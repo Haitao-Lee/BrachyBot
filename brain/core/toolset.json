@@ -1,0 +1,196 @@
+{
+    "name": "BrachyAgent Tool Set",
+    "version": "1.0",
+    "description": "Tool set for AI-BrachyAgent brachytherapy planning",
+    "tools": [
+        {
+            "id": 1,
+            "type": "segmentation",
+            "category": "ctv",
+            "name": "pancreatic_ctv",
+            "description": "Segment pancreatic CTV from CT imaging",
+            "input": "ct_path: str, output_dir: str",
+            "output": "CTV segmentation mask"
+        },
+        {
+            "id": 2,
+            "type": "segmentation",
+            "category": "ctv",
+            "name": "prostate_ctv",
+            "description": "Segment prostate CTV from CT imaging",
+            "input": "ct_path: str, output_dir: str",
+            "output": "CTV segmentation mask"
+        },
+        {
+            "id": 3,
+            "type": "segmentation",
+            "category": "ctv",
+            "name": "liver_ctv",
+            "description": "Segment liver CTV from CT imaging",
+            "input": "ct_path: str, output_dir: str",
+            "output": "CTV segmentation mask"
+        },
+        {
+            "id": 4,
+            "type": "segmentation",
+            "category": "ctv",
+            "name": "kidney_ctv",
+            "description": "Segment kidney CTV from CT imaging",
+            "input": "ct_path: str, output_dir: str",
+            "output": "CTV segmentation mask"
+        },
+        {
+            "id": 5,
+            "type": "segmentation",
+            "category": "ctv",
+            "name": "lung_ctv",
+            "description": "Segment lung CTV from CT imaging",
+            "input": "ct_path: str, output_dir: str",
+            "output": "CTV segmentation mask"
+        },
+        {
+            "id": 6,
+            "type": "segmentation",
+            "category": "ctv",
+            "name": "head_neck_ctv",
+            "description": "Segment head and neck CTV from CT imaging",
+            "input": "ct_path: str, output_dir: str",
+            "output": "CTV segmentation mask"
+        },
+        {
+            "id": 10,
+            "type": "segmentation",
+            "category": "oar",
+            "name": "totalsegmentator_oar",
+            "description": "Segment all OARs using TotalSegmentator",
+            "input": "ct_path: str, output_dir: str",
+            "output": "OAR segmentation masks"
+        },
+        {
+            "id": 11,
+            "type": "segmentation",
+            "category": "oar",
+            "name": "pancreatic_oar",
+            "description": "Segment pancreatic OARs (duodenum, stomach, small_bowel)",
+            "input": "ct_path: str, output_dir: str",
+            "output": "OAR segmentation masks"
+        },
+        {
+            "id": 20,
+            "type": "planning",
+            "category": "trajectory",
+            "name": "trajectory_init",
+            "description": "Generate initial needle trajectory plan",
+            "input": "ctv_path: str, oar_path: str, output_dir: str",
+            "output": "Initial trajectory plan"
+        },
+        {
+            "id": 21,
+            "type": "planning",
+            "category": "trajectory",
+            "name": "trajectory_refine",
+            "description": "Refine trajectory plan based on OAR constraints",
+            "input": "initial_trajectory: dict, oar_path: str, output_dir: str",
+            "output": "Refined trajectory plan"
+        },
+        {
+            "id": 30,
+            "type": "planning",
+            "category": "seed",
+            "name": "unified_seed",
+            "description": "Unified seed planning using hybrid approach",
+            "input": "ctv_path: str, trajectory_plan: dict, output_dir: str",
+            "output": "Seed placement plan"
+        },
+        {
+            "id": 31,
+            "type": "planning",
+            "category": "seed",
+            "name": "rule_based_seed",
+            "description": "Rule-based seed planning",
+            "input": "ctv_path: str, trajectory_plan: dict, output_dir: str",
+            "output": "Seed placement plan"
+        },
+        {
+            "id": 32,
+            "type": "planning",
+            "category": "seed",
+            "name": "rl_seed",
+            "description": "RL-based seed planning",
+            "input": "ctv_path: str, trajectory_plan: dict, output_dir: str",
+            "output": "Seed placement plan"
+        },
+        {
+            "id": 40,
+            "type": "evaluation",
+            "category": "dose",
+            "name": "vx_metrics",
+            "description": "Calculate V_x metrics (V100, V150, V200)",
+            "input": "dose_array, ctv_mask, thresholds",
+            "output": "VX metrics dictionary"
+        },
+        {
+            "id": 41,
+            "type": "evaluation",
+            "category": "dose",
+            "name": "dx_metrics",
+            "description": "Calculate D_x metrics (D90, D100, D2cc)",
+            "input": "dose_array, ctv_mask, oar_masks",
+            "output": "DX metrics dictionary"
+        },
+        {
+            "id": 42,
+            "type": "evaluation",
+            "category": "dose",
+            "name": "dvh_calculation",
+            "description": "Calculate complete DVH data",
+            "input": "dose_array, structure_masks",
+            "output": "DVH data"
+        },
+        {
+            "id": 43,
+            "type": "evaluation",
+            "category": "dose",
+            "name": "comprehensive_dose_evaluation",
+            "description": "Full dosimetric assessment",
+            "input": "dose_array, ctv_mask, oar_masks, prescription_dose",
+            "output": "Comprehensive evaluation report"
+        },
+        {
+            "id": 50,
+            "type": "io",
+            "category": "image",
+            "name": "image_loader",
+            "description": "Load and validate medical images",
+            "input": "image_path: str",
+            "output": "Image array with metadata"
+        },
+        {
+            "id": 51,
+            "type": "io",
+            "category": "image",
+            "name": "image_preprocessor",
+            "description": "Preprocess images (resample, normalize)",
+            "input": "image_array, target_spacing, normalize_params",
+            "output": "Preprocessed image"
+        },
+        {
+            "id": 60,
+            "type": "export",
+            "category": "dicom",
+            "name": "dicom_rt_exporter",
+            "description": "Export plan to DICOM RT format",
+            "input": "plan_data, output_dir",
+            "output": "DICOM RT files"
+        },
+        {
+            "id": 61,
+            "type": "export",
+            "category": "dose",
+            "name": "dose_exporter",
+            "description": "Export dose distribution",
+            "input": "dose_array, reference_ct, output_path",
+            "output": "Dose file"
+        }
+    ]
+}

@@ -1,0 +1,266 @@
+{
+  "standard_planning": {
+    "name": "standard_planning",
+    "description": "Standard pre-operative planning: CTV + OAR seg -> trajectories -> seeds -> dose eval",
+    "category": "planning",
+    "triggers": [
+      "\u89c4\u5212",
+      "\u6807\u51c6\u8ba1\u5212",
+      "standard plan",
+      "\u6cbb\u7597\u8ba1\u5212",
+      "treatment plan"
+    ],
+    "tool_sequence": [
+      "ctv_segmentation",
+      "oar_segmentation",
+      "trajectory_planning",
+      "seed_planning",
+      "dose_engine",
+      "dose_evaluation"
+    ],
+    "parameters": {
+      "ctv_segmentation": {
+        "tumor_type": null
+      },
+      "oar_segmentation": {
+        "organ_type": "general"
+      },
+      "seed_planning": {
+        "mode": "rule_based"
+      },
+      "dose_engine": {
+        "engine": "gaussian"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1778849747.4125402,
+    "last_used": 1778849747.4125404,
+    "version": "1.0.0"
+  },
+  "rl_planning": {
+    "name": "rl_planning",
+    "description": "RL-optimized planning for complex cases requiring advanced optimization",
+    "category": "planning",
+    "triggers": [
+      "RL",
+      "\u5f3a\u5316\u5b66\u4e60",
+      "rl plan",
+      "\u5f3a\u5316",
+      "complex",
+      "\u590d\u6742"
+    ],
+    "tool_sequence": [
+      "ctv_segmentation",
+      "oar_segmentation",
+      "trajectory_planning",
+      "seed_planning_rl",
+      "dose_engine",
+      "dose_evaluation",
+      "plan_quality_scorer"
+    ],
+    "parameters": {
+      "ctv_segmentation": {
+        "tumor_type": null
+      },
+      "oar_segmentation": {
+        "organ_type": "general"
+      },
+      "seed_planning_rl": {
+        "mode": "rl"
+      },
+      "dose_engine": {
+        "engine": "cnn"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1778849747.4129882,
+    "last_used": 1778849747.4129884,
+    "version": "1.0.0"
+  },
+  "quick_planning": {
+    "name": "quick_planning",
+    "description": "Quick planning mode using fast Gaussian dose model",
+    "category": "planning",
+    "triggers": [
+      "\u5feb\u901f",
+      "quick",
+      "\u9884\u89c8",
+      "preview",
+      "\u901f\u89c8"
+    ],
+    "tool_sequence": [
+      "ctv_segmentation",
+      "trajectory_planning",
+      "seed_planning",
+      "dose_engine"
+    ],
+    "parameters": {
+      "ctv_segmentation": {
+        "fast_mode": true
+      },
+      "seed_planning": {
+        "mode": "rule_based"
+      },
+      "dose_engine": {
+        "engine": "gaussian"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1778849747.4166367,
+    "last_used": 1778849747.4166372,
+    "version": "1.0.0"
+  },
+  "pancreas_segmentation": {
+    "name": "pancreas_segmentation",
+    "description": "Pancreatic tumor (CTV) + surrounding OAR (artery, vein, pancreas) segmentation",
+    "category": "segmentation",
+    "triggers": [
+      "\u80f0\u817a",
+      "pancreas",
+      "\u80f0",
+      "pancreatic"
+    ],
+    "tool_sequence": [
+      "ctv_segmentation",
+      "oar_segmentation"
+    ],
+    "parameters": {
+      "ctv_segmentation": {
+        "tumor_type": "pancreatic"
+      },
+      "oar_segmentation": {
+        "organ_type": "pancreatic"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1778849747.4169939,
+    "last_used": 1778849747.4169984,
+    "version": "1.0.0"
+  },
+  "prostate_segmentation": {
+    "name": "prostate_segmentation",
+    "description": "Prostate tumor segmentation for brachytherapy planning",
+    "category": "segmentation",
+    "triggers": [
+      "\u524d\u5217\u817a",
+      "prostate",
+      "\u6444\u62a4\u817a"
+    ],
+    "tool_sequence": [
+      "ctv_segmentation",
+      "oar_segmentation"
+    ],
+    "parameters": {
+      "ctv_segmentation": {
+        "tumor_type": "prostate"
+      },
+      "oar_segmentation": {
+        "organ_type": "general"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1778849747.4172926,
+    "last_used": 1778849747.4172928,
+    "version": "1.0.0"
+  },
+  "generic_segmentation": {
+    "name": "generic_segmentation",
+    "description": "Generic tumor and organ segmentation using TotalSegmentator",
+    "category": "segmentation",
+    "triggers": [
+      "\u5206\u5272",
+      "segment",
+      "\u6807\u6ce8",
+      "annotate"
+    ],
+    "tool_sequence": [
+      "ctv_segmentation",
+      "oar_segmentation"
+    ],
+    "parameters": {
+      "ctv_segmentation": {
+        "fast_mode": false
+      },
+      "oar_segmentation": {
+        "organ_type": "general"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1778849747.4175963,
+    "last_used": 1778849747.417601,
+    "version": "1.0.0"
+  },
+  "standard_evaluation": {
+    "name": "standard_evaluation",
+    "description": "Standard dose evaluation: Vx/Dx metrics + OAR constraint check",
+    "category": "evaluation",
+    "triggers": [
+      "\u8bc4\u4f30",
+      "evaluate",
+      "\u5242\u91cf\u8bc4\u4f30",
+      "dose eval",
+      "metrics"
+    ],
+    "tool_sequence": [
+      "dose_evaluation",
+      "oar_constraint_checker",
+      "plan_quality_scorer"
+    ],
+    "parameters": {
+      "dose_evaluation": {
+        "prescribed_dose": 1.0
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1778849747.4178882,
+    "last_used": 1778849747.4178884,
+    "version": "1.0.0"
+  },
+  "detailed_evaluation": {
+    "name": "detailed_evaluation",
+    "description": "Detailed dose evaluation with DVH curves and comprehensive OAR analysis",
+    "category": "evaluation",
+    "triggers": [
+      "\u8be6\u7ec6\u8bc4\u4f30",
+      "\u8be6\u7ec6",
+      "detailed",
+      "DVH",
+      "comprehensive"
+    ],
+    "tool_sequence": [
+      "dose_evaluation",
+      "dvh_calculation",
+      "oar_constraint_checker",
+      "plan_quality_scorer",
+      "report_generator"
+    ],
+    "parameters": {
+      "dose_evaluation": {
+        "prescribed_dose": 1.0
+      },
+      "report_generator": {
+        "output_format": "html"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1778849747.4181757,
+    "last_used": 1778849747.418176,
+    "version": "1.0.0"
+  }
+}

@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Large model files (download separately)
+VoCo/
+*.pth
+*.ckpt
+*.pt
+*.onnx
+*.bin
+*.safetensors
+dose_pre/*.pth
+dose_pre/*.ckpt
+
+# Data and runtime memory
+memory/data/
+output/
+*.nii.gz
+*.nii
+*.dcm
+*.dicom
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment secrets
+.env
+.env.local
+*.key
+mykey.py

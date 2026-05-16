@@ -1,0 +1,1651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-BrachyAgent Brachytherapy Planning System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        :root {
+            --primary: #0ea5e9;
+            --primary-dark: #0284c7;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --bg: #0f172a;
+            --bg-2: #1e293b;
+            --bg-3: #334155;
+            --card-bg: #1e293b;
+            --card-border: #334155;
+            --text: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-dim: #64748b;
+            --accent: #8b5cf6;
+            --accent-bg: rgba(139, 92, 246, 0.15);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            user-select: none;
+        }
+
+        /* ============ HEADER ============ */
+        .header {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            border-bottom: 1px solid var(--card-border);
+            padding: 0 1rem;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-shrink: 0;
+            z-index: 100;
+        }
+
+        .header-logo {
+            width: 28px; height: 28px;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 800; font-size: 0.8rem; flex-shrink: 0;
+        }
+
+        .header-title { font-size: 0.9rem; font-weight: 700; }
+        .header-subtitle { font-size: 0.65rem; color: var(--text-dim); }
+
+        .header-status { display: flex; align-items: center; gap: 0.8rem; margin-left: auto; }
+
+        .status-chip {
+            display: flex; align-items: center; gap: 0.3rem;
+            padding: 0.25rem 0.6rem; background: var(--bg-3);
+            border-radius: 20px; font-size: 0.7rem; color: var(--text-secondary);
+        }
+
+        .status-chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+        .status-chip .dot.green { background: var(--success); box-shadow: 0 0 6px var(--success); }
+        .status-chip .dot.yellow { background: var(--warning); }
+        .status-chip .dot.red { background: var(--danger); }
+
+        /* ============ MAIN BODY ============ */
+        .app-body {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* ============ LEFT: CHAT ============ */
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 400px;
+        }
+
+        .chat-header {
+            padding: 0.6rem 1rem;
+            border-bottom: 1px solid var(--card-border);
+            display: flex; align-items: center; gap: 0.5rem;
+            background: var(--bg-2); flex-shrink: 0;
+        }
+
+        .chat-header-icon {
+            width: 24px; height: 24px;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            border-radius: 6px; display: flex; align-items: center; justify-content: center;
+            font-size: 0.65rem; flex-shrink: 0;
+        }
+
+        .chat-header-title { font-size: 0.8rem; font-weight: 600; }
+        .chat-header-sub { font-size: 0.65rem; color: var(--text-dim); }
+
+        .chat-messages {
+            flex: 1; overflow-y: auto;
+            padding: 1rem; display: flex; flex-direction: column; gap: 0.6rem;
+        }
+
+        .chat-msg {
+            padding: 0.6rem 0.85rem; border-radius: 12px;
+            font-size: 0.82rem; line-height: 1.5; max-width: 80%;
+            animation: fadeIn 0.2s ease; word-break: break-word;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .chat-msg.user { background: var(--primary); color: white; align-self: flex-end; border-bottom-right-radius: 3px; }
+        .chat-msg.bot { background: var(--bg-3); color: var(--text); align-self: flex-start; border-bottom-left-radius: 3px; }
+        .chat-msg.system { background: var(--accent-bg); color: var(--accent); align-self: flex-start; border: 1px solid rgba(139,92,246,0.3); font-size: 0.75rem; }
+        .chat-msg.error { background: rgba(239,68,68,0.1); color: var(--danger); align-self: flex-start; border: 1px solid rgba(239,68,68,0.3); font-size: 0.75rem; }
+
+        /* ============ THINKING CHAIN / EXECUTION STEPS ============ */
+        .thinking-chain {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            align-self: flex-start;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .thinking-header {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.2rem 0;
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            cursor: pointer;
+            user-select: none;
+        }
+        .thinking-header:hover { color: var(--text-secondary); }
+        .thinking-toggle {
+            font-size: 0.6rem;
+            transition: transform 0.15s;
+            color: var(--text-dim);
+        }
+        .thinking-toggle.expanded { transform: rotate(90deg); }
+        .thinking-label { font-weight: 600; color: var(--accent); }
+        .thinking-count { color: var(--text-dim); font-size: 0.62rem; }
+
+        .thinking-steps {
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            padding-left: 0.5rem;
+            border-left: 2px solid var(--card-border);
+            margin-left: 0.25rem;
+        }
+        .thinking-steps.expanded { display: flex; }
+
+        .step-block {
+            background: var(--bg-3);
+            border-radius: 8px;
+            border: 1px solid var(--card-border);
+            overflow: hidden;
+            font-size: 0.75rem;
+        }
+
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.35rem 0.6rem;
+            cursor: pointer;
+        }
+        .step-header:hover { background: rgba(255,255,255,0.03); }
+
+        .step-icon {
+            font-size: 0.75rem;
+            width: 16px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        .step-icon.user { color: var(--primary); }
+        .step-icon.thinking { color: var(--warning); }
+        .step-icon.tool { color: var(--accent); }
+        .step-icon.result { color: var(--success); }
+        .step-icon.error { color: var(--danger); }
+        .step-icon.assistant { color: var(--primary); }
+
+        .step-title {
+            flex: 1;
+            font-weight: 600;
+            color: var(--text);
+            font-size: 0.72rem;
+        }
+        .step-status {
+            font-size: 0.6rem;
+            padding: 1px 5px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+        .step-status.done { background: rgba(16,185,129,0.15); color: var(--success); }
+        .step-status.error { background: rgba(239,68,68,0.15); color: var(--danger); }
+        .step-status.pending { background: rgba(245,158,11,0.15); color: var(--warning); }
+
+        .step-body {
+            display: none;
+            padding: 0.3rem 0.6rem 0.4rem;
+            border-top: 1px solid var(--card-border);
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            line-height: 1.45;
+        }
+        .step-body.expanded { display: block; }
+
+        .step-tool-name {
+            display: inline-block;
+            background: var(--accent-bg);
+            color: var(--accent);
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .step-params {
+            background: rgba(0,0,0,0.2);
+            border-radius: 4px;
+            padding: 0.25rem 0.4rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            margin: 0.2rem 0;
+            word-break: break-all;
+        }
+
+        .step-result {
+            color: var(--success);
+            font-size: 0.72rem;
+        }
+
+        .step-content {
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            white-space: pre-wrap;
+        }
+
+        /* Final bot response */
+        .chat-msg.bot-response {
+            background: var(--bg-3);
+            color: var(--text);
+            align-self: flex-start;
+            border-radius: 12px;
+            border-bottom-left-radius: 3px;
+            padding: 0.6rem 0.85rem;
+            font-size: 0.82rem;
+            line-height: 1.5;
+            max-width: 85%;
+            animation: fadeIn 0.2s ease;
+            word-break: break-word;
+        }
+
+        .chat-input-area {
+            padding: 0.75rem 1rem;
+            border-top: 1px solid var(--card-border);
+            background: var(--bg-2); flex-shrink: 0;
+        }
+
+        .chat-input-row {
+            display: flex; gap: 0.5rem; align-items: center;
+        }
+
+        .chat-input-row input {
+            flex: 1; background: var(--bg-3); border: 1px solid var(--card-border);
+            border-radius: 8px; color: var(--text); font-size: 0.85rem;
+            padding: 0.6rem 0.85rem;
+        }
+        .chat-input-row input:focus { outline: none; border-color: var(--primary); }
+        .chat-input-row input::placeholder { color: var(--text-dim); }
+
+        .chat-send {
+            width: 40px; height: 40px; background: var(--primary); color: white;
+            border: none; border-radius: 8px; font-size: 1rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.15s; flex-shrink: 0;
+        }
+        .chat-send:hover { background: var(--primary-dark); }
+
+        .chat-hint { font-size: 0.65rem; color: var(--text-dim); margin-top: 0.4rem; padding-left: 0.25rem; }
+
+        /* ============ RIGHT PANEL ============ */
+        .right-panel {
+            width: 500px; min-width: 200px;
+            background: var(--bg-2);
+            border-left: 1px solid var(--card-border);
+            display: flex; flex-direction: column;
+            overflow: visible; flex-shrink: 0;
+        }
+
+        /* ============ VERTICAL SPLITTER ============ */
+        .v-splitter {
+            width: 5px; background: var(--bg);
+            cursor: col-resize; flex-shrink: 0;
+            position: relative; transition: background 0.15s;
+            z-index: 10;
+        }
+        .v-splitter::after {
+            content: ''; position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 3px; height: 40px;
+            background: var(--card-border); border-radius: 2px;
+            transition: background 0.15s;
+        }
+        .v-splitter:hover::after, .v-splitter.dragging::after {
+            background: var(--primary);
+        }
+
+        .panel-tabs {
+            display: flex; border-bottom: 1px solid var(--card-border); flex-shrink: 0;
+        }
+
+        .panel-tab {
+            flex: 1; padding: 0.6rem 0.2rem;
+            text-align: center; font-size: 0.68rem; color: var(--text-dim);
+            cursor: pointer; border-bottom: 2px solid transparent;
+            transition: all 0.15s; font-weight: 500;
+            display: flex; align-items: center; justify-content: center; gap: 0.2rem;
+            overflow: hidden; white-space: nowrap;
+        }
+        .panel-tab:hover { color: var(--text); }
+        .panel-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+        .panel-content {
+            flex: 1; overflow: hidden; display: none;
+            min-height: 0;
+        }
+        .panel-content.active { display: flex; flex-direction: column; }
+
+        /* ============ INPUT FORM ============ */
+        .input-form {
+            padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem;
+        }
+
+        .form-section-title {
+            font-size: 0.65rem; font-weight: 600; color: var(--text-dim);
+            text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.25rem;
+            display: flex; align-items: center; gap: 0.4rem;
+        }
+        .form-section-title::after { content: ''; flex: 1; height: 1px; background: var(--card-border); }
+
+        .form-group { display: flex; flex-direction: column; gap: 0.15rem; }
+
+        .form-label {
+            font-size: 0.65rem; color: var(--text-dim);
+            font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+
+        .form-row {
+            display: flex; gap: 0.4rem; align-items: center;
+        }
+
+        .form-input, .form-select {
+            background: var(--bg-3); border: 1px solid var(--card-border);
+            border-radius: 6px; color: var(--text); font-size: 0.78rem;
+            padding: 0.45rem 0.6rem; width: 100%;
+            transition: border-color 0.15s;
+        }
+        .form-input:focus, .form-select:focus { outline: none; border-color: var(--primary); }
+        .form-input::placeholder { color: var(--text-dim); font-size: 0.72rem; }
+
+        /* File picker button */
+        .file-btn {
+            padding: 0.45rem 0.6rem; background: var(--bg-3);
+            border: 1px solid var(--card-border); border-radius: 6px;
+            color: var(--text-secondary); font-size: 0.75rem;
+            cursor: pointer; white-space: nowrap;
+            display: flex; align-items: center; gap: 0.25rem;
+            transition: all 0.15s; flex-shrink: 0;
+        }
+        .file-btn:hover { background: var(--primary); color: white; border-color: var(--primary); }
+
+        .form-actions { display: flex; gap: 0.4rem; margin-top: 0.5rem; flex-wrap: wrap; }
+
+        .btn {
+            padding: 0.5rem 0.75rem; border: none; border-radius: 6px;
+            font-size: 0.78rem; font-weight: 600; cursor: pointer;
+            transition: all 0.15s; display: flex; align-items: center; gap: 0.3rem;
+        }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-dark); }
+        .btn-warning { background: var(--warning); color: #1e293b; }
+        .btn-warning:hover { filter: brightness(1.1); }
+        .btn-outline { background: transparent; color: var(--text-secondary); border: 1px solid var(--card-border); }
+        .btn-outline:hover { background: var(--bg-3); color: var(--text); }
+        .btn-icon { font-size: 0.9rem; }
+
+        /* ============ METRICS ============ */
+        .metrics-panel { padding: 0.75rem; flex: 1; }
+
+        .metrics-section { margin-bottom: 0.75rem; }
+
+        .metrics-title {
+            font-size: 0.65rem; font-weight: 600; color: var(--text-dim);
+            text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 0.5rem;
+            display: flex; align-items: center; gap: 0.4rem;
+        }
+        .metrics-title::after { content: ''; flex: 1; height: 1px; background: var(--card-border); }
+
+        .metrics-grid {
+            display: grid; grid-template-columns: repeat(3, 1fr);
+            gap: 4px; margin-bottom: 0.5rem;
+        }
+
+        .metric-card {
+            background: var(--bg-3); border-radius: 6px; padding: 0.4rem;
+            text-align: center; border: 1px solid transparent; transition: all 0.2s;
+        }
+        .metric-card:hover { border-color: var(--primary); }
+        .metric-card.good { border-color: var(--success); background: rgba(16,185,129,0.08); }
+        .metric-card.warn { border-color: var(--warning); background: rgba(245,158,11,0.08); }
+        .metric-card.bad { border-color: var(--danger); background: rgba(239,68,68,0.08); }
+
+        .metric-val { font-size: 1rem; font-weight: 700; color: var(--primary); }
+        .metric-card.good .metric-val { color: var(--success); }
+        .metric-card.warn .metric-val { color: var(--warning); }
+        .metric-card.bad .metric-val { color: var(--danger); }
+        .metric-lbl { font-size: 0.55rem; color: var(--text-dim); margin-top: 1px; }
+
+        .metric-bar { height: 2px; background: var(--bg-2); border-radius: 2px; margin-top: 3px; overflow: hidden; }
+        .metric-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+        .metric-bar-fill.good { background: var(--success); }
+        .metric-bar-fill.warn { background: var(--warning); }
+        .metric-bar-fill.bad { background: var(--danger); }
+
+        /* OAR Table */
+        .oar-table { width: 100%; border-collapse: collapse; font-size: 0.68rem; }
+        .oar-table th {
+            text-align: left; padding: 0.3rem 0.4rem; color: var(--text-dim);
+            font-weight: 600; font-size: 0.6rem; text-transform: uppercase;
+            letter-spacing: 0.5px; border-bottom: 1px solid var(--card-border);
+        }
+        .oar-table td {
+            padding: 0.35rem 0.4rem;
+            border-bottom: 1px solid rgba(51,65,85,0.5);
+            color: var(--text-secondary);
+        }
+        .oar-table tr:hover td { background: var(--bg-3); }
+
+        .oar-status {
+            display: inline-flex; align-items: center; gap: 2px;
+            font-size: 0.6rem; font-weight: 600; padding: 1px 5px; border-radius: 8px;
+        }
+        .oar-status.pass { background: rgba(16,185,129,0.15); color: var(--success); }
+        .oar-status.warn { background: rgba(245,158,11,0.15); color: var(--warning); }
+        .oar-status.fail { background: rgba(239,68,68,0.15); color: var(--danger); }
+
+        /* ============ DVH ============ */
+        .dvh-panel { padding: 0.75rem; flex: 1; }
+
+        .dvh-container {
+            height: 200px; position: relative;
+            background: var(--bg-3); border-radius: 8px;
+            overflow: hidden; margin-bottom: 0.5rem;
+        }
+
+        .dvh-placeholder {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            height: 100%; color: var(--text-dim);
+            font-size: 0.75rem; gap: 0.4rem;
+        }
+
+        .dvh-legend { display: flex; flex-direction: column; gap: 3px; font-size: 0.68rem; }
+        .dvh-legend-item { display: flex; align-items: center; gap: 5px; color: var(--text-dim); }
+
+        /* ============ SEEDS ============ */
+        .seeds-panel { padding: 0.75rem; flex: 1; }
+
+        .seeds-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 5px; align-content: start;
+        }
+
+        .seed-chip {
+            background: var(--bg-3); border: 1px solid var(--card-border);
+            border-radius: 6px; padding: 0.4rem 0.5rem; font-size: 0.68rem;
+        }
+        .seed-chip-header { font-weight: 600; color: var(--text); margin-bottom: 2px; }
+        .seed-chip-detail { color: var(--text-dim); font-size: 0.6rem; }
+
+        .empty-state {
+            text-align: center; color: var(--text-dim);
+            padding: 2rem 1rem; font-size: 0.75rem; line-height: 1.5;
+        }
+        .empty-state-icon { font-size: 1.8rem; opacity: 0.25; margin-bottom: 0.5rem; }
+
+        /* ============ VIEWERS (scrollable vertical stack) ============ */
+        .viewers-panel {
+            padding: 0.5rem;
+            display: flex; flex-direction: column; gap: 0.5rem;
+            overflow-y: auto;
+            overflow-x: hidden;
+            position: relative;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .viewer-card {
+            background: var(--card-bg); border: 1px solid var(--card-border);
+            border-radius: 8px; overflow: hidden;
+            flex-shrink: 0;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Fullscreen: card takes all remaining space in the flex column (other cards hidden) */
+        .viewer-card.fullscreen {
+            flex: 1;
+            min-height: 0;
+            height: auto !important;
+            border-radius: 0;
+            z-index: 200;
+        }
+
+        body.viewer-fullscreen { overflow: hidden; }
+
+        .viewer-card-header {
+            padding: 0.35rem 0.6rem;
+            background: rgba(15,23,42,0.8);
+            border-bottom: 1px solid var(--card-border);
+            display: flex; align-items: center; justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .viewer-card-label {
+            font-size: 0.65rem; font-weight: 600; color: var(--text-dim);
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+
+        .viewer-card-expand-btn {
+            width: 22px; height: 22px;
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            color: var(--text-dim);
+            font-size: 0.8rem;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.15s;
+            flex-shrink: 0;
+        }
+        .viewer-card-expand-btn:hover {
+            background: var(--bg-3);
+            border-color: var(--card-border);
+            color: var(--text);
+        }
+
+        .viewer-card-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        .viewer-card-canvas {
+            width: 100%;
+            flex: 1;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-dim); font-size: 0.72rem;
+            position: relative;
+            min-height: 120px;
+        }
+
+        /* Vertical resize handle at bottom of card */
+        .viewer-resize-h {
+            height: 5px;
+            background: transparent;
+            cursor: row-resize;
+            flex-shrink: 0;
+            position: relative;
+            transition: background 0.15s;
+        }
+        .viewer-resize-h::after {
+            content: '';
+            position: absolute;
+            bottom: 2px; left: 50%;
+            transform: translateX(-50%);
+            width: 24px; height: 3px;
+            background: var(--card-border);
+            border-radius: 2px;
+            transition: background 0.15s;
+        }
+        .viewer-resize-h:hover::after { background: var(--primary); }
+
+        .viewer-card-ctrl {
+            padding: 0.3rem 0.6rem;
+            background: rgba(15,23,42,0.8);
+            border-top: 1px solid var(--card-border);
+            display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+        .viewer-card-ctrl label { font-size: 0.6rem; color: var(--text-dim); white-space: nowrap; }
+        .viewer-card-ctrl input[type="range"] { flex: 1; height: 2px; accent-color: var(--primary); min-width: 60px; }
+
+        .ctrl-sep { width: 1px; height: 12px; background: var(--card-border); flex-shrink: 0; }
+
+        .ctrl-toggle {
+            display: flex; align-items: center; gap: 0.2rem;
+            font-size: 0.6rem; color: var(--text-dim); cursor: pointer; white-space: nowrap;
+        }
+        .ctrl-toggle input[type="checkbox"] { accent-color: var(--primary); cursor: pointer; }
+        .ctrl-toggle input[type="range"] { width: 50px; height: 2px; accent-color: var(--primary); }
+
+        .viewer-no-data {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            color: var(--text-dim); font-size: 0.7rem; gap: 0.3rem;
+        }
+        .viewer-no-data svg { opacity: 0.2; }
+
+        /* 3D viewer card is taller by default */
+        .viewer-card-3d .viewer-card-canvas { min-height: 200px; }
+
+        .loading-overlay {
+            position: absolute; inset: 0;
+            background: rgba(15,23,42,0.85);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 50; gap: 0.5rem; opacity: 0;
+            pointer-events: none; transition: opacity 0.2s;
+        }
+        .loading-overlay.active { opacity: 1; pointer-events: all; }
+
+        .spinner-ring {
+            width: 28px; height: 28px; border: 2px solid var(--card-border);
+            border-top-color: var(--primary); border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { font-size: 0.7rem; color: var(--text-secondary); }
+
+        /* Drag cursor during resize */
+        body.v-dragging { cursor: col-resize !important; }
+        body.v-dragging * { pointer-events: none; user-select: none; }
+        .v-splitter.dragging { background: rgba(14,165,233,0.15); }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 2px; }
+
+        /* Summary bar */
+        .panel-summary-bar {
+            padding: 0.5rem 0.75rem; border-top: 1px solid var(--card-border);
+            background: var(--bg); display: flex; gap: 0.5rem; flex-shrink: 0;
+        }
+
+        .summary-chip {
+            flex: 1; background: var(--bg-3); border-radius: 5px;
+            padding: 0.3rem 0.5rem; text-align: center; font-size: 0.68rem;
+        }
+        .summary-chip-label { color: var(--text-dim); font-size: 0.55rem; }
+        .summary-chip-value { font-weight: 600; color: var(--text); }
+
+        /* Hidden file inputs */
+        input[type="file"] { display: none; }
+    </style>
+</head>
+<body>
+
+<!-- ============ HEADER ============ -->
+<header class="header">
+    <div class="header-logo">AI</div>
+    <div>
+        <div class="header-title">AI-BrachyAgent</div>
+        <div class="header-subtitle">Brachytherapy Planning</div>
+    </div>
+    <div class="header-status">
+        <div class="status-chip">
+            <span class="dot green" id="serverDot"></span>
+            <span id="serverStatus">Connected</span>
+        </div>
+        <div class="status-chip">
+            <span class="dot green" id="brainDot"></span>
+            <span>Brain <span id="brainStatusText">Online</span></span>
+        </div>
+        <div class="status-chip">Session: <span id="sessionDisplay">web</span></div>
+    </div>
+</header>
+
+<!-- ============ APP BODY ============ -->
+<div class="app-body">
+
+    <!-- ============ LEFT: CHAT ============ -->
+    <div class="chat-area">
+        <div class="chat-header">
+            <div class="chat-header-icon">AI</div>
+            <div>
+                <div class="chat-header-title">AI Planning Assistant</div>
+                <div class="chat-header-sub">Describe your case or load patient data to begin</div>
+            </div>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+            <div class="chat-msg system">Welcome to AI-BrachyAgent. Describe your brachytherapy case — tumor location, type, patient condition — and I will help you generate an optimal treatment plan. You can also load CT data directly via the Input panel on the right.</div>
+        </div>
+
+        <div class="chat-input-area">
+            <div class="chat-input-row">
+                <input type="text" id="chatInput" placeholder="Describe your case, e.g. pancreatic cancer patient with CT loaded..." onkeypress="if(event.key==='Enter')sendChat()">
+                <button class="chat-send" onclick="sendChat()">&#10148;</button>
+            </div>
+            <div class="chat-hint">Press Enter to send &middot; Results will appear in the right panel</div>
+        </div>
+    </div>
+
+    <!-- VERTICAL SPLITTER -->
+    <div class="v-splitter" id="vSplitter"></div>
+
+    <!-- ============ RIGHT PANEL ============ -->
+    <div class="right-panel">
+
+        <!-- Tabs -->
+        <div class="panel-tabs">
+            <div class="panel-tab active" onclick="switchPanel('input', this)">
+                <span>&#9881;</span> Input
+            </div>
+            <div class="panel-tab" onclick="switchPanel('metrics', this)">
+                <span>&#128200;</span> Metrics
+            </div>
+            <div class="panel-tab" onclick="switchPanel('dvh', this)">
+                <span>&#128202;</span> DVH
+            </div>
+            <div class="panel-tab" onclick="switchPanel('seeds', this)">
+                <span>&#9679;</span> Seeds
+            </div>
+            <div class="panel-tab" onclick="switchPanel('viewers', this)">
+                <span>&#9638;</span> Viewers
+            </div>
+        </div>
+
+        <!-- INPUT PANEL -->
+         <div class="panel-content active" id="panelInput">
+            <div class="input-form">
+                <div class="form-section-title">Image Data</div>
+
+                <!-- CT file picker -->
+                <div class="form-group">
+                    <label class="form-label">CT Image *</label>
+                    <div class="form-row">
+                        <input type="text" class="form-input" id="ctPath" placeholder="/path/to/ct.nii.gz">
+                        <button class="file-btn" onclick="document.getElementById('fileCT').click()">&#128193; Browse</button>
+                    </div>
+                    <input type="file" id="fileCT" accept=".nii,.nii.gz,.mha,.nrrd,image/*" onchange="handleFileSelect(this, 'ctPath')">
+                </div>
+
+                <!-- CTV file picker -->
+                <div class="form-group">
+                    <label class="form-label">CTV Mask</label>
+                    <div class="form-row">
+                        <input type="text" class="form-input" id="ctvPath" placeholder="/path/to/ctv.nii.gz (optional)">
+                        <button class="file-btn" onclick="document.getElementById('fileCTV').click()">&#128193; Browse</button>
+                    </div>
+                    <input type="file" id="fileCTV" accept=".nii,.nii.gz,.mha,.nrrd,image/*" onchange="handleFileSelect(this, 'ctvPath')">
+                </div>
+
+                <!-- OAR file picker -->
+                <div class="form-group">
+                    <label class="form-label">OAR Mask</label>
+                    <div class="form-row">
+                        <input type="text" class="form-input" id="oarPath" placeholder="/path/to/oar.nii.gz (optional)">
+                        <button class="file-btn" onclick="document.getElementById('fileOAR').click()">&#128193; Browse</button>
+                    </div>
+                    <input type="file" id="fileOAR" accept=".nii,.nii.gz,.mha,.nrrd,image/*" onchange="handleFileSelect(this, 'oarPath')">
+                </div>
+
+                <div class="form-section-title">Planning Options</div>
+
+                <div class="form-group">
+                    <label class="form-label">Planning Mode</label>
+                    <select class="form-select" id="planMode">
+                        <option value="rule_based">Rule-Based</option>
+                        <option value="rl">Reinforcement Learning</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Deviation Threshold (mm)</label>
+                    <input type="number" class="form-input" id="devThreshold" value="2.0" step="0.1">
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn btn-primary" onclick="runPlanning()">
+                        <span class="btn-icon">&#9654;</span> Start Plan
+                    </button>
+                    <button class="btn btn-warning" onclick="runIntra()">
+                        <span class="btn-icon">&#9889;</span> Intraop
+                    </button>
+                    <button class="btn btn-outline" onclick="resetSession()">
+                        &#8635; Reset
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- METRICS PANEL -->
+        <div class="panel-content" id="panelMetrics">
+            <div class="metrics-panel">
+                <div class="metrics-section">
+                    <div class="metrics-title">Target Coverage</div>
+                    <div class="metrics-grid">
+                        <div class="metric-card" id="cardV100">
+                            <div class="metric-val" id="valV100">--</div>
+                            <div class="metric-lbl">V100%</div>
+                            <div class="metric-bar"><div class="metric-bar-fill" id="barV100" style="width:0%"></div></div>
+                        </div>
+                        <div class="metric-card" id="cardV150">
+                            <div class="metric-val" id="valV150">--</div>
+                            <div class="metric-lbl">V150%</div>
+                            <div class="metric-bar"><div class="metric-bar-fill" id="barV150" style="width:0%"></div></div>
+                        </div>
+                        <div class="metric-card" id="cardV200">
+                            <div class="metric-val" id="valV200">--</div>
+                            <div class="metric-lbl">V200%</div>
+                            <div class="metric-bar"><div class="metric-bar-fill" id="barV200" style="width:0%"></div></div>
+                        </div>
+                        <div class="metric-card" id="cardD90">
+                            <div class="metric-val" id="valD90">--</div>
+                            <div class="metric-lbl">D90</div>
+                            <div class="metric-bar"><div class="metric-bar-fill" id="barD90" style="width:0%"></div></div>
+                        </div>
+                        <div class="metric-card" id="cardD95">
+                            <div class="metric-val" id="valD95">--</div>
+                            <div class="metric-lbl">D95</div>
+                            <div class="metric-bar"><div class="metric-bar-fill" id="barD95" style="width:0%"></div></div>
+                        </div>
+                        <div class="metric-card" id="cardScore">
+                            <div class="metric-val" id="valScore">--</div>
+                            <div class="metric-lbl">Score</div>
+                            <div class="metric-bar"><div class="metric-bar-fill" id="barScore" style="width:0%"></div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="metrics-section">
+                    <div class="metrics-title">OAR Constraints</div>
+                    <table class="oar-table">
+                        <thead>
+                            <tr><th>Organ</th><th>D0.1cc</th><th>D1cc</th><th>Status</th></tr>
+                        </thead>
+                        <tbody id="oarTableBody">
+                            <tr><td colspan="4" style="text-align:center;color:var(--text-dim);padding:0.75rem;font-size:0.7rem;">No OAR data</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- DVH PANEL -->
+        <div class="panel-content" id="panelDVH">
+            <div class="dvh-panel">
+                <div class="dvh-container" id="dvhChart">
+                    <div class="dvh-placeholder" id="dvhPlaceholder">
+                        <div style="font-size:1.5rem;opacity:0.3;">&#128202;</div>
+                        <div>DVH curves will appear after planning</div>
+                    </div>
+                </div>
+                <div class="dvh-legend">
+                    <div class="dvh-legend-item">
+                        <div style="width:14px;height:2px;background:var(--primary);border-radius:1px;"></div>
+                        <span>CTV (Target)</span>
+                    </div>
+                    <div class="dvh-legend-item">
+                        <div style="width:14px;height:2px;background:var(--danger);border-radius:1px;"></div>
+                        <span>OAR (Organ at Risk)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SEEDS PANEL -->
+        <div class="panel-content" id="panelSeeds">
+            <div class="seeds-panel">
+                <div class="empty-state" id="seedsEmpty">
+                    <div class="empty-state-icon">&#9679;</div>
+                    <div>No seed data</div>
+                    <div style="font-size:0.68rem;margin-top:0.25rem;">Run a plan to see seed positions</div>
+                </div>
+                <div class="seeds-grid" id="seedsGrid" style="display:none;"></div>
+            </div>
+        </div>
+
+        <!-- VIEWERS PANEL (scrollable vertical stack) -->
+        <div class="panel-content" id="panelViewers">
+            <div class="viewers-panel" id="viewersPanel">
+
+                <!-- Axial -->
+                <div class="viewer-card" id="viewerAxial" data-view="axial" style="height:260px;">
+                    <div class="viewer-card-header">
+                        <span class="viewer-card-label">Axial</span>
+                        <button class="viewer-card-expand-btn" onclick="toggleViewerFullscreen('axial')" title="Fullscreen">&#9974;</button>
+                    </div>
+                    <div class="viewer-card-body">
+                        <div class="viewer-card-canvas" id="canvasAxial">
+                            <div class="viewer-no-data">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="12" r="10"/></svg>
+                                <span>No CT data</span>
+                            </div>
+                            <div id="labelOverlay_Axial" style="position:absolute;inset:0;display:block;opacity:0.6;pointer-events:none;background:transparent;"></div>
+                        </div>
+                    </div>
+                    <div class="viewer-resize-h" data-view="axial"></div>
+                    <div class="viewer-card-ctrl">
+                        <label>Slice</label>
+                        <input type="range" min="0" max="100" value="50" id="sliderAxial" oninput="updateSlice('axial', this.value)">
+                        <div class="ctrl-sep"></div>
+                        <label class="ctrl-toggle">
+                            <input type="checkbox" id="labelShowAxial" checked onchange="updateLabelImage('axial')">
+                            Label
+                        </label>
+                        <label>Op</label>
+                        <input type="range" min="0" max="100" value="60" id="labelOpAxial" oninput="updateLabelImage('axial')">
+                    </div>
+                </div>
+
+                <!-- Sagittal -->
+                <div class="viewer-card" id="viewerSagittal" data-view="sagittal" style="height:260px;">
+                    <div class="viewer-card-header">
+                        <span class="viewer-card-label">Sagittal</span>
+                        <button class="viewer-card-expand-btn" onclick="toggleViewerFullscreen('sagittal')" title="Fullscreen">&#9974;</button>
+                    </div>
+                    <div class="viewer-card-body">
+                        <div class="viewer-card-canvas" id="canvasSagittal">
+                            <div class="viewer-no-data">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="12" r="10"/></svg>
+                                <span>No CT data</span>
+                            </div>
+                            <div id="labelOverlay_Sagittal" style="position:absolute;inset:0;display:block;opacity:0.6;pointer-events:none;background:transparent;"></div>
+                        </div>
+                    </div>
+                    <div class="viewer-resize-h" data-view="sagittal"></div>
+                    <div class="viewer-card-ctrl">
+                        <label>Slice</label>
+                        <input type="range" min="0" max="100" value="50" id="sliderSagittal" oninput="updateSlice('sagittal', this.value)">
+                        <div class="ctrl-sep"></div>
+                        <label class="ctrl-toggle">
+                            <input type="checkbox" id="labelShowSagittal" checked onchange="updateLabelImage('sagittal')">
+                            Label
+                        </label>
+                        <label>Op</label>
+                        <input type="range" min="0" max="100" value="60" id="labelOpSagittal" oninput="updateLabelImage('sagittal')">
+                    </div>
+                </div>
+
+                <!-- Coronal -->
+                <div class="viewer-card" id="viewerCoronal" data-view="coronal" style="height:260px;">
+                    <div class="viewer-card-header">
+                        <span class="viewer-card-label">Coronal</span>
+                        <button class="viewer-card-expand-btn" onclick="toggleViewerFullscreen('coronal')" title="Fullscreen">&#9974;</button>
+                    </div>
+                    <div class="viewer-card-body">
+                        <div class="viewer-card-canvas" id="canvasCoronal">
+                            <div class="viewer-no-data">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="12" r="10"/></svg>
+                                <span>No CT data</span>
+                            </div>
+                            <div id="labelOverlay_Coronal" style="position:absolute;inset:0;display:block;opacity:0.6;pointer-events:none;background:transparent;"></div>
+                        </div>
+                    </div>
+                    <div class="viewer-resize-h" data-view="coronal"></div>
+                    <div class="viewer-card-ctrl">
+                        <label>Slice</label>
+                        <input type="range" min="0" max="100" value="50" id="sliderCoronal" oninput="updateSlice('coronal', this.value)">
+                        <div class="ctrl-sep"></div>
+                        <label class="ctrl-toggle">
+                            <input type="checkbox" id="labelShowCoronal" checked onchange="updateLabelImage('coronal')">
+                            Label
+                        </label>
+                        <label>Op</label>
+                        <input type="range" min="0" max="100" value="60" id="labelOpCoronal" oninput="updateLabelImage('coronal')">
+                    </div>
+                </div>
+
+                <!-- 3D -->
+                <div class="viewer-card viewer-card-3d" id="viewer3d" data-view="3d" style="height:300px;">
+                    <div class="viewer-card-header">
+                        <span class="viewer-card-label">3D Dose</span>
+                        <button class="viewer-card-expand-btn" onclick="toggleViewerFullscreen('3d')" title="Fullscreen">&#9974;</button>
+                    </div>
+                    <div class="viewer-card-body">
+                        <div class="viewer-card-canvas" id="canvas3D">
+                            <div class="viewer-no-data">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                                <span>No plan data</span>
+                            </div>
+                            <div id="labelOverlay_3d" style="position:absolute;inset:0;display:block;opacity:0.6;pointer-events:none;background:transparent;"></div>
+                        </div>
+                    </div>
+                    <div class="viewer-resize-h" data-view="3d"></div>
+                    <div class="viewer-card-ctrl">
+                        <label>Dose Op</label>
+                        <input type="range" min="0" max="100" value="40" id="doseOpacity" oninput="updateDoseOpacity(this.value)">
+                        <div class="ctrl-sep"></div>
+                        <label class="ctrl-toggle">
+                            <input type="checkbox" id="labelShow3d" checked onchange="updateLabelImage('3d')">
+                            Label
+                        </label>
+                        <label>Op</label>
+                        <input type="range" min="0" max="100" value="60" id="labelOp3d" oninput="updateLabelImage('3d')">
+                    </div>
+                    <div class="loading-overlay" id="loading3D">
+                        <div class="spinner-ring"></div>
+                        <div class="loading-text">Rendering...</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Summary bar -->
+        <div class="panel-summary-bar" id="summaryBar">
+            <div class="summary-chip">
+                <div class="summary-chip-label">Seeds</div>
+                <div class="summary-chip-value" id="sumSeeds">--</div>
+            </div>
+            <div class="summary-chip">
+                <div class="summary-chip-label">CTV Vol</div>
+                <div class="summary-chip-value" id="sumCTV">--</div>
+            </div>
+            <div class="summary-chip">
+                <div class="summary-chip-label">D90</div>
+                <div class="summary-chip-value" id="sumD90">--</div>
+            </div>
+            <div class="summary-chip">
+                <div class="summary-chip-label">V100</div>
+                <div class="summary-chip-value" id="sumV100">--</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+/******** STATE ********/
+const state = {
+    brainAvailable: false,
+    sessionId: 'web',
+    metrics: {},
+    seeds: [],
+    dvhData: null,
+    plan3D: null,
+    slices: { axial: 50, sagittal: 50, coronal: 50 },
+    doseOpacity: 0.4,
+    labelImage: {
+        axial:   { visible: true, opacity: 0.6 },
+        sagittal: { visible: true, opacity: 0.6 },
+        coronal:  { visible: true, opacity: 0.6 },
+        '3d':     { visible: true, opacity: 0.6 },
+    },
+};
+
+/******** API ********/
+const API = '/api';
+
+async function api(endpoint, body) {
+    const res = await fetch(API + endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(err.error || `Request failed: ${res.status}`);
+    }
+    return res.json();
+}
+
+/******** FILE PICKER ********/
+function handleFileSelect(input, targetId) {
+    const file = input.files[0];
+    if (!file) return;
+    document.getElementById(targetId).value = file.name || file.path || file.webkitRelativePath || file.name;
+    input.value = '';
+}
+
+/******** INIT ********/
+async function init() {
+    try {
+        const resp = await fetch(API + '/status');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        state.brainAvailable = data.brain_available;
+        state.sessionId = data.session_id || 'web';
+        document.getElementById('brainDot').className = 'dot ' + (data.brain_available ? 'green' : 'yellow');
+        document.getElementById('brainStatusText').textContent = data.brain_available ? 'Online' : 'Offline';
+        document.getElementById('sessionDisplay').textContent = state.sessionId;
+    } catch (e) {
+        document.getElementById('serverDot').className = 'dot red';
+        document.getElementById('serverStatus').textContent = 'Offline';
+    }
+}
+
+/******** VIEWER FULLSCREEN & RESIZE ********/
+function toggleViewerFullscreen(view) {
+    const card = document.getElementById('viewer' + capitalize(view));
+    const allCards = document.querySelectorAll('.viewer-card');
+    const viewersPanel = document.getElementById('viewersPanel');
+
+    if (!card) return;
+
+    if (card.classList.contains('fullscreen')) {
+        // Restore
+        card.classList.remove('fullscreen');
+        document.body.classList.remove('viewer-fullscreen');
+        card.style.height = card.dataset.prevHeight || '220px';
+        // Restore all cards
+        allCards.forEach(c => c.style.display = '');
+        viewersPanel.style.display = '';
+        // Update button icon
+        card.querySelector('.viewer-card-expand-btn').innerHTML = '&#9974;';
+    } else {
+        // Fullscreen: save current height and maximize
+        card.dataset.prevHeight = card.style.height || '220px';
+        card.classList.add('fullscreen');
+        document.body.classList.add('viewer-fullscreen');
+        // Hide other cards
+        allCards.forEach(c => {
+            if (c !== card) c.style.display = 'none';
+        });
+        viewersPanel.style.display = '';
+        // Update button icon to collapse
+        card.querySelector('.viewer-card-expand-btn').innerHTML = '&#10006;';
+    }
+}
+
+/******** PER-VIEWER VERTICAL RESIZE ********/
+function setupViewerResizers() {
+    document.querySelectorAll('.viewer-resize-h').forEach(handle => {
+        let resizing = false;
+        let startY = 0;
+        let startH = 0;
+        let view = handle.dataset.view;
+        let card = document.getElementById('viewer' + capitalize(view));
+        if (!card) return;
+
+        handle.addEventListener('mousedown', e => {
+            if (card.classList.contains('fullscreen')) return;
+            resizing = true;
+            startY = e.clientY;
+            startH = card.offsetHeight;
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', e => {
+            if (!resizing) return;
+            const dy = e.clientY - startY;
+            const newH = Math.max(120, startH + dy);
+            card.style.height = newH + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (resizing) {
+                resizing = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            }
+        });
+    });
+}
+
+/******** DRAGGABLE SPLITTER ********/
+function setupSplitter() {
+    const splitter = document.getElementById('vSplitter');
+    const rightPanel = document.querySelector('.right-panel');
+    let dragging = false;
+
+    splitter.addEventListener('mousedown', (e) => {
+        dragging = true;
+        document.body.classList.add('v-dragging');
+        splitter.classList.add('dragging');
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const container = document.querySelector('.app-body');
+        const containerRect = container.getBoundingClientRect();
+        const newWidth = containerRect.right - e.clientX;
+        if (newWidth >= 200 && newWidth <= containerRect.width - 100) {
+            rightPanel.style.width = newWidth + 'px';
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (dragging) {
+            dragging = false;
+            document.body.classList.remove('v-dragging');
+            splitter.classList.remove('dragging');
+        }
+    });
+}
+
+/******** PANEL SWITCHING ********/
+function switchPanel(name, el) {
+    document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel-content').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('panel' + capitalize(name)).classList.add('active');
+}
+
+function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+/******** VIEWER CONTROLS ********/
+function updateSlice(view, val) {
+    state.slices[view] = parseInt(val);
+}
+
+function updateDoseOpacity(val) {
+    state.doseOpacity = val / 100;
+    if (window.dose3D) render3D();
+}
+
+function updateLabelImage(view) {
+    const showEl = document.getElementById('labelShow' + capitalize(view));
+    const opEl = document.getElementById('labelOp' + capitalize(view));
+    if (!showEl || !opEl) return;
+
+    state.labelImage[view] = {
+        visible: showEl.checked,
+        opacity: parseInt(opEl.value) / 100,
+    };
+
+    // Apply to overlay canvas if it exists
+    const overlay = document.getElementById('labelOverlay_' + view);
+    if (overlay) {
+        overlay.style.display = state.labelImage[view].visible ? 'block' : 'none';
+        overlay.style.opacity = state.labelImage[view].opacity;
+    }
+}
+
+/******** 3D RENDERING ********/
+function render3D() {
+    const canvas = document.getElementById('canvas3D');
+    canvas.innerHTML = '';
+    if (!state.plan3D) {
+        canvas.innerHTML = '<div class="viewer-no-data"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span>No plan data</span></div>';
+        return;
+    }
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+    renderer.setClearColor(0x000000, 0);
+    canvas.appendChild(renderer.domElement);
+
+    const ctvGeo = new THREE.SphereGeometry(5, 16, 12);
+    const ctvMat = new THREE.MeshBasicMaterial({ color: 0x0ea5e9, wireframe: true, opacity: 0.4, transparent: true });
+    const ctvMesh = new THREE.Mesh(ctvGeo, ctvMat);
+    scene.add(ctvMesh);
+
+    if (state.plan3D.dose) {
+        const doseGeo = new THREE.BufferGeometry();
+        const dosePositions = [];
+        for (let i = 0; i < 3000; i++) {
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            const r = 3 + Math.random() * 4;
+            dosePositions.push(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi));
+        }
+        doseGeo.setAttribute('position', new THREE.Float32BufferAttribute(dosePositions, 3));
+        const doseMat = new THREE.PointsMaterial({ color: 0xff4444, size: 0.15, opacity: state.doseOpacity, transparent: true });
+        scene.add(new THREE.Points(doseGeo, doseMat));
+    }
+
+    if (state.seeds.length > 0) {
+        const seedGeo = new THREE.SphereGeometry(0.2, 8, 6);
+        const seedMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
+        state.seeds.slice(0, 50).forEach(s => {
+            const m = new THREE.Mesh(seedGeo, seedMat);
+            m.position.set(s.pos[0] / 10 - 5, s.pos[1] / 10 - 5, s.pos[2] / 10 - 5);
+            scene.add(m);
+        });
+    }
+
+    camera.position.set(12, 8, 12);
+    camera.lookAt(0, 0, 0);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(10, 10, 10);
+    scene.add(dir);
+
+    function animate() {
+        requestAnimationFrame(animate);
+        ctvMesh.rotation.y += 0.003;
+        renderer.render(scene, camera);
+    }
+    animate();
+    window.dose3D = true;
+}
+
+/******** DVH CHART ********/
+function drawDVH() {
+    const placeholder = document.getElementById('dvhPlaceholder');
+    if (!state.dvhData || Object.keys(state.dvhData).length === 0) return;
+    placeholder.style.display = 'none';
+
+    const traces = [];
+    const colors = ['#0ea5e9', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4'];
+    let i = 0;
+    for (const [name, dvh] of Object.entries(state.dvhData)) {
+        traces.push({
+            x: dvh.dose_bins || [],
+            y: dvh.volume_pcts || [],
+            type: 'scatter', mode: 'lines', name: name,
+            line: { color: colors[i % colors.length], width: 2 },
+            fill: i === 0 ? 'tozeroy' : 'none',
+            fillcolor: i === 0 ? 'rgba(14,165,233,0.1)' : undefined,
+        });
+        i++;
+    }
+
+    Plotly.newPlot('dvhChart', traces, {
+        paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+        font: { color: '#94a3b8', size: 10, family: 'Inter, sans-serif' },
+        margin: { l: 40, r: 10, t: 10, b: 35 },
+        xaxis: { title: 'Dose (Gy)', gridcolor: '#334155', linecolor: '#334155', tickcolor: '#334155', titlefont: { color: '#64748b', size: 9 } },
+        yaxis: { title: 'Volume (%)', gridcolor: '#334155', linecolor: '#334155', tickcolor: '#334155', titlefont: { color: '#64748b', size: 9 } },
+        legend: { orientation: 'h', y: -0.2, x: 0.5, xanchor: 'center' },
+        hovermode: 'closest',
+    }, { responsive: true, displayModeBar: false });
+}
+
+/******** METRICS ********/
+function updateMetrics(metrics) {
+    state.metrics = metrics || {};
+
+    const setMetric = (id, val, thresholds, suffix = '') => {
+        const el = document.getElementById('val' + id);
+        const card = document.getElementById('card' + id);
+        const bar = document.getElementById('bar' + id);
+        if (!el) return;
+        if (val === undefined || val === null) { el.textContent = '--'; return; }
+        el.textContent = (typeof val === 'number' ? (Number.isInteger(val) ? val : val.toFixed(1)) : val) + suffix;
+        if (thresholds && bar) {
+            const pct = Math.min(100, Math.max(0, (val / thresholds.max) * 100));
+            bar.style.width = pct + '%';
+            bar.className = 'metric-bar-fill ' + (val >= thresholds.good ? 'good' : val >= thresholds.warn ? 'warn' : 'bad');
+            card.className = 'metric-card ' + (val >= thresholds.good ? 'good' : val >= thresholds.warn ? 'warn' : 'bad');
+        }
+    };
+
+    const m = state.metrics;
+    setMetric('V100', (m.v100 || 0) * 100, { max: 100, good: 90, warn: 80 }, '%');
+    setMetric('V150', (m.v150 || 0) * 100, { max: 60, good: 50, warn: 35 }, '%');
+    setMetric('V200', (m.v200 || 0) * 100, { max: 40, good: 20, warn: 35 }, '%');
+    setMetric('D90', m.d90, { max: 150, good: 100, warn: 80 }, '');
+    setMetric('D95', m.d95, { max: 150, good: 95, warn: 75 }, '');
+    setMetric('Score', m.plan_score, { max: 100, good: 80, warn: 60 }, '');
+
+    document.getElementById('sumSeeds').textContent = m.total_seeds || '--';
+    document.getElementById('sumCTV').textContent = m.ctv_voxels ? (m.ctv_voxels * 0.001).toFixed(1) : '--';
+    document.getElementById('sumD90').textContent = m.d90 ? m.d90.toFixed(1) : '--';
+    document.getElementById('sumV100').textContent = m.v100 ? ((m.v100 || 0) * 100).toFixed(1) + '%' : '--';
+}
+
+function updateOARTable(oarMetrics) {
+    const tbody = document.getElementById('oarTableBody');
+    if (!oarMetrics || Object.keys(oarMetrics).length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-dim);padding:0.75rem;font-size:0.7rem;">No OAR data</td></tr>';
+        return;
+    }
+    tbody.innerHTML = Object.entries(oarMetrics).map(([name, m]) => {
+        const d01 = m.D0_1cc || m['D0.1cc'] || m.max_dose || 0;
+        const d1 = m.D1cc || m['D1cc'] || 0;
+        const status = d01 < 30 ? 'pass' : d01 < 50 ? 'warn' : 'fail';
+        const statusText = status === 'pass' ? 'Pass' : status === 'warn' ? 'Warn' : 'Fail';
+        return `<tr><td>${escHtml(name)}</td><td>${d01.toFixed(1)}</td><td>${d1.toFixed(1)}</td><td><span class="oar-status ${status}">${statusText}</span></td></tr>`;
+    }).join('');
+}
+
+function updateSeeds(seeds) {
+    state.seeds = seeds || [];
+    const empty = document.getElementById('seedsEmpty');
+    const grid = document.getElementById('seedsGrid');
+
+    if (state.seeds.length === 0) {
+        empty.style.display = 'block';
+        grid.style.display = 'none';
+        return;
+    }
+    empty.style.display = 'none';
+    grid.style.display = 'grid';
+
+    grid.innerHTML = state.seeds.map((s, i) => `
+        <div class="seed-chip">
+            <div class="seed-chip-header">Seed #${i + 1}</div>
+            <div class="seed-chip-detail">Pos: ${Array.isArray(s.pos) ? s.pos.map(v => v.toFixed(1)).join(', ') : '--'}</div>
+            <div class="seed-chip-detail">Dose: ${s.dose ? s.dose.toFixed(2) + ' Gy' : '--'}</div>
+        </div>
+    `).join('');
+}
+
+/******** PLANNING ********/
+async function runPlanning() {
+    const ctPath = document.getElementById('ctPath').value.trim();
+    const ctvPath = document.getElementById('ctvPath').value.trim();
+    const oarPath = document.getElementById('oarPath').value.trim();
+    const mode = document.getElementById('planMode').value;
+    if (!ctPath) { alert('Please enter CT image path or browse to select a file'); return; }
+
+    showLoading(true);
+    addChat('system', 'Starting preoperative planning...');
+    try {
+        const data = await api('/plan/preoperative', {
+            ct_path: ctPath, ctv_path: ctvPath || null,
+            oar_path: oarPath || null, mode: mode, output_dir: './output',
+        });
+
+        if (data.success) {
+            updateMetrics(data.metrics);
+            updateSeeds(data.seeds || []);
+            addChat('system', `Plan complete! V100: ${((data.metrics?.v100 || 0) * 100).toFixed(1)}%, D90: ${(data.metrics?.d90 || 0).toFixed(1)} Gy, Score: ${data.metrics?.plan_score || '--'}`);
+            if (data.metrics?.oar_metrics) updateOARTable(data.metrics.oar_metrics);
+            state.plan3D = data;
+            state.dvhData = data.dvh || null;
+            render3D();
+            drawDVH();
+            switchPanel('metrics', document.querySelectorAll('.panel-tab')[1]);
+        } else {
+            addChat('error', `Planning failed: ${data.error}`);
+        }
+    } catch (e) {
+        addChat('error', `Request failed: ${e.message}`);
+    }
+    showLoading(false);
+}
+
+async function runIntra() {
+    const ctPath = document.getElementById('ctPath').value.trim();
+    const threshold = parseFloat(document.getElementById('devThreshold').value) || 2.0;
+    if (!ctPath) { alert('Please enter CT image path or browse to select a file'); return; }
+
+    showLoading(true);
+    addChat('system', 'Starting intraoperative replanning...');
+    try {
+        const data = await api('/plan/intraoperative', {
+            ct_path: ctPath, original_plan: null,
+            deviation_threshold_mm: threshold, output_dir: './output',
+        });
+        if (data.success) {
+            if (data.deviation_detected) {
+                addChat('system', `Deviation ${data.max_deviation_mm?.toFixed(2)} mm detected. Replanning triggered.`);
+                if (data.replan_result?.success) {
+                    state.seeds = data.replan_result.seeds || [];
+                    updateSeeds(state.seeds);
+                    if (data.replan_result.metrics) updateMetrics(data.replan_result.metrics);
+                    if (data.replan_result.metrics?.oar_metrics) updateOARTable(data.replan_result.metrics.oar_metrics);
+                    render3D();
+                    drawDVH();
+                }
+            } else {
+                addChat('system', `Deviation ${data.max_deviation_mm?.toFixed(2)} mm within threshold. No replanning needed.`);
+            }
+            switchPanel('metrics', document.querySelectorAll('.panel-tab')[1]);
+        } else {
+            addChat('error', `Intraop replan failed: ${data.error}`);
+        }
+    } catch (e) {
+        addChat('error', `Request failed: ${e.message}`);
+    }
+    showLoading(false);
+}
+
+function showLoading(show) {
+    document.getElementById('loading3D').className = 'loading-overlay' + (show ? ' active' : '');
+}
+
+/******** CHAT ********/
+function addChat(type, msg) {
+    const container = document.getElementById('chatMessages');
+    const div = document.createElement('div');
+    div.className = 'chat-msg ' + type;
+    div.innerHTML = escHtml(msg).replace(/\n/g, '<br>');
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+const STEP_ICONS = {
+    user: '&#128100;',
+    thinking: '&#129520;',
+    tool: '&#9881;',
+    result: '&#9989;',
+    error: '&#10060;',
+    assistant: '&#129302;',
+};
+
+function renderThinkingChain(steps) {
+    const container = document.getElementById('chatMessages');
+    const totalSteps = steps ? steps.length : 0;
+    const doneSteps = steps ? steps.filter(s => s.status === 'done').length : 0;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'thinking-chain';
+
+    // Header (click to expand/collapse)
+    const header = document.createElement('div');
+    header.className = 'thinking-header';
+    header.onclick = () => toggleThinkingChain(wrapper, steps);
+    header.innerHTML = `
+        <span class="thinking-toggle" id="tt_${Date.now()}">&#9654;</span>
+        <span class="thinking-label">Execution Trace</span>
+        <span class="thinking-count">${doneSteps}/${totalSteps} steps</span>
+    `;
+    wrapper.appendChild(header);
+
+    // Steps container
+    const stepsDiv = document.createElement('div');
+    stepsDiv.className = 'thinking-steps';
+
+    if (steps && steps.length > 0) {
+        steps.forEach((step, idx) => {
+            const block = document.createElement('div');
+            block.className = 'step-block';
+            block.id = `step_${idx}`;
+
+            const icon = STEP_ICONS[step.type] || '&#9679;';
+            const toolName = step.tool ? `<div class="step-tool-name">${escHtml(step.tool)}</div>` : '';
+            const params = step.params ? `<div class="step-params">${Object.entries(step.params).map(([k,v]) => `${escHtml(k)}: ${escHtml(JSON.stringify(v))}`).join(', ')}</div>` : '';
+            const resultHtml = step.result ? `<div class="step-result">&#8594; ${escHtml(step.result)}</div>` : '';
+            const contentHtml = step.content ? `<div class="step-content">${escHtml(step.content)}</div>` : '';
+
+            block.innerHTML = `
+                <div class="step-header" onclick="toggleStep('step_body_${idx}')">
+                    <span class="step-icon ${step.type}">${icon}</span>
+                    <span class="step-title">${escHtml(step.title)}</span>
+                    <span class="step-status ${escHtml(step.status)}">${escHtml(step.status)}</span>
+                </div>
+                <div class="step-body" id="step_body_${idx}">
+                    ${toolName}
+                    ${params}
+                    ${contentHtml}
+                    ${resultHtml}
+                </div>
+            `;
+            stepsDiv.appendChild(block);
+        });
+    } else {
+        stepsDiv.innerHTML = '<div style="color:var(--text-dim);font-size:0.72rem;padding:0.25rem 0.5rem;">No execution steps</div>';
+    }
+
+    wrapper.appendChild(stepsDiv);
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+}
+
+function toggleThinkingChain(wrapper, steps) {
+    const toggle = wrapper.querySelector('.thinking-toggle');
+    const stepsDiv = wrapper.querySelector('.thinking-steps');
+    const isExpanded = toggle.classList.contains('expanded');
+    toggle.classList.toggle('expanded');
+    stepsDiv.classList.toggle('expanded');
+    // Expand all step bodies when chain is expanded
+    stepsDiv.querySelectorAll('.step-body').forEach(b => {
+        b.classList.toggle('expanded', !isExpanded);
+    });
+}
+
+function toggleStep(bodyId) {
+    const body = document.getElementById(bodyId);
+    if (body) body.classList.toggle('expanded');
+}
+
+function escHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function sendChat() {
+    const input = document.getElementById('chatInput');
+    const msg = input.value.trim();
+    if (!msg) return;
+    input.value = '';
+
+    // Add user message
+    addChat('user', msg);
+
+    try {
+        const data = await api('/chat', { message: msg });
+
+        // Render thinking chain if steps are available
+        if (data.steps && data.steps.length > 0) {
+            renderThinkingChain(data.steps);
+        }
+
+        // Add final bot response
+        const response = data.response || 'Response received';
+        const responseDiv = document.createElement('div');
+        responseDiv.className = 'chat-msg bot-response';
+        responseDiv.innerHTML = escHtml(response).replace(/\n/g, '<br>');
+        document.getElementById('chatMessages').appendChild(responseDiv);
+        document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
+
+    } catch (e) {
+        addChat('error', 'Request failed: ' + e.message);
+    }
+}
+
+/******** RESET ********/
+async function resetSession() {
+    if (!confirm('Reset session?')) return;
+    try {
+        const resp = await fetch(API + '/reset', { method: 'POST' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        location.reload();
+    } catch (e) {
+        alert('Reset failed: ' + e.message);
+    }
+}
+
+/******** BOOT ********/
+setupSplitter();
+setupViewerResizers();
+init();
+setInterval(init, 30000);
+</script>
+</body>
+</html>
