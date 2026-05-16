@@ -112,10 +112,10 @@ Supporting:
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        User Interface                               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐    │
-│  │ CLI      │  │ Web UI   │  │ API      │  │ IM Bots (future) │    │
-│  │ brachybot│  │ Flask    │  │ REST     │  │ Telegram/WeChat  │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────────────────┘    │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                          │
+│  │ CLI      │  │ Web UI   │  │ API      │                          │
+│  │ brachybot│  │ Flask    │  │ REST     │                          │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘                          │
 │       └──────────────┼──────────────┘                                │
 │                      ▼                                                │
 │  ┌───────────────────────────────────────────────────────────────┐   │
@@ -424,7 +424,8 @@ SimpleITK, numpy, torch
 ### Step 1: Clone and Install Dependencies
 
 ```bash
-cd /home/lht/snap/brachyplan/BrachyBot
+git clone https://github.com/Haitao-Lee/BrachyBot.git
+cd BrachyBot
 
 # Install core dependencies
 pip install -r requirements.txt
@@ -457,13 +458,14 @@ export BRACHY_LLM_PROVIDER="ollama"
 
 ### Step 3: Download Pre-trained Models (Optional)
 
-For VoCo segmentation models:
+VoCo segmentation model weights are not included in the repository due to size (~18GB). To use VoCo models:
 
-```bash
-# VoCo models are stored in VoCo/ directory
-# Download from: https://github.com/Luffy03/Large-Scale-Medical.git
-git clone https://github.com/Luffy03/Large-Scale-Medical.git VoCo_models
-```
+1. Download weights from [Large-Scale-Medical](https://github.com/Luffy03/Large-Scale-Medical)
+2. Place them in the corresponding `VoCo/<dataset>/` directories
+
+Without VoCo weights, the system falls back to nnU-Net or HU-threshold-based segmentation.
+
+The myDoseNet CNN dose prediction model weight (`dose_pre/dose_model.pth`, ~24MB) is included in the repository.
 
 ---
 
@@ -508,14 +510,14 @@ print(status["enhanced"]["skill_crystallizer"])
 ### Method 2: CLI
 
 ```bash
-# Start interactive CLI
-python brachybot.py --cli
+# Interactive chat mode
+python brachybot.py --chat
+
+# Direct planning
+python brachybot.py --ct /path/to/ct.nii.gz --ctv /path/to/ctv.nii.gz --mode rule_based
 
 # Start web server
 python brachybot.py --server --port 8080
-
-# With specific config
-python brachybot.py --server --port 8080 --provider openrouter
 ```
 
 ### Method 3: Web Interface
@@ -835,66 +837,62 @@ Agent: Self-evolution cycle complete:
 tool_factory/
 ├── CTV_seg/              # Tumor segmentation (14 tools)
 │   ├── ctv_segmentation.py   # Unified entry point
-│   ├── pancreas.py           # nnU-Net pancreas CTV
-│   ├── prostate.py           # nnU-Net prostate CTV
+│   ├── pancreatic_tumor.py   # nnU-Net pancreas CTV
+│   ├── prostate_tumor.py     # nnU-Net prostate CTV
 │   ├── liver_tumor.py        # nnU-Net liver tumor
 │   ├── lung_tumor.py         # nnU-Net lung tumor
-│   ├── brain_tumor.py        # nnU-Net brain tumor
 │   ├── head_neck.py          # nnU-Net head & neck
+│   ├── kidney_tumor.py       # nnU-Net kidney tumor
 │   ├── voco_pancreas.py      # VoCo pancreas
 │   ├── voco_prostate.py      # VoCo prostate (MRI)
 │   ├── voco_liver.py         # VoCo liver
 │   ├── voco_lung.py          # VoCo lung
 │   ├── voco_brain.py         # VoCo brain
 │   ├── voco_kidney.py        # VoCo kidney
-│   └── voco_spleen.py        # VoCo spleen
+│   └── ...                   # Additional VoCo models
 │
 ├── OAR_seg/              # Organ-at-risk segmentation (4 tools)
-│   ├── oar_segmentation.py   # Unified entry point
-│   ├── total_segmentator.py  # TotalSegmentator (104 organs)
-│   ├── voco_oar.py           # VoCo OAR
-│   ├── pancreatic_oar.py     # Pancreatic-specific OAR
-│   └── aorta.py              # Aorta segmentation
+│   ├── oar_segmentation.py      # Unified entry point
+│   ├── totalsegmentator_oar.py  # TotalSegmentator (104 organs)
+│   ├── voco_total_segmentation.py
+│   ├── pancreatic_oar.py
+│   └── aorta_vessel_voco.py
 │
 ├── traj_plan/            # Trajectory planning (2 tools)
-│   ├── trajectory_planning.py # Unified entry point
 │   ├── trajectory_init.py     # Directional sampling
 │   └── trajectory_refine.py   # Quality filtering
 │
 ├── seed__plan/           # Seed placement (2 tools)
-│   ├── seed_planning.py      # Unified entry point
-│   ├── rule_based.py         # Greedy + CNN dose prediction
-│   └── rl_planning.py        # REINFORCE RL optimization
+│   ├── seed_planning_rule_based.py  # Greedy + CNN dose prediction
+│   └── seed_planning_rl.py        # REINFORCE RL optimization
 │
 ├── dose_engine/          # Dose calculation (2 tools)
-│   ├── dose_engine.py        # Unified entry point
-│   ├── gaussian.py           # Gaussian analytical model
-│   └── myDoseNet.py          # CNN dose prediction
+│   ├── gaussian_dose_engine.py    # Gaussian analytical model
+│   └── cnn_dose_engine.py         # CNN dose prediction (myDoseNet)
 │
 ├── dose_eval/            # Dose evaluation (5 tools)
-│   ├── dose_evaluation.py    # Unified entry point
-│   ├── vx_calculator.py      # Vx metrics (V100, V150, V200)
-│   ├── dx_calculator.py      # Dx metrics (D90, D100)
-│   ├── absolute_dose.py      # Absolute dose calculation
-│   ├── dvh_analysis.py       # DVH curve analysis
-│   └── comprehensive_eval.py # Full evaluation suite
+│   ├── vx_metrics.py              # Vx metrics (V100, V150, V200)
+│   ├── dx_metrics.py              # Dx metrics (D90, D100)
+│   ├── absolute_dose_metrics.py   # Absolute dose calculation
+│   ├── dvh_calculation.py         # DVH curve analysis
+│   └── comprehensive_dose_evaluation.py
 │
 ├── seed_seg/             # Intra-operative seed detection
-│   └── seed_segmentation.py  # Intensity + connected components
+│   └── seed_segmentation.py
 │
 ├── plan_quality/         # Plan quality tools
-│   ├── quality_scorer.py     # Overall plan scoring
-│   ├── oar_constraints.py    # OAR dose constraint checking
-│   └── plan_refinement.py    # Plan refinement suggestions
+│   ├── plan_quality_scorer.py
+│   ├── oar_constraint_checker.py
+│   └── plan_refinement.py
 │
 ├── image_processing/     # Image utilities
-│   ├── image_loader.py       # DICOM/NIfTI loading
-│   └── preprocessor.py       # Resample, normalize, bias correction
+│   ├── image_loader.py
+│   └── image_preprocessor.py
 │
 └── output/               # Export tools
-    ├── dicom_rt_exporter.py  # DICOM RT Structure/Plan/Dose
-    ├── dose_exporter.py      # Dose volume export
-    └── report_generator.py   # Clinical report generation
+    ├── dicom_rt_exporter.py
+    ├── dose_exporter.py
+    └── report_generator.py
 ```
 
 ### Tool Interface
@@ -1109,7 +1107,7 @@ BRACHY_HOST="0.0.0.0"             # Web server host
 
 ### Frontend
 
-Single-page HTML interface at `web/static/index.html`:
+Single-page HTML interface at `web/app/index.html`:
 - Chat interface with streaming responses
 - Execution trace visualization
 - Status dashboard
@@ -1162,7 +1160,7 @@ print('EnhancedAgentIntegration: OK')
 
 ### VoCo Segmentation Models
 
-- **Source**: [Large-Scale-Medical](https://github.com/Luffy03/Large-Scale-Medical.git)
+- **Source**: [Large-Scale-Medical](https://github.com/Luffy03/Large-Scale-Medical)
 - **Models**: 8 VoCo pre-trained models for multi-organ segmentation
 
 ### Dose Prediction
@@ -1183,7 +1181,7 @@ BrachyBot's architecture is inspired by and builds upon the following open-sourc
 - **[LATS](https://github.com/lapisrocks/LanguageAgentTreeSearch)** — Language Agent Tree Search (ICML 2024)
 - **[EvoSkills](https://evoskills.net/)** — Self-evolving agent skills via co-evolutionary verification
 - **[SkillOS](https://arxiv.org/abs/2605.06614)** — Learning skill curation for self-evolving agents
-- **[VoCo](https://github.com/Luffy03/Large-Scale-Medical.git)** — Visual Contextual Learning for medical image segmentation
+- **[VoCo](https://github.com/Luffy03/Large-Scale-Medical)** — Visual Contextual Learning for medical image segmentation
 - **[nnU-Net](https://github.com/MIC-DKFZ/nnUNet)** — Self-adapting framework for medical image segmentation
 - **[TotalSegmentator](https://github.com/wasserth/TotalSegmentator)** — Robust segmentation of 104 anatomical structures
 - **[MCP Protocol](https://modelcontextprotocol.io)** — Model Context Protocol for standardized tool integration
@@ -1194,21 +1192,21 @@ We are grateful to all the developers, researchers, and contributors who made th
 
 ## 📄 License
 
-MIT License — see LICENSE file for details.
+MIT License. See the [LICENSE](LICENSE) file for details.
 
 ---
 
 ## 📞 Contact & Support
 
-- **Issues**: Report bugs and feature requests via GitHub Issues
-- **Discussions**: Join the discussion in GitHub Discussions
+- **Issues**: Report bugs and feature requests via [GitHub Issues](https://github.com/Haitao-Lee/BrachyBot/issues)
+- **Discussions**: Join the discussion in [GitHub Discussions](https://github.com/Haitao-Lee/BrachyBot/discussions)
 - **Citation**: If you use BrachyBot in your research, please cite:
 
 ```bibtex
 @software{brachybot2026,
   title = {BrachyBot: Self-Evolving AI Agent for Brachytherapy Treatment Planning},
   year = {2026},
-  url = {https://github.com/your-org/BrachyBot},
+  url = {https://github.com/Haitao-Lee/BrachyBot},
 }
 ```
 
@@ -1216,6 +1214,6 @@ MIT License — see LICENSE file for details.
 
 <div align="center">
 
-**BrachyBot** — Growing smarter with every plan. 🧬
+**BrachyBot** — Growing smarter with every plan.
 
 </div>
