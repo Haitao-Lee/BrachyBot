@@ -1,0 +1,20 @@
+{
+  "report_info": {
+    "plan_name": "BrachyPlan",
+    "patient_id": "UNKNOWN",
+    "generated_at": "2026-05-15T17:21:09.346831",
+    "format_version": "1.0"
+  },
+  "plan_summary": {
+    "total_seeds": 0,
+    "total_trajectories": 0,
+    "prescribed_dose_gy": 1.0,
+    "plan_score": 0
+  },
+  "ctv_metrics": {
+    "voxels": 0
+  },
+  "dose_metrics": {},
+  "oar_metrics": {},
+  "deviation_stats": {}
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "timestamp": "2026-05-16T13:48:21.775916",
+    "verdict": "APPROVE",
+    "score": 10.0,
+    "requires_review": false
+  },
+  {
+    "timestamp": "2026-05-16T13:52:53.484133",
+    "verdict": "APPROVE",
+    "score": 10.0,
+    "requires_review": false
+  }
+]

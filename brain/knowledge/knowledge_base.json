@@ -1,0 +1,81 @@
+{
+  "version": "1.0.0",
+  "description": "Brachytherapy domain knowledge base for RAG retrieval",
+  "chunks": [
+    {
+      "id": 1,
+      "text": "CTV (Clinical Target Volume) includes the visible tumor and suspected subclinical disease spread. It is defined by the radiation oncologist based on imaging and clinical examination.",
+      "tags": ["ctv", "target", "volume", "definition"]
+    },
+    {
+      "id": 2,
+      "text": "OAR (Organ at Risk) refers to normal tissues that may be affected by radiation dose. Common OARs in brachytherapy include rectum, bladder, urethra, bowel, and spinal cord.",
+      "tags": ["oar", "organ", "risk", "normal tissue"]
+    },
+    {
+      "id": 3,
+      "text": "V100 represents the percentage of the target volume receiving at least 100% of the prescribed dose. A V100 >= 90% is generally considered acceptable for prostate brachytherapy.",
+      "tags": ["v100", "dose", "coverage", "metric"]
+    },
+    {
+      "id": 4,
+      "text": "D90 is the minimum dose covering 90% of the target volume. For I-125 prostate implants, D90 should be >= 140 Gy (post-implant).",
+      "tags": ["d90", "dose", "coverage", "metric"]
+    },
+    {
+      "id": 5,
+      "text": "V150 represents the percentage of the target volume receiving at least 150% of the prescribed dose. V150 should generally be < 60% to avoid excessive hot spots.",
+      "tags": ["v150", "dose", "hotspot", "metric"]
+    },
+    {
+      "id": 6,
+      "text": "V200 represents the percentage of the target volume receiving at least 200% of the prescribed dose. V200 should generally be < 35% to minimize tissue necrosis risk.",
+      "tags": ["v200", "dose", "hotspot", "metric"]
+    },
+    {
+      "id": 7,
+      "text": "D2cc is the minimum dose covering the hottest 2 cubic centimeters of an organ at risk. It is a standard metric for OAR dose constraints in brachytherapy.",
+      "tags": ["d2cc", "oar", "constraint", "metric"]
+    },
+    {
+      "id": 8,
+      "text": "Rectum dose constraints: D2cc < 75 Gy (EQD2) for prostate brachytherapy. Exceeding this increases risk of rectal toxicity and fistula.",
+      "tags": ["rectum", "constraint", "d2cc", "oar"]
+    },
+    {
+      "id": 9,
+      "text": "Bladder dose constraints: D2cc < 90 Gy (EQD2) for prostate brachytherapy. Urethra D10 < 150% of prescribed dose.",
+      "tags": ["bladder", "urethra", "constraint", "d2cc", "oar"]
+    },
+    {
+      "id": 10,
+      "text": "Seed placement patterns: peripheral loading (seeds placed near the periphery of the target) provides more homogeneous dose distribution compared to uniform loading.",
+      "tags": ["seed", "placement", "pattern", "loading"]
+    },
+    {
+      "id": 11,
+      "text": "Trajectory planning optimizes needle paths to minimize OAR exposure while ensuring adequate target coverage. Parallel catheters are typically used for dose uniformity.",
+      "tags": ["trajectory", "needle", "planning", "catheter"]
+    },
+    {
+      "id": 12,
+      "text": "Pd-103 and I-125 are the most common isotopes for permanent prostate brachytherapy. Pd-103 has a shorter half-life (17 days) vs I-125 (60 days).",
+      "tags": ["isotope", "pd-103", "i-125", "half-life"]
+    },
+    {
+      "id": 13,
+      "text": "Intra-operative replanning is triggered when seed deviation exceeds the threshold (typically 2-3 mm). The system detects implanted seeds and adjusts the remaining plan.",
+      "tags": ["replanning", "intraoperative", "deviation", "seed"]
+    },
+    {
+      "id": 14,
+      "text": "DVH (Dose Volume Histogram) is a cumulative histogram showing the volume of a structure receiving at least a given dose. It is the primary tool for plan evaluation.",
+      "tags": ["dvh", "histogram", "dose", "volume"]
+    },
+    {
+      "id": 15,
+      "text": "Gaussian dose model approximates the dose distribution from a single seed as a 3D Gaussian function. The dose falls off approximately as 1/r^2 from the seed center.",
+      "tags": ["gaussian", "dose", "model", "fall-off"]
+    }
+  ]
+}

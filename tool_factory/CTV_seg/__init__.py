@@ -1,0 +1,193 @@
+"""
+CTV Segmentation Tools
+===================
+Clinical Target Volume (CTV) segmentation tools for various tumor types.
+Includes both nnU-Net based tools and VoCo pre-trained models.
+"""
+
+import sys
+import os
+import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from tool_factory import BaseTool, ToolResult
+
+from pancreatic_tumor import PancreaticTumorSegmentationTool
+from liver_tumor import LiverTumorSegmentationTool
+from kidney_tumor import KidneyTumorSegmentationTool
+from prostate_tumor import ProstateTumorSegmentationTool
+from lung_tumor import LungTumorSegmentationTool
+from head_neck_tumor import HeadNeckTumorSegmentationTool
+
+from pancreatic_tumor_voco import VoCoPancreaticTumorTool
+from liver_tumor_voco import VoCoLiverTumorTool
+from colon_tumor_voco import VoCoColonTumorTool
+from kidney_tumor_voco import VoCoKidneyTumorTool
+from lung_tumor_voco import VoCoLungTumorTool
+from prostate_tumor_voco import VoCoProstateTool
+from btcv_tumor_voco import VoCoBTCVTumorTool
+from segthor_tumor_voco import VoCoSegThorTumorTool
+
+
+TOOL_REGISTRY = {
+    "pancreatic_tumor": PancreaticTumorSegmentationTool,
+    "liver_tumor": LiverTumorSegmentationTool,
+    "kidney_tumor": KidneyTumorSegmentationTool,
+    "prostate_tumor": ProstateTumorSegmentationTool,
+    "lung_tumor": LungTumorSegmentationTool,
+    "head_neck_tumor": HeadNeckTumorSegmentationTool,
+    "voco_pancreatic": VoCoPancreaticTumorTool,
+    "voco_liver": VoCoLiverTumorTool,
+    "voco_colon": VoCoColonTumorTool,
+    "voco_kidney": VoCoKidneyTumorTool,
+    "voco_lung": VoCoLungTumorTool,
+    "voco_prostate": VoCoProstateTool,
+    "voco_btcv": VoCoBTCVTumorTool,
+    "voco_segthor": VoCoSegThorTumorTool,
+}
+
+
+def get_tool(tool_name: str):
+    """Get a CTV segmentation tool by name."""
+    tool_class = TOOL_REGISTRY.get(tool_name)
+    if tool_class is None:
+        raise ValueError(f"Unknown tool: {tool_name}. Available: {list(TOOL_REGISTRY.keys())}")
+    return tool_class()
+
+
+def list_tools():
+    """List all available CTV segmentation tools."""
+    return list(TOOL_REGISTRY.keys())
+
+
+class CTVSegmentationTool(BaseTool):
+    """
+    Unified CTV segmentation tool that delegates to tumor-specific tools.
+
+    Automatically selects the appropriate segmentation model based on
+    tumor type or falls back to generic segmentation.
+    """
+
+    def __init__(self):
+        self._tumor_types = list(TOOL_REGISTRY.keys())
+
+    @property
+    def name(self) -> str:
+        return "ctv_segmentation"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Segment Clinical Target Volume (CTV/tumor) from CT images. "
+            "Supports: pancreatic, liver, kidney, prostate, lung, colon, head_neck, btcv, segthor. "
+            "Uses nnU-Net or VoCo pre-trained models. "
+            "Input: CT image (SimpleITK) or path, optional tumor_type. "
+            "Output: CTV binary mask and volume metrics."
+        )
+
+    @property
+    def input_schema(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "image": {"type": "object", "description": "SimpleITK Image of CT scan"},
+                "image_path": {"type": "string", "description": "Path to CT file (.nii.gz, .mhd)"},
+                "label_path": {"type": "string", "description": "Path to existing CTV label file (optional)"},
+                "tumor_type": {
+                    "type": "string",
+                    "description": f"Tumor type for specialized model. Options: {self._tumor_types}. Auto-detect if not specified.",
+                    "enum": self._tumor_types,
+                },
+                "target_value": {"type": "number", "default": 1, "description": "Label value for tumor voxels"},
+                "fast_mode": {"type": "boolean", "default": False, "description": "Disable TTA, reduce threads"},
+            },
+            "required": [],
+        }
+
+    @property
+    def output_schema(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "ctv_mask": {"type": "object", "description": "SimpleITK binary mask of CTV"},
+                "ctv_array": {"type": "array", "description": "NumPy array of CTV mask"},
+                "ctv_volume_mm3": {"type": "number", "description": "CTV volume in mm³"},
+                "ctv_voxel_count": {"type": "integer", "description": "Number of CTV voxels"},
+                "tumor_type_used": {"type": "string", "description": "Tumor segmentation model used"},
+            },
+        }
+
+    def _execute(self, **kwargs):
+        import SimpleITK as sitk
+        import numpy as np
+
+        image = kwargs.get("image")
+        image_path = kwargs.get("image_path")
+        label_path = kwargs.get("label_path")
+        tumor_type = kwargs.get("tumor_type")
+        target_value = kwargs.get("target_value", 1)
+        fast_mode = kwargs.get("fast_mode", False)
+
+        if label_path and os.path.exists(label_path):
+            label_img = sitk.ReadImage(label_path)
+            ctv_array = sitk.GetArrayFromImage(label_img)
+            ctv_mask = label_img
+        else:
+            if image is None and image_path is not None:
+                image = sitk.ReadImage(image_path)
+            elif image is None:
+                return ToolResult(success=False, error="Either 'image' or 'image_path' must be provided")
+
+            if tumor_type and tumor_type in TOOL_REGISTRY:
+                tool = TOOL_REGISTRY[tumor_type]()
+            else:
+                tool = PancreaticTumorSegmentationTool()
+
+            result = tool._execute(image=image, target_value=target_value, fast_mode=fast_mode)
+            if result.success:
+                ctv_array = result.metadata.get("ctv_array", result.data)
+                ctv_mask = result.metadata.get("ctv_mask", image)
+            else:
+                return result
+
+        voxel_count = int(np.sum(ctv_array > 0))
+        spacing = ctv_mask.GetSpacing() if hasattr(ctv_mask, 'GetSpacing') else (1, 1, 1)
+        voxel_size = spacing[0] * spacing[1] * spacing[2]
+        volume_mm3 = voxel_count * voxel_size
+
+        return ToolResult(
+            success=True,
+            data=ctv_array,
+            message=f"CTV segmentation completed. Volume: {volume_mm3:.1f} mm³",
+            metadata={
+                "ctv_mask": ctv_mask,
+                "ctv_array": ctv_array,
+                "ctv_volume_mm3": float(volume_mm3),
+                "ctv_voxel_count": voxel_count,
+                "tumor_type_used": tumor_type or "auto",
+            },
+        )
+
+
+__all__ = [
+    "BaseTool",
+    "ToolResult",
+    "PancreaticTumorSegmentationTool",
+    "LiverTumorSegmentationTool",
+    "KidneyTumorSegmentationTool",
+    "ProstateTumorSegmentationTool",
+    "LungTumorSegmentationTool",
+    "HeadNeckTumorSegmentationTool",
+    "VoCoPancreaticTumorTool",
+    "VoCoLiverTumorTool",
+    "VoCoColonTumorTool",
+    "VoCoKidneyTumorTool",
+    "VoCoLungTumorTool",
+    "VoCoProstateTool",
+    "VoCoBTCVTumorTool",
+    "VoCoSegThorTumorTool",
+    "CTVSegmentationTool",
+    "get_tool",
+    "list_tools",
+]
