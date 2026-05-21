@@ -10,22 +10,80 @@ import sys
 import json
 import logging
 import threading
+import secrets
+import hashlib
 from datetime import datetime
 from typing import Dict, Any, Optional
+from functools import wraps
+
+# Add parent directory to Python path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
+from flask import request, jsonify, send_from_directory, Response
+from flask_cors import CORS
 
 WEB_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(WEB_DIR, "app")
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+API_KEY = os.environ.get("BRACHYBOT_API_KEY", None)
+RATE_LIMIT_REQUESTS = 60
+RATE_LIMIT_WINDOW = 60
+_rate_limit_store: Dict[str, list] = {}
+
+
+def _check_rate_limit(client_ip: str) -> bool:
+    now = datetime.now().timestamp()
+    if client_ip not in _rate_limit_store:
+        _rate_limit_store[client_ip] = []
+    _rate_limit_store[client_ip] = [
+        t for t in _rate_limit_store[client_ip] if now - t < RATE_LIMIT_WINDOW
+    ]
+    if len(_rate_limit_store[client_ip]) >= RATE_LIMIT_REQUESTS:
+        return False
+    _rate_limit_store[client_ip].append(now)
+    return True
+
+
+def _validate_path(path: str) -> bool:
+    if not path:
+        return False
+    normalized = os.path.normpath(path)
+    if normalized.startswith("..") or normalized.startswith("/"):
+        return False
+    return True
+
+
+def require_api_key(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if API_KEY:
+            request_key = request.headers.get("X-API-Key", "")
+            if not request_key or not secrets.compare_digest(
+                hashlib.sha256(request_key.encode()).hexdigest(),
+                hashlib.sha256(API_KEY.encode()).hexdigest(),
+            ):
+                return jsonify({"error": "Invalid or missing API key"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+def rate_limit(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        client_ip = request.remote_addr
+        if not _check_rate_limit(client_ip):
+            return jsonify({"error": "Rate limit exceeded"}), 429
+        return f(*args, **kwargs)
+    return decorated
 
 
 def create_app(config: Optional[Dict] = None):
     """Create and configure the Flask application."""
     try:
-        from flask import Flask, request, jsonify, send_from_directory
+        from flask import Flask, request, jsonify, send_from_directory, Response
         from flask_cors import CORS
         HAS_FLASK = True
     except ImportError:
@@ -35,6 +93,7 @@ def create_app(config: Optional[Dict] = None):
 
     app = Flask(__name__, static_folder=APP_DIR, static_url_path="")
     CORS(app)
+    app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500MB max upload
 
     if config is None:
         config = {}
@@ -53,13 +112,333 @@ def create_app(config: Optional[Dict] = None):
                 )
                 logger.info("BrachyAgent initialized for web server")
             except Exception as e:
+                import traceback
                 logger.error(f"Failed to initialize BrachyAgent: {e}")
+                logger.error(traceback.format_exc())
                 return None
         return agent
 
     @app.route("/")
     def index():
         return send_from_directory(APP_DIR, "index.html")
+
+    @app.route("/api/upload", methods=["POST"])
+    def api_upload():
+        """Upload a file to the server and return the server-side path."""
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+
+        file = request.files["file"]
+        if file.filename == "":
+            return jsonify({"error": "No file selected"}), 400
+
+        upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")
+        os.makedirs(upload_dir, exist_ok=True)
+
+        # Sanitize filename
+        filename = "".join(c for c in file.filename if c.isalnum() or c in "._- ")
+        if not filename:
+            filename = "uploaded_file"
+
+        # Avoid overwriting: add timestamp
+        base, ext = os.path.splitext(filename)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_name = f"{base}_{timestamp}{ext}"
+        save_path = os.path.join(upload_dir, save_name)
+
+        file.save(save_path)
+        abs_path = os.path.abspath(save_path)
+
+        return jsonify({
+            "success": True,
+            "path": abs_path,
+            "filename": save_name,
+            "size": os.path.getsize(abs_path),
+        })
+
+    @app.route("/api/viewer/load", methods=["POST"])
+    def api_viewer_load():
+        """Load CT image and return slice metadata (no pixel data)."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        ct_path = data.get("ct_path")
+        window_center = data.get("window_center", 40)
+        window_width = data.get("window_width", 400)
+
+        if not ct_path:
+            return jsonify({"error": "ct_path is required"}), 400
+
+        try:
+            import numpy as np
+            import nibabel as nib
+
+            logger.info(f"Loading CT from: {ct_path}")
+            ct_img = nib.load(ct_path)
+            ct_data = ct_img.get_fdata()
+            spacing = ct_img.header.get_zooms()[:3]
+            shape = ct_data.shape
+            logger.info(f"CT shape: {shape}, spacing: {spacing}")
+
+            # Store in agent memory
+            agent.memory.store("ct_image", ct_img)
+            agent.memory.store("ct_data", ct_data)
+            agent.memory.store("ct_spacing", spacing)
+            agent.memory.store("ct_shape", list(shape))
+            agent.memory.store("ct_window_center", window_center)
+            agent.memory.store("ct_window_width", window_width)
+
+            axis_map = {
+                'axial': 2,
+                'sagittal': 0,
+                'coronal': 1,
+            }
+
+            slices = {}
+            for name, axis in axis_map.items():
+                mid = int(shape[axis] // 2)
+                slices[name] = {
+                    'slice_index': mid,
+                    'total_slices': int(shape[axis]),
+                    'shape': [int(shape[0]), int(shape[1]), int(shape[2])],
+                }
+
+            return jsonify({
+                "success": True,
+                "slices": slices,
+                "spacing": [float(spacing[0]), float(spacing[1]), float(spacing[2])],
+                "shape": [int(shape[0]), int(shape[1]), int(shape[2])],
+                "hu_range": [float(ct_data.min()), float(ct_data.max())],
+            })
+        except Exception as e:
+            import traceback
+            logger.error(f"Viewer load failed: {e}")
+            logger.error(traceback.format_exc())
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/viewer/slice", methods=["POST"])
+    def api_viewer_slice():
+        """Get a specific slice from loaded CT as PNG image."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        axis_name = data.get("axis", "axial")
+        slice_index = data.get("slice_index", 0)
+        window_center = data.get("window_center", agent.memory.retrieve("ct_window_center") or 40)
+        window_width = data.get("window_width", agent.memory.retrieve("ct_window_width") or 400)
+        overlay_type = data.get("overlay_type", None)
+        threshold = data.get("threshold", None)
+
+        ct_data = agent.memory.retrieve("ct_data")
+        if ct_data is None:
+            return jsonify({"error": "No CT image loaded"}), 400
+
+        try:
+            import numpy as np
+            from io import BytesIO
+            from PIL import Image
+
+            axis_map = agent.memory.retrieve("ct_axis_map") or {
+                'axial': 2, 'sagittal': 0, 'coronal': 1,
+            }
+            axis = axis_map.get(axis_name, 2)
+            shape = ct_data.shape
+
+            # Apply window/level
+            lower = window_center - window_width / 2
+            upper = window_center + window_width / 2
+            ct_windowed = np.clip(ct_data, lower, upper)
+            ct_windowed = ((ct_windowed - lower) / (upper - lower) * 255).astype(np.uint8)
+
+            # Get slice
+            slice_data = np.take(ct_windowed, slice_index, axis=axis)
+
+            # For sagittal and coronal, transpose so Z axis is vertical
+            if axis_name in ('sagittal', 'coronal'):
+                slice_data = slice_data.T
+
+            # Apply threshold overlay if requested
+            if threshold is not None:
+                mask = ct_data > threshold
+                mask_slice = np.take(mask, slice_index, axis=axis)
+                if axis_name in ('sagittal', 'coronal'):
+                    mask_slice = mask_slice.T
+                # Create RGB overlay
+                slice_rgb = np.stack([slice_data] * 3, axis=-1)
+                slice_rgb[mask_slice, 0] = np.minimum(255, slice_rgb[mask_slice, 0].astype(int) + 120)
+                slice_rgb[mask_slice, 1] = np.maximum(0, slice_rgb[mask_slice, 1].astype(int) - 80)
+                slice_rgb[mask_slice, 2] = np.maximum(0, slice_rgb[mask_slice, 2].astype(int) - 80)
+                img = Image.fromarray(slice_rgb)
+            else:
+                img = Image.fromarray(slice_data)
+
+            # Downsample if too large for display
+            max_dim = 512
+            if img.width > max_dim or img.height > max_dim:
+                ratio = max(img.width / max_dim, img.height / max_dim)
+                new_size = (int(img.width / ratio), int(img.height / ratio))
+                img = img.resize(new_size, Image.LANCZOS)
+
+            # Convert to base64 PNG
+            buffered = BytesIO()
+            img.save(buffered, format="PNG")
+            import base64
+            img_str = base64.b64encode(buffered.getvalue()).decode()
+
+            return jsonify({
+                "success": True,
+                "data": f"data:image/png;base64,{img_str}",
+                "shape": list(slice_data.shape),
+            })
+        except Exception as e:
+            import traceback
+            logger.error(f"Viewer slice failed: {e}")
+            logger.error(traceback.format_exc())
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/viewer/threshold", methods=["POST"])
+    def api_viewer_threshold():
+        """Apply threshold segmentation and return mask."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        lower = data.get("lower", -1000)
+        upper = data.get("upper", 1000)
+        axis = data.get("axis", "axial")
+        slice_index = data.get("slice_index", 0)
+
+        ct_data = agent.memory.retrieve("ct_data")
+        if ct_data is None:
+            return jsonify({"error": "No CT image loaded"}), 400
+
+        try:
+            import numpy as np
+
+            mask = (ct_data >= lower) & (ct_data <= upper)
+            mask_slice = np.take(mask, slice_index, axis={'axial': 0, 'sagittal': 1, 'coronal': 2}.get(axis, 0))
+
+            # Count voxels
+            total_voxels = int(mask.sum())
+            spacing = agent.memory.retrieve("ct_spacing") or (1, 1, 1)
+            volume_mm3 = total_voxels * float(np.prod(spacing))
+
+            return jsonify({
+                "success": True,
+                "mask": mask_slice.tolist(),
+                "total_voxels": total_voxels,
+                "volume_mm3": volume_mm3,
+            })
+        except Exception as e:
+            logger.error(f"Viewer threshold failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/viewer/hu", methods=["POST"])
+    def api_viewer_hu():
+        """Get HU value at a specific voxel."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        x = data.get("x", 0)
+        y = data.get("y", 0)
+        z = data.get("z", 0)
+
+        ct_data = agent.memory.retrieve("ct_data")
+        if ct_data is None:
+            return jsonify({"error": "No CT image loaded"}), 400
+
+        try:
+            import numpy as np
+            shape = ct_data.shape
+            if 0 <= x < shape[0] and 0 <= y < shape[1] and 0 <= z < shape[2]:
+                hu = float(ct_data[x, y, z])
+                return jsonify({"success": True, "hu": hu, "coords": [x, y, z]})
+            else:
+                return jsonify({"error": "Coordinates out of bounds"}), 400
+        except Exception as e:
+            logger.error(f"Viewer HU failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/viewer/3d", methods=["POST"])
+    def api_viewer_3d():
+        """Generate 3D mesh from CT or mask data."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        threshold = data.get("threshold", -200)
+        decimate = data.get("decimate", 0.9)  # Reduce mesh complexity
+
+        ct_data = agent.memory.retrieve("ct_data")
+        if ct_data is None:
+            return jsonify({"error": "No CT image loaded"}), 400
+
+        try:
+            import numpy as np
+            from skimage import measure
+
+            # Create mask from threshold
+            mask = ct_data > threshold
+
+            # Generate marching cubes mesh
+            vertices, faces, normals, values = measure.marching_cubes(mask, spacing=agent.memory.retrieve("ct_spacing") or (1, 1, 1))
+
+            # Decimate if requested
+            if decimate > 0 and len(faces) > 10000:
+                keep = int(len(faces) * (1 - decimate))
+                indices = np.random.choice(len(faces), keep, replace=False)
+                faces = faces[indices]
+
+            return jsonify({
+                "success": True,
+                "vertices": vertices.tolist(),
+                "faces": faces.tolist(),
+                "vertex_count": len(vertices),
+                "face_count": len(faces),
+            })
+        except Exception as e:
+            logger.error(f"Viewer 3D failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/config", methods=["POST"])
+    def api_config():
+        """Update agent configuration (hyperparameters)."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+
+        try:
+            if "seed_info" in data:
+                agent.config["seed_info"] = data["seed_info"]
+            if "radiation_array_params" in data:
+                agent.config["radiation_array_params"] = data["radiation_array_params"]
+            if "reference_direc" in data:
+                agent.config["reference_direc"] = data["reference_direc"]
+            if "in_lowest_energy" in data:
+                agent.config["in_lowest_energy"] = data["in_lowest_energy"]
+            if "out_highest_energy" in data:
+                agent.config["out_highest_energy"] = data["out_highest_energy"]
+            if "DVH_rate" in data:
+                agent.config["DVH_rate"] = data["DVH_rate"]
+            if "max_iter" in data:
+                agent.config["max_iter"] = data["max_iter"]
+            if "rf_params" in data:
+                agent.config["rf_params"] = data["rf_params"]
+
+            return jsonify({"success": True, "config": agent.config})
+        except Exception as e:
+            logger.error(f"Config update failed: {e}")
+            return jsonify({"error": str(e)}), 500
 
     @app.route("/api/status", methods=["GET"])
     def api_status():
@@ -73,6 +452,8 @@ def create_app(config: Optional[Dict] = None):
         return jsonify(status)
 
     @app.route("/api/plan/preoperative", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_preoperative_plan():
         """Run pre-operative planning."""
         agent = get_agent()
@@ -89,12 +470,42 @@ def create_app(config: Optional[Dict] = None):
         if not ct_path:
             return jsonify({"error": "ct_path is required"}), 400
 
+        if not _validate_path(ct_path):
+            return jsonify({"error": "Invalid ct_path"}), 400
+        if ctv_path and not _validate_path(ctv_path):
+            return jsonify({"error": "Invalid ctv_path"}), 400
+        if oar_path and not _validate_path(oar_path):
+            return jsonify({"error": "Invalid oar_path"}), 400
+        if not _validate_path(output_dir):
+            return jsonify({"error": "Invalid output_dir"}), 400
+        if mode not in ("rule_based", "rl", "auto"):
+            return jsonify({"error": "Invalid mode. Use 'rule_based', 'rl', or 'auto'"}), 400
+
         try:
+            # Get hyperparameters from agent config
+            config = getattr(agent, 'config', {})
+            seed_info = config.get('seed_info')
+            radiation_array_params = config.get('radiation_array_params')
+            reference_direc = config.get('reference_direc')
+            in_lowest_energy = config.get('in_lowest_energy')
+            out_highest_energy = config.get('out_highest_energy')
+            DVH_rate = config.get('DVH_rate')
+            max_iter = config.get('max_iter')
+            rf_params = config.get('rf_params')
+
             result = agent.run_preoperative_plan(
                 ct_path=ct_path,
                 ctv_path=ctv_path,
                 oar_path=oar_path,
                 mode=mode,
+                seed_info=seed_info,
+                radiation_array_params=radiation_array_params,
+                reference_direc=reference_direc,
+                in_lowest_energy=in_lowest_energy,
+                out_highest_energy=out_highest_energy,
+                DVH_rate=DVH_rate,
+                max_iter=max_iter,
+                rf_params=rf_params,
                 output_dir=output_dir,
             )
             return jsonify(result)
@@ -103,6 +514,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/plan/intraoperative", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_intraoperative_plan():
         """Run intra-operative replanning."""
         agent = get_agent()
@@ -118,6 +531,17 @@ def create_app(config: Optional[Dict] = None):
         if not ct_path:
             return jsonify({"error": "ct_path is required"}), 400
 
+        if not _validate_path(ct_path):
+            return jsonify({"error": "Invalid ct_path"}), 400
+        if not _validate_path(output_dir):
+            return jsonify({"error": "Invalid output_dir"}), 400
+        try:
+            threshold = float(threshold)
+            if threshold <= 0:
+                return jsonify({"error": "threshold must be positive"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid threshold value"}), 400
+
         try:
             result = agent.run_intraoperative_replan(
                 intra_op_ct_path=ct_path,
@@ -131,6 +555,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/chat", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_chat():
         """Natural language chat interface with execution trace."""
         agent = get_agent()
@@ -139,23 +565,43 @@ def create_app(config: Optional[Dict] = None):
 
         data = request.get_json() or {}
         message = data.get("message", "")
+        ui_state = data.get("ui_state", {})
+        stream = data.get("stream", True)  # Default to streaming
 
         if not message:
             return jsonify({"error": "message is required"}), 400
 
-        try:
-            result = agent.chat_with_trace(message)
-            return jsonify({
-                "response": result["response"],
-                "steps": result["steps"],
-                "session_id": agent.memory.session_id,
-                "brain_available": agent.brain_available,
-            })
-        except Exception as e:
-            logger.error(f"Chat failed: {e}")
-            return jsonify({"error": str(e)}), 500
+        if stream:
+            def generate():
+                agent.memory.set_ui_state(ui_state)
+                for event in agent.chat_with_stream(message):
+                    yield event
+
+            return Response(generate(), mimetype='text/event-stream')
+        else:
+            try:
+                agent.memory.set_ui_state(ui_state)
+                result = agent.chat_with_trace(message)
+                return jsonify({
+                    "response": result["response"],
+                    "steps": result["steps"],
+                    "llm_meta": result.get("llm_meta", {}),
+                    "context": {
+                        "summary": agent.memory.context_summary or None,
+                        "compaction_count": agent.memory.compaction_count,
+                        "message_count": len(agent.memory.conversation),
+                        "ui_state": agent.memory.get_ui_state(),
+                    },
+                    "session_id": agent.memory.session_id,
+                    "brain_available": agent.brain_available,
+                })
+            except Exception as e:
+                logger.error(f"Chat failed: {e}")
+                return jsonify({"error": str(e)}), 500
 
     @app.route("/api/export/dicom", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_export_dicom():
         """Export plan to DICOM RT format."""
         agent = get_agent()
@@ -164,6 +610,9 @@ def create_app(config: Optional[Dict] = None):
 
         data = request.get_json() or {}
         output_dir = data.get("output_dir", "./dicom_export")
+
+        if not _validate_path(output_dir):
+            return jsonify({"error": "Invalid output_dir"}), 400
 
         try:
             ct_image = agent.memory.retrieve("ct_image")
@@ -184,7 +633,7 @@ def create_app(config: Optional[Dict] = None):
             from tool_factory.output.dicom_rt_exporter import DicomRTExporterTool
             exporter = DicomRTExporterTool()
 
-            result = exporter._execute(
+            result = exporter.execute(
                 ct_image=ct_image,
                 structures=structures,
                 dose_array=dose_distribution,
@@ -206,6 +655,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/export/report", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_export_report():
         """Generate planning report."""
         agent = get_agent()
@@ -216,6 +667,11 @@ def create_app(config: Optional[Dict] = None):
         output_path = data.get("output_path", "./report.json")
         output_format = data.get("format", "json")
 
+        if not _validate_path(output_path):
+            return jsonify({"error": "Invalid output_path"}), 400
+        if output_format not in ("json", "html", "pdf"):
+            return jsonify({"error": "Invalid format. Use 'json', 'html', or 'pdf'"}), 400
+
         try:
             metrics = agent.memory.retrieve("metrics", {})
             plan_score = metrics.get("plan_score", 0)
@@ -225,7 +681,7 @@ def create_app(config: Optional[Dict] = None):
             from tool_factory.output.report_generator import ReportGeneratorTool
             generator = ReportGeneratorTool()
 
-            result = generator._execute(
+            result = generator.execute(
                 patient_id=agent.memory.patient_data.get("id", "UNKNOWN"),
                 plan_name="BrachyPlan",
                 output_path=output_path,
@@ -250,7 +706,93 @@ def create_app(config: Optional[Dict] = None):
             logger.error(f"Report generation failed: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/viewer/control", methods=["POST"])
+    @require_api_key
+    @rate_limit
+    def api_viewer_control():
+        """LLM-callable viewer control endpoint. Adjust window/level, navigate slices, toggle overlays."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        action = data.get("action", "")
+        ct_data = agent.memory.retrieve("ct_data")
+
+        if ct_data is None and action not in ("get_state",):
+            return jsonify({"error": "No CT image loaded"}), 400
+
+        try:
+            if action == "set_window":
+                w = data.get("window", agent.memory.retrieve("ct_window_width") or 400)
+                l = data.get("level", agent.memory.retrieve("ct_window_center") or 40)
+                agent.memory.store("ct_window_width", w)
+                agent.memory.store("ct_window_center", l)
+                return jsonify({"success": True, "message": f"Window set to W:{w} L:{l}", "window": w, "level": l})
+
+            elif action == "set_preset":
+                presets = {
+                    "soft": {"w": 400, "l": 40},
+                    "bone": {"w": 2000, "l": 400},
+                    "lung": {"w": 1500, "l": -600},
+                    "brain": {"w": 80, "l": 40},
+                }
+                preset = data.get("preset", "soft")
+                if preset not in presets:
+                    return jsonify({"error": f"Unknown preset: {preset}. Available: {list(presets.keys())}"}), 400
+                p = presets[preset]
+                agent.memory.store("ct_window_width", p["w"])
+                agent.memory.store("ct_window_center", p["l"])
+                return jsonify({"success": True, "message": f"Preset '{preset}' applied (W:{p['w']} L:{p['l']})", "window": p["w"], "level": p["l"]})
+
+            elif action == "navigate_slice":
+                axis = data.get("axis", "axial")
+                slice_index = data.get("slice_index", 0)
+                shape = ct_data.shape
+                axis_map = agent.memory.retrieve("ct_axis_map") or {'axial': 2, 'sagittal': 0, 'coronal': 1}
+                axis_idx = axis_map.get(axis, 2)
+                max_slice = shape[axis_idx] - 1
+                slice_index = max(0, min(slice_index, max_slice))
+                agent.memory.store(f"viewer_slice_{axis}", slice_index)
+                return jsonify({"success": True, "message": f"Moved to {axis} slice {slice_index}/{max_slice}", "axis": axis, "slice_index": slice_index, "max_slice": max_slice})
+
+            elif action == "set_threshold":
+                threshold = data.get("threshold", -200)
+                agent.memory.store("viewer_threshold", threshold)
+                return jsonify({"success": True, "message": f"Threshold set to {threshold} HU", "threshold": threshold})
+
+            elif action == "toggle_overlay":
+                overlay = data.get("overlay", "ctv")
+                current = agent.memory.retrieve("viewer_overlay")
+                new_overlay = None if current == overlay else overlay
+                agent.memory.store("viewer_overlay", new_overlay)
+                return jsonify({"success": True, "message": f"Overlay {overlay} {'activated' if new_overlay else 'deactivated'}", "overlay": new_overlay})
+
+            elif action == "get_state":
+                return jsonify({
+                    "success": True,
+                    "ct_loaded": ct_data is not None,
+                    "ct_shape": list(ct_data.shape) if ct_data is not None else None,
+                    "window": agent.memory.retrieve("ct_window_width") or 400,
+                    "level": agent.memory.retrieve("ct_window_center") or 40,
+                    "threshold": agent.memory.retrieve("viewer_threshold"),
+                    "overlay": agent.memory.retrieve("viewer_overlay"),
+                    "slices": {
+                        "axial": agent.memory.retrieve("viewer_slice_axial") or 0,
+                        "sagittal": agent.memory.retrieve("viewer_slice_sagittal") or 0,
+                        "coronal": agent.memory.retrieve("viewer_slice_coronal") or 0,
+                    },
+                })
+
+            else:
+                return jsonify({"error": f"Unknown action: {action}. Available: set_window, set_preset, navigate_slice, set_threshold, toggle_overlay, get_state"}), 400
+
+        except Exception as e:
+            logger.error(f"Viewer control failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/reset", methods=["POST"])
+    @require_api_key
     def api_reset():
         """Reset agent state."""
         nonlocal agent
@@ -268,7 +810,7 @@ def create_app(config: Optional[Dict] = None):
     return app
 
 
-def run_server(port: int = 8080, host: str = "0.0.0.0", config: Optional[Dict] = None):
+def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict] = None):
     """Run the web server."""
     app = create_app(config)
 

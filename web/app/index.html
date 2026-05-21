@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI-BrachyAgent Brachytherapy Planning System</title>
+    <title>BrachyBot — AI Brachytherapy Planning</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -85,6 +85,186 @@
             overflow: hidden;
         }
 
+        /* ============ SESSION SIDEBAR ============ */
+        .session-sidebar {
+            width: 260px;
+            background: var(--bg-2);
+            border-right: 1px solid var(--card-border);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .session-sidebar-header {
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--card-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .session-sidebar-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .new-chat-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 0.3rem 0.6rem;
+            font-size: 0.7rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            transition: background 0.15s;
+        }
+        .new-chat-btn:hover { background: var(--primary-dark); }
+
+        .session-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.5rem;
+        }
+
+        .session-item {
+            padding: 0.5rem 0.6rem;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 2px;
+            transition: background 0.1s;
+            position: relative;
+        }
+        .session-item:hover { background: var(--bg-3); }
+        .session-item.active { background: var(--bg-3); border: 1px solid var(--card-border); }
+
+        .session-item-info {
+            flex: 1;
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        .session-item-title {
+            font-size: 0.72rem;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .session-item-time {
+            font-size: 0.6rem;
+            color: var(--text-dim);
+        }
+
+        .session-item-actions {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+        .session-item:hover .session-item-actions { opacity: 1; }
+        .session-item.active .session-item-actions { opacity: 1; }
+
+        .session-item-btn {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            padding: 0.2rem;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+        }
+        .session-item-btn:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+        .session-item-btn.delete:hover { color: var(--danger); background: rgba(239,68,68,0.1); }
+
+        .session-item-rename-input {
+            width: 100%;
+            background: var(--bg-3);
+            border: 1px solid var(--primary);
+            border-radius: 4px;
+            color: var(--text);
+            font-size: 0.72rem;
+            padding: 0.2rem 0.3rem;
+            outline: none;
+        }
+
+        /* ============ CONTEXT PANEL ============ */
+        .session-sidebar-footer {
+            border-top: 1px solid var(--card-border);
+            padding: 0.4rem;
+        }
+
+        .context-toggle-btn {
+            width: 100%;
+            background: var(--bg-3);
+            border: 1px solid var(--card-border);
+            border-radius: 6px;
+            padding: 0.35rem 0.5rem;
+            color: var(--text-secondary);
+            font-size: 0.65rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.3rem;
+            transition: all 0.15s;
+        }
+        .context-toggle-btn:hover { background: var(--primary); color: white; border-color: var(--primary); }
+
+        .context-panel {
+            border-top: 1px solid var(--card-border);
+            max-height: 200px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .context-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.4rem 0.5rem;
+            font-size: 0.65rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            background: var(--bg-3);
+        }
+
+        .context-panel-close {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: 0.9rem;
+            padding: 0;
+            line-height: 1;
+        }
+        .context-panel-close:hover { color: var(--text); }
+
+        .context-panel-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.4rem 0.5rem;
+            font-size: 0.62rem;
+            color: var(--text-dim);
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
         /* ============ LEFT: CHAT ============ */
         .chat-area {
             flex: 1;
@@ -111,6 +291,19 @@
         .chat-header-title { font-size: 0.8rem; font-weight: 600; }
         .chat-header-sub { font-size: 0.65rem; color: var(--text-dim); }
 
+        .context-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.2rem;
+            padding: 0.15rem 0.4rem;
+            background: var(--bg-3);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            font-size: 0.6rem;
+            color: var(--text-dim);
+        }
+        .context-badge span { font-weight: 600; color: var(--text-secondary); }
+
         .chat-messages {
             flex: 1; overflow-y: auto;
             padding: 1rem; display: flex; flex-direction: column; gap: 0.6rem;
@@ -131,6 +324,208 @@
         .chat-msg.bot { background: var(--bg-3); color: var(--text); align-self: flex-start; border-bottom-left-radius: 3px; }
         .chat-msg.system { background: var(--accent-bg); color: var(--accent); align-self: flex-start; border: 1px solid rgba(139,92,246,0.3); font-size: 0.75rem; }
         .chat-msg.error { background: rgba(239,68,68,0.1); color: var(--danger); align-self: flex-start; border: 1px solid rgba(239,68,68,0.3); font-size: 0.75rem; }
+
+        /* ============ AVATARS ============ */
+        .chat-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 0.5rem;
+            max-width: 85%;
+            animation: fadeIn 0.2s ease;
+        }
+        .chat-row.user { align-self: flex-end; flex-direction: row-reverse; }
+        .chat-row.bot { align-self: flex-start; }
+
+        .chat-avatar {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+        }
+        .chat-avatar.bot-avatar {
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            color: white;
+            font-weight: 800;
+        }
+        .chat-avatar.user-avatar {
+            background: var(--bg-3);
+            color: var(--text-secondary);
+            border: 1px solid var(--card-border);
+        }
+
+        .chat-row .chat-msg {
+            max-width: 100%;
+        }
+
+        .chat-msg-wrapper {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            max-width: 85%;
+        }
+        .chat-msg-wrapper.user { align-self: flex-end; }
+        .chat-msg-wrapper.bot { align-self: flex-start; }
+
+        .chat-msg-actions {
+            display: none;
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: var(--bg-2);
+            border: 1px solid var(--card-border);
+            border-radius: 6px;
+            padding: 0.15rem;
+            gap: 2px;
+        }
+        .chat-msg-wrapper:hover .chat-msg-actions { display: flex; }
+
+        .chat-msg-action-btn {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            padding: 0.2rem 0.3rem;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            transition: all 0.15s;
+        }
+        .chat-msg-action-btn:hover { color: var(--text); background: var(--bg-3); }
+
+        .chat-msg.bot-response {
+            background: var(--bg-3);
+            color: var(--text);
+            align-self: flex-start;
+            border-radius: 12px;
+            border-bottom-left-radius: 3px;
+            padding: 0.6rem 0.85rem;
+            font-size: 0.82rem;
+            line-height: 1.5;
+            max-width: 85%;
+            animation: fadeIn 0.2s ease;
+            word-break: break-word;
+            user-select: text;
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
+        }
+
+        .chat-msg.user {
+            user-select: text;
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
+        }
+
+        .chat-msg.system {
+            user-select: text;
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
+        }
+
+        .chat-msg.error {
+            user-select: text;
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
+        }
+
+        .thinking-steps {
+            user-select: text;
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
+        }
+
+        /* ============ TOOL PROGRESS MESSAGES ============ */
+        .tool-progress-text {
+            transition: all 0.3s ease;
+        }
+        .chat-msg.system {
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+
+        /* ============ THINKING INDICATOR (Gemini/Claude style) ============ */
+        .thinking-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.85rem;
+            background: var(--bg-3);
+            border-radius: 12px;
+            border-bottom-left-radius: 3px;
+            align-self: flex-start;
+            max-width: 85%;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .thinking-dots {
+            display: flex;
+            gap: 3px;
+            align-items: center;
+        }
+
+        .thinking-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent);
+            animation: thinkingPulse 1.4s ease-in-out infinite;
+        }
+        .thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+        .thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes thinkingPulse {
+            0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+            40% { opacity: 1; transform: scale(1.2); }
+        }
+
+        .thinking-text {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .thinking-time {
+            font-size: 0.65rem;
+            color: var(--text-dim);
+            font-variant-numeric: tabular-nums;
+            margin-left: auto;
+        }
+
+        /* ============ USAGE STATS BAR ============ */
+        .usage-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.3rem 0.85rem;
+            background: rgba(139, 92, 246, 0.08);
+            border: 1px solid rgba(139, 92, 246, 0.15);
+            border-radius: 8px;
+            align-self: flex-start;
+            max-width: 85%;
+            font-size: 0.62rem;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        .usage-item {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .usage-label { color: var(--text-dim); }
+        .usage-value { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+        .usage-sep {
+            width: 1px;
+            height: 10px;
+            background: var(--card-border);
+        }
 
         /* ============ THINKING CHAIN / EXECUTION STEPS ============ */
         .thinking-chain {
@@ -201,6 +596,7 @@
         .step-icon.result { color: var(--success); }
         .step-icon.error { color: var(--danger); }
         .step-icon.assistant { color: var(--primary); }
+        .step-icon.memory { color: var(--text-secondary); }
 
         .step-title {
             flex: 1;
@@ -259,21 +655,6 @@
             color: var(--text-secondary);
             font-size: 0.72rem;
             white-space: pre-wrap;
-        }
-
-        /* Final bot response */
-        .chat-msg.bot-response {
-            background: var(--bg-3);
-            color: var(--text);
-            align-self: flex-start;
-            border-radius: 12px;
-            border-bottom-left-radius: 3px;
-            padding: 0.6rem 0.85rem;
-            font-size: 0.82rem;
-            line-height: 1.5;
-            max-width: 85%;
-            animation: fadeIn 0.2s ease;
-            word-break: break-word;
         }
 
         .chat-input-area {
@@ -348,7 +729,7 @@
         .panel-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
 
         .panel-content {
-            flex: 1; overflow: hidden; display: none;
+            flex: 1; overflow-y: auto; display: none;
             min-height: 0;
         }
         .panel-content.active { display: flex; flex-direction: column; }
@@ -356,6 +737,7 @@
         /* ============ INPUT FORM ============ */
         .input-form {
             padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem;
+            overflow-y: visible;
         }
 
         .form-section-title {
@@ -694,8 +1076,8 @@
 <header class="header">
     <div class="header-logo">AI</div>
     <div>
-        <div class="header-title">AI-BrachyAgent</div>
-        <div class="header-subtitle">Brachytherapy Planning</div>
+        <div class="header-title">BrachyBot</div>
+        <div class="header-subtitle">AI Brachytherapy Planning</div>
     </div>
     <div class="header-status">
         <div class="status-chip">
@@ -713,18 +1095,56 @@
 <!-- ============ APP BODY ============ -->
 <div class="app-body">
 
+    <!-- ============ SESSION SIDEBAR ============ -->
+    <div class="session-sidebar">
+        <div class="session-sidebar-header">
+            <span class="session-sidebar-title">Chats</span>
+            <button class="new-chat-btn" onclick="newChat()">&#43; New</button>
+        </div>
+        <div class="session-list" id="sessionList"></div>
+        <div class="context-panel" id="contextPanel" style="display:none">
+            <div class="context-panel-header">
+                <span>Context Summary</span>
+                <button class="context-panel-close" onclick="toggleContextPanel()">&times;</button>
+            </div>
+            <div class="context-panel-body" id="contextPanelBody"></div>
+        </div>
+        <div class="session-sidebar-footer">
+            <button class="context-toggle-btn" onclick="toggleContextPanel()">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                Context
+            </button>
+        </div>
+    </div>
+
     <!-- ============ LEFT: CHAT ============ -->
     <div class="chat-area">
         <div class="chat-header">
-            <div class="chat-header-icon">AI</div>
+            <div class="chat-header-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                    <path d="M2 17l10 5 10-5"/>
+                    <path d="M2 12l10 5 10-5"/>
+                </svg>
+            </div>
             <div>
-                <div class="chat-header-title">AI Planning Assistant</div>
-                <div class="chat-header-sub">Describe your case or load patient data to begin</div>
+                <div class="chat-header-title">BrachyBot</div>
+                <div class="chat-header-sub" id="chatSessionTitle">New conversation</div>
+            </div>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:0.4rem;">
+                <div class="context-badge" id="contextBadge" title="Context messages">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    <span id="contextCount">0</span>
+                </div>
+                <div class="context-badge" id="compactionBadge" style="display:none" title="Context compacted">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <span id="compactionCount">0</span>
+                </div>
             </div>
         </div>
 
         <div class="chat-messages" id="chatMessages">
-            <div class="chat-msg system">Welcome to AI-BrachyAgent. Describe your brachytherapy case — tumor location, type, patient condition — and I will help you generate an optimal treatment plan. You can also load CT data directly via the Input panel on the right.</div>
+            <div class="chat-msg system">Welcome to BrachyBot. Describe your brachytherapy case — tumor location, type, patient condition — and I will help you generate an optimal treatment plan. You can also load CT data directly via the Input panel on the right.</div>
         </div>
 
         <div class="chat-input-area">
@@ -809,6 +1229,103 @@
                 <div class="form-group">
                     <label class="form-label">Deviation Threshold (mm)</label>
                     <input type="number" class="form-input" id="devThreshold" value="2.0" step="0.1">
+                </div>
+
+                <div class="form-section-title" style="cursor:pointer" onclick="toggleHyperparams()">
+                    <span>Hyperparameters</span>
+                    <span id="hyperparamToggle" style="font-size:0.6rem;color:var(--text-dim);">&#9654;</span>
+                </div>
+
+                <div id="hyperparamsSection" style="display:none;flex-direction:column;gap:0.5rem;max-height:calc(100vh - 300px);overflow-y:auto;padding-right:4px;">
+                    <!-- Seed Properties -->
+                    <div class="form-group">
+                        <label class="form-label">Seed Radius (mm)</label>
+                        <input type="number" class="form-input" id="seedRadius" value="0.4" step="0.05" min="0.1" max="2.0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Seed Length (mm)</label>
+                        <input type="number" class="form-input" id="seedLength" value="3.7" step="0.1" min="1.0" max="20.0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Seed Margin Rate</label>
+                        <input type="number" class="form-input" id="seedMarginRate" value="1.5" step="0.1" min="0.5" max="5.0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Seed Count Min</label>
+                        <input type="number" class="form-input" id="seedCountMin" value="1" step="1" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Seed Count Max</label>
+                        <input type="number" class="form-input" id="seedCountMax" value="200" step="10" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Seed Avg Dose (Gy)</label>
+                        <input type="number" class="form-input" id="seedAvgDose" value="50" step="1" min="10" max="200">
+                    </div>
+
+                    <!-- Radiation Array Params -->
+                    <div class="form-group">
+                        <label class="form-label">Target Value</label>
+                        <input type="number" class="form-input" id="targetValue" value="1" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Obstacle Value</label>
+                        <input type="number" class="form-input" id="obstacleValue" value="2" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Background Value</label>
+                        <input type="number" class="form-input" id="backgroundValue" value="0" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Backlit Angle</label>
+                        <input type="number" class="form-input" id="backlitAngle" value="0.5" step="0.1" min="0" max="3.14">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Max Candidate Trajectories</label>
+                        <input type="number" class="form-input" id="maxCandiTraj" value="200" step="10" min="10">
+                    </div>
+
+                    <!-- Reference Direction -->
+                    <div class="form-group">
+                        <label class="form-label">Reference Direction (X, Y, Z)</label>
+                        <div class="form-row">
+                            <input type="number" class="form-input" id="refDirecX" value="0" step="1" style="width:33%">
+                            <input type="number" class="form-input" id="refDirecY" value="1" step="1" style="width:33%">
+                            <input type="number" class="form-input" id="refDirecZ" value="0" step="1" style="width:33%">
+                        </div>
+                    </div>
+
+                    <!-- Energy & Iteration -->
+                    <div class="form-group">
+                        <label class="form-label">In Lowest Energy</label>
+                        <input type="number" class="form-input" id="inLowestEnergy" value="1" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Out Highest Energy</label>
+                        <input type="number" class="form-input" id="outHighestEnergy" value="1" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">DVH Rate</label>
+                        <input type="number" class="form-input" id="dvhRate" value="0.9" step="0.05" min="0" max="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Max Iterations</label>
+                        <input type="number" class="form-input" id="maxIter" value="4" step="1" min="1" max="20">
+                    </div>
+
+                    <!-- RF Params -->
+                    <div class="form-group">
+                        <label class="form-label">RF Max Episodes</label>
+                        <input type="number" class="form-input" id="rfMaxEpisodes" value="100" step="10" min="10">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">RF Bandwidth</label>
+                        <input type="number" class="form-input" id="rfBandwidth" value="50" step="5" min="1">
+                    </div>
+
+                    <button class="btn btn-outline" onclick="applyHyperparams()" style="width:100%;justify-content:center;">
+                        <span class="btn-icon">&#9989;</span> Apply Hyperparameters
+                    </button>
                 </div>
 
                 <div class="form-actions">
@@ -914,6 +1431,70 @@
 
         <!-- VIEWERS PANEL (scrollable vertical stack) -->
         <div class="panel-content" id="panelViewers">
+            <!-- Viewer Controls Bar -->
+            <div style="padding:0.5rem;border-bottom:1px solid var(--card-border);display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;">
+                <!-- Window Presets -->
+                <div style="display:flex;align-items:center;gap:0.3rem;">
+                    <label style="font-size:0.6rem;color:var(--text-dim);">Preset:</label>
+                    <select id="windowPreset" onchange="applyWindowPreset()" style="background:var(--bg-3);border:1px solid var(--card-border);border-radius:4px;color:var(--text);font-size:0.6rem;padding:2px 4px;">
+                        <option value="soft">Soft Tissue</option>
+                        <option value="bone">Bone</option>
+                        <option value="lung">Lung</option>
+                        <option value="brain">Brain</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+                <div style="display:flex;align-items:center;gap:0.3rem;">
+                    <label style="font-size:0.6rem;color:var(--text-dim);">W:</label>
+                    <input type="number" id="viewerWindow" value="400" step="10" style="width:50px;background:var(--bg-3);border:1px solid var(--card-border);border-radius:4px;color:var(--text);font-size:0.65rem;padding:2px 4px;" onchange="applyViewerSettings()">
+                </div>
+                <div style="display:flex;align-items:center;gap:0.3rem;">
+                    <label style="font-size:0.6rem;color:var(--text-dim);">L:</label>
+                    <input type="number" id="viewerLevel" value="40" step="10" style="width:50px;background:var(--bg-3);border:1px solid var(--card-border);border-radius:4px;color:var(--text);font-size:0.65rem;padding:2px 4px;" onchange="applyViewerSettings()">
+                </div>
+                <div class="ctrl-sep" style="height:16px;"></div>
+                <!-- Zoom/Pan -->
+                <div style="display:flex;align-items:center;gap:0.3rem;">
+                    <label style="font-size:0.6rem;color:var(--text-dim);">Zoom:</label>
+                    <input type="range" id="viewerZoom" min="50" max="300" value="100" step="10" style="width:60px;" oninput="applyZoom(this.value)">
+                    <span id="zoomLabel" style="font-size:0.6rem;color:var(--text-dim);min-width:30px;">100%</span>
+                </div>
+                <div class="ctrl-sep" style="height:16px;"></div>
+                <!-- Threshold -->
+                <div style="display:flex;align-items:center;gap:0.3rem;">
+                    <label style="font-size:0.6rem;color:var(--text-dim);">Threshold:</label>
+                    <input type="number" id="viewerThreshold" value="-200" step="10" style="width:60px;background:var(--bg-3);border:1px solid var(--card-border);border-radius:4px;color:var(--text);font-size:0.65rem;padding:2px 4px;">
+                </div>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="applyThreshold()">Apply</button>
+                <div class="ctrl-sep" style="height:16px;"></div>
+                <!-- Overlays -->
+                <label class="ctrl-toggle" style="font-size:0.6rem;">
+                    <input type="checkbox" id="overlayCTV" onchange="toggleOverlay()"> CTV
+                </label>
+                <label class="ctrl-toggle" style="font-size:0.6rem;">
+                    <input type="checkbox" id="overlayOAR" onchange="toggleOverlay()"> OAR
+                </label>
+                <div class="ctrl-sep" style="height:16px;"></div>
+                <!-- Tools -->
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('crosshair')" id="toolCrosshair">&#10799; Cross</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('measure')" id="toolMeasure">&#128207; Line</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('angle')" id="toolAngle">&#8736; Angle</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('rect')" id="toolRect">&#9633; Rect</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('zoombox')" id="toolZoombox">&#128269; Zoom</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('annotate')" id="toolAnnotate">&#9998; Draw</button>
+                <div class="ctrl-sep" style="height:16px;"></div>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerFlipH()">&#8644; FlipH</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerFlipV()">&#8645; FlipV</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerRotate()">&#8634; Rotate</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerUndo()">&#8617; Undo</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerRedo()">&#8618; Redo</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="resetViewer()">&#8635; Reset</button>
+                <div class="ctrl-sep" style="height:16px;"></div>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="reconstruct3D()">&#9638; 3D</button>
+                <!-- HU Display -->
+                <div id="huDisplay" style="margin-left:auto;font-size:0.65rem;color:var(--accent);font-family:monospace;"></div>
+            </div>
+
             <div class="viewers-panel" id="viewersPanel">
 
                 <!-- Axial -->
@@ -928,6 +1509,9 @@
                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="12" r="10"/></svg>
                                 <span>No CT data</span>
                             </div>
+                            <canvas id="sliceCanvasAxial" style="display:none;max-width:100%;max-height:100%;"></canvas>
+                            <canvas id="crosshairCanvasAxial" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
+                            <canvas id="annotationCanvasAxial" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
                             <div id="labelOverlay_Axial" style="position:absolute;inset:0;display:block;opacity:0.6;pointer-events:none;background:transparent;"></div>
                         </div>
                     </div>
@@ -935,13 +1519,7 @@
                     <div class="viewer-card-ctrl">
                         <label>Slice</label>
                         <input type="range" min="0" max="100" value="50" id="sliderAxial" oninput="updateSlice('axial', this.value)">
-                        <div class="ctrl-sep"></div>
-                        <label class="ctrl-toggle">
-                            <input type="checkbox" id="labelShowAxial" checked onchange="updateLabelImage('axial')">
-                            Label
-                        </label>
-                        <label>Op</label>
-                        <input type="range" min="0" max="100" value="60" id="labelOpAxial" oninput="updateLabelImage('axial')">
+                        <span id="sliceLabelAxial" style="font-size:0.6rem;color:var(--text-dim);min-width:30px;text-align:center;">50</span>
                     </div>
                 </div>
 
@@ -957,6 +1535,9 @@
                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="12" r="10"/></svg>
                                 <span>No CT data</span>
                             </div>
+                            <canvas id="sliceCanvasSagittal" style="display:none;max-width:100%;max-height:100%;"></canvas>
+                            <canvas id="crosshairCanvasSagittal" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
+                            <canvas id="annotationCanvasSagittal" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
                             <div id="labelOverlay_Sagittal" style="position:absolute;inset:0;display:block;opacity:0.6;pointer-events:none;background:transparent;"></div>
                         </div>
                     </div>
@@ -964,13 +1545,7 @@
                     <div class="viewer-card-ctrl">
                         <label>Slice</label>
                         <input type="range" min="0" max="100" value="50" id="sliderSagittal" oninput="updateSlice('sagittal', this.value)">
-                        <div class="ctrl-sep"></div>
-                        <label class="ctrl-toggle">
-                            <input type="checkbox" id="labelShowSagittal" checked onchange="updateLabelImage('sagittal')">
-                            Label
-                        </label>
-                        <label>Op</label>
-                        <input type="range" min="0" max="100" value="60" id="labelOpSagittal" oninput="updateLabelImage('sagittal')">
+                        <span id="sliceLabelSagittal" style="font-size:0.6rem;color:var(--text-dim);min-width:30px;text-align:center;">50</span>
                     </div>
                 </div>
 
@@ -986,6 +1561,9 @@
                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="12" r="10"/></svg>
                                 <span>No CT data</span>
                             </div>
+                            <canvas id="sliceCanvasCoronal" style="display:none;max-width:100%;max-height:100%;"></canvas>
+                            <canvas id="crosshairCanvasCoronal" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
+                            <canvas id="annotationCanvasCoronal" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
                             <div id="labelOverlay_Coronal" style="position:absolute;inset:0;display:block;opacity:0.6;pointer-events:none;background:transparent;"></div>
                         </div>
                     </div>
@@ -993,20 +1571,14 @@
                     <div class="viewer-card-ctrl">
                         <label>Slice</label>
                         <input type="range" min="0" max="100" value="50" id="sliderCoronal" oninput="updateSlice('coronal', this.value)">
-                        <div class="ctrl-sep"></div>
-                        <label class="ctrl-toggle">
-                            <input type="checkbox" id="labelShowCoronal" checked onchange="updateLabelImage('coronal')">
-                            Label
-                        </label>
-                        <label>Op</label>
-                        <input type="range" min="0" max="100" value="60" id="labelOpCoronal" oninput="updateLabelImage('coronal')">
+                        <span id="sliceLabelCoronal" style="font-size:0.6rem;color:var(--text-dim);min-width:30px;text-align:center;">50</span>
                     </div>
                 </div>
 
                 <!-- 3D -->
                 <div class="viewer-card viewer-card-3d" id="viewer3d" data-view="3d" style="height:300px;">
                     <div class="viewer-card-header">
-                        <span class="viewer-card-label">3D Dose</span>
+                        <span class="viewer-card-label">3D Reconstruction</span>
                         <button class="viewer-card-expand-btn" onclick="toggleViewerFullscreen('3d')" title="Fullscreen">&#9974;</button>
                     </div>
                     <div class="viewer-card-body">
@@ -1062,6 +1634,157 @@
 </div>
 
 <script>
+function escHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/******** SESSION MANAGEMENT ********/
+const SESSIONS_KEY = 'brachybot_sessions';
+const ACTIVE_KEY = 'brachybot_active_session';
+
+let sessions = {};
+let activeSessionId = null;
+
+function loadSessions() {
+    try {
+        const data = localStorage.getItem(SESSIONS_KEY);
+        sessions = data ? JSON.parse(data) : {};
+    } catch {
+        sessions = {};
+    }
+    if (Object.keys(sessions).length === 0) {
+        const id = generateSessionId();
+        sessions[id] = { id, title: 'New chat', messages: [], created: Date.now() };
+        saveSessions();
+    }
+    activeSessionId = localStorage.getItem(ACTIVE_KEY) || Object.keys(sessions)[0];
+    if (!sessions[activeSessionId]) {
+        activeSessionId = Object.keys(sessions)[0];
+    }
+}
+
+function saveSessions() {
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+    localStorage.setItem(ACTIVE_KEY, activeSessionId);
+}
+
+function generateSessionId() {
+    return 'sess_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function newChat() {
+    const id = generateSessionId();
+    sessions[id] = { id, title: 'New chat', messages: [], created: Date.now() };
+    activeSessionId = id;
+    saveSessions();
+    renderSessionList();
+    loadSessionChat(id);
+}
+
+function switchSession(id) {
+    if (id === activeSessionId) return;
+    activeSessionId = id;
+    saveSessions();
+    renderSessionList();
+    loadSessionChat(id);
+}
+
+function deleteSession(id) {
+    if (Object.keys(sessions).length <= 1) return;
+    delete sessions[id];
+    if (activeSessionId === id) {
+        activeSessionId = Object.keys(sessions)[0];
+    }
+    saveSessions();
+    renderSessionList();
+    loadSessionChat(activeSessionId);
+}
+
+function startRenameSession(id, event) {
+    event.stopPropagation();
+    const titleEl = document.getElementById('session-title-' + id);
+    if (!titleEl) return;
+
+    const session = sessions[id];
+    const currentTitle = session.title;
+
+    // Replace title with input
+    titleEl.innerHTML = `<input class="session-item-rename-input" id="rename-input-${id}" value="${escHtml(currentTitle)}" />`;
+    const input = document.getElementById('rename-input-' + id);
+    input.focus();
+    input.select();
+
+    // Handle save on Enter or blur
+    const saveRename = () => {
+        const newTitle = input.value.trim() || 'Untitled';
+        session.title = newTitle;
+        saveSessions();
+        renderSessionList();
+        if (id === activeSessionId) {
+            document.getElementById('chatSessionTitle').textContent = newTitle;
+        }
+    };
+
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter') saveRename();
+        if (e.key === 'Escape') renderSessionList(); // Cancel
+    };
+    input.onblur = saveRename;
+}
+
+function renderSessionList() {
+    const list = document.getElementById('sessionList');
+    const sorted = Object.values(sessions).sort((a, b) => b.created - a.created);
+    list.innerHTML = sorted.map(s => {
+        const time = new Date(s.created).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const active = s.id === activeSessionId ? ' active' : '';
+        return `<div class="session-item${active}" onclick="switchSession('${s.id}')">
+            <div class="session-item-info">
+                <div class="session-item-title" id="session-title-${s.id}">${escHtml(s.title)}</div>
+                <div class="session-item-time">${time}</div>
+            </div>
+            <div class="session-item-actions">
+                <button class="session-item-btn" onclick="startRenameSession('${s.id}', event)" title="Rename">&#9998;</button>
+                <button class="session-item-btn delete" onclick="event.stopPropagation();deleteSession('${s.id}')" title="Delete">&#10005;</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function loadSessionChat(id) {
+    const session = sessions[id];
+    if (!session) return;
+    const container = document.getElementById('chatMessages');
+    container.innerHTML = '';
+    if (session.messages.length === 0) {
+        container.innerHTML = '<div class="chat-msg system">Welcome to BrachyBot. Describe your brachytherapy case — tumor location, type, patient condition — and I will help you generate an optimal treatment plan. You can also load CT data directly via the Input panel on the right.</div>';
+    } else {
+        session.messages.forEach(msg => {
+            if (msg.type === 'thinking') {
+                renderThinkingChain(msg.steps);
+            } else {
+                addChat(msg.type, msg.content, false);
+            }
+        });
+    }
+    const title = session.messages.length > 0 ? session.title : 'New conversation';
+    document.getElementById('chatSessionTitle').textContent = title;
+    container.scrollTop = container.scrollHeight;
+}
+
+function saveSessionMessage(type, content, steps) {
+    const session = sessions[activeSessionId];
+    if (!session) return;
+    session.messages.push({ type, content, steps: steps || null });
+    if (session.messages.length === 1 && type === 'user') {
+        session.title = content.slice(0, 40) + (content.length > 40 ? '...' : '');
+        document.getElementById('chatSessionTitle').textContent = session.title;
+        renderSessionList();
+    }
+    saveSessions();
+}
+
 /******** STATE ********/
 const state = {
     brainAvailable: false,
@@ -1070,8 +1793,29 @@ const state = {
     seeds: [],
     dvhData: null,
     plan3D: null,
-    slices: { axial: 50, sagittal: 50, coronal: 50 },
+    mesh3D: null,
+    ctPath: null,
+    ctLoaded: false,
+    ctShape: null,
+    slices: { axial: 0, sagittal: 0, coronal: 0 },
     doseOpacity: 0.4,
+    viewerSettings: {
+        window: 400,
+        level: 40,
+        threshold: null,
+        showCTV: false,
+        showOAR: false,
+        zoom: 1.0,
+        panX: 0,
+        panY: 0,
+        flipH: false,
+        flipV: false,
+        rotation: 0,
+        activeTool: 'crosshair',
+    },
+    annotations: [],
+    annotationUndoStack: [],
+    annotationRedoStack: [],
     labelImage: {
         axial:   { visible: true, opacity: 0.6 },
         sagittal: { visible: true, opacity: 0.6 },
@@ -1097,11 +1841,97 @@ async function api(endpoint, body) {
 }
 
 /******** FILE PICKER ********/
-function handleFileSelect(input, targetId) {
+async function handleFileSelect(input, targetId) {
     const file = input.files[0];
     if (!file) return;
-    document.getElementById(targetId).value = file.name || file.path || file.webkitRelativePath || file.name;
+
+    const pathInput = document.getElementById(targetId);
+    pathInput.value = 'Uploading ' + file.name + '...';
+    pathInput.disabled = true;
+
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const res = await fetch(API + '/upload', {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+            throw new Error(err.error || 'Upload failed');
+        }
+
+        const data = await res.json();
+        pathInput.value = data.path;
+        pathInput.disabled = false;
+
+        // Auto-load CT to viewers if it's a CT file
+        if (targetId === 'ctPath') {
+            state.ctPath = data.path;
+            await loadCTToViewers(data.path);
+        }
+    } catch (e) {
+        pathInput.value = '';
+        pathInput.disabled = false;
+        alert('File upload failed: ' + e.message);
+    }
+
     input.value = '';
+}
+
+async function loadCTToViewers(ctPath) {
+    if (!ctPath) return;
+
+    addChat('system', 'Loading CT image to viewers...');
+
+    try {
+        const res = await fetch(API + '/viewer/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ct_path: ctPath,
+                window_center: state.viewerSettings.level,
+                window_width: state.viewerSettings.window,
+            }),
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = await res.json();
+        if (data.success) {
+            state.ctLoaded = true;
+            state.ctShape = data.shape;
+            state.ctHURange = data.hu_range;
+
+            // Update slice sliders
+            const axes = ['axial', 'sagittal', 'coronal'];
+            axes.forEach((axis, i) => {
+                const slider = document.getElementById('slider' + capitalize(axis));
+                const sliceInfo = data.slices[axis];
+                if (slider && sliceInfo) {
+                    slider.max = sliceInfo.total_slices - 1;
+                    slider.value = sliceInfo.slice_index;
+                    state.slices[axis] = sliceInfo.slice_index;
+                    const label = document.getElementById('sliceLabel' + capitalize(axis));
+                    if (label) label.textContent = sliceInfo.slice_index;
+                }
+            });
+
+            // Load and render slices
+            await loadAllSlices();
+
+            // Rebind viewer interactions after canvases are rendered
+            setTimeout(() => {
+                setupViewerInteractions();
+            }, 500);
+
+            addChat('system', `CT loaded: ${data.shape.join(' × ')} voxels, ${data.hu_range[0].toFixed(0)} to ${data.hu_range[1].toFixed(0)} HU`);
+        }
+    } catch (e) {
+        addChat('error', 'Failed to load CT: ' + e.message);
+    }
 }
 
 /******** INIT ********/
@@ -1236,6 +2066,9 @@ function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 /******** VIEWER CONTROLS ********/
 function updateSlice(view, val) {
     state.slices[view] = parseInt(val);
+    const label = document.getElementById('sliceLabel' + capitalize(view));
+    if (label) label.textContent = val;
+    loadSlice(view, parseInt(val));
 }
 
 function updateDoseOpacity(val) {
@@ -1253,12 +2086,1036 @@ function updateLabelImage(view) {
         opacity: parseInt(opEl.value) / 100,
     };
 
-    // Apply to overlay canvas if it exists
     const overlay = document.getElementById('labelOverlay_' + view);
     if (overlay) {
         overlay.style.display = state.labelImage[view].visible ? 'block' : 'none';
         overlay.style.opacity = state.labelImage[view].opacity;
     }
+}
+
+function applyViewerSettings() {
+    const wc = document.getElementById('viewerWindow').value;
+    const wl = document.getElementById('viewerLevel').value;
+    state.viewerSettings.window = parseInt(wc);
+    state.viewerSettings.level = parseInt(wl);
+    if (state.ctLoaded) loadAllSlices();
+}
+
+function applyWindowPreset() {
+    const preset = document.getElementById('windowPreset').value;
+    applyWindowPresetByName(preset);
+}
+
+function applyWindowPresetByName(preset) {
+    const presets = {
+        soft: { w: 400, l: 40 },
+        bone: { w: 2000, l: 400 },
+        lung: { w: 1500, l: -600 },
+        brain: { w: 80, l: 40 },
+        custom: null,
+    };
+    const p = presets[preset];
+    if (p) {
+        state.viewerSettings.window = p.w;
+        state.viewerSettings.level = p.l;
+        document.getElementById('viewerWindow').value = p.w;
+        document.getElementById('viewerLevel').value = p.l;
+        document.getElementById('windowPreset').value = preset;
+        if (state.ctLoaded) loadAllSlices();
+    }
+}
+
+async function syncViewerState() {
+    if (!state.ctLoaded) return;
+    try {
+        const res = await fetch(API + '/viewer/control', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'get_state' }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.success) return;
+        
+        const s = data;
+        const changed = {};
+        
+        if (s.window && s.window !== state.viewerSettings.window) {
+            state.viewerSettings.window = s.window;
+            document.getElementById('viewerWindow').value = s.window;
+            changed.window = true;
+        }
+        if (s.level && s.level !== state.viewerSettings.level) {
+            state.viewerSettings.level = s.level;
+            document.getElementById('viewerLevel').value = s.level;
+            changed.level = true;
+        }
+        if (s.threshold !== undefined && s.threshold !== state.viewerSettings.threshold) {
+            state.viewerSettings.threshold = s.threshold;
+            document.getElementById('viewerThreshold').value = s.threshold;
+            changed.threshold = true;
+        }
+        if (s.slices) {
+            ['axial', 'sagittal', 'coronal'].forEach(axis => {
+                const slider = document.getElementById('slider' + capitalize(axis));
+                if (slider && s.slices[axis] !== undefined) {
+                    const newVal = parseInt(slider.value);
+                    if (s.slices[axis] !== newVal) {
+                        slider.value = s.slices[axis];
+                        state.slices[axis] = s.slices[axis];
+                        const label = document.getElementById('sliceLabel' + capitalize(axis));
+                        if (label) label.textContent = s.slices[axis];
+                        changed[axis] = true;
+                    }
+                }
+            });
+        }
+        
+        if (Object.keys(changed).length > 0) {
+            loadAllSlices();
+        }
+    } catch (e) {
+        // Ignore sync errors
+    }
+}
+
+function applyThreshold() {
+    const threshold = parseInt(document.getElementById('viewerThreshold').value);
+    state.viewerSettings.threshold = threshold;
+    if (state.ctLoaded) loadAllSlices();
+}
+
+function toggleOverlay() {
+    state.viewerSettings.showCTV = document.getElementById('overlayCTV').checked;
+    state.viewerSettings.showOAR = document.getElementById('overlayOAR').checked;
+    if (state.ctLoaded) loadAllSlices();
+}
+
+function applyZoom(val) {
+    state.viewerSettings.zoom = parseInt(val) / 100;
+    document.getElementById('zoomLabel').textContent = val + '%';
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
+        if (canvas) {
+            canvas.style.transform = `scale(${state.viewerSettings.zoom})`;
+            canvas.style.transformOrigin = 'center center';
+        }
+    });
+}
+
+function setViewerTool(tool) {
+    state.viewerSettings.activeTool = tool;
+    const toolIds = ['toolCrosshair', 'toolMeasure', 'toolAngle', 'toolRect', 'toolZoombox', 'toolAnnotate'];
+    toolIds.forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.style.background = '';
+    });
+    const toolMap = { crosshair: 'toolCrosshair', measure: 'toolMeasure', angle: 'toolAngle', rect: 'toolRect', zoombox: 'toolZoombox', annotate: 'toolAnnotate' };
+    const activeBtn = document.getElementById(toolMap[tool]);
+    if (activeBtn) activeBtn.style.background = 'var(--primary)';
+    
+    // Update cursor on all slice canvases
+    const cursors = { crosshair: 'crosshair', measure: 'crosshair', angle: 'crosshair', rect: 'crosshair', zoombox: 'zoom-in', annotate: 'crosshair' };
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
+        if (canvas) canvas.style.cursor = cursors[tool] || 'default';
+    });
+}
+
+function resetViewer() {
+    state.viewerSettings = {
+        window: 400, level: 40, threshold: null,
+        showCTV: false, showOAR: false, zoom: 1.0,
+        activeTool: null, panX: 0, panY: 0,
+        flipH: false, flipV: false, rotation: 0,
+    };
+    state.annotations = [];
+    state.annotationUndoStack = [];
+    state.annotationRedoStack = [];
+    document.getElementById('viewerWindow').value = 400;
+    document.getElementById('viewerLevel').value = 40;
+    document.getElementById('viewerThreshold').value = -200;
+    document.getElementById('viewerZoom').value = 100;
+    document.getElementById('zoomLabel').textContent = '100%';
+    document.getElementById('overlayCTV').checked = false;
+    document.getElementById('overlayOAR').checked = false;
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
+        if (canvas) {
+            canvas.style.transform = 'scale(1)';
+            canvas.style.transformOrigin = 'center center';
+        }
+        const annCanvas = document.getElementById('annotationCanvas' + capitalize(axis));
+        if (annCanvas) {
+            const ctx = annCanvas.getContext('2d');
+            ctx.clearRect(0, 0, annCanvas.width, annCanvas.height);
+        }
+    });
+    if (state.ctLoaded) loadAllSlices();
+}
+
+async function loadSlice(axis, sliceIndex) {
+    if (!state.ctPath) return;
+
+    try {
+        const res = await fetch(API + '/viewer/slice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                axis: axis,
+                slice_index: sliceIndex,
+                window_center: state.viewerSettings.level,
+                window_width: state.viewerSettings.window,
+                overlay_type: state.viewerSettings.showCTV ? 'ctv' : (state.viewerSettings.showOAR ? 'oar' : null),
+                threshold: state.viewerSettings.threshold !== null ? state.viewerSettings.threshold : undefined,
+            }),
+        });
+
+        if (!res.ok) return;
+
+        const data = await res.json();
+        if (data.success) {
+            renderSliceToCanvas(axis, data.data);
+        }
+    } catch (e) {
+        console.error('Failed to load slice:', e);
+    }
+}
+
+function renderSliceToCanvas(axis, sliceData) {
+    const canvasId = 'sliceCanvas' + capitalize(axis);
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const container = canvas.parentElement;
+
+    // Check if it's a base64 PNG
+    if (typeof sliceData === 'string' && sliceData.startsWith('data:image/png;base64,')) {
+        const img = new Image();
+        img.onload = () => {
+            // Calculate display size maintaining aspect ratio
+            const containerRect = container.getBoundingClientRect();
+            const containerW = containerRect.width;
+            const containerH = containerRect.height;
+            const imgW = img.width;
+            const imgH = img.height;
+
+            // Fit image to container while maintaining aspect ratio
+            const scale = Math.min(containerW / imgW, containerH / imgH);
+            const displayW = imgW * scale;
+            const displayH = imgH * scale;
+
+            // Set canvas display size
+            canvas.style.width = displayW + 'px';
+            canvas.style.height = displayH + 'px';
+            canvas.style.position = 'absolute';
+            canvas.style.left = ((containerW - displayW) / 2) + 'px';
+            canvas.style.top = ((containerH - displayH) / 2) + 'px';
+            canvas.style.margin = '0';
+
+            // Set actual canvas resolution
+            canvas.width = imgW;
+            canvas.height = imgH;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+            canvas.style.display = 'block';
+
+            const placeholder = container.querySelector('.viewer-no-data');
+            if (placeholder) placeholder.style.display = 'none';
+
+            // Update crosshair canvas size
+            const crossCanvas = document.getElementById('crosshairCanvas' + capitalize(axis));
+            if (crossCanvas) {
+                crossCanvas.width = displayW;
+                crossCanvas.height = displayH;
+                crossCanvas.style.width = displayW + 'px';
+                crossCanvas.style.height = displayH + 'px';
+                crossCanvas.style.position = 'absolute';
+                crossCanvas.style.left = ((containerW - displayW) / 2) + 'px';
+                crossCanvas.style.top = ((containerH - displayH) / 2) + 'px';
+            }
+            
+            // Update annotation canvas size
+            syncAnnotationCanvasSize(axis);
+            redrawAllAnnotations();
+
+            // Store display info for coordinate mapping
+            canvas._displayScale = scale;
+            canvas._displayW = displayW;
+            canvas._displayH = displayH;
+            canvas._offsetX = (containerW - displayW) / 2;
+            canvas._offsetY = (containerH - displayH) / 2;
+        };
+        img.src = sliceData;
+        return;
+    }
+
+    // Fallback: handle raw array data (legacy)
+    const isRGB = Array.isArray(sliceData[0]) && Array.isArray(sliceData[0][0]);
+
+    if (isRGB) {
+        canvas.width = sliceData[0].length;
+        canvas.height = sliceData.length;
+        const imageData = ctx.createImageData(canvas.width, canvas.height);
+        for (let y = 0; y < sliceData.length; y++) {
+            for (let x = 0; x < sliceData[y].length; x++) {
+                const idx = (y * canvas.width + x) * 4;
+                imageData.data[idx] = sliceData[y][x][0];
+                imageData.data[idx + 1] = sliceData[y][x][1];
+                imageData.data[idx + 2] = sliceData[y][x][2];
+                imageData.data[idx + 3] = 255;
+            }
+        }
+        ctx.putImageData(imageData, 0, 0);
+    } else {
+        canvas.width = sliceData[0].length;
+        canvas.height = sliceData.length;
+        const imageData = ctx.createImageData(canvas.width, canvas.height);
+        for (let y = 0; y < sliceData.length; y++) {
+            for (let x = 0; x < sliceData[y].length; x++) {
+                const idx = (y * canvas.width + x) * 4;
+                const val = sliceData[y][x];
+                imageData.data[idx] = val;
+                imageData.data[idx + 1] = val;
+                imageData.data[idx + 2] = val;
+                imageData.data[idx + 3] = 255;
+            }
+        }
+        ctx.putImageData(imageData, 0, 0);
+    }
+
+    canvas.style.display = 'block';
+    const placeholder = canvas.parentElement.querySelector('.viewer-no-data');
+    if (placeholder) placeholder.style.display = 'none';
+
+    if (state.viewerSettings.zoom !== 1.0) {
+        canvas.style.transform = `scale(${state.viewerSettings.zoom})`;
+        canvas.style.transformOrigin = 'center center';
+    }
+}
+
+async function loadAllSlices() {
+    if (!state.ctPath) return;
+    await Promise.all([
+        loadSlice('axial', state.slices.axial),
+        loadSlice('sagittal', state.slices.sagittal),
+        loadSlice('coronal', state.slices.coronal),
+    ]);
+}
+
+async function reconstruct3D() {
+    if (!state.ctPath) {
+        addChat('error', 'No CT image loaded');
+        return;
+    }
+
+    const loading = document.getElementById('loading3D');
+    if (loading) loading.classList.add('active');
+
+    try {
+        const threshold = parseInt(document.getElementById('viewerThreshold').value);
+        const res = await fetch(API + '/viewer/3d', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ threshold: threshold, decimate: 0.8 }),
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = await res.json();
+        if (data.success) {
+            state.mesh3D = data;
+            render3DMesh(data);
+            addChat('system', `3D reconstruction complete: ${data.vertex_count} vertices, ${data.face_count} faces`);
+        }
+    } catch (e) {
+        addChat('error', '3D reconstruction failed: ' + e.message);
+    } finally {
+        if (loading) loading.classList.remove('active');
+    }
+}
+
+function render3DMesh(meshData) {
+    const canvas = document.getElementById('canvas3D');
+    canvas.innerHTML = '';
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+    renderer.setClearColor(0x000000, 0);
+    canvas.appendChild(renderer.domElement);
+
+    const geometry = new THREE.BufferGeometry();
+    const vertices = new Float32Array(meshData.vertices.flat());
+    const indices = new Uint32Array(meshData.faces.flat());
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+    geometry.computeVertexNormals();
+
+    const material = new THREE.MeshPhongMaterial({
+        color: 0x0ea5e9, transparent: true, opacity: 0.7, side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+
+    geometry.computeBoundingBox();
+    const bbox = geometry.boundingBox;
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const scale = 10 / maxDim;
+    mesh.scale.set(scale, scale, scale);
+    mesh.position.sub(center.multiplyScalar(scale));
+
+    camera.position.set(12, 8, 12);
+    camera.lookAt(0, 0, 0);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(10, 10, 10);
+    scene.add(dir);
+
+    let isDragging = false;
+    let prevMouse = { x: 0, y: 0 };
+    let rotation = { x: 0.3, y: 0.5 };
+
+    renderer.domElement.addEventListener('mousedown', (e) => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY }; });
+    renderer.domElement.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        rotation.y += (e.clientX - prevMouse.x) * 0.01;
+        rotation.x += (e.clientY - prevMouse.y) * 0.01;
+        prevMouse = { x: e.clientX, y: e.clientY };
+    });
+    renderer.domElement.addEventListener('mouseup', () => { isDragging = false; });
+    renderer.domElement.addEventListener('mouseleave', () => { isDragging = false; });
+
+    function animate() {
+        requestAnimationFrame(animate);
+        if (!isDragging) rotation.y += 0.003;
+        mesh.rotation.x = rotation.x;
+        mesh.rotation.y = rotation.y;
+        renderer.render(scene, camera);
+    }
+    animate();
+    window.dose3D = true;
+}
+
+/******** VIEWER INTERACTIVE TOOLS (Slicer-like) ********/
+function setupViewerInteractions() {
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const sliceCanvas = getSliceCanvas(axis);
+        if (!sliceCanvas) return;
+        syncAnnotationCanvasSize(axis);
+        setupAnnotationTool(axis);
+    });
+}
+
+let huFetchTimeout = null;
+function fetchHUValue(volX, volY, volZ) {
+    if (huFetchTimeout) clearTimeout(huFetchTimeout);
+    
+    huFetchTimeout = setTimeout(async () => {
+        try {
+            const res = await fetch(API + '/viewer/hu', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    x: volX,
+                    y: volY,
+                    z: volZ,
+                }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('huDisplay').textContent = `HU: ${data.hu.toFixed(0)} | [${volX}, ${volY}, ${volZ}]`;
+                }
+            }
+        } catch (e) {
+            // Ignore errors
+        }
+    }, 50);
+}
+
+function drawLinkedCrosshairs(volX, volY, volZ, sourceAxis) {
+    const axes = ['axial', 'sagittal', 'coronal'];
+    axes.forEach(axis => {
+        const crossCanvas = document.getElementById('crosshairCanvas' + capitalize(axis));
+        const sliceCanvas = document.getElementById('sliceCanvas' + capitalize(axis));
+        if (!crossCanvas || !sliceCanvas) return;
+
+        const displayW = sliceCanvas._displayW || sliceCanvas.offsetWidth;
+        const displayH = sliceCanvas._displayH || sliceCanvas.offsetHeight;
+        const offsetX = sliceCanvas._offsetX || 0;
+        const offsetY = sliceCanvas._offsetY || 0;
+
+        crossCanvas.width = displayW;
+        crossCanvas.height = displayH;
+        crossCanvas.style.width = displayW + 'px';
+        crossCanvas.style.height = displayH + 'px';
+        crossCanvas.style.position = 'absolute';
+        crossCanvas.style.left = offsetX + 'px';
+        crossCanvas.style.top = offsetY + 'px';
+        crossCanvas.style.display = 'block';
+        crossCanvas.style.pointerEvents = 'none';
+
+        const ctx = crossCanvas.getContext('2d');
+        ctx.clearRect(0, 0, crossCanvas.width, crossCanvas.height);
+        ctx.strokeStyle = axis === sourceAxis ? '#ff4444' : '#0ea5e9';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+
+        let cx, cy;
+        const w = displayW;
+        const h = displayH;
+
+        // Map volume coordinates to display coordinates
+        if (axis === 'axial') {
+            cx = (volX / state.ctShape[0]) * w;
+            cy = (volY / state.ctShape[1]) * h;
+        } else if (axis === 'sagittal') {
+            cx = (volZ / state.ctShape[2]) * w;
+            cy = (volY / state.ctShape[1]) * h;
+        } else {
+            cx = (volX / state.ctShape[0]) * w;
+            cy = (volZ / state.ctShape[2]) * h;
+        }
+
+        // Draw crosshair lines
+        ctx.beginPath();
+        ctx.moveTo(cx, 0);
+        ctx.lineTo(cx, h);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(0, cy);
+        ctx.lineTo(w, cy);
+        ctx.stroke();
+    });
+}
+
+function clearLinkedCrosshairs() {
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const crossCanvas = document.getElementById('crosshairCanvas' + capitalize(axis));
+        if (crossCanvas) {
+            crossCanvas.style.display = 'none';
+            const ctx = crossCanvas.getContext('2d');
+            ctx.clearRect(0, 0, crossCanvas.width, crossCanvas.height);
+        }
+    });
+}
+
+/******** ANNOTATION & MEASUREMENT TOOLS ********/
+function getAnnotationCanvas(axis) {
+    return document.getElementById('annotationCanvas' + capitalize(axis));
+}
+
+function getSliceCanvas(axis) {
+    return document.getElementById('sliceCanvas' + capitalize(axis));
+}
+
+function syncAnnotationCanvasSize(axis) {
+    const sliceCanvas = getSliceCanvas(axis);
+    const annCanvas = getAnnotationCanvas(axis);
+    if (!sliceCanvas || !annCanvas) return;
+    
+    const displayW = sliceCanvas._displayW || sliceCanvas.offsetWidth;
+    const displayH = sliceCanvas._displayH || sliceCanvas.offsetHeight;
+    const offsetX = sliceCanvas._offsetX || 0;
+    const offsetY = sliceCanvas._offsetY || 0;
+    
+    annCanvas.width = displayW;
+    annCanvas.height = displayH;
+    annCanvas.style.width = displayW + 'px';
+    annCanvas.style.height = displayH + 'px';
+    annCanvas.style.position = 'absolute';
+    annCanvas.style.left = offsetX + 'px';
+    annCanvas.style.top = offsetY + 'px';
+    annCanvas.style.display = 'block';
+    annCanvas.style.pointerEvents = 'none';
+}
+
+function redrawAllAnnotations() {
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const annCanvas = getAnnotationCanvas(axis);
+        if (!annCanvas) return;
+        const ctx = annCanvas.getContext('2d');
+        ctx.clearRect(0, 0, annCanvas.width, annCanvas.height);
+        
+        state.annotations.filter(a => a.axis === axis).forEach(ann => {
+            drawAnnotation(ctx, ann);
+        });
+    });
+}
+
+function drawAnnotation(ctx, ann) {
+    ctx.save();
+    ctx.strokeStyle = ann.color || '#00ff00';
+    ctx.fillStyle = ann.color || '#00ff00';
+    ctx.lineWidth = 2;
+    ctx.font = '12px monospace';
+    
+    if (ann.type === 'line') {
+        ctx.beginPath();
+        ctx.moveTo(ann.x1, ann.y1);
+        ctx.lineTo(ann.x2, ann.y2);
+        ctx.stroke();
+        
+        // Draw endpoints
+        ctx.beginPath();
+        ctx.arc(ann.x1, ann.y1, 4, 0, Math.PI * 2);
+        ctx.arc(ann.x2, ann.y2, 4, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Distance label
+        const dx = ann.x2 - ann.x1;
+        const dy = ann.y2 - ann.y1;
+        const distPx = Math.sqrt(dx * dx + dy * dy);
+        const distMm = (distPx * (ann.pixelSpacing || 0.5)).toFixed(1);
+        const midX = (ann.x1 + ann.x2) / 2;
+        const midY = (ann.y1 + ann.y2) / 2;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(midX - 30, midY - 10, 60, 16);
+        ctx.fillStyle = ann.color || '#00ff00';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${distMm} mm`, midX, midY + 3);
+    } else if (ann.type === 'angle') {
+        ctx.beginPath();
+        ctx.moveTo(ann.x1, ann.y1);
+        ctx.lineTo(ann.x2, ann.y2);
+        ctx.lineTo(ann.x3, ann.y3);
+        ctx.stroke();
+        
+        // Draw endpoints
+        ctx.beginPath();
+        ctx.arc(ann.x1, ann.y1, 4, 0, Math.PI * 2);
+        ctx.arc(ann.x2, ann.y2, 4, 0, Math.PI * 2);
+        ctx.arc(ann.x3, ann.y3, 4, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Angle calculation
+        const v1x = ann.x1 - ann.x2;
+        const v1y = ann.y1 - ann.y2;
+        const v2x = ann.x3 - ann.x2;
+        const v2y = ann.y3 - ann.y2;
+        const dot = v1x * v2x + v1y * v2y;
+        const mag1 = Math.sqrt(v1x * v1x + v1y * v1y);
+        const mag2 = Math.sqrt(v2x * v2x + v2y * v2y);
+        const angleDeg = (Math.acos(Math.max(-1, Math.min(1, dot / (mag1 * mag2)))) * 180 / Math.PI).toFixed(1);
+        
+        ctx.fillStyle = '#000';
+        ctx.fillRect(ann.x2 - 25, ann.y2 - 20, 50, 16);
+        ctx.fillStyle = ann.color || '#00ff00';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${angleDeg}°`, ann.x2, ann.y2 - 8);
+    } else if (ann.type === 'rect') {
+        ctx.strokeRect(ann.x1, ann.y1, ann.x2 - ann.x1, ann.y2 - ann.y1);
+        
+        // Dimension labels
+        const widthMm = (Math.abs(ann.x2 - ann.x1) * (ann.pixelSpacing || 0.5)).toFixed(1);
+        const heightMm = (Math.abs(ann.y2 - ann.y1) * (ann.pixelSpacing || 0.5)).toFixed(1);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(ann.x1, ann.y1 - 16, 80, 14);
+        ctx.fillStyle = ann.color || '#00ff00';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${widthMm}x${heightMm}mm`, ann.x1 + 2, ann.y1 - 5);
+    } else if (ann.type === 'freehand') {
+        if (ann.points && ann.points.length > 1) {
+            ctx.beginPath();
+            ctx.moveTo(ann.points[0].x, ann.points[0].y);
+            for (let i = 1; i < ann.points.length; i++) {
+                ctx.lineTo(ann.points[i].x, ann.points[i].y);
+            }
+            ctx.stroke();
+        }
+    }
+    ctx.restore();
+}
+
+function pushUndo(annotation) {
+    state.annotationUndoStack.push(annotation);
+    state.annotationRedoStack = [];
+}
+
+function viewerUndo() {
+    if (state.annotationUndoStack.length === 0) return;
+    const ann = state.annotationUndoStack.pop();
+    state.annotations = state.annotations.filter(a => a !== ann);
+    state.annotationRedoStack.push(ann);
+    redrawAllAnnotations();
+}
+
+function viewerRedo() {
+    if (state.annotationRedoStack.length === 0) return;
+    const ann = state.annotationRedoStack.pop();
+    state.annotations.push(ann);
+    state.annotationUndoStack.push(ann);
+    redrawAllAnnotations();
+}
+
+function viewerFlipH() {
+    state.viewerSettings.flipH = !state.viewerSettings.flipH;
+    applyViewerTransform();
+}
+
+function viewerFlipV() {
+    state.viewerSettings.flipV = !state.viewerSettings.flipV;
+    applyViewerTransform();
+}
+
+function viewerRotate() {
+    state.viewerSettings.rotation = (state.viewerSettings.rotation + 90) % 360;
+    applyViewerTransform();
+}
+
+function applyViewerTransform() {
+    const { flipH, flipV, rotation, zoom, panX, panY } = state.viewerSettings;
+    const scaleX = flipH ? -1 : 1;
+    const scaleY = flipV ? -1 : 1;
+    const transform = `rotate(${rotation}deg) scale(${zoom * scaleX}, ${zoom * scaleY}) translate(${panX}px, ${panY}px)`;
+    
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const canvas = getSliceCanvas(axis);
+        if (canvas) {
+            canvas.style.transform = transform;
+            canvas.style.transformOrigin = 'center center';
+        }
+        const annCanvas = getAnnotationCanvas(axis);
+        if (annCanvas) {
+            annCanvas.style.transform = transform;
+            annCanvas.style.transformOrigin = 'center center';
+        }
+        const crossCanvas = document.getElementById('crosshairCanvas' + capitalize(axis));
+        if (crossCanvas) {
+            crossCanvas.style.transform = transform;
+            crossCanvas.style.transformOrigin = 'center center';
+        }
+    });
+}
+
+function screenToImageCoords(axis, screenX, screenY) {
+    const sliceCanvas = getSliceCanvas(axis);
+    if (!sliceCanvas) return { x: screenX, y: screenY };
+    
+    const rect = sliceCanvas.getBoundingClientRect();
+    const offsetX = sliceCanvas._offsetX || 0;
+    const offsetY = sliceCanvas._offsetY || 0;
+    const displayScale = sliceCanvas._displayScale || 1;
+    
+    const imgX = (screenX - rect.left - offsetX) / displayScale;
+    const imgY = (screenY - rect.top - offsetY) / displayScale;
+    
+    return { x: imgX, y: imgY, displayX: screenX - rect.left, displayY: screenY - rect.top };
+}
+
+function setupAnnotationTool(axis) {
+    const sliceCanvas = getSliceCanvas(axis);
+    if (!sliceCanvas) return;
+    
+    let toolState = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, points: [] };
+    
+    // Only clone if listeners have been set up before (avoid unnecessary cloning on boot)
+    let newCanvas;
+    if (sliceCanvas._listenersSetup) {
+        newCanvas = sliceCanvas.cloneNode(true);
+        newCanvas._displayScale = sliceCanvas._displayScale;
+        newCanvas._displayW = sliceCanvas._displayW;
+        newCanvas._displayH = sliceCanvas._displayH;
+        newCanvas._offsetX = sliceCanvas._offsetX;
+        newCanvas._offsetY = sliceCanvas._offsetY;
+        sliceCanvas.parentNode.replaceChild(newCanvas, sliceCanvas);
+    } else {
+        newCanvas = sliceCanvas;
+    }
+    
+    // Re-setup basic interactions (wheel, drag) first
+    setupBasicInteractions(axis, newCanvas);
+    
+    // Annotation overlay canvas for drawing preview
+    const annCanvas = getAnnotationCanvas(axis);
+    
+    newCanvas.addEventListener('mousedown', (e) => {
+        const tool = state.viewerSettings.activeTool;
+        if (tool === 'crosshair' || !tool) return;
+        if (e.button !== 0) return;
+        
+        const coords = screenToImageCoords(axis, e.clientX, e.clientY);
+        toolState.active = true;
+        toolState.startX = coords.displayX;
+        toolState.startY = coords.displayY;
+        toolState.currentX = coords.displayX;
+        toolState.currentY = coords.displayY;
+        toolState.points = [{ x: coords.displayX, y: coords.displayY }];
+        
+        if (tool === 'annotate') {
+            annCanvas.style.pointerEvents = 'auto';
+        }
+    });
+    
+    newCanvas.addEventListener('mousemove', (e) => {
+        const coords = screenToImageCoords(axis, e.clientX, e.clientY);
+        toolState.currentX = coords.displayX;
+        toolState.currentY = coords.displayY;
+        
+        // Preview drawing
+        const tool = state.viewerSettings.activeTool;
+        if (tool === 'crosshair' || !tool || !toolState.active) return;
+        
+        const ctx = annCanvas.getContext('2d');
+        ctx.clearRect(0, 0, annCanvas.width, annCanvas.height);
+        
+        // Redraw existing annotations for this axis
+        state.annotations.filter(a => a.axis === axis).forEach(ann => drawAnnotation(ctx, ann));
+        
+        ctx.save();
+        ctx.strokeStyle = '#00ff00';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        
+        if (tool === 'measure' || tool === 'zoombox') {
+            ctx.beginPath();
+            ctx.moveTo(toolState.startX, toolState.startY);
+            ctx.lineTo(toolState.currentX, toolState.currentY);
+            ctx.stroke();
+            
+            if (tool === 'measure') {
+                const dx = toolState.currentX - toolState.startX;
+                const dy = toolState.currentY - toolState.startY;
+                const distPx = Math.sqrt(dx * dx + dy * dy);
+                const distMm = (distPx * 0.5).toFixed(1);
+                const midX = (toolState.startX + toolState.currentX) / 2;
+                const midY = (toolState.startY + toolState.currentY) / 2;
+                ctx.setLineDash([]);
+                ctx.fillStyle = '#000';
+                ctx.fillRect(midX - 30, midY - 10, 60, 16);
+                ctx.fillStyle = '#00ff00';
+                ctx.textAlign = 'center';
+                ctx.font = '12px monospace';
+                ctx.fillText(`${distMm} mm`, midX, midY + 3);
+            }
+        } else if (tool === 'angle') {
+            // Draw existing points
+            toolState.points.forEach(p => {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = '#00ff00';
+                ctx.fill();
+            });
+            if (toolState.points.length > 0) {
+                ctx.beginPath();
+                ctx.moveTo(toolState.points[0].x, toolState.points[0].y);
+                toolState.points.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+                ctx.lineTo(toolState.currentX, toolState.currentY);
+                ctx.stroke();
+            }
+        } else if (tool === 'rect') {
+            ctx.strokeRect(toolState.startX, toolState.startY, 
+                          toolState.currentX - toolState.startX, 
+                          toolState.currentY - toolState.startY);
+        } else if (tool === 'annotate') {
+            if (toolState.points.length > 1) {
+                ctx.beginPath();
+                ctx.moveTo(toolState.points[0].x, toolState.points[0].y);
+                toolState.points.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+                ctx.stroke();
+            }
+        }
+        ctx.restore();
+    });
+    
+    newCanvas.addEventListener('mouseup', (e) => {
+        if (!toolState.active) return;
+        toolState.active = false;
+        
+        const tool = state.viewerSettings.activeTool;
+        if (tool === 'crosshair' || !tool) return;
+        
+        const coords = screenToImageCoords(axis, e.clientX, e.clientY);
+        toolState.currentX = coords.displayX;
+        toolState.currentY = coords.displayY;
+        
+        const spacing = 0.5; // Default pixel spacing in mm
+        let annotation = null;
+        
+        if (tool === 'measure') {
+            annotation = {
+                type: 'line',
+                axis: axis,
+                x1: toolState.startX, y1: toolState.startY,
+                x2: toolState.currentX, y2: toolState.currentY,
+                pixelSpacing: spacing,
+                color: '#00ff00',
+            };
+        } else if (tool === 'angle') {
+            toolState.points.push({ x: toolState.currentX, y: toolState.currentY });
+            if (toolState.points.length >= 3) {
+                annotation = {
+                    type: 'angle',
+                    axis: axis,
+                    x1: toolState.points[0].x, y1: toolState.points[0].y,
+                    x2: toolState.points[1].x, y2: toolState.points[1].y,
+                    x3: toolState.points[2].x, y3: toolState.points[2].y,
+                    color: '#ffaa00',
+                };
+                toolState.points = [];
+            }
+        } else if (tool === 'rect') {
+            annotation = {
+                type: 'rect',
+                axis: axis,
+                x1: toolState.startX, y1: toolState.startY,
+                x2: toolState.currentX, y2: toolState.currentY,
+                pixelSpacing: spacing,
+                color: '#00aaff',
+            };
+        } else if (tool === 'annotate') {
+            if (toolState.points.length > 2) {
+                annotation = {
+                    type: 'freehand',
+                    axis: axis,
+                    points: [...toolState.points],
+                    color: '#ff00ff',
+                };
+            }
+            toolState.points = [];
+        } else if (tool === 'zoombox') {
+            // Apply zoom to box
+            const dx = Math.abs(toolState.currentX - toolState.startX);
+            const dy = Math.abs(toolState.currentY - toolState.startY);
+            if (dx > 20 && dy > 20) {
+                const boxCenterX = (toolState.startX + toolState.currentX) / 2;
+                const boxCenterY = (toolState.startY + toolState.currentY) / 2;
+                const sliceCanvas = getSliceCanvas(axis);
+                const containerW = sliceCanvas._displayW || sliceCanvas.offsetWidth;
+                const containerH = sliceCanvas._displayH || sliceCanvas.offsetHeight;
+                
+                const zoomFactor = Math.min(containerW / dx, containerH / dy);
+                state.viewerSettings.zoom = Math.min(zoomFactor, 10);
+                state.viewerSettings.panX = (containerW / 2 - boxCenterX) * state.viewerSettings.zoom;
+                state.viewerSettings.panY = (containerH / 2 - boxCenterY) * state.viewerSettings.zoom;
+                applyViewerTransform();
+                document.getElementById('viewerZoom').value = Math.round(state.viewerSettings.zoom * 100);
+                document.getElementById('zoomLabel').textContent = Math.round(state.viewerSettings.zoom * 100) + '%';
+            }
+        }
+        
+        if (annotation) {
+            state.annotations.push(annotation);
+            pushUndo(annotation);
+        }
+        
+        // Redraw
+        const ctx = annCanvas.getContext('2d');
+        ctx.clearRect(0, 0, annCanvas.width, annCanvas.height);
+        redrawAllAnnotations();
+        
+        if (tool !== 'annotate') {
+            annCanvas.style.pointerEvents = 'none';
+        }
+    });
+    
+    newCanvas.addEventListener('mouseleave', () => {
+        toolState.active = false;
+    });
+}
+
+function setupBasicInteractions(axis, canvas) {
+    // Mouse wheel: scroll slices
+    canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const slider = document.getElementById('slider' + capitalize(axis));
+        if (!slider) return;
+        const delta = e.deltaY > 0 ? 1 : -1;
+        let newVal = parseInt(slider.value) + delta;
+        newVal = Math.max(0, Math.min(parseInt(slider.max), newVal));
+        slider.value = newVal;
+        state.slices[axis] = newVal;
+        const label = document.getElementById('sliceLabel' + capitalize(axis));
+        if (label) label.textContent = newVal;
+        loadSlice(axis, newVal);
+    }, { passive: false });
+    
+    // Mouse drag: window/level or pan
+    let isDragging = false;
+    let dragStart = { x: 0, y: 0 };
+    let wlStart = { w: 0, l: 0 };
+    
+    canvas.addEventListener('mousedown', (e) => {
+        const tool = state.viewerSettings.activeTool;
+        if (tool && tool !== 'crosshair') return; // Let annotation tool handle it
+        if (e.button !== 0) return;
+        isDragging = true;
+        dragStart = { x: e.clientX, y: e.clientY };
+        wlStart = { w: state.viewerSettings.window, l: state.viewerSettings.level };
+        canvas.style.cursor = 'crosshair';
+    });
+    
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const offsetX = canvas._offsetX || 0;
+        const offsetY = canvas._offsetY || 0;
+        const displayScale = canvas._displayScale || 1;
+        const mouseX = e.clientX - rect.left - offsetX;
+        const mouseY = e.clientY - rect.top - offsetY;
+        const imgX = Math.floor(mouseX / displayScale);
+        const imgY = Math.floor(mouseY / displayScale);
+        
+        // Linked MPR crosshairs
+        if (state.ctShape && (!state.viewerSettings.activeTool || state.viewerSettings.activeTool === 'crosshair')) {
+            const zAxial = state.slices.axial;
+            const zSag = state.slices.sagittal;
+            const zCor = state.slices.coronal;
+            
+            let volX, volY, volZ;
+            if (axis === 'axial') {
+                volX = imgX; volY = imgY; volZ = zAxial;
+            } else if (axis === 'sagittal') {
+                volX = zSag; volY = imgY; volZ = imgX;
+            } else {
+                volX = imgX; volY = zCor; volZ = imgY;
+            }
+            
+            if (volX >= 0 && volX < state.ctShape[0] && volY >= 0 && volY < state.ctShape[1] && volZ >= 0 && volZ < state.ctShape[2]) {
+                drawLinkedCrosshairs(volX, volY, volZ, axis);
+                fetchHUValue(volX, volY, volZ);
+            }
+        }
+        
+        if (!isDragging) return;
+        const dx = e.clientX - dragStart.x;
+        const dy = e.clientY - dragStart.y;
+        
+        if (e.buttons === 1 && !e.shiftKey) {
+            state.viewerSettings.window = Math.max(1, wlStart.w + dx * 2);
+            state.viewerSettings.level = wlStart.l + dy * 2;
+            document.getElementById('viewerWindow').value = Math.round(state.viewerSettings.window);
+            document.getElementById('viewerLevel').value = Math.round(state.viewerSettings.level);
+            loadSlice(axis, state.slices[axis]);
+        } else if (e.buttons === 1 && e.shiftKey) {
+            state.viewerSettings.panX += dx;
+            state.viewerSettings.panY += dy;
+            applyViewerTransform();
+            dragStart = { x: e.clientX, y: e.clientY };
+        }
+    });
+    
+    canvas.addEventListener('mouseup', () => {
+        isDragging = false;
+        canvas.style.cursor = '';
+    });
+    canvas.addEventListener('mouseleave', () => {
+        isDragging = false;
+        canvas.style.cursor = '';
+        document.getElementById('huDisplay').textContent = '';
+        clearLinkedCrosshairs();
+    });
+    
+    // Mark as having listeners set up
+    canvas._listenersSetup = true;
 }
 
 /******** 3D RENDERING ********/
@@ -1500,13 +3357,61 @@ function showLoading(show) {
 }
 
 /******** CHAT ********/
-function addChat(type, msg) {
+function addChat(type, msg, save = true) {
     const container = document.getElementById('chatMessages');
+
+    if (type === 'system' || type === 'error') {
+        const div = document.createElement('div');
+        div.className = 'chat-msg ' + type;
+        div.innerHTML = escHtml(msg).replace(/\n/g, '<br>');
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+        if (save) saveSessionMessage(type, msg);
+        return;
+    }
+
+    const row = document.createElement('div');
+    row.className = 'chat-row ' + (type === 'user' ? 'user' : 'bot');
+
+    const avatar = document.createElement('div');
+    avatar.className = 'chat-avatar ' + (type === 'user' ? 'user-avatar' : 'bot-avatar');
+    if (type === 'user') {
+        avatar.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+    } else {
+        avatar.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>';
+    }
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chat-msg-wrapper ' + (type === 'user' ? 'user' : 'bot');
+
     const div = document.createElement('div');
     div.className = 'chat-msg ' + type;
     div.innerHTML = escHtml(msg).replace(/\n/g, '<br>');
-    container.appendChild(div);
+
+    if (type === 'user' || type === 'bot' || type === 'bot-response') {
+        const actions = document.createElement('div');
+        actions.className = 'chat-msg-actions';
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'chat-msg-action-btn';
+        copyBtn.innerHTML = '&#128203;';
+        copyBtn.title = 'Copy';
+        copyBtn.onclick = () => {
+            navigator.clipboard.writeText(msg).then(() => {
+                copyBtn.innerHTML = '&#9989;';
+                setTimeout(() => { copyBtn.innerHTML = '&#128203;'; }, 1500);
+            });
+        };
+        actions.appendChild(copyBtn);
+        wrapper.appendChild(actions);
+    }
+
+    wrapper.appendChild(div);
+    row.appendChild(avatar);
+    row.appendChild(wrapper);
+    container.appendChild(row);
     container.scrollTop = container.scrollHeight;
+
+    if (save) saveSessionMessage(type, msg);
 }
 
 const STEP_ICONS = {
@@ -1516,12 +3421,20 @@ const STEP_ICONS = {
     result: '&#9989;',
     error: '&#10060;',
     assistant: '&#129302;',
+    memory: '&#128218;',
 };
 
 function renderThinkingChain(steps) {
     const container = document.getElementById('chatMessages');
     const totalSteps = steps ? steps.length : 0;
     const doneSteps = steps ? steps.filter(s => s.status === 'done').length : 0;
+
+    const row = document.createElement('div');
+    row.className = 'chat-row bot';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'chat-avatar bot-avatar';
+    avatar.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>';
 
     const wrapper = document.createElement('div');
     wrapper.className = 'thinking-chain';
@@ -1573,7 +3486,9 @@ function renderThinkingChain(steps) {
     }
 
     wrapper.appendChild(stepsDiv);
-    container.appendChild(wrapper);
+    row.appendChild(avatar);
+    row.appendChild(wrapper);
+    container.appendChild(row);
     container.scrollTop = container.scrollHeight;
 }
 
@@ -1594,39 +3509,612 @@ function toggleStep(bodyId) {
     if (body) body.classList.toggle('expanded');
 }
 
-function escHtml(str) {
-    if (!str) return '';
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
 async function sendChat() {
     const input = document.getElementById('chatInput');
     const msg = input.value.trim();
     if (!msg) return;
     input.value = '';
 
-    // Add user message
     addChat('user', msg);
 
-    try {
-        const data = await api('/chat', { message: msg });
+    const uiState = collectUIState();
 
-        // Render thinking chain if steps are available
-        if (data.steps && data.steps.length > 0) {
-            renderThinkingChain(data.steps);
+    const thinkingEl = showThinkingIndicator();
+
+    let chainEl = null;
+    let stepsDiv = null;
+    let headerEl = null;
+    let stepCount = 0;
+    let responseEl = null;
+    let responseText = '';
+    let progressEl = null;
+    let lastToolName = '';
+
+    try {
+        const res = await fetch(API + '/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: msg, ui_state: uiState, stream: true }),
+        });
+
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
         }
 
-        // Add final bot response
-        const response = data.response || 'Response received';
-        const responseDiv = document.createElement('div');
-        responseDiv.className = 'chat-msg bot-response';
-        responseDiv.innerHTML = escHtml(response).replace(/\n/g, '<br>');
-        document.getElementById('chatMessages').appendChild(responseDiv);
-        document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let steps = [];
+        let finalResponse = '';
+        let llmMeta = {};
+        let contextData = null;
+        let currentEvent = null;
 
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (line.startsWith('event: ')) {
+                    currentEvent = line.slice(7).trim();
+                } else if (line.startsWith('data: ')) {
+                    const dataStr = line.slice(6).trim();
+                    if (!dataStr) continue;
+
+                    try {
+                        const data = JSON.parse(dataStr);
+
+                        if (currentEvent === 'step') {
+                            steps.push(data);
+                            stepCount++;
+
+                            // 收到第一个step时，替换thinking indicator为thinking chain
+                            if (!chainEl) {
+                                removeThinkingIndicator(thinkingEl);
+                                const result = createLiveThinkingChain();
+                                chainEl = result.chainEl;
+                                stepsDiv = result.stepsDiv;
+                                headerEl = result.headerEl;
+                            }
+
+                            appendStepToChain(stepsDiv, data, stepCount - 1);
+                            updateChainHeader(headerEl, steps);
+
+                            // Show progress message for tool calls
+                            if (data.type === 'tool' && data.status === 'pending') {
+                                // Hide previous progress if any
+                                if (progressEl && progressEl.parentNode) {
+                                    progressEl.style.opacity = '0.3';
+                                    progressEl.style.transform = 'scale(0.98)';
+                                }
+                                lastToolName = data.tool || 'unknown';
+                                progressEl = showToolProgress(lastToolName, data.params);
+                            } else if (data.type === 'tool' && (data.status === 'done' || data.status === 'error')) {
+                                if (progressEl) {
+                                    updateToolProgress(progressEl, lastToolName, data.status, data.result);
+                                    setTimeout(() => {
+                                        if (progressEl && progressEl.parentNode) {
+                                            progressEl.style.opacity = '0.5';
+                                            progressEl.style.transform = 'scale(0.98)';
+                                        }
+                                    }, 1500);
+                                }
+                            }
+
+                            scrollToBottom();
+                        } else if (currentEvent === 'text_chunk') {
+                            // Real-time text streaming
+                            responseText += data.text;
+
+                            // Hide progress when text starts appearing
+                            if (progressEl) {
+                                progressEl.style.opacity = '0.3';
+                            }
+
+                            // Create or update response message
+                            if (!responseEl) {
+                                removeThinkingIndicator(thinkingEl);
+                                if (!chainEl) {
+                                    const result = createLiveThinkingChain();
+                                    chainEl = result.chainEl;
+                                    stepsDiv = result.stepsDiv;
+                                    headerEl = result.headerEl;
+                                }
+                                responseEl = createStreamingResponse();
+                            }
+
+                            updateStreamingResponse(responseEl, responseText);
+                            scrollToBottom();
+                        } else if (currentEvent === 'response') {
+                            finalResponse = data.response;
+                            llmMeta = data.llm_meta || {};
+                        } else if (currentEvent === 'done') {
+                            contextData = data.context || null;
+                        } else if (currentEvent === 'error') {
+                            addChat('error', 'AI error: ' + (data.message || 'Unknown error'));
+                        } else if (currentEvent === 'start') {
+                            // Stream started, keep thinking indicator visible
+                        }
+                    } catch (e) {
+                        // Ignore parse errors
+                    }
+                }
+            }
+        }
+
+        // 如果没有任何step（快速响应），移除thinking indicator
+        if (!chainEl) {
+            removeThinkingIndicator(thinkingEl);
+        } else {
+            finalizeThinkingChain(chainEl, headerEl, steps);
+            saveSessionMessage('thinking', '', steps);
+        }
+
+        // Finalize response
+        const response = finalResponse || responseText || 'Response received';
+        if (responseEl) {
+            finalizeStreamingResponse(responseEl, response);
+        } else {
+            addChat('bot-response', response);
+        }
+
+        // Sync viewer state after LLM response (in case LLM changed viewer settings via API)
+        setTimeout(() => syncViewerState(), 300);
+
+        if (llmMeta && llmMeta.usage) {
+            renderUsageBar(llmMeta);
+        }
+
+        if (contextData) {
+            updateContextBadges(contextData);
+        }
+
+    } catch (e) {
+        removeThinkingIndicator(thinkingEl);
+        addChat('error', 'Request failed: ' + e.message);
+    }
+}
+
+function createStreamingResponse() {
+    const container = document.getElementById('chatMessages');
+
+    const row = document.createElement('div');
+    row.className = 'chat-row bot';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'chat-avatar bot-avatar';
+    avatar.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chat-msg-wrapper bot';
+
+    const div = document.createElement('div');
+    div.className = 'chat-msg bot-response';
+    div.id = 'streamingResponse';
+    div.style.userSelect = 'text';
+    div.style.webkitUserSelect = 'text';
+    div.style.mozUserSelect = 'text';
+    div.style.msUserSelect = 'text';
+
+    wrapper.appendChild(div);
+    row.appendChild(avatar);
+    row.appendChild(wrapper);
+    container.appendChild(row);
+
+    return div;
+}
+
+function updateStreamingResponse(el, text) {
+    el.innerHTML = escHtml(text).replace(/\n/g, '<br>');
+}
+
+function finalizeStreamingResponse(el, text) {
+    el.removeAttribute('id');
+    el.innerHTML = escHtml(text).replace(/\n/g, '<br>');
+    saveSessionMessage('bot-response', text);
+}
+
+function createLiveThinkingChain() {
+    const container = document.getElementById('chatMessages');
+
+    const row = document.createElement('div');
+    row.className = 'chat-row bot';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'chat-avatar bot-avatar';
+    avatar.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'thinking-chain';
+    wrapper.id = 'liveThinkingChain';
+
+    const startTime = Date.now();
+
+    const header = document.createElement('div');
+    header.className = 'thinking-header';
+    header.innerHTML = `
+        <span class="thinking-toggle expanded">&#9654;</span>
+        <span class="thinking-label">Thinking</span>
+        <span class="thinking-count">0 steps</span>
+        <span class="thinking-time" style="margin-left:auto;font-size:0.62rem;color:var(--text-dim);font-variant-numeric:tabular-nums;">0.0s</span>
+    `;
+    header.onclick = () => toggleThinkingChain(wrapper, []);
+    wrapper.appendChild(header);
+
+    // Start timer
+    const timer = setInterval(() => {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        const timeEl = header.querySelector('.thinking-time');
+        if (timeEl) timeEl.textContent = elapsed + 's';
+    }, 100);
+    header._timer = timer;
+
+    const stepsDiv = document.createElement('div');
+    stepsDiv.className = 'thinking-steps expanded';
+    wrapper.appendChild(stepsDiv);
+
+    row.appendChild(avatar);
+    row.appendChild(wrapper);
+    container.appendChild(row);
+
+    return { chainEl: wrapper, stepsDiv, headerEl: header };
+}
+
+function appendStepToChain(stepsDiv, step, idx) {
+    // Check if a step with this ID already exists (backend sends same step twice: pending -> done)
+    const existingBlock = stepsDiv.querySelector(`[data-step-id="${step.id}"]`);
+    if (existingBlock) {
+        // Update existing step instead of creating duplicate
+        const icon = STEP_ICONS[step.type] || '&#9679;';
+        const toolName = step.tool ? `<div class="step-tool-name">${escHtml(step.tool)}</div>` : '';
+        const params = step.params ? `<div class="step-params">${Object.entries(step.params).map(([k,v]) => `${escHtml(k)}: ${escHtml(JSON.stringify(v))}`).join(', ')}</div>` : '';
+        const resultHtml = step.result ? `<div class="step-result">&#8594; ${escHtml(step.result)}</div>` : '';
+        const contentHtml = step.content ? `<div class="step-content">${escHtml(step.content)}</div>` : '';
+        
+        existingBlock.innerHTML = `
+            <div class="step-header" onclick="toggleStep('step_body_${idx}')">
+                <span class="step-icon ${step.type}">${icon}</span>
+                <span class="step-title">${escHtml(step.title)}</span>
+                <span class="step-status ${escHtml(step.status)}">${escHtml(step.status)}</span>
+            </div>
+            <div class="step-body expanded" id="step_body_${idx}">
+                ${toolName}
+                ${params}
+                ${contentHtml}
+                ${resultHtml}
+            </div>
+        `;
+        
+        // Scroll to show the updated step
+        existingBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        return;
+    }
+    
+    // Create new step block
+    const block = document.createElement('div');
+    block.className = 'step-block';
+    block.id = `step_${idx}`;
+    block.dataset.stepId = step.id;
+
+    const icon = STEP_ICONS[step.type] || '&#9679;';
+    const toolName = step.tool ? `<div class="step-tool-name">${escHtml(step.tool)}</div>` : '';
+    const params = step.params ? `<div class="step-params">${Object.entries(step.params).map(([k,v]) => `${escHtml(k)}: ${escHtml(JSON.stringify(v))}`).join(', ')}</div>` : '';
+    const resultHtml = step.result ? `<div class="step-result">&#8594; ${escHtml(step.result)}</div>` : '';
+    const contentHtml = step.content ? `<div class="step-content">${escHtml(step.content)}</div>` : '';
+
+    block.innerHTML = `
+        <div class="step-header" onclick="toggleStep('step_body_${idx}')">
+            <span class="step-icon ${step.type}">${icon}</span>
+            <span class="step-title">${escHtml(step.title)}</span>
+            <span class="step-status ${escHtml(step.status)}">${escHtml(step.status)}</span>
+        </div>
+        <div class="step-body expanded" id="step_body_${idx}">
+            ${toolName}
+            ${params}
+            ${contentHtml}
+            ${resultHtml}
+        </div>
+    `;
+
+    stepsDiv.appendChild(block);
+}
+
+function updateChainHeader(headerEl, steps) {
+    const countEl = headerEl.querySelector('.thinking-count');
+    const doneSteps = steps.filter(s => s.status === 'done').length;
+    if (countEl) countEl.textContent = `${doneSteps}/${steps.length} steps`;
+}
+
+function finalizeThinkingChain(chainEl, headerEl, steps) {
+    chainEl.removeAttribute('id');
+    const labelEl = headerEl.querySelector('.thinking-label');
+    if (labelEl) labelEl.textContent = 'Execution Trace';
+    updateChainHeader(headerEl, steps);
+    
+    // Clear the timer
+    if (headerEl._timer) {
+        clearInterval(headerEl._timer);
+        headerEl._timer = null;
+    }
+}
+
+function scrollToBottom() {
+    const container = document.getElementById('chatMessages');
+    container.scrollTop = container.scrollHeight;
+}
+
+function showToolProgress(toolName, params) {
+    const container = document.getElementById('chatMessages');
+
+    const row = document.createElement('div');
+    row.className = 'chat-row bot';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'chat-avatar bot-avatar';
+    avatar.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chat-msg-wrapper bot';
+
+    const div = document.createElement('div');
+    div.className = 'chat-msg system';
+    div.style.background = 'rgba(14,165,233,0.1)';
+    div.style.borderColor = 'rgba(14,165,233,0.3)';
+    div.style.color = 'var(--primary)';
+    div.style.fontSize = '0.72rem';
+    div.style.display = 'flex';
+    div.style.alignItems = 'center';
+    div.style.gap = '0.5rem';
+
+    // Spinner
+    const spinner = document.createElement('div');
+    spinner.className = 'spinner-ring';
+    spinner.style.width = '14px';
+    spinner.style.height = '14px';
+    spinner.style.borderWidth = '2px';
+
+    const text = document.createElement('span');
+    text.className = 'tool-progress-text';
+    text.innerHTML = `<strong>${escHtml(toolName)}</strong> running...`;
+
+    div.appendChild(spinner);
+    div.appendChild(text);
+    wrapper.appendChild(div);
+    row.appendChild(avatar);
+    row.appendChild(wrapper);
+    container.appendChild(row);
+    container.scrollTop = container.scrollHeight;
+
+    return div;
+}
+
+function updateToolProgress(el, toolName, status, result) {
+    const textEl = el.querySelector('.tool-progress-text');
+    const spinner = el.querySelector('.spinner-ring');
+
+    if (status === 'done') {
+        if (spinner) spinner.remove();
+        if (textEl) {
+            textEl.innerHTML = `<strong>${escHtml(toolName)}</strong> completed`;
+            el.style.background = 'rgba(16,185,129,0.1)';
+            el.style.borderColor = 'rgba(16,185,129,0.3)';
+            el.style.color = 'var(--success)';
+        }
+    } else if (status === 'error') {
+        if (spinner) spinner.remove();
+        if (textEl) {
+            textEl.innerHTML = `<strong>${escHtml(toolName)}</strong> failed`;
+            el.style.background = 'rgba(239,68,68,0.1)';
+            el.style.borderColor = 'rgba(239,68,68,0.3)';
+            el.style.color = 'var(--danger)';
+        }
+    }
+}
+
+function collectUIState() {
+    return {
+        ct_path: document.getElementById('ctPath')?.value?.trim() || '',
+        ctv_path: document.getElementById('ctvPath')?.value?.trim() || '',
+        oar_path: document.getElementById('oarPath')?.value?.trim() || '',
+        plan_mode: document.getElementById('planMode')?.value || '',
+        dev_threshold: document.getElementById('devThreshold')?.value || '',
+        viewer: {
+            ct_loaded: state.ctLoaded,
+            ct_shape: state.ctShape,
+            current_slices: state.slices,
+            window: state.viewerSettings.window,
+            level: state.viewerSettings.level,
+            threshold: state.viewerSettings.threshold,
+            show_ctv: state.viewerSettings.showCTV,
+            show_oar: state.viewerSettings.showOAR,
+            has_3d_mesh: state.mesh3D !== null,
+        },
+    };
+}
+
+function toggleHyperparams() {
+    const section = document.getElementById('hyperparamsSection');
+    const toggle = document.getElementById('hyperparamToggle');
+    if (!section) return;
+    const isVisible = section.style.display !== 'none';
+    section.style.display = isVisible ? 'none' : 'flex';
+    if (toggle) toggle.innerHTML = isVisible ? '&#9654;' : '&#9660;';
+}
+
+function collectHyperparams() {
+    return {
+        seed_info: {
+            radius: parseFloat(document.getElementById('seedRadius')?.value) || 0.4,
+            length: parseFloat(document.getElementById('seedLength')?.value) || 3.7,
+            margin_rate: parseFloat(document.getElementById('seedMarginRate')?.value) || 1.5,
+            num_of_seeds: [
+                parseInt(document.getElementById('seedCountMin')?.value) || 1,
+                parseInt(document.getElementById('seedCountMax')?.value) || 200,
+            ],
+            seed_avr_dose: parseFloat(document.getElementById('seedAvgDose')?.value) || 50,
+        },
+        radiation_array_params: {
+            target_value: parseInt(document.getElementById('targetValue')?.value) || 1,
+            obstacle_value: parseInt(document.getElementById('obstacleValue')?.value) || 2,
+            background_value: parseInt(document.getElementById('backgroundValue')?.value) || 0,
+            backlit_angle: parseFloat(document.getElementById('backlitAngle')?.value) || 0.5,
+            maximum_candidate_trajectories: parseInt(document.getElementById('maxCandiTraj')?.value) || 200,
+        },
+        reference_direc: [
+            parseInt(document.getElementById('refDirecX')?.value) || 0,
+            parseInt(document.getElementById('refDirecY')?.value) || 1,
+            parseInt(document.getElementById('refDirecZ')?.value) || 0,
+        ],
+        in_lowest_energy: parseInt(document.getElementById('inLowestEnergy')?.value) || 1,
+        out_highest_energy: parseInt(document.getElementById('outHighestEnergy')?.value) || 1,
+        DVH_rate: parseFloat(document.getElementById('dvhRate')?.value) || 0.9,
+        max_iter: parseInt(document.getElementById('maxIter')?.value) || 4,
+        rf_params: {
+            max_episodes: parseInt(document.getElementById('rfMaxEpisodes')?.value) || 100,
+            bandwidth: parseInt(document.getElementById('rfBandwidth')?.value) || 50,
+        },
+    };
+}
+
+async function applyHyperparams() {
+    const params = collectHyperparams();
+    try {
+        const res = await fetch(API + '/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(params),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.success) {
+            addChat('system', 'Hyperparameters updated:\n' + JSON.stringify(params, null, 2));
+        } else {
+            addChat('error', 'Failed to update hyperparameters: ' + (data.error || 'Unknown error'));
+        }
     } catch (e) {
         addChat('error', 'Request failed: ' + e.message);
     }
+}
+
+function updateContextBadges(ctx) {
+    const countEl = document.getElementById('contextCount');
+    const compBadge = document.getElementById('compactionBadge');
+    const compCountEl = document.getElementById('compactionCount');
+
+    if (countEl) countEl.textContent = ctx.message_count || 0;
+
+    if (ctx.compaction_count > 0 && compBadge) {
+        compBadge.style.display = 'flex';
+        if (compCountEl) compCountEl.textContent = ctx.compaction_count;
+    }
+
+    if (ctx.summary) {
+        const body = document.getElementById('contextPanelBody');
+        if (body) body.textContent = ctx.summary;
+    }
+}
+
+function toggleContextPanel() {
+    const panel = document.getElementById('contextPanel');
+    if (!panel) return;
+    const isVisible = panel.style.display !== 'none';
+    panel.style.display = isVisible ? 'none' : 'flex';
+}
+
+function showThinkingIndicator() {
+    const container = document.getElementById('chatMessages');
+
+    const row = document.createElement('div');
+    row.className = 'chat-row bot';
+    row.id = 'thinkingRow';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'chat-avatar bot-avatar';
+    avatar.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'thinking-indicator';
+    wrapper.id = 'thinkingIndicator';
+
+    const startTime = Date.now();
+    const dots = document.createElement('div');
+    dots.className = 'thinking-dots';
+    dots.innerHTML = '<div class="thinking-dot"></div><div class="thinking-dot"></div><div class="thinking-dot"></div>';
+
+    const text = document.createElement('div');
+    text.className = 'thinking-text';
+    text.textContent = 'Thinking';
+
+    const timeEl = document.createElement('div');
+    timeEl.className = 'thinking-time';
+    timeEl.textContent = '0.0s';
+
+    wrapper.appendChild(dots);
+    wrapper.appendChild(text);
+    wrapper.appendChild(timeEl);
+
+    row.appendChild(avatar);
+    row.appendChild(wrapper);
+    container.appendChild(row);
+    container.scrollTop = container.scrollHeight;
+
+    const timer = setInterval(() => {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        timeEl.textContent = elapsed + 's';
+    }, 100);
+
+    wrapper._timer = timer;
+    return row;
+}
+
+function removeThinkingIndicator(el) {
+    if (el && el.parentNode) {
+        const indicator = el.querySelector('#thinkingIndicator');
+        if (indicator && indicator._timer) clearInterval(indicator._timer);
+        el.remove();
+    }
+}
+
+function renderUsageBar(meta) {
+    const container = document.getElementById('chatMessages');
+
+    const row = document.createElement('div');
+    row.className = 'chat-row bot';
+
+    const spacer = document.createElement('div');
+    spacer.className = 'chat-avatar';
+    spacer.style.visibility = 'hidden';
+
+    const bar = document.createElement('div');
+    bar.className = 'usage-bar';
+
+    const usage = meta.usage || {};
+    const latency = meta.latency_ms || 0;
+    const llmCalls = meta.llm_calls || 0;
+
+    const promptTokens = usage.prompt_tokens || 0;
+    const compTokens = usage.completion_tokens || 0;
+    const totalTokens = usage.total_tokens || 0;
+
+    bar.innerHTML = `
+        <div class="usage-item"><span class="usage-label">&#9889;</span><span class="usage-value">${(latency / 1000).toFixed(1)}s</span></div>
+        <div class="usage-sep"></div>
+        <div class="usage-item"><span class="usage-label">tokens</span><span class="usage-value">${totalTokens.toLocaleString()}</span></div>
+        <div class="usage-sep"></div>
+        <div class="usage-item"><span class="usage-label">in</span><span class="usage-value">${promptTokens.toLocaleString()}</span></div>
+        <div class="usage-sep"></div>
+        <div class="usage-item"><span class="usage-label">out</span><span class="usage-value">${compTokens.toLocaleString()}</span></div>
+        ${llmCalls > 1 ? `<div class="usage-sep"></div><div class="usage-item"><span class="usage-label">calls</span><span class="usage-value">${llmCalls}</span></div>` : ''}
+    `;
+
+    row.appendChild(spacer);
+    row.appendChild(bar);
+    container.appendChild(row);
+    container.scrollTop = container.scrollHeight;
 }
 
 /******** RESET ********/
@@ -1642,8 +4130,12 @@ async function resetSession() {
 }
 
 /******** BOOT ********/
+loadSessions();
+renderSessionList();
+loadSessionChat(activeSessionId);
 setupSplitter();
 setupViewerResizers();
+setupViewerInteractions();
 init();
 setInterval(init, 30000);
 </script>
