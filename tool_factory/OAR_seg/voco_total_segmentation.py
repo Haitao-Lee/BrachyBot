@@ -4,9 +4,7 @@ VoCo-based TotalSegmentator Tool
 Uses VoCo fine-tuned SwinUNETR for multi-organ segmentation (104 structures).
 """
 
-import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from tool_factory import BaseTool, ToolResult
 import numpy as np
@@ -25,8 +23,8 @@ class VoCoTotalSegmentatorTool(BaseTool):
     """
 
     DEFAULT_CONFIG = {
-        "model_path": os.environ.get("VOCO_MODEL_PATH", "/home/lht/snap/brachyplan/BrachyBot/VoCo/Totalsegmentator/model_voco_base_84.84.pt"),
-        "model_large_path": os.environ.get("VOCO_MODEL_LARGE_PATH", "/home/lht/snap/brachyplan/BrachyBot/VoCo/Totalsegmentator/model_voco_large_85.27.pt"),
+        "model_path": os.environ.get("VOCO_MODEL_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "VoCo", "Totalsegmentator", "model_voco.pt")),
+        "model_large_path": os.environ.get("VOCO_MODEL_LARGE_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "VoCo", "Totalsegmentator", "model_voco_large_85.27.pt")),
         "out_channels": 104,
         "feature_size": 48,
         "feature_size_large": 96,

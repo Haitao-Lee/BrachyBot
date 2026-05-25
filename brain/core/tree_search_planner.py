@@ -34,16 +34,21 @@ class PlanningNode:
     is_terminal: bool = False
     execution_result: dict = field(default_factory=dict)
 
+    def _iter_ancestors(self, tree: "PlanningTreeSearch"):
+        current = self
+        while current:
+            yield current
+            if current.parent_id:
+                current = tree._find_node(current.parent_id)
+            else:
+                current = None
+
     @property
     def ucb_score(self) -> float:
         if self.visits == 0:
             return float("inf")
-        parent_visits = sum(1 for _ in self._iter_ancestors())
-        exploration_constant = 1.4
-        return self.value + exploration_constant * math.sqrt(math.log(max(parent_visits, 2)) / self.visits)
-
-    def _iter_ancestors(self):
-        yield self
+        parent_visits = 1
+        return self.value + 1.4 * math.sqrt(math.log(max(parent_visits, 2)) / self.visits)
 
 
 class PlanningTreeSearch:
@@ -71,6 +76,7 @@ class PlanningTreeSearch:
             tool_params={}, state_description=task_description,
             depth=0,
         )
+        self._store_node(self.root)
 
         initial_state = initial_state or {}
 
@@ -115,6 +121,18 @@ class PlanningTreeSearch:
             else:
                 break
         return current
+
+    def _get_parent_visits(self, node: PlanningNode) -> int:
+        count = 0
+        current = node
+        while current and current.parent_id:
+            parent = self._find_node(current.parent_id)
+            if parent:
+                count += parent.visits
+                current = parent
+            else:
+                break
+        return max(count, 1)
 
     def _expand(self, node: PlanningNode, available_tools: list, state: dict) -> PlanningNode:
         candidate_tools = self._get_candidate_tools(node, available_tools, state)

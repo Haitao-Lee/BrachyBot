@@ -3,12 +3,11 @@ BrachyBot Skills System
 ======================
 Predefined skill templates that can be refined based on user interactions.
 Skills are reusable, composable units of agent behavior.
+
+Supports two formats:
+1. Python class-based skills (legacy)
+2. Markdown files with YAML frontmatter (recommended, Claude Code style)
 """
-
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from .skill_base import Skill, SkillRegistry
 from .planning_skills import (
@@ -46,6 +45,14 @@ from .advanced_skills import (
     CodeWriterSkill,
 )
 
+# Markdown skill loader (Claude Code style)
+from .markdown_loader import (
+    MarkdownSkill,
+    MarkdownSkillLoader,
+    get_skill_loader,
+    find_skill_for_request,
+)
+
 __all__ = [
     "Skill",
     "SkillRegistry",
@@ -75,4 +82,9 @@ __all__ = [
     "DVHAnalysisSkill",
     "SelfEvolveSkill",
     "CodeWriterSkill",
+    # Markdown skills
+    "MarkdownSkill",
+    "MarkdownSkillLoader",
+    "get_skill_loader",
+    "find_skill_for_request",
 ]

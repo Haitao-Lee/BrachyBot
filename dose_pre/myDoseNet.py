@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from typing import Optional
 import os
 import sys
-sys.path.append(os.getcwd())
 
 import torch
 import torch.nn as nn

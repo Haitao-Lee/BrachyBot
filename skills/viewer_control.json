@@ -1,0 +1,29 @@
+{
+  "name": "viewer_control",
+  "description": "Control the medical image viewer: adjust window/level, navigate slices, toggle overlays, adjust zoom/pan, and perform measurements.",
+  "trigger_keywords": ["window", "level", "brightness", "contrast", "slice", "zoom", "pan", "overlay", "CTV", "OAR", "measure", "threshold", "viewer"],
+  "parameters": {
+    "action": {
+      "type": "string",
+      "enum": ["set_window_level", "navigate_slice", "toggle_overlay", "set_threshold", "zoom", "pan", "reset_view"],
+      "description": "The viewer action to perform"
+    },
+    "window": {"type": "number", "description": "Window width (contrast)"},
+    "level": {"type": "number", "description": "Window center (brightness)"},
+    "axis": {"type": "string", "enum": ["axial", "sagittal", "coronal"], "description": "Which view to navigate"},
+    "slice_index": {"type": "integer", "description": "Slice number to navigate to"},
+    "overlay": {"type": "string", "enum": ["ctv", "oar", "none"], "description": "Overlay to toggle"},
+    "threshold": {"type": "number", "description": "Threshold value for segmentation"},
+    "zoom_factor": {"type": "number", "description": "Zoom factor (1.0 = 100%)"},
+    "pan_x": {"type": "number", "description": "Pan offset X in pixels"},
+    "pan_y": {"type": "number", "description": "Pan offset Y in pixels"}
+  },
+  "examples": [
+    "Adjust the window to 800 and level to 40",
+    "Navigate to axial slice 25",
+    "Show the CTV overlay",
+    "Set threshold to -200 for bone segmentation",
+    "Zoom in to 150%",
+    "Reset the view to default"
+  ]
+}

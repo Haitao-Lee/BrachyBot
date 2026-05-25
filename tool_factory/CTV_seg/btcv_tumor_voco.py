@@ -1,4 +1,5 @@
 """
+
 VoCo BTCV Tumor Segmentation Tool
 =================================
 Multi-organ tumor segmentation using VoCo pre-trained SwinUNETR.
@@ -6,10 +7,8 @@ Fine-tuned on BTCV (Beyond the Cranial Vault) dataset.
 Supports liver, kidney, spleen, and pancreas tumor segmentation.
 """
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+import os
 from tool_factory import BaseTool, ToolResult
 import numpy as np
 import torch
@@ -26,7 +25,7 @@ class VoCoBTCVTumorTool(BaseTool):
     Suitable for liver, kidney, spleen, and pancreas tumors.
     """
 
-    MODEL_PATH = os.environ.get("VOCO_MODEL_PATH", "/home/lht/snap/brachyplan/BrachyBot/VoCo/BTCV/model_voco_86.64.pt")))), "VoCo", os.path.basename(__file__).replace("_voco.py", "").replace("_tumor", "").replace("_vessel", "").upper() + "/model_voco.pt"))
+    MODEL_PATH = os.environ.get("VOCO_MODEL_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "VoCo", "BTCV", "model_voco.pt"))
     OUT_CHANNELS = 2
     FEATURE_SIZE = 48
     ROI_SIZE = (96, 96, 96)

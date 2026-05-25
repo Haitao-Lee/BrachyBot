@@ -162,6 +162,95 @@ class OpenRouterLLM(BaseLLM):
         """Send chat request with message history via OpenRouter."""
         return self._chat(messages, tools, **kwargs)
 
+    def chat_messages_stream(
+        self,
+        messages: List[Dict],
+        tools: List[Dict] = None,
+        **kwargs
+    ):
+        """Streaming version that yields text chunks as they arrive."""
+        import time
+        start_time = time.time()
+        try:
+            chat_kwargs = {
+                "model": self.model,
+                "messages": messages,
+                "stream": True,
+            }
+
+            if tools:
+                chat_kwargs["tools"] = self._format_tools(tools)
+                chat_kwargs["tool_choice"] = "auto"
+
+            extra_headers = kwargs.pop("extra_headers", None)
+            if extra_headers:
+                chat_kwargs["extra_headers"] = extra_headers
+
+            response = self.client.chat.completions.create(**chat_kwargs, **kwargs)
+
+            full_content = ""
+            tool_calls = []
+            finish_reason = None
+            usage = {}
+
+            for chunk in response:
+                if chunk.choices and chunk.choices[0].delta:
+                    delta = chunk.choices[0].delta
+
+                    # Handle tool calls in streaming mode
+                    if delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            if tc.index >= len(tool_calls):
+                                tool_calls.append({
+                                    "id": tc.id or "",
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc.function.name or "",
+                                        "arguments": tc.function.arguments or "",
+                                    }
+                                })
+                            else:
+                                if tc.function.name:
+                                    tool_calls[tc.index]["function"]["name"] += tc.function.name
+                                if tc.function.arguments:
+                                    tool_calls[tc.index]["function"]["arguments"] += tc.function.arguments
+
+                    # Handle content streaming
+                    if delta.content:
+                        full_content += delta.content
+                        yield delta.content
+
+                if chunk.choices and chunk.choices[0].finish_reason:
+                    finish_reason = chunk.choices[0].finish_reason
+
+                if chunk.usage:
+                    usage = {
+                        "prompt_tokens": chunk.usage.prompt_tokens,
+                        "completion_tokens": chunk.usage.completion_tokens,
+                        "total_tokens": chunk.usage.total_tokens,
+                    }
+
+            latency_ms = (time.time() - start_time) * 1000
+
+            # Yield final metadata
+            yield {
+                "type": "final",
+                "content": full_content,
+                "finish_reason": finish_reason,
+                "tool_calls": tool_calls if tool_calls else None,
+                "usage": usage,
+                "latency_ms": latency_ms,
+                "model": getattr(response, 'model', self.model),
+            }
+
+        except Exception as e:
+            logger.error(f"OpenRouter stream error: {e}")
+            yield {
+                "type": "error",
+                "content": f"Error: {str(e)}",
+                "finish_reason": "error",
+            }
+
     def _chat(
         self,
         messages: List[Dict],

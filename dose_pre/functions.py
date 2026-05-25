@@ -93,7 +93,7 @@ def line_source_map(seed, direction, image_origin, image_size, image_spacing):
         v0 = np.array([0, 0, 1])
         L = 4.5
         
-        norm_direction_vector = direction/ np.linalg.norm(direction[3])
+        norm_direction_vector = direction / np.linalg.norm(direction)
         norm_direction_vector = np.array([norm_direction_vector[0], norm_direction_vector[1], -norm_direction_vector[2]])
         # 计算两个点的坐标
         A_prime = seed[0:3] - L/2 * norm_direction_vector

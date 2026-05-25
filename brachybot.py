@@ -105,6 +105,17 @@ def _run_chat(session_id):
 def _run_server(port):
     import web.server
 
+    # Auto-detect MiniMax proxy config from environment
+    minimax_base = os.environ.get("ANTHROPIC_BASE_URL", "")
+    minimax_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "") or os.environ.get("ANTHROPIC_API_KEY", "")
+    if minimax_base and minimax_token:
+        os.environ["ANTHROPIC_BASE_URL"] = minimax_base
+        os.environ["ANTHROPIC_AUTH_TOKEN"] = minimax_token
+        os.environ["ANTHROPIC_MODEL"] = os.environ.get("ANTHROPIC_MODEL", "MiniMax-M2.7-highspeed")
+        os.environ["BRACHY_LLM_PROVIDER"] = "anthropic"
+        print(f"Using MiniMax proxy: {minimax_base}")
+        print(f"Model: {os.environ['ANTHROPIC_MODEL']}")
+
     print(f"\nStarting BrachyBot web server on port {port}...")
     print(f"Open http://localhost:{port} in your browser")
     web.server.run_server(port=port)

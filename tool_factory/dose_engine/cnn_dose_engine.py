@@ -5,9 +5,6 @@ Deep learning based dose calculation using myDoseNet.
 Supports batch inference for multiple seeds simultaneously.
 """
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from tool_factory import BaseTool, ToolResult
 import numpy as np

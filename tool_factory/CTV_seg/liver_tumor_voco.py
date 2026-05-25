@@ -1,14 +1,13 @@
 """
+
 VoCo Liver Tumor Segmentation Tool
 ====================================
 Liver tumor segmentation using VoCo pre-trained SwinUNETR.
 Fine-tuned on 3D-IRCADb dataset.
 """
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+import os
 from tool_factory import BaseTool, ToolResult
 import numpy as np
 import torch
@@ -24,7 +23,7 @@ class VoCoLiverTumorTool(BaseTool):
     Uses SwinUNETR fine-tuned on 3D-IRCADb dataset.
     """
 
-    MODEL_PATH = os.environ.get("VOCO_MODEL_PATH", "/home/lht/snap/brachyplan/BrachyBot/VoCo/3D-IRCADb/model_voco_74.27.pt")))), "VoCo", os.path.basename(__file__).replace("_voco.py", "").replace("_tumor", "").replace("_vessel", "").upper() + "/model_voco.pt"))
+    MODEL_PATH = os.environ.get("VOCO_MODEL_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "VoCo", "3D-IRCADb", "model_voco.pt"))
     OUT_CHANNELS = 2
     FEATURE_SIZE = 48
     ROI_SIZE = (96, 96, 96)

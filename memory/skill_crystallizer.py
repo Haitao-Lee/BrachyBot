@@ -223,38 +223,48 @@ Provide a brief reason."""
         params_optimized = 0
         failures_analyzed = 0
 
-        successful = [e for e in experiences if e.get("success", False)]
-        failed = [e for e in experiences if not e.get("success", False)]
+        # Normalize to dicts (ExperienceEntry objects or raw dicts)
+        def _to_dict(e):
+            return e.to_dict() if hasattr(e, "to_dict") else e
+
+        successful = [e for e in experiences if _to_dict(e).get("success", False)]
+        failed = [e for e in experiences if not _to_dict(e).get("success", False)]
 
         for exp in successful:
-            chain = exp.get("tool_chain", [])
-            if len(chain) >= 2:
-                existing = self._find_matching_skill(chain)
+            d = _to_dict(exp)
+            chain = d.get("tool_chain", [])
+            # Extract tool names from chain (handle both dict and string formats)
+            tool_names = [t.get("tool", t) if isinstance(t, dict) else t for t in chain]
+            if len(tool_names) >= 2:
+                existing = self._find_matching_skill(tool_names)
                 if existing:
                     existing.usage_count += 1
                     existing.success_rate = (existing.success_rate * existing.usage_count + 1.0) / (existing.usage_count + 1)
                     skills_updated += 1
                 else:
                     self.crystallize(
-                        task_description=exp.get("intent", ""),
-                        tool_chain=chain,
-                        tool_results=exp.get("results", []),
-                        parameters=exp.get("parameters", {}),
+                        task_description=d.get("user_intent", ""),
+                        tool_chain=tool_names,
+                        tool_results=d.get("tool_chain", []),
+                        parameters=d.get("metrics", {}),
                     )
                     skills_created += 1
 
         for exp in failed:
-            chain = exp.get("tool_chain", [])
-            failed_tool = chain[-1] if chain else "unknown"
+            d = _to_dict(exp)
+            chain = d.get("tool_chain", [])
+            tool_names = [t.get("tool", t) if isinstance(t, dict) else t for t in chain]
+            failed_tool = tool_names[-1] if tool_names else "unknown"
             for skill in self.skills.values():
                 if failed_tool in skill.tool_chain:
                     skill.success_rate = max(0.1, skill.success_rate - 0.05)
-                    skill.notes += f"\nFailure noted: {exp.get('outcome', 'Unknown')}"
+                    skill.notes += f"\nFailure noted: {d.get('outcome', 'Unknown')}"
             failures_analyzed += 1
 
         all_params = {}
         for exp in successful:
-            for k, v in (exp.get("parameters", {}) or {}).items():
+            d = _to_dict(exp)
+            for k, v in (d.get("metrics", {}) or {}).items():
                 if k not in all_params:
                     all_params[k] = []
                 all_params[k].append(v)

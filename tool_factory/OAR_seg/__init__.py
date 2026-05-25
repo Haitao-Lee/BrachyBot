@@ -11,10 +11,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from tool_factory import BaseTool, ToolResult
 
-from totalsegmentator_oar import TotalSegmentatorOARTool
-from pancreatic_oar import PancreaticOARTool
-from voco_total_segmentation import VoCoTotalSegmentatorTool
-from aorta_vessel_voco import VoCoAortaVesselTool
+from .totalsegmentator_oar import TotalSegmentatorOARTool
+from .pancreatic_oar import PancreaticOARTool
+from .voco_total_segmentation import VoCoTotalSegmentatorTool
+from .aorta_vessel_voco import VoCoAortaVesselTool
 
 
 TOOL_REGISTRY = {

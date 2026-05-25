@@ -34,6 +34,59 @@ RATE_LIMIT_WINDOW = 60
 _rate_limit_store: Dict[str, list] = {}
 
 
+class TaskManager:
+    """Manages background task progress for SSE streaming."""
+    def __init__(self):
+        self._tasks: Dict[str, Dict[str, Any]] = {}
+        self._lock = threading.Lock()
+
+    def create_task(self, task_type: str, description: str) -> str:
+        task_id = secrets.token_hex(8)
+        with self._lock:
+            self._tasks[task_id] = {
+                "id": task_id,
+                "type": task_type,
+                "description": description,
+                "status": "running",
+                "progress": 0,
+                "message": "Starting...",
+                "result": None,
+                "error": None,
+            }
+        return task_id
+
+    def update_progress(self, task_id: str, progress: int, message: str = ""):
+        with self._lock:
+            if task_id in self._tasks:
+                self._tasks[task_id]["progress"] = progress
+                if message:
+                    self._tasks[task_id]["message"] = message
+
+    def complete_task(self, task_id: str, result: Any = None):
+        with self._lock:
+            if task_id in self._tasks:
+                self._tasks[task_id]["status"] = "completed"
+                self._tasks[task_id]["progress"] = 100
+                self._tasks[task_id]["result"] = result
+
+    def fail_task(self, task_id: str, error: str):
+        with self._lock:
+            if task_id in self._tasks:
+                self._tasks[task_id]["status"] = "failed"
+                self._tasks[task_id]["error"] = error
+
+    def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            return self._tasks.get(task_id)
+
+    def get_all_tasks(self) -> Dict[str, Dict[str, Any]]:
+        with self._lock:
+            return dict(self._tasks)
+
+
+task_manager = TaskManager()
+
+
 def _check_rate_limit(client_ip: str) -> bool:
     now = datetime.now().timestamp()
     if client_ip not in _rate_limit_store:
@@ -173,28 +226,42 @@ def create_app(config: Optional[Dict] = None):
 
         try:
             import numpy as np
-            import nibabel as nib
+            import SimpleITK as sitk
 
             logger.info(f"Loading CT from: {ct_path}")
-            ct_img = nib.load(ct_path)
-            ct_data = ct_img.get_fdata()
-            spacing = ct_img.header.get_zooms()[:3]
+            ct_sitk = sitk.ReadImage(ct_path)
+            
+            # Use DICOMOrient to get canonical orientation
+            orient_filter = sitk.DICOMOrientImageFilter()
+            original_orientation = orient_filter.GetMetaData("0020|0037") if orient_filter.HasMetaDataItem("0020|0037") else "Unknown"
+            
+            # Reorient to LPI (Left-Posterior-Inferior) standard anatomical orientation
+            ct_oriented = sitk.DICOMOrient(ct_sitk, 'LPI')
+            logger.info(f"Original orientation: {original_orientation}, Reoriented to LPI")
+            
+            ct_data = sitk.GetArrayFromImage(ct_oriented)  # Shape: (Z, Y, X) in LPI orientation
+            spacing = ct_oriented.GetSpacing()  # (X, Y, Z)
             shape = ct_data.shape
-            logger.info(f"CT shape: {shape}, spacing: {spacing}")
+            logger.info(f"CT shape after orientation (ZYX): {shape}, spacing (XYZ): {spacing}")
 
             # Store in agent memory
-            agent.memory.store("ct_image", ct_img)
+            agent.memory.store("ct_image", ct_oriented)
             agent.memory.store("ct_data", ct_data)
             agent.memory.store("ct_spacing", spacing)
             agent.memory.store("ct_shape", list(shape))
             agent.memory.store("ct_window_center", window_center)
             agent.memory.store("ct_window_width", window_width)
 
+            # After LPI orientation:
+            # - Array axis 0 = Z = Superior->Inferior (head to foot)
+            # - Array axis 1 = Y = Anterior->Posterior (front to back)
+            # - Array axis 2 = X = Left->Right (patient left on right side of image)
             axis_map = {
-                'axial': 2,
-                'sagittal': 0,
-                'coronal': 1,
+                'axial': 0,    # Z axis (short axis, 48 slices)
+                'sagittal': 2, # X axis (left-right)
+                'coronal': 1,  # Y axis (anterior-posterior)
             }
+            agent.memory.store("ct_axis_map", axis_map)
 
             slices = {}
             for name, axis in axis_map.items():
@@ -243,9 +310,9 @@ def create_app(config: Optional[Dict] = None):
             from PIL import Image
 
             axis_map = agent.memory.retrieve("ct_axis_map") or {
-                'axial': 2, 'sagittal': 0, 'coronal': 1,
+                'axial': 0, 'sagittal': 2, 'coronal': 1,
             }
-            axis = axis_map.get(axis_name, 2)
+            axis = axis_map.get(axis_name, 0)
             shape = ct_data.shape
 
             # Apply window/level
@@ -254,11 +321,15 @@ def create_app(config: Optional[Dict] = None):
             ct_windowed = np.clip(ct_data, lower, upper)
             ct_windowed = ((ct_windowed - lower) / (upper - lower) * 255).astype(np.uint8)
 
-            # Get slice
+            # Get slice - with LPI orientation, ct_data is (Z, Y, X)
+            # axial: axis 0 -> (Y, X) = (512, 512), no transpose needed
+            # sagittal: axis 2 -> (Z, Y) = (48, 512), transpose for Z vertical
+            # coronal: axis 1 -> (Z, X) = (48, 512), transpose for Z vertical
             slice_data = np.take(ct_windowed, slice_index, axis=axis)
-
-            # For sagittal and coronal, transpose so Z axis is vertical
-            if axis_name in ('sagittal', 'coronal'):
+            
+            if axis_name == 'sagittal':
+                slice_data = slice_data.T
+            elif axis_name == 'coronal':
                 slice_data = slice_data.T
 
             # Apply threshold overlay if requested
@@ -298,6 +369,38 @@ def create_app(config: Optional[Dict] = None):
             import traceback
             logger.error(f"Viewer slice failed: {e}")
             logger.error(traceback.format_exc())
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/viewer/volume", methods=["GET"])
+    def api_viewer_volume():
+        """Return entire CT volume as binary blob for client-side rendering."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        ct_data = agent.memory.retrieve("ct_data")
+        spacing = agent.memory.retrieve("ct_spacing")
+        if ct_data is None:
+            return jsonify({"error": "No CT image loaded"}), 400
+
+        try:
+            import numpy as np
+
+            # Convert to int16 (Hounsfield units)
+            ct_int16 = ct_data.astype(np.int16)
+            raw_bytes = ct_int16.tobytes()
+
+            response = Response(raw_bytes, mimetype='application/octet-stream')
+            response.headers['X-Shape-Z'] = str(ct_data.shape[0])
+            response.headers['X-Shape-Y'] = str(ct_data.shape[1])
+            response.headers['X-Shape-X'] = str(ct_data.shape[2])
+            response.headers['X-Spacing-X'] = str(float(spacing[0]))
+            response.headers['X-Spacing-Y'] = str(float(spacing[1]))
+            response.headers['X-Spacing-Z'] = str(float(spacing[2]))
+            response.headers['X-Dtype'] = 'int16'
+            return response
+        except Exception as e:
+            logger.error(f"Volume export failed: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/viewer/threshold", methods=["POST"])
@@ -577,7 +680,15 @@ def create_app(config: Optional[Dict] = None):
                 for event in agent.chat_with_stream(message):
                     yield event
 
-            return Response(generate(), mimetype='text/event-stream')
+            return Response(
+                generate(),
+                mimetype='text/event-stream',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'X-Accel-Buffering': 'no',
+                    'Connection': 'keep-alive',
+                }
+            )
         else:
             try:
                 agent.memory.set_ui_state(ui_state)
@@ -598,6 +709,38 @@ def create_app(config: Optional[Dict] = None):
             except Exception as e:
                 logger.error(f"Chat failed: {e}")
                 return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/tasks/stream")
+    def api_tasks_stream():
+        """SSE endpoint for real-time task progress updates."""
+        task_id = request.args.get("task_id")
+
+        def generate():
+            if task_id:
+                task = task_manager.get_task(task_id)
+                if task:
+                    yield f"event: task\ndata: {json.dumps(task)}\n\n"
+                return
+
+            for tid, task in task_manager.get_all_tasks().items():
+                yield f"event: task\ndata: {json.dumps(task)}\n\n"
+                if task["status"] != "running":
+                    continue
+
+        return Response(generate(), mimetype='text/event-stream')
+
+    @app.route("/api/tasks/<task_id>", methods=["GET"])
+    def api_task_status(task_id):
+        """Get task status."""
+        task = task_manager.get_task(task_id)
+        if task is None:
+            return jsonify({"error": "Task not found"}), 404
+        return jsonify(task)
+
+    @app.route("/api/tasks", methods=["GET"])
+    def api_tasks_list():
+        """List all tasks."""
+        return jsonify(task_manager.get_all_tasks())
 
     @app.route("/api/export/dicom", methods=["POST"])
     @require_api_key

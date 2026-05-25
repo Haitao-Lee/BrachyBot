@@ -13,21 +13,21 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from tool_factory import BaseTool, ToolResult
 
-from pancreatic_tumor import PancreaticTumorSegmentationTool
-from liver_tumor import LiverTumorSegmentationTool
-from kidney_tumor import KidneyTumorSegmentationTool
-from prostate_tumor import ProstateTumorSegmentationTool
-from lung_tumor import LungTumorSegmentationTool
-from head_neck_tumor import HeadNeckTumorSegmentationTool
+from .pancreatic_tumor import PancreaticTumorSegmentationTool
+from .liver_tumor import LiverTumorSegmentationTool
+from .kidney_tumor import KidneyTumorSegmentationTool
+from .prostate_tumor import ProstateTumorSegmentationTool
+from .lung_tumor import LungTumorSegmentationTool
+from .head_neck_tumor import HeadNeckTumorSegmentationTool
 
-from pancreatic_tumor_voco import VoCoPancreaticTumorTool
-from liver_tumor_voco import VoCoLiverTumorTool
-from colon_tumor_voco import VoCoColonTumorTool
-from kidney_tumor_voco import VoCoKidneyTumorTool
-from lung_tumor_voco import VoCoLungTumorTool
-from prostate_tumor_voco import VoCoProstateTool
-from btcv_tumor_voco import VoCoBTCVTumorTool
-from segthor_tumor_voco import VoCoSegThorTumorTool
+from .pancreatic_tumor_voco import VoCoPancreaticTumorTool
+from .liver_tumor_voco import VoCoLiverTumorTool
+from .colon_tumor_voco import VoCoColonTumorTool
+from .kidney_tumor_voco import VoCoKidneyTumorTool
+from .lung_tumor_voco import VoCoLungTumorTool
+from .prostate_tumor_voco import VoCoProstateTool
+from .btcv_tumor_voco import VoCoBTCVTumorTool
+from .segthor_tumor_voco import VoCoSegThorTumorTool
 
 
 TOOL_REGISTRY = {

@@ -408,6 +408,19 @@ Task: "Generate prostate plan"
 - **nnU-Net + VoCo**: Deep learning segmentation models
 - **Rule-based + RL**: Dual seed planning modes
 - **DICOM Export**: RT Structure, RT Plan, RT Dose
+- **Autonomous Tool Creation**: LLM can create new tools on-demand via `code_writer`
+
+### 🌐 Web Interface
+- **Real-time CT Viewer**: 3D Slicer-level slice interaction with volume rendering
+- **Streaming Output**: Real-time LLM text streaming with SSE
+- **Tool Progress**: Live progress bars during long-running tasks
+- **Slash Commands**: `/help`, `/plan`, `/segment`, `/evaluate`, `/export`, `/viewer`, `/clear`
+- **Keyboard Shortcuts**: `Ctrl+L` clear chat, `Ctrl+K` focus input
+
+### 📝 Skills System (Markdown)
+- **Claude Code Style**: SKILL.md format with YAML frontmatter
+- **Trigger Matching**: Auto-match user requests to skills
+- **10 Built-in Skills**: Planning, segmentation, evaluation, export workflows
 
 ---
 
@@ -862,7 +875,7 @@ tool_factory/
 │   ├── trajectory_init.py     # Directional sampling
 │   └── trajectory_refine.py   # Quality filtering
 │
-├── seed__plan/           # Seed placement (2 tools)
+├── seed_plan/            # Seed placement (3 tools)
 │   ├── seed_planning_rule_based.py  # Greedy + CNN dose prediction
 │   └── seed_planning_rl.py        # REINFORCE RL optimization
 │
@@ -960,7 +973,59 @@ class ToolResult:
 
 ## 📚 Skills Library
 
-### Built-in Skills (28 skills)
+### Markdown Skills (Recommended)
+
+Skills are now defined in Markdown files with YAML frontmatter (Claude Code style):
+
+```
+skills/markdown/
+├── standard_planning.md      # 标准治疗计划
+├── rl_planning.md            # 强化学习计划
+├── pancreas_segmentation.md  # 胰腺分割
+├── prostate_segmentation.md  # 前列腺分割
+├── generic_segmentation.md   # 通用分割
+├── dose_evaluation.md        # 剂量评估
+├── viewer_control.md         # 查看器控制
+├── dicom_export.md           # DICOM导出
+├── report_generation.md      # 报告生成
+└── intraop_replan.md         # 术中重新计划
+```
+
+**Skill Format Example**:
+```yaml
+---
+name: standard_planning
+description: Standard brachytherapy treatment planning workflow
+category: planning
+triggers:
+  - 规划
+  - 标准计划
+  - treatment plan
+tool_sequence:
+  - ctv_segmentation
+  - oar_segmentation
+  - trajectory_planning
+  - seed_planning
+  - dose_engine
+  - dose_evaluation
+parameters:
+  tumor_type: null
+  organ_type: general
+success_threshold: 0.7
+version: "1.0.0"
+---
+
+# Standard Brachytherapy Planning
+
+Execute the complete brachytherapy treatment planning workflow.
+
+## Steps
+1. **CTV Segmentation**: Segment the clinical target volume from CT
+2. **OAR Segmentation**: Segment organs at risk
+...
+```
+
+### Built-in Skills (28 Python skills)
 
 | Category | Skills |
 |----------|--------|
@@ -980,6 +1045,14 @@ Skills automatically created from successful trajectories:
 - Include trigger keywords, tool chain, success rate
 - Verified by LLM before registration
 - Auto-applied when matching user input
+
+### Autonomous Tool Creation
+
+When existing tools are insufficient, the LLM can create new tools:
+1. Check available tools: `self.registry.tool_names`
+2. Use `code_writer` tool to generate new tool code
+3. Tool is automatically validated and registered
+4. Available immediately for use
 
 ---
 
@@ -1099,19 +1172,42 @@ BRACHY_HOST="0.0.0.0"             # Web server host
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/chat` | POST | Send message, get response |
-| `/api/chat_with_trace` | POST | Send message, get response + steps |
+| `/api/chat` | POST | Send message, get streaming response (SSE) |
 | `/api/status` | GET | Get agent status |
-| `/api/plan` | POST | Run pre-operative planning |
-| `/api/replan` | POST | Run intra-operative replanning |
+| `/api/plan/preoperative` | POST | Run pre-operative planning |
+| `/api/plan/intraoperative` | POST | Run intra-operative replanning |
+| `/api/viewer/load` | POST | Load CT into viewer |
+| `/api/viewer/slice` | POST | Get slice as PNG |
+| `/api/viewer/volume` | GET | Get full CT volume data |
+| `/api/viewer/control` | POST | Control viewer settings |
+| `/api/viewer/hu` | POST | Get HU value at point |
+| `/api/viewer/3d` | POST | 3D reconstruction |
+| `/api/export/dicom` | POST | Export to DICOM RT |
+| `/api/tasks/stream` | SSE | Task progress stream |
 
-### Frontend
+### Frontend Features
 
 Single-page HTML interface at `web/app/index.html`:
-- Chat interface with streaming responses
-- Execution trace visualization
-- Status dashboard
-- File upload for CT images
+
+**Chat Panel (Left)**
+- Real-time streaming output (text_chunk events)
+- Tool execution progress bars
+- Slash commands: `/help`, `/plan`, `/segment`, `/evaluate`, `/export`, `/viewer`, `/clear`
+- Keyboard shortcuts: `Ctrl+L` clear, `Ctrl+K` focus, `Escape` close menu
+
+**Control Panel (Right)**
+- Input: File upload with progress indicator
+- Analysis: Metrics + DVH + OAR constraints
+- Seeds: Seed positions and doses
+- Viewers: Real-time CT slice viewer (3D Slicer level)
+
+**CT Viewer**
+- Volume-based client-side rendering (instant response)
+- Axial, Sagittal, Coronal views
+- Window/Level adjustment
+- Threshold overlay
+- CTV/OAR overlay toggle
+- 3D mesh reconstruction
 
 ---
 

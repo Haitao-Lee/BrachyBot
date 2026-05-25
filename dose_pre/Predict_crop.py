@@ -74,28 +74,31 @@ def pad_to_original_size(cropped_image: sitk.Image,
     crop_origin = cropped_image.GetOrigin()
     start_index = original_image.TransformPhysicalPointToIndex(crop_origin)
 
-    
+    padded_array = sitk.GetArrayFromImage(padded_image)
+    cropped_array = sitk.GetArrayFromImage(cropped_image)
+
+    orig_size = original_image.GetSize()
     patch_size = cropped_image.GetSize()
-    for z in range(patch_size[2]):
-        for y in range(patch_size[1]):
-            for x in range(patch_size[0]):
-                
-                orig_x = start_index[0] + x
-                orig_y = start_index[1] + y
-                orig_z = start_index[2] + z
-                
-                
-                if (orig_x >= 0 and orig_x < original_image.GetSize()[0] and 
-                    orig_y >= 0 and orig_y < original_image.GetSize()[1] and 
-                    orig_z >= 0 and orig_z < original_image.GetSize()[2]):
-                    padded_image[orig_x, orig_y, orig_z] = cropped_image[x, y, z]
-    
+
+    x_start, y_start, z_start = start_index
+    x_end = min(x_start + patch_size[0], orig_size[0])
+    y_end = min(y_start + patch_size[1], orig_size[1])
+    z_end = min(z_start + patch_size[2], orig_size[2])
+
+    cx_end = x_end - x_start
+    cy_end = y_end - y_start
+    cz_end = z_end - z_start
+
+    padded_array[z_start:z_end, y_start:y_end, x_start:x_end] = cropped_array[:cz_end, :cy_end, :cx_end]
+    padded_image = sitk.GetImageFromArray(padded_array)
+    padded_image.CopyInformation(original_image)
+
     return padded_image
 
 if __name__ == "__main__":
     ################################# 参数设定 ###################################
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    Dataset_root = 'D:\LJX_Data\dose_calculation\\train-data\\full-test-data'
+    Dataset_root = os.path.join(current_dir, 'data', 'dose_calculation', 'train-data', 'full-test-data')
     Dataset_image_path = os.path.join(Dataset_root, 'ct')
     Dataset_map_path = os.path.join(Dataset_root, 'map')
     Dataset_label_path = os.path.join(Dataset_root, 'pos')

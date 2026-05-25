@@ -29,13 +29,10 @@ Description: {description}
 """
 
 import os
-import sys
 import logging
 import numpy as np
 from dataclasses import dataclass
 from typing import Dict, Any, Optional
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
 from tool_factory.base import BaseTool, ToolResult
 
@@ -184,7 +181,19 @@ class ToolCodeWriter:
 
         try:
             file_path = tool_info["file_path"]
+
+            if not os.path.exists(file_path):
+                return {"success": False, "error": f"Tool file not found: {file_path}"}
+
+            real_path = os.path.realpath(file_path)
+            allowed_dir = os.path.realpath(TOOL_FACTORY_DIR)
+            if not real_path.startswith(allowed_dir):
+                return {"success": False, "error": "Tool file path is outside allowed directory"}
+
             spec = importlib.util.spec_from_file_location(name, file_path)
+            if spec is None or spec.loader is None:
+                return {"success": False, "error": "Failed to create module spec"}
+
             module = importlib.util.module_from_spec(spec)
             sys.modules[name] = module
             spec.loader.exec_module(module)
@@ -226,15 +235,33 @@ class ToolCodeWriter:
             errors.append("ToolResult not used in code")
 
         dangerous_patterns = [
-            "__import__('os').system",
-            "subprocess.call",
-            "os.system(",
-            "eval(",
-            "exec(",
+            ("__import__", "Dynamic import detected"),
+            ("importlib", "importlib usage detected"),
+            ("subprocess", "subprocess usage detected"),
+            ("os.system", "os.system() detected"),
+            ("os.popen", "os.popen() detected"),
+            ("eval(", "eval() detected"),
+            ("exec(", "exec() detected"),
+            ("compile(", "compile() detected"),
+            ("getattr(__builtins__", "Builtins access detected"),
+            ("setattr(__builtins__", "Builtins modification detected"),
+            ("__class__.__bases__", "Class manipulation detected"),
+            ("__subclasses__", "Subclass enumeration detected"),
+            ("globals()[", "Global namespace access detected"),
+            ("sys.modules", "sys.modules manipulation detected"),
         ]
-        for pattern in dangerous_patterns:
+        for pattern, msg in dangerous_patterns:
             if pattern in code:
-                errors.append(f"Dangerous pattern detected: {pattern}")
+                errors.append(f"Dangerous pattern detected: {msg}")
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id in ("eval", "exec", "compile"):
+                    errors.append(f"Dangerous AST node: {node.func.id}() call detected")
+                if isinstance(node.func, ast.Attribute):
+                    if node.func.attr in ("system", "popen", "spawn") and isinstance(node.func.value, ast.Name):
+                        if node.func.value.id in ("os", "subprocess"):
+                            errors.append(f"Dangerous AST node: {node.func.value.id}.{node.func.attr}()")
 
         return {"valid": len(errors) == 0, "errors": errors}
 
