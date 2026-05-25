@@ -404,11 +404,18 @@ Task: "Generate prostate plan"
 - **Plan Quality Scoring**: V100, D90, V150, V200 metrics
 
 ### 🔧 Tool Factory
-- **40+ medical tools**: CTV/OAR segmentation, trajectory, seed planning, dose calculation/evaluation
+- **50+ medical tools**: CTV/OAR segmentation, trajectory, seed planning, dose calculation/evaluation
 - **nnU-Net + VoCo**: Deep learning segmentation models
+- **TotalSegmentator**: 104 anatomical structures segmentation
 - **Rule-based + RL**: Dual seed planning modes
 - **DICOM Export**: RT Structure, RT Plan, RT Dose
 - **Autonomous Tool Creation**: LLM can create new tools on-demand via `code_writer`
+
+### 🎮 Interactive Viewer Control (NEW)
+- **viewer_command**: Direct LLM control of CT viewer (navigate, window/level, presets, overlays)
+- **auto_navigate**: Automatic navigation to tumor/organ locations from segmentation
+- **query_metrics**: Query dose metrics, plan quality, organ volumes via conversation
+- **Smart Commands**: "Go to the tumor", "Show me slice 50", "What is the V100?"
 
 ### 🌐 Web Interface
 - **Real-time CT Viewer**: 3D Slicer-level slice interaction with volume rendering

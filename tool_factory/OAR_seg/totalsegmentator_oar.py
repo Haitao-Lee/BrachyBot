@@ -24,7 +24,10 @@ from typing import Dict
 logger = logging.getLogger(__name__)
 
 
+# TotalSegmentator v2 label mapping (104 anatomical structures)
+# Reference: https://github.com/wasserth/TotalSegmentator
 TOTALSEG_LABEL_MAPPING = {
+    # v1 labels (48 structures)
     1: "body",
     2: "kidney_right",
     3: "kidney_left",
@@ -73,6 +76,80 @@ TOTALSEG_LABEL_MAPPING = {
     46: "sacrum",
     47: "costal_cartilage",
     48: "skin",
+    # v2 additional labels (56 structures)
+    49: "brainstem",
+    50: "gallbladder",
+    51: "esophagus",
+    52: "stomach_wall",
+    53: "duodenum_wall",
+    54: "colon_wall",
+    55: "small_bowel_wall",
+    56: "rectum_wall",
+    57: "urinary_bladder_wall",
+    58: "kidney_cyst_left",
+    59: "kidney_cyst_right",
+    60: "kidney_tumor_left",
+    61: "kidney_tumor_right",
+    62: "liver_tumor",
+    63: "pancreas_tumor",
+    64: "lung_tumor_left",
+    65: "lung_tumor_right",
+    66: "bone_tumor",
+    67: "vertebrae_C1",
+    68: "vertebrae_C2",
+    69: "vertebrae_C3",
+    70: "vertebrae_C4",
+    71: "vertebrae_C5",
+    72: "vertebrae_C6",
+    73: "vertebrae_C7",
+    74: "vertebrae_T1",
+    75: "vertebrae_T2",
+    76: "vertebrae_T3",
+    77: "vertebrae_T4",
+    78: "vertebrae_T5",
+    79: "vertebrae_T6",
+    80: "vertebrae_T7",
+    81: "vertebrae_T8",
+    82: "vertebrae_T9",
+    83: "vertebrae_T10",
+    84: "vertebrae_T11",
+    85: "vertebrae_T12",
+    86: "vertebrae_L1",
+    87: "vertebrae_L2",
+    88: "vertebrae_L3",
+    89: "vertebrae_L4",
+    90: "vertebrae_L5",
+    91: "vertebrae_L6",
+    92: "rib_left_1",
+    93: "rib_left_2",
+    94: "rib_left_3",
+    95: "rib_left_4",
+    96: "rib_left_5",
+    97: "rib_left_6",
+    98: "rib_left_7",
+    99: "rib_left_8",
+    100: "rib_left_9",
+    101: "rib_left_10",
+    102: "rib_left_11",
+    103: "rib_left_12",
+    104: "rib_right_1",
+    105: "rib_right_2",
+    106: "rib_right_3",
+    107: "rib_right_4",
+    108: "rib_right_5",
+    109: "rib_right_6",
+    110: "rib_right_7",
+    111: "rib_right_8",
+    112: "rib_right_9",
+    113: "rib_right_10",
+    114: "rib_right_11",
+    115: "rib_right_12",
+    116: "vertebrae_S1",
+    117: "vertebrae_S2",
+    118: "vertebrae_S3",
+    119: "vertebrae_S4",
+    120: "vertebrae_S5",
+    121: "coccyx",
 }
 
 
@@ -94,7 +171,8 @@ class TotalSegmentatorOARTool(BaseTool):
         return (
             "Segment all Organs At Risk (OAR) from CT images using TotalSegmentator. "
             "Returns a multi-label mask where different integer values represent different organs. "
-            "Supports 40+ anatomical structures including liver, kidneys, pancreas, heart, lungs, etc. "
+            "Supports 104 anatomical structures including liver, kidneys, pancreas, heart, lungs, "
+            "vertebrae, ribs, brain, spinal cord, and many more. "
             "Optional dose constraints can be provided for each organ label."
         )
 
