@@ -10,18 +10,10 @@ import json
 import time
 from typing import Dict, List, Any, Optional, Callable, Tuple
 from dataclasses import dataclass
-from enum import Enum
 
 from ..core.tool_registry import ToolRegistry, get_tool_registry
 from ..core.base import PlanStep
-
-
-class ExecutionStatus(Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    SUCCESS = "success"
-    FAILED = "failed"
-    SKIPPED = "skipped"
+from .types import ExecutionStatus
 
 
 @dataclass
@@ -239,7 +231,7 @@ class CaseExecutor:
         final_indicators = [
             s for s in result.steps
             if s.status == ExecutionStatus.SUCCESS and
-            hasattr(s, 'output_type') and s.output_type == "final indicator"
+            getattr(s, "output_type", None) == "final indicator"
         ]
         if final_indicators:
             result.final_result = {

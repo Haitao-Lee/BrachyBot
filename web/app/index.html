@@ -857,9 +857,9 @@
         .dvh-panel { padding: 0.75rem; flex: 1; }
 
         .dvh-container {
-            height: 200px; position: relative;
+            height: 140px; position: relative;
             background: var(--bg-3); border-radius: 8px;
-            overflow: hidden; margin-bottom: 0.5rem;
+            overflow: hidden; margin-bottom: 0.25rem;
         }
 
         .dvh-placeholder {
@@ -1043,6 +1043,26 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         .loading-text { font-size: 0.7rem; color: var(--text-secondary); }
 
+        /* Upload progress overlay - inline style */
+        .upload-progress-overlay {
+            display: none; align-items: center; gap: 0.5rem;
+            padding: 0.25rem 0.5rem; border-radius: 6px;
+            background: var(--bg-2); border: 1px solid var(--card-border);
+        }
+        .upload-progress-overlay.active { display: flex; }
+        .upload-progress-overlay .spinner-ring {
+            width: 16px; height: 16px; border: 2px solid var(--card-border);
+            border-top-color: var(--primary); border-radius: 50%;
+            animation: spin 0.9s linear infinite; flex-shrink: 0;
+        }
+        .upload-progress-text {
+            font-size: 0.75rem; color: var(--text);
+        }
+        .upload-progress-filename {
+            font-size: 0.65rem; color: var(--text-secondary); max-width: 120px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+
         /* Drag cursor during resize */
         body.v-dragging { cursor: col-resize !important; }
         body.v-dragging * { pointer-events: none; user-select: none; }
@@ -1147,12 +1167,48 @@
             <div class="chat-msg system">Welcome to BrachyBot. Describe your brachytherapy case — tumor location, type, patient condition — and I will help you generate an optimal treatment plan. You can also load CT data directly via the Input panel on the right.</div>
         </div>
 
+        <!-- Tool Progress Display -->
+        <div id="toolProgressContainer" style="display:none;padding:0.5rem 1rem;background:var(--bg-2);border-top:1px solid var(--card-border);">
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+                <div class="spinner-ring" style="width:14px;height:14px;border-width:2px;"></div>
+                <span id="toolProgressText" style="font-size:0.75rem;color:var(--text);">Processing...</span>
+            </div>
+            <div style="margin-top:0.25rem;height:3px;background:var(--bg-3);border-radius:2px;overflow:hidden;">
+                <div id="toolProgressBar" style="height:100%;background:var(--primary);border-radius:2px;width:0%;transition:width 0.3s ease;"></div>
+            </div>
+        </div>
+
+        <!-- Slash Command Menu -->
+        <div id="slashCommandMenu" style="display:none;position:absolute;bottom:100%;left:0;right:0;background:var(--bg-2);border:1px solid var(--card-border);border-radius:8px 8px 0 0;max-height:200px;overflow-y:auto;z-index:100;">
+            <div class="slash-cmd" data-cmd="/help" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/help')">
+                <strong>/help</strong> - Show available commands
+            </div>
+            <div class="slash-cmd" data-cmd="/plan" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/plan')">
+                <strong>/plan</strong> - Start treatment planning
+            </div>
+            <div class="slash-cmd" data-cmd="/segment" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/segment')">
+                <strong>/segment</strong> - Segment CT image
+            </div>
+            <div class="slash-cmd" data-cmd="/evaluate" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/evaluate')">
+                <strong>/evaluate</strong> - Evaluate dose plan
+            </div>
+            <div class="slash-cmd" data-cmd="/export" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/export')">
+                <strong>/export</strong> - Export to DICOM
+            </div>
+            <div class="slash-cmd" data-cmd="/viewer" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/viewer')">
+                <strong>/viewer</strong> - Control CT viewer
+            </div>
+            <div class="slash-cmd" data-cmd="/clear" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/clear')">
+                <strong>/clear</strong> - Clear chat history
+            </div>
+        </div>
+
         <div class="chat-input-area">
             <div class="chat-input-row">
-                <input type="text" id="chatInput" placeholder="Describe your case, e.g. pancreatic cancer patient with CT loaded..." onkeypress="if(event.key==='Enter')sendChat()">
+                <input type="text" id="chatInput" placeholder="Describe your case or type / for commands..." onkeypress="handleChatKeypress(event)" oninput="handleChatInput(this)">
                 <button class="chat-send" onclick="sendChat()">&#10148;</button>
             </div>
-            <div class="chat-hint">Press Enter to send &middot; Results will appear in the right panel</div>
+            <div class="chat-hint">Press Enter to send &middot; Type / for commands &middot; Ctrl+L to clear</div>
         </div>
     </div>
 
@@ -1168,10 +1224,7 @@
                 <span>&#9881;</span> Input
             </div>
             <div class="panel-tab" onclick="switchPanel('metrics', this)">
-                <span>&#128200;</span> Metrics
-            </div>
-            <div class="panel-tab" onclick="switchPanel('dvh', this)">
-                <span>&#128202;</span> DVH
+                <span>&#128200;</span> Analysis
             </div>
             <div class="panel-tab" onclick="switchPanel('seeds', this)">
                 <span>&#9679;</span> Seeds
@@ -1182,7 +1235,7 @@
         </div>
 
         <!-- INPUT PANEL -->
-         <div class="panel-content active" id="panelInput">
+          <div class="panel-content active" id="panelInput">
             <div class="input-form">
                 <div class="form-section-title">Image Data</div>
 
@@ -1192,6 +1245,11 @@
                     <div class="form-row">
                         <input type="text" class="form-input" id="ctPath" placeholder="/path/to/ct.nii.gz">
                         <button class="file-btn" onclick="document.getElementById('fileCT').click()">&#128193; Browse</button>
+                        <div class="upload-progress-overlay" id="uploadProgressOverlay">
+                            <div class="spinner-ring"></div>
+                            <div class="upload-progress-text" id="uploadProgressText">Uploading...</div>
+                            <div class="upload-progress-filename" id="uploadProgressFilename"></div>
+                        </div>
                     </div>
                     <input type="file" id="fileCT" accept=".nii,.nii.gz,.mha,.nrrd,image/*" onchange="handleFileSelect(this, 'ctPath')">
                 </div>
@@ -1382,6 +1440,27 @@
                 </div>
 
                 <div class="metrics-section">
+                    <div class="metrics-title">Dose-Volume Histogram</div>
+                    <div class="dvh-container" id="dvhChart">
+                        <div class="dvh-placeholder" id="dvhPlaceholder">
+                            <div style="font-size:1.2rem;opacity:0.3;">&#128202;</div>
+                            <div style="font-size:0.65rem;">DVH curves appear after planning</div>
+                        </div>
+                        <canvas id="dvhCanvas" style="display:none;"></canvas>
+                    </div>
+                    <div class="dvh-legend" style="flex-direction:row;gap:0.75rem;margin-top:0.25rem;">
+                        <div class="dvh-legend-item">
+                            <div style="width:14px;height:2px;background:var(--primary);border-radius:1px;"></div>
+                            <span>CTV</span>
+                        </div>
+                        <div class="dvh-legend-item">
+                            <div style="width:14px;height:2px;background:var(--danger);border-radius:1px;"></div>
+                            <span>OAR</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="metrics-section">
                     <div class="metrics-title">OAR Constraints</div>
                     <table class="oar-table">
                         <thead>
@@ -1391,28 +1470,6 @@
                             <tr><td colspan="4" style="text-align:center;color:var(--text-dim);padding:0.75rem;font-size:0.7rem;">No OAR data</td></tr>
                         </tbody>
                     </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- DVH PANEL -->
-        <div class="panel-content" id="panelDVH">
-            <div class="dvh-panel">
-                <div class="dvh-container" id="dvhChart">
-                    <div class="dvh-placeholder" id="dvhPlaceholder">
-                        <div style="font-size:1.5rem;opacity:0.3;">&#128202;</div>
-                        <div>DVH curves will appear after planning</div>
-                    </div>
-                </div>
-                <div class="dvh-legend">
-                    <div class="dvh-legend-item">
-                        <div style="width:14px;height:2px;background:var(--primary);border-radius:1px;"></div>
-                        <span>CTV (Target)</span>
-                    </div>
-                    <div class="dvh-legend-item">
-                        <div style="width:14px;height:2px;background:var(--danger);border-radius:1px;"></div>
-                        <span>OAR (Organ at Risk)</span>
-                    </div>
                 </div>
             </div>
         </div>
@@ -1846,7 +1903,14 @@ async function handleFileSelect(input, targetId) {
     if (!file) return;
 
     const pathInput = document.getElementById(targetId);
-    pathInput.value = 'Uploading ' + file.name + '...';
+    const overlay = document.getElementById('uploadProgressOverlay');
+    const progressText = document.getElementById('uploadProgressText');
+    const progressFilename = document.getElementById('uploadProgressFilename');
+
+    // Show upload progress overlay
+    progressText.textContent = 'Uploading file...';
+    progressFilename.textContent = file.name;
+    overlay.classList.add('active');
     pathInput.disabled = true;
 
     try {
@@ -1872,7 +1936,10 @@ async function handleFileSelect(input, targetId) {
             state.ctPath = data.path;
             await loadCTToViewers(data.path);
         }
+
+        overlay.classList.remove('active');
     } catch (e) {
+        overlay.classList.remove('active');
         pathInput.value = '';
         pathInput.disabled = false;
         alert('File upload failed: ' + e.message);
@@ -1883,6 +1950,12 @@ async function handleFileSelect(input, targetId) {
 
 async function loadCTToViewers(ctPath) {
     if (!ctPath) return;
+
+    const overlay = document.getElementById('uploadProgressOverlay');
+    const progressText = document.getElementById('uploadProgressText');
+
+    // Update overlay text to show CT loading
+    progressText.textContent = 'Loading CT to viewers...';
 
     addChat('system', 'Loading CT image to viewers...');
 
@@ -1919,8 +1992,13 @@ async function loadCTToViewers(ctPath) {
                 }
             });
 
-            // Load and render slices
-            await loadAllSlices();
+            // Load CT volume for client-side rendering
+            await loadVolumeData();
+
+            // Render initial slices from volume
+            ['axial', 'sagittal', 'coronal'].forEach(axis => {
+                renderSliceFromVolume(axis, state.slices[axis]);
+            });
 
             // Rebind viewer interactions after canvases are rendered
             setTimeout(() => {
@@ -1930,6 +2008,7 @@ async function loadCTToViewers(ctPath) {
             addChat('system', `CT loaded: ${data.shape.join(' × ')} voxels, ${data.hu_range[0].toFixed(0)} to ${data.hu_range[1].toFixed(0)} HU`);
         }
     } catch (e) {
+        overlay.classList.remove('active');
         addChat('error', 'Failed to load CT: ' + e.message);
     }
 }
@@ -2059,16 +2138,268 @@ function switchPanel(name, el) {
     document.querySelectorAll('.panel-content').forEach(c => c.classList.remove('active'));
     el.classList.add('active');
     document.getElementById('panel' + capitalize(name)).classList.add('active');
+    if (name === 'viewers' && state.ctLoaded) loadAllSlices();
 }
 
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
+/******** VOLUME-BASED RENDERING ********/
+let volumeData = null;
+let volumeShape = null;
+let volumeSpacing = null;
+
+async function loadVolumeData() {
+    const res = await fetch(API + '/viewer/volume');
+    if (!res.ok) throw new Error('Failed to load volume');
+
+    const shapeZ = parseInt(res.headers.get('X-Shape-Z'));
+    const shapeY = parseInt(res.headers.get('X-Shape-Y'));
+    const shapeX = parseInt(res.headers.get('X-Shape-X'));
+    volumeShape = [shapeZ, shapeY, shapeX];
+    volumeSpacing = [
+        parseFloat(res.headers.get('X-Spacing-X')),
+        parseFloat(res.headers.get('X-Spacing-Y')),
+        parseFloat(res.headers.get('X-Spacing-Z'))
+    ];
+
+    const buffer = await res.arrayBuffer();
+    volumeData = new Int16Array(buffer);
+    console.log(`Volume loaded: ${shapeZ}x${shapeY}x${shapeX}, ${volumeData.length} voxels`);
+}
+
+// Pre-allocate pixel buffer for reuse
+let _pixelBuffer = null;
+let _imageDataBuffer = null;
+
+function renderSliceFromVolume(axis, sliceIndex) {
+    if (!volumeData || !volumeShape) return;
+
+    const [Z, Y, X] = volumeShape;
+    const wc = state.viewerSettings.level;
+    const ww = state.viewerSettings.window;
+    const lower = wc - ww / 2;
+    const range = ww || 1;  // Avoid division by zero
+    const scale = 255 / range;
+
+    let width, height;
+
+    if (axis === 'axial') {
+        width = X;
+        height = Y;
+    } else if (axis === 'sagittal') {
+        width = Y;
+        height = Z;
+    } else {
+        width = X;
+        height = Z;
+    }
+
+    const pixelCount = width * height;
+
+    // Reuse pixel buffer if size matches
+    if (!_pixelBuffer || _pixelBuffer.length !== pixelCount) {
+        _pixelBuffer = new Uint8ClampedArray(pixelCount);
+    }
+    const pixels = _pixelBuffer;
+
+    // Extract and transform pixels in one pass
+    if (axis === 'axial') {
+        const offset = sliceIndex * Y * X;
+        for (let i = 0; i < pixelCount; i++) {
+            const val = volumeData[offset + i];
+            pixels[i] = val <= lower ? 0 : (val >= upper ? 255 : ((val - lower) * scale));
+        }
+    } else if (axis === 'sagittal') {
+        let idx = 0;
+        for (let z = 0; z < Z; z++) {
+            const zOffset = z * Y * X + sliceIndex;
+            for (let y = 0; y < Y; y++) {
+                const val = volumeData[zOffset + y * X];
+                pixels[idx++] = val <= lower ? 0 : (val >= upper ? 255 : ((val - lower) * scale));
+            }
+        }
+    } else {
+        let idx = 0;
+        for (let z = 0; z < Z; z++) {
+            const zOffset = z * Y * X + sliceIndex * X;
+            for (let x = 0; x < X; x++) {
+                const val = volumeData[zOffset + x];
+                pixels[idx++] = val <= lower ? 0 : (val >= upper ? 255 : ((val - lower) * scale));
+            }
+        }
+    }
+
+    const canvasId = 'sliceCanvas' + capitalize(axis);
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+
+    const container = canvas.parentElement;
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = width;
+    canvas.height = height;
+
+    // Reuse imageData buffer if size matches
+    if (!_imageDataBuffer || _imageDataBuffer.width !== width || _imageDataBuffer.height !== height) {
+        _imageDataBuffer = ctx.createImageData(width, height);
+    }
+    const imageData = _imageDataBuffer;
+
+    // Fill RGBA in one pass (grayscale)
+    const data = imageData.data;
+    for (let i = 0; i < pixelCount; i++) {
+        const idx = i * 4;
+        const val = pixels[i];
+        data[idx] = val;
+        data[idx + 1] = val;
+        data[idx + 2] = val;
+        data[idx + 3] = 255;
+    }
+    ctx.putImageData(imageData, 0, 0);
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    const containerRect = container.getBoundingClientRect();
+    const containerW = containerRect.width;
+    const containerH = containerRect.height;
+    const scale = Math.min(containerW / width, containerH / height);
+    const displayW = width * scale;
+    const displayH = height * scale;
+
+    canvas.style.width = displayW + 'px';
+    canvas.style.height = displayH + 'px';
+    canvas.style.position = 'absolute';
+    canvas.style.left = ((containerW - displayW) / 2) + 'px';
+    canvas.style.top = ((containerH - displayH) / 2) + 'px';
+    canvas.style.display = 'block';
+
+    const placeholder = container.querySelector('.viewer-no-data');
+    if (placeholder) placeholder.style.display = 'none';
+
+    canvas._displayScale = scale;
+    canvas._displayW = displayW;
+    canvas._displayH = displayH;
+    canvas._offsetX = (containerW - displayW) / 2;
+    canvas._offsetY = (containerH - displayH) / 2;
+
+    const crossCanvas = document.getElementById('crosshairCanvas' + capitalize(axis));
+    if (crossCanvas) {
+        crossCanvas.width = displayW;
+        crossCanvas.height = displayH;
+        crossCanvas.style.width = displayW + 'px';
+        crossCanvas.style.height = displayH + 'px';
+        crossCanvas.style.position = 'absolute';
+        crossCanvas.style.left = ((containerW - displayW) / 2) + 'px';
+        crossCanvas.style.top = ((containerH - displayH) / 2) + 'px';
+    }
+
+    syncAnnotationCanvasSize(axis);
+    redrawAllAnnotations();
+}
+
 /******** VIEWER CONTROLS ********/
+const sliceCache = { axial: {}, sagittal: {}, coronal: {} };
+
+function renderCachedSlice(axis, sliceIndex) {
+    const cached = sliceCache[axis][sliceIndex];
+    if (cached) {
+        renderSliceToCanvas(axis, cached);
+        return true;
+    }
+    return false;
+}
+
+async function loadSlice(axis, sliceIndex) {
+    if (!state.ctPath) return;
+
+    const cached = sliceCache[axis][sliceIndex];
+    if (cached) {
+        renderSliceToCanvas(axis, cached);
+        return;
+    }
+
+    try {
+        const res = await fetch(API + '/viewer/slice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                axis: axis,
+                slice_index: sliceIndex,
+                window_center: state.viewerSettings.level,
+                window_width: state.viewerSettings.window,
+                overlay_type: state.viewerSettings.showCTV ? 'ctv' : (state.viewerSettings.showOAR ? 'oar' : null),
+                threshold: state.viewerSettings.threshold !== null ? state.viewerSettings.threshold : undefined,
+            }),
+        });
+
+        if (!res.ok) return;
+
+        const data = await res.json();
+        if (data.success) {
+            sliceCache[axis][sliceIndex] = data.data;
+            renderSliceToCanvas(axis, data.data);
+        }
+    } catch (e) {
+        console.error('Failed to load slice:', e);
+    }
+}
+
+async function preloadAxis(axis) {
+    const slider = document.getElementById('slider' + capitalize(axis));
+    if (!slider) return;
+    const max = parseInt(slider.max) || 48;
+    sliceCache[axis] = {};
+
+    const batchSize = 10;
+    for (let start = 0; start < max; start += batchSize) {
+        const end = Math.min(start + batchSize, max);
+        const promises = [];
+        for (let i = start; i < end; i++) {
+            promises.push(
+                fetch(API + '/viewer/slice', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        axis: axis,
+                        slice_index: i,
+                        window_center: state.viewerSettings.level,
+                        window_width: state.viewerSettings.window,
+                        overlay_type: state.viewerSettings.showCTV ? 'ctv' : (state.viewerSettings.showOAR ? 'oar' : null),
+                        threshold: state.viewerSettings.threshold !== null ? state.viewerSettings.threshold : undefined,
+                    }),
+                })
+                .then(res => res.ok ? res.json() : null)
+                .then(data => {
+                    if (data && data.success) {
+                        sliceCache[axis][i] = data.data;
+                    }
+                })
+                .catch(() => {})
+            );
+        }
+        await Promise.all(promises);
+    }
+    console.log(`Preloaded ${axis}: ${max} slices`);
+}
+
+async function preloadAllSlices() {
+    await preloadAxis('axial');
+    console.log('Axial preloaded, sagittal/coronal will load on demand');
+}
+
 function updateSlice(view, val) {
     state.slices[view] = parseInt(val);
     const label = document.getElementById('sliceLabel' + capitalize(view));
     if (label) label.textContent = val;
-    loadSlice(view, parseInt(val));
+
+    // Use volume-based rendering for instant response
+    if (volumeData && volumeShape) {
+        renderSliceFromVolume(view, parseInt(val));
+    } else {
+        // Fallback to server-based rendering
+        renderCachedSlice(view, parseInt(val));
+        loadSlice(view, parseInt(val));
+    }
 }
 
 function updateDoseOpacity(val) {
@@ -2098,7 +2429,15 @@ function applyViewerSettings() {
     const wl = document.getElementById('viewerLevel').value;
     state.viewerSettings.window = parseInt(wc);
     state.viewerSettings.level = parseInt(wl);
-    if (state.ctLoaded) loadAllSlices();
+    if (state.ctLoaded) {
+        sliceCache.axial = {};
+        sliceCache.sagittal = {};
+        sliceCache.coronal = {};
+        sliceCacheOrder.axial = [];
+        sliceCacheOrder.sagittal = [];
+        sliceCacheOrder.coronal = [];
+        loadAllSlices();
+    }
 }
 
 function applyWindowPreset() {
@@ -2254,34 +2593,6 @@ function resetViewer() {
     if (state.ctLoaded) loadAllSlices();
 }
 
-async function loadSlice(axis, sliceIndex) {
-    if (!state.ctPath) return;
-
-    try {
-        const res = await fetch(API + '/viewer/slice', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                axis: axis,
-                slice_index: sliceIndex,
-                window_center: state.viewerSettings.level,
-                window_width: state.viewerSettings.window,
-                overlay_type: state.viewerSettings.showCTV ? 'ctv' : (state.viewerSettings.showOAR ? 'oar' : null),
-                threshold: state.viewerSettings.threshold !== null ? state.viewerSettings.threshold : undefined,
-            }),
-        });
-
-        if (!res.ok) return;
-
-        const data = await res.json();
-        if (data.success) {
-            renderSliceToCanvas(axis, data.data);
-        }
-    } catch (e) {
-        console.error('Failed to load slice:', e);
-    }
-}
-
 function renderSliceToCanvas(axis, sliceData) {
     const canvasId = 'sliceCanvas' + capitalize(axis);
     const canvas = document.getElementById(canvasId);
@@ -2398,6 +2709,16 @@ function renderSliceToCanvas(axis, sliceData) {
 
 async function loadAllSlices() {
     if (!state.ctPath) return;
+
+    // Use volume-based rendering for instant response
+    if (volumeData && volumeShape) {
+        ['axial', 'sagittal', 'coronal'].forEach(axis => {
+            renderSliceFromVolume(axis, state.slices[axis]);
+        });
+        return;
+    }
+
+    // Fallback to server-based rendering
     await Promise.all([
         loadSlice('axial', state.slices.axial),
         loadSlice('sagittal', state.slices.sagittal),
@@ -3088,18 +3409,18 @@ function setupBasicInteractions(axis, canvas) {
         if (!isDragging) return;
         const dx = e.clientX - dragStart.x;
         const dy = e.clientY - dragStart.y;
-        
+
         if (e.buttons === 1 && !e.shiftKey) {
+            state.viewerSettings.panX += dx;
+            state.viewerSettings.panY += dy;
+            applyViewerTransform();
+            dragStart = { x: e.clientX, y: e.clientY };
+        } else if (e.buttons === 1 && e.shiftKey) {
             state.viewerSettings.window = Math.max(1, wlStart.w + dx * 2);
             state.viewerSettings.level = wlStart.l + dy * 2;
             document.getElementById('viewerWindow').value = Math.round(state.viewerSettings.window);
             document.getElementById('viewerLevel').value = Math.round(state.viewerSettings.level);
             loadSlice(axis, state.slices[axis]);
-        } else if (e.buttons === 1 && e.shiftKey) {
-            state.viewerSettings.panX += dx;
-            state.viewerSettings.panY += dy;
-            applyViewerTransform();
-            dragStart = { x: e.clientX, y: e.clientY };
         }
     });
     
@@ -3509,15 +3830,180 @@ function toggleStep(bodyId) {
     if (body) body.classList.toggle('expanded');
 }
 
+/******** SLASH COMMANDS ********/
+const slashCommands = {
+    '/help': 'Show available commands and their descriptions',
+    '/plan': 'Start treatment planning workflow',
+    '/segment': 'Segment CT image (tumor and organs)',
+    '/evaluate': 'Evaluate dose plan quality',
+    '/export': 'Export plan to DICOM format',
+    '/viewer': 'Control CT viewer settings',
+    '/clear': 'Clear chat history',
+};
+
+function handleChatInput(input) {
+    const value = input.value;
+    const menu = document.getElementById('slashCommandMenu');
+
+    if (value.startsWith('/') && value.length > 0) {
+        const matches = Object.keys(slashCommands).filter(cmd => cmd.startsWith(value.toLowerCase()));
+        if (matches.length > 0) {
+            menu.style.display = 'block';
+            menu.innerHTML = matches.map(cmd =>
+                `<div class="slash-cmd" data-cmd="${cmd}" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('${cmd}')">
+                    <strong>${cmd}</strong> - ${slashCommands[cmd]}
+                </div>`
+            ).join('');
+        } else {
+            menu.style.display = 'none';
+        }
+    } else {
+        menu.style.display = 'none';
+    }
+}
+
+function handleChatKeypress(event) {
+    if (event.key === 'Enter') {
+        const menu = document.getElementById('slashCommandMenu');
+        if (menu.style.display === 'block') {
+            const firstCmd = menu.querySelector('.slash-cmd');
+            if (firstCmd) {
+                insertSlashCommand(firstCmd.dataset.cmd);
+                return;
+            }
+        }
+        sendChat();
+    } else if (event.key === 'Escape') {
+        const menu = document.getElementById('slashCommandMenu');
+        menu.style.display = 'none';
+    } else if (event.ctrlKey && event.key === 'l') {
+        event.preventDefault();
+        clearChat();
+    }
+}
+
+function insertSlashCommand(cmd) {
+    const input = document.getElementById('chatInput');
+    input.value = cmd + ' ';
+    input.focus();
+    const menu = document.getElementById('slashCommandMenu');
+    menu.style.display = 'none';
+}
+
+function executeSlashCommand(cmd, args) {
+    switch (cmd) {
+        case '/help':
+            showHelp();
+            break;
+        case '/plan':
+            sendChatMessage('Start treatment planning for the loaded CT image');
+            break;
+        case '/segment':
+            sendChatMessage('Segment the CT image to identify tumor and organs at risk');
+            break;
+        case '/evaluate':
+            sendChatMessage('Evaluate the current dose plan quality');
+            break;
+        case '/export':
+            sendChatMessage('Export the treatment plan to DICOM format');
+            break;
+        case '/viewer':
+            if (args) {
+                sendChatMessage(`Control viewer: ${args}`);
+            } else {
+                showViewerHelp();
+            }
+            break;
+        case '/clear':
+            clearChat();
+            break;
+        default:
+            sendChatMessage(cmd.substring(1) + ' ' + (args || ''));
+    }
+}
+
+function showHelp() {
+    const helpText = `**Available Commands:**
+
+- **/help** - Show this help message
+- **/plan** - Start treatment planning workflow
+- **/segment** - Segment CT image (tumor and organs)
+- **/evaluate** - Evaluate dose plan quality
+- **/export** - Export plan to DICOM format
+- **/viewer** - Control CT viewer settings
+- **/clear** - Clear chat history
+
+**Keyboard Shortcuts:**
+- **Enter** - Send message
+- **Ctrl+L** - Clear chat
+- **Escape** - Close command menu`;
+
+    addChat('system', helpText);
+}
+
+function showViewerHelp() {
+    const helpText = `**Viewer Controls:**
+
+- **Window Presets:** soft, bone, lung, brain
+- **Navigate:** Go to specific slice on any axis
+- **Threshold:** Set HU threshold overlay
+- **Overlays:** Toggle CTV/OAR visibility
+
+Example: /viewer lung window`;
+
+    addChat('system', helpText);
+}
+
+function clearChat() {
+    const container = document.getElementById('chatMessages');
+    container.innerHTML = '<div class="chat-msg system">Chat cleared. Describe your case to start a new conversation.</div>';
+}
+
+function sendChatMessage(message) {
+    const input = document.getElementById('chatInput');
+    input.value = message;
+    sendChat();
+}
+
+// Global keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    // Ctrl+L to clear chat
+    if (e.ctrlKey && e.key === 'l') {
+        e.preventDefault();
+        clearChat();
+    }
+    // Ctrl+K to focus chat input
+    if (e.ctrlKey && e.key === 'k') {
+        e.preventDefault();
+        document.getElementById('chatInput').focus();
+    }
+});
+
 async function sendChat() {
     const input = document.getElementById('chatInput');
     const msg = input.value.trim();
     if (!msg) return;
     input.value = '';
 
+    // Handle slash commands
+    if (msg.startsWith('/')) {
+        const parts = msg.split(' ');
+        const cmd = parts[0].toLowerCase();
+        const args = parts.slice(1).join(' ');
+
+        if (slashCommands[cmd]) {
+            executeSlashCommand(cmd, args);
+            return;
+        }
+    }
+
     addChat('user', msg);
 
     const uiState = collectUIState();
+
+    // Hide progress container at start
+    const progressContainer = document.getElementById('toolProgressContainer');
+    if (progressContainer) progressContainer.style.display = 'none';
 
     const thinkingEl = showThinkingIndicator();
 
@@ -3629,6 +4115,20 @@ async function sendChat() {
 
                             updateStreamingResponse(responseEl, responseText);
                             scrollToBottom();
+                        } else if (currentEvent === 'progress') {
+                            // Real-time tool progress updates
+                            if (data.type === 'tool_progress') {
+                                // Update progress display
+                                const progressContainer = document.getElementById('toolProgressContainer');
+                                if (progressContainer) {
+                                    progressContainer.style.display = 'flex';
+                                    const progressText = document.getElementById('toolProgressText');
+                                    const progressBar = document.getElementById('toolProgressBar');
+                                    if (progressText) progressText.textContent = data.message;
+                                    if (progressBar) progressBar.style.width = data.percent + '%';
+                                }
+                            }
+                            scrollToBottom();
                         } else if (currentEvent === 'response') {
                             finalResponse = data.response;
                             llmMeta = data.llm_meta || {};
@@ -3662,6 +4162,10 @@ async function sendChat() {
             addChat('bot-response', response);
         }
 
+        // Hide progress container when chat is complete
+        const progressContainerEnd = document.getElementById('toolProgressContainer');
+        if (progressContainerEnd) progressContainerEnd.style.display = 'none';
+
         // Sync viewer state after LLM response (in case LLM changed viewer settings via API)
         setTimeout(() => syncViewerState(), 300);
 
@@ -3676,6 +4180,9 @@ async function sendChat() {
     } catch (e) {
         removeThinkingIndicator(thinkingEl);
         addChat('error', 'Request failed: ' + e.message);
+        // Hide progress container on error
+        const progressContainerError = document.getElementById('toolProgressContainer');
+        if (progressContainerError) progressContainerError.style.display = 'none';
     }
 }
 
@@ -4129,6 +4636,102 @@ async function resetSession() {
     }
 }
 
+/******** TASK PROGRESS SSE ********/
+let taskEventSource = null;
+const activeTaskProgress = {};
+
+function connectTaskSSE() {
+    if (taskEventSource) taskEventSource.close();
+    taskEventSource = new EventSource(API + '/tasks/stream');
+
+    taskEventSource.addEventListener('task', (e) => {
+        try {
+            const task = JSON.parse(e.data);
+            if (task.status === 'running') {
+                showTaskProgressInline(task);
+            } else if (task.status === 'completed') {
+                updateTaskProgressInline(task.id, 'completed', task.result);
+            } else if (task.status === 'failed') {
+                updateTaskProgressInline(task.id, 'failed', task.error);
+            }
+        } catch (err) {}
+    });
+
+    taskEventSource.onerror = () => {
+        taskEventSource.close();
+        setTimeout(connectTaskSSE, 5000);
+    };
+}
+
+function showTaskProgressInline(task) {
+    if (activeTaskProgress[task.id]) return;
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+
+    const row = document.createElement('div');
+    row.className = 'chat-row bot';
+    row.id = 'task-progress-' + task.id;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'chat-avatar bot-avatar';
+    avatar.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chat-msg-wrapper bot';
+
+    const div = document.createElement('div');
+    div.className = 'chat-msg system';
+    div.style.background = 'rgba(14,165,233,0.1)';
+    div.style.borderColor = 'rgba(14,165,233,0.3)';
+    div.style.color = 'var(--primary)';
+    div.style.fontSize = '0.72rem';
+    div.style.display = 'flex';
+    div.style.alignItems = 'center';
+    div.style.gap = '0.5rem';
+
+    const spinner = document.createElement('div');
+    spinner.className = 'spinner-ring';
+    spinner.style.width = '14px';
+    spinner.style.height = '14px';
+    spinner.style.borderWidth = '2px';
+
+    const text = document.createElement('span');
+    text.id = 'task-text-' + task.id;
+    text.innerHTML = `<strong>${escHtml(task.type)}</strong>: ${escHtml(task.description)} - ${task.message}`;
+
+    div.appendChild(spinner);
+    div.appendChild(text);
+    wrapper.appendChild(div);
+    row.appendChild(avatar);
+    row.appendChild(wrapper);
+    container.appendChild(row);
+    container.scrollTop = container.scrollHeight;
+    activeTaskProgress[task.id] = row;
+}
+
+function updateTaskProgressInline(taskId, status, result) {
+    const row = activeTaskProgress[taskId];
+    if (!row) return;
+    const text = document.getElementById('task-text-' + taskId);
+    const spinner = row.querySelector('.spinner-ring');
+    if (spinner) spinner.remove();
+    if (text) {
+        if (status === 'completed') {
+            text.innerHTML = `<strong>${escHtml(taskId)}</strong> completed`;
+            row.style.background = 'rgba(16,185,129,0.1)';
+            row.style.borderColor = 'rgba(16,185,129,0.3)';
+        } else {
+            text.innerHTML = `<strong>${escHtml(taskId)}</strong> failed: ${escHtml(result)}`;
+            row.style.background = 'rgba(239,68,68,0.1)';
+            row.style.borderColor = 'rgba(239,68,68,0.3)';
+        }
+    }
+    setTimeout(() => {
+        if (row.parentNode) row.remove();
+        delete activeTaskProgress[taskId];
+    }, 3000);
+}
+
 /******** BOOT ********/
 loadSessions();
 renderSessionList();
@@ -4138,6 +4741,7 @@ setupViewerResizers();
 setupViewerInteractions();
 init();
 setInterval(init, 30000);
+connectTaskSSE();
 </script>
 </body>
 </html>

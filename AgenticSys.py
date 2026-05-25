@@ -492,8 +492,11 @@ class BrachyAgent:
 
         logger.info(f"Registered {len(self.registry.tool_names)} tools: {self.registry.tool_names}")
     
-    def _execute_tool_with_memory(self, tool_name: str, params: Dict) -> Any:
+    def _execute_tool_with_memory(self, tool_name: str, params: Dict, progress_callback=None) -> Any:
         """Execute a tool, automatically injecting memory-stored data."""
+        if progress_callback:
+            progress_callback(f"Preparing {tool_name}...", 10)
+
         ct_image = self.memory.retrieve("ct_image")
         ctv_array = self.memory.retrieve("ctv_array")
         oar_array = self.memory.retrieve("oar_array")
@@ -507,7 +510,12 @@ class BrachyAgent:
                 params["image"] = ct_image
         elif tool_name == "oar_segmentation" and "image" not in params:
             if ct_image is not None:
-                params["image"] = ct_image
+                import SimpleITK as sitk
+                ct_array = ct_image.get_fdata()
+                sitk_image = sitk.GetImageFromArray(ct_array)
+                sitk_image.SetSpacing(tuple(float(x) for x in ct_image.header.get_zooms()[:3]))
+                sitk_image.SetOrigin(tuple(float(x) for x in ct_image.affine[:3, 3]))
+                params["image"] = sitk_image
         elif tool_name == "trajectory_planning":
             if "dose_image" not in params and ct_image is not None:
                 params["dose_image"] = ct_image
@@ -545,7 +553,13 @@ class BrachyAgent:
             if ct_image is not None:
                 params["image"] = ct_image
 
+        if progress_callback:
+            progress_callback(f"Executing {tool_name}...", 50)
+
         result = self.registry.execute(tool_name, **params)
+
+        if progress_callback:
+            progress_callback(f"Processing results...", 90)
 
         if result.success:
             if tool_name == "ctv_segmentation" and "ctv_array" in result.metadata:
@@ -566,6 +580,10 @@ class BrachyAgent:
                 self.memory.store("metrics", result.metadata)
 
         self.memory.log_tool_call(tool_name, params, result)
+
+        if progress_callback:
+            progress_callback(f"{tool_name} completed", 100)
+
         return result
 
     def _run_llm_function_calling(self, message: str, steps: List[Dict], step_id_ref: List[int]) -> str:
@@ -611,6 +629,13 @@ class BrachyAgent:
             "  Use it for ad-hoc tasks: computing statistics, analyzing data, etc.\n"
             "  The code runs in a sandboxed Python environment with numpy, scipy, nibabel, SimpleITK available.\n"
             "- **Filesystem Browser**: You can list directories and inspect file metadata using `filesystem_browser`.\n"
+            "- **Tool Creation**: You can autonomously create new tools when existing ones are insufficient.\n"
+            "  When the user requests functionality that doesn't exist:\n"
+            "  1. First check available tools: self.registry.tool_names\n"
+            "  2. If no suitable tool exists, use `code_writer` tool to create a new one\n"
+            "  3. The new tool will be automatically registered and available immediately\n"
+            "  Example: If user asks for 'liver dose analysis' but no liver_dose_analyzer tool exists,\n"
+            "  create one with code_writer that implements the analysis logic.\n"
             "- **Knowledge Base**: You have access to brachytherapy clinical guidelines, tool documentation, and past experience.\n\n"
             "WEB INTERFACE CONTEXT:\n"
             "You are accessed through a web interface with two panels:\n"
@@ -654,9 +679,11 @@ class BrachyAgent:
             "- `get_state`: Get current viewer state (no params)\n\n"
             f"CURRENT UI STATE:\n{ui_state_summary}\n\n"
             "IMPORTANT RULES:\n"
-            "1. When the user asks to segment, plan, evaluate, etc., call the tools directly.\n"
+            "1. When the user asks to segment, plan, evaluate, etc., IMMEDIATELY call the tools.\n"
+            "   DO NOT output any explanatory text before tools. Never say '正在提交' or 'running in background'.\n"
+            "   NEVER generate fake progress lists like '⏳ 正在加载CT图像...' - these are not real progress updates.\n"
             "2. Use tool_call blocks to invoke tools.\n"
-            "3. After calling tools, summarize the results for the user.\n"
+            "3. Wait for tool results to complete, then summarize in plain text.\n"
             "4. If the user asks you to inspect a file, write code, or compute something — use `code_executor`.\n"
             "5. If the user asks about files or directories — use `filesystem_browser`.\n"
             "6. If you need CT data and it's NOT in the UI state above, tell the user to use the Input panel.\n"
@@ -911,6 +938,11 @@ class BrachyAgent:
             "  Use it for ad-hoc tasks: computing statistics, analyzing data, etc.\n"
             "  The code runs in a sandboxed Python environment with numpy, scipy, nibabel, SimpleITK available.\n"
             "- **Filesystem Browser**: You can list directories and inspect file metadata using `filesystem_browser`.\n"
+            "- **Tool Creation**: You can autonomously create new tools when existing ones are insufficient.\n"
+            "  When the user requests functionality that doesn't exist:\n"
+            "  1. First check available tools: self.registry.tool_names\n"
+            "  2. If no suitable tool exists, use `code_writer` tool to create a new one\n"
+            "  3. The new tool will be automatically registered and available immediately\n"
             "- **Knowledge Base**: You have access to brachytherapy clinical guidelines, tool documentation, and past experience.\n\n"
             "WEB INTERFACE CONTEXT:\n"
             "You are accessed through a web interface with two panels:\n"
@@ -954,9 +986,11 @@ class BrachyAgent:
             "- `get_state`: Get current viewer state (no params)\n\n"
             f"CURRENT UI STATE:\n{ui_state_summary}\n\n"
             "IMPORTANT RULES:\n"
-            "1. When the user asks to segment, plan, evaluate, etc., call the tools directly.\n"
+            "1. When the user asks to segment, plan, evaluate, etc., IMMEDIATELY call the tools.\n"
+            "   DO NOT output any explanatory text before tools. Never say '正在提交' or 'running in background'.\n"
+            "   NEVER generate fake progress lists like '⏳ 正在加载CT图像...' - these are not real progress updates.\n"
             "2. Use tool_call blocks to invoke tools.\n"
-            "3. After calling tools, summarize the results for the user.\n"
+            "3. Wait for tool results to complete, then summarize in plain text.\n"
             "4. If the user asks you to inspect a file, write code, or compute something — use `code_executor`.\n"
             "5. If the user asks about files or directories — use `filesystem_browser`.\n"
             "6. If you need CT data and it's NOT in the UI state above, tell the user to use the Input panel.\n"
@@ -1140,13 +1174,23 @@ class BrachyAgent:
                 steps.append(tool_step)
                 events.append(yield_event("step", tool_step))
 
+                # Progress callback for real-time updates
+                def tool_progress_callback(message, percent):
+                    progress_event = {
+                        "type": "tool_progress",
+                        "tool": tool_name,
+                        "message": message,
+                        "percent": percent,
+                    }
+                    events.append(yield_event("progress", progress_event))
+
                 if tool_name in ("self_evolve", "evolve", "进化", "总结经验"):
                     result_text = self._handle_self_evolution()
                 elif tool_name in ("code_writer", "write_tool", "create_tool", "写工具", "新工具"):
                     result_text = self._handle_code_writing(params)
                 elif tool_name in self.registry.tool_names:
                     try:
-                        result = self._execute_tool_with_memory(tool_name, params)
+                        result = self._execute_tool_with_memory(tool_name, params, progress_callback=tool_progress_callback)
                         if result.success:
                             result_text = result.message
                             if tool_name == "code_executor" and hasattr(result, "data") and result.data:

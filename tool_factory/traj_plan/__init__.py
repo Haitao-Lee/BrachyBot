@@ -11,8 +11,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from tool_factory import BaseTool, ToolResult
 
-from trajectory_init import TrajectoryInitTool
-from trajectory_refine import TrajectoryRefineTool
+from .trajectory_init import TrajectoryInitTool
+from .trajectory_refine import TrajectoryRefineTool
 
 
 TOOL_REGISTRY = {

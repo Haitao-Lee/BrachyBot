@@ -19,11 +19,6 @@ Directory Structure:
 - demos/         System demonstrations
 """
 
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from .core import (
     BaseLLM, BaseDecider, BasePlanner, LLMResponse, PlanStep,
     LLMRouter, ToolRegistry, get_tool_registry, ToolCodeWriter,
@@ -31,6 +26,7 @@ from .core import (
     PlanningTreeSearch, PlanningNode
 )
 from .execution import (
+    ExecutionStatus, BaseStepResult,
     PlanExecutor, validate_plan,
     CaseExecutor, CaseExecutionResult, execute_plan
 )
@@ -61,6 +57,8 @@ __all__ = [
     "PlanningTreeSearch",
     "PlanningNode",
     # Execution
+    "ExecutionStatus",
+    "BaseStepResult",
     "PlanExecutor",
     "validate_plan",
     "CaseExecutor",

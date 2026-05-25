@@ -12,11 +12,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from tool_factory import BaseTool, ToolResult
 
-from vx_metrics import VxMetricsTool
-from dx_metrics import DxMetricsTool
-from absolute_dose_metrics import AbsoluteDoseMetricsTool
-from dvh_calculation import DVHCalculationTool
-from comprehensive_dose_evaluation import ComprehensiveDoseEvaluationTool
+from .vx_metrics import VxMetricsTool
+from .dx_metrics import DxMetricsTool
+from .absolute_dose_metrics import AbsoluteDoseMetricsTool
+from .dvh_calculation import DVHCalculationTool
+from .comprehensive_dose_evaluation import ComprehensiveDoseEvaluationTool
 
 
 TOOL_REGISTRY = {

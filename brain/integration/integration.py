@@ -125,7 +125,7 @@ def create_oar_segmentation_tool(anatomy: str):
 
 def create_seed_planning_tool(mode: str = "rule_based"):
     """Factory for seed planning tools."""
-    from tool_factory.seed__plan import SeedPlanningTool, RuleBasedSeedPlanningTool, RLSeedPlanningTool
+    from tool_factory.seed_plan import SeedPlanningTool, RuleBasedSeedPlanningTool, RLSeedPlanningTool
 
     tools = {
         "unified": SeedPlanningTool,

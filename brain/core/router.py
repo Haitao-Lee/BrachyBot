@@ -64,8 +64,9 @@ class LLMRouter:
         elif name == "anthropic":
             from ..providers.anthropic_llm import AnthropicLLM
             return AnthropicLLM(
-                api_key=cfg.get("api_key", os.environ.get("ANTHROPIC_API_KEY", "")),
-                model=cfg.get("model", "claude-sonnet-4-20250514"),
+                api_key=cfg.get("api_key", os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")),
+                model=cfg.get("model", os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")),
+                base_url=cfg.get("base_url", os.environ.get("ANTHROPIC_BASE_URL", None)),
             )
         elif name == "local":
             from ..providers.local_llm import LocalLLM
@@ -202,6 +203,25 @@ class LLMRouter:
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
             return LLMResponse(content=f"Error: {str(e)}", finish_reason="error")
+
+    def chat_messages_stream(
+        self,
+        messages: List[Dict],
+        provider: str = None,
+        tools: List[Dict] = None,
+        task_type: str = "general",
+        **kwargs
+    ):
+        """Streaming version that yields text chunks."""
+        llm = self._select_llm(provider, task_type)
+        if not llm:
+            yield {"type": "error", "content": "Error: No LLM provider available"}
+            return
+        try:
+            yield from llm.chat_messages_stream(messages=messages, tools=tools, **kwargs)
+        except Exception as e:
+            logger.error(f"LLM stream call failed: {e}")
+            yield {"type": "error", "content": f"Error: {str(e)}"}
 
     def _select_llm(self, provider: str, task_type: str) -> Optional[BaseLLM]:
         """Select the best LLM for the task."""

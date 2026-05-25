@@ -35,8 +35,8 @@
     "success_threshold": 0.8,
     "usage_count": 0,
     "success_count": 0,
-    "created_at": 1778849747.4125402,
-    "last_used": 1778849747.4125404,
+    "created_at": 1779704700.9391353,
+    "last_used": 1779704700.9391356,
     "version": "1.0.0"
   },
   "rl_planning": {
@@ -77,8 +77,8 @@
     "success_threshold": 0.8,
     "usage_count": 0,
     "success_count": 0,
-    "created_at": 1778849747.4129882,
-    "last_used": 1778849747.4129884,
+    "created_at": 1779704700.9399142,
+    "last_used": 1779704700.939915,
     "version": "1.0.0"
   },
   "quick_planning": {
@@ -112,8 +112,8 @@
     "success_threshold": 0.8,
     "usage_count": 0,
     "success_count": 0,
-    "created_at": 1778849747.4166367,
-    "last_used": 1778849747.4166372,
+    "created_at": 1779704700.9436448,
+    "last_used": 1779704700.943645,
     "version": "1.0.0"
   },
   "pancreas_segmentation": {
@@ -141,8 +141,8 @@
     "success_threshold": 0.8,
     "usage_count": 0,
     "success_count": 0,
-    "created_at": 1778849747.4169939,
-    "last_used": 1778849747.4169984,
+    "created_at": 1779704700.9443712,
+    "last_used": 1779704700.9443717,
     "version": "1.0.0"
   },
   "prostate_segmentation": {
@@ -169,8 +169,8 @@
     "success_threshold": 0.8,
     "usage_count": 0,
     "success_count": 0,
-    "created_at": 1778849747.4172926,
-    "last_used": 1778849747.4172928,
+    "created_at": 1779704700.9776025,
+    "last_used": 1779704700.977603,
     "version": "1.0.0"
   },
   "generic_segmentation": {
@@ -198,8 +198,8 @@
     "success_threshold": 0.8,
     "usage_count": 0,
     "success_count": 0,
-    "created_at": 1778849747.4175963,
-    "last_used": 1778849747.417601,
+    "created_at": 1779704700.9782963,
+    "last_used": 1779704700.9782965,
     "version": "1.0.0"
   },
   "standard_evaluation": {
@@ -226,8 +226,8 @@
     "success_threshold": 0.8,
     "usage_count": 0,
     "success_count": 0,
-    "created_at": 1778849747.4178882,
-    "last_used": 1778849747.4178884,
+    "created_at": 1779704700.9789648,
+    "last_used": 1779704700.9789653,
     "version": "1.0.0"
   },
   "detailed_evaluation": {
@@ -259,8 +259,500 @@
     "success_threshold": 0.8,
     "usage_count": 0,
     "success_count": 0,
-    "created_at": 1778849747.4181757,
-    "last_used": 1778849747.418176,
+    "created_at": 1779704700.979643,
+    "last_used": 1779704700.9796433,
+    "version": "1.0.0"
+  },
+  "full_auto_planning": {
+    "name": "full_auto_planning",
+    "description": "Fully automated treatment planning with auto-segmentation",
+    "category": "planning",
+    "triggers": [
+      "full plan",
+      "\u5168\u81ea\u52a8\u8ba1\u5212",
+      "complete planning",
+      "generate full plan",
+      "\u5b8c\u6574\u8ba1\u5212"
+    ],
+    "tool_sequence": [
+      "ctv_segmentation",
+      "oar_segmentation",
+      "trajectory_planning",
+      "seed_planning",
+      "dose_engine",
+      "dose_evaluation"
+    ],
+    "parameters": {
+      "ctv_segmentation": {
+        "mode": "auto"
+      },
+      "oar_segmentation": {
+        "mode": "totalsegmentator"
+      },
+      "seed_planning": {
+        "mode": "rule_based"
+      },
+      "dose_engine": {
+        "method": "gaussian"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.9803016,
+    "last_used": 1779704700.9803019,
+    "version": "1.0.0"
+  },
+  "quick_plan": {
+    "name": "quick_plan",
+    "description": "Quick planning using existing segmentations",
+    "category": "planning",
+    "triggers": [
+      "quick plan",
+      "\u5feb\u901f\u8ba1\u5212",
+      "fast plan",
+      "simple plan"
+    ],
+    "tool_sequence": [
+      "trajectory_planning",
+      "seed_planning",
+      "dose_engine",
+      "dose_evaluation"
+    ],
+    "parameters": {
+      "seed_planning": {
+        "mode": "rule_based"
+      },
+      "dose_engine": {
+        "method": "gaussian"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.9809608,
+    "last_used": 1779704700.980961,
+    "version": "1.0.0"
+  },
+  "rl_optimized_plan": {
+    "name": "rl_optimized_plan",
+    "description": "RL-optimized seed placement using REINFORCE algorithm",
+    "category": "planning",
+    "triggers": [
+      "rl plan",
+      "\u5f3a\u5316\u5b66\u4e60",
+      "RL optimization",
+      "reinforcement learning plan"
+    ],
+    "tool_sequence": [
+      "ctv_segmentation",
+      "oar_segmentation",
+      "trajectory_planning",
+      "seed_planning",
+      "dose_engine",
+      "dose_evaluation",
+      "plan_quality_scorer"
+    ],
+    "parameters": {
+      "seed_planning": {
+        "mode": "rl"
+      },
+      "dose_engine": {
+        "method": "cnn"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.981632,
+    "last_used": 1779704700.9816322,
+    "version": "1.0.0"
+  },
+  "pancreas_ctv_seg": {
+    "name": "pancreas_ctv_seg",
+    "description": "Pancreatic tumor CTV segmentation using VoCo or nnU-Net",
+    "category": "segmentation",
+    "triggers": [
+      "pancreas segment",
+      "\u80f0\u817a\u5206\u5272",
+      "pancreatic tumor",
+      "\u80f0\u817a\u80bf\u7624"
+    ],
+    "tool_sequence": [
+      "ctv_segmentation"
+    ],
+    "parameters": {
+      "ctv_segmentation": {
+        "anatomy": "pancreas",
+        "method": "voco"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.9822814,
+    "last_used": 1779704700.9822817,
+    "version": "1.0.0"
+  },
+  "pancreas_oar_seg": {
+    "name": "pancreas_oar_seg",
+    "description": "Pancreatic OAR segmentation (duodenum, stomach, kidneys, spinal cord)",
+    "category": "segmentation",
+    "triggers": [
+      "pancreas oar",
+      "\u80f0\u817a\u5371\u53ca\u5668\u5b98",
+      "pancreatic organs"
+    ],
+    "tool_sequence": [
+      "oar_segmentation"
+    ],
+    "parameters": {
+      "oar_segmentation": {
+        "method": "totalsegmentator"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.982938,
+    "last_used": 1779704700.9829383,
+    "version": "1.0.0"
+  },
+  "pancreas_full_workflow": {
+    "name": "pancreas_full_workflow",
+    "description": "Complete pancreatic brachytherapy workflow: seg \u2192 plan \u2192 eval",
+    "category": "workflow",
+    "triggers": [
+      "pancreas workflow",
+      "\u80f0\u817a\u5168\u6d41\u7a0b",
+      "pancreatic brachytherapy"
+    ],
+    "tool_sequence": [
+      "ctv_segmentation",
+      "oar_segmentation",
+      "trajectory_planning",
+      "seed_planning",
+      "dose_engine",
+      "dose_evaluation",
+      "oar_constraint_checker",
+      "plan_quality_scorer"
+    ],
+    "parameters": {
+      "ctv_segmentation": {
+        "anatomy": "pancreas"
+      },
+      "oar_segmentation": {
+        "method": "totalsegmentator"
+      },
+      "seed_planning": {
+        "mode": "rule_based"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.9836254,
+    "last_used": 1779704700.9836254,
+    "version": "1.0.0"
+  },
+  "prostate_full_workflow": {
+    "name": "prostate_full_workflow",
+    "description": "Complete prostate brachytherapy workflow",
+    "category": "workflow",
+    "triggers": [
+      "prostate workflow",
+      "\u524d\u5217\u817a\u5168\u6d41\u7a0b",
+      "prostate brachytherapy"
+    ],
+    "tool_sequence": [
+      "ctv_segmentation",
+      "oar_segmentation",
+      "trajectory_planning",
+      "seed_planning",
+      "dose_engine",
+      "dose_evaluation",
+      "oar_constraint_checker",
+      "plan_quality_scorer"
+    ],
+    "parameters": {
+      "ctv_segmentation": {
+        "anatomy": "prostate"
+      },
+      "oar_segmentation": {
+        "method": "totalsegmentator"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.9843004,
+    "last_used": 1779704700.9843006,
+    "version": "1.0.0"
+  },
+  "comprehensive_dose_eval": {
+    "name": "comprehensive_dose_eval",
+    "description": "Comprehensive dose evaluation with OAR constraints and quality scoring",
+    "category": "evaluation",
+    "triggers": [
+      "dose eval",
+      "\u5242\u91cf\u8bc4\u4f30",
+      "evaluate dose",
+      "check dose",
+      "\u5242\u91cf\u68c0\u67e5"
+    ],
+    "tool_sequence": [
+      "dose_evaluation",
+      "oar_constraint_checker",
+      "plan_quality_scorer"
+    ],
+    "parameters": {},
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.984984,
+    "last_used": 1779704700.9849842,
+    "version": "1.0.0"
+  },
+  "plan_optimization": {
+    "name": "plan_optimization",
+    "description": "Iterative plan optimization to improve V100 and reduce OAR dose",
+    "category": "optimization",
+    "triggers": [
+      "optimize",
+      "\u4f18\u5316",
+      "improve plan",
+      "\u8c03\u6574\u8ba1\u5212",
+      "plan refinement"
+    ],
+    "tool_sequence": [
+      "dose_evaluation",
+      "oar_constraint_checker",
+      "plan_refinement",
+      "dose_engine",
+      "dose_evaluation",
+      "plan_quality_scorer"
+    ],
+    "parameters": {},
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.985667,
+    "last_used": 1779704700.9856675,
+    "version": "1.0.0"
+  },
+  "intraop_replan": {
+    "name": "intraop_replan",
+    "description": "Intra-operative seed detection and replanning",
+    "category": "intraoperative",
+    "triggers": [
+      "intraop",
+      "\u672f\u4e2d",
+      "replan",
+      "replanning",
+      "\u91cd\u89c4\u5212",
+      "seed check"
+    ],
+    "tool_sequence": [
+      "seed_segmentation",
+      "dose_evaluation",
+      "seed_planning",
+      "dose_engine",
+      "dose_evaluation"
+    ],
+    "parameters": {
+      "seed_planning": {
+        "mode": "rule_based"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.9863381,
+    "last_used": 1779704700.9863384,
+    "version": "1.0.0"
+  },
+  "dicom_export": {
+    "name": "dicom_export",
+    "description": "Export plan to DICOM RT Structure Set and RT Dose",
+    "category": "export",
+    "triggers": [
+      "export dicom",
+      "\u5bfc\u51faDICOM",
+      "DICOM RT",
+      "export plan"
+    ],
+    "tool_sequence": [
+      "dicom_rt_exporter"
+    ],
+    "parameters": {},
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.9870236,
+    "last_used": 1779704700.9870238,
+    "version": "1.0.0"
+  },
+  "report_generation": {
+    "name": "report_generation",
+    "description": "Generate planning report in JSON/HTML/Markdown format",
+    "category": "export",
+    "triggers": [
+      "generate report",
+      "\u751f\u6210\u62a5\u544a",
+      "report",
+      "summary"
+    ],
+    "tool_sequence": [
+      "report_generator"
+    ],
+    "parameters": {},
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.9877086,
+    "last_used": 1779704700.987709,
+    "version": "1.0.0"
+  },
+  "multi_organ_seg": {
+    "name": "multi_organ_seg",
+    "description": "Segment all organs using TotalSegmentator (104 structures)",
+    "category": "segmentation",
+    "triggers": [
+      "segment all",
+      "\u5168\u90e8\u5206\u5272",
+      "multi-organ",
+      "totalsegmentator",
+      "\u5168\u5668\u5b98"
+    ],
+    "tool_sequence": [
+      "oar_segmentation"
+    ],
+    "parameters": {
+      "oar_segmentation": {
+        "method": "totalsegmentator"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.98838,
+    "last_used": 1779704700.9883802,
+    "version": "1.0.0"
+  },
+  "voco_segmentation": {
+    "name": "voco_segmentation",
+    "description": "Tumor segmentation using VoCo pre-trained models",
+    "category": "segmentation",
+    "triggers": [
+      "voco",
+      "voco seg",
+      "VoCo\u5206\u5272",
+      "pretrained seg"
+    ],
+    "tool_sequence": [
+      "ctv_segmentation",
+      "oar_segmentation"
+    ],
+    "parameters": {
+      "ctv_segmentation": {
+        "method": "voco"
+      },
+      "oar_segmentation": {
+        "method": "voco"
+      }
+    },
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.9890575,
+    "last_used": 1779704700.9890578,
+    "version": "1.0.0"
+  },
+  "quality_check": {
+    "name": "quality_check",
+    "description": "Comprehensive plan quality check with clinical constraints",
+    "category": "evaluation",
+    "triggers": [
+      "quality check",
+      "\u8d28\u91cf\u68c0\u67e5",
+      "check plan",
+      "verify plan",
+      "\u8ba1\u5212\u68c0\u67e5"
+    ],
+    "tool_sequence": [
+      "dose_evaluation",
+      "oar_constraint_checker",
+      "plan_quality_scorer"
+    ],
+    "parameters": {},
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.9897451,
+    "last_used": 1779704700.9897454,
+    "version": "1.0.0"
+  },
+  "dvh_analysis": {
+    "name": "dvh_analysis",
+    "description": "Dose-volume histogram analysis for all structures",
+    "category": "evaluation",
+    "triggers": [
+      "dvh",
+      "DVH\u5206\u6790",
+      "dose volume",
+      "volume histogram"
+    ],
+    "tool_sequence": [
+      "dose_evaluation"
+    ],
+    "parameters": {},
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.9904141,
+    "last_used": 1779704700.9904144,
+    "version": "1.0.0"
+  },
+  "self_evolve": {
+    "name": "self_evolve",
+    "description": "Run self-evolution: analyze experiences, learn new skills, optimize parameters",
+    "category": "meta",
+    "triggers": [
+      "evolve",
+      "\u8fdb\u5316",
+      "self-improve",
+      "learn",
+      "\u5b66\u4e60",
+      "\u603b\u7ed3\u7ecf\u9a8c"
+    ],
+    "tool_sequence": [],
+    "parameters": {},
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.9911356,
+    "last_used": 1779704700.9911358,
+    "version": "1.0.0"
+  },
+  "code_writer": {
+    "name": "code_writer",
+    "description": "Write new tool code and register it into the tool registry",
+    "category": "meta",
+    "triggers": [
+      "write tool",
+      "\u5199\u5de5\u5177",
+      "create tool",
+      "\u65b0\u5de5\u5177",
+      "add tool",
+      "\u7f16\u5199\u4ee3\u7801"
+    ],
+    "tool_sequence": [],
+    "parameters": {},
+    "success_threshold": 0.8,
+    "usage_count": 0,
+    "success_count": 0,
+    "created_at": 1779704700.9918272,
+    "last_used": 1779704700.9918275,
     "version": "1.0.0"
   }
 }

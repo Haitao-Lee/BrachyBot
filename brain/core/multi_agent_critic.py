@@ -18,9 +18,9 @@ class CritiqueResult:
     persona: str
     verdict: str
     score: float
-    concerns: list
-    recommendations: list
-    confidence: float
+    concerns: list = field(default_factory=list)
+    recommendations: list = field(default_factory=list)
+    confidence: float = 0.7
 
 
 @dataclass
@@ -28,9 +28,9 @@ class ConsensusReport:
     overall_verdict: str
     average_score: float
     unanimous: bool
-    critiques: list
-    final_recommendation: str
-    requires_human_review: bool
+    critiques: list = field(default_factory=list)
+    final_recommendation: str = ""
+    requires_human_review: bool = False
 
 
 class MultiAgentCritic:

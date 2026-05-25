@@ -38,7 +38,7 @@ class BaseLLM(ABC):
         pass
 
     @abstractmethod
-    def _chat(self, messages: List[Dict], tools: List[Dict] = None, **kwargs) -> LLMResponse:
+    def _chat(self, messages: List[Dict], tools: Optional[List[Dict]] = None, **kwargs) -> LLMResponse:
         pass
 
     def chat(self, prompt: str, system: str = "", tools: List[Dict] = None, **kwargs) -> LLMResponse:

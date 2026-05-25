@@ -8,7 +8,6 @@ Forms the foundation for self-evolution.
 import os
 import json
 import time
-import copy
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field, asdict
 from collections import defaultdict, Counter

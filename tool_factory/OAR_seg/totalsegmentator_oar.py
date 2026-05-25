@@ -190,8 +190,11 @@ class TotalSegmentatorOARTool(BaseTool):
             organ_counts[organ_name] = count
             organ_volumes[organ_name] = count * voxel_volume_mm3
 
-        oar_mask = sitk.GetImageFromArray(oar_array)
-        oar_mask.CopyInformation(image)
+        # Convert from nibabel (X,Y,Z) to SimpleITK (Z,Y,X) order for consistency
+        oar_array_ordered = np.transpose(oar_array, (2, 1, 0))
+        oar_mask = sitk.GetImageFromArray(oar_array_ordered)
+        oar_mask.SetSpacing(spacing)
+        oar_mask.SetOrigin(image.GetOrigin())
 
         num_organs = len(organ_volumes)
         return ToolResult(
@@ -200,7 +203,7 @@ class TotalSegmentatorOARTool(BaseTool):
             message=f"OAR segmentation completed using {method}. Found {num_organs} organ(s).",
             metadata={
                 "oar_mask": oar_mask,
-                "oar_array": oar_array,
+                "oar_array": oar_array_ordered,  # Use (Z,Y,X) order for consistency with sitk
                 "organ_volumes": organ_volumes,
                 "organ_counts": organ_counts,
                 "dose_constraints": dose_constraints,
@@ -218,7 +221,7 @@ class TotalSegmentatorOARTool(BaseTool):
         temp_dir = tempfile.mkdtemp()
         try:
             input_file = os.path.join(temp_dir, "input.nii.gz")
-            output_dir = os.path.join(temp_dir, "segmentation")
+            output_path = os.path.join(temp_dir, "segmentation.nii.gz")
 
             sitk.WriteImage(image, input_file)
 
@@ -233,9 +236,10 @@ class TotalSegmentatorOARTool(BaseTool):
             cmd = [
                 ts_exe,
                 "-i", input_file,
-                "-o", output_dir,
+                "-o", output_path,
                 "--task", "total",
                 "--device", device_str,
+                "--ml",  # multilabel output for easier reading
             ]
             if fast_mode:
                 cmd.append("--fast")
@@ -258,7 +262,7 @@ class TotalSegmentatorOARTool(BaseTool):
             if proc.returncode != 0:
                 raise RuntimeError(f"TotalSegmentator failed with return code {proc.returncode}")
 
-            result_file = os.path.join(output_dir, "segmentations.nii.gz")
+            result_file = output_path
             if not os.path.exists(result_file):
                 raise RuntimeError(f"TotalSegmentator output not found: {result_file}")
 

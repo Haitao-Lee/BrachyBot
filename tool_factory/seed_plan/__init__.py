@@ -1,19 +1,14 @@
 """
 Seed Planning Tools
-=================
+================
 Tools for optimizing seed placement in brachytherapy.
 """
 
-import sys
-import os
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
 from tool_factory import BaseTool, ToolResult
 
-from seed_planning import SeedPlanningTool
-from seed_planning_rule_based import RuleBasedSeedPlanningTool
-from seed_planning_rl import RLSeedPlanningTool
+from .seed_planning import SeedPlanningTool
+from .seed_planning_rule_based import RuleBasedSeedPlanningTool
+from .seed_planning_rl import RLSeedPlanningTool
 
 
 TOOL_REGISTRY = {

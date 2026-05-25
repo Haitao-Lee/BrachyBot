@@ -21,10 +21,23 @@ class ToolSpec:
 
 
 class ToolRegistry:
-    def __init__(self):
+    def __init__(self, use_agentic_sys: bool = True):
         self._tools: Dict[str, ToolSpec] = {}
         self._tools_by_id: Dict[int, ToolSpec] = {}
         self._categories: Dict[str, List[str]] = {}
+        self._agentic_registry = None
+
+        # Try to import AgenticSys registry for unified execution
+        if use_agentic_sys:
+            try:
+                import sys
+                sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+                from AgenticSys import ToolRegistry as AgenticToolRegistry
+                self._agentic_registry = AgenticToolRegistry()
+                logger.info("Connected to AgenticSys ToolRegistry")
+            except Exception as e:
+                logger.warning(f"Could not connect to AgenticSys registry: {e}")
+
         self._load_toolset_json()
 
     def _load_toolset_json(self):
@@ -37,29 +50,43 @@ class ToolRegistry:
                     for t in data.get("tools", []):
                         self.register(
                             name=t["name"],
-                            id=t["id"],
+                            tool_id=t["id"],
                             type=t.get("type", "general"),
                             description=t["description"],
                             category=t.get("category", "general"),
                             parameters={},
                             input_schema=t.get("input", ""),
                             output_schema=t.get("output", ""),
-                            execute_fn=lambda **kw: {"status": "placeholder"}
+                            execute_fn=None
                         )
+                    logger.info(f"Loaded {len(data.get('tools', []))} tool specs from toolset.json")
             except Exception as e:
                 logger.warning(f"Failed to load toolset.json: {e}")
 
-    def register(self, name: str, id: int = None, type: str = "general",
+    def register(self, name: str, tool_id: int = None, type: str = "general",
                  description: str = "", category: str = "general",
                  parameters: Dict[str, Any] = None, input_schema: str = "",
                  output_schema: str = "", execute_fn: Callable = None) -> None:
-        if id is None:
-            id = self._get_next_id()
+        if tool_id is None:
+            tool_id = self._get_next_id()
+
+        # If we have AgenticSys registry, try to get the actual tool
+        if execute_fn is None and self._agentic_registry:
+            try:
+                actual_tool = self._agentic_registry.get(name)
+                if actual_tool:
+                    execute_fn = actual_tool.execute
+                    logger.debug(f"Connected tool '{name}' to AgenticSys implementation")
+            except Exception:
+                pass
+
         if execute_fn is None:
-            execute_fn = lambda **kw: {"status": "placeholder"}
+            execute_fn = lambda **kw: {"status": "placeholder", "warning": "Tool not yet connected to implementation"}
+            logger.debug(f"Tool '{name}' registered with placeholder execute_fn")
+
         spec = ToolSpec(
             name=name,
-            id=id,
+            id=tool_id,
             type=type,
             description=description,
             category=category,
@@ -69,7 +96,7 @@ class ToolRegistry:
             execute_fn=execute_fn
         )
         self._tools[name] = spec
-        self._tools_by_id[id] = spec
+        self._tools_by_id[tool_id] = spec
         if category not in self._categories:
             self._categories[category] = []
         if name not in self._categories[category]:

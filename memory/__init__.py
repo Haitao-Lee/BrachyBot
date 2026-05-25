@@ -11,11 +11,6 @@ Architecture inspired by:
 - EvoSkills: Co-evolutionary skill verification
 """
 
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from .interaction_memory import InteractionMemory
 from .skill_learner import SkillLearner
 from .preference_store import PreferenceStore

@@ -1,4 +1,5 @@
 """
+
 VoCo Aorta/Blood Vessel Segmentation Tool
 =======================================
 Blood vessel segmentation using VoCo pre-trained SwinUNETR.
@@ -6,10 +7,8 @@ Fine-tuned on Aorta dataset.
 Supports aorta and major vessel segmentation as OAR.
 """
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+import os
 from tool_factory import BaseTool, ToolResult
 import numpy as np
 import torch
@@ -26,7 +25,7 @@ class VoCoAortaVesselTool(BaseTool):
     Suitable for aorta and major vessel segmentation as OAR.
     """
 
-    MODEL_PATH = os.environ.get("VOCO_MODEL_PATH", os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "VoCo", os.path.basename(__file__).replace("_voco.py", "").replace("_tumor", "").replace("_vessel", "").upper() + "/model_voco.pt"))
+    MODEL_PATH = os.environ.get("VOCO_MODEL_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "VoCo", "Aorta", "model_voco.pt"))
     OUT_CHANNELS = 2
     FEATURE_SIZE = 48
     ROI_SIZE = (96, 96, 96)

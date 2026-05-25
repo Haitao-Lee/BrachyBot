@@ -1,15 +1,8 @@
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass, field
-from enum import Enum
 import json
 
-
-class ExecutionStatus(Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    SUCCESS = "success"
-    FAILED = "failed"
-    SKIPPED = "skipped"
+from .types import ExecutionStatus
 
 
 @dataclass
