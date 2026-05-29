@@ -1050,7 +1050,6 @@
         /* ============ VIEWERS (scrollable vertical stack) ============ */
         .viewers-panel {
             padding: 0.5rem;
-            padding-bottom: 4rem; /* Space for summary bar */
             display: flex; flex-direction: column; gap: 0.5rem;
             overflow-y: auto;
             overflow-x: hidden;
@@ -1058,7 +1057,7 @@
             flex: 1;
             min-height: 0;
         }
-        /* Default: viewer cards have fixed height, can be resized freely */
+        /* Default vertical: cards have fixed height, can be resized freely */
         .viewers-panel > .viewer-card {
             flex: none;
             height: 260px;
@@ -1067,64 +1066,78 @@
         .viewers-panel > .viewer-card.viewer-card-3d {
             height: 300px;
         }
+
+        /* Grid: 2x2 with fixed row heights */
         .viewers-panel.layout-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            grid-template-rows: 1fr 1fr;
+            grid-template-rows: minmax(200px, 1fr) minmax(200px, 1fr);
             gap: 0.5rem;
         }
-        .viewers-panel.layout-grid > .viewer-card { height: auto; flex: 1; min-height: 0; }
+        .viewers-panel.layout-grid > .viewer-card {
+            height: auto;
+            min-height: 0;
+        }
+
+        /* Horizontal: cards have fixed width, panel scrolls horizontally */
         .viewers-panel.layout-horizontal {
             flex-direction: row;
             flex-wrap: nowrap;
-            align-items: stretch;
             overflow-x: auto;
+            align-items: stretch;
         }
         .viewers-panel.layout-horizontal > .viewer-card {
-            flex: 1 1 0;
+            flex: none;
+            width: 320px;
             min-width: 200px;
             height: auto;
-            align-self: stretch;
         }
+
+        /* 3D-top: 3D fixed height on top, 3 viewers below in a row */
         .viewers-panel.layout-3d-top {
             display: flex;
             flex-direction: column;
             gap: 0.5rem;
         }
         .viewers-panel.layout-3d-top > .viewer-card-3d {
-            flex: 0 0 45%;
-            min-height: 200px;
+            flex: none;
+            height: 300px;
+            min-height: 180px;
         }
+        .viewers-panel.layout-3d-top .viewers-row {
+            display: flex;
+            gap: 0.5rem;
+            flex: none;
+        }
+        .viewers-panel.layout-3d-top .viewers-row > .viewer-card {
+            flex: none;
+            width: 320px;
+            min-width: 200px;
+            height: 260px;
+        }
+
+        /* 3D-bottom: 3 viewers on top, 3D fixed height below */
         .viewers-panel.layout-3d-bottom {
             display: flex;
             flex-direction: column;
             gap: 0.5rem;
         }
-        .viewers-panel.layout-3d-bottom > .viewer-card-3d {
-            flex: 0 0 40%;
-            min-height: 180px;
-        }
         .viewers-panel.layout-3d-bottom .viewers-row {
-            flex: 1 1 0;
             display: flex;
             gap: 0.5rem;
-            min-height: 0;
-            align-items: stretch;
+            flex: none;
         }
         .viewers-panel.layout-3d-bottom .viewers-row > .viewer-card {
-            flex: 1 1 0;
-            height: auto;
-            min-height: 120px;
+            flex: none;
+            width: 320px;
+            min-width: 200px;
+            height: 260px;
         }
-        .viewers-panel.layout-3d-top .viewers-row {
-            flex: 1 1 0;
-            display: flex;
-            gap: 0.5rem;
-            min-height: 0;
-            align-items: stretch;
+        .viewers-panel.layout-3d-bottom > .viewer-card-3d {
+            flex: none;
+            height: 300px;
+            min-height: 180px;
         }
-        .viewers-panel.layout-3d-top .viewers-row > .viewer-card {
-            flex: 1 1 0;
             height: auto;
             min-height: 120px;
         }
@@ -3407,12 +3420,13 @@ function wrapViewersInRow(panel, mode) {
         row.appendChild(sagittal);
         row.appendChild(coronal);
         if (mode === 'after-3d' && viewer3d) {
-            // 3D on top: insert row AFTER 3D viewer
-            panel.appendChild(row);  // append row at end
-        } else if (mode === 'before-3d' && viewer3d) {
-            // 3D on bottom: insert 3D viewer first, then row
+            // 3D on top: 3D first, then row
             panel.appendChild(viewer3d);
             panel.appendChild(row);
+        } else if (mode === 'before-3d' && viewer3d) {
+            // 3D on bottom: row first, then 3D
+            panel.appendChild(row);
+            panel.appendChild(viewer3d);
         } else {
             panel.appendChild(row);
         }
@@ -5849,8 +5863,11 @@ function finalizeStreamingResponse(el, text) {
 }
 
 function captureAnalysis(text) {
-    // Show analysis in the Analysis tab if it contains meaningful content
-    if (!text || text.length < 20) return;
+    // Only capture analysis/segmentation results, not general chat
+    if (!text || text.length < 30) return;
+    const analysisKeywords = ['CT', 'HU', '图像', '分析', '分割', 'segmentation', '器官', '肿瘤', '靶区', '体积', '体素', 'spacing', '维度'];
+    const isAnalysis = analysisKeywords.some(kw => text.includes(kw));
+    if (!isAnalysis) return;
     const section = document.getElementById('analysisSection');
     const content = document.getElementById('analysisContent');
     const timeEl = document.getElementById('analysisTime');
