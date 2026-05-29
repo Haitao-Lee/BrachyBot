@@ -769,7 +769,8 @@
             background: var(--bg-2);
             border-left: 1px solid var(--card-border);
             display: flex; flex-direction: column;
-            overflow: visible; flex-shrink: 0;
+            overflow: hidden; flex-shrink: 0;
+            position: relative;
         }
 
         /* ============ VERTICAL SPLITTER ============ */
@@ -1049,6 +1050,7 @@
         /* ============ VIEWERS (scrollable vertical stack) ============ */
         .viewers-panel {
             padding: 0.5rem;
+            padding-bottom: 4rem; /* Space for summary bar */
             display: flex; flex-direction: column; gap: 0.5rem;
             overflow-y: auto;
             overflow-x: hidden;
@@ -1337,7 +1339,9 @@
         /* Summary bar */
         .panel-summary-bar {
             padding: 0.5rem 0.75rem; border-top: 1px solid var(--card-border);
-            background: var(--bg); display: flex; gap: 0.5rem; flex-shrink: 0;
+            background: var(--bg-2); display: flex; gap: 0.5rem; flex-shrink: 0;
+            position: fixed; bottom: 0; z-index: 30;
+            width: 500px; min-width: 200px;
         }
 
         .summary-chip {
@@ -1973,9 +1977,8 @@
 
             </div>
             </div>
-        </div>
 
-        <!-- Summary bar -->
+        <!-- Summary bar (inside viewers panel for sticky positioning) -->
         <div class="panel-summary-bar" id="summaryBar">
             <div class="summary-chip">
                 <div class="summary-chip-label">Seeds</div>
@@ -2536,6 +2539,9 @@ function switchPanel(name, el) {
     } else {
         console.error('[switchPanel] Panel not found:', 'panel' + capitalize(name));
     }
+    // Hide summary bar when viewers panel is active
+    const summaryBar = document.getElementById('summaryBar');
+    if (summaryBar) summaryBar.style.display = name === 'viewers' ? 'none' : '';
     if (name === 'viewers' && state.ctLoaded) loadAllSlices();
 }
 
@@ -2697,8 +2703,9 @@ function renderSliceFromVolume(axis, sliceIndex) {
 
     const crossCanvas = document.getElementById('crosshairCanvas' + capitalize(axis));
     if (crossCanvas) {
-        crossCanvas.width = displayW;
-        crossCanvas.height = displayH;
+        // Use CT canvas pixel dimensions for consistent alignment
+        crossCanvas.width = width;
+        crossCanvas.height = height;
         crossCanvas.style.width = displayW + 'px';
         crossCanvas.style.height = displayH + 'px';
         crossCanvas.style.position = 'absolute';
@@ -3901,13 +3908,16 @@ function drawLinkedCrosshairs(volX, volY, volZ, sourceAxis) {
         const sliceCanvas = document.getElementById('sliceCanvas' + capitalize(axis));
         if (!crossCanvas || !sliceCanvas) return;
 
+        // Use CT canvas pixel dimensions (not display dimensions) for consistent alignment
+        const w = sliceCanvas.width;
+        const h = sliceCanvas.height;
         const displayW = sliceCanvas._displayW || sliceCanvas.offsetWidth;
         const displayH = sliceCanvas._displayH || sliceCanvas.offsetHeight;
         const offsetX = sliceCanvas._offsetX || 0;
         const offsetY = sliceCanvas._offsetY || 0;
 
-        crossCanvas.width = displayW;
-        crossCanvas.height = displayH;
+        crossCanvas.width = w;
+        crossCanvas.height = h;
         crossCanvas.style.width = displayW + 'px';
         crossCanvas.style.height = displayH + 'px';
         crossCanvas.style.position = 'absolute';
@@ -3917,7 +3927,7 @@ function drawLinkedCrosshairs(volX, volY, volZ, sourceAxis) {
         crossCanvas.style.pointerEvents = 'none';
 
         const ctx = crossCanvas.getContext('2d');
-        ctx.clearRect(0, 0, crossCanvas.width, crossCanvas.height);
+        ctx.clearRect(0, 0, w, h);
         ctx.strokeStyle = axis === sourceAxis ? '#ff4444' : '#0ea5e9';
         // Compensate for zoom so line width stays constant
         const zoom = state.viewerSettings.zoom || 1;
@@ -3925,25 +3935,20 @@ function drawLinkedCrosshairs(volX, volY, volZ, sourceAxis) {
         ctx.setLineDash([4 / zoom, 4 / zoom]);
 
         let cx, cy;
-        const w = displayW;
-        const h = displayH;
 
         // Get spacing for coordinate conversion
         const spacing = volumeSpacing || [0.68, 0.68, 5.0];
 
-        // Map volume coordinates to display coordinates
+        // Map volume coordinates to canvas pixel coordinates
         // ctShape = [Z, Y, X]
         if (axis === 'axial') {
-            // axial: X -> width, Y -> height
             cx = (volX / state.ctShape[2]) * w;
             cy = (volY / state.ctShape[1]) * h;
         } else if (axis === 'sagittal') {
-            // sagittal: Y -> width, Z_resampled -> height
             const totalResampledZ = state.ctShape[0] * spacing[2] / spacing[1];
             cx = (volY / state.ctShape[1]) * w;
             cy = (volZ / totalResampledZ) * h;
         } else {
-            // coronal: X -> width, Z_resampled -> height
             const totalResampledZ = state.ctShape[0] * spacing[2] / spacing[0];
             cx = (volX / state.ctShape[2]) * w;
             cy = (volZ / totalResampledZ) * h;
@@ -4711,8 +4716,10 @@ function setupBasicInteractions(axis, canvas) {
         e.preventDefault();
         const rect = canvas.getBoundingClientRect();
         const displayScale = canvas._displayScale || 1;
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+        const zoom = state.viewerSettings.zoom || 1;
+        // Account for zoom scaling
+        const mouseX = (e.clientX - rect.left) / zoom;
+        const mouseY = (e.clientY - rect.top) / zoom;
         const imgX = Math.floor(mouseX / displayScale);
         const imgY = Math.floor(mouseY / displayScale);
 
