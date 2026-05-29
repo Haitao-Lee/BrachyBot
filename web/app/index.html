@@ -1079,7 +1079,7 @@
             min-height: 0;
         }
 
-        /* Horizontal: cards have fixed width, panel scrolls horizontally */
+        /* Horizontal: cards share space equally, resize adjusts proportions */
         .viewers-panel.layout-horizontal {
             flex-direction: row;
             flex-wrap: nowrap;
@@ -1087,9 +1087,8 @@
             align-items: stretch;
         }
         .viewers-panel.layout-horizontal > .viewer-card {
-            flex: none;
-            width: 320px;
-            min-width: 200px;
+            flex: 1 1 0;
+            min-width: 150px;
             height: auto;
         }
 
@@ -3433,40 +3432,45 @@ function wrapViewersInRow(panel, mode) {
     }
 }
 
+// Global vertical resize state
+const _vResize = { active: false, card: null, startX: 0, startW: 0 };
+
 function setupVerticalResize() {
     document.querySelectorAll('.viewer-resize-v').forEach(handle => {
-        let resizing = false;
-        let startX = 0;
-        let startW = 0;
-        let prevCard = handle.previousElementSibling;
-
+        if (handle._resizeListener) return; // Skip if already has listener
+        handle._resizeListener = true;
         handle.addEventListener('mousedown', e => {
-            if (!prevCard || prevCard.classList.contains('fullscreen')) return;
-            resizing = true;
-            startX = e.clientX;
-            startW = prevCard.offsetWidth;
+            const card = handle.previousElementSibling;
+            if (!card || card.classList.contains('fullscreen')) return;
+            _vResize.active = true;
+            _vResize.card = card;
+            _vResize.startX = e.clientX;
+            _vResize.startW = card.offsetWidth;
             document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';
             e.preventDefault();
         });
-
-        document.addEventListener('mousemove', e => {
-            if (!resizing) return;
-            const dx = e.clientX - startX;
-            const newW = Math.max(150, startW + dx);
-            prevCard.style.width = newW + 'px';
-            prevCard.style.flex = 'none';
-        });
-
-        document.addEventListener('mouseup', () => {
-            if (resizing) {
-                resizing = false;
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-            }
-        });
     });
 }
+
+// Global mousemove handler for vertical resize
+document.addEventListener('mousemove', e => {
+    if (!_vResize.active || !_vResize.card) return;
+    const dx = e.clientX - _vResize.startX;
+    const newW = Math.max(150, _vResize.startW + dx);
+    _vResize.card.style.width = newW + 'px';
+    _vResize.card.style.flex = 'none';
+});
+
+// Global mouseup handler for vertical resize
+document.addEventListener('mouseup', () => {
+    if (_vResize.active) {
+        _vResize.active = false;
+        _vResize.card = null;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+    }
+});
 
 function setViewerLayout(layout) {
     const panel = document.getElementById('viewersPanel');
