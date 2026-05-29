@@ -231,13 +231,9 @@ def create_app(config: Optional[Dict] = None):
             logger.info(f"Loading CT from: {ct_path}")
             ct_sitk = sitk.ReadImage(ct_path)
             
-            # Use DICOMOrient to get canonical orientation
-            orient_filter = sitk.DICOMOrientImageFilter()
-            original_orientation = orient_filter.GetMetaData("0020|0037") if orient_filter.HasMetaDataItem("0020|0037") else "Unknown"
-            
             # Reorient to LPI (Left-Posterior-Inferior) standard anatomical orientation
             ct_oriented = sitk.DICOMOrient(ct_sitk, 'LPI')
-            logger.info(f"Original orientation: {original_orientation}, Reoriented to LPI")
+            logger.info(f"Reoriented to LPI")
             
             ct_data = sitk.GetArrayFromImage(ct_oriented)  # Shape: (Z, Y, X) in LPI orientation
             spacing = ct_oriented.GetSpacing()  # (X, Y, Z)
@@ -403,6 +399,169 @@ def create_app(config: Optional[Dict] = None):
             logger.error(f"Volume export failed: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/viewer/overlay", methods=["POST"])
+    def api_viewer_overlay():
+        """Get segmentation overlay for a specific slice."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        axis_name = data.get("axis", "axial")
+        slice_index = data.get("slice_index", 0)
+        overlay_type = data.get("overlay_type", "oar")  # "ctv" or "oar"
+        # Per-organ visibility and opacity from client
+        visible_organs = data.get("visible_organs", None)  # list of label_ids to show
+        organ_opacities = data.get("organ_opacities", None)  # {label_id: opacity 0-1}
+        ctv_opacity = data.get("ctv_opacity", 0.7)
+        oar_opacity = data.get("oar_opacity", 0.5)
+
+        ct_data = agent.memory.retrieve("ct_data")
+        if ct_data is None:
+            return jsonify({"error": "No CT image loaded"}), 400
+
+        try:
+            import base64
+            import numpy as np
+            from io import BytesIO
+            from PIL import Image
+
+            axis_map = agent.memory.retrieve("ct_axis_map") or {
+                'axial': 0, 'sagittal': 2, 'coronal': 1,
+            }
+            axis = axis_map.get(axis_name, 0)
+
+            # Get the segmentation mask
+            if overlay_type == "ctv":
+                mask_data = agent.memory.retrieve("ctv_array")
+            else:
+                mask_data = agent.memory.retrieve("oar_array")
+
+            if mask_data is None:
+                img = Image.new('RGBA', (1, 1), (0, 0, 0, 0))
+                buffered = BytesIO()
+                img.save(buffered, format="PNG")
+                img_str = base64.b64encode(buffered.getvalue()).decode()
+                return jsonify({"success": True, "data": f"data:image/png;base64,{img_str}", "has_mask": False})
+
+            # Extract slice from mask: np.take with axis gives correct orientation
+            # mask_data is (Z, Y, X), axis_map: axial=0(Z), sagittal=2(X), coronal=1(Y)
+            mask_slice = np.take(mask_data, slice_index, axis=axis)
+
+            # For sagittal/coronal: resample Z-axis to match isotropic display
+            # Client expects: sagittal -> width=Y, height=Z_resampled
+            #                coronal -> width=X, height=Z_resampled
+            # After np.take: sagittal=(Z, Y), coronal=(Z, X)
+            # Image.fromarray(H, W) -> image width=W, height=H
+            # So (Z_resampled, Y) -> width=Y, height=Z_resampled ✓
+            if axis_name in ('sagittal', 'coronal'):
+                spacing = agent.memory.retrieve("ct_spacing") or (0.6836, 0.6836, 5.0)
+                spacing_x, spacing_y, spacing_z = float(spacing[0]), float(spacing[1]), float(spacing[2])
+                if axis_name == 'sagittal':
+                    resample_ratio = spacing_z / spacing_y
+                else:  # coronal
+                    resample_ratio = spacing_z / spacing_x
+                if resample_ratio != 1.0:
+                    new_z = int(mask_slice.shape[0] * resample_ratio)
+                    indices = np.minimum((np.arange(new_z) / resample_ratio).astype(int), mask_slice.shape[0] - 1)
+                    mask_slice = mask_slice[indices, :]
+                # No transpose needed - (Z_resampled, Y/X) gives correct width/height
+
+            # Create colored overlay with per-organ visibility/opacity
+            overlay = np.zeros((*mask_slice.shape, 4), dtype=np.uint8)
+
+            if overlay_type == "ctv":
+                alpha = int(ctv_opacity * 255)
+                overlay[mask_slice > 0] = [255, 0, 0, alpha]
+            else:
+                # OAR: per-organ colors with visibility/opacity filtering
+                unique_labels = np.unique(mask_slice[mask_slice > 0])
+                default_colors = [
+                    (0, 255, 0),     # green
+                    (0, 200, 255),   # cyan
+                    (255, 200, 0),   # yellow
+                    (255, 0, 255),   # magenta
+                    (0, 255, 200),   # teal
+                    (255, 100, 0),   # orange
+                    (100, 0, 255),   # purple
+                    (0, 255, 100),   # lime
+                ]
+                for label in unique_labels:
+                    label_int = int(label)
+                    # Check visibility - use label_int (actual mask value) for filtering
+                    if visible_organs is not None and label_int not in visible_organs:
+                        continue
+                    # Get opacity for this organ
+                    if organ_opacities and str(label_int) in organ_opacities:
+                        alpha = int(organ_opacities[str(label_int)] * 255)
+                    else:
+                        alpha = int(oar_opacity * 255)
+                    # Use label_int to index colors so mapping is consistent
+                    color = default_colors[label_int % len(default_colors)]
+                    overlay[mask_slice == label] = [*color, alpha]
+
+            img = Image.fromarray(overlay, 'RGBA')
+
+            buffered = BytesIO()
+            img.save(buffered, format="PNG")
+            img_str = base64.b64encode(buffered.getvalue()).decode()
+
+            return jsonify({
+                "success": True,
+                "data": f"data:image/png;base64,{img_str}",
+                "has_mask": True,
+                "overlay_type": overlay_type,
+            })
+        except Exception as e:
+            logger.error(f"Overlay generation failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/viewer/organs", methods=["GET"])
+    def api_viewer_organs():
+        """Return organ data (names and voxel counts) from OAR segmentation."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        organ_names = agent.memory.retrieve("organ_names", {})
+        organ_counts = agent.memory.retrieve("organ_counts", {})
+
+        # If organ_names is empty but oar_array exists, generate from array
+        if not organ_names:
+            oar_array = agent.memory.retrieve("oar_array")
+            if oar_array is not None:
+                import numpy as np
+                organ_counts_generated = {}
+                organ_names_generated = {}
+                unique_labels = np.unique(oar_array)
+                for label in unique_labels:
+                    if label > 0:
+                        label_int = int(label)
+                        organ_counts_generated[label_int] = int(np.sum(oar_array == label))
+                        # Try TotalSegmentator mapping
+                        try:
+                            from tool_factory.OAR_seg.totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
+                            organ_names_generated[label_int] = TOTALSEG_LABEL_MAPPING.get(label_int, f"organ_{label_int}")
+                        except ImportError:
+                            organ_names_generated[label_int] = f"organ_{label_int}"
+                organ_names = organ_names_generated
+                organ_counts = organ_counts_generated
+                # Store for future use
+                agent.memory.store("organ_names", organ_names)
+                agent.memory.store("organ_counts", organ_counts)
+
+        organs = {}
+        for label_id, name in organ_names.items():
+            label_int = int(label_id) if isinstance(label_id, str) else label_id
+            organs[str(label_int)] = {
+                "name": name,
+                "voxel_count": organ_counts.get(label_int, organ_counts.get(str(label_int), 0))
+            }
+
+        return jsonify({"success": True, "organs": organs})
+
     @app.route("/api/viewer/threshold", methods=["POST"])
     def api_viewer_threshold():
         """Apply threshold segmentation and return mask."""
@@ -460,8 +619,9 @@ def create_app(config: Optional[Dict] = None):
         try:
             import numpy as np
             shape = ct_data.shape
-            if 0 <= x < shape[0] and 0 <= y < shape[1] and 0 <= z < shape[2]:
-                hu = float(ct_data[x, y, z])
+            # ct_data shape is (Z, Y, X)
+            if 0 <= x < shape[2] and 0 <= y < shape[1] and 0 <= z < shape[0]:
+                hu = float(ct_data[z, y, x])
                 return jsonify({"success": True, "hu": hu, "coords": [x, y, z]})
             else:
                 return jsonify({"error": "Coordinates out of bounds"}), 400
@@ -471,34 +631,48 @@ def create_app(config: Optional[Dict] = None):
 
     @app.route("/api/viewer/3d", methods=["POST"])
     def api_viewer_3d():
-        """Generate 3D mesh from CT or mask data."""
+        """Generate 3D mesh from CTV or OAR mask."""
         agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
         data = request.get_json() or {}
-        threshold = data.get("threshold", -200)
-        decimate = data.get("decimate", 0.9)  # Reduce mesh complexity
-
-        ct_data = agent.memory.retrieve("ct_data")
-        if ct_data is None:
-            return jsonify({"error": "No CT image loaded"}), 400
+        source = data.get("source", "ctv")  # "ctv" or "oar"
+        label_id = data.get("label_id")  # specific organ label for OAR
 
         try:
             import numpy as np
             from skimage import measure
+            from scipy.ndimage import binary_closing, binary_fill_holes
 
-            # Create mask from threshold
-            mask = ct_data > threshold
+            # Get mask data
+            if source == "ctv":
+                mask_data = agent.memory.retrieve("ctv_array")
+            else:
+                mask_data = agent.memory.retrieve("oar_array")
 
-            # Generate marching cubes mesh
-            vertices, faces, normals, values = measure.marching_cubes(mask, spacing=agent.memory.retrieve("ct_spacing") or (1, 1, 1))
+            if mask_data is None:
+                return jsonify({"error": f"No {source} mask data available"}), 400
 
-            # Decimate if requested
-            if decimate > 0 and len(faces) > 10000:
-                keep = int(len(faces) * (1 - decimate))
-                indices = np.random.choice(len(faces), keep, replace=False)
-                faces = faces[indices]
+            # Extract specific label if provided
+            if label_id is not None:
+                mask = (mask_data == int(label_id)).astype(np.uint8)
+            else:
+                mask = (mask_data > 0).astype(np.uint8)
+
+            if mask.sum() == 0:
+                return jsonify({"error": "Empty mask"}), 400
+
+            # Clean up mask
+            mask = binary_closing(mask, iterations=1).astype(np.uint8)
+            mask = binary_fill_holes(mask).astype(np.uint8)
+
+            spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
+            spacing = tuple(float(s) for s in spacing[:3])
+
+            vertices, faces, normals, values = measure.marching_cubes(
+                mask, level=0.5, spacing=spacing, allow_degenerate=False
+            )
 
             return jsonify({
                 "success": True,
@@ -506,9 +680,93 @@ def create_app(config: Optional[Dict] = None):
                 "faces": faces.tolist(),
                 "vertex_count": len(vertices),
                 "face_count": len(faces),
+                "source": source,
+                "label_id": label_id,
             })
         except Exception as e:
             logger.error(f"Viewer 3D failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/viewer/3d_mask", methods=["POST"])
+    def api_viewer_3d_mask():
+        """Generate 3D mesh from a specific organ mask label."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        label_id = data.get("label_id")
+        source = data.get("source", "oar")  # "oar" or "ctv"
+        smoothing = data.get("smoothing", 1)
+
+        if label_id is None:
+            return jsonify({"error": "label_id required"}), 400
+
+        try:
+            import numpy as np
+            from skimage import measure
+            from scipy.ndimage import binary_closing, binary_fill_holes
+
+            if source == "ctv":
+                mask_data = agent.memory.retrieve("ctv_array")
+            else:
+                mask_data = agent.memory.retrieve("oar_array")
+
+            if mask_data is None:
+                return jsonify({"error": f"No {source} mask data available"}), 400
+
+            # Extract binary mask for this label
+            label_id = int(label_id)
+            binary_mask = (mask_data == label_id).astype(np.uint8)
+
+            if binary_mask.sum() == 0:
+                return jsonify({"error": f"Label {label_id} not found in mask"}), 400
+
+            # Clean up mask
+            binary_mask = binary_closing(binary_mask, iterations=smoothing).astype(np.uint8)
+            binary_mask = binary_fill_holes(binary_mask).astype(np.uint8)
+
+            # Get spacing from CT data
+            spacing = agent.memory.retrieve("ct_spacing") or (1.0, 1.0, 1.0)
+            # Ensure spacing is tuple of 3 floats
+            if isinstance(spacing, (list, tuple)) and len(spacing) >= 3:
+                spacing = tuple(float(s) for s in spacing[:3])
+            else:
+                spacing = (1.0, 1.0, 1.0)
+
+            # Generate mesh with marching cubes
+            vertices, faces, normals, values = measure.marching_cubes(
+                binary_mask, level=0.5, spacing=spacing, allow_degenerate=False
+            )
+
+            # Simple decimation: if too many faces, use quadric decimation
+            if len(faces) > 50000:
+                target = min(50000, len(faces))
+                # Use Open3D if available for proper decimation
+                try:
+                    import open3d as o3d
+                    mesh_o3d = o3d.geometry.TriangleMesh()
+                    mesh_o3d.vertices = o3d.utility.Vector3dVector(vertices)
+                    mesh_o3d.triangles = o3d.utility.Vector3iVector(faces)
+                    mesh_o3d = mesh_o3d.simplify_quadric_decimation(target_number_of_triangles=target)
+                    vertices = np.asarray(mesh_o3d.vertices)
+                    faces = np.asarray(mesh_o3d.triangles)
+                except ImportError:
+                    # Fallback: stride-based decimation
+                    stride = max(1, len(faces) // target)
+                    faces = faces[::stride]
+
+            return jsonify({
+                "success": True,
+                "vertices": vertices.tolist(),
+                "faces": faces.tolist(),
+                "vertex_count": len(vertices),
+                "face_count": len(faces),
+                "label_id": label_id,
+                "source": source,
+            })
+        except Exception as e:
+            logger.error(f"3D mask reconstruction failed: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/config", methods=["POST"])

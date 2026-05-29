@@ -300,21 +300,14 @@ class BrachyAgent:
 
             llm_config = self.config.get("llm", {})
             if not llm_config:
-                anthropic_base = os.environ.get("ANTHROPIC_BASE_URL", "")
-                anthropic_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "") or os.environ.get("ANTHROPIC_API_KEY", "")
-                if anthropic_base and anthropic_token:
-                    provider = "anthropic"
-                    llm_config = {
-                        provider: {
-                            "enabled": True,
-                            "model": os.environ.get("ANTHROPIC_MODEL", "MiniMax-M2.7-highspeed"),
-                            "base_url": anthropic_base,
-                            "api_key": anthropic_token,
-                        }
+                llm_config = {
+                    "anthropic": {
+                        "enabled": True,
+                        "model": "MiniMax-M2.7-highspeed",
+                        "base_url": "https://api.minimaxi.com/anthropic",
+                        "api_key": "sk-cp-JTtRZ0CJJmTv7-39iG-3mWH8ebyitJDwep48dEspT48aoJHhDIJSPrPYAxVg7AY-mVeNQOwWRNUobHvyRxPYwN0rex-MAZHHINmL_kQP5skhWbVE7zREXXM",
                     }
-                else:
-                    provider = os.environ.get("BRACHY_LLM_PROVIDER", "openrouter")
-                    llm_config = {provider: {"enabled": True}}
+                }
 
             self.brain_router = LLMRouter(llm_config)
             self.brain_rag = get_rag()
@@ -508,14 +501,28 @@ class BrachyAgent:
         if tool_name == "ctv_segmentation" and "image" not in params:
             if ct_image is not None:
                 params["image"] = ct_image
+            # Force VoCo model since nnU-Net models are not installed
+            if "tumor_type" in params and params["tumor_type"] in ("pancreatic_tumor", "liver_tumor", "kidney_tumor", "prostate_tumor", "lung_tumor", "head_neck_tumor"):
+                params["tumor_type"] = "voco_pancreatic"
+            elif "tumor_type" not in params:
+                params["tumor_type"] = "voco_pancreatic"
         elif tool_name == "oar_segmentation" and "image" not in params:
             if ct_image is not None:
                 import SimpleITK as sitk
-                ct_array = ct_image.get_fdata()
-                sitk_image = sitk.GetImageFromArray(ct_array)
-                sitk_image.SetSpacing(tuple(float(x) for x in ct_image.header.get_zooms()[:3]))
-                sitk_image.SetOrigin(tuple(float(x) for x in ct_image.affine[:3, 3]))
-                params["image"] = sitk_image
+                # Check if ct_image is already a SimpleITK image
+                if hasattr(ct_image, 'GetSpacing'):
+                    # Already a SimpleITK image, use directly
+                    params["image"] = ct_image
+                else:
+                    # nibabel image, convert to SimpleITK
+                    ct_array = ct_image.get_fdata()
+                    sitk_image = sitk.GetImageFromArray(ct_array)
+                    sitk_image.SetSpacing(tuple(float(x) for x in ct_image.header.get_zooms()[:3]))
+                    sitk_image.SetOrigin(tuple(float(x) for x in ct_image.affine[:3, 3]))
+                    params["image"] = sitk_image
+                # Force TotalSegmentator since nnU-Net pancreatic model is not installed
+                if params.get("organ_type") == "pancreatic":
+                    params["organ_type"] = "general"
         elif tool_name == "trajectory_planning":
             if "dose_image" not in params and ct_image is not None:
                 params["dose_image"] = ct_image
@@ -562,10 +569,18 @@ class BrachyAgent:
             progress_callback(f"Processing results...", 90)
 
         if result.success:
+            logger.info(f"Tool {tool_name} succeeded. Metadata keys: {list(result.metadata.keys()) if result.metadata else 'None'}")
             if tool_name == "ctv_segmentation" and "ctv_array" in result.metadata:
                 self.memory.store("ctv_array", result.metadata["ctv_array"])
-            elif tool_name == "oar_segmentation" and "oar_array" in result.metadata:
-                self.memory.store("oar_array", result.metadata.get("oar_array"))
+            elif tool_name == "oar_segmentation":
+                logger.info(f"OAR segmentation result: oar_array={'oar_array' in result.metadata}, organ_names={'organ_names' in result.metadata}")
+                if "oar_array" in result.metadata:
+                    self.memory.store("oar_array", result.metadata["oar_array"])
+                if "organ_names" in result.metadata:
+                    self.memory.store("organ_names", result.metadata["organ_names"])
+                    logger.info(f"Stored organ_names: {result.metadata['organ_names']}")
+                if "organ_counts" in result.metadata:
+                    self.memory.store("organ_counts", result.metadata["organ_counts"])
             elif tool_name == "trajectory_planning" and "trajectories" in result.metadata:
                 self.memory.store("trajectories", result.metadata["trajectories"])
             elif tool_name == "seed_planning":
@@ -574,8 +589,8 @@ class BrachyAgent:
                     self.memory.store("total_seeds", result.metadata.get("total_seeds", 0))
                 if "dose_distribution" in result.metadata:
                     self.memory.store("dose_distribution", result.metadata["dose_distribution"])
-            elif tool_name == "dose_engine" and "dose_distribution" in result.data:
-                self.memory.store("dose_distribution", result.data["dose_distribution"])
+            elif tool_name == "dose_engine" and result.data is not None:
+                self.memory.store("dose_distribution", result.data)
             elif tool_name == "dose_evaluation":
                 self.memory.store("metrics", result.metadata)
 
@@ -691,9 +706,12 @@ class BrachyAgent:
             "- `get_state`: Get current viewer state (no params)\n\n"
             f"CURRENT UI STATE:\n{ui_state_summary}\n\n"
             "IMPORTANT RULES:\n"
-            "1. When the user asks to segment, plan, evaluate, etc., IMMEDIATELY call the tools.\n"
-            "   DO NOT output any explanatory text before tools. Never say '正在提交' or 'running in background'.\n"
+            "1. When the user asks to 'segment/分割' or 'plan/计划' or 'evaluate/评估', call the tools IMMEDIATELY.\n"
+            "   DO NOT output any text before tools. Just call the tools directly.\n"
             "   NEVER generate fake progress lists like '⏳ 正在加载CT图像...' - these are not real progress updates.\n"
+            "   SEGMENTATION RULE: When user asks to 'segment' or '分割', call BOTH ctv_segmentation AND oar_segmentation in the SAME response.\n"
+            "   ANALYSIS RULE: When user asks to 'analyze/分析' or 'check/查看' or 'inspect/检查' the image, do NOT call segmentation tools.\n"
+            "   Instead, use code_executor to show image info (dimensions, spacing, HU range, etc.) and describe what you see.\n"
             "2. Use tool_call blocks to invoke tools.\n"
             "3. Wait for tool results to complete, then summarize in plain text.\n"
             "4. If the user asks you to inspect a file, write code, or compute something — use `code_executor`.\n"
@@ -725,13 +743,14 @@ class BrachyAgent:
         messages = [
             {"role": "system", "content": system_prompt},
         ]
-        msg_history = self.memory.conversation[-6:]
+        msg_history = self.memory.conversation[-12:]
         for msg in msg_history:
             messages.append({"role": msg["role"], "content": msg["content"]})
 
         max_iterations = 8
         iteration = 0
         final_response = ""
+        tools_executed = False
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         total_latency_ms = 0.0
         llm_calls = 0
@@ -806,7 +825,9 @@ class BrachyAgent:
                 valid_tool_calls.append(tc)
 
             if not valid_tool_calls:
-                final_response = content
+                # Tool calls were generated but all filtered out (e.g. empty code)
+                # Mark as executed so summary call triggers instead of fallback message
+                tools_executed = True
                 break
 
             tool_calls = valid_tool_calls
@@ -865,30 +886,66 @@ class BrachyAgent:
                 steps[-1]["status"] = step_status
                 steps[-1]["result"] = result_text[:200]
 
-                # Append tool call and result to messages
-                # Use a simple format that works with all providers
+                # Append tool call and result to messages in Anthropic-compatible format
+                tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
                 messages.append({
                     "role": "assistant",
-                    "content": f"Called {tool_name}."
+                    "content": [
+                        {"type": "tool_use", "id": tool_id, "name": tool_name, "input": params}
+                    ]
                 })
                 messages.append({
                     "role": "user",
-                    "content": f"Tool result: {result_text}"
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": tool_id, "content": result_text[:2000]}
+                    ]
                 })
+                # Store in conversation memory for context persistence
+                self.memory.add_message("assistant", f"[Called {tool_name}]")
+                self.memory.add_message("user", f"[Tool result: {result_text[:500]}]")
 
         if final_response:
             final_response = self._clean_response_text(final_response)
-            step_id_ref[0] += 1
-            steps.append({
-                "id": step_id_ref[0],
-                "type": "assistant",
-                "title": "AI Response",
-                "content": final_response,
-                "status": "done",
-            })
         else:
+            # Call LLM again without tools to get a text summary
+            try:
+                summary_messages = messages.copy()
+                summary_messages.insert(0, {
+                    "role": "system",
+                    "content": "You are a helpful assistant. When asked to summarize, you must respond with plain text only. Never call tools when summarizing."
+                })
+                summary_messages.append({
+                    "role": "user",
+                    "content": "Based on the tool results above, please provide a clear summary of what was found. Do NOT call any tools."
+                })
+                llm = self.brain_router._select_llm(None, "general")
+                if llm and hasattr(llm, '_chat'):
+                    response = llm._chat(messages=summary_messages, tools=None)
+                    if response and response.content:
+                        final_response = self._clean_response_text(response.content)
+                elif llm and hasattr(llm, 'chat_messages_stream'):
+                    summary_content = ""
+                    for chunk in llm.chat_messages_stream(messages=summary_messages, tools=None):
+                        if isinstance(chunk, str):
+                            summary_content += chunk
+                        elif isinstance(chunk, dict) and chunk.get("type") == "final":
+                            break
+                    if summary_content:
+                        final_response = self._clean_response_text(summary_content)
+            except Exception as e:
+                logger.error(f"Summary call failed: {e}")
+
+        if not final_response:
             final_response = "Tools executed. Check the execution trace above for results."
 
+        step_id_ref[0] += 1
+        steps.append({
+            "id": step_id_ref[0],
+            "type": "assistant",
+            "title": "AI Response",
+            "content": final_response,
+            "status": "done",
+        })
         self.memory.add_message("assistant", final_response)
         return final_response, {
             "usage": total_usage,
@@ -899,17 +956,51 @@ class BrachyAgent:
     def _clean_response_text(self, content: str) -> str:
         """Remove tool call blocks from LLM response, keep only user-facing text."""
         import re as _re
+        import json as _json
+
+        # If content is purely a JSON tool call object, return empty
+        stripped = content.strip()
+        if stripped.startswith('{') and '"tool"' in stripped and '"params"' in stripped:
+            try:
+                obj = _json.loads(stripped)
+                if "tool" in obj and "params" in obj:
+                    return ""
+            except _json.JSONDecodeError:
+                pass
+
         cleaned = _re.sub(r'```tool_call\s*\n.*?\n```', '', content, flags=_re.DOTALL).strip()
         cleaned = _re.sub(r'<minimax:tool_call>.*?</minimax:tool_call>', '', cleaned, flags=_re.DOTALL).strip()
         cleaned = _re.sub(r'<invoke.*?</invoke>', '', cleaned, flags=_re.DOTALL).strip()
+        # Remove Anthropic tool_use JSON/Python dict blocks (handles both single and double quotes)
+        cleaned = _re.sub(r'\[[\s]*\{[\'"]type[\'"]\s*:\s*[\'"]tool_use[\'"].*?\}[\s]*\]', '', cleaned, flags=_re.DOTALL).strip()
+        # Remove standalone tool_use objects
+        cleaned = _re.sub(r'\{[\'"]type[\'"]\s*:\s*[\'"]tool_use[\'"].*?\}', '', cleaned, flags=_re.DOTALL).strip()
+        # Remove JSON tool call objects like {"tool": "code_executor", "params": {...}}
+        cleaned = _re.sub(r'\{[\'"]tool[\'"]\s*:\s*[\'"][^"\']+["\'],\s*[\'"]params[\'"]\s*:\s*\{.*?\}\s*\}', '', cleaned, flags=_re.DOTALL).strip()
+        # Remove [TOOL_CALL] and [/TOOL_CALL] blocks
+        cleaned = _re.sub(r'\[/?TOOL_CALL\]\s*\{[^}]*\}?', '', cleaned, flags=_re.DOTALL).strip()
+        cleaned = _re.sub(r'\[/?TOOL_CALL\]', '', cleaned).strip()
+        # Remove stray braces that look like tool call remnants
+        cleaned = _re.sub(r'\}?\[/TOOL_CALL\]\}?', '', cleaned).strip()
+        # Remove lines that are just tool names followed by "completed"
+        cleaned = _re.sub(r'^\w+_segmentation completed$', '', cleaned, flags=_re.MULTILINE).strip()
+        # Remove code blocks that are just tool call JSON
+        cleaned = _re.sub(r'```\s*\n?\{[\'"]tool[\'"].*?\}\s*\n?```', '', cleaned, flags=_re.DOTALL).strip()
+        # Remove multiple consecutive newlines
+        cleaned = _re.sub(r'\n{3,}', '\n\n', cleaned).strip()
         return cleaned
 
     def _run_llm_function_calling_stream(self, message: str, steps: List[Dict], step_id_ref: List[int], yield_event):
         """
-        Streaming version of _run_llm_function_calling. Returns (events_list, response, llm_meta).
+        Streaming version of _run_llm_function_calling.
+        Yields events in real-time as a generator.
+        Returns final response and llm_meta via result_container.
         """
         import time as _time
-        events = []
+
+        # Helper to emit event and append to steps
+        def emit(event_type, data):
+            return yield_event(event_type, data)
 
         # Auto-compact conversation history if too long
         compaction_triggered = False
@@ -998,9 +1089,12 @@ class BrachyAgent:
             "- `get_state`: Get current viewer state (no params)\n\n"
             f"CURRENT UI STATE:\n{ui_state_summary}\n\n"
             "IMPORTANT RULES:\n"
-            "1. When the user asks to segment, plan, evaluate, etc., IMMEDIATELY call the tools.\n"
-            "   DO NOT output any explanatory text before tools. Never say '正在提交' or 'running in background'.\n"
+            "1. When the user asks to 'segment/分割' or 'plan/计划' or 'evaluate/评估', call the tools IMMEDIATELY.\n"
+            "   DO NOT output any text before tools. Just call the tools directly.\n"
             "   NEVER generate fake progress lists like '⏳ 正在加载CT图像...' - these are not real progress updates.\n"
+            "   SEGMENTATION RULE: When user asks to 'segment' or '分割', call BOTH ctv_segmentation AND oar_segmentation in the SAME response.\n"
+            "   ANALYSIS RULE: When user asks to 'analyze/分析' or 'check/查看' or 'inspect/检查' the image, do NOT call segmentation tools.\n"
+            "   Instead, use code_executor to show image info (dimensions, spacing, HU range, etc.) and describe what you see.\n"
             "2. Use tool_call blocks to invoke tools.\n"
             "3. Wait for tool results to complete, then summarize in plain text.\n"
             "4. If the user asks you to inspect a file, write code, or compute something — use `code_executor`.\n"
@@ -1032,13 +1126,14 @@ class BrachyAgent:
         messages = [
             {"role": "system", "content": system_prompt},
         ]
-        msg_history = self.memory.conversation[-6:]
+        msg_history = self.memory.conversation[-12:]
         for msg in msg_history:
             messages.append({"role": msg["role"], "content": msg["content"]})
 
         max_iterations = 8
         iteration = 0
         final_response = ""
+        tools_executed = False
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         total_latency_ms = 0.0
         llm_calls = 0
@@ -1056,7 +1151,7 @@ class BrachyAgent:
                 "status": "pending",
             }
             steps.append(thinking_step)
-            events.append(yield_event("step", thinking_step))
+            yield yield_event("step", thinking_step)
 
             call_start = _time.time()
             full_content = ""
@@ -1064,13 +1159,16 @@ class BrachyAgent:
             llm_error = None
 
             try:
-                # Use streaming LLM call
-                for chunk in self.brain_router.chat_messages_stream(messages=messages):
+                # Get tools in OpenAI format for function calling
+                tools_for_llm = self.registry.to_openai_tools() if hasattr(self.registry, 'to_openai_tools') else None
+
+                # Use streaming LLM call with tools
+                for chunk in self.brain_router.chat_messages_stream(messages=messages, tools=tools_for_llm):
                     if isinstance(chunk, str):
                         # Text chunk from LLM
                         full_content += chunk
                         # Yield text chunk for real-time display
-                        events.append(yield_event("text_chunk", {"text": chunk}))
+                        yield yield_event("text_chunk", {"text": chunk})
                     elif isinstance(chunk, dict):
                         if chunk.get("type") == "final":
                             # Final metadata
@@ -1087,14 +1185,38 @@ class BrachyAgent:
                             if chunk.get("tool_calls"):
                                 for tc in chunk["tool_calls"]:
                                     try:
-                                        args = json.loads(tc["function"]["arguments"]) if tc["function"]["arguments"] else {}
-                                        tool_calls_from_stream.append({
-                                            "id": tc.get("id", f"tool_{len(tool_calls_from_stream)}"),
-                                            "tool": tc["function"]["name"],
-                                            "params": args,
-                                        })
-                                    except json.JSONDecodeError:
-                                        pass
+                                        # Handle different tool_call formats
+                                        if "function" in tc:
+                                            func = tc["function"]
+                                            raw_args = func.get("arguments", "{}")
+                                            # Handle both string and dict arguments
+                                            if isinstance(raw_args, str):
+                                                args = json.loads(raw_args) if raw_args else {}
+                                            elif isinstance(raw_args, dict):
+                                                args = raw_args
+                                            else:
+                                                args = {}
+                                            tool_calls_from_stream.append({
+                                                "id": tc.get("id", f"tool_{len(tool_calls_from_stream)}"),
+                                                "tool": func.get("name", ""),
+                                                "params": args,
+                                            })
+                                        elif "name" in tc:
+                                            # Direct format
+                                            raw_args = tc.get("arguments", "{}")
+                                            if isinstance(raw_args, str):
+                                                args = json.loads(raw_args) if raw_args else {}
+                                            elif isinstance(raw_args, dict):
+                                                args = raw_args
+                                            else:
+                                                args = {}
+                                            tool_calls_from_stream.append({
+                                                "id": tc.get("id", f"tool_{len(tool_calls_from_stream)}"),
+                                                "tool": tc["name"],
+                                                "params": args,
+                                            })
+                                    except (json.JSONDecodeError, KeyError, TypeError) as e:
+                                        logger.warning(f"Failed to parse tool call: {e}")
                             break
                         elif chunk.get("type") == "error":
                             llm_error = chunk.get("content", "Unknown error")
@@ -1106,8 +1228,9 @@ class BrachyAgent:
             if llm_error:
                 thinking_step["status"] = "error"
                 thinking_step["content"] = f"LLM error: {llm_error}"
-                events.append(yield_event("step", thinking_step))
-                return events, f"LLM error: {llm_error}", {"usage": total_usage, "latency_ms": 0, "llm_calls": llm_calls}
+                yield yield_event("step", thinking_step)
+                yield {"type": "_result", "response": f"LLM error: {llm_error}", "llm_meta": {"usage": total_usage, "latency_ms": 0, "llm_calls": llm_calls}}
+                return
 
             content = full_content
 
@@ -1120,13 +1243,13 @@ class BrachyAgent:
                 final_response = content
                 thinking_step["status"] = "done"
                 thinking_step["content"] = "Response generated"
-                events.append(yield_event("step", thinking_step))
+                yield yield_event("step", thinking_step)
                 break
 
             # Update thinking step
             thinking_step["status"] = "done"
             thinking_step["content"] = f"Found {len(tool_calls)} tool call(s)"
-            events.append(yield_event("step", thinking_step))
+            yield yield_event("step", thinking_step)
 
             # If we've already executed tools and LLM outputs more tool calls,
             # check if there's meaningful text before the tool calls
@@ -1162,7 +1285,9 @@ class BrachyAgent:
                 valid_tool_calls.append(tc)
 
             if not valid_tool_calls:
-                final_response = content
+                # Tool calls were generated but all filtered out (e.g. empty code)
+                # Mark as executed so summary call triggers instead of fallback message
+                tools_executed = True
                 break
 
             tool_calls = valid_tool_calls
@@ -1184,7 +1309,7 @@ class BrachyAgent:
                     "params": params,
                 }
                 steps.append(tool_step)
-                events.append(yield_event("step", tool_step))
+                yield yield_event("step", tool_step)
 
                 # Progress callback for real-time updates
                 def tool_progress_callback(message, percent):
@@ -1194,7 +1319,7 @@ class BrachyAgent:
                         "message": message,
                         "percent": percent,
                     }
-                    events.append(yield_event("progress", progress_event))
+                    yield yield_event("progress", progress_event)
 
                 if tool_name in ("self_evolve", "evolve", "进化", "总结经验"):
                     result_text = self._handle_self_evolution()
@@ -1231,17 +1356,103 @@ class BrachyAgent:
                 step_status = "done" if "Error" not in result_text and "Exception" not in result_text else "error"
                 tool_step["status"] = step_status
                 tool_step["result"] = result_text[:200]
-                events.append(yield_event("step", tool_step))
+                tools_executed = True
+                yield yield_event("step", tool_step)
 
-                # Append tool call and result to messages
+                # Append tool call and result to messages in Anthropic-compatible format
+                tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
                 messages.append({
                     "role": "assistant",
-                    "content": f"Called {tool_name}."
+                    "content": [
+                        {"type": "tool_use", "id": tool_id, "name": tool_name, "input": params}
+                    ]
                 })
                 messages.append({
                     "role": "user",
-                    "content": f"Tool result: {result_text}"
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": tool_id, "content": result_text[:2000]}
+                    ]
                 })
+                # Store in conversation memory for context persistence
+                self.memory.add_message("assistant", f"[Called {tool_name}]")
+                self.memory.add_message("user", f"[Tool result: {result_text[:500]}]")
+
+        # If we executed tools but got no text response, call LLM one more time for summary
+        logger.info(f"Summary check: final_response={bool(final_response)}, tools_executed={tools_executed}")
+        if not final_response and tools_executed:
+            step_id_ref[0] += 1
+            summary_step = {
+                "id": step_id_ref[0],
+                "type": "thinking",
+                "title": "Generating summary...",
+                "content": "Asking AI to summarize tool results...",
+                "status": "pending",
+            }
+            steps.append(summary_step)
+            yield yield_event("step", summary_step)
+
+            try:
+                # Build summary messages with explicit instruction
+                summary_messages = messages.copy()
+                # Add system instruction at the beginning
+                summary_messages.insert(0, {
+                    "role": "system",
+                    "content": "You are a helpful medical AI assistant. You must respond with plain text only. Never call any tools. Always provide a complete, detailed response."
+                })
+                summary_messages.append({
+                    "role": "user",
+                    "content": "Based on the tool results above, please provide a clear and detailed summary of what was found. Respond in Chinese if the user wrote in Chinese. Do NOT call any tools."
+                })
+                # Use non-streaming API for more reliable text generation
+                llm = self.brain_router._select_llm(None, "general")
+                if llm and hasattr(llm, '_chat'):
+                    response = llm._chat(messages=summary_messages, tools=None)
+                    # Track usage from summary call
+                    if response and response.usage:
+                        total_usage["prompt_tokens"] += response.usage.get("prompt_tokens", 0)
+                        total_usage["completion_tokens"] += response.usage.get("completion_tokens", 0)
+                        total_usage["total_tokens"] += response.usage.get("total_tokens", 0)
+                    llm_calls += 1
+                    logger.info(f"Summary response: content_len={len(response.content) if response.content else 0}, tool_calls={len(response.tool_calls) if response.tool_calls else 0}")
+                    if response and response.content:
+                        final_response = response.content
+                        yield yield_event("text_chunk", {"text": response.content})
+                    elif response and response.tool_calls:
+                        # If LLM still returns tool calls, execute them and get result
+                        for tc in response.tool_calls:
+                            tn = tc.get("function", {}).get("name", "")
+                            raw_args = tc.get("function", {}).get("arguments", "{}")
+                            args = json.loads(raw_args) if isinstance(raw_args, str) and raw_args else {}
+                            if tn in self.registry.tool_names:
+                                result = self._execute_tool_with_memory(tn, args)
+                                result_text = result.message if result.success else f"Error: {result.error}"
+                            else:
+                                result_text = f"Unknown tool: {tn}"
+                            tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
+                            summary_messages.append({"role": "assistant", "content": [{"type": "tool_use", "id": tool_id, "name": tn, "input": args}]})
+                            summary_messages.append({"role": "user", "content": [{"type": "tool_result", "tool_use_id": tool_id, "content": result_text[:2000]}]})
+                        # Try once more with the tool results
+                        response2 = llm._chat(messages=summary_messages, tools=None)
+                        if response2 and response2.content:
+                            final_response = response2.content
+                            yield yield_event("text_chunk", {"text": response2.content})
+                elif llm and hasattr(llm, 'chat_messages_stream'):
+                    # Fallback to streaming
+                    summary_content = ""
+                    for chunk in llm.chat_messages_stream(messages=summary_messages, tools=None):
+                        if isinstance(chunk, str):
+                            summary_content += chunk
+                            yield yield_event("text_chunk", {"text": chunk})
+                        elif isinstance(chunk, dict) and chunk.get("type") == "final":
+                            break
+                    if summary_content:
+                        final_response = summary_content
+            except Exception as e:
+                logger.error(f"Summary LLM call failed: {e}")
+
+            summary_step["status"] = "done"
+            summary_step["content"] = "Summary generated" if final_response else "No summary"
+            yield yield_event("step", summary_step)
 
         if final_response:
             final_response = self._clean_response_text(final_response)
@@ -1254,16 +1465,17 @@ class BrachyAgent:
                 "status": "done",
             }
             steps.append(response_step)
-            events.append(yield_event("step", response_step))
+            yield yield_event("step", response_step)
         else:
             final_response = "Tools executed. Check the execution trace above for results."
 
         self.memory.add_message("assistant", final_response)
-        return events, final_response, {
+        yield {"type": "_result", "response": final_response, "llm_meta": {
             "usage": total_usage,
             "latency_ms": round(total_latency_ms, 1),
             "llm_calls": llm_calls,
-        }
+        }}
+        return
 
     def _parse_tool_calls(self, content: str) -> List[Dict]:
         """Parse tool calls from LLM response. Supports multiple formats."""
@@ -1338,7 +1550,28 @@ class BrachyAgent:
                 except (json.JSONDecodeError, AttributeError):
                     pass
 
-        # Format 3: Bare JSON objects with "tool" key
+        # Format 3: [TOOL_CALL] prefix with JSON
+        if not tool_calls:
+            toc_pattern = r'\[TOOL_CALL\]\s*(\{.*?\})'
+            toc_matches = re.findall(toc_pattern, content, re.DOTALL)
+            for match in toc_matches:
+                try:
+                    tc = json.loads(match.strip())
+                    if isinstance(tc, dict) and "tool" in tc:
+                        tool_calls.append(tc)
+                except json.JSONDecodeError:
+                    # Try extracting from nested braces
+                    start = match.find('{')
+                    end = match.rfind('}')
+                    if start != -1 and end != -1 and end > start:
+                        try:
+                            tc = json.loads(match[start:end+1].replace('\n', '\\n'))
+                            if isinstance(tc, dict) and "tool" in tc:
+                                tool_calls.append(tc)
+                        except json.JSONDecodeError:
+                            pass
+
+        # Format 4: Bare JSON objects with "tool" key
         if not tool_calls:
             pattern2 = r'\{[^{}]*"tool"[^{}]*\}'
             matches2 = re.findall(pattern2, content)
@@ -1544,9 +1777,12 @@ class BrachyAgent:
 
         if self.brain_available:
             try:
-                events, response, llm_meta = self._run_llm_function_calling_stream(message, steps, step_id, yield_event)
-                for ev in events:
-                    yield ev
+                for ev in self._run_llm_function_calling_stream(message, steps, step_id, yield_event):
+                    if isinstance(ev, dict) and ev.get("type") == "_result":
+                        response = ev.get("response", "")
+                        llm_meta = ev.get("llm_meta", {})
+                    else:
+                        yield ev
             except Exception as e:
                 logger.error(f"LLM function calling failed: {e}")
                 add_step("error", "LLM Error", str(e), status="error")
@@ -1810,6 +2046,10 @@ class BrachyAgent:
         self.memory.log_tool_call("oar_segmentation", {}, result)
         if result.success:
             self.memory.store("oar_array", result.metadata.get("oar_array"))
+            if "organ_names" in result.metadata:
+                self.memory.store("organ_names", result.metadata["organ_names"])
+            if "organ_counts" in result.metadata:
+                self.memory.store("organ_counts", result.metadata["organ_counts"])
             return result.message
         return f"OAR分割失败: {result.error}"
     
@@ -1938,6 +2178,10 @@ class BrachyAgent:
             dose_constraints = {}
             if oar_array is not None:
                 self.memory.store("oar_array", oar_array)
+                if "organ_names" in oar_result.metadata:
+                    self.memory.store("organ_names", oar_result.metadata["organ_names"])
+                if "organ_counts" in oar_result.metadata:
+                    self.memory.store("organ_counts", oar_result.metadata["organ_counts"])
                 dose_constraints = self.config.get("oar_constraints", {})
                 logger.info(f"  OAR labels: {list(oar_result.metadata.get('organ_counts', {}).keys())}")
             
@@ -1997,7 +2241,7 @@ class BrachyAgent:
             
             eval_metrics = eval_result.metadata
             v100_val = eval_metrics.get("v100", 0)
-            v100_display = f"{v100_val:.1f}%" if v100_val <= 1 else f"{v100_val:.1f}%"
+            v100_display = f"{v100_val * 100:.1f}%" if v100_val <= 1 else f"{v100_val:.1f}%"
             logger.info(f"  V100={v100_display}, D90={eval_metrics.get('d90', 0):.2f}Gy, Score={eval_metrics.get('plan_score', 0):.1f}")
             
             os.makedirs(output_dir, exist_ok=True)
@@ -2142,6 +2386,7 @@ class BrachyAgent:
             "tool_calls_made": len(self.memory.tool_results),
             "messages": len(self.memory.conversation),
             "stored_keys": list(self.memory.planning_results.keys()),
+            "ct_loaded": self.memory.retrieve("ct_data") is not None,
         }
         try:
             status["skills_available"] = len(self.skill_registry.list_skills())

@@ -68,6 +68,28 @@ Supporting:
 
 ---
 
+## 📸 Screenshots
+
+### Viewer Panel — Crosshair Navigation
+![Crosshair](docs/screenshots/viewer_crosshair.png)
+
+### Viewer Panel — CTV + OAR Overlay
+![Overlay](docs/screenshots/viewer_overlay.png)
+
+### Viewer Panel — Fullscreen Mode
+![Fullscreen](docs/screenshots/viewer_fullscreen.png)
+
+### 3D Reconstruction
+![3D](docs/screenshots/viewer_3d.png)
+
+### Chat — Analysis Response
+![Chat](docs/screenshots/chat_analysis.png)
+
+### Layout — 2x2 Grid
+![Grid](docs/screenshots/layout_grid.png)
+
+---
+
 ## 🏗️ Architecture
 
 ### System Overview
