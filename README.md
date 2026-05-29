@@ -70,7 +70,7 @@ Supporting:
 
 ## 📸 Screenshot
 
-![BrachyBot UI](docs/screenshots/viewer_crosshair.png)
+![BrachyBot UI](docs/screenshots/02_chat_response.png)
 
 ---
 
