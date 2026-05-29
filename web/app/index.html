@@ -5807,7 +5807,8 @@ async function sendChat() {
         // Sync viewer state after LLM response (in case LLM changed viewer settings via API)
         setTimeout(() => syncViewerState(), 300);
 
-        if (llmMeta && llmMeta.usage) {
+        if (llmMeta && (llmMeta.usage || llmMeta.latency_ms || llmMeta.llm_calls)) {
+            llmMeta._responseText = finalResponse || responseText || '';
             renderUsageBar(llmMeta);
         }
 
@@ -6271,19 +6272,24 @@ function renderUsageBar(meta) {
     const latency = meta.latency_ms || 0;
     const llmCalls = meta.llm_calls || 0;
 
-    const promptTokens = usage.prompt_tokens || 0;
-    const compTokens = usage.completion_tokens || 0;
-    const totalTokens = usage.total_tokens || 0;
+    let promptTokens = usage.prompt_tokens || 0;
+    let compTokens = usage.completion_tokens || 0;
+    let totalTokens = usage.total_tokens || 0;
+
+    // Estimate tokens if not provided (MiniMax streaming doesn't return usage)
+    if (totalTokens === 0) {
+        const responseText = meta._responseText || '';
+        compTokens = Math.ceil(responseText.length / 3); // ~3 chars per token
+        totalTokens = compTokens; // Can't estimate prompt tokens without server data
+    }
 
     bar.innerHTML = `
         <div class="usage-item"><span class="usage-label">&#9889;</span><span class="usage-value">${(latency / 1000).toFixed(1)}s</span></div>
         <div class="usage-sep"></div>
-        <div class="usage-item"><span class="usage-label">tokens</span><span class="usage-value">${totalTokens.toLocaleString()}</span></div>
+        <div class="usage-item"><span class="usage-label">tokens</span><span class="usage-value">~${totalTokens.toLocaleString()}</span></div>
         <div class="usage-sep"></div>
-        <div class="usage-item"><span class="usage-label">in</span><span class="usage-value">${promptTokens.toLocaleString()}</span></div>
-        <div class="usage-sep"></div>
-        <div class="usage-item"><span class="usage-label">out</span><span class="usage-value">${compTokens.toLocaleString()}</span></div>
-        ${llmCalls > 1 ? `<div class="usage-sep"></div><div class="usage-item"><span class="usage-label">calls</span><span class="usage-value">${llmCalls}</span></div>` : ''}
+        <div class="usage-item"><span class="usage-label">out</span><span class="usage-value">~${compTokens.toLocaleString()}</span></div>
+        ${llmCalls > 0 ? `<div class="usage-sep"></div><div class="usage-item"><span class="usage-label">calls</span><span class="usage-value">${llmCalls}</span></div>` : ''}
     `;
 
     row.appendChild(spacer);
