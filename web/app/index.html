@@ -1082,6 +1082,7 @@
             flex: 1 1 0;
             min-width: 200px;
             height: auto;
+            align-self: stretch;
         }
         .viewers-panel.layout-3d-top {
             display: flex;
@@ -1106,20 +1107,25 @@
             display: flex;
             gap: 0.5rem;
             min-height: 0;
+            align-items: stretch;
         }
         .viewers-panel.layout-3d-bottom .viewers-row > .viewer-card {
             flex: 1 1 0;
-            height: 260px;
+            height: auto;
             min-height: 120px;
         }
         .viewers-panel.layout-3d-top .viewers-row {
             flex: 1 1 0;
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
+            display: flex;
             gap: 0.5rem;
             min-height: 0;
+            align-items: stretch;
         }
-        .viewers-panel.layout-3d-top .viewers-row .viewer-card { height: auto; min-height: 0; }
+        .viewers-panel.layout-3d-top .viewers-row > .viewer-card {
+            flex: 1 1 0;
+            height: auto;
+            min-height: 120px;
+        }
         .layout-btn.active {
             background: var(--primary) !important;
             color: #fff !important;
@@ -2181,7 +2187,7 @@ const state = {
         flipV: false,
         rotation: 0,
         activeTool: 'crosshair',
-        layout: 'grid',
+        layout: 'vertical',
     },
     annotations: [],
     annotationUndoStack: [],
