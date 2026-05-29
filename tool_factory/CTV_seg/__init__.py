@@ -142,7 +142,8 @@ class CTVSegmentationTool(BaseTool):
             if tumor_type and tumor_type in TOOL_REGISTRY:
                 tool = TOOL_REGISTRY[tumor_type]()
             else:
-                tool = PancreaticTumorSegmentationTool()
+                # Default to VoCo pancreatic tumor tool (no external model weights needed)
+                tool = VoCoPancreaticTumorTool()
 
             result = tool._execute(image=image, target_value=target_value, fast_mode=fast_mode)
             if result.success:

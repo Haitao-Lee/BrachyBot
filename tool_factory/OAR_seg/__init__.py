@@ -121,11 +121,21 @@ class OARSegmentationTool(BaseTool):
 
         import numpy as np
         organ_counts = {}
+        organ_names = {}
         if oar_array is not None:
             unique_labels = np.unique(oar_array)
             for label in unique_labels:
                 if label > 0:
                     organ_counts[int(label)] = int(np.sum(oar_array == label))
+
+            # Try to get organ names from TotalSegmentator label mapping
+            try:
+                from .totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
+                for label_id in organ_counts:
+                    organ_names[label_id] = TOTALSEG_LABEL_MAPPING.get(label_id, f"organ_{label_id}")
+            except ImportError:
+                for label_id in organ_counts:
+                    organ_names[label_id] = f"organ_{label_id}"
 
         return ToolResult(
             success=True,
@@ -135,6 +145,7 @@ class OARSegmentationTool(BaseTool):
                 "oar_mask": image if image is not None else label_path,
                 "oar_array": oar_array,
                 "organ_counts": organ_counts,
+                "organ_names": organ_names,
             },
         )
 

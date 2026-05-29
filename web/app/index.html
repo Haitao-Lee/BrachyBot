@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
         :root {
@@ -93,6 +94,19 @@
             display: flex;
             flex-direction: column;
             flex-shrink: 0;
+            position: relative;
+        }
+        .sidebar-resize-handle {
+            position: absolute;
+            top: 0;
+            right: -3px;
+            width: 6px;
+            height: 100%;
+            cursor: col-resize;
+            z-index: 10;
+        }
+        .sidebar-resize-handle:hover {
+            background: rgba(14,165,233,0.3);
         }
 
         .session-sidebar-header {
@@ -310,10 +324,14 @@
         }
 
         .chat-msg {
-            padding: 0.6rem 0.85rem; border-radius: 12px;
-            font-size: 0.82rem; line-height: 1.5; max-width: 80%;
+            padding: 0.7rem 1rem; border-radius: 14px;
+            font-size: 0.82rem; line-height: 1.7; max-width: 100%;
             animation: fadeIn 0.2s ease; word-break: break-word;
+            letter-spacing: 0.01em;
         }
+        .chat-msg p { margin: 0.45rem 0; }
+        .chat-msg p:first-child { margin-top: 0; }
+        .chat-msg p:last-child { margin-bottom: 0; }
 
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(5px); }
@@ -325,12 +343,71 @@
         .chat-msg.system { background: var(--accent-bg); color: var(--accent); align-self: flex-start; border: 1px solid rgba(139,92,246,0.3); font-size: 0.75rem; }
         .chat-msg.error { background: rgba(239,68,68,0.1); color: var(--danger); align-self: flex-start; border: 1px solid rgba(239,68,68,0.3); font-size: 0.75rem; }
 
+        /* Markdown styles */
+        .md-code-block {
+            background: var(--bg-4);
+            border: 1px solid var(--card-border);
+            border-radius: 6px;
+            padding: 0.6rem 0.8rem;
+            margin: 0.6rem 0;
+            font-family: 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace;
+            font-size: 0.72rem;
+            overflow-x: auto;
+            white-space: pre;
+            line-height: 1.4;
+        }
+        .md-inline-code {
+            background: var(--bg-4);
+            border: 1px solid var(--card-border);
+            border-radius: 3px;
+            padding: 0.1rem 0.35rem;
+            font-family: 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace;
+            font-size: 0.75rem;
+        }
+        .md-table {
+            border-collapse: collapse;
+            margin: 0.6rem 0;
+            font-size: 0.72rem;
+            width: 100%;
+        }
+        .md-table th, .md-table td {
+            border: 1px solid var(--card-border);
+            padding: 0.35rem 0.55rem;
+            text-align: left;
+        }
+        .md-table th {
+            background: var(--bg-3);
+            font-weight: 600;
+        }
+        .md-list, .md-ordered-list {
+            margin: 0.5rem 0;
+            padding-left: 1.5rem;
+        }
+        .md-list-item, .md-ordered-item {
+            margin: 0.25rem 0;
+            line-height: 1.6;
+        }
+        .md-hr {
+            border: none;
+            border-top: 1px solid var(--card-border);
+            margin: 0.7rem 0;
+        }
+        .md-h1, .md-h2, .md-h3 {
+            margin: 0.7rem 0 0.35rem 0;
+            font-weight: 600;
+            line-height: 1.4;
+        }
+        .md-h1 { font-size: 1.1rem; }
+        .md-h2 { font-size: 0.95rem; }
+        .md-h3 { font-size: 0.85rem; }
+
         /* ============ AVATARS ============ */
         .chat-row {
             display: flex;
             align-items: flex-end;
             gap: 0.5rem;
-            max-width: 85%;
+            max-width: 88%;
+            width: 88%;
             animation: fadeIn 0.2s ease;
         }
         .chat-row.user { align-self: flex-end; flex-direction: row-reverse; }
@@ -365,7 +442,8 @@
             position: relative;
             display: flex;
             flex-direction: column;
-            max-width: 85%;
+            flex: 1;
+            min-width: 0;
         }
         .chat-msg-wrapper.user { align-self: flex-end; }
         .chat-msg-wrapper.bot { align-self: flex-start; }
@@ -893,6 +971,81 @@
         }
         .empty-state-icon { font-size: 1.8rem; opacity: 0.25; margin-bottom: 0.5rem; }
 
+        /* ============ DATA TREE ============ */
+        .data-tree-container {
+            width: 200px; min-width: 120px; max-width: 400px;
+            border-right: 1px solid var(--card-border);
+            background: var(--bg-2);
+            overflow-y: auto; overflow-x: hidden;
+            display: flex; flex-direction: column;
+            flex-shrink: 0;
+            resize: horizontal;
+        }
+        .data-tree-resize {
+            width: 4px; cursor: col-resize; background: transparent;
+            position: absolute; right: 0; top: 0; bottom: 0; z-index: 10;
+        }
+        .data-tree-resize:hover { background: var(--primary); }
+        .data-tree-header {
+            padding: 0.4rem 0.6rem;
+            font-size: 0.7rem; font-weight: 600;
+            color: var(--text-dim);
+            border-bottom: 1px solid var(--card-border);
+            display: flex; align-items: center; gap: 0.4rem;
+            flex-shrink: 0;
+        }
+        .data-tree-body { padding: 0.25rem 0; flex: 1; overflow-y: auto; }
+        .tree-group { margin-bottom: 0.15rem; }
+        .tree-group-header {
+            display: flex; align-items: center; gap: 0.3rem;
+            padding: 0.2rem 0.5rem; cursor: pointer;
+            font-size: 0.68rem; font-weight: 600; color: var(--text);
+            user-select: none;
+        }
+        .tree-group-header:hover { background: var(--bg-3); }
+        .tree-group-header .arrow { font-size: 0.5rem; transition: transform 0.15s; color: var(--text-dim); }
+        .tree-group-header .arrow.collapsed { transform: rotate(-90deg); }
+        .tree-group-items { padding-left: 0.8rem; }
+        .tree-group-items.collapsed { display: none; }
+        .tree-item {
+            display: flex; align-items: center; gap: 0.3rem;
+            padding: 0.15rem 0.4rem; cursor: pointer;
+            font-size: 0.65rem; color: var(--text);
+            border-radius: 3px; user-select: none;
+        }
+        .tree-item:hover { background: var(--bg-3); }
+        .tree-item.selected { background: rgba(139,92,246,0.15); }
+        .tree-item .eye-btn {
+            width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;
+            font-size: 0.6rem; cursor: pointer; opacity: 0.6; flex-shrink: 0;
+            border: none; background: none; color: var(--text); padding: 0;
+        }
+        .tree-item .eye-btn:hover { opacity: 1; }
+        .tree-item .eye-btn.hidden { opacity: 0.2; }
+        .tree-item .color-swatch {
+            width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0;
+            border: 1px solid rgba(255,255,255,0.15);
+        }
+        .tree-item .item-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+        .tree-item .item-info { font-size: 0.55rem; color: var(--text-dim); flex-shrink: 0; }
+        .tree-item .opacity-slider {
+            width: 40px; height: 3px; flex-shrink: 0;
+            -webkit-appearance: none; background: var(--bg-3); border-radius: 2px; outline: none;
+        }
+        .tree-item .recon3d-btn {
+            width: 18px; height: 18px; border: none; background: none;
+            color: var(--text-dim); cursor: pointer; font-size: 0.6rem;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 3px; flex-shrink: 0; opacity: 0.5;
+            transition: opacity 0.15s, color 0.15s;
+        }
+        .tree-item .recon3d-btn:hover { opacity: 1; color: var(--primary); }
+        .tree-item .recon3d-btn.active { opacity: 1; color: var(--accent); }
+        .tree-item .opacity-slider::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 8px; height: 8px;
+            border-radius: 50%; background: var(--primary); cursor: pointer;
+        }
+
         /* ============ VIEWERS (scrollable vertical stack) ============ */
         .viewers-panel {
             padding: 0.5rem;
@@ -903,23 +1056,103 @@
             flex: 1;
             min-height: 0;
         }
+        /* Default: viewer cards have fixed height, can be resized freely */
+        .viewers-panel > .viewer-card {
+            flex: none;
+            height: 260px;
+            min-height: 120px;
+        }
+        .viewers-panel > .viewer-card.viewer-card-3d {
+            height: 300px;
+        }
+        .viewers-panel.layout-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 0.5rem;
+        }
+        .viewers-panel.layout-grid > .viewer-card { height: auto; flex: 1; min-height: 0; }
+        .viewers-panel.layout-horizontal {
+            flex-direction: row;
+            flex-wrap: nowrap;
+            align-items: stretch;
+            overflow-x: auto;
+        }
+        .viewers-panel.layout-horizontal > .viewer-card {
+            flex: 1 1 0;
+            min-width: 200px;
+            height: auto;
+        }
+        .viewers-panel.layout-3d-top {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .viewers-panel.layout-3d-top > .viewer-card-3d {
+            flex: 0 0 45%;
+            min-height: 200px;
+        }
+        .viewers-panel.layout-3d-bottom {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .viewers-panel.layout-3d-bottom > .viewer-card-3d {
+            flex: 0 0 40%;
+            min-height: 180px;
+        }
+        .viewers-panel.layout-3d-bottom .viewers-row {
+            flex: 1 1 0;
+            display: flex;
+            gap: 0.5rem;
+            min-height: 0;
+        }
+        .viewers-panel.layout-3d-bottom .viewers-row > .viewer-card {
+            flex: 1 1 0;
+            height: 260px;
+            min-height: 120px;
+        }
+        .viewers-panel.layout-3d-top .viewers-row {
+            flex: 1 1 0;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 0.5rem;
+            min-height: 0;
+        }
+        .viewers-panel.layout-3d-top .viewers-row .viewer-card { height: auto; min-height: 0; }
+        .layout-btn.active {
+            background: var(--primary) !important;
+            color: #fff !important;
+            border-color: var(--primary) !important;
+        }
 
         .viewer-card {
             background: var(--card-bg); border: 1px solid var(--card-border);
-            border-radius: 8px; overflow: hidden;
-            flex-shrink: 0;
+            border-radius: 8px; overflow: visible;
             position: relative;
             display: flex;
             flex-direction: column;
+            min-height: 0;
+            z-index: 1;
         }
-
+        .viewer-card:hover { z-index: 5; }
         /* Fullscreen: card takes all remaining space in the flex column (other cards hidden) */
         .viewer-card.fullscreen {
-            flex: 1;
-            min-height: 0;
-            height: auto !important;
-            border-radius: 0;
+            position: absolute !important;
+            top: 0; left: 0; right: 0; bottom: 0;
             z-index: 200;
+            border-radius: 0;
+            height: auto !important;
+        }
+        .viewer-card.fullscreen .viewer-card-body {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 40px;
+            overflow: hidden;
+        }
+        .viewer-card.fullscreen .viewer-card-canvas {
+            width: 100%;
+            height: 100%;
+            min-height: 0 !important;
         }
 
         body.viewer-fullscreen { overflow: hidden; }
@@ -948,6 +1181,8 @@
             display: flex; align-items: center; justify-content: center;
             transition: all 0.15s;
             flex-shrink: 0;
+            position: relative;
+            z-index: 15;
         }
         .viewer-card-expand-btn:hover {
             background: var(--bg-3);
@@ -960,6 +1195,7 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            min-height: 0;
             min-height: 0;
         }
 
@@ -977,24 +1213,43 @@
 
         /* Vertical resize handle at bottom of card */
         .viewer-resize-h {
-            height: 5px;
-            background: transparent;
+            height: 6px;
             cursor: row-resize;
             flex-shrink: 0;
             position: relative;
-            transition: background 0.15s;
+            z-index: 20;
         }
         .viewer-resize-h::after {
             content: '';
             position: absolute;
-            bottom: 2px; left: 50%;
-            transform: translateX(-50%);
-            width: 24px; height: 3px;
+            bottom: 0; left: 25%; right: 25%;
+            height: 3px;
             background: var(--card-border);
             border-radius: 2px;
             transition: background 0.15s;
         }
         .viewer-resize-h:hover::after { background: var(--primary); }
+
+        /* Vertical resize handle (for horizontal layout) */
+        .viewer-resize-v {
+            width: 5px;
+            cursor: col-resize;
+            position: relative;
+            flex-shrink: 0;
+            z-index: 10;
+        }
+        .viewer-resize-v::after {
+            content: '';
+            position: absolute;
+            top: 20%;
+            bottom: 20%;
+            left: 1px;
+            width: 3px;
+            background: var(--card-border);
+            border-radius: 2px;
+            transition: background 0.15s;
+        }
+        .viewer-resize-v:hover::after { background: var(--primary); }
 
         .viewer-card-ctrl {
             padding: 0.3rem 0.6rem;
@@ -1116,12 +1371,13 @@
 <div class="app-body">
 
     <!-- ============ SESSION SIDEBAR ============ -->
-    <div class="session-sidebar">
+    <div class="session-sidebar" id="sessionSidebar">
         <div class="session-sidebar-header">
             <span class="session-sidebar-title">Chats</span>
             <button class="new-chat-btn" onclick="newChat()">&#43; New</button>
         </div>
         <div class="session-list" id="sessionList"></div>
+        <div class="sidebar-resize-handle" id="sidebarResizeHandle"></div>
         <div class="context-panel" id="contextPanel" style="display:none">
             <div class="context-panel-header">
                 <span>Context Summary</span>
@@ -1140,6 +1396,7 @@
     <!-- ============ LEFT: CHAT ============ -->
     <div class="chat-area">
         <div class="chat-header">
+            <button onclick="toggleSessionSidebar()" title="Toggle chat history" style="background:none;border:none;color:var(--text);cursor:pointer;font-size:0.9rem;padding:2px 6px;">&#9776;</button>
             <div class="chat-header-icon">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12 2L2 7l10 5 10-5-10-5z"/>
@@ -1167,45 +1424,45 @@
             <div class="chat-msg system">Welcome to BrachyBot. Describe your brachytherapy case — tumor location, type, patient condition — and I will help you generate an optimal treatment plan. You can also load CT data directly via the Input panel on the right.</div>
         </div>
 
-        <!-- Tool Progress Display -->
-        <div id="toolProgressContainer" style="display:none;padding:0.5rem 1rem;background:var(--bg-2);border-top:1px solid var(--card-border);">
-            <div style="display:flex;align-items:center;gap:0.5rem;">
-                <div class="spinner-ring" style="width:14px;height:14px;border-width:2px;"></div>
-                <span id="toolProgressText" style="font-size:0.75rem;color:var(--text);">Processing...</span>
+        <div class="chat-input-area" style="position:relative;">
+            <!-- Tool Progress Display -->
+            <div id="toolProgressContainer" style="display:none;padding:0.5rem 1rem;background:var(--bg-2);border-top:1px solid var(--card-border);">
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <div class="spinner-ring" style="width:14px;height:14px;border-width:2px;"></div>
+                    <span id="toolProgressText" style="font-size:0.75rem;color:var(--text);">Processing...</span>
+                </div>
+                <div style="margin-top:0.25rem;height:3px;background:var(--bg-3);border-radius:2px;overflow:hidden;">
+                    <div id="toolProgressBar" style="height:100%;background:var(--primary);border-radius:2px;width:0%;transition:width 0.3s ease;"></div>
+                </div>
             </div>
-            <div style="margin-top:0.25rem;height:3px;background:var(--bg-3);border-radius:2px;overflow:hidden;">
-                <div id="toolProgressBar" style="height:100%;background:var(--primary);border-radius:2px;width:0%;transition:width 0.3s ease;"></div>
-            </div>
-        </div>
 
-        <!-- Slash Command Menu -->
-        <div id="slashCommandMenu" style="display:none;position:absolute;bottom:100%;left:0;right:0;background:var(--bg-2);border:1px solid var(--card-border);border-radius:8px 8px 0 0;max-height:200px;overflow-y:auto;z-index:100;">
-            <div class="slash-cmd" data-cmd="/help" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/help')">
-                <strong>/help</strong> - Show available commands
+            <!-- Slash Command Menu -->
+            <div id="slashCommandMenu" style="display:none;position:absolute;bottom:100%;left:0;right:0;background:var(--bg-2);border:1px solid var(--card-border);border-radius:8px 8px 0 0;max-height:200px;overflow-y:auto;z-index:100;">
+                <div class="slash-cmd" data-cmd="/help" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/help')">
+                    <strong>/help</strong> - Show available commands
+                </div>
+                <div class="slash-cmd" data-cmd="/plan" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/plan')">
+                    <strong>/plan</strong> - Start treatment planning
+                </div>
+                <div class="slash-cmd" data-cmd="/segment" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/segment')">
+                    <strong>/segment</strong> - Segment CT image
+                </div>
+                <div class="slash-cmd" data-cmd="/evaluate" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/evaluate')">
+                    <strong>/evaluate</strong> - Evaluate dose plan
+                </div>
+                <div class="slash-cmd" data-cmd="/export" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/export')">
+                    <strong>/export</strong> - Export to DICOM
+                </div>
+                <div class="slash-cmd" data-cmd="/viewer" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/viewer')">
+                    <strong>/viewer</strong> - Control CT viewer
+                </div>
+                <div class="slash-cmd" data-cmd="/clear" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/clear')">
+                    <strong>/clear</strong> - Clear chat history
+                </div>
             </div>
-            <div class="slash-cmd" data-cmd="/plan" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/plan')">
-                <strong>/plan</strong> - Start treatment planning
-            </div>
-            <div class="slash-cmd" data-cmd="/segment" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/segment')">
-                <strong>/segment</strong> - Segment CT image
-            </div>
-            <div class="slash-cmd" data-cmd="/evaluate" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/evaluate')">
-                <strong>/evaluate</strong> - Evaluate dose plan
-            </div>
-            <div class="slash-cmd" data-cmd="/export" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/export')">
-                <strong>/export</strong> - Export to DICOM
-            </div>
-            <div class="slash-cmd" data-cmd="/viewer" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/viewer')">
-                <strong>/viewer</strong> - Control CT viewer
-            </div>
-            <div class="slash-cmd" data-cmd="/clear" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/clear')">
-                <strong>/clear</strong> - Clear chat history
-            </div>
-        </div>
 
-        <div class="chat-input-area">
             <div class="chat-input-row">
-                <input type="text" id="chatInput" placeholder="Describe your case or type / for commands..." onkeypress="handleChatKeypress(event)" oninput="handleChatInput(this)">
+                <input type="text" id="chatInput" placeholder="Describe your case or type / for commands..." onkeydown="handleChatKeypress(event)" oninput="handleChatInput(this)">
                 <button class="chat-send" onclick="sendChat()">&#10148;</button>
             </div>
             <div class="chat-hint">Press Enter to send &middot; Type / for commands &middot; Ctrl+L to clear</div>
@@ -1403,6 +1660,15 @@
         <!-- METRICS PANEL -->
         <div class="panel-content" id="panelMetrics">
             <div class="metrics-panel">
+                <!-- Image Analysis Section -->
+                <div class="metrics-section" id="analysisSection" style="display:none;">
+                    <div class="metrics-title" style="display:flex;align-items:center;gap:0.4rem;">
+                        <span>&#128269;</span> Image Analysis
+                        <span style="margin-left:auto;font-size:0.55rem;color:var(--text-dim);" id="analysisTime"></span>
+                    </div>
+                    <div id="analysisContent" style="background:var(--bg-2);border-radius:6px;padding:0.75rem;font-size:0.7rem;color:var(--text);line-height:1.6;max-height:400px;overflow-y:auto;"></div>
+                </div>
+
                 <div class="metrics-section">
                     <div class="metrics-title">Target Coverage</div>
                     <div class="metrics-grid">
@@ -1524,6 +1790,16 @@
                 </div>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="applyThreshold()">Apply</button>
                 <div class="ctrl-sep" style="height:16px;"></div>
+                <!-- Display Mode -->
+                <div style="display:flex;align-items:center;gap:0.3rem;">
+                    <label style="font-size:0.6rem;color:var(--text-dim);">Display:</label>
+                    <select id="displayMode" onchange="setDisplayMode()" style="background:var(--bg-3);border:1px solid var(--card-border);border-radius:4px;color:var(--text);font-size:0.6rem;padding:2px 4px;">
+                        <option value="ct">CT Only</option>
+                        <option value="overlay">CT + Label</option>
+                        <option value="label">Label Only</option>
+                    </select>
+                </div>
+                <div class="ctrl-sep" style="height:16px;"></div>
                 <!-- Overlays -->
                 <label class="ctrl-toggle" style="font-size:0.6rem;">
                     <input type="checkbox" id="overlayCTV" onchange="toggleOverlay()"> CTV
@@ -1533,12 +1809,13 @@
                 </label>
                 <div class="ctrl-sep" style="height:16px;"></div>
                 <!-- Tools -->
-                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('crosshair')" id="toolCrosshair">&#10799; Cross</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;white-space:nowrap;" onclick="setViewerTool('crosshair')" id="toolCrosshair">&#10799; Crosshair</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('measure')" id="toolMeasure">&#128207; Line</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('angle')" id="toolAngle">&#8736; Angle</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('rect')" id="toolRect">&#9633; Rect</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('zoombox')" id="toolZoombox">&#128269; Zoom</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('annotate')" id="toolAnnotate">&#9998; Draw</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('eraser')" id="toolEraser">&#9003; Erase</button>
                 <div class="ctrl-sep" style="height:16px;"></div>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerFlipH()">&#8644; FlipH</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerFlipV()">&#8645; FlipV</button>
@@ -1548,14 +1825,37 @@
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="resetViewer()">&#8635; Reset</button>
                 <div class="ctrl-sep" style="height:16px;"></div>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="reconstruct3D()">&#9638; 3D</button>
+                <div class="ctrl-sep" style="height:16px;"></div>
+                <!-- Layout Switcher -->
+                <div style="display:flex;align-items:center;gap:2px;">
+                    <label style="font-size:0.6rem;color:var(--text-dim);">Layout:</label>
+                    <button class="file-btn layout-btn active" data-layout="vertical" onclick="setViewerLayout('vertical')" title="1 column (default)" style="padding:2px 5px;font-size:0.6rem;">&#9776;</button>
+                    <button class="file-btn layout-btn" data-layout="horizontal" onclick="setViewerLayout('horizontal')" title="1 row" style="padding:2px 5px;font-size:0.6rem;">&#9783;</button>
+                    <button class="file-btn layout-btn" data-layout="grid" onclick="setViewerLayout('grid')" title="2x2 Grid" style="padding:2px 5px;font-size:0.6rem;">&#9638;</button>
+                    <button class="file-btn layout-btn" data-layout="3d-top" onclick="setViewerLayout('3d-top')" title="3D top + 3 viewers" style="padding:2px 5px;font-size:0.6rem;">&#9650;</button>
+                    <button class="file-btn layout-btn" data-layout="3d-bottom" onclick="setViewerLayout('3d-bottom')" title="3 viewers + 3D" style="padding:2px 5px;font-size:0.6rem;">&#9660;</button>
+                </div>
                 <!-- HU Display -->
                 <div id="huDisplay" style="margin-left:auto;font-size:0.65rem;color:var(--accent);font-family:monospace;"></div>
             </div>
 
-            <div class="viewers-panel" id="viewersPanel">
+            <div style="display:flex;flex:1;min-height:0;overflow:hidden;">
+                <!-- Data Tree Sidebar -->
+                <div class="data-tree-container" id="dataTreeContainer" style="position:relative;">
+                    <div class="data-tree-header">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                        Data
+                    </div>
+                    <div class="data-tree-body" id="dataTreeBody">
+                        <div style="padding:1rem;text-align:center;color:var(--text-dim);font-size:0.65rem;">No data loaded</div>
+                    </div>
+                    <div class="data-tree-resize" id="dataTreeResize"></div>
+                </div>
+
+                <div class="viewers-panel" id="viewersPanel">
 
                 <!-- Axial -->
-                <div class="viewer-card" id="viewerAxial" data-view="axial" style="height:260px;">
+                <div class="viewer-card" id="viewerAxial" data-view="axial">
                     <div class="viewer-card-header">
                         <span class="viewer-card-label">Axial</span>
                         <button class="viewer-card-expand-btn" onclick="toggleViewerFullscreen('axial')" title="Fullscreen">&#9974;</button>
@@ -1569,7 +1869,7 @@
                             <canvas id="sliceCanvasAxial" style="display:none;max-width:100%;max-height:100%;"></canvas>
                             <canvas id="crosshairCanvasAxial" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
                             <canvas id="annotationCanvasAxial" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
-                            <div id="labelOverlay_Axial" style="position:absolute;inset:0;display:block;opacity:0.6;pointer-events:none;background:transparent;"></div>
+                            <canvas id="labelOverlay_Axial" style="position:absolute;pointer-events:none;display:none;opacity:0.6;"></canvas>
                         </div>
                     </div>
                     <div class="viewer-resize-h" data-view="axial"></div>
@@ -1581,7 +1881,7 @@
                 </div>
 
                 <!-- Sagittal -->
-                <div class="viewer-card" id="viewerSagittal" data-view="sagittal" style="height:260px;">
+                <div class="viewer-card" id="viewerSagittal" data-view="sagittal">
                     <div class="viewer-card-header">
                         <span class="viewer-card-label">Sagittal</span>
                         <button class="viewer-card-expand-btn" onclick="toggleViewerFullscreen('sagittal')" title="Fullscreen">&#9974;</button>
@@ -1595,7 +1895,7 @@
                             <canvas id="sliceCanvasSagittal" style="display:none;max-width:100%;max-height:100%;"></canvas>
                             <canvas id="crosshairCanvasSagittal" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
                             <canvas id="annotationCanvasSagittal" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
-                            <div id="labelOverlay_Sagittal" style="position:absolute;inset:0;display:block;opacity:0.6;pointer-events:none;background:transparent;"></div>
+                            <canvas id="labelOverlay_Sagittal" style="position:absolute;pointer-events:none;display:none;opacity:0.6;"></canvas>
                         </div>
                     </div>
                     <div class="viewer-resize-h" data-view="sagittal"></div>
@@ -1607,7 +1907,7 @@
                 </div>
 
                 <!-- Coronal -->
-                <div class="viewer-card" id="viewerCoronal" data-view="coronal" style="height:260px;">
+                <div class="viewer-card" id="viewerCoronal" data-view="coronal">
                     <div class="viewer-card-header">
                         <span class="viewer-card-label">Coronal</span>
                         <button class="viewer-card-expand-btn" onclick="toggleViewerFullscreen('coronal')" title="Fullscreen">&#9974;</button>
@@ -1621,7 +1921,7 @@
                             <canvas id="sliceCanvasCoronal" style="display:none;max-width:100%;max-height:100%;"></canvas>
                             <canvas id="crosshairCanvasCoronal" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
                             <canvas id="annotationCanvasCoronal" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
-                            <div id="labelOverlay_Coronal" style="position:absolute;inset:0;display:block;opacity:0.6;pointer-events:none;background:transparent;"></div>
+                            <canvas id="labelOverlay_Coronal" style="position:absolute;pointer-events:none;display:none;opacity:0.6;"></canvas>
                         </div>
                     </div>
                     <div class="viewer-resize-h" data-view="coronal"></div>
@@ -1633,7 +1933,7 @@
                 </div>
 
                 <!-- 3D -->
-                <div class="viewer-card viewer-card-3d" id="viewer3d" data-view="3d" style="height:300px;">
+                <div class="viewer-card viewer-card-3d" id="viewer3d" data-view="3d">
                     <div class="viewer-card-header">
                         <span class="viewer-card-label">3D Reconstruction</span>
                         <button class="viewer-card-expand-btn" onclick="toggleViewerFullscreen('3d')" title="Fullscreen">&#9974;</button>
@@ -1665,6 +1965,7 @@
                     </div>
                 </div>
 
+            </div>
             </div>
         </div>
 
@@ -1728,6 +2029,16 @@ function saveSessions() {
 
 function generateSessionId() {
     return 'sess_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function toggleSessionSidebar() {
+    const sidebar = document.getElementById('sessionSidebar');
+    if (!sidebar) return;
+    if (sidebar.style.display === 'none') {
+        sidebar.style.display = '';
+    } else {
+        sidebar.style.display = 'none';
+    }
 }
 
 function newChat() {
@@ -1862,6 +2173,7 @@ const state = {
         threshold: null,
         showCTV: false,
         showOAR: false,
+        displayMode: 'ct',
         zoom: 1.0,
         panX: 0,
         panY: 0,
@@ -1869,10 +2181,14 @@ const state = {
         flipV: false,
         rotation: 0,
         activeTool: 'crosshair',
+        layout: 'grid',
     },
     annotations: [],
     annotationUndoStack: [],
     annotationRedoStack: [],
+    // Manual mask drawing state
+    maskLabels: {}, // { 'mask_1': { name: 'Manual Mask 1', color: '#ff0000', slices: { axial: Set, sagittal: Set, coronal: Set }, visible: true, opacity: 0.6 } }
+    maskLabelCounter: 0,
     labelImage: {
         axial:   { visible: true, opacity: 0.6 },
         sagittal: { visible: true, opacity: 0.6 },
@@ -2005,6 +2321,15 @@ async function loadCTToViewers(ctPath) {
                 setupViewerInteractions();
             }, 500);
 
+            // Update data tree and load overlays if data exists
+            renderDataTree();
+            // Load overlays for all axes (will show nothing if no segmentation data)
+            setTimeout(() => {
+                ['axial', 'sagittal', 'coronal'].forEach(axis => {
+                    loadOverlay(axis, state.slices[axis]);
+                });
+            }, 100);
+
             addChat('system', `CT loaded: ${data.shape.join(' × ')} voxels, ${data.hu_range[0].toFixed(0)} to ${data.hu_range[1].toFixed(0)} HU`);
         }
     } catch (e) {
@@ -2028,6 +2353,27 @@ async function init() {
         document.getElementById('serverDot').className = 'dot red';
         document.getElementById('serverStatus').textContent = 'Offline';
     }
+    // Fetch existing organ data for data tree (only if CT is loaded on server)
+    try {
+        const statusResp = await fetch(API + '/status');
+        if (statusResp.ok) {
+            const statusData = await statusResp.json();
+            // Check if CT is actually loaded in the agent's memory
+            if (statusData.ct_loaded) {
+                const organResp = await fetch(API + '/viewer/organs');
+                if (organResp.ok) {
+                    const organData = await organResp.json();
+                    if (organData.success && organData.organs && Object.keys(organData.organs).length > 0) {
+                        updateOrganList(organData.organs);
+                        dataTreeState.oar.loaded = true;
+                        renderDataTree();
+                    }
+                }
+            }
+        }
+    } catch (e) {}
+    // Apply default viewer layout
+    setViewerLayout(state.viewerSettings.layout || 'grid');
 }
 
 /******** VIEWER FULLSCREEN & RESIZE ********/
@@ -2088,6 +2434,7 @@ function setupViewerResizers() {
             const dy = e.clientY - startY;
             const newH = Math.max(120, startH + dy);
             card.style.height = newH + 'px';
+            card.style.flex = 'none';
         });
 
         document.addEventListener('mouseup', () => {
@@ -2103,6 +2450,7 @@ function setupViewerResizers() {
 /******** DRAGGABLE SPLITTER ********/
 function setupSplitter() {
     const splitter = document.getElementById('vSplitter');
+    const sidebar = document.querySelector('.session-sidebar');
     const rightPanel = document.querySelector('.right-panel');
     let dragging = false;
 
@@ -2117,8 +2465,9 @@ function setupSplitter() {
         if (!dragging) return;
         const container = document.querySelector('.app-body');
         const containerRect = container.getBoundingClientRect();
+        // Dragging splitter = resize right panel (sidebar stays fixed)
         const newWidth = containerRect.right - e.clientX;
-        if (newWidth >= 200 && newWidth <= containerRect.width - 100) {
+        if (newWidth >= 300 && newWidth <= containerRect.width - 200) {
             rightPanel.style.width = newWidth + 'px';
         }
     });
@@ -2132,12 +2481,55 @@ function setupSplitter() {
     });
 }
 
+function setupSidebarResize() {
+    const handle = document.getElementById('sidebarResizeHandle');
+    const sidebar = document.getElementById('sessionSidebar');
+    if (!handle || !sidebar) return;
+
+    let dragging = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    handle.addEventListener('mousedown', (e) => {
+        dragging = true;
+        startX = e.clientX;
+        startWidth = sidebar.offsetWidth;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+        e.stopPropagation();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const newWidth = startWidth + (e.clientX - startX);
+        if (newWidth >= 180 && newWidth <= 500) {
+            sidebar.style.width = newWidth + 'px';
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (dragging) {
+            dragging = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    });
+}
+
 /******** PANEL SWITCHING ********/
 function switchPanel(name, el) {
+    console.log('[switchPanel] Switching to:', name);
     document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.panel-content').forEach(c => c.classList.remove('active'));
     el.classList.add('active');
-    document.getElementById('panel' + capitalize(name)).classList.add('active');
+    const panel = document.getElementById('panel' + capitalize(name));
+    if (panel) {
+        panel.classList.add('active');
+        console.log('[switchPanel] Panel activated:', 'panel' + capitalize(name));
+    } else {
+        console.error('[switchPanel] Panel not found:', 'panel' + capitalize(name));
+    }
     if (name === 'viewers' && state.ctLoaded) loadAllSlices();
 }
 
@@ -2178,20 +2570,32 @@ function renderSliceFromVolume(axis, sliceIndex) {
     const wc = state.viewerSettings.level;
     const ww = state.viewerSettings.window;
     const lower = wc - ww / 2;
+    const upper = wc + ww / 2;
     const range = ww || 1;  // Avoid division by zero
     const scale = 255 / range;
 
+    // Get spacing for isotropic resampling
+    const spacing = volumeSpacing || [0.68, 0.68, 5.0];
+    const spacingX = spacing[0] || 0.68;
+    const spacingY = spacing[1] || 0.68;
+    const spacingZ = spacing[2] || 5.0;
+
     let width, height;
+    let resampleRatio = 1; // For Z axis resampling
 
     if (axis === 'axial') {
         width = X;
         height = Y;
     } else if (axis === 'sagittal') {
+        // Y × Z, need to resample Z to match Y spacing
         width = Y;
-        height = Z;
+        height = Math.round(Z * spacingZ / spacingY); // Resample Z to isotropic
+        resampleRatio = spacingZ / spacingY;
     } else {
+        // X × Z, need to resample Z to match X spacing
         width = X;
-        height = Z;
+        height = Math.round(Z * spacingZ / spacingX);
+        resampleRatio = spacingZ / spacingX;
     }
 
     const pixelCount = width * height;
@@ -2210,18 +2614,23 @@ function renderSliceFromVolume(axis, sliceIndex) {
             pixels[i] = val <= lower ? 0 : (val >= upper ? 255 : ((val - lower) * scale));
         }
     } else if (axis === 'sagittal') {
+        // Resample Z axis to match Y spacing (isotropic display)
         let idx = 0;
-        for (let z = 0; z < Z; z++) {
-            const zOffset = z * Y * X + sliceIndex;
+        for (let displayY = 0; displayY < height; displayY++) {
+            // Map display Y to source Z with nearest-neighbor
+            const srcZ = Math.min(Math.floor(displayY / resampleRatio), Z - 1);
+            const zOffset = srcZ * Y * X + sliceIndex;
             for (let y = 0; y < Y; y++) {
                 const val = volumeData[zOffset + y * X];
                 pixels[idx++] = val <= lower ? 0 : (val >= upper ? 255 : ((val - lower) * scale));
             }
         }
     } else {
+        // Resample Z axis to match X spacing (isotropic display)
         let idx = 0;
-        for (let z = 0; z < Z; z++) {
-            const zOffset = z * Y * X + sliceIndex * X;
+        for (let displayY = 0; displayY < height; displayY++) {
+            const srcZ = Math.min(Math.floor(displayY / resampleRatio), Z - 1);
+            const zOffset = srcZ * Y * X + sliceIndex * X;
             for (let x = 0; x < X; x++) {
                 const val = volumeData[zOffset + x];
                 pixels[idx++] = val <= lower ? 0 : (val >= upper ? 255 : ((val - lower) * scale));
@@ -2256,15 +2665,13 @@ function renderSliceFromVolume(axis, sliceIndex) {
         data[idx + 3] = 255;
     }
     ctx.putImageData(imageData, 0, 0);
-    }
-    ctx.putImageData(imageData, 0, 0);
 
     const containerRect = container.getBoundingClientRect();
     const containerW = containerRect.width;
     const containerH = containerRect.height;
-    const scale = Math.min(containerW / width, containerH / height);
-    const displayW = width * scale;
-    const displayH = height * scale;
+    const displayScale = Math.min(containerW / width, containerH / height);
+    const displayW = width * displayScale;
+    const displayH = height * displayScale;
 
     canvas.style.width = displayW + 'px';
     canvas.style.height = displayH + 'px';
@@ -2276,7 +2683,7 @@ function renderSliceFromVolume(axis, sliceIndex) {
     const placeholder = container.querySelector('.viewer-no-data');
     if (placeholder) placeholder.style.display = 'none';
 
-    canvas._displayScale = scale;
+    canvas._displayScale = displayScale;
     canvas._displayW = displayW;
     canvas._displayH = displayH;
     canvas._offsetX = (containerW - displayW) / 2;
@@ -2295,10 +2702,160 @@ function renderSliceFromVolume(axis, sliceIndex) {
 
     syncAnnotationCanvasSize(axis);
     redrawAllAnnotations();
+
+    // Position overlay canvas to match CT canvas (same as crosshair/annotation)
+    const overlayCanvas = document.getElementById('labelOverlay_' + capitalize(axis));
+    if (overlayCanvas) {
+        // Only resize if dimensions changed to prevent canvas clear (flickering)
+        if (overlayCanvas.width !== displayW || overlayCanvas.height !== displayH) {
+            overlayCanvas.width = displayW;
+            overlayCanvas.height = displayH;
+        }
+        overlayCanvas.style.width = displayW + 'px';
+        overlayCanvas.style.height = displayH + 'px';
+        overlayCanvas.style.position = 'absolute';
+        overlayCanvas.style.left = ((containerW - displayW) / 2) + 'px';
+        overlayCanvas.style.top = ((containerH - displayH) / 2) + 'px';
+        overlayCanvas.style.right = 'auto';
+        overlayCanvas.style.bottom = 'auto';
+    }
+
+    // Load overlay (debounced per-axis to prevent flicker on rapid slice changes)
+    if (!renderSliceFromVolume._overlayTimers) renderSliceFromVolume._overlayTimers = {};
+    if (renderSliceFromVolume._overlayTimers[axis]) clearTimeout(renderSliceFromVolume._overlayTimers[axis]);
+    renderSliceFromVolume._overlayTimers[axis] = setTimeout(() => loadOverlay(axis, sliceIndex), 50);
+}
+
+async function loadOverlay(axis, sliceIndex) {
+    const overlayCanvas = document.getElementById('labelOverlay_' + capitalize(axis));
+    if (!overlayCanvas) return;
+
+    const ctCanvas = document.getElementById('sliceCanvas' + capitalize(axis));
+    const displayMode = state.viewerSettings.displayMode || 'ct';
+
+    const showOAR = state.viewerSettings.showOAR;
+    const showCTV = state.viewerSettings.showCTV;
+
+    // Label Only mode
+    if (displayMode === 'label') {
+        if (ctCanvas) ctCanvas.style.opacity = '0';
+        overlayCanvas.style.opacity = '1';
+        overlayCanvas.style.display = 'block';
+    } else if (displayMode === 'overlay') {
+        if (ctCanvas) ctCanvas.style.opacity = '1';
+        overlayCanvas.style.opacity = '1';  // Alpha is baked into RGBA from server
+        overlayCanvas.style.display = 'block';
+    } else {
+        // CT Only mode
+        if (ctCanvas) ctCanvas.style.opacity = '1';
+        overlayCanvas.style.display = 'none';
+        return;
+    }
+
+    const ctvVisible = dataTreeState.ctv.visible && showCTV;
+    const oarVisible = dataTreeState.oar.visible && showOAR;
+
+    if (!oarVisible && !ctvVisible) {
+        overlayCanvas.style.display = 'none';
+        if (displayMode === 'label' && ctCanvas) ctCanvas.style.opacity = '1';
+        return;
+    }
+
+    try {
+        // Set overlay canvas to CT canvas pixel dimensions (not display size)
+        const ctW = ctCanvas ? ctCanvas.width : 512;
+        const ctH = ctCanvas ? ctCanvas.height : 512;
+        if (overlayCanvas.width !== ctW || overlayCanvas.height !== ctH) {
+            overlayCanvas.width = ctW;
+            overlayCanvas.height = ctH;
+        }
+
+        // Fetch CTV and OAR separately, draw onto one canvas
+        let hasAnyMask = false;
+        const ctx = overlayCanvas.getContext('2d');
+        ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+        if (ctvVisible) {
+            const resCtv = await fetch(API + '/viewer/overlay', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ axis, slice_index: sliceIndex, overlay_type: 'ctv', ctv_opacity: dataTreeState.ctv.opacity }),
+            });
+            if (resCtv.ok) {
+                const d = await resCtv.json();
+                if (d.has_mask && d.data) {
+                    const img = new Image();
+                    await new Promise(r => { img.onload = r; img.src = d.data; });
+                    ctx.drawImage(img, 0, 0, overlayCanvas.width, overlayCanvas.height);
+                    hasAnyMask = true;
+                }
+            }
+        }
+
+        if (oarVisible && dataTreeState.organs.length > 0) {
+            const visibleOrgans = dataTreeState.organs.filter(o => o.visible).map(o => o.labelId);
+            const organOpacities = {};
+            dataTreeState.organs.forEach(o => { organOpacities[o.labelId] = o.opacity; });
+            const resOar = await fetch(API + '/viewer/overlay', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ axis, slice_index: sliceIndex, overlay_type: 'oar', visible_organs: visibleOrgans, organ_opacities: organOpacities, oar_opacity: dataTreeState.oar.opacity }),
+            });
+            if (resOar.ok) {
+                const d = await resOar.json();
+                if (d.has_mask && d.data) {
+                    const img = new Image();
+                    await new Promise(r => { img.onload = r; img.src = d.data; });
+                    ctx.drawImage(img, 0, 0, overlayCanvas.width, overlayCanvas.height);
+                    hasAnyMask = true;
+                }
+            }
+        }
+
+        if (hasAnyMask) {
+            if (ctCanvas) {
+                overlayCanvas.style.width = ctCanvas.style.width;
+                overlayCanvas.style.height = ctCanvas.style.height;
+                overlayCanvas.style.position = 'absolute';
+                overlayCanvas.style.left = ctCanvas.style.left;
+                overlayCanvas.style.top = ctCanvas.style.top;
+                overlayCanvas.style.right = 'auto';
+                overlayCanvas.style.bottom = 'auto';
+                overlayCanvas.style.display = 'block';
+                // Copy transform from CT canvas
+                if (ctCanvas.style.transform) {
+                    overlayCanvas.style.transform = ctCanvas.style.transform;
+                    overlayCanvas.style.transformOrigin = ctCanvas.style.transformOrigin || 'center center';
+                }
+            }
+
+        } else {
+            overlayCanvas.style.display = 'none';
+            if (displayMode === 'label' && ctCanvas) ctCanvas.style.opacity = '1';
+        }
+    } catch (e) {
+        // Silently fail - don't hide overlay on error
+    }
+}
+
+function toggleOAROverlay() {
+    state.viewerSettings.showOAR = !state.viewerSettings.showOAR;
+    // Reload current slices to update overlay
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        renderSliceFromVolume(axis, state.slices[axis]);
+    });
+}
+
+function toggleCTVOverlay() {
+    state.viewerSettings.showCTV = !state.viewerSettings.showCTV;
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        renderSliceFromVolume(axis, state.slices[axis]);
+    });
 }
 
 /******** VIEWER CONTROLS ********/
 const sliceCache = { axial: {}, sagittal: {}, coronal: {} };
+const sliceCacheOrder = { axial: [], sagittal: [], coronal: [] };
 
 function renderCachedSlice(axis, sliceIndex) {
     const cached = sliceCache[axis][sliceIndex];
@@ -2494,21 +3051,8 @@ async function syncViewerState() {
             document.getElementById('viewerThreshold').value = s.threshold;
             changed.threshold = true;
         }
-        if (s.slices) {
-            ['axial', 'sagittal', 'coronal'].forEach(axis => {
-                const slider = document.getElementById('slider' + capitalize(axis));
-                if (slider && s.slices[axis] !== undefined) {
-                    const newVal = parseInt(slider.value);
-                    if (s.slices[axis] !== newVal) {
-                        slider.value = s.slices[axis];
-                        state.slices[axis] = s.slices[axis];
-                        const label = document.getElementById('sliceLabel' + capitalize(axis));
-                        if (label) label.textContent = s.slices[axis];
-                        changed[axis] = true;
-                    }
-                }
-            });
-        }
+        // Don't sync slice positions - frontend is source of truth
+        // (Server doesn't store them unless navigate_slice is called)
         
         if (Object.keys(changed).length > 0) {
             loadAllSlices();
@@ -2527,34 +3071,455 @@ function applyThreshold() {
 function toggleOverlay() {
     state.viewerSettings.showCTV = document.getElementById('overlayCTV').checked;
     state.viewerSettings.showOAR = document.getElementById('overlayOAR').checked;
+    // Sync with data tree
+    dataTreeState.ctv.visible = state.viewerSettings.showCTV;
+    dataTreeState.oar.visible = state.viewerSettings.showOAR;
+    renderDataTree();
     if (state.ctLoaded) loadAllSlices();
 }
 
-function applyZoom(val) {
-    state.viewerSettings.zoom = parseInt(val) / 100;
-    document.getElementById('zoomLabel').textContent = val + '%';
+function setDisplayMode() {
+    const mode = document.getElementById('displayMode').value;
+    state.viewerSettings.displayMode = mode;
+
+    // Auto-check overlay checkboxes based on mode
+    if (mode === 'overlay' || mode === 'label') {
+        // Enable OAR by default if available
+        const oarCb = document.getElementById('overlayOAR');
+        if (oarCb && !oarCb.checked) {
+            oarCb.checked = true;
+            state.viewerSettings.showOAR = true;
+            dataTreeState.oar.visible = true;
+        }
+    }
+
+    renderDataTree();
+    if (state.ctLoaded) loadAllSlices();
+}
+
+// Reload only overlays (for visibility/opacity changes) without re-rendering CT
+function reloadOverlays() {
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
-        const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
-        if (canvas) {
-            canvas.style.transform = `scale(${state.viewerSettings.zoom})`;
-            canvas.style.transformOrigin = 'center center';
+        loadOverlay(axis, state.slices[axis]);
+    });
+}
+
+/******** DATA TREE ********/
+const dataTreeState = {
+    ct:       { visible: true, opacity: 1.0, color: '#888', loaded: false, label: 'CT Image' },
+    ctv:      { visible: true, opacity: 0.7, color: '#ef4444', loaded: false, label: 'CTV Mask' },
+    oar:      { visible: true, opacity: 0.5, color: '#22c55e', loaded: false, label: 'All OARs' },
+    organs:   [],  // Individual organs: [{id, label, color, visible, opacity, voxelCount}]
+    dose:     { visible: true, opacity: 0.4, color: '#f59e0b', loaded: false, label: 'Dose Distribution' },
+    seeds:    { visible: true, opacity: 1.0, color: '#3b82f6', loaded: false, label: 'Seed Positions' },
+};
+
+// Predefined colors for organs
+const ORGAN_COLORS = [
+    '#22c55e', '#06b6d4', '#8b5cf6', '#f59e0b', '#ef4444',
+    '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
+    '#e11d48', '#0ea5e9', '#a855f7', '#eab308', '#10b981',
+    '#d946ef', '#0891b2', '#7c3aed', '#ca8a04', '#059669',
+];
+
+function updateOrganList(organData) {
+    // organData: {label_id: {name, voxel_count}}
+    if (!organData) return;
+    dataTreeState.organs = [];
+    let i = 0;
+    for (const [labelId, info] of Object.entries(organData)) {
+        dataTreeState.organs.push({
+            id: `organ_${labelId}`,
+            labelId: parseInt(labelId),
+            label: info.name || `Organ ${labelId}`,
+            color: ORGAN_COLORS[i % ORGAN_COLORS.length],
+            visible: true,
+            opacity: 0.5,
+            voxelCount: info.voxel_count || 0,
+        });
+        i++;
+    }
+}
+
+function renderDataTree() {
+    const body = document.getElementById('dataTreeBody');
+    if (!body) return;
+
+    // Check what data is loaded
+    dataTreeState.ct.loaded = state.ctLoaded;
+    dataTreeState.ctv.loaded = !!state.ctLoaded;
+    dataTreeState.oar.loaded = dataTreeState.organs.length > 0;
+    dataTreeState.dose.loaded = !!(state.metrics && state.metrics.v100 !== undefined);
+    dataTreeState.seeds.loaded = !!(state.seeds && state.seeds.length > 0);
+
+    let html = '';
+
+    // Image group
+    html += `<div class="tree-group">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+            <span class="arrow">&#9660;</span>
+            <span>Image</span>
+        </div>
+        <div class="tree-group-items">`;
+    html += renderTreeItem('ct', dataTreeState.ct, state.ctShape ? `${state.ctShape[2]}×${state.ctShape[1]}×${state.ctShape[0]}` : '');
+    html += `</div></div>`;
+
+    // CTV group
+    html += `<div class="tree-group">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+            <span class="arrow">&#9660;</span>
+            <span>Target</span>
+        </div>
+        <div class="tree-group-items">`;
+    const ctvVolume = state.ctvVolume || null;
+    const ctvInfo = ctvVolume ? `${ctvVolume.toFixed(1)} mm³` : (dataTreeState.ctv.loaded ? 'loaded' : '');
+    html += renderTreeItem('ctv', dataTreeState.ctv, ctvInfo);
+    html += `</div></div>`;
+
+    // OAR group with individual organs
+    html += `<div class="tree-group">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+            <span class="arrow">&#9660;</span>
+            <span>Organs at Risk (${dataTreeState.organs.length})</span>
+        </div>
+        <div class="tree-group-items">`;
+
+    // Master OAR toggle
+    html += renderTreeItem('oar', dataTreeState.oar, dataTreeState.organs.length > 0 ? `${dataTreeState.organs.length} organs` : '');
+
+    // Individual organs
+    if (dataTreeState.organs.length > 0) {
+        for (const organ of dataTreeState.organs) {
+            const organState = { visible: organ.visible, opacity: organ.opacity, color: organ.color, loaded: true, label: organ.label };
+            const info = organ.voxelCount > 0 ? `${(organ.voxelCount * 0.6836 * 0.6836 * 5 / 1000).toFixed(1)} cm³` : '';
+            html += renderTreeItem(organ.id, organState, info);
+        }
+    }
+
+    html += `</div></div>`;
+
+    // Dose group
+    html += `<div class="tree-group">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+            <span class="arrow">&#9660;</span>
+            <span>Dose</span>
+        </div>
+        <div class="tree-group-items">`;
+    html += renderTreeItem('dose', dataTreeState.dose, state.metrics && state.metrics.v100 !== undefined ? `V100: ${(state.metrics.v100 * 100).toFixed(1)}%` : '');
+    html += renderTreeItem('seeds', dataTreeState.seeds, state.seeds ? `${state.seeds.length} seeds` : '');
+    html += `</div></div>`;
+
+    body.innerHTML = html;
+}
+
+function renderTreeItem(id, itemState, info) {
+    const eyeIcon = itemState.visible ? '&#128065;' : '&#128064;';
+    const eyeClass = itemState.visible ? '' : 'hidden';
+    const loadedClass = itemState.loaded ? '' : 'style="opacity:0.4;"';
+    const disabledAttr = itemState.loaded ? '' : 'disabled';
+    const indent = id.startsWith('organ_') ? 'style="padding-left:1.6rem;"' : '';
+    // 3D button for organs and CTV
+    const canRecon3d = id === 'ctv' || id.startsWith('organ_');
+    const recon3dBtn = canRecon3d ? `<button class="recon3d-btn" title="3D Reconstruct" onclick="event.stopPropagation();reconstructOrgan3D('${id}')">&#9638;</button>` : '';
+
+    return `<div class="tree-item" ${loadedClass} ${indent} onclick="selectDataItem('${id}')">
+        <button class="eye-btn ${eyeClass}" onclick="event.stopPropagation();toggleDataVisibility('${id}')" ${disabledAttr}>${eyeIcon}</button>
+        <span class="color-swatch" style="background:${itemState.color};"></span>
+        <span class="item-label">${itemState.label}</span>
+        <span class="item-info">${info}</span>
+        ${recon3dBtn}
+        <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(itemState.opacity * 100)}"
+            ${disabledAttr}
+            onclick="event.stopPropagation()"
+            oninput="setDataOpacity('${id}', this.value)">
+    </div>`;
+}
+
+function toggleTreeGroup(header) {
+    const arrow = header.querySelector('.arrow');
+    const items = header.nextElementSibling;
+    if (arrow && items) {
+        arrow.classList.toggle('collapsed');
+        items.classList.toggle('collapsed');
+    }
+}
+
+function toggleDataVisibility(id) {
+    // Handle individual organ toggles
+    if (id.startsWith('organ_')) {
+        const organ = dataTreeState.organs.find(o => o.id === id);
+        if (organ) {
+            organ.visible = !organ.visible;
+            renderDataTree();
+            if (state.ctLoaded) reloadOverlays();
+        }
+        return;
+    }
+
+    if (!dataTreeState[id]) return;
+    dataTreeState[id].visible = !dataTreeState[id].visible;
+
+    // Sync with existing overlay system
+    if (id === 'ctv') {
+        state.viewerSettings.showCTV = dataTreeState.ctv.visible;
+        const cb = document.getElementById('overlayCTV');
+        if (cb) cb.checked = dataTreeState.ctv.visible;
+    } else if (id === 'oar') {
+        state.viewerSettings.showOAR = dataTreeState.oar.visible;
+        const cb = document.getElementById('overlayOAR');
+        if (cb) cb.checked = dataTreeState.oar.visible;
+        // Toggle all organs
+        dataTreeState.organs.forEach(o => o.visible = dataTreeState.oar.visible);
+    }
+
+    renderDataTree();
+    if (state.ctLoaded) reloadOverlays();
+}
+
+function setDataOpacity(id, value) {
+    // Handle individual organ opacity
+    if (id.startsWith('organ_')) {
+        const organ = dataTreeState.organs.find(o => o.id === id);
+        if (organ) {
+            organ.opacity = parseInt(value) / 100;
+            if (state.ctLoaded) reloadOverlays();
+        }
+        return;
+    }
+
+    if (!dataTreeState[id]) return;
+    dataTreeState[id].opacity = parseInt(value) / 100;
+
+    if (state.ctLoaded) reloadOverlays();
+}
+
+function selectDataItem(id) {
+    // Highlight selected item
+    document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('selected'));
+    const items = document.querySelectorAll('.tree-item');
+    items.forEach(el => {
+        if (el.onclick && el.onclick.toString().includes(`'${id}'`)) {
+            el.classList.add('selected');
         }
     });
 }
 
+function refreshDataTree() {
+    renderDataTree();
+}
+
+// Initialize data tree on load
+setTimeout(() => renderDataTree(), 500);
+
+/******** DATA TREE RESIZE ********/
+(function() {
+    const container = document.getElementById('dataTreeContainer');
+    const handle = document.getElementById('dataTreeResize');
+    if (!container || !handle) return;
+
+    let startX, startWidth;
+    handle.addEventListener('mousedown', (e) => {
+        startX = e.clientX;
+        startWidth = container.offsetWidth;
+        document.addEventListener('mousemove', onDrag);
+        document.addEventListener('mouseup', onDragEnd);
+        e.preventDefault();
+    });
+
+    function onDrag(e) {
+        const newWidth = Math.max(120, Math.min(400, startWidth + (e.clientX - startX)));
+        container.style.width = newWidth + 'px';
+    }
+
+    function onDragEnd() {
+        document.removeEventListener('mousemove', onDrag);
+        document.removeEventListener('mouseup', onDragEnd);
+    }
+})();
+
+/******** TOOLTIPS ********/
+function addTooltips() {
+    const tooltips = {
+        'windowPreset': 'Window/Level preset for CT display',
+        'viewerWindow': 'Window width (contrast)',
+        'viewerLevel': 'Window level (brightness)',
+        'viewerZoom': 'Zoom level',
+        'viewerThreshold': 'HU threshold for segmentation overlay',
+        'displayMode': 'CT Only / CT+Label / Label Only display mode',
+        'overlayCTV': 'Toggle Clinical Target Volume overlay',
+        'overlayOAR': 'Toggle Organs at Risk overlay',
+        'toolCrosshair': 'Crosshair tool - click to navigate',
+        'toolMeasure': 'Measure distance between two points',
+        'toolMeasure': 'Measure distance between two points',
+        'toolAngle': 'Measure angle between three points',
+        'toolRect': 'Rectangle measurement tool',
+        'toolZoombox': 'Zoom into a region',
+        'toolAnnotate': 'Freehand drawing tool',
+    };
+    for (const [id, tip] of Object.entries(tooltips)) {
+        const el = document.getElementById(id);
+        if (el && !el.title) el.title = tip;
+    }
+    // Add tooltips to file buttons
+    document.querySelectorAll('.file-btn').forEach(btn => {
+        if (!btn.title) {
+            const text = btn.textContent.trim();
+            if (text.includes('FlipH')) btn.title = 'Flip image horizontally';
+            else if (text.includes('FlipV')) btn.title = 'Flip image vertically';
+            else if (text.includes('Rotate')) btn.title = 'Rotate image 90°';
+            else if (text.includes('Undo')) btn.title = 'Undo last action';
+            else if (text.includes('Redo')) btn.title = 'Redo last action';
+            else if (text.includes('Reset')) btn.title = 'Reset viewer settings';
+            else if (text.includes('3D')) btn.title = '3D reconstruction from threshold';
+        }
+    });
+}
+setTimeout(addTooltips, 1000);
+
+function applyZoom(val) {
+    state.viewerSettings.zoom = parseInt(val) / 100;
+    document.getElementById('zoomLabel').textContent = val + '%';
+    applyViewerTransform();
+}
+
+function wrapViewersInRow(panel, mode) {
+    const row = document.createElement('div');
+    row.className = 'viewers-row';
+    const axial = document.getElementById('viewerAxial');
+    const sagittal = document.getElementById('viewerSagittal');
+    const coronal = document.getElementById('viewerCoronal');
+    const viewer3d = document.getElementById('viewer3d');
+    if (axial && sagittal && coronal) {
+        row.appendChild(axial);
+        row.appendChild(sagittal);
+        row.appendChild(coronal);
+        if (mode === 'after-3d' && viewer3d) {
+            // 3D on top: insert row AFTER 3D viewer
+            panel.appendChild(row);  // append row at end
+        } else if (mode === 'before-3d' && viewer3d) {
+            // 3D on bottom: insert 3D viewer first, then row
+            panel.appendChild(viewer3d);
+            panel.appendChild(row);
+        } else {
+            panel.appendChild(row);
+        }
+    }
+}
+
+function setupVerticalResize() {
+    document.querySelectorAll('.viewer-resize-v').forEach(handle => {
+        let resizing = false;
+        let startX = 0;
+        let startW = 0;
+        let prevCard = handle.previousElementSibling;
+
+        handle.addEventListener('mousedown', e => {
+            if (!prevCard || prevCard.classList.contains('fullscreen')) return;
+            resizing = true;
+            startX = e.clientX;
+            startW = prevCard.offsetWidth;
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', e => {
+            if (!resizing) return;
+            const dx = e.clientX - startX;
+            const newW = Math.max(150, startW + dx);
+            prevCard.style.width = newW + 'px';
+            prevCard.style.flex = 'none';
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (resizing) {
+                resizing = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            }
+        });
+    });
+}
+
+function setViewerLayout(layout) {
+    const panel = document.getElementById('viewersPanel');
+    if (!panel) return;
+    panel.classList.remove('layout-grid', 'layout-horizontal', 'layout-vertical', 'layout-3d-top', 'layout-3d-bottom');
+
+    // Remove any existing viewers-row wrapper
+    const existingRow = panel.querySelector('.viewers-row');
+    if (existingRow) {
+        while (existingRow.firstChild) panel.insertBefore(existingRow.firstChild, existingRow);
+        existingRow.remove();
+    }
+
+    // Remove vertical resize handles from all cards
+    panel.querySelectorAll('.viewer-resize-v').forEach(h => h.remove());
+
+    // Reset all viewer card heights/widths
+    ['viewerAxial', 'viewerSagittal', 'viewerCoronal', 'viewer3d'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.style.height = ''; el.style.width = ''; }
+    });
+
+    if (layout === 'grid') {
+        panel.classList.add('layout-grid');
+    } else if (layout === 'horizontal') {
+        panel.classList.add('layout-horizontal');
+        // Add vertical resize handles between viewers
+        const cards = ['viewerAxial', 'viewerSagittal', 'viewerCoronal', 'viewer3d'];
+        cards.forEach(id => {
+            const card = document.getElementById(id);
+            if (card) {
+                const vHandle = document.createElement('div');
+                vHandle.className = 'viewer-resize-v';
+                vHandle.dataset.view = id.replace('viewer', '').toLowerCase();
+                card.parentNode.insertBefore(vHandle, card.nextSibling);
+            }
+        });
+        // Setup vertical resize handlers
+        setupVerticalResize();
+    } else if (layout === '3d-top') {
+        panel.classList.add('layout-3d-top');
+        wrapViewersInRow(panel, 'after-3d');
+    } else if (layout === '3d-bottom') {
+        panel.classList.add('layout-3d-bottom');
+        wrapViewersInRow(panel, 'before-3d');
+    } else {
+        panel.classList.add('layout-vertical');
+    }
+    // Update active button
+    document.querySelectorAll('.layout-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.layout === layout);
+    });
+    state.viewerSettings.layout = layout;
+    // Re-render current slices to fit new layout
+    setTimeout(() => {
+        ['axial', 'sagittal', 'coronal'].forEach(axis => {
+            const slider = document.getElementById('slider' + capitalize(axis));
+            if (slider && state.ctLoaded) updateSlice(axis, slider.value);
+        });
+    }, 150);
+}
+
 function setViewerTool(tool) {
     state.viewerSettings.activeTool = tool;
-    const toolIds = ['toolCrosshair', 'toolMeasure', 'toolAngle', 'toolRect', 'toolZoombox', 'toolAnnotate'];
+    // Reset annotation tool state when switching tools
+    if (window._annotationToolState) {
+        window._annotationToolState.active = false;
+        window._annotationToolState.points = [];
+    }
+    const toolIds = ['toolCrosshair', 'toolMeasure', 'toolAngle', 'toolRect', 'toolZoombox', 'toolAnnotate', 'toolEraser'];
     toolIds.forEach(id => {
         const btn = document.getElementById(id);
         if (btn) btn.style.background = '';
     });
-    const toolMap = { crosshair: 'toolCrosshair', measure: 'toolMeasure', angle: 'toolAngle', rect: 'toolRect', zoombox: 'toolZoombox', annotate: 'toolAnnotate' };
+    const toolMap = { crosshair: 'toolCrosshair', measure: 'toolMeasure', angle: 'toolAngle', rect: 'toolRect', zoombox: 'toolZoombox', annotate: 'toolAnnotate', eraser: 'toolEraser' };
     const activeBtn = document.getElementById(toolMap[tool]);
     if (activeBtn) activeBtn.style.background = 'var(--primary)';
-    
+
     // Update cursor on all slice canvases
-    const cursors = { crosshair: 'crosshair', measure: 'crosshair', angle: 'crosshair', rect: 'crosshair', zoombox: 'zoom-in', annotate: 'crosshair' };
+    const cursors = { crosshair: 'crosshair', measure: 'crosshair', angle: 'crosshair', rect: 'crosshair', zoombox: 'zoom-in', annotate: 'crosshair', eraser: 'cell' };
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
         if (canvas) canvas.style.cursor = cursors[tool] || 'default';
@@ -2567,6 +3532,7 @@ function resetViewer() {
         showCTV: false, showOAR: false, zoom: 1.0,
         activeTool: null, panX: 0, panY: 0,
         flipH: false, flipV: false, rotation: 0,
+        displayMode: 'ct',
     };
     state.annotations = [];
     state.annotationUndoStack = [];
@@ -2736,20 +3702,79 @@ async function reconstruct3D() {
     if (loading) loading.classList.add('active');
 
     try {
-        const threshold = parseInt(document.getElementById('viewerThreshold').value);
-        const res = await fetch(API + '/viewer/3d', {
+        // Try CTV first, then OAR
+        let res = await fetch(API + '/viewer/3d', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ threshold: threshold, decimate: 0.8 }),
+            body: JSON.stringify({ source: 'ctv' }),
+        });
+
+        if (!res.ok) {
+            // Fallback to OAR
+            res = await fetch(API + '/viewer/3d', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source: 'oar' }),
+            });
+        }
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = await res.json();
+        if (data.success) {
+            data.color = data.source === 'ctv' ? 0xff4444 : 0x0ea5e9;
+            state.mesh3D = data;
+            render3DMesh(data);
+        }
+    } catch (e) {
+        addChat('error', '3D reconstruction failed: ' + e.message);
+    } finally {
+        if (loading) loading.classList.remove('active');
+    }
+}
+
+// 3D reconstruction for individual organs from data tree
+async function reconstructOrgan3D(id) {
+    if (!state.ctPath) {
+        addChat('error', 'No CT image loaded');
+        return;
+    }
+
+    const loading = document.getElementById('loading3D');
+    if (loading) loading.classList.add('active');
+
+    try {
+        let label_id, source, color;
+        if (id === 'ctv') {
+            label_id = 1;
+            source = 'ctv';
+            color = 0xff6b6b;
+        } else if (id.startsWith('organ_')) {
+            label_id = parseInt(id.replace('organ_', ''));
+            source = 'oar';
+            const organ = dataTreeState.organs.find(o => o.id === id);
+            color = organ ? parseInt(organ.color.replace('#', '0x')) : 0x0ea5e9;
+        } else {
+            return;
+        }
+
+        const res = await fetch(API + '/viewer/3d_mask', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ label_id, source, smoothing: 1 }),
         });
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const data = await res.json();
         if (data.success) {
+            // Store with color info for rendering
+            data.color = color;
+            data.organ_id = id;
             state.mesh3D = data;
             render3DMesh(data);
-            addChat('system', `3D reconstruction complete: ${data.vertex_count} vertices, ${data.face_count} faces`);
+            // Switch to Viewers tab to show result
+            switchPanel('viewers', document.querySelectorAll('.panel-tab')[3]);
         }
     } catch (e) {
         addChat('error', '3D reconstruction failed: ' + e.message);
@@ -2776,8 +3801,9 @@ function render3DMesh(meshData) {
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     geometry.computeVertexNormals();
 
+    const meshColor = meshData.color || 0x0ea5e9;
     const material = new THREE.MeshPhongMaterial({
-        color: 0x0ea5e9, transparent: true, opacity: 0.7, side: THREE.DoubleSide,
+        color: meshColor, transparent: true, opacity: 0.7, side: THREE.DoubleSide,
     });
     const mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
@@ -2887,23 +3913,34 @@ function drawLinkedCrosshairs(volX, volY, volZ, sourceAxis) {
         const ctx = crossCanvas.getContext('2d');
         ctx.clearRect(0, 0, crossCanvas.width, crossCanvas.height);
         ctx.strokeStyle = axis === sourceAxis ? '#ff4444' : '#0ea5e9';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
+        // Compensate for zoom so line width stays constant
+        const zoom = state.viewerSettings.zoom || 1;
+        ctx.lineWidth = 1 / zoom;
+        ctx.setLineDash([4 / zoom, 4 / zoom]);
 
         let cx, cy;
         const w = displayW;
         const h = displayH;
 
+        // Get spacing for coordinate conversion
+        const spacing = volumeSpacing || [0.68, 0.68, 5.0];
+
         // Map volume coordinates to display coordinates
+        // ctShape = [Z, Y, X]
         if (axis === 'axial') {
-            cx = (volX / state.ctShape[0]) * w;
+            // axial: X -> width, Y -> height
+            cx = (volX / state.ctShape[2]) * w;
             cy = (volY / state.ctShape[1]) * h;
         } else if (axis === 'sagittal') {
-            cx = (volZ / state.ctShape[2]) * w;
-            cy = (volY / state.ctShape[1]) * h;
+            // sagittal: Y -> width, Z_resampled -> height
+            const totalResampledZ = state.ctShape[0] * spacing[2] / spacing[1];
+            cx = (volY / state.ctShape[1]) * w;
+            cy = (volZ / totalResampledZ) * h;
         } else {
-            cx = (volX / state.ctShape[0]) * w;
-            cy = (volZ / state.ctShape[2]) * h;
+            // coronal: X -> width, Z_resampled -> height
+            const totalResampledZ = state.ctShape[0] * spacing[2] / spacing[0];
+            cx = (volX / state.ctShape[2]) * w;
+            cy = (volZ / totalResampledZ) * h;
         }
 
         // Draw crosshair lines
@@ -2992,11 +4029,13 @@ function drawAnnotation(ctx, ann) {
         ctx.arc(ann.x2, ann.y2, 4, 0, Math.PI * 2);
         ctx.fill();
         
-        // Distance label
+        // Distance label with real mm
         const dx = ann.x2 - ann.x1;
         const dy = ann.y2 - ann.y1;
-        const distPx = Math.sqrt(dx * dx + dy * dy);
-        const distMm = (distPx * (ann.pixelSpacing || 0.5)).toFixed(1);
+        const distMm = Math.sqrt(
+            Math.pow(dx * (ann.spacingX || 0.68), 2) +
+            Math.pow(dy * (ann.spacingY || 0.68), 2)
+        ).toFixed(1);
         const midX = (ann.x1 + ann.x2) / 2;
         const midY = (ann.y1 + ann.y2) / 2;
         ctx.fillStyle = '#000';
@@ -3010,35 +4049,45 @@ function drawAnnotation(ctx, ann) {
         ctx.lineTo(ann.x2, ann.y2);
         ctx.lineTo(ann.x3, ann.y3);
         ctx.stroke();
-        
+
         // Draw endpoints
         ctx.beginPath();
         ctx.arc(ann.x1, ann.y1, 4, 0, Math.PI * 2);
         ctx.arc(ann.x2, ann.y2, 4, 0, Math.PI * 2);
         ctx.arc(ann.x3, ann.y3, 4, 0, Math.PI * 2);
         ctx.fill();
-        
-        // Angle calculation
-        const v1x = ann.x1 - ann.x2;
-        const v1y = ann.y1 - ann.y2;
-        const v2x = ann.x3 - ann.x2;
-        const v2y = ann.y3 - ann.y2;
-        const dot = v1x * v2x + v1y * v2y;
-        const mag1 = Math.sqrt(v1x * v1x + v1y * v1y);
-        const mag2 = Math.sqrt(v2x * v2x + v2y * v2y);
-        const angleDeg = (Math.acos(Math.max(-1, Math.min(1, dot / (mag1 * mag2)))) * 180 / Math.PI).toFixed(1);
-        
+
+        // Use pre-calculated angle or calculate
+        const angleDeg = ann.angleDeg != null ? ann.angleDeg.toFixed(1) : (() => {
+            const v1x = ann.x1 - ann.x2, v1y = ann.y1 - ann.y2;
+            const v2x = ann.x3 - ann.x2, v2y = ann.y3 - ann.y2;
+            const dot = v1x * v2x + v1y * v2y;
+            const mag1 = Math.sqrt(v1x * v1x + v1y * v1y);
+            const mag2 = Math.sqrt(v2x * v2x + v2y * v2y);
+            return (Math.acos(Math.max(-1, Math.min(1, dot / (mag1 * mag2 || 1)))) * 180 / Math.PI).toFixed(1);
+        })();
+
+        // Draw angle arc
+        const a1 = Math.atan2(ann.y1 - ann.y2, ann.x1 - ann.x2);
+        const a2 = Math.atan2(ann.y3 - ann.y2, ann.x3 - ann.x2);
+        ctx.beginPath();
+        ctx.arc(ann.x2, ann.y2, 20, Math.min(a1, a2), Math.max(a1, a2));
+        ctx.strokeStyle = ann.color || '#ffaa00';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
         ctx.fillStyle = '#000';
-        ctx.fillRect(ann.x2 - 25, ann.y2 - 20, 50, 16);
-        ctx.fillStyle = ann.color || '#00ff00';
+        ctx.fillRect(ann.x2 - 25, ann.y2 - 28, 50, 16);
+        ctx.fillStyle = ann.color || '#ffaa00';
         ctx.textAlign = 'center';
-        ctx.fillText(`${angleDeg}°`, ann.x2, ann.y2 - 8);
+        ctx.font = '11px monospace';
+        ctx.fillText(`${angleDeg}°`, ann.x2, ann.y2 - 16);
     } else if (ann.type === 'rect') {
         ctx.strokeRect(ann.x1, ann.y1, ann.x2 - ann.x1, ann.y2 - ann.y1);
         
-        // Dimension labels
-        const widthMm = (Math.abs(ann.x2 - ann.x1) * (ann.pixelSpacing || 0.5)).toFixed(1);
-        const heightMm = (Math.abs(ann.y2 - ann.y1) * (ann.pixelSpacing || 0.5)).toFixed(1);
+        // Dimension labels with real mm
+        const widthMm = (Math.abs(ann.x2 - ann.x1) * (ann.spacingX || 0.68)).toFixed(1);
+        const heightMm = (Math.abs(ann.y2 - ann.y1) * (ann.spacingY || 0.68)).toFixed(1);
         ctx.fillStyle = '#000';
         ctx.fillRect(ann.x1, ann.y1 - 16, 80, 14);
         ctx.fillStyle = ann.color || '#00ff00';
@@ -3060,6 +4109,135 @@ function drawAnnotation(ctx, ann) {
 function pushUndo(annotation) {
     state.annotationUndoStack.push(annotation);
     state.annotationRedoStack = [];
+}
+
+/******** MANUAL MASK DRAWING ********/
+const MASK_COLORS = ['#ff4444','#44ff44','#4488ff','#ffaa00','#ff44ff','#44ffff','#ffff44','#ff8844'];
+
+function createMaskFromFreehand(axis, points) {
+    if (!state.ctShape || points.length < 3) return;
+    state.maskLabelCounter++;
+    const id = 'mask_' + state.maskLabelCounter;
+    const color = MASK_COLORS[(state.maskLabelCounter - 1) % MASK_COLORS.length];
+
+    // Create a canvas to rasterize the polygon
+    const sliceCanvas = getSliceCanvas(axis);
+    const w = sliceCanvas.width;
+    const h = sliceCanvas.height;
+    const displayScale = sliceCanvas._displayScale || 1;
+
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = w;
+    maskCanvas.height = h;
+    const mctx = maskCanvas.getContext('2d');
+    mctx.fillStyle = '#fff';
+    mctx.beginPath();
+    mctx.moveTo(points[0].x / displayScale, points[0].y / displayScale);
+    for (let i = 1; i < points.length; i++) {
+        mctx.lineTo(points[i].x / displayScale, points[i].y / displayScale);
+    }
+    mctx.closePath();
+    mctx.fill();
+
+    const maskData = mctx.getImageData(0, 0, w, h).data;
+
+    // Convert to voxel coordinates
+    const voxelSet = new Set();
+    for (let py = 0; py < h; py++) {
+        for (let px = 0; px < w; px++) {
+            const idx = (py * w + px) * 4;
+            if (maskData[idx] > 128) {
+                let volX, volY, volZ;
+                if (axis === 'axial') {
+                    volX = px; volY = py; volZ = state.slices.axial;
+                } else if (axis === 'sagittal') {
+                    volX = state.slices.sagittal; volY = px;
+                    const spacing = window.volumeSpacing || [0.68, 0.68, 5.0];
+                    volZ = Math.round(py * spacing[1] / spacing[2]);
+                } else {
+                    volX = px; volY = state.slices.coronal;
+                    const spacing = window.volumeSpacing || [0.68, 0.68, 5.0];
+                    volZ = Math.round(py * spacing[0] / spacing[2]);
+                }
+                if (volX >= 0 && volX < state.ctShape[2] && volY >= 0 && volY < state.ctShape[1] && volZ >= 0 && volZ < state.ctShape[0]) {
+                    voxelSet.add(`${volX},${volY},${volZ}`);
+                }
+            }
+        }
+    }
+
+    state.maskLabels[id] = {
+        name: `Manual Mask ${state.maskLabelCounter}`,
+        color: color,
+        voxels: voxelSet,
+        visible: true,
+        opacity: 0.6,
+        axis: axis,
+    };
+
+    renderDataTree();
+    reloadOverlays();
+    addChat('system', `Created mask "${state.maskLabels[id].name}" with ${voxelSet.size} voxels`);
+}
+
+function eraseMaskArea(axis, points) {
+    if (!state.ctShape || points.length < 3) return;
+
+    const sliceCanvas = getSliceCanvas(axis);
+    const w = sliceCanvas.width;
+    const h = sliceCanvas.height;
+    const displayScale = sliceCanvas._displayScale || 1;
+
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = w;
+    maskCanvas.height = h;
+    const mctx = maskCanvas.getContext('2d');
+    mctx.fillStyle = '#fff';
+    mctx.beginPath();
+    mctx.moveTo(points[0].x / displayScale, points[0].y / displayScale);
+    for (let i = 1; i < points.length; i++) {
+        mctx.lineTo(points[i].x / displayScale, points[i].y / displayScale);
+    }
+    mctx.closePath();
+    mctx.fill();
+
+    const maskData = mctx.getImageData(0, 0, w, h).data;
+
+    // Erase from all visible masks
+    let erased = 0;
+    for (const [id, mask] of Object.entries(state.maskLabels)) {
+        if (!mask.visible) continue;
+        for (let py = 0; py < h; py++) {
+            for (let px = 0; px < w; px++) {
+                const idx = (py * w + px) * 4;
+                if (maskData[idx] > 128) {
+                    let volX, volY, volZ;
+                    if (axis === 'axial') {
+                        volX = px; volY = py; volZ = state.slices.axial;
+                    } else if (axis === 'sagittal') {
+                        volX = state.slices.sagittal; volY = px;
+                        const spacing = window.volumeSpacing || [0.68, 0.68, 5.0];
+                        volZ = Math.round(py * spacing[1] / spacing[2]);
+                    } else {
+                        volX = px; volY = state.slices.coronal;
+                        const spacing = window.volumeSpacing || [0.68, 0.68, 5.0];
+                        volZ = Math.round(py * spacing[0] / spacing[2]);
+                    }
+                    const key = `${volX},${volY},${volZ}`;
+                    if (mask.voxels.has(key)) {
+                        mask.voxels.delete(key);
+                        erased++;
+                    }
+                }
+            }
+        }
+    }
+
+    if (erased > 0) {
+        renderDataTree();
+        reloadOverlays();
+        addChat('system', `Erased ${erased} voxels from masks`);
+    }
 }
 
 function viewerUndo() {
@@ -3098,7 +4276,7 @@ function applyViewerTransform() {
     const scaleX = flipH ? -1 : 1;
     const scaleY = flipV ? -1 : 1;
     const transform = `rotate(${rotation}deg) scale(${zoom * scaleX}, ${zoom * scaleY}) translate(${panX}px, ${panY}px)`;
-    
+
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         const canvas = getSliceCanvas(axis);
         if (canvas) {
@@ -3115,51 +4293,55 @@ function applyViewerTransform() {
             crossCanvas.style.transform = transform;
             crossCanvas.style.transformOrigin = 'center center';
         }
+        // Apply same transform to overlay div
+        const overlayDiv = document.getElementById('labelOverlay_' + capitalize(axis));
+        if (overlayDiv) {
+            overlayDiv.style.transform = transform;
+            overlayDiv.style.transformOrigin = 'center center';
+        }
     });
 }
 
 function screenToImageCoords(axis, screenX, screenY) {
     const sliceCanvas = getSliceCanvas(axis);
-    if (!sliceCanvas) return { x: screenX, y: screenY };
-    
+    if (!sliceCanvas) return { x: screenX, y: screenY, displayX: screenX, displayY: screenY };
+
     const rect = sliceCanvas.getBoundingClientRect();
-    const offsetX = sliceCanvas._offsetX || 0;
-    const offsetY = sliceCanvas._offsetY || 0;
     const displayScale = sliceCanvas._displayScale || 1;
-    
-    const imgX = (screenX - rect.left - offsetX) / displayScale;
-    const imgY = (screenY - rect.top - offsetY) / displayScale;
-    
-    return { x: imgX, y: imgY, displayX: screenX - rect.left, displayY: screenY - rect.top };
+    const zoom = state.viewerSettings.zoom || 1;
+
+    // Account for zoom scaling
+    const canvasX = (screenX - rect.left) / zoom;
+    const canvasY = (screenY - rect.top) / zoom;
+
+    // Convert to image coordinates
+    const imgX = canvasX / displayScale;
+    const imgY = canvasY / displayScale;
+
+    return { x: imgX, y: imgY, displayX: canvasX, displayY: canvasY };
 }
 
 function setupAnnotationTool(axis) {
     const sliceCanvas = getSliceCanvas(axis);
     if (!sliceCanvas) return;
-    
-    let toolState = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, points: [] };
-    
-    // Only clone if listeners have been set up before (avoid unnecessary cloning on boot)
-    let newCanvas;
-    if (sliceCanvas._listenersSetup) {
-        newCanvas = sliceCanvas.cloneNode(true);
-        newCanvas._displayScale = sliceCanvas._displayScale;
-        newCanvas._displayW = sliceCanvas._displayW;
-        newCanvas._displayH = sliceCanvas._displayH;
-        newCanvas._offsetX = sliceCanvas._offsetX;
-        newCanvas._offsetY = sliceCanvas._offsetY;
-        sliceCanvas.parentNode.replaceChild(newCanvas, sliceCanvas);
-    } else {
-        newCanvas = sliceCanvas;
+
+    // Don't re-setup if already done
+    if (sliceCanvas._annotationSetup) return;
+    sliceCanvas._annotationSetup = true;
+
+    // Use global tool state so setViewerTool can reset it
+    if (!window._annotationToolState) {
+        window._annotationToolState = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, points: [] };
     }
-    
-    // Re-setup basic interactions (wheel, drag) first
-    setupBasicInteractions(axis, newCanvas);
+    const toolState = window._annotationToolState;
+
+    // Setup basic interactions (wheel, drag, crosshair)
+    setupBasicInteractions(axis, sliceCanvas);
     
     // Annotation overlay canvas for drawing preview
     const annCanvas = getAnnotationCanvas(axis);
     
-    newCanvas.addEventListener('mousedown', (e) => {
+    sliceCanvas.addEventListener('mousedown', (e) => {
         const tool = state.viewerSettings.activeTool;
         if (tool === 'crosshair' || !tool) return;
         if (e.button !== 0) return;
@@ -3170,20 +4352,28 @@ function setupAnnotationTool(axis) {
         toolState.startY = coords.displayY;
         toolState.currentX = coords.displayX;
         toolState.currentY = coords.displayY;
-        toolState.points = [{ x: coords.displayX, y: coords.displayY }];
+        // Don't reset points for angle tool (accumulates across clicks)
+        if (tool !== 'angle') {
+            toolState.points = [{ x: coords.displayX, y: coords.displayY }];
+        }
         
-        if (tool === 'annotate') {
+        if (tool === 'annotate' || tool === 'eraser') {
             annCanvas.style.pointerEvents = 'auto';
         }
     });
     
-    newCanvas.addEventListener('mousemove', (e) => {
+    sliceCanvas.addEventListener('mousemove', (e) => {
         const coords = screenToImageCoords(axis, e.clientX, e.clientY);
         toolState.currentX = coords.displayX;
         toolState.currentY = coords.displayY;
-        
-        // Preview drawing
+
+        // Collect points for freehand/eraser tools only (angle collects on mouseup)
         const tool = state.viewerSettings.activeTool;
+        if (toolState.active && (tool === 'annotate' || tool === 'eraser')) {
+            toolState.points.push({ x: coords.displayX, y: coords.displayY });
+        }
+
+        // Preview drawing
         if (tool === 'crosshair' || !tool || !toolState.active) return;
         
         const ctx = annCanvas.getContext('2d');
@@ -3206,8 +4396,12 @@ function setupAnnotationTool(axis) {
             if (tool === 'measure') {
                 const dx = toolState.currentX - toolState.startX;
                 const dy = toolState.currentY - toolState.startY;
-                const distPx = Math.sqrt(dx * dx + dy * dy);
-                const distMm = (distPx * 0.5).toFixed(1);
+                const volSpacing = window.volumeSpacing || [0.68, 0.68, 5.0];
+                let sx, sy;
+                if (axis === 'axial') { sx = volSpacing[0]; sy = volSpacing[1]; }
+                else if (axis === 'sagittal') { sx = volSpacing[1]; sy = volSpacing[2]; }
+                else { sx = volSpacing[0]; sy = volSpacing[2]; }
+                const distMm = Math.sqrt(Math.pow(dx * sx, 2) + Math.pow(dy * sy, 2)).toFixed(1);
                 const midX = (toolState.startX + toolState.currentX) / 2;
                 const midY = (toolState.startY + toolState.currentY) / 2;
                 ctx.setLineDash([]);
@@ -3233,11 +4427,30 @@ function setupAnnotationTool(axis) {
                 ctx.lineTo(toolState.currentX, toolState.currentY);
                 ctx.stroke();
             }
+            // Show angle preview if 2 points placed
+            if (toolState.points.length === 2) {
+                const p = toolState.points;
+                const v1x = p[0].x - p[1].x, v1y = p[0].y - p[1].y;
+                const v2x = toolState.currentX - p[1].x, v2y = toolState.currentY - p[1].y;
+                const dot = v1x * v2x + v1y * v2y;
+                const mag1 = Math.sqrt(v1x * v1x + v1y * v1y);
+                const mag2 = Math.sqrt(v2x * v2x + v2y * v2y);
+                if (mag1 > 2 && mag2 > 2) {
+                    const angle = (Math.acos(Math.max(-1, Math.min(1, dot / (mag1 * mag2)))) * 180 / Math.PI).toFixed(1);
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(p[1].x - 25, p[1].y - 28, 50, 16);
+                    ctx.fillStyle = '#ffaa00';
+                    ctx.textAlign = 'center';
+                    ctx.font = '11px monospace';
+                    ctx.fillText(`${angle}°`, p[1].x, p[1].y - 16);
+                }
+            }
         } else if (tool === 'rect') {
-            ctx.strokeRect(toolState.startX, toolState.startY, 
-                          toolState.currentX - toolState.startX, 
+            ctx.strokeRect(toolState.startX, toolState.startY,
+                          toolState.currentX - toolState.startX,
                           toolState.currentY - toolState.startY);
-        } else if (tool === 'annotate') {
+        } else if (tool === 'annotate' || tool === 'eraser') {
             if (toolState.points.length > 1) {
                 ctx.beginPath();
                 ctx.moveTo(toolState.points[0].x, toolState.points[0].y);
@@ -3248,7 +4461,7 @@ function setupAnnotationTool(axis) {
         ctx.restore();
     });
     
-    newCanvas.addEventListener('mouseup', (e) => {
+    sliceCanvas.addEventListener('mouseup', (e) => {
         if (!toolState.active) return;
         toolState.active = false;
         
@@ -3259,27 +4472,41 @@ function setupAnnotationTool(axis) {
         toolState.currentX = coords.displayX;
         toolState.currentY = coords.displayY;
         
-        const spacing = 0.5; // Default pixel spacing in mm
+        const volSpacing = window.volumeSpacing || [0.68, 0.68, 5.0];
+        // Get pixel spacing for this axis
+        let pxSpacingX, pxSpacingY;
+        if (axis === 'axial') { pxSpacingX = volSpacing[0]; pxSpacingY = volSpacing[1]; }
+        else if (axis === 'sagittal') { pxSpacingX = volSpacing[1]; pxSpacingY = volSpacing[2]; }
+        else { pxSpacingX = volSpacing[0]; pxSpacingY = volSpacing[2]; }
         let annotation = null;
-        
+
         if (tool === 'measure') {
             annotation = {
                 type: 'line',
                 axis: axis,
                 x1: toolState.startX, y1: toolState.startY,
                 x2: toolState.currentX, y2: toolState.currentY,
-                pixelSpacing: spacing,
+                spacingX: pxSpacingX, spacingY: pxSpacingY,
                 color: '#00ff00',
             };
         } else if (tool === 'angle') {
             toolState.points.push({ x: toolState.currentX, y: toolState.currentY });
             if (toolState.points.length >= 3) {
+                const p = toolState.points;
+                // Calculate angle at p1 between vectors p0->p1 and p2->p1
+                const v1x = p[0].x - p[1].x, v1y = p[0].y - p[1].y;
+                const v2x = p[2].x - p[1].x, v2y = p[2].y - p[1].y;
+                const dot = v1x * v2x + v1y * v2y;
+                const mag1 = Math.sqrt(v1x * v1x + v1y * v1y);
+                const mag2 = Math.sqrt(v2x * v2x + v2y * v2y);
+                const angleDeg = (Math.acos(Math.max(-1, Math.min(1, dot / (mag1 * mag2 || 1)))) * 180 / Math.PI);
                 annotation = {
                     type: 'angle',
                     axis: axis,
-                    x1: toolState.points[0].x, y1: toolState.points[0].y,
-                    x2: toolState.points[1].x, y2: toolState.points[1].y,
-                    x3: toolState.points[2].x, y3: toolState.points[2].y,
+                    x1: p[0].x, y1: p[0].y,
+                    x2: p[1].x, y2: p[1].y,
+                    x3: p[2].x, y3: p[2].y,
+                    angleDeg: angleDeg,
                     color: '#ffaa00',
                 };
                 toolState.points = [];
@@ -3301,6 +4528,13 @@ function setupAnnotationTool(axis) {
                     points: [...toolState.points],
                     color: '#ff00ff',
                 };
+                // Create mask from freehand
+                createMaskFromFreehand(axis, toolState.points);
+            }
+            toolState.points = [];
+        } else if (tool === 'eraser') {
+            if (toolState.points.length > 2) {
+                eraseMaskArea(axis, toolState.points);
             }
             toolState.points = [];
         } else if (tool === 'zoombox') {
@@ -3339,7 +4573,7 @@ function setupAnnotationTool(axis) {
         }
     });
     
-    newCanvas.addEventListener('mouseleave', () => {
+    sliceCanvas.addEventListener('mouseleave', () => {
         toolState.active = false;
     });
 }
@@ -3352,12 +4586,10 @@ function setupBasicInteractions(axis, canvas) {
         if (!slider) return;
         const delta = e.deltaY > 0 ? 1 : -1;
         let newVal = parseInt(slider.value) + delta;
-        newVal = Math.max(0, Math.min(parseInt(slider.max), newVal));
+        const maxVal = parseInt(slider.max) || 100;
+        newVal = Math.max(0, Math.min(maxVal, newVal));
         slider.value = newVal;
-        state.slices[axis] = newVal;
-        const label = document.getElementById('sliceLabel' + capitalize(axis));
-        if (label) label.textContent = newVal;
-        loadSlice(axis, newVal);
+        updateSlice(axis, newVal);
     }, { passive: false });
     
     // Mouse drag: window/level or pan
@@ -3377,11 +4609,11 @@ function setupBasicInteractions(axis, canvas) {
     
     canvas.addEventListener('mousemove', (e) => {
         const rect = canvas.getBoundingClientRect();
-        const offsetX = canvas._offsetX || 0;
-        const offsetY = canvas._offsetY || 0;
         const displayScale = canvas._displayScale || 1;
-        const mouseX = e.clientX - rect.left - offsetX;
-        const mouseY = e.clientY - rect.top - offsetY;
+        const zoom = state.viewerSettings.zoom || 1;
+        // rect.left includes CSS position; account for zoom scaling
+        const mouseX = (e.clientX - rect.left) / zoom;
+        const mouseY = (e.clientY - rect.top) / zoom;
         const imgX = Math.floor(mouseX / displayScale);
         const imgY = Math.floor(mouseY / displayScale);
         
@@ -3391,18 +4623,51 @@ function setupBasicInteractions(axis, canvas) {
             const zSag = state.slices.sagittal;
             const zCor = state.slices.coronal;
             
+            // Get spacing for coordinate conversion
+            const spacing = volumeSpacing || [0.68, 0.68, 5.0];
+            
             let volX, volY, volZ;
             if (axis === 'axial') {
+                // axial: imgX = X, imgY = Y
                 volX = imgX; volY = imgY; volZ = zAxial;
             } else if (axis === 'sagittal') {
-                volX = zSag; volY = imgY; volZ = imgX;
+                // sagittal: imgX = Y, imgY = Z (resampled)
+                // Need to convert from resampled Z to original Z
+                const resampleRatio = spacing[2] / spacing[1]; // 5.0 / 0.68
+                volX = zSag; volY = imgX; volZ = Math.round(imgY / resampleRatio);
             } else {
-                volX = imgX; volY = zCor; volZ = imgY;
+                // coronal: imgX = X, imgY = Z (resampled)
+                const resampleRatio = spacing[2] / spacing[0]; // 5.0 / 0.68
+                volX = imgX; volY = zCor; volZ = Math.round(imgY / resampleRatio);
             }
             
-            if (volX >= 0 && volX < state.ctShape[0] && volY >= 0 && volY < state.ctShape[1] && volZ >= 0 && volZ < state.ctShape[2]) {
+            if (volX >= 0 && volX < state.ctShape[2] && volY >= 0 && volY < state.ctShape[1] && volZ >= 0 && volZ < state.ctShape[0]) {
                 drawLinkedCrosshairs(volX, volY, volZ, axis);
                 fetchHUValue(volX, volY, volZ);
+                
+                // Update other viewers' slice positions on click (isDragging is set on mousedown)
+                if (isDragging) {
+                    const updates = {};
+                    if (axis === 'axial') {
+                        updates.sagittal = volX;
+                        updates.coronal = volY;
+                    } else if (axis === 'sagittal') {
+                        updates.axial = volZ;
+                        updates.coronal = volY;
+                    } else {
+                        updates.axial = volZ;
+                        updates.sagittal = volX;
+                    }
+                    
+                    Object.entries(updates).forEach(([view, sliceIdx]) => {
+                        const slider = document.getElementById('slider' + capitalize(view));
+                        if (slider) {
+                            sliceIdx = Math.max(0, Math.min(parseInt(slider.max), Math.round(sliceIdx)));
+                            slider.value = sliceIdx;
+                            updateSlice(view, sliceIdx);
+                        }
+                    });
+                }
             }
         }
         
@@ -3434,7 +4699,62 @@ function setupBasicInteractions(axis, canvas) {
         document.getElementById('huDisplay').textContent = '';
         clearLinkedCrosshairs();
     });
-    
+
+    // Double-click: navigate all viewers to clicked position
+    canvas.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const displayScale = canvas._displayScale || 1;
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const imgX = Math.floor(mouseX / displayScale);
+        const imgY = Math.floor(mouseY / displayScale);
+
+        if (!state.ctShape) return;
+        const spacing = volumeSpacing || [0.68, 0.68, 5.0];
+
+        let volX, volY, volZ;
+        if (axis === 'axial') {
+            volX = imgX; volY = imgY; volZ = state.slices.axial;
+        } else if (axis === 'sagittal') {
+            const resampleRatio = spacing[2] / spacing[1];
+            volX = state.slices.sagittal; volY = imgX;
+            volZ = Math.round(imgY / resampleRatio);
+        } else {
+            const resampleRatio = spacing[2] / spacing[0];
+            volX = imgX; volY = state.slices.coronal;
+            volZ = Math.round(imgY / resampleRatio);
+        }
+
+        if (volX < 0 || volX >= state.ctShape[2] || volY < 0 || volY >= state.ctShape[1] || volZ < 0 || volZ >= state.ctShape[0]) return;
+
+        // Draw crosshairs
+        drawLinkedCrosshairs(volX, volY, volZ, axis);
+        fetchHUValue(volX, volY, volZ);
+
+        // Navigate other viewers
+        const updates = {};
+        if (axis === 'axial') {
+            updates.sagittal = volX;
+            updates.coronal = volY;
+        } else if (axis === 'sagittal') {
+            updates.axial = volZ;
+            updates.coronal = volY;
+        } else {
+            updates.axial = volZ;
+            updates.sagittal = volX;
+        }
+
+        Object.entries(updates).forEach(([view, sliceIdx]) => {
+            const slider = document.getElementById('slider' + capitalize(view));
+            if (slider) {
+                sliceIdx = Math.max(0, Math.min(parseInt(slider.max), Math.round(sliceIdx)));
+                slider.value = sliceIdx;
+                updateSlice(view, sliceIdx);
+            }
+        });
+    });
+
     // Mark as having listeners set up
     canvas._listenersSetup = true;
 }
@@ -3677,6 +4997,78 @@ function showLoading(show) {
     document.getElementById('loading3D').className = 'loading-overlay' + (show ? ' active' : '');
 }
 
+/******** MARKDOWN RENDERER ********/
+function renderMarkdown(text) {
+    if (!text) return '';
+    
+    // Escape HTML first
+    let html = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    
+    // Code blocks (```...```)
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+        return `<pre class="md-code-block"><code class="language-${lang}">${code.trim()}</code></pre>`;
+    });
+    
+    // Inline code (`...`)
+    html = html.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
+    
+    // Tables
+    html = html.replace(/\|(.+)\|\n\|[-| ]+\|\n((?:\|.+\|\n?)+)/g, (match, header, body) => {
+        const headers = header.split('|').filter(h => h.trim()).map(h => `<th>${h.trim()}</th>`).join('');
+        const rows = body.trim().split('\n').map(row => {
+            const cells = row.split('|').filter(c => c.trim()).map(c => `<td>${c.trim()}</td>`).join('');
+            return `<tr>${cells}</tr>`;
+        }).join('');
+        return `<table class="md-table"><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
+    });
+    
+    // Bold (**...**)
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    
+    // Italic (*...*)
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    
+    // Headers (### ... , ## ... , # ...)
+    html = html.replace(/^### (.+)$/gm, '<h4 class="md-h3">$1</h4>');
+    html = html.replace(/^## (.+)$/gm, '<h3 class="md-h2">$1</h3>');
+    html = html.replace(/^# (.+)$/gm, '<h2 class="md-h1">$1</h2>');
+    
+    // Unordered lists
+    html = html.replace(/^- (.+)$/gm, '<li class="md-list-item">$1</li>');
+    html = html.replace(/(<li class="md-list-item">.*<\/li>\n?)+/g, (match) => {
+        return `<ul class="md-list">${match}</ul>`;
+    });
+    
+    // Ordered lists
+    html = html.replace(/^\d+\. (.+)$/gm, '<li class="md-ordered-item">$1</li>');
+    html = html.replace(/(<li class="md-ordered-item">.*<\/li>\n?)+/g, (match) => {
+        return `<ol class="md-ordered-list">${match}</ol>`;
+    });
+    
+    // Horizontal rule (---)
+    html = html.replace(/^---$/gm, '<hr class="md-hr">');
+    
+    // Line breaks - wrap non-block text in <p> tags
+    html = html.replace(/\n\n+/g, '</p><p>');
+    html = html.replace(/\n/g, '<br>');
+
+    // Clean up extra <br> after block elements
+    html = html.replace(/<\/(pre|h[2-4]|table|ul|ol|hr)><br>/g, '</$1>');
+    html = html.replace(/<br><(pre|h[2-4]|table|ul|ol|hr)/g, '<$1');
+    html = html.replace(/<\/p><br>/g, '</p>');
+    html = html.replace(/<br><p>/g, '<p>');
+
+    // Wrap in paragraph if not already wrapped
+    if (!html.startsWith('<p>') && !html.startsWith('<pre>') && !html.startsWith('<h') && !html.startsWith('<table>') && !html.startsWith('<ul>') && !html.startsWith('<ol>') && !html.startsWith('<hr')) {
+        html = '<p>' + html + '</p>';
+    }
+
+    return html;
+}
+
 /******** CHAT ********/
 function addChat(type, msg, save = true) {
     const container = document.getElementById('chatMessages');
@@ -3684,7 +5076,7 @@ function addChat(type, msg, save = true) {
     if (type === 'system' || type === 'error') {
         const div = document.createElement('div');
         div.className = 'chat-msg ' + type;
-        div.innerHTML = escHtml(msg).replace(/\n/g, '<br>');
+        div.innerHTML = renderMarkdown(msg);
         container.appendChild(div);
         container.scrollTop = container.scrollHeight;
         if (save) saveSessionMessage(type, msg);
@@ -3707,7 +5099,7 @@ function addChat(type, msg, save = true) {
 
     const div = document.createElement('div');
     div.className = 'chat-msg ' + type;
-    div.innerHTML = escHtml(msg).replace(/\n/g, '<br>');
+    div.innerHTML = renderMarkdown(msg);
 
     if (type === 'user' || type === 'bot' || type === 'bot-response') {
         const actions = document.createElement('div');
@@ -3717,10 +5109,12 @@ function addChat(type, msg, save = true) {
         copyBtn.innerHTML = '&#128203;';
         copyBtn.title = 'Copy';
         copyBtn.onclick = () => {
-            navigator.clipboard.writeText(msg).then(() => {
-                copyBtn.innerHTML = '&#9989;';
-                setTimeout(() => { copyBtn.innerHTML = '&#128203;'; }, 1500);
-            });
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(msg).then(() => {
+                    copyBtn.innerHTML = '&#9989;';
+                    setTimeout(() => { copyBtn.innerHTML = '&#128203;'; }, 1500);
+                }).catch(() => {});
+            }
         };
         actions.appendChild(copyBtn);
         wrapper.appendChild(actions);
@@ -3733,6 +5127,7 @@ function addChat(type, msg, save = true) {
     container.scrollTop = container.scrollHeight;
 
     if (save) saveSessionMessage(type, msg);
+    if (type === 'bot' || type === 'bot-response') captureAnalysis(msg);
 }
 
 const STEP_ICONS = {
@@ -3832,14 +5227,19 @@ function toggleStep(bodyId) {
 
 /******** SLASH COMMANDS ********/
 const slashCommands = {
-    '/help': 'Show available commands and their descriptions',
-    '/plan': 'Start treatment planning workflow',
-    '/segment': 'Segment CT image (tumor and organs)',
-    '/evaluate': 'Evaluate dose plan quality',
-    '/export': 'Export plan to DICOM format',
-    '/viewer': 'Control CT viewer settings',
-    '/clear': 'Clear chat history',
+    '/help': '显示帮助信息',
+    '/plan': '开始治疗计划工作流',
+    '/segment': '分割CT图像',
+    '/evaluate': '评估剂量计划',
+    '/export': '导出DICOM',
+    '/viewer': '控制查看器',
+    '/goal': '设置目标，自主工作直到完成',
+    '/stop': '停止当前目标工作流',
+    '/clear': '清除聊天',
 };
+
+const messageHistory = [];
+let historyIndex = -1;
 
 function handleChatInput(input) {
     const value = input.value;
@@ -3863,8 +5263,10 @@ function handleChatInput(input) {
 }
 
 function handleChatKeypress(event) {
+    const input = event.target;
+    const menu = document.getElementById('slashCommandMenu');
+
     if (event.key === 'Enter') {
-        const menu = document.getElementById('slashCommandMenu');
         if (menu.style.display === 'block') {
             const firstCmd = menu.querySelector('.slash-cmd');
             if (firstCmd) {
@@ -3873,8 +5275,49 @@ function handleChatKeypress(event) {
             }
         }
         sendChat();
+    } else if (event.key === 'Tab') {
+        event.preventDefault();
+        const value = input.value;
+        if (value.startsWith('/')) {
+            const matches = Object.keys(slashCommands).filter(cmd => cmd.startsWith(value.toLowerCase()));
+            if (matches.length === 1) {
+                insertSlashCommand(matches[0]);
+            } else if (matches.length > 1) {
+                // Find common prefix
+                let common = matches[0];
+                for (let i = 1; i < matches.length; i++) {
+                    while (!matches[i].startsWith(common)) {
+                        common = common.slice(0, -1);
+                    }
+                }
+                if (common.length > value.length) {
+                    input.value = common;
+                }
+            }
+        }
+        menu.style.display = 'none';
+    } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (messageHistory.length > 0) {
+            if (historyIndex === -1) {
+                historyIndex = messageHistory.length - 1;
+            } else if (historyIndex > 0) {
+                historyIndex--;
+            }
+            input.value = messageHistory[historyIndex];
+        }
+    } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        if (historyIndex !== -1) {
+            if (historyIndex < messageHistory.length - 1) {
+                historyIndex++;
+                input.value = messageHistory[historyIndex];
+            } else {
+                historyIndex = -1;
+                input.value = '';
+            }
+        }
     } else if (event.key === 'Escape') {
-        const menu = document.getElementById('slashCommandMenu');
         menu.style.display = 'none';
     } else if (event.ctrlKey && event.key === 'l') {
         event.preventDefault();
@@ -3914,6 +5357,16 @@ function executeSlashCommand(cmd, args) {
                 showViewerHelp();
             }
             break;
+        case '/goal':
+            if (args) {
+                startGoalWorkflow(args);
+            } else {
+                addChat('system', '请指定目标，例如: /goal 前列腺癌近距离治疗计划');
+            }
+            break;
+        case '/stop':
+            stopGoal();
+            break;
         case '/clear':
             clearChat();
             break;
@@ -3922,23 +5375,119 @@ function executeSlashCommand(cmd, args) {
     }
 }
 
+// Goal-driven autonomous workflow
+let goalActive = false;
+let goalTarget = '';
+let goalIteration = 0;
+const MAX_GOAL_ITERATIONS = 10;
+
+function startGoalWorkflow(goal) {
+    goalActive = true;
+    goalTarget = goal;
+    goalIteration = 0;
+    
+    addChat('system', `🎯 **目标已设定**: ${goal}\n\n自主工作模式启动，将自动执行以下步骤直到完成：\n1. 分析CT图像\n2. 分割肿瘤和器官\n3. 生成治疗计划\n4. 评估计划质量\n5. 导出结果\n\n输入 "/stop" 可随时停止。`);
+    
+    // Start the autonomous workflow
+    executeGoalStep();
+}
+
+async function executeGoalStep() {
+    if (!goalActive || goalIteration >= MAX_GOAL_ITERATIONS) {
+        if (goalIteration >= MAX_GOAL_ITERATIONS) {
+            addChat('system', '⚠️ 已达到最大迭代次数，目标工作流已停止。');
+        }
+        goalActive = false;
+        return;
+    }
+    
+    goalIteration++;
+    
+    // Build context-aware prompt for this step
+    let prompt = '';
+    if (goalIteration === 1) {
+        prompt = `目标: ${goalTarget}\n\n请开始执行治疗计划工作流。首先分析CT图像并进行分割。`;
+    } else if (goalIteration === 2) {
+        prompt = `目标: ${goalTarget}\n\n继续执行：进行OAR分割和轨迹规划。`;
+    } else if (goalIteration === 3) {
+        prompt = `目标: ${goalTarget}\n\n继续执行：进行种子源规划和剂量计算。`;
+    } else if (goalIteration === 4) {
+        prompt = `目标: ${goalTarget}\n\n继续执行：评估计划质量并显示结果。`;
+    } else {
+        prompt = `目标: ${goalTarget}\n\n请继续执行下一步操作，直到目标完成。`;
+    }
+    
+    // Send message and wait for response
+    await sendChatMessageAsync(prompt);
+    
+    // Check if goal is achieved (simple heuristic: if LLM says "完成" or "completed")
+    // In a real implementation, this would check actual completion criteria
+    setTimeout(() => {
+        if (goalActive) {
+            executeGoalStep();
+        }
+    }, 5000); // Wait 5 seconds between steps
+}
+
+function stopGoal() {
+    goalActive = false;
+    addChat('system', '🛑 目标工作流已停止。');
+}
+
+// Async version of sendChatMessage
+function sendChatMessageAsync(message) {
+    return new Promise((resolve) => {
+        const input = document.getElementById('chatInput');
+        input.value = message;
+        
+        // Override the callback to resolve when done
+        const originalSendChat = window.sendChat;
+        window.sendChat = async function() {
+            await originalSendChat();
+            window.sendChat = originalSendChat;
+            resolve();
+        };
+        
+        sendChat();
+    });
+}
+
 function showHelp() {
-    const helpText = `**Available Commands:**
+    const helpText = `**📋 BrachyBot 使用指南**
 
-- **/help** - Show this help message
-- **/plan** - Start treatment planning workflow
-- **/segment** - Segment CT image (tumor and organs)
-- **/evaluate** - Evaluate dose plan quality
-- **/export** - Export plan to DICOM format
-- **/viewer** - Control CT viewer settings
-- **/clear** - Clear chat history
+**🔧 命令列表:**
+- **/help** - 显示此帮助信息
+- **/plan** - 开始治疗计划工作流
+- **/segment** - 分割CT图像（肿瘤和器官）
+- **/evaluate** - 评估剂量计划质量
+- **/export** - 导出计划为DICOM格式
+- **/viewer** - 控制CT查看器设置
+- **/goal [目标]** - 设置目标，自主工作直到完成
+- **/stop** - 停止当前目标工作流
+- **/clear** - 清除聊天历史
 
-**Keyboard Shortcuts:**
-- **Enter** - Send message
-- **Ctrl+L** - Clear chat
-- **Escape** - Close command menu`;
+**⌨️ 快捷键:**
+- **Enter** - 发送消息
+- **↑ / ↓** - 浏览历史消息
+- **Tab** - 自动补全命令
+- **Ctrl+L** - 清除聊天
+- **Ctrl+K** - 聚焦输入框
+- **Escape** - 关闭命令菜单
 
-    addChat('system', helpText);
+**🖼️ Viewer 交互:**
+- **鼠标滚轮** - 切换切片
+- **左键拖拽** - 平移图像
+- **Shift+左键拖拽** - 调整窗宽窗位
+- **点击** - 十字线联动（自动更新其他视图）
+
+**💬 使用示例:**
+- "帮我分割这个CT图像"
+- "/goal 前列腺癌近距离治疗计划"
+- "定位到肿瘤位置"
+- "V100是多少？"
+- "使用肺窗显示"`;
+
+    addChat('bot', helpText);
 }
 
 function showViewerHelp() {
@@ -3951,7 +5500,7 @@ function showViewerHelp() {
 
 Example: /viewer lung window`;
 
-    addChat('system', helpText);
+    addChat('bot', helpText);
 }
 
 function clearChat() {
@@ -3980,9 +5529,19 @@ document.addEventListener('keydown', function(e) {
 });
 
 async function sendChat() {
+    console.log('[sendChat] Called');
     const input = document.getElementById('chatInput');
     const msg = input.value.trim();
-    if (!msg) return;
+    console.log('[sendChat] Message:', msg);
+    if (!msg) {
+        console.log('[sendChat] Empty message, returning');
+        return;
+    }
+
+    // Add to message history for arrow key navigation
+    messageHistory.push(msg);
+    historyIndex = -1;
+
     input.value = '';
 
     // Handle slash commands
@@ -3990,6 +5549,7 @@ async function sendChat() {
         const parts = msg.split(' ');
         const cmd = parts[0].toLowerCase();
         const args = parts.slice(1).join(' ');
+        console.log('[sendChat] Slash command:', cmd, args);
 
         if (slashCommands[cmd]) {
             executeSlashCommand(cmd, args);
@@ -3997,6 +5557,7 @@ async function sendChat() {
         }
     }
 
+    console.log('[sendChat] Adding user message to chat');
     addChat('user', msg);
 
     const uiState = collectUIState();
@@ -4166,6 +5727,52 @@ async function sendChat() {
         const progressContainerEnd = document.getElementById('toolProgressContainer');
         if (progressContainerEnd) progressContainerEnd.style.display = 'none';
 
+        // Auto-enable overlay after successful segmentation
+        if (steps && steps.length > 0) {
+            let needsOverlayRefresh = false;
+            for (const step of steps) {
+                if (step.type === 'tool' && step.status === 'done' && step.tool) {
+                    const toolName = step.tool.toLowerCase();
+                    if (toolName.includes('ctv_segmentation') || toolName.includes('ctv')) {
+                        state.viewerSettings.showCTV = true;
+                        dataTreeState.ctv.visible = true;
+                        dataTreeState.ctv.loaded = true;
+                        const cb = document.getElementById('overlayCTV');
+                        if (cb) cb.checked = true;
+                        needsOverlayRefresh = true;
+                    }
+                    if (toolName.includes('oar_segmentation') || toolName.includes('oar')) {
+                        state.viewerSettings.showOAR = true;
+                        dataTreeState.oar.visible = true;
+                        dataTreeState.oar.loaded = true;
+                        const cb = document.getElementById('overlayOAR');
+                        if (cb) cb.checked = true;
+                        needsOverlayRefresh = true;
+                        // Fetch organ data from server, then refresh overlays
+                        fetch(API + '/viewer/organs').then(r => r.json()).then(data => {
+                            if (data.success && data.organs) {
+                                updateOrganList(data.organs);
+                                renderDataTree();
+                            }
+                            // Refresh overlays after organ data is loaded
+                            if (state.ctLoaded) reloadOverlays();
+                        }).catch(() => {});
+                    }
+                }
+            }
+            if (needsOverlayRefresh) {
+                // Switch to overlay display mode
+                state.viewerSettings.displayMode = 'overlay';
+                const modeSelect = document.getElementById('displayMode');
+                if (modeSelect) modeSelect.value = 'overlay';
+                // Refresh data tree and viewers
+                renderDataTree();
+                if (state.ctLoaded) {
+                    setTimeout(() => loadAllSlices(), 500);
+                }
+            }
+        }
+
         // Sync viewer state after LLM response (in case LLM changed viewer settings via API)
         setTimeout(() => syncViewerState(), 300);
 
@@ -4221,8 +5828,23 @@ function updateStreamingResponse(el, text) {
 
 function finalizeStreamingResponse(el, text) {
     el.removeAttribute('id');
-    el.innerHTML = escHtml(text).replace(/\n/g, '<br>');
+    // Render markdown for bot responses
+    el.innerHTML = renderMarkdown(text);
     saveSessionMessage('bot-response', text);
+    // Capture analysis results for Analysis tab
+    captureAnalysis(text);
+}
+
+function captureAnalysis(text) {
+    // Show analysis in the Analysis tab if it contains meaningful content
+    if (!text || text.length < 20) return;
+    const section = document.getElementById('analysisSection');
+    const content = document.getElementById('analysisContent');
+    const timeEl = document.getElementById('analysisTime');
+    if (!section || !content) return;
+    section.style.display = '';
+    content.innerHTML = renderMarkdown(text);
+    timeEl.textContent = new Date().toLocaleTimeString();
 }
 
 function createLiveThinkingChain() {
@@ -4341,12 +5963,24 @@ function finalizeThinkingChain(chainEl, headerEl, steps) {
     const labelEl = headerEl.querySelector('.thinking-label');
     if (labelEl) labelEl.textContent = 'Execution Trace';
     updateChainHeader(headerEl, steps);
-    
+
     // Clear the timer
     if (headerEl._timer) {
         clearInterval(headerEl._timer);
         headerEl._timer = null;
     }
+
+    // Auto-collapse after response is complete
+    setTimeout(() => {
+        const toggle = chainEl.querySelector('.thinking-toggle');
+        const stepsDiv = chainEl.querySelector('.thinking-steps');
+        if (toggle) toggle.classList.remove('expanded');
+        if (stepsDiv) stepsDiv.classList.remove('expanded');
+        // Collapse all step bodies
+        if (stepsDiv) {
+            stepsDiv.querySelectorAll('.step-body').forEach(b => b.classList.remove('expanded'));
+        }
+    }, 500);
 }
 
 function scrollToBottom() {
@@ -4720,6 +6354,36 @@ function updateTaskProgressInline(taskId, status, result) {
             text.innerHTML = `<strong>${escHtml(taskId)}</strong> completed`;
             row.style.background = 'rgba(16,185,129,0.1)';
             row.style.borderColor = 'rgba(16,185,129,0.3)';
+            
+            // Auto-refresh viewer after segmentation
+            if (taskId.includes('oar_segmentation') || taskId.includes('oar')) {
+                state.viewerSettings.showOAR = true;
+                dataTreeState.oar.visible = true;
+                dataTreeState.oar.loaded = true;
+                const cb = document.getElementById('overlayOAR');
+                if (cb) cb.checked = true;
+                // Switch to overlay mode
+                state.viewerSettings.displayMode = 'overlay';
+                const modeSelect = document.getElementById('displayMode');
+                if (modeSelect) modeSelect.value = 'overlay';
+                // Fetch organ data for data tree
+                fetch(API + '/viewer/organs').then(r => r.json()).then(data => {
+                    if (data.success && data.organs) {
+                        updateOrganList(data.organs);
+                        renderDataTree();
+                    }
+                }).catch(() => {});
+                refreshAllViewers();
+            } else if (taskId.includes('ctv_segmentation') || taskId.includes('ctv')) {
+                state.viewerSettings.showCTV = true;
+                const cb = document.getElementById('overlayCTV');
+                if (cb) cb.checked = true;
+                // Switch to overlay mode
+                state.viewerSettings.displayMode = 'overlay';
+                const modeSelect = document.getElementById('displayMode');
+                if (modeSelect) modeSelect.value = 'overlay';
+                refreshAllViewers();
+            }
         } else {
             text.innerHTML = `<strong>${escHtml(taskId)}</strong> failed: ${escHtml(result)}`;
             row.style.background = 'rgba(239,68,68,0.1)';
@@ -4732,16 +6396,54 @@ function updateTaskProgressInline(taskId, status, result) {
     }, 3000);
 }
 
+function refreshAllViewers() {
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        renderSliceFromVolume(axis, state.slices[axis]);
+    });
+}
+
 /******** BOOT ********/
 loadSessions();
 renderSessionList();
 loadSessionChat(activeSessionId);
 setupSplitter();
+setupSidebarResize();
 setupViewerResizers();
 setupViewerInteractions();
-init();
+
+console.log('[BOOT] Starting initialization...');
+try {
+    init();
+    console.log('[BOOT] init() completed');
+} catch (e) {
+    console.error('[BOOT] init() failed:', e);
+}
+
 setInterval(init, 30000);
-connectTaskSSE();
+
+try {
+    connectTaskSSE();
+    console.log('[BOOT] connectTaskSSE() completed');
+} catch (e) {
+    console.error('[BOOT] connectTaskSSE() failed:', e);
+}
+
+console.log('[BOOT] All initialization complete');
+
+// Debug: Add click listener to track clicks
+document.addEventListener('click', function(e) {
+    console.log('[CLICK]', e.target.tagName, e.target.id || e.target.className);
+}, true);
+
+// Debug: Track errors
+window.onerror = function(msg, url, line, col, error) {
+    console.error('[ERROR]', msg, 'at', url, ':', line, ':', col, error);
+    return false;
+};
+
+window.addEventListener('unhandledrejection', function(e) {
+    console.error('[UNHANDLED REJECTION]', e.reason);
+});
 </script>
 </body>
 </html>
