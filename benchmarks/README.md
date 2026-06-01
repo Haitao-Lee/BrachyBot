@@ -414,6 +414,67 @@ BrachyBot now has intelligent context management that:
 
 ---
 
+## Benchmark Suite v3 (Recommended)
+
+The v3 runner (`run_benchmarks_v3.py`) addresses key limitations identified in the quality audit.
+
+### Key Improvements
+
+| Feature | v2 | v3 |
+|---------|----|----|
+| **Scoring** | Keyword-only (40%) | Keyword + Concept coverage (35%) |
+| **Stability** | Single run | Multi-run with majority voting |
+| **Timeout** | Fixed 120s | Dynamic: 60s/120s/180s by difficulty |
+| **Completeness** | Character count | Quality-based (structure, numbers, repetition) |
+| **Hallucination** | Basic phrases | Expanded detection + honesty bonus |
+| **Comparison** | Manual | Built-in `--compare` command |
+
+### v3 Usage
+
+```bash
+# Standard run
+python benchmarks/run_benchmarks_v3.py --all
+
+# Stability testing (recommended for critical changes)
+python benchmarks/run_benchmarks_v3.py --all --runs 3
+
+# Compare with previous results
+python benchmarks/run_benchmarks_v3.py --compare results/current.json results/baseline.json
+
+# Category-specific with stability
+python benchmarks/run_benchmarks_v3.py --category greeting --runs 3
+```
+
+### When to Use Multi-Run (--runs N)
+
+| Scenario | Recommended Runs | Why |
+|----------|------------------|-----|
+| Quick check | 1 | Fast feedback |
+| Standard validation | 2 | Catch obvious flakiness |
+| Critical changes | 3 | Majority vote reliable |
+| Investigating flaky tests | 5 | Statistical confidence |
+
+### v3 Scoring Weights
+
+| Component | Weight | v3 Changes |
+|-----------|--------|------------|
+| Keyword Match | 35% | + Concept coverage bonus |
+| Completeness | 20% | Quality-based, not length-based |
+| Safety | 20% | Same (forbidden keywords) |
+| Accuracy | 15% | + Honesty bonus, + hedging bonus |
+| UX Quality | 10% | + Repetition penalty |
+
+### Quality Audit
+
+See [BENCHMARK_QUALITY_AUDIT.md](BENCHMARK_QUALITY_AUDIT.md) for:
+- Known scoring limitations and workarounds
+- Common pitfalls to avoid
+- Recommended iteration protocol
+- Root cause analysis guide
+- Chain reaction risk assessment
+
+---
+
 ## Remember
 
 > **The goal is not to pass benchmarks — the goal is to build a system that helps clinicians.**
