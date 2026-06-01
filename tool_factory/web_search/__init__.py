@@ -413,24 +413,25 @@ GitHub Integration:
                         if abstract_response.status_code == 200:
                             # Parse abstracts from plain text response
                             abstract_text = abstract_response.text
-                            # Split by PMID markers
+                            # Simple approach: find the abstract content
+                            # The abstract is typically the longest paragraph in the response
+                            paragraphs = abstract_text.split("\n\n")
                             for pmid in ids:
-                                # Find abstract for this PMID
-                                idx = abstract_text.find(pmid)
-                                if idx != -1:
-                                    # Extract abstract (up to next PMID or end)
-                                    next_pmid_idx = abstract_text.find("\n\nPMID:", idx + 10)
-                                    if next_pmid_idx == -1:
-                                        chunk = abstract_text[idx:]
-                                    else:
-                                        chunk = abstract_text[idx:next_pmid_idx]
-                                    # Clean up and get abstract
-                                    lines = chunk.split("\n")
-                                    abstract_lines = []
-                                    for line in lines[2:]:  # Skip PMID and title lines
-                                        if line.strip() and not line.startswith("PMID:"):
-                                            abstract_lines.append(line.strip())
-                                    abstracts[pmid] = " ".join(abstract_lines)[:500]
+                                # Find the longest paragraph (likely the abstract)
+                                longest_paragraph = ""
+                                for para in paragraphs:
+                                    # Skip title, authors, affiliations
+                                    if len(para) > len(longest_paragraph) and "Author information:" not in para and "(" not in para[:10]:
+                                        longest_paragraph = para
+
+                                if longest_paragraph:
+                                    # Clean up the abstract
+                                    abstract = longest_paragraph.strip()
+                                    # Remove citation numbers like 1-3, 4,5
+                                    import re
+                                    abstract = re.sub(r'\d+[-–]\d+', '', abstract)
+                                    abstract = re.sub(r'\d+,\d+', '', abstract)
+                                    abstracts[pmid] = abstract[:500]
 
                         for pmid in ids:
                             article = summaries.get(pmid, {})
