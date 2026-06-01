@@ -16,8 +16,11 @@ import json
 import os
 import hashlib
 import time
+import logging
 from dataclasses import dataclass, field, asdict
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 from datetime import datetime
 
 
@@ -128,6 +131,12 @@ class LayeredMemory:
         self._load_all()
         if not self.l0_rules:
             self._init_default_rules()
+
+    def clear_session_data(self):
+        """Clear session-specific data (L1, L4) for fresh start."""
+        self.l1_index.clear()
+        self.l4_archives.clear()
+        logger.info("LayeredMemory: Cleared L1 index and L4 archives")
 
     def _load_all(self):
         for layer_name, storage in [
