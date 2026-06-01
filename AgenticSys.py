@@ -247,6 +247,30 @@ class AgentMemory:
             self.smart_context.clear()
             logger.info("Smart context cleared")
 
+        # Clear all enhanced integration components
+        if hasattr(self, 'enhanced') and self.enhanced:
+            try:
+                # Clear layered memory session data
+                if hasattr(self.enhanced, 'layered_memory'):
+                    self.enhanced.layered_memory.clear_session_data()
+                    logger.info("Layered memory session data cleared")
+
+                # Clear skill crystallizer
+                if hasattr(self.enhanced, 'skill_crystallizer'):
+                    self.enhanced.skill_crystallizer.clear()
+                    logger.info("Skill crystallizer cleared")
+
+                # Clear reflexion engine
+                if hasattr(self.enhanced, 'reflexion'):
+                    self.enhanced.reflexion.clear()
+                    logger.info("Reflexion engine cleared")
+
+                # Reinitialize enhanced integration for fresh start
+                self._init_enhanced_integration()
+                logger.info("Enhanced integration reset for new session")
+            except Exception as e:
+                logger.warning(f"Failed to reset enhanced integration: {e}")
+
         logger.info(f"Conversation cleared for session {self.session_id}")
 
     def get_clean_context(self) -> str:

@@ -12,9 +12,12 @@ Extended with: Multi-Agent Reflexion (MAR) to avoid confirmation bias.
 import json
 import os
 import hashlib
+import logging
 from dataclasses import dataclass, field
 from typing import Optional
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -62,6 +65,12 @@ class ReflexionEngine:
         self.episodic = EpisodicMemory()
         self.max_reflections = 10
         self._load()
+
+    def clear(self):
+        """Clear all reflections and reset state."""
+        self.episodic.reflections.clear()
+        self.episodic.failure_patterns.clear()
+        logger.info("ReflexionEngine: Cleared all reflections")
 
     def _load(self):
         path = os.path.join(self.memory_dir, "reflexion_memory.json")

@@ -14,9 +14,12 @@ The pipeline:
 import json
 import os
 import hashlib
+import logging
 from dataclasses import dataclass, field
 from typing import Optional
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -77,6 +80,13 @@ class SkillCrystallizer:
         self.last_evolution_time = 0
 
         self._load()
+
+    def clear(self):
+        """Clear all skills and reset state."""
+        self.skills.clear()
+        self.evolution_cycles.clear()
+        self.interaction_count = 0
+        logger.info("SkillCrystallizer: Cleared all skills")
 
     def _load(self):
         path = os.path.join(self.skills_dir, "crystallized_skills.json")
