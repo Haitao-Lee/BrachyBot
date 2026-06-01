@@ -96,6 +96,7 @@ class OARSegmentationTool(BaseTool):
         image_path = kwargs.get("image_path")
         label_path = kwargs.get("label_path")
         organ_type = kwargs.get("organ_type", "general")
+        label_img = None
 
         if label_path and os.path.exists(label_path):
             label_img = sitk.ReadImage(label_path)
@@ -142,7 +143,7 @@ class OARSegmentationTool(BaseTool):
             data=oar_array,
             message=f"OAR segmentation completed. {len(organ_counts)} organs segmented.",
             metadata={
-                "oar_mask": image if image is not None else label_path,
+                "oar_mask": image if image is not None else (label_img if label_img is not None else label_path),
                 "oar_array": oar_array,
                 "organ_counts": organ_counts,
                 "organ_names": organ_names,

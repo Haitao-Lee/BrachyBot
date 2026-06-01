@@ -301,11 +301,12 @@ class AnthropicLLM(BaseLLM):
         full_content = ""
         tool_calls = []
         finish_reason = None
+        usage_data = {}
 
         try:
             # Use raw stream instead of high-level helper for better compatibility
             stream = client.messages.create(**request_kwargs)
-            
+
             for event in stream:
                 if event.type == "content_block_delta":
                     if event.delta.type == "text_delta":
@@ -325,6 +326,14 @@ class AnthropicLLM(BaseLLM):
                 elif event.type == "message_delta":
                     if event.delta.stop_reason:
                         finish_reason = event.delta.stop_reason
+                    # Extract usage from message_delta if available
+                    if hasattr(event, 'usage') and event.usage:
+                        usage_data = {
+                            "input_tokens": getattr(event.usage, 'input_tokens', 0) or 0,
+                            "output_tokens": getattr(event.usage, 'output_tokens', 0) or 0,
+                            "total_tokens": (getattr(event.usage, 'input_tokens', 0) or 0) +
+                                           (getattr(event.usage, 'output_tokens', 0) or 0),
+                        }
 
             latency_ms = (time.time() - start_time) * 1000
 
@@ -340,7 +349,7 @@ class AnthropicLLM(BaseLLM):
                 "content": full_content,
                 "finish_reason": finish_reason,
                 "tool_calls": tool_calls if tool_calls else None,
-                "usage": {},
+                "usage": usage_data,
                 "latency_ms": latency_ms,
             }
 

@@ -18,7 +18,7 @@ Usage:
     result = agent.run_intraoperative_replan(intra_op_ct_path, original_plan)
     
     # Natural language interface (with LLM function calling)
-    result = agent.chat("先分割CTV和OAR，然后生成治疗计划")
+    result = agent.chat("First segment CTV and OAR, then generate treatment plan")
 """
 
 import os
@@ -207,7 +207,28 @@ class AgentMemory:
         self.conversation = self.conversation[-keep_last:]
         self.compaction_count += 1
         return self.context_summary
-    
+
+    def clear_conversation(self):
+        """Clear conversation history and context summary for fresh start."""
+        self.conversation = []
+        self.context_summary = ""
+        self.compaction_count = 0
+        self.tool_results = []
+        logger.info(f"Conversation cleared for session {self.session_id}")
+
+    def get_clean_context(self) -> str:
+        """Return context summary with memory artifacts removed."""
+        if not self.context_summary:
+            return ""
+        cleaned = self.context_summary
+        # Remove [Called tool_name] artifacts
+        cleaned = re.sub(r'\[Called [^\]]+\]', '', cleaned)
+        # Remove [Tool result: ...] artifacts
+        cleaned = re.sub(r'\[Tool result: [^\]]*\]', '', cleaned)
+        # Remove multiple newlines
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+        return cleaned
+
     def export_state(self, path: str):
         state = {
             "session_id": self.session_id,
@@ -475,6 +496,36 @@ class BrachyAgent:
         except ImportError as e:
             logger.warning(f"FilesystemBrowserTool not available: {e}")
 
+        try:
+            from tool_factory.env_manager import EnvManagerTool
+            self.registry.register(EnvManagerTool())
+        except ImportError as e:
+            logger.warning(f"EnvManagerTool not available: {e}")
+
+        try:
+            from tool_factory.tool_creator import ToolCreatorTool
+            self.registry.register(ToolCreatorTool())
+        except ImportError as e:
+            logger.warning(f"ToolCreatorTool not available: {e}")
+
+        try:
+            from tool_factory.shell_executor import ShellExecutorTool
+            self.registry.register(ShellExecutorTool())
+        except ImportError as e:
+            logger.warning(f"ShellExecutorTool not available: {e}")
+
+        try:
+            from tool_factory.doc_reader import DocumentReaderTool
+            self.registry.register(DocumentReaderTool())
+        except ImportError as e:
+            logger.warning(f"DocumentReaderTool not available: {e}")
+
+        try:
+            from tool_factory.ui_inspector import UIInspectorTool
+            self.registry.register(UIInspectorTool())
+        except ImportError as e:
+            logger.warning(f"UIInspectorTool not available: {e}")
+
         self.registry.register(CTVSegmentationTool())
         self.registry.register(OARSegmentationTool())
         self.registry.register(DoseEngineTool())
@@ -482,6 +533,43 @@ class BrachyAgent:
         self.registry.register(SeedPlanningTool())
         self.registry.register(SeedSegmentationTool())
         self.registry.register(TrajectoryPlanningTool())
+
+        # Advanced tools: knowledge, memory, safety, reporting
+        try:
+            from tool_factory.case_memory import CaseMemoryTool
+            self.registry.register(CaseMemoryTool())
+        except ImportError as e:
+            logger.warning(f"CaseMemoryTool not available: {e}")
+
+        try:
+            from tool_factory.clinical_kb import ClinicalKnowledgeBaseTool
+            self.registry.register(ClinicalKnowledgeBaseTool())
+        except ImportError as e:
+            logger.warning(f"ClinicalKnowledgeBaseTool not available: {e}")
+
+        try:
+            from tool_factory.plan_comparator import PlanComparatorTool
+            self.registry.register(PlanComparatorTool())
+        except ImportError as e:
+            logger.warning(f"PlanComparatorTool not available: {e}")
+
+        try:
+            from tool_factory.safety_validator import SafetyValidatorTool
+            self.registry.register(SafetyValidatorTool())
+        except ImportError as e:
+            logger.warning(f"SafetyValidatorTool not available: {e}")
+
+        try:
+            from tool_factory.report_generator import ReportGeneratorTool
+            self.registry.register(ReportGeneratorTool())
+        except ImportError as e:
+            logger.warning(f"ReportGeneratorTool not available: {e}")
+
+        try:
+            from tool_factory.performance_tracker import PerformanceTrackerTool
+            self.registry.register(PerformanceTrackerTool())
+        except ImportError as e:
+            logger.warning(f"PerformanceTrackerTool not available: {e}")
 
         logger.info(f"Registered {len(self.registry.tool_names)} tools: {self.registry.tool_names}")
     
@@ -601,6 +689,35 @@ class BrachyAgent:
 
         return result
 
+    def _normalize_tool_params(self, tool_calls: List[Dict]) -> List[Dict]:
+        """Normalize tool call parameters (alias mapping, validation).
+
+        Returns filtered list of valid tool calls. Invalid ones are dropped.
+        """
+        valid = []
+        for tc in tool_calls:
+            tn = tc.get("tool", "")
+            p = tc.get("params", {})
+            if tn == "filesystem_browser":
+                if "dirPath" in p and "path" not in p:
+                    p["path"] = p.pop("dirPath")
+                if "directory" in p and "path" not in p:
+                    p["path"] = p.pop("directory")
+                if "action" not in p:
+                    p["action"] = "list"
+                if p.get("action") not in ("list", "info"):
+                    p["action"] = "list"
+                if not p.get("path", "").strip():
+                    continue
+            elif tn == "code_executor":
+                for alias in ("script", "python", "command"):
+                    if alias in p and "code" not in p:
+                        p["code"] = p.pop(alias)
+                if not p.get("code", "").strip():
+                    continue
+            valid.append(tc)
+        return valid
+
     def _run_llm_function_calling(self, message: str, steps: List[Dict], step_id_ref: List[int]) -> str:
         """
         LLM-driven function calling loop with enhanced self-evolving memory.
@@ -634,62 +751,56 @@ class BrachyAgent:
         ui_state_summary = self.memory.get_ui_state_summary()
 
         system_prompt = (
-            "You are BrachyBot, an AI assistant specialized in brachytherapy (近距离放射治疗) treatment planning.\n"
-            "You are knowledgeable about medical imaging, radiation therapy, and treatment planning workflows.\n\n"
-            "YOUR CAPABILITIES:\n"
-            "1. **CT Image Analysis**: Analyze CT images - dimensions, spacing, HU values, tissue composition, anatomy identification.\n"
-            "2. **CTV Segmentation**: Automatically segment Clinical Target Volume (tumor) using VoCo pre-trained models.\n"
-            "3. **OAR Segmentation**: Automatically segment Organs at Risk using TotalSegmentator (57+ organs).\n"
-            "4. **Trajectory Planning**: Generate optimized needle insertion paths for brachytherapy.\n"
-            "5. **Seed Planning**: Place radiation sources optimally within the target volume.\n"
-            "6. **Dose Calculation**: Compute 3D dose distributions using Gaussian or CNN-based models.\n"
-            "7. **Plan Evaluation**: Calculate quality metrics (V100, V150, D90, DVH, etc.).\n"
-            "8. **DICOM Export**: Export plans compatible with Eclipse, RayStation, and other TPS.\n"
-            "9. **Interactive Viewer Control**: Navigate slices, adjust window/level, toggle overlays, 3D reconstruction.\n"
-            "10. **Code Execution**: Write and execute Python code for ad-hoc analysis (numpy, scipy, SimpleITK available).\n\n"
-            "AVAILABLE TOOLS:\n"
-            f"{self.registry.to_tool_descriptions()}\n\n"
-            "WEB INTERFACE:\n"
-            "- LEFT: Chat conversation area\n"
-            "- RIGHT: Tabs - Input (file upload), Analysis (image info), Seeds (positions), Viewers (CT slices + 3D)\n"
-            "- Viewers tab has: Axial/Sagittal/Coronal slices, crosshair navigation, zoom, window/level,\n"
-            "  CTV/OAR overlays, 5 layout modes, resize handles, fullscreen, 3D reconstruction\n"
-            "- Data Tree shows loaded items with visibility toggles and opacity sliders\n\n"
-            f"CURRENT UI STATE:\n{ui_state_summary}\n\n"
-            "IMPORTANT RULES:\n"
-            "1. When user asks to 'segment/分割', call BOTH ctv_segmentation AND oar_segmentation.\n"
-            "2. When user asks to 'analyze/分析', use code_executor to show image info (NOT segmentation).\n"
-            "3. When user asks to 'plan/计划', call trajectory_planning → seed_planning → dose_engine → dose_evaluation.\n"
-            "4. Always explain what you're doing in clear, clinical language.\n"
-            "5. You CAN answer questions about yourself, your capabilities, and the system state.\n"
-            "6. When CT is loaded, describe what you see in the image (anatomy, HU values, etc.).\n"
-            "7. Be conversational but precise. Use Chinese if the user writes in Chinese.\n\n"
-            "2. Use tool_call blocks to invoke tools.\n"
-            "3. Wait for tool results to complete, then summarize in plain text.\n"
-            "4. If the user asks you to inspect a file, write code, or compute something — use `code_executor`.\n"
-            "5. If the user asks about files or directories — use `filesystem_browser`.\n"
-            "6. If you need CT data and it's NOT in the UI state above, tell the user to use the Input panel.\n"
-            "7. For self-evolution (进化/总结经验), respond with a summary of learned experiences.\n"
-            "8. For writing new tools (写工具/create tool), describe the tool specification.\n"
-            "9. Be clinical, precise, and actionable.\n"
-            "10. Check past experiences and matched SOPs before planning.\n"
-            "11. When the user asks to adjust the viewer (e.g., 'switch to lung window', 'go to slice 50'),\n"
-            "    use `code_executor` to call the viewer control API as described above.\n\n"
+            "You are BrachyBot, an AI assistant for brachytherapy treatment planning.\n\n"
+            "## Core Principles\n"
+            "- 🎯 **Concise & Direct**: Only answer what the user asks, no extra content\n"
+            "- 💬 **Conversational**: Natural, human-like responses, not robotic\n"
+            "- 📏 **Brief**: Keep responses to 2-4 sentences unless user asks for details\n"
+            "- 🌍 **Language Matching**: Always respond in the same language the user uses\n\n"
+            "## Capabilities\n"
+            "- CT image analysis, CTV/OAR segmentation, trajectory planning, seed placement\n"
+            "- Dose calculation & evaluation, DICOM export\n"
+            "- Code execution, environment management, dynamic tool creation\n"
+            "- Document reading (PDF, Word, TXT, CSV, JSON)\n\n"
+            "## 🖥️ UI Quick Reference\n"
+            "- Left: Chat area (input box + slash commands)\n"
+            "- Right: 4 tabs (Input/Analysis/Seeds/Viewers)\n"
+            "- Input: Upload CT/CTV/OAR files\n"
+            "- Viewers: Slice viewing, 3D reconstruction, window/level, overlay layers\n\n"
+            "## Tool Usage Rules\n"
+            "- Segmentation → ctv_segmentation + oar_segmentation\n"
+            "- Analysis → code_executor\n"
+            "- Planning → trajectory_planning → seed_planning → dose_engine → dose_evaluation\n"
+            "- Safety check → safety_validator (before export)\n"
+            "- Compare plans → plan_comparator\n"
+            "- Clinical knowledge → clinical_kb (dose constraints, protocols)\n"
+            "- Past cases → case_memory (search similar cases, learn from experience)\n"
+            "- Generate reports → report_generator\n"
+            "- Read docs → doc_reader\n"
+            "- Inspect UI → ui_inspector\n\n"
+            f"## Current State\n{ui_state_summary}\n\n"
+            "## Response Style\n"
+            "- Answer directly, skip filler like 'I can help you...'\n"
+            "- Use emojis moderately (2-3 per response)\n"
+            "- Summarize tool results, don't repeat raw output\n\n"
             f"{enhanced_context}\n"
-            f"{self.memory.context_summary}\n\n"
+            f"{self.memory.get_clean_context()}\n\n"
+            "## ⚠️ Critical Stopping Rules\n"
+            "After receiving tool execution results, immediately summarize in natural language.\n"
+            "NEVER call another tool after receiving results. Output final answer directly.\n"
+            "Error handling: If a tool fails, tell the user what went wrong, don't retry.\n\n"
+            "## 🚫 Safety Rules (Absolute - Never Violate)\n"
+            "The following operations are strictly prohibited and must be refused:\n"
+            "- Deleting files, formatting, rm commands\n"
+            "- Accessing sensitive directories (/etc, /root, /proc)\n"
+            "- Executing dangerous shell commands\n"
+            "- Modifying system files\n"
+            "- Leaking private information\n"
+            "If user requests these, politely refuse and explain why.\n\n"
             "Tool call format:\n"
             "```tool_call\n"
             '{"tool": "tool_name", "params": {"param1": "value1"}}\n'
-            "```\n\n"
-            "CRITICAL: After you have received all tool results, you MUST provide a final text response to the user.\n"
-            "Do NOT output another tool_call block after you have the results. Instead, summarize the results in plain text.\n"
-            "The conversation ends when you output plain text without any tool_call blocks.\n"
-            "Example flow:\n"
-            "1. User asks a question\n"
-            "2. You call a tool with ```tool_call\n"
-            "3. You see the tool result\n"
-            "4. You respond with plain text summarizing the result (NO tool_call blocks)\n"
-            "IMPORTANT: Once you have the tool results, DO NOT call more tools. Just summarize for the user.\n"
+            "```\n"
         )
 
         messages = [
@@ -697,7 +808,14 @@ class BrachyAgent:
         ]
         msg_history = self.memory.conversation[-12:]
         for msg in msg_history:
-            messages.append({"role": msg["role"], "content": msg["content"]})
+            content = msg["content"]
+            # Filter out memory artifacts from conversation history
+            if isinstance(content, str):
+                content = re.sub(r'\[Called [^\]]+\]', '', content).strip()
+                content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
+                if not content:
+                    continue  # Skip empty messages after cleaning
+            messages.append({"role": msg["role"], "content": content})
 
         max_iterations = 8
         iteration = 0
@@ -728,13 +846,36 @@ class BrachyAgent:
             # Check for tool calls from both native API response and parsed text
             tool_calls = []
             if response.tool_calls:
-                # Native tool calls from API (Anthropic format)
                 for tc in response.tool_calls:
-                    tool_calls.append({
-                        "id": tc.get("id", f"tool_{len(tool_calls)}"),
-                        "tool": tc.get("name", ""),
-                        "params": tc.get("arguments", tc.get("input", {})),
-                    })
+                    # Handle OpenAI format: {"function": {"name": ..., "arguments": ...}}
+                    if "function" in tc:
+                        func = tc["function"]
+                        raw_args = func.get("arguments", "{}")
+                        if isinstance(raw_args, str):
+                            args = json.loads(raw_args) if raw_args else {}
+                        elif isinstance(raw_args, dict):
+                            args = raw_args
+                        else:
+                            args = {}
+                        tool_calls.append({
+                            "id": tc.get("id", f"tool_{len(tool_calls)}"),
+                            "tool": func.get("name", ""),
+                            "params": args,
+                        })
+                    else:
+                        # Native Anthropic format: {"name": ..., "arguments": ...}
+                        raw_args = tc.get("arguments", tc.get("input", {}))
+                        if isinstance(raw_args, str):
+                            args = json.loads(raw_args) if raw_args else {}
+                        elif isinstance(raw_args, dict):
+                            args = raw_args
+                        else:
+                            args = {}
+                        tool_calls.append({
+                            "id": tc.get("id", f"tool_{len(tool_calls)}"),
+                            "tool": tc.get("name", ""),
+                            "params": args,
+                        })
             else:
                 # Parse from text format (```tool_call blocks)
                 tool_calls = self._parse_tool_calls(content)
@@ -746,35 +887,14 @@ class BrachyAgent:
             # If we've already executed tools and LLM outputs more tool calls,
             # check if there's meaningful text before the tool calls - use that as final response
             if any(s["type"] == "tool" for s in steps):
-                import re as _re
-                text_before = _re.sub(r'```tool_call\s*\n.*?\n```', '', content, flags=_re.DOTALL).strip()
-                text_before = _re.sub(r'<minimax:tool_call>.*?</minimax:tool_call>', '', text_before, flags=_re.DOTALL).strip()
+                text_before = re.sub(r'```tool_call\s*\n.*?\n```', '', content, flags=re.DOTALL).strip()
+                text_before = re.sub(r'<minimax:tool_call>.*?</minimax:tool_call>', '', text_before, flags=re.DOTALL).strip()
                 if len(text_before) > 10:
                     final_response = text_before
                     break
 
             # Filter out tool calls with empty required params, normalize param names
-            valid_tool_calls = []
-            for tc in tool_calls:
-                tn = tc.get("tool", "")
-                p = tc.get("params", {})
-                if tn == "filesystem_browser":
-                    if "dirPath" in p and "path" not in p:
-                        p["path"] = p.pop("dirPath")
-                    if "directory" in p and "path" not in p:
-                        p["path"] = p.pop("directory")
-                    if "action" not in p:
-                        p["action"] = "list"
-                    if not p.get("path", "").strip():
-                        continue
-                if tn == "code_executor":
-                    if "script" in p and "code" not in p:
-                        p["code"] = p.pop("script")
-                    if "python" in p and "code" not in p:
-                        p["code"] = p.pop("python")
-                    if not p.get("code", "").strip():
-                        continue
-                valid_tool_calls.append(tc)
+            valid_tool_calls = self._normalize_tool_params(tool_calls)
 
             if not valid_tool_calls:
                 # Tool calls were generated but all filtered out (e.g. empty code)
@@ -907,39 +1027,46 @@ class BrachyAgent:
 
     def _clean_response_text(self, content: str) -> str:
         """Remove tool call blocks from LLM response, keep only user-facing text."""
-        import re as _re
-        import json as _json
-
         # If content is purely a JSON tool call object, return empty
         stripped = content.strip()
         if stripped.startswith('{') and '"tool"' in stripped and '"params"' in stripped:
             try:
-                obj = _json.loads(stripped)
+                obj = json.loads(stripped)
                 if "tool" in obj and "params" in obj:
                     return ""
-            except _json.JSONDecodeError:
+            except json.JSONDecodeError:
                 pass
 
-        cleaned = _re.sub(r'```tool_call\s*\n.*?\n```', '', content, flags=_re.DOTALL).strip()
-        cleaned = _re.sub(r'<minimax:tool_call>.*?</minimax:tool_call>', '', cleaned, flags=_re.DOTALL).strip()
-        cleaned = _re.sub(r'<invoke.*?</invoke>', '', cleaned, flags=_re.DOTALL).strip()
+        cleaned = re.sub(r'```tool_call\s*\n.*?\n```', '', content, flags=re.DOTALL).strip()
+        cleaned = re.sub(r'<minimax:tool_call>.*?</minimax:tool_call>', '', cleaned, flags=re.DOTALL).strip()
+        cleaned = re.sub(r'<invoke.*?</invoke>', '', cleaned, flags=re.DOTALL).strip()
         # Remove Anthropic tool_use JSON/Python dict blocks (handles both single and double quotes)
-        cleaned = _re.sub(r'\[[\s]*\{[\'"]type[\'"]\s*:\s*[\'"]tool_use[\'"].*?\}[\s]*\]', '', cleaned, flags=_re.DOTALL).strip()
+        cleaned = re.sub(r'\[[\s]*\{[\'"]type[\'"]\s*:\s*[\'"]tool_use[\'"].*?\}[\s]*\]', '', cleaned, flags=re.DOTALL).strip()
+        # Also handle tool_use blocks without array wrapper
+        cleaned = re.sub(r'\{[\'"]type[\'"]\s*:\s*[\'"]tool_use[\'"],\s*[\'"]id[\'"].*?\}', '', cleaned, flags=re.DOTALL).strip()
         # Remove standalone tool_use objects
-        cleaned = _re.sub(r'\{[\'"]type[\'"]\s*:\s*[\'"]tool_use[\'"].*?\}', '', cleaned, flags=_re.DOTALL).strip()
+        cleaned = re.sub(r'\{[\'"]type[\'"]\s*:\s*[\'"]tool_use[\'"].*?\}', '', cleaned, flags=re.DOTALL).strip()
+        # Remove Python set/dict format tool_use: {'tool_use', 'id': '...', 'name': '...', 'params': {...}}
+        cleaned = re.sub(r'\[\{[\'"]tool_use[\'"],\s*[\'"]id[\'"].*?\}\]', '', cleaned, flags=re.DOTALL).strip()
+        # Remove incomplete tool_use dict (without closing bracket) — limit to 500 chars
+        # to avoid greedy .* eating legitimate text after a partial tool_use pattern
+        cleaned = re.sub(r'\[\{[\'"]tool_use[\'"],\s*[\'"]id[\'"].{0,500}', '', cleaned, flags=re.DOTALL).strip()
         # Remove JSON tool call objects like {"tool": "code_executor", "params": {...}}
-        cleaned = _re.sub(r'\{[\'"]tool[\'"]\s*:\s*[\'"][^"\']+["\'],\s*[\'"]params[\'"]\s*:\s*\{.*?\}\s*\}', '', cleaned, flags=_re.DOTALL).strip()
+        cleaned = re.sub(r'\{[\'"]tool[\'"]\s*:\s*[\'"][^"\']+["\'],\s*[\'"]params[\'"]\s*:\s*\{.*?\}\s*\}', '', cleaned, flags=re.DOTALL).strip()
         # Remove [TOOL_CALL] and [/TOOL_CALL] blocks
-        cleaned = _re.sub(r'\[/?TOOL_CALL\]\s*\{[^}]*\}?', '', cleaned, flags=_re.DOTALL).strip()
-        cleaned = _re.sub(r'\[/?TOOL_CALL\]', '', cleaned).strip()
+        cleaned = re.sub(r'\[TOOL_CALL\].*?\[/TOOL_CALL\]', '', cleaned, flags=re.DOTALL).strip()
+        cleaned = re.sub(r'\[/?TOOL_CALL\]', '', cleaned).strip()
         # Remove stray braces that look like tool call remnants
-        cleaned = _re.sub(r'\}?\[/TOOL_CALL\]\}?', '', cleaned).strip()
+        cleaned = re.sub(r'\}?\[/TOOL_CALL\]\}?', '', cleaned).strip()
         # Remove lines that are just tool names followed by "completed"
-        cleaned = _re.sub(r'^\w+_segmentation completed$', '', cleaned, flags=_re.MULTILINE).strip()
+        cleaned = re.sub(r'^\w+_segmentation completed$', '', cleaned, flags=re.MULTILINE).strip()
+        # Remove [Called tool_name] and [Tool result: ...] memory artifacts
+        cleaned = re.sub(r'\[Called [^\]]+\]', '', cleaned).strip()
+        cleaned = re.sub(r'\[Tool result: [^\]]*\]', '', cleaned).strip()
         # Remove code blocks that are just tool call JSON
-        cleaned = _re.sub(r'```\s*\n?\{[\'"]tool[\'"].*?\}\s*\n?```', '', cleaned, flags=_re.DOTALL).strip()
+        cleaned = re.sub(r'```\s*\n?\{[\'"]tool[\'"].*?\}\s*\n?```', '', cleaned, flags=re.DOTALL).strip()
         # Remove multiple consecutive newlines
-        cleaned = _re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
         return cleaned
 
     def _run_llm_function_calling_stream(self, message: str, steps: List[Dict], step_id_ref: List[int], yield_event):
@@ -983,62 +1110,56 @@ class BrachyAgent:
         ui_state_summary = self.memory.get_ui_state_summary()
 
         system_prompt = (
-            "You are BrachyBot, an AI assistant specialized in brachytherapy (近距离放射治疗) treatment planning.\n"
-            "You are knowledgeable about medical imaging, radiation therapy, and treatment planning workflows.\n\n"
-            "YOUR CAPABILITIES:\n"
-            "1. **CT Image Analysis**: Analyze CT images - dimensions, spacing, HU values, tissue composition, anatomy identification.\n"
-            "2. **CTV Segmentation**: Automatically segment Clinical Target Volume (tumor) using VoCo pre-trained models.\n"
-            "3. **OAR Segmentation**: Automatically segment Organs at Risk using TotalSegmentator (57+ organs).\n"
-            "4. **Trajectory Planning**: Generate optimized needle insertion paths for brachytherapy.\n"
-            "5. **Seed Planning**: Place radiation sources optimally within the target volume.\n"
-            "6. **Dose Calculation**: Compute 3D dose distributions using Gaussian or CNN-based models.\n"
-            "7. **Plan Evaluation**: Calculate quality metrics (V100, V150, D90, DVH, etc.).\n"
-            "8. **DICOM Export**: Export plans compatible with Eclipse, RayStation, and other TPS.\n"
-            "9. **Interactive Viewer Control**: Navigate slices, adjust window/level, toggle overlays, 3D reconstruction.\n"
-            "10. **Code Execution**: Write and execute Python code for ad-hoc analysis (numpy, scipy, SimpleITK available).\n\n"
-            "AVAILABLE TOOLS:\n"
-            f"{self.registry.to_tool_descriptions()}\n\n"
-            "WEB INTERFACE:\n"
-            "- LEFT: Chat conversation area\n"
-            "- RIGHT: Tabs - Input (file upload), Analysis (image info), Seeds (positions), Viewers (CT slices + 3D)\n"
-            "- Viewers tab has: Axial/Sagittal/Coronal slices, crosshair navigation, zoom, window/level,\n"
-            "  CTV/OAR overlays, 5 layout modes, resize handles, fullscreen, 3D reconstruction\n"
-            "- Data Tree shows loaded items with visibility toggles and opacity sliders\n\n"
-            f"CURRENT UI STATE:\n{ui_state_summary}\n\n"
-            "IMPORTANT RULES:\n"
-            "1. When user asks to 'segment/分割', call BOTH ctv_segmentation AND oar_segmentation.\n"
-            "2. When user asks to 'analyze/分析', use code_executor to show image info (NOT segmentation).\n"
-            "3. When user asks to 'plan/计划', call trajectory_planning → seed_planning → dose_engine → dose_evaluation.\n"
-            "4. Always explain what you're doing in clear, clinical language.\n"
-            "5. You CAN answer questions about yourself, your capabilities, and the system state.\n"
-            "6. When CT is loaded, describe what you see in the image (anatomy, HU values, etc.).\n"
-            "7. Be conversational but precise. Use Chinese if the user writes in Chinese.\n\n"
-            "2. Use tool_call blocks to invoke tools.\n"
-            "3. Wait for tool results to complete, then summarize in plain text.\n"
-            "4. If the user asks you to inspect a file, write code, or compute something — use `code_executor`.\n"
-            "5. If the user asks about files or directories — use `filesystem_browser`.\n"
-            "6. If you need CT data and it's NOT in the UI state above, tell the user to use the Input panel.\n"
-            "7. For self-evolution (进化/总结经验), respond with a summary of learned experiences.\n"
-            "8. For writing new tools (写工具/create tool), describe the tool specification.\n"
-            "9. Be clinical, precise, and actionable.\n"
-            "10. Check past experiences and matched SOPs before planning.\n"
-            "11. When the user asks to adjust the viewer (e.g., 'switch to lung window', 'go to slice 50'),\n"
-            "    use `code_executor` to call the viewer control API as described above.\n\n"
+            "You are BrachyBot, an AI assistant for brachytherapy treatment planning.\n\n"
+            "## Core Principles\n"
+            "- 🎯 **Concise & Direct**: Only answer what the user asks, no extra content\n"
+            "- 💬 **Conversational**: Natural, human-like responses, not robotic\n"
+            "- 📏 **Brief**: Keep responses to 2-4 sentences unless user asks for details\n"
+            "- 🌍 **Language Matching**: Always respond in the same language the user uses\n\n"
+            "## Capabilities\n"
+            "- CT image analysis, CTV/OAR segmentation, trajectory planning, seed placement\n"
+            "- Dose calculation & evaluation, DICOM export\n"
+            "- Code execution, environment management, dynamic tool creation\n"
+            "- Document reading (PDF, Word, TXT, CSV, JSON)\n\n"
+            "## 🖥️ UI Quick Reference\n"
+            "- Left: Chat area (input box + slash commands)\n"
+            "- Right: 4 tabs (Input/Analysis/Seeds/Viewers)\n"
+            "- Input: Upload CT/CTV/OAR files\n"
+            "- Viewers: Slice viewing, 3D reconstruction, window/level, overlay layers\n\n"
+            "## Tool Usage Rules\n"
+            "- Segmentation → ctv_segmentation + oar_segmentation\n"
+            "- Analysis → code_executor\n"
+            "- Planning → trajectory_planning → seed_planning → dose_engine → dose_evaluation\n"
+            "- Safety check → safety_validator (before export)\n"
+            "- Compare plans → plan_comparator\n"
+            "- Clinical knowledge → clinical_kb (dose constraints, protocols)\n"
+            "- Past cases → case_memory (search similar cases, learn from experience)\n"
+            "- Generate reports → report_generator\n"
+            "- Read docs → doc_reader\n"
+            "- Inspect UI → ui_inspector\n\n"
+            f"## Current State\n{ui_state_summary}\n\n"
+            "## Response Style\n"
+            "- Answer directly, skip filler like 'I can help you...'\n"
+            "- Use emojis moderately (2-3 per response)\n"
+            "- Summarize tool results, don't repeat raw output\n\n"
             f"{enhanced_context}\n"
-            f"{self.memory.context_summary}\n\n"
+            f"{self.memory.get_clean_context()}\n\n"
+            "## ⚠️ Critical Stopping Rules\n"
+            "After receiving tool execution results, immediately summarize in natural language.\n"
+            "NEVER call another tool after receiving results. Output final answer directly.\n"
+            "Error handling: If a tool fails, tell the user what went wrong, don't retry.\n\n"
+            "## 🚫 Safety Rules (Absolute - Never Violate)\n"
+            "The following operations are strictly prohibited and must be refused:\n"
+            "- Deleting files, formatting, rm commands\n"
+            "- Accessing sensitive directories (/etc, /root, /proc)\n"
+            "- Executing dangerous shell commands\n"
+            "- Modifying system files\n"
+            "- Leaking private information\n"
+            "If user requests these, politely refuse and explain why.\n\n"
             "Tool call format:\n"
             "```tool_call\n"
             '{"tool": "tool_name", "params": {"param1": "value1"}}\n'
-            "```\n\n"
-            "CRITICAL: After you have received all tool results, you MUST provide a final text response to the user.\n"
-            "Do NOT output another tool_call block after you have the results. Instead, summarize the results in plain text.\n"
-            "The conversation ends when you output plain text without any tool_call blocks.\n"
-            "Example flow:\n"
-            "1. User asks a question\n"
-            "2. You call a tool with ```tool_call\n"
-            "3. You see the tool result\n"
-            "4. You respond with plain text summarizing the result (NO tool_call blocks)\n"
-            "IMPORTANT: Once you have the tool results, DO NOT call more tools. Just summarize for the user.\n"
+            "```\n"
         )
 
         messages = [
@@ -1046,7 +1167,14 @@ class BrachyAgent:
         ]
         msg_history = self.memory.conversation[-12:]
         for msg in msg_history:
-            messages.append({"role": msg["role"], "content": msg["content"]})
+            content = msg["content"]
+            # Filter out memory artifacts from conversation history
+            if isinstance(content, str):
+                content = re.sub(r'\[Called [^\]]+\]', '', content).strip()
+                content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
+                if not content:
+                    continue  # Skip empty messages after cleaning
+            messages.append({"role": msg["role"], "content": content})
 
         max_iterations = 8
         iteration = 0
@@ -1081,12 +1209,23 @@ class BrachyAgent:
                 tools_for_llm = self.registry.to_openai_tools() if hasattr(self.registry, 'to_openai_tools') else None
 
                 # Use streaming LLM call with tools
+                prev_cleaned_len = 0
                 for chunk in self.brain_router.chat_messages_stream(messages=messages, tools=tools_for_llm):
                     if isinstance(chunk, str):
                         # Text chunk from LLM
                         full_content += chunk
-                        # Yield text chunk for real-time display
-                        yield yield_event("text_chunk", {"text": chunk})
+                        # Clean accumulated content
+                        cleaned_content = self._clean_response_text(full_content)
+                        # Yield only incremental new text, skipping partial tool_use patterns
+                        if cleaned_content and len(cleaned_content) > prev_cleaned_len:
+                            new_text = cleaned_content[prev_cleaned_len:]
+                            # Don't yield if new text starts with tool_call patterns
+                            # Use specific patterns to avoid filtering legitimate text like [type something]
+                            if not re.match(r'(\[\s*\{\s*["\']type["\']\s*:\s*["\']tool_use|```tool_call|<minimax:tool_call>|\[\s*TOOL_CALL\s*\])', new_text):
+                                yield yield_event("text_chunk", {"text": new_text})
+                            # Always advance offset so tool_call text is consumed
+                            # and doesn't block future chunks when _clean_response_text removes it
+                            prev_cleaned_len = len(cleaned_content)
                     elif isinstance(chunk, dict):
                         if chunk.get("type") == "final":
                             # Final metadata
@@ -1172,35 +1311,14 @@ class BrachyAgent:
             # If we've already executed tools and LLM outputs more tool calls,
             # check if there's meaningful text before the tool calls
             if any(s["type"] == "tool" for s in steps):
-                import re as _re
-                text_before = _re.sub(r'```tool_call\s*\n.*?\n```', '', content, flags=_re.DOTALL).strip()
-                text_before = _re.sub(r'<minimax:tool_call>.*?</minimax:tool_call>', '', text_before, flags=_re.DOTALL).strip()
+                text_before = re.sub(r'```tool_call\s*\n.*?\n```', '', content, flags=re.DOTALL).strip()
+                text_before = re.sub(r'<minimax:tool_call>.*?</minimax:tool_call>', '', text_before, flags=re.DOTALL).strip()
                 if len(text_before) > 10:
                     final_response = text_before
                     break
 
             # Filter out tool calls with empty required params, normalize param names
-            valid_tool_calls = []
-            for tc in tool_calls:
-                tn = tc.get("tool", "")
-                p = tc.get("params", {})
-                if tn == "filesystem_browser":
-                    if "dirPath" in p and "path" not in p:
-                        p["path"] = p.pop("dirPath")
-                    if "directory" in p and "path" not in p:
-                        p["path"] = p.pop("directory")
-                    if "action" not in p:
-                        p["action"] = "list"
-                    if not p.get("path", "").strip():
-                        continue
-                if tn == "code_executor":
-                    if "script" in p and "code" not in p:
-                        p["code"] = p.pop("script")
-                    if "python" in p and "code" not in p:
-                        p["code"] = p.pop("python")
-                    if not p.get("code", "").strip():
-                        continue
-                valid_tool_calls.append(tc)
+            valid_tool_calls = self._normalize_tool_params(tool_calls)
 
             if not valid_tool_calls:
                 # Tool calls were generated but all filtered out (e.g. empty code)
@@ -1333,8 +1451,13 @@ class BrachyAgent:
                     llm_calls += 1
                     logger.info(f"Summary response: content_len={len(response.content) if response.content else 0}, tool_calls={len(response.tool_calls) if response.tool_calls else 0}")
                     if response and response.content:
-                        final_response = response.content
-                        yield yield_event("text_chunk", {"text": response.content})
+                        # Clean the response before yielding to frontend
+                        cleaned = self._clean_response_text(response.content)
+                        if cleaned:
+                            final_response = cleaned
+                            yield yield_event("text_chunk", {"text": cleaned})
+                        else:
+                            final_response = response.content
                     elif response and response.tool_calls:
                         # If LLM still returns tool calls, execute them and get result
                         for tc in response.tool_calls:
@@ -1353,14 +1476,22 @@ class BrachyAgent:
                         response2 = llm._chat(messages=summary_messages, tools=None)
                         if response2 and response2.content:
                             final_response = response2.content
-                            yield yield_event("text_chunk", {"text": response2.content})
+                            cleaned2 = self._clean_response_text(response2.content)
+                            if cleaned2:
+                                yield yield_event("text_chunk", {"text": cleaned2})
                 elif llm and hasattr(llm, 'chat_messages_stream'):
                     # Fallback to streaming
                     summary_content = ""
+                    summary_prev_len = 0
                     for chunk in llm.chat_messages_stream(messages=summary_messages, tools=None):
                         if isinstance(chunk, str):
                             summary_content += chunk
-                            yield yield_event("text_chunk", {"text": chunk})
+                            cleaned_content = self._clean_response_text(summary_content)
+                            if cleaned_content and len(cleaned_content) > summary_prev_len:
+                                new_text = cleaned_content[summary_prev_len:]
+                                if not re.match(r'(\[\s*\{\s*["\']type["\']\s*:\s*["\']tool_use|```tool_call|<minimax:tool_call>|\[\s*TOOL_CALL\s*\])', new_text):
+                                    summary_prev_len = len(cleaned_content)
+                                    yield yield_event("text_chunk", {"text": new_text})
                         elif isinstance(chunk, dict) and chunk.get("type") == "final":
                             break
                     if summary_content:
@@ -1500,6 +1631,17 @@ class BrachyAgent:
                         tool_calls.append(tc)
                 except json.JSONDecodeError:
                     pass
+
+        # Format 5: Anthropic format [{"type": "tool_use", "name": "...", "input": {...}}]
+        if not tool_calls:
+            anthropic_pattern = r'\[[\s]*\{[^{}]*"type"\s*:\s*"tool_use"[^{}]*"name"\s*:\s*"([^"]+)"[^{}]*"input"\s*:\s*(\{[^}]*\})[^{}]*\}[\s]*\]'
+            anthropic_matches = re.findall(anthropic_pattern, content, re.DOTALL)
+            for name, input_str in anthropic_matches:
+                try:
+                    params = json.loads(input_str)
+                    tool_calls.append({"tool": name, "params": params})
+                except json.JSONDecodeError:
+                    tool_calls.append({"tool": name, "params": {}})
 
         return tool_calls
 
@@ -1816,12 +1958,12 @@ class BrachyAgent:
         else:
             result = (
                 "I can help with brachytherapy planning. Try:\n"
-                "  - '分割CTV' - Segment CTV\n"
-                "  - '生成治疗计划' - Generate plan\n"
-                "  - '评估剂量' - Evaluate dose\n"
-                "  - '优化计划' - Optimize plan\n"
-                "  - '总结经验' - Self-evolve\n"
-                "  - '写工具' - Create new tool"
+                "  - 'Segment CTV' - Segment CTV\n"
+                "  - 'Generate plan' - Generate treatment plan\n"
+                "  - 'Evaluate dose' - Evaluate dose distribution\n"
+                "  - 'Optimize plan' - Optimize treatment plan\n"
+                "  - 'Self-evolve' - Trigger self-evolution\n"
+                "  - 'Create tool' - Create new tool"
             )
             return result
 
@@ -1876,12 +2018,12 @@ class BrachyAgent:
         else:
             result = (
                 "I can help with brachytherapy planning. Try:\n"
-                "  - '分割CTV' - Segment CTV\n"
-                "  - '生成治疗计划' - Generate plan\n"
-                "  - '评估剂量' - Evaluate dose\n"
-                "  - '优化计划' - Optimize plan\n"
-                "  - '总结经验' - Self-evolve\n"
-                "  - '写工具' - Create new tool"
+                "  - 'Segment CTV' - Segment CTV\n"
+                "  - 'Generate plan' - Generate treatment plan\n"
+                "  - 'Evaluate dose' - Evaluate dose distribution\n"
+                "  - 'Optimize plan' - Optimize treatment plan\n"
+                "  - 'Self-evolve' - Trigger self-evolution\n"
+                "  - 'Create tool' - Create new tool"
             )
             return result
 
@@ -1934,12 +2076,12 @@ class BrachyAgent:
         else:
             response = (
                 "I can help with brachytherapy planning. Try:\n"
-                "  - '分割CTV' - Segment CTV\n"
-                "  - '生成治疗计划' - Generate plan\n"
-                "  - '评估剂量' - Evaluate dose\n"
-                "  - '优化计划' - Optimize plan\n"
-                "  - '总结经验' - Self-evolve\n"
-                "  - '写工具' - Create new tool"
+                "  - 'Segment CTV' - Segment CTV\n"
+                "  - 'Generate plan' - Generate treatment plan\n"
+                "  - 'Evaluate dose' - Evaluate dose distribution\n"
+                "  - 'Optimize plan' - Optimize treatment plan\n"
+                "  - 'Self-evolve' - Trigger self-evolution\n"
+                "  - 'Create tool' - Create new tool"
             )
         return response
     
@@ -1947,19 +2089,19 @@ class BrachyAgent:
         ct_image = self.memory.retrieve("ct_image")
         ctv_path = self.memory.retrieve("ctv_path")
         if ct_image is None:
-            return "请先提供CT影像路径。使用 run_preoperative_plan(ct_path=...) 加载CT。"
+            return "Please provide CT image path first. Use run_preoperative_plan(ct_path=...) to load CT."
         result = self.registry.execute("ctv_segmentation", image=ct_image, label_path=ctv_path)
         self.memory.log_tool_call("ctv_segmentation", {}, result)
         if result.success:
             self.memory.store("ctv_array", result.metadata["ctv_array"])
             return result.message
-        return f"CTV分割失败: {result.error}"
+        return f"CTV segmentation failed: {result.error}"
     
     def _handle_oar_segmentation_request(self, message: str) -> str:
         ct_image = self.memory.retrieve("ct_image")
         oar_path = self.memory.retrieve("oar_path")
         if ct_image is None:
-            return "请先提供CT影像路径。"
+            return "Please provide CT image path first."
         result = self.registry.execute("oar_segmentation", image=ct_image, label_path=oar_path)
         self.memory.log_tool_call("oar_segmentation", {}, result)
         if result.success:
@@ -1969,14 +2111,14 @@ class BrachyAgent:
             if "organ_counts" in result.metadata:
                 self.memory.store("organ_counts", result.metadata["organ_counts"])
             return result.message
-        return f"OAR分割失败: {result.error}"
+        return f"OAR segmentation failed: {result.error}"
     
     def _handle_planning_request(self, message: str) -> str:
         trajectories = self.memory.retrieve("trajectories")
         radiation_volume = self.memory.retrieve("radiation_volume")
         ct_image = self.memory.retrieve("ct_image")
         if trajectories is None or radiation_volume is None or ct_image is None:
-            return "请先加载CT影像并生成分割结果，然后再规划。"
+            return "Please load CT image and generate segmentation results first, then proceed with planning."
         mode = "rl" if "rl" in message.lower() or "强化" in message else "rule_based"
         seed_info = self.config.get("seed_info", {"radius": 0.4, "length": 4.5, "seed_avr_dose": 50})
         dl_params = self.config.get("dl_params", {})
@@ -1995,48 +2137,48 @@ class BrachyAgent:
             self.memory.store("dose_distribution", result.metadata.get("dose_distribution"))
             self.memory.store("total_seeds", result.metadata["total_seeds"])
             return result.message
-        return f"种子规划失败: {result.error}"
+        return f"Seed planning failed: {result.error}"
     
     def _handle_evaluation_request(self, message: str) -> str:
         dose = self.memory.retrieve("dose_distribution")
         ctv = self.memory.retrieve("ctv_array")
         oar = self.memory.retrieve("oar_array")
         if dose is None or ctv is None:
-            return "请先完成治疗计划生成，然后再评估。"
+            return "Please complete treatment plan generation first, then proceed with evaluation."
         result = self.registry.execute(
             "dose_evaluation", dose_array=dose, ctv_mask=ctv, oar_mask=oar,
         )
         self.memory.log_tool_call("dose_evaluation", {}, result)
         if result.success:
             return result.message
-        return f"剂量评估失败: {result.error}"
+        return f"Dose evaluation failed: {result.error}"
     
     def _handle_optimization_request(self, message: str) -> str:
         dose = self.memory.retrieve("dose_distribution")
         ctv = self.memory.retrieve("ctv_array")
         oar = self.memory.retrieve("oar_array")
         if dose is None:
-            return "没有可优化的计划。请先生成治疗计划。"
+            return "No optimizable plan found. Please generate a treatment plan first."
         eval_result = self.registry.execute(
             "dose_evaluation", dose_array=dose, ctv_mask=ctv, oar_mask=oar,
         )
         if not eval_result.success:
-            return f"评估失败: {eval_result.error}"
+            return f"Evaluation failed: {eval_result.error}"
         metrics = eval_result.metadata
         suggestions = []
         if metrics.get("v100", 0) < 0.90:
-            suggestions.append("V100 < 90%，建议增加种子数量或调整种子位置以提高靶区覆盖率。")
+            suggestions.append("V100 < 90%, recommend increasing seed count or adjusting positions to improve target coverage.")
         if metrics.get("v200", 0) > 0.35:
-            suggestions.append("V200 > 35%，存在过度照射区域，建议减少种子数量或调整位置。")
+            suggestions.append("V200 > 35%, over-irradiation detected. Recommend reducing seed count or adjusting positions.")
         if metrics.get("oar_violations"):
             violations = metrics["oar_violations"]
-            suggestions.append(f"检测到 {len(violations)} 个OAR剂量超标，需要重新优化计划以保护危及器官。")
+            suggestions.append(f"Detected {len(violations)} OAR dose violations. Plan needs re-optimization to protect organs at risk.")
         plan_score = metrics.get("plan_score", 0)
         if plan_score >= 80 or (plan_score <= 1 and plan_score >= 0.8):
-            suggestions.append("计划质量良好，可以考虑执行。")
+            suggestions.append("Plan quality is good and ready for execution.")
         if not suggestions:
-            suggestions.append("计划评估完成，未发现明显问题。")
-        return f"优化建议:\n" + "\n".join(f"  - {s}" for s in suggestions)
+            suggestions.append("Plan evaluation complete. No significant issues found.")
+        return f"Optimization suggestions:\n" + "\n".join(f"  - {s}" for s in suggestions)
     
     def run_preoperative_plan(
         self,
