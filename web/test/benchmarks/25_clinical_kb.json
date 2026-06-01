@@ -1,0 +1,112 @@
+{
+  "category": "clinical_kb",
+  "description": "Clinical knowledge base tests - dose constraints, organ tolerances, treatment protocols",
+  "requires_ct": false,
+  "cases": [
+    {
+      "id": "CK001",
+      "input": "What are the dose constraints for prostate brachytherapy?",
+      "expected_keywords": ["clinical_kb", "constraints", "prostate"],
+      "difficulty": "easy",
+      "user_type": "beginner"
+    },
+    {
+      "id": "CK002",
+      "input": "What's the maximum tolerable dose for the rectum?",
+      "expected_keywords": ["clinical_kb", "tolerance", "rectum"],
+      "difficulty": "easy",
+      "user_type": "beginner"
+    },
+    {
+      "id": "CK003",
+      "input": "Tell me about the HDR cervical cancer protocol",
+      "expected_keywords": ["clinical_kb", "protocol", "cervical"],
+      "difficulty": "medium",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CK004",
+      "input": "前列腺癌近距离治疗的V100目标是多少？",
+      "expected_keywords": ["clinical_kb", "constraints", "prostate", "V100"],
+      "difficulty": "medium",
+      "user_type": "chinese"
+    },
+    {
+      "id": "CK005",
+      "input": "What's the difference between TG-43 and TG-137?",
+      "expected_keywords": ["clinical_kb", "search"],
+      "difficulty": "hard",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CK006",
+      "input": "Check if this plan meets the clinical benchmarks",
+      "expected_keywords": ["clinical_kb", "benchmark"],
+      "difficulty": "medium",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CK007",
+      "input": "宫颈癌HDR的OAR约束标准是什么？",
+      "expected_keywords": ["clinical_kb", "constraints", "cervical"],
+      "difficulty": "medium",
+      "user_type": "chinese"
+    },
+    {
+      "id": "CK008",
+      "input": "What are the organ tolerance limits for spinal cord?",
+      "expected_keywords": ["clinical_kb", "tolerance", "spinal"],
+      "difficulty": "easy",
+      "user_type": "beginner"
+    },
+    {
+      "id": "CK009",
+      "input": "What treatment protocol do you recommend for intermediate risk prostate cancer?",
+      "expected_keywords": ["clinical_kb", "protocol", "prostate"],
+      "difficulty": "hard",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CK010",
+      "input": "Is a V200 of 40% acceptable for prostate brachytherapy?",
+      "expected_keywords": ["clinical_kb", "benchmark", "V200"],
+      "difficulty": "medium",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CK011",
+      "input": "肝脏近距离治疗的正常肝平均剂量限制是多少？",
+      "expected_keywords": ["clinical_kb", "tolerance", "liver"],
+      "difficulty": "hard",
+      "user_type": "chinese"
+    },
+    {
+      "id": "CK012",
+      "input": "What's the prescription dose for low-risk prostate cancer monotherapy?",
+      "expected_keywords": ["clinical_kb", "protocol", "prescription"],
+      "difficulty": "medium",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CK013",
+      "input": "Search the knowledge base for urethra dose limits",
+      "expected_keywords": ["clinical_kb", "search", "urethra"],
+      "difficulty": "easy",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CK014",
+      "input": "What are the quality benchmarks for an excellent plan?",
+      "expected_keywords": ["clinical_kb", "benchmark", "excellent"],
+      "difficulty": "medium",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CK015",
+      "input": "Add a new dose constraint for bladder: D2cc should be less than 90Gy EQD2",
+      "expected_keywords": ["clinical_kb", "add", "bladder"],
+      "difficulty": "hard",
+      "user_type": "experienced"
+    }
+  ]
+}

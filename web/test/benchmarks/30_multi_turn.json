@@ -1,0 +1,137 @@
+{
+  "category": "multi_turn",
+  "description": "Multi-turn conversation tests - context retention, follow-up questions, conversation continuity",
+  "requires_ct": false,
+  "cases": [
+    {
+      "id": "MT001",
+      "input": "Turn 1: I have a prostate cancer patient. Turn 2: The CT shows a 35cc prostate. Turn 3: What seed count do you recommend?",
+      "expected_keywords": ["seed", "prostate", "recommend"],
+      "difficulty": "hard",
+      "user_type": "experienced",
+      "multi_turn": true,
+      "turns": [
+        "I have a prostate cancer patient who needs brachytherapy",
+        "The CT shows a 35cc prostate volume",
+        "What seed count do you recommend for this case?"
+      ]
+    },
+    {
+      "id": "MT002",
+      "input": "Turn 1: Analyze this CT. Turn 2: Now segment the CTV. Turn 3: What about the OAR?",
+      "expected_keywords": ["segment", "CTV", "OAR"],
+      "difficulty": "medium",
+      "user_type": "experienced",
+      "multi_turn": true,
+      "turns": [
+        "Please analyze this CT image",
+        "Now segment the CTV",
+        "What about the OAR segmentation?"
+      ]
+    },
+    {
+      "id": "MT003",
+      "input": "Turn 1: 请分析这个CT。Turn 2: 分割一下CTV。Turn 3: OAR也帮我分割一下。",
+      "expected_keywords": ["segment", "CTV", "OAR"],
+      "difficulty": "medium",
+      "user_type": "chinese",
+      "multi_turn": true,
+      "turns": [
+        "请分析这个CT图像",
+        "帮我分割一下CTV",
+        "OAR也帮我分割一下"
+      ]
+    },
+    {
+      "id": "MT004",
+      "input": "Turn 1: The plan score is 72. Turn 2: Can you optimize it? Turn 3: What changed after optimization?",
+      "expected_keywords": ["optimize", "improve", "score"],
+      "difficulty": "hard",
+      "user_type": "experienced",
+      "multi_turn": true,
+      "turns": [
+        "The plan score is 72, which is below our target",
+        "Can you optimize the plan to improve the score?",
+        "What changed after the optimization?"
+      ]
+    },
+    {
+      "id": "MT005",
+      "input": "Turn 1: 分割完成了吗？Turn 2: 结果怎么样？Turn 3: 帮我导出报告。",
+      "expected_keywords": ["segment", "result", "report"],
+      "difficulty": "medium",
+      "user_type": "chinese",
+      "multi_turn": true,
+      "turns": [
+        "分割完成了吗？",
+        "结果怎么样？",
+        "帮我导出一份报告"
+      ]
+    },
+    {
+      "id": "MT006",
+      "input": "Turn 1: What's the V100? Turn 2: And V200? Turn 3: Is the plan safe to export?",
+      "expected_keywords": ["V100", "V200", "safe", "export"],
+      "difficulty": "medium",
+      "user_type": "experienced",
+      "multi_turn": true,
+      "turns": [
+        "What's the V100 of this plan?",
+        "And what about V200?",
+        "Is the plan safe to export?"
+      ]
+    },
+    {
+      "id": "MT007",
+      "input": "Turn 1: 我有一个宫颈癌病例。Turn 2: 用HDR方案。Turn 3: 剂量约束是什么？",
+      "expected_keywords": ["cervical", "HDR", "dose", "constraints"],
+      "difficulty": "hard",
+      "user_type": "chinese",
+      "multi_turn": true,
+      "turns": [
+        "我有一个宫颈癌病例需要做近距离治疗",
+        "我们打算用HDR方案",
+        "这个方案的剂量约束是什么？"
+      ]
+    },
+    {
+      "id": "MT008",
+      "input": "Turn 1: Show me the DVH. Turn 2: The rectum looks too high. Turn 3: Can you adjust the plan?",
+      "expected_keywords": ["DVH", "rectum", "adjust", "optimize"],
+      "difficulty": "hard",
+      "user_type": "experienced",
+      "multi_turn": true,
+      "turns": [
+        "Show me the DVH analysis",
+        "The rectum dose looks too high",
+        "Can you adjust the plan to reduce rectum dose?"
+      ]
+    },
+    {
+      "id": "MT009",
+      "input": "Turn 1: 帮我找一下类似的病例。Turn 2: 那个病例的V100是多少？Turn 3: 我们能达到同样的水平吗？",
+      "expected_keywords": ["case", "V100", "achieve"],
+      "difficulty": "hard",
+      "user_type": "chinese",
+      "multi_turn": true,
+      "turns": [
+        "帮我从病例库中找一下类似的前列腺癌病例",
+        "那个病例的V100是多少？",
+        "我们这个病例能达到同样的水平吗？"
+      ]
+    },
+    {
+      "id": "MT010",
+      "input": "Turn 1: I need help with a lung case. Turn 2: The tumor is in the left lower lobe. Turn 3: What's the prescription dose?",
+      "expected_keywords": ["lung", "prescription", "dose"],
+      "difficulty": "hard",
+      "user_type": "experienced",
+      "multi_turn": true,
+      "turns": [
+        "I need help with a lung cancer brachytherapy case",
+        "The tumor is in the left lower lobe, about 2cm",
+        "What prescription dose do you recommend?"
+      ]
+    }
+  ]
+}
