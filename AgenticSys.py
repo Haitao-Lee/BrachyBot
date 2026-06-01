@@ -1177,6 +1177,11 @@ class BrachyAgent:
                         continue  # Skip empty messages after cleaning
                 messages.append({"role": msg["role"], "content": content})
 
+        # CRITICAL: Add the current user message if not already in history
+        # This ensures the LLM always has the current query to respond to
+        if not messages or messages[-1].get("content") != message:
+            messages.append({"role": "user", "content": message})
+
         max_iterations = 8
         iteration = 0
         final_response = ""
@@ -1857,6 +1862,11 @@ class BrachyAgent:
                     if not content:
                         continue  # Skip empty messages after cleaning
                 messages.append({"role": msg["role"], "content": content})
+
+        # CRITICAL: Add the current user message if not already in history
+        # This ensures the LLM always has the current query to respond to
+        if not messages or messages[-1].get("content") != message:
+            messages.append({"role": "user", "content": message})
 
         max_iterations = 8
         iteration = 0
