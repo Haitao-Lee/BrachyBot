@@ -24,7 +24,7 @@
             --card-border: #334155;
             --text: #f1f5f9;
             --text-secondary: #94a3b8;
-            --text-dim: #64748b;
+            --text-dim: #8b95a5;
             --accent: #8b5cf6;
             --accent-bg: rgba(139, 92, 246, 0.15);
         }
@@ -272,9 +272,9 @@
             flex: 1;
             overflow-y: auto;
             padding: 0.4rem 0.5rem;
-            font-size: 0.62rem;
+            font-size: 0.72rem;
             color: var(--text-dim);
-            line-height: 1.4;
+            line-height: 1.6;
             white-space: pre-wrap;
             word-break: break-word;
         }
@@ -355,7 +355,25 @@
             overflow-x: auto;
             white-space: pre;
             line-height: 1.4;
+            position: relative;
         }
+        .code-copy-btn {
+            position: absolute;
+            top: 0.4rem;
+            right: 0.4rem;
+            background: var(--bg-3);
+            border: 1px solid var(--card-border);
+            border-radius: 4px;
+            padding: 0.2rem 0.4rem;
+            font-size: 0.65rem;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s, background 0.15s;
+            color: var(--text-dim);
+            z-index: 5;
+        }
+        .md-code-block:hover .code-copy-btn { opacity: 1; }
+        .code-copy-btn:hover { background: var(--primary); color: white; border-color: var(--primary); }
         .md-inline-code {
             background: var(--bg-4);
             border: 1px solid var(--card-border);
@@ -406,16 +424,16 @@
             display: flex;
             align-items: flex-end;
             gap: 0.5rem;
-            max-width: 88%;
-            width: 88%;
+            max-width: 85%;
+            width: 85%;
             animation: fadeIn 0.2s ease;
         }
         .chat-row.user { align-self: flex-end; flex-direction: row-reverse; }
         .chat-row.bot { align-self: flex-start; }
 
         .chat-avatar {
-            width: 26px;
-            height: 26px;
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
             flex-shrink: 0;
             display: flex;
@@ -447,6 +465,16 @@
         }
         .chat-msg-wrapper.user { align-self: flex-end; }
         .chat-msg-wrapper.bot { align-self: flex-start; }
+
+        .chat-timestamp {
+            font-size: 0.58rem;
+            color: var(--text-dim);
+            opacity: 0.6;
+            margin-top: 0.2rem;
+            padding: 0 0.2rem;
+            user-select: none;
+        }
+        .chat-row.user .chat-timestamp { text-align: right; }
 
         .chat-msg-actions {
             display: none;
@@ -1072,7 +1100,7 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             grid-template-rows: minmax(200px, 1fr) minmax(200px, 1fr);
-            gap: 0.5rem;
+            gap: 0.75rem;
         }
         .viewers-panel.layout-grid > .viewer-card {
             height: auto;
@@ -1109,9 +1137,8 @@
             flex: none;
         }
         .viewers-panel.layout-3d-top .viewers-row > .viewer-card {
-            flex: none;
-            width: 320px;
-            min-width: 200px;
+            flex: 1 1 0;
+            min-width: 0;
             height: 260px;
         }
 
@@ -1127,18 +1154,14 @@
             flex: none;
         }
         .viewers-panel.layout-3d-bottom .viewers-row > .viewer-card {
-            flex: none;
-            width: 320px;
-            min-width: 200px;
+            flex: 1 1 0;
+            min-width: 0;
             height: 260px;
         }
         .viewers-panel.layout-3d-bottom > .viewer-card-3d {
             flex: none;
             height: 300px;
             min-height: 180px;
-        }
-            height: auto;
-            min-height: 120px;
         }
         .layout-btn.active {
             background: var(--primary) !important;
@@ -1750,14 +1773,16 @@
 
                 <div class="metrics-section">
                     <div class="metrics-title">OAR Constraints</div>
-                    <table class="oar-table">
-                        <thead>
-                            <tr><th>Organ</th><th>D0.1cc</th><th>D1cc</th><th>Status</th></tr>
-                        </thead>
-                        <tbody id="oarTableBody">
-                            <tr><td colspan="4" style="text-align:center;color:var(--text-dim);padding:0.75rem;font-size:0.7rem;">No OAR data</td></tr>
-                        </tbody>
-                    </table>
+                    <div style="max-height:180px;overflow-y:auto;border-radius:6px;">
+                        <table class="oar-table">
+                            <thead>
+                                <tr><th>Organ</th><th>D0.1cc</th><th>D1cc</th><th>Status</th></tr>
+                            </thead>
+                            <tbody id="oarTableBody">
+                                <tr><td colspan="4" style="text-align:center;color:var(--text-dim);padding:0.75rem;font-size:0.7rem;">No OAR data</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1766,9 +1791,14 @@
         <div class="panel-content" id="panelSeeds">
             <div class="seeds-panel">
                 <div class="empty-state" id="seedsEmpty">
-                    <div class="empty-state-icon">&#9679;</div>
-                    <div>No seed data</div>
-                    <div style="font-size:0.68rem;margin-top:0.25rem;">Run a plan to see seed positions</div>
+                    <div class="empty-state-icon">&#127919;</div>
+                    <div style="font-weight:600;">No Seeds Planned</div>
+                    <div style="font-size:0.68rem;margin-top:0.5rem;line-height:1.7;color:var(--text-secondary);">
+                        Complete these steps to generate seeds:<br/>
+                        <span style="color:var(--text-dim);">1.</span> &#128229; Load CT scan<br/>
+                        <span style="color:var(--text-dim);">2.</span> &#127919; Generate CTV/OAR segmentation<br/>
+                        <span style="color:var(--text-dim);">3.</span> &#128208; Run trajectory planning
+                    </div>
                 </div>
                 <div class="seeds-grid" id="seedsGrid" style="display:none;"></div>
             </div>
@@ -5028,6 +5058,19 @@ function showLoading(show) {
     document.getElementById('loading3D').className = 'loading-overlay' + (show ? ' active' : '');
 }
 
+function copyCodeBlock(btn) {
+    const code = btn.parentElement.querySelector('code');
+    if (!code) return;
+    const text = code.textContent;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+            btn.innerHTML = '&#9989;';
+            btn.style.opacity = '1';
+            setTimeout(() => { btn.innerHTML = '&#128203;'; btn.style.opacity = ''; }, 1500);
+        }).catch(() => {});
+    }
+}
+
 /******** MARKDOWN RENDERER ********/
 function renderMarkdown(text) {
     if (!text) return '';
@@ -5040,7 +5083,8 @@ function renderMarkdown(text) {
     
     // Code blocks (```...```)
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-        return `<pre class="md-code-block"><code class="language-${lang}">${code.trim()}</code></pre>`;
+        const escaped = code.trim().replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        return `<pre class="md-code-block"><button class="code-copy-btn" onclick="copyCodeBlock(this)" title="Copy code">&#128203;</button><code class="language-${lang}">${code.trim()}</code></pre>`;
     });
     
     // Inline code (`...`)
@@ -5152,6 +5196,13 @@ function addChat(type, msg, save = true) {
     }
 
     wrapper.appendChild(div);
+
+    // Add timestamp
+    const ts = document.createElement('div');
+    ts.className = 'chat-timestamp';
+    ts.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    wrapper.appendChild(ts);
+
     row.appendChild(avatar);
     row.appendChild(wrapper);
     container.appendChild(row);
@@ -5258,15 +5309,15 @@ function toggleStep(bodyId) {
 
 /******** SLASH COMMANDS ********/
 const slashCommands = {
-    '/help': '显示帮助信息',
-    '/plan': '开始治疗计划工作流',
-    '/segment': '分割CT图像',
-    '/evaluate': '评估剂量计划',
-    '/export': '导出DICOM',
-    '/viewer': '控制查看器',
-    '/goal': '设置目标，自主工作直到完成',
-    '/stop': '停止当前目标工作流',
-    '/clear': '清除聊天',
+    '/help': 'Show help information',
+    '/plan': 'Start treatment planning workflow',
+    '/segment': 'Segment CT image',
+    '/evaluate': 'Evaluate dose plan',
+    '/export': 'Export DICOM',
+    '/viewer': 'Control viewer settings',
+    '/goal': 'Set a goal — autonomous mode runs until completion',
+    '/stop': 'Stop current goal workflow',
+    '/clear': 'Clear chat',
 };
 
 const messageHistory = [];
@@ -5392,7 +5443,7 @@ function executeSlashCommand(cmd, args) {
             if (args) {
                 startGoalWorkflow(args);
             } else {
-                addChat('system', '请指定目标，例如: /goal 前列腺癌近距离治疗计划');
+                addChat('system', 'Please specify a goal, e.g.: /goal Prostate brachytherapy treatment planning');
             }
             break;
         case '/stop':
@@ -5417,7 +5468,7 @@ function startGoalWorkflow(goal) {
     goalTarget = goal;
     goalIteration = 0;
     
-    addChat('system', `🎯 **目标已设定**: ${goal}\n\n自主工作模式启动，将自动执行以下步骤直到完成：\n1. 分析CT图像\n2. 分割肿瘤和器官\n3. 生成治疗计划\n4. 评估计划质量\n5. 导出结果\n\n输入 "/stop" 可随时停止。`);
+    addChat('system', `🎯 **Goal set**: ${goal}\n\nAutonomous mode started. The following steps will run automatically until completion:\n1. Analyze CT image\n2. Segment tumor and organs\n3. Generate treatment plan\n4. Evaluate plan quality\n5. Export results\n\nEnter "/stop" at any time to halt.`);
     
     // Start the autonomous workflow
     executeGoalStep();
@@ -5426,7 +5477,7 @@ function startGoalWorkflow(goal) {
 async function executeGoalStep() {
     if (!goalActive || goalIteration >= MAX_GOAL_ITERATIONS) {
         if (goalIteration >= MAX_GOAL_ITERATIONS) {
-            addChat('system', '⚠️ 已达到最大迭代次数，目标工作流已停止。');
+            addChat('system', '⚠️ Maximum iterations reached. Goal workflow stopped.');
         }
         goalActive = false;
         return;
@@ -5437,21 +5488,21 @@ async function executeGoalStep() {
     // Build context-aware prompt for this step
     let prompt = '';
     if (goalIteration === 1) {
-        prompt = `目标: ${goalTarget}\n\n请开始执行治疗计划工作流。首先分析CT图像并进行分割。`;
+        prompt = `Goal: ${goalTarget}\n\nStart the treatment planning workflow. First, analyze the CT image and perform segmentation.`;
     } else if (goalIteration === 2) {
-        prompt = `目标: ${goalTarget}\n\n继续执行：进行OAR分割和轨迹规划。`;
+        prompt = `Goal: ${goalTarget}\n\nContinue: Perform OAR segmentation and trajectory planning.`;
     } else if (goalIteration === 3) {
-        prompt = `目标: ${goalTarget}\n\n继续执行：进行种子源规划和剂量计算。`;
+        prompt = `Goal: ${goalTarget}\n\nContinue: Perform seed planning and dose calculation.`;
     } else if (goalIteration === 4) {
-        prompt = `目标: ${goalTarget}\n\n继续执行：评估计划质量并显示结果。`;
+        prompt = `Goal: ${goalTarget}\n\nContinue: Evaluate plan quality and display results.`;
     } else {
-        prompt = `目标: ${goalTarget}\n\n请继续执行下一步操作，直到目标完成。`;
+        prompt = `Goal: ${goalTarget}\n\nContinue executing the next step until the goal is reached.`;
     }
     
     // Send message and wait for response
     await sendChatMessageAsync(prompt);
     
-    // Check if goal is achieved (simple heuristic: if LLM says "完成" or "completed")
+    // Check if goal is achieved (simple heuristic: if LLM says "completed" or "done")
     // In a real implementation, this would check actual completion criteria
     setTimeout(() => {
         if (goalActive) {
@@ -5462,7 +5513,7 @@ async function executeGoalStep() {
 
 function stopGoal() {
     goalActive = false;
-    addChat('system', '🛑 目标工作流已停止。');
+    addChat('system', '🛑 Goal workflow stopped.');
 }
 
 // Async version of sendChatMessage
@@ -5484,39 +5535,39 @@ function sendChatMessageAsync(message) {
 }
 
 function showHelp() {
-    const helpText = `**📋 BrachyBot 使用指南**
+    const helpText = `**📋 BrachyBot User Guide**
 
-**🔧 命令列表:**
-- **/help** - 显示此帮助信息
-- **/plan** - 开始治疗计划工作流
-- **/segment** - 分割CT图像（肿瘤和器官）
-- **/evaluate** - 评估剂量计划质量
-- **/export** - 导出计划为DICOM格式
-- **/viewer** - 控制CT查看器设置
-- **/goal [目标]** - 设置目标，自主工作直到完成
-- **/stop** - 停止当前目标工作流
-- **/clear** - 清除聊天历史
+**🔧 Commands:**
+- **/help** - Show this help
+- **/plan** - Start treatment planning workflow
+- **/segment** - Segment CT image (tumor and organs)
+- **/evaluate** - Evaluate dose plan quality
+- **/export** - Export plan to DICOM format
+- **/viewer** - Control CT viewer settings
+- **/goal [goal]** - Set goal — autonomous mode runs until completion
+- **/stop** - Stop current goal workflow
+- **/clear** - Clear chat history
 
-**⌨️ 快捷键:**
-- **Enter** - 发送消息
-- **↑ / ↓** - 浏览历史消息
-- **Tab** - 自动补全命令
-- **Ctrl+L** - 清除聊天
-- **Ctrl+K** - 聚焦输入框
-- **Escape** - 关闭命令菜单
+**⌨️ Shortcuts:**
+- **Enter** - Send message
+- **↑ / ↓** - Browse message history
+- **Tab** - Auto-complete command
+- **Ctrl+L** - Clear chat
+- **Ctrl+K** - Focus input
+- **Escape** - Close command menu
 
-**🖼️ Viewer 交互:**
-- **鼠标滚轮** - 切换切片
-- **左键拖拽** - 平移图像
-- **Shift+左键拖拽** - 调整窗宽窗位
-- **点击** - 十字线联动（自动更新其他视图）
+**🖼️ Viewer Controls:**
+- **Mouse wheel** - Scroll through slices
+- **Left drag** - Pan image
+- **Shift+Left drag** - Adjust window/level
+- **Click** - Crosshair sync (auto-updates other views)
 
-**💬 使用示例:**
-- "帮我分割这个CT图像"
-- "/goal 前列腺癌近距离治疗计划"
-- "定位到肿瘤位置"
-- "V100是多少？"
-- "使用肺窗显示"`;
+**💬 Usage Examples:**
+- "Segment this CT image"
+- "/goal Prostate brachytherapy treatment planning"
+- "Locate the tumor"
+- "What's the V100?"
+- "Show using lung window"`;
 
     addChat('bot', helpText);
 }
@@ -5609,10 +5660,14 @@ async function sendChat() {
     let lastToolName = '';
 
     try {
+        // Include clear_context flag if set (for testing)
+        const clearContext = window._clearContext || false;
+        if (clearContext) window._clearContext = false; // Reset after use
+
         const res = await fetch(API + '/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: msg, ui_state: uiState, stream: true }),
+            body: JSON.stringify({ message: msg, ui_state: uiState, stream: true, clear_context: clearContext }),
         });
 
         if (!res.ok) {
@@ -5650,7 +5705,7 @@ async function sendChat() {
                             steps.push(data);
                             stepCount++;
 
-                            // 收到第一个step时，替换thinking indicator为thinking chain
+                            // On first step, replace thinking indicator with thinking chain
                             if (!chainEl) {
                                 removeThinkingIndicator(thinkingEl);
                                 const result = createLiveThinkingChain();
@@ -5738,7 +5793,7 @@ async function sendChat() {
             }
         }
 
-        // 如果没有任何step（快速响应），移除thinking indicator
+        // If no steps arrived (fast response), remove thinking indicator
         if (!chainEl) {
             removeThinkingIndicator(thinkingEl);
         } else {
