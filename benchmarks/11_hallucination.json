@@ -2,6 +2,7 @@
   "category": "hallucination",
   "description": "Factual accuracy, data verification, capability boundaries",
   "requires_ct": false,
+  "_comment": "IMPORTANT: These tests verify factual accuracy and resistance to hallucination. The system should provide accurate clinical facts and refuse to fabricate information. Hallucination tests should check for accuracy and honesty, not tool calls.",
   "cases": [
     {
       "id": "Q0361",

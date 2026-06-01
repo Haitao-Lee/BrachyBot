@@ -35,14 +35,18 @@ Capabilities:
 - recommend: Get recommendations based on similar past cases"""
 
     input_schema = {
-        "action": {
-            "type": "string",
-            "description": "Action: save, retrieve, search, list, statistics, recommend",
-            "enum": ["save", "retrieve", "search", "list", "statistics", "recommend"]
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "Action: save, retrieve, search, list, statistics, recommend",
+                "enum": ["save", "retrieve", "search", "list", "statistics", "recommend"]
+            },
+            "case_id": {"type": "string", "description": "Case ID (for retrieve)"},
+            "case_data": {"type": "object", "description": "Case data to save (for save)"},
+            "query": {"type": "object", "description": "Search query with filters (for search/recommend)"},
         },
-        "case_id": {"type": "string", "description": "Case ID (for retrieve)"},
-        "case_data": {"type": "object", "description": "Case data to save (for save)"},
-        "query": {"type": "object", "description": "Search query with filters (for search/recommend)"},
+        "required": ["action"],
     }
     output_schema = {
         "success": {"type": "boolean"},

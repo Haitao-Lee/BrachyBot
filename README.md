@@ -1309,7 +1309,40 @@ A comprehensive code review was conducted across the core modules with **4 round
 - Moved `_label_color` function to module level (was redefined per request)
 - Removed 5 missing tool registrations and phantom system prompt references
 
-See [`docs/CODE_REVIEW_REPORT.md`](docs/CODE_REVIEW_REPORT.md) for the full audit report.
+### Benchmark Overcorrection Fix (2026-06-01)
+
+A code review identified **9 benchmark-driven overcorrections** that were causing incorrect behavior in production:
+
+| # | Finding | Severity | Status |
+|---|---------|----------|--------|
+| 1 | "TOP PRIORITY" forces clinical_kb on greetings | Critical | ✅ Fixed |
+| 2 | Greedy regex eats legitimate response text | High | ✅ Fixed |
+| 3 | Stopping rules allow 5 rounds for simple questions | Medium | ✅ Fixed |
+| 4 | 78 lines of hardcoded clinical facts duplicate clinical_kb | Medium | ✅ Fixed |
+| 5 | Fragile string matching for CT state | Medium | ✅ Fixed |
+| 6 | Streaming vs non-streaming tool filtering inconsistency | Medium | ✅ Fixed |
+| 7 | Report generator auto-detect masks errors | Medium | ✅ Fixed |
+| 8 | Benchmark runners deleted | Low | ⚠️ Pending |
+| 9 | Prompt injection rules may block legitimate requests | Low | ⚠️ Pending |
+
+**Root cause:** Benchmarks were testing for tool names in responses (e.g., expecting "clinical_kb" to appear), which led to adding forceful instructions like "YOU MUST USE clinical_kb" that broke natural conversational behavior.
+
+**Fixes applied:**
+- **Removed "TOP PRIORITY" section**: System now answers clinical questions directly from knowledge
+- **Fixed greedy regex**: Reverted to bounded matching (max 2000 chars) to avoid eating legitimate text
+- **Added conditional stopping rules**: Simple questions get 1 round, workflows get up to 5 rounds
+- **Removed hardcoded clinical facts**: Facts now come from clinical_kb tool when needed
+- **Fixed CT state detection**: Uses boolean `ct_loaded` flag instead of fragile string matching
+- **Unified tool filtering**: Both streaming and non-streaming paths now filter CT-dependent tools consistently
+- **Fixed report generator**: Returns error with guidance when action is missing
+
+**Benchmark updates:**
+- Removed expectations that tool names appear in response text
+- Added `forbidden_keywords` to prevent tool name leakage
+- Added `_comment` fields explaining each test case's purpose
+- Focused tests on clinical accuracy, not tool invocation
+
+See [`docs/BENCHMARK_OVERCORRECTION_REVIEW.md`](docs/BENCHMARK_OVERCORRECTION_REVIEW.md) for the full review report.
 
 ---
 
@@ -1319,24 +1352,48 @@ See [`docs/CODE_REVIEW_REPORT.md`](docs/CODE_REVIEW_REPORT.md) for the full audi
 
 ```bash
 # Show benchmark statistics
-python web/test/benchmarks/run_benchmarks.py --stats
+python benchmarks/run_benchmarks.py --stats
 
 # Run specific category
-python web/test/benchmarks/run_benchmarks.py --category greeting
+python benchmarks/run_benchmarks.py --category greeting
 
 # Run all benchmarks
-python web/test/benchmarks/run_benchmarks.py --all
+python benchmarks/run_benchmarks.py --all
 
 # Run with CT upload (requires Playwright)
-python web/test/benchmarks/run_benchmarks.py --all --upload-ct
+python benchmarks/run_benchmarks.py --all --upload-ct
 
 # Run new tool tests
-python web/test/benchmarks/run_benchmarks.py --category case_memory
-python web/test/benchmarks/run_benchmarks.py --category clinical_kb
-python web/test/benchmarks/run_benchmarks.py --category safety_validator
-python web/test/benchmarks/run_benchmarks.py --category multi_turn
-python web/test/benchmarks/run_benchmarks.py --category clinical_workflow
+python benchmarks/run_benchmarks.py --category case_memory
+python benchmarks/run_benchmarks.py --category clinical_kb
+python benchmarks/run_benchmarks.py --category safety_validator
+python benchmarks/run_benchmarks.py --category multi_turn
+python benchmarks/run_benchmarks.py --category clinical_workflow
 ```
+
+**Benchmark Location:** `benchmarks/` (root directory)
+**Execution Guidelines:** See [`benchmarks/GUIDELINES.md`](benchmarks/GUIDELINES.md) for detailed instructions on running benchmarks and interpreting results.
+
+### Scoring System
+
+The benchmark runner uses a weighted scoring system with penalties for incorrect answers:
+
+| Component | Weight | Description |
+|-----------|--------|-------------|
+| Keyword Match | 40% | Response contains expected clinical terms |
+| Completeness | 20% | Response is substantial (≥300 chars) |
+| Safety | 20% | No forbidden keywords (tool names, etc.) |
+| Accuracy | 10% | No hallucination indicators |
+| UX Quality | 10% | Well-formatted, appropriate length |
+
+**Penalty Rules:**
+- **Forbidden keywords present**: Score = 0 (automatic fail)
+- **Hallucination detected**: -50% penalty
+- **Low keyword match (<30%)**: Automatic fail
+- **System error**: Score = 0
+- **Response too short (<100 chars)**: -50% penalty
+
+**Pass Threshold:** 60% (configurable per test case)
 
 ### Benchmark Categories
 

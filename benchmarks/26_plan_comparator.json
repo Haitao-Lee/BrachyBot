@@ -1,0 +1,98 @@
+{
+  "category": "plan_comparator",
+  "description": "Plan comparator tests - verify the system can compare, rank, and recommend treatment plans",
+  "requires_ct": false,
+  "_comment": "IMPORTANT: These tests verify that the system correctly handles plan comparison operations. The system should use the plan_comparator tool when users ask to compare/rank plans. Do NOT expect tool names in responses - expect the comparison results and recommendations.",
+  "cases": [
+    {
+      "id": "PC001",
+      "input": "Compare these two treatment plans and tell me which is better",
+      "expected_keywords": ["compare", "plan", "better"],
+      "forbidden_keywords": ["plan_comparator"],
+      "difficulty": "medium",
+      "user_type": "experienced",
+      "_comment": "User asks to compare two plans. System should provide a detailed comparison with recommendation."
+    },
+    {
+      "id": "PC002",
+      "input": "Rank these plans by quality score",
+      "expected_keywords": ["rank", "plan", "quality"],
+      "forbidden_keywords": ["plan_comparator"],
+      "difficulty": "easy",
+      "user_type": "experienced",
+      "_comment": "User asks to rank plans. System should present plans ranked by quality."
+    },
+    {
+      "id": "PC003",
+      "input": "What's the difference between plan A and plan B?",
+      "expected_keywords": ["difference", "plan"],
+      "forbidden_keywords": ["plan_comparator"],
+      "difficulty": "medium",
+      "user_type": "experienced",
+      "_comment": "User asks about differences between plans. System should highlight key differences."
+    },
+    {
+      "id": "PC004",
+      "input": "Which plan would you recommend and why?",
+      "expected_keywords": ["recommend", "plan"],
+      "forbidden_keywords": ["plan_comparator"],
+      "difficulty": "hard",
+      "user_type": "experienced",
+      "_comment": "User asks for recommendation. System should provide evidence-based recommendation."
+    },
+    {
+      "id": "PC005",
+      "input": "帮我比较一下这两个方案的DVH曲线差异",
+      "expected_keywords": ["比较", "DVH"],
+      "forbidden_keywords": ["plan_comparator"],
+      "difficulty": "hard",
+      "user_type": "chinese",
+      "_comment": "Chinese user asks to compare DVH curves. System should respond in Chinese."
+    },
+    {
+      "id": "PC006",
+      "input": "I have 3 plans, rank them by V100 coverage",
+      "expected_keywords": ["rank", "V100", "coverage"],
+      "forbidden_keywords": ["plan_comparator"],
+      "difficulty": "medium",
+      "user_type": "experienced",
+      "_comment": "User asks to rank plans by V100. System should rank and explain the ranking."
+    },
+    {
+      "id": "PC007",
+      "input": "这个方案比上一个好在哪里？",
+      "expected_keywords": ["方案", "好"],
+      "forbidden_keywords": ["plan_comparator"],
+      "difficulty": "medium",
+      "user_type": "chinese",
+      "_comment": "Chinese user asks what's better about this plan. System should respond in Chinese."
+    },
+    {
+      "id": "PC008",
+      "input": "Which plan has better OAR sparing?",
+      "expected_keywords": ["OAR", "plan", "sparing"],
+      "forbidden_keywords": ["plan_comparator"],
+      "difficulty": "medium",
+      "user_type": "experienced",
+      "_comment": "User asks about OAR sparing comparison. System should compare OAR metrics."
+    },
+    {
+      "id": "PC009",
+      "input": "Show me the pros and cons of each plan",
+      "expected_keywords": ["pros", "cons", "plan"],
+      "forbidden_keywords": ["plan_comparator"],
+      "difficulty": "medium",
+      "user_type": "experienced",
+      "_comment": "User asks for pros and cons. System should present balanced analysis."
+    },
+    {
+      "id": "PC010",
+      "input": "Which plan is more conformal?",
+      "expected_keywords": ["conformal", "plan"],
+      "forbidden_keywords": ["plan_comparator"],
+      "difficulty": "hard",
+      "user_type": "experienced",
+      "_comment": "User asks about conformity. System should compare conformity indices."
+    }
+  ]
+}

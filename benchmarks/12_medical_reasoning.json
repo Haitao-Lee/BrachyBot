@@ -2,6 +2,7 @@
   "category": "medical_reasoning",
   "description": "Domain knowledge, clinical decisions, medical expertise",
   "requires_ct": false,
+  "_comment": "IMPORTANT: These tests verify clinical knowledge and reasoning. The system should answer medical questions directly from its training knowledge. Do NOT expect tool calls for clinical questions - the system should demonstrate medical expertise through comprehensive, accurate answers.",
   "cases": [
     {
       "id": "Q0026",
