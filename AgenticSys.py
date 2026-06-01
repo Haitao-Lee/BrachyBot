@@ -2066,7 +2066,26 @@ class BrachyAgent:
                         result = self._execute_tool_with_memory(tool_name, params, progress_callback=tool_progress_callback)
                         if result.success:
                             result_text = result.message
-                            if tool_name == "code_executor" and hasattr(result, "data") and result.data:
+                            # Special handling for web_search - include actual results
+                            if tool_name == "web_search" and hasattr(result, "data") and result.data:
+                                answer = result.data.get("answer", "")
+                                sources = result.data.get("sources", [])
+                                results_list = result.data.get("results", [])
+                                if answer:
+                                    result_text = answer
+                                elif results_list:
+                                    # Build summary from results
+                                    result_text = "Search results:\n"
+                                    for r in results_list[:3]:
+                                        title = r.get("title", "")
+                                        snippet = r.get("snippet", "")[:200]
+                                        url = r.get("url", "")
+                                        result_text += f"- {title}: {snippet}\n"
+                                        if url:
+                                            result_text += f"  Source: {url}\n"
+                                if sources:
+                                    result_text += f"\nSources: {', '.join(sources[:3])}"
+                            elif tool_name == "code_executor" and hasattr(result, "data") and result.data:
                                 stdout = result.data.get("stdout", "").strip()
                                 if stdout:
                                     result_text = stdout[:1000]
