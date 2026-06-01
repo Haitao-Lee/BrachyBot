@@ -131,8 +131,8 @@ class ToolRegistry:
 
 
 class AgentMemory:
-    """Persistent memory for the agent session."""
-    
+    """Persistent memory for the agent session with smart context management."""
+
     def __init__(self, session_id: str = "default"):
         self.session_id = session_id
         self.patient_data: Dict = {}
@@ -144,13 +144,21 @@ class AgentMemory:
         self.current_phase: PlanningPhase = PlanningPhase.IDLE
         self.deviation_threshold_mm: float = 2.0
         self._ui_state: Dict = {}
-    
+
+        # Smart context manager for intelligent context selection
+        try:
+            from memory.smart_context import SmartContextManager
+            self.smart_context = SmartContextManager(max_context_tokens=8000)
+        except ImportError:
+            self.smart_context = None
+            logger.warning("SmartContextManager not available, using basic conversation")
+
     def store(self, key: str, value: Any):
         self.planning_results[key] = value
-    
+
     def retrieve(self, key: str, default: Any = None) -> Any:
         return self.planning_results.get(key, default)
-    
+
     def log_tool_call(self, tool_name: str, inputs: Dict, result):
         self.tool_results.append({
             "tool": tool_name,
@@ -159,9 +167,14 @@ class AgentMemory:
             "message": result.message,
             "execution_time": result.execution_time,
         })
-    
+
     def add_message(self, role: str, content: str):
+        """Add a message with smart context tracking."""
         self.conversation.append({"role": role, "content": content})
+
+        # Also add to smart context manager
+        if self.smart_context:
+            self.smart_context.add_message(role, content)
     
     def set_ui_state(self, state: Dict):
         """Update UI state from frontend (selected files, etc)."""
@@ -242,6 +255,86 @@ class AgentMemory:
         # Remove multiple newlines
         cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
         return cleaned
+
+    def get_smart_context(self, current_query: str = "") -> str:
+        """
+        Get intelligent context based on the current query.
+
+        Uses SmartContextManager to select relevant messages based on:
+        1. Recency (recent messages are more relevant)
+        2. Entity overlap (messages about same entities)
+        3. Topic overlap (messages about same topics)
+        4. Importance (high-importance messages are kept)
+        """
+        if not self.smart_context:
+            # Fallback to basic conversation
+            return self._get_basic_context()
+
+        # Get relevant context from smart manager
+        relevant_messages = self.smart_context.get_relevant_context(current_query)
+
+        if not relevant_messages:
+            return ""
+
+        # Format context
+        context_parts = []
+        for msg in relevant_messages:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+
+            # Skip very short messages
+            if len(content) < 10:
+                continue
+
+            # Format based on role
+            if role == "user":
+                context_parts.append(f"User: {content[:500]}")
+            elif role == "assistant":
+                context_parts.append(f"Assistant: {content[:500]}")
+            elif role == "system":
+                context_parts.append(f"[System] {content[:300]}")
+
+        if not context_parts:
+            return ""
+
+        # Add entity context if available
+        entities = self.smart_context.get_active_topics()
+        if entities:
+            entity_info = []
+            for entity in entities[:5]:  # Top 5 entities
+                entity_info.append(f"- {entity['name']} ({entity['type']}, mentioned {entity['count']}x)")
+            if entity_info:
+                context_parts.append("\nActive entities:\n" + "\n".join(entity_info))
+
+        return "\n".join(context_parts[-20:])  # Last 20 relevant messages
+
+    def _get_basic_context(self) -> str:
+        """Fallback: get basic context from conversation history."""
+        if not self.conversation:
+            return ""
+
+        # Get last 10 messages
+        recent = self.conversation[-10:]
+        context_parts = []
+        for msg in recent:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            if role == "user":
+                context_parts.append(f"User: {content[:300]}")
+            elif role == "assistant":
+                context_parts.append(f"Assistant: {content[:300]}")
+
+        return "\n".join(context_parts)
+
+    def get_context_stats(self) -> dict:
+        """Get context manager statistics."""
+        if self.smart_context:
+            return self.smart_context.get_stats()
+        return {
+            "message_count": len(self.conversation),
+            "entity_count": 0,
+            "topic_count": 0,
+        }
 
     def export_state(self, path: str):
         state = {
@@ -1013,16 +1106,33 @@ class BrachyAgent:
         messages = [
             {"role": "system", "content": system_prompt},
         ]
-        msg_history = self.memory.conversation[-12:]
-        for msg in msg_history:
-            content = msg["content"]
-            # Filter out memory artifacts from conversation history
-            if isinstance(content, str):
-                content = re.sub(r'\[Called [^\]]+\]', '', content).strip()
-                content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
-                if not content:
-                    continue  # Skip empty messages after cleaning
-            messages.append({"role": msg["role"], "content": content})
+
+        # Use smart context manager for intelligent context selection
+        if self.memory.smart_context:
+            # Get relevant context based on the current message
+            smart_context_messages = self.memory.smart_context.get_relevant_context(message)
+            for msg in smart_context_messages:
+                content = msg.get("content", "")
+                role = msg.get("role", "user")
+                # Filter out memory artifacts
+                if isinstance(content, str):
+                    content = re.sub(r'\[Called [^\]]+\]', '', content).strip()
+                    content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
+                    if not content or len(content) < 10:
+                        continue
+                messages.append({"role": role, "content": content})
+        else:
+            # Fallback: use last 12 messages
+            msg_history = self.memory.conversation[-12:]
+            for msg in msg_history:
+                content = msg["content"]
+                # Filter out memory artifacts from conversation history
+                if isinstance(content, str):
+                    content = re.sub(r'\[Called [^\]]+\]', '', content).strip()
+                    content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
+                    if not content:
+                        continue  # Skip empty messages after cleaning
+                messages.append({"role": msg["role"], "content": content})
 
         max_iterations = 8
         iteration = 0
@@ -1642,16 +1752,33 @@ class BrachyAgent:
         messages = [
             {"role": "system", "content": system_prompt},
         ]
-        msg_history = self.memory.conversation[-12:]
-        for msg in msg_history:
-            content = msg["content"]
-            # Filter out memory artifacts from conversation history
-            if isinstance(content, str):
-                content = re.sub(r'\[Called [^\]]+\]', '', content).strip()
-                content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
-                if not content:
-                    continue  # Skip empty messages after cleaning
-            messages.append({"role": msg["role"], "content": content})
+
+        # Use smart context manager for intelligent context selection
+        if self.memory.smart_context:
+            # Get relevant context based on the current message
+            smart_context_messages = self.memory.smart_context.get_relevant_context(message)
+            for msg in smart_context_messages:
+                content = msg.get("content", "")
+                role = msg.get("role", "user")
+                # Filter out memory artifacts
+                if isinstance(content, str):
+                    content = re.sub(r'\[Called [^\]]+\]', '', content).strip()
+                    content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
+                    if not content or len(content) < 10:
+                        continue
+                messages.append({"role": role, "content": content})
+        else:
+            # Fallback: use last 12 messages
+            msg_history = self.memory.conversation[-12:]
+            for msg in msg_history:
+                content = msg["content"]
+                # Filter out memory artifacts from conversation history
+                if isinstance(content, str):
+                    content = re.sub(r'\[Called [^\]]+\]', '', content).strip()
+                    content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
+                    if not content:
+                        continue  # Skip empty messages after cleaning
+                messages.append({"role": msg["role"], "content": content})
 
         max_iterations = 8
         iteration = 0
