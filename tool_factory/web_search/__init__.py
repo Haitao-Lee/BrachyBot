@@ -255,6 +255,77 @@ GitHub Integration:
 
         return results[:max_results]
 
+    def _search_bing(self, query: str, max_results: int = 5) -> List[Dict]:
+        """
+        Search using Bing Web Search API.
+        Requires BING_SEARCH_API_KEY environment variable.
+        Falls back to scraping if no API key.
+        """
+        results = []
+        api_key = os.environ.get("BING_SEARCH_API_KEY")
+
+        if api_key:
+            # Use official Bing API
+            try:
+                endpoint = "https://api.bing.microsoft.com/v7.0/search"
+                headers = {"Ocp-Apim-Subscription-Key": api_key}
+                params = {
+                    "q": query,
+                    "count": max_results,
+                    "mkt": "en-US"
+                }
+                response = requests.get(endpoint, headers=headers, params=params, timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    for item in data.get("webPages", {}).get("value", [])[:max_results]:
+                        results.append({
+                            "title": item.get("name", ""),
+                            "snippet": item.get("snippet", ""),
+                            "url": item.get("url", ""),
+                            "source": "Bing"
+                        })
+            except Exception as e:
+                logger.warning(f"Bing API error: {e}")
+        else:
+            # Fallback: scrape Bing search results
+            try:
+                search_url = f"https://www.bing.com/search?q={quote_plus(query)}"
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                }
+                response = requests.get(search_url, headers=headers, timeout=5)
+                if response.status_code == 200:
+                    text = response.text
+                    # Extract search results from Bing HTML
+                    # Look for result snippets
+                    snippet_pattern = r'<p class="b_lineclamp[2-4]">(.*?)</p>'
+                    snippets = re.findall(snippet_pattern, text, re.DOTALL)
+
+                    # Extract titles
+                    title_pattern = r'<a[^>]*class="tilk"[^>]*>(.*?)</a>'
+                    titles = re.findall(title_pattern, text, re.DOTALL)
+
+                    # Extract URLs
+                    url_pattern = r'<a[^>]*class="tilk"[^>]*href="(.*?)"'
+                    urls = re.findall(url_pattern, text)
+
+                    for i in range(min(len(snippets), max_results)):
+                        clean_snippet = re.sub(r'<[^>]+>', '', snippets[i]).strip()
+                        clean_title = re.sub(r'<[^>]+>', '', titles[i]).strip() if i < len(titles) else f"Result {i+1}"
+                        clean_url = urls[i] if i < len(urls) else ""
+
+                        if clean_snippet:
+                            results.append({
+                                "title": clean_title,
+                                "snippet": clean_snippet[:300],
+                                "url": clean_url,
+                                "source": "Bing"
+                            })
+            except Exception as e:
+                logger.warning(f"Bing scraping error: {e}")
+
+        return results[:max_results]
+
     def _search_pubmed(self, query: str, max_results: int = 3) -> List[Dict]:
         """Search PubMed for clinical literature."""
         results = []
@@ -657,6 +728,7 @@ GitHub Integration:
                 )
 
         # Perform search based on type
+        # Priority: Bing > DuckDuckGo > Wikipedia (for general search)
         results = []
 
         if search_type == "clinical":
@@ -664,17 +736,20 @@ GitHub Integration:
             pubmed_results = self._search_pubmed(query, max_results=3)
             results.extend(pubmed_results)
 
-            # Also search general web
+            # Also search with Bing/DuckDuckGo
             if len(results) < max_results:
-                web_results = self._search_duckduckgo(
-                    query, max_results=max_results - len(results)
-                )
-                results.extend(web_results)
+                bing_results = self._search_bing(query, max_results=max_results - len(results))
+                results.extend(bing_results)
+                if len(results) < max_results:
+                    ddg_results = self._search_duckduckgo(query, max_results=max_results - len(results))
+                    results.extend(ddg_results)
 
         elif search_type == "equipment":
-            # For equipment queries, search manufacturer sites
+            # For equipment queries, search Bing first
             enhanced_query = f"{query} specifications datasheet"
-            results = self._search_duckduckgo(enhanced_query, max_results)
+            results = self._search_bing(enhanced_query, max_results)
+            if not results:
+                results = self._search_duckduckgo(enhanced_query, max_results)
 
         elif search_type == "github_repos":
             # Search GitHub repositories
@@ -689,8 +764,10 @@ GitHub Integration:
             results = self._search_github(query, max_results, search_type="issues")
 
         else:
-            # General search
-            results = self._search_duckduckgo(query, max_results)
+            # General search: Bing first, then DuckDuckGo
+            results = self._search_bing(query, max_results)
+            if not results:
+                results = self._search_duckduckgo(query, max_results)
 
         # Track evidence for all results
         for result in results:
