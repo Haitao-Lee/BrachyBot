@@ -168,6 +168,13 @@ class InteractionMemory:
             "overall_success_rate": self.get_success_rate(),
         }
 
+    def clear(self):
+        """Clear all interaction history."""
+        self.conversation.clear()
+        self.tool_call_history.clear()
+        self.session_start = time.time()
+        logger.info(f"InteractionMemory: Cleared all history for session {self.session_id}")
+
     def _sanitize(self, data: Dict) -> Dict:
         """Remove large/unserializable fields."""
         sanitized = {}

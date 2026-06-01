@@ -44,6 +44,11 @@ class SelfEvolutionEngine:
         with open(self._log_file, "w") as f:
             json.dump(self.evolution_log, f, indent=2, default=str)
 
+    def clear(self):
+        """Clear evolution log."""
+        self.evolution_log.clear()
+        logger.info("SelfEvolutionEngine: Cleared evolution log")
+
     def evolve(self) -> Dict:
         """Run full evolution cycle."""
         results = {
