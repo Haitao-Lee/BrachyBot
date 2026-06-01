@@ -1089,7 +1089,7 @@ class BrachyAgent:
             f"{enhanced_context}\n"
             f"{self.memory.get_clean_context()}\n\n"
             "## ⚠️ Critical Stopping Rules\n"
-            "- For simple knowledge questions (dose constraints, protocols, clinical facts): Call ONE tool if needed, then summarize immediately.\n"
+            "- For simple knowledge questions (dose constraints, protocols, clinical facts): Call ONE tool if needed, then provide the answer.\n"
             "- For multi-step clinical workflows (segmentation → planning → evaluation): Call tools sequentially as needed (up to 5 rounds).\n"
             "- After receiving tool execution results for knowledge queries: Output final answer directly, do NOT call more tools.\n"
             "- After receiving tool execution results for workflows: Continue with next step if workflow is not complete.\n"
@@ -1353,69 +1353,13 @@ class BrachyAgent:
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
                 self.memory.add_message("user", f"[Tool result: {result_text[:500]}]")
 
+        # Clean response - no summarization
         if final_response:
             raw_final = final_response
             final_response = self._clean_response_text(final_response)
             # If cleaning stripped everything, it was pure tool_call content
             if not final_response.strip() and raw_final.strip():
                 final_response = ""
-        else:
-            # Call LLM again without tools to get a text summary
-            try:
-                # Convert Anthropic-format messages to plain text for OpenAI-compatible API
-                summary_messages = [{"role": "system", "content": (
-                    "You are a helpful medical AI assistant specializing in brachytherapy. "
-                    "You must respond with plain text only. Never call any tools. "
-                    "Provide a complete, detailed clinical response. "
-                    "If tool results show errors or no data, ignore them and answer the user's original question "
-                    "using your medical knowledge. Always address all parts of the user's question. "
-                    "Provide your response in the same language as the user's question."
-                )}]
-                for msg in messages:
-                    if msg.get("role") == "system":
-                        continue
-                    content = msg.get("content", "")
-                    if isinstance(content, str):
-                        summary_messages.append({"role": msg["role"], "content": content})
-                    elif isinstance(content, list):
-                        text_parts = []
-                        for block in content:
-                            if isinstance(block, dict):
-                                if block.get("type") == "text":
-                                    text_parts.append(block.get("text", ""))
-                                elif block.get("type") == "tool_use":
-                                    tool_name = block.get("name", "unknown")
-                                    text_parts.append(f"[Called {tool_name}]")
-                                elif block.get("type") == "tool_result":
-                                    result_content = block.get("content", "")
-                                    if isinstance(result_content, list):
-                                        for rc in result_content:
-                                            if isinstance(rc, dict) and rc.get("type") == "text":
-                                                text_parts.append(rc.get("text", ""))
-                                    elif isinstance(result_content, str):
-                                        text_parts.append(result_content)
-                        if text_parts:
-                            summary_messages.append({"role": msg["role"], "content": "\n".join(text_parts)})
-                summary_messages.append({
-                    "role": "user",
-                    "content": "Based on the information above, please provide a clear, comprehensive response to the user's original question. Do NOT call any tools. Respond in the same language the user used."
-                })
-                llm = self.brain_router._select_llm(None, "general")
-                if llm and hasattr(llm, '_chat'):
-                    response = llm._chat(messages=summary_messages, tools=None)
-                    if response and response.content:
-                        final_response = self._clean_response_text(response.content)
-                elif llm and hasattr(llm, 'chat_messages_stream'):
-                    summary_content = ""
-                    for chunk in llm.chat_messages_stream(messages=summary_messages, tools=None):
-                        if isinstance(chunk, str):
-                            summary_content += chunk
-                        elif isinstance(chunk, dict) and chunk.get("type") == "final":
-                            break
-                    if summary_content:
-                        final_response = self._clean_response_text(summary_content)
-            except Exception as e:
-                logger.error(f"Summary call failed: {e}")
 
         if not final_response:
             if tools_executed:
@@ -1774,7 +1718,7 @@ class BrachyAgent:
             f"{enhanced_context}\n"
             f"{self.memory.get_clean_context()}\n\n"
             "## ⚠️ Critical Stopping Rules\n"
-            "- For simple knowledge questions (dose constraints, protocols, clinical facts): Call ONE tool if needed, then summarize immediately.\n"
+            "- For simple knowledge questions (dose constraints, protocols, clinical facts): Call ONE tool if needed, then provide the answer.\n"
             "- For multi-step clinical workflows (segmentation → planning → evaluation): Call tools sequentially as needed (up to 5 rounds).\n"
             "- After receiving tool execution results for knowledge queries: Output final answer directly, do NOT call more tools.\n"
             "- After receiving tool execution results for workflows: Continue with next step if workflow is not complete.\n"
@@ -2142,17 +2086,7 @@ class BrachyAgent:
         ]
         _is_simple_greeting = any(re.match(p, message.lower().strip()) for p in _simple_patterns)
 
-        # SIMPLE FALLBACK: Only if tools executed but LLM generated NO text response
-        # This should rarely happen - the LLM should always generate text after tool calls
-        if not final_response and tools_executed:
-            logger.info("Tools executed but no text response - generating simple fallback")
-            # Build a minimal response based on tool results
-            tool_names = [r.get("tool", "") for r in self.memory.tool_results[-5:] if r.get("success")]
-            if tool_names:
-                final_response = f"已完成操作: {', '.join(tool_names)}。请问还有什么需要帮助的？"
-            else:
-                final_response = "操作已完成。请问还有什么需要帮助的？"
-
+        # No summarization - use LLM response directly
         if final_response:
             raw_final = final_response
             final_response = self._clean_response_text(final_response)
