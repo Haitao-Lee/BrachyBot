@@ -980,9 +980,17 @@ def create_app(config: Optional[Dict] = None):
         stream = data.get("stream", True)  # Default to streaming
         image_path = data.get("image_path", None)  # Optional image path
         clear_context = data.get("clear_context", False)  # Optional: clear conversation history
+        session_id = data.get("session_id", None)  # Optional: session ID for isolation
 
-        # Clear conversation context if requested (for fresh start between tests)
-        if clear_context:
+        # Handle session isolation for benchmarks
+        if session_id:
+            # If session ID changed, always clear context for fresh start
+            if not hasattr(agent, '_current_session_id') or agent._current_session_id != session_id:
+                agent.memory.clear_conversation()
+                agent._current_session_id = session_id
+                logger.info(f"New session started: {session_id}")
+        elif clear_context:
+            # Clear conversation context if requested (for fresh start between tests)
             agent.memory.clear_conversation()
             logger.info("Conversation context cleared")
 
