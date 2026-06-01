@@ -1,0 +1,112 @@
+{
+  "category": "case_memory",
+  "description": "Case memory tool tests - store, retrieve, search past treatment plans for learning",
+  "requires_ct": false,
+  "cases": [
+    {
+      "id": "CM001",
+      "input": "Save this prostate plan as a case for future reference",
+      "expected_keywords": ["case_memory", "save"],
+      "difficulty": "easy",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CM002",
+      "input": "Find me similar prostate cancer cases from the past",
+      "expected_keywords": ["case_memory", "search", "prostate"],
+      "difficulty": "easy",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CM003",
+      "input": "What treatment plans have we done for cervical cancer before?",
+      "expected_keywords": ["case_memory", "search", "cervical"],
+      "difficulty": "medium",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CM004",
+      "input": "Show me the statistics of all our past treatment plans",
+      "expected_keywords": ["case_memory", "statistics"],
+      "difficulty": "easy",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CM005",
+      "input": "Based on similar past cases, what seed count do you recommend for this prostate case?",
+      "expected_keywords": ["case_memory", "recommend", "seed"],
+      "difficulty": "hard",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CM006",
+      "input": "我之前做过一个肝癌的plan，帮我找出来",
+      "expected_keywords": ["case_memory", "search", "liver"],
+      "difficulty": "medium",
+      "user_type": "chinese"
+    },
+    {
+      "id": "CM007",
+      "input": "这个病例的V100达到了98%，帮我存档",
+      "expected_keywords": ["case_memory", "save"],
+      "difficulty": "medium",
+      "user_type": "chinese"
+    },
+    {
+      "id": "CM008",
+      "input": "List all stored cases",
+      "expected_keywords": ["case_memory", "list"],
+      "difficulty": "easy",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CM009",
+      "input": "What lessons did we learn from our previous head and neck cases?",
+      "expected_keywords": ["case_memory", "search", "head"],
+      "difficulty": "hard",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CM010",
+      "input": "Compare this plan with our best prostate case from the database",
+      "expected_keywords": ["case_memory", "recommend", "compare"],
+      "difficulty": "hard",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CM011",
+      "input": "我们的病例库中有多少个肺癌的病例？",
+      "expected_keywords": ["case_memory", "search", "lung"],
+      "difficulty": "medium",
+      "user_type": "chinese"
+    },
+    {
+      "id": "CM012",
+      "input": "Save this case with note: patient had prior EBRT, 45Gy in 25 fractions",
+      "expected_keywords": ["case_memory", "save"],
+      "difficulty": "medium",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CM013",
+      "input": "What's our average plan score for liver cases?",
+      "expected_keywords": ["case_memory", "statistics", "liver"],
+      "difficulty": "medium",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CM014",
+      "input": "Find cases where V200 was below 30%",
+      "expected_keywords": ["case_memory", "search"],
+      "difficulty": "hard",
+      "user_type": "experienced"
+    },
+    {
+      "id": "CM015",
+      "input": "帮我推荐一个和当前病例最相似的历史方案",
+      "expected_keywords": ["case_memory", "recommend"],
+      "difficulty": "hard",
+      "user_type": "chinese"
+    }
+  ]
+}
