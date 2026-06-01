@@ -2134,10 +2134,20 @@ class BrachyAgent:
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
                 self.memory.add_message("user", f"[Tool result: {result_text[:500]}]")
 
+        # Check if this is a simple greeting or short question (should NOT trigger summarization)
+        _simple_patterns = [
+            r'^(你好|hello|hi|hey|嗨|您好|早上好|下午好|晚上好|good\s*(morning|afternoon|evening))',
+            r'^(谢谢|thanks|thank you|再见|bye|goodbye)',
+            r'^(你是谁|who are you|what are you|你可以做什么|what can you do)',
+        ]
+        _is_simple_greeting = any(re.match(p, message.lower().strip()) for p in _simple_patterns)
+
         # If we executed tools but got no text response, or response is too short for a clinical question,
         # call LLM one more time for a comprehensive summary
-        logger.info(f"Summary check: final_response={bool(final_response)}, tools_executed={tools_executed}, len={len(final_response) if final_response else 0}")
-        _needs_summary = (not final_response and tools_executed) or (final_response and len(final_response) < 500 and _no_files_loaded)
+        # BUT: Never summarize simple greetings - they should get direct responses
+        logger.info(f"Summary check: final_response={bool(final_response)}, tools_executed={tools_executed}, len={len(final_response) if final_response else 0}, is_greeting={_is_simple_greeting}")
+        _needs_summary = (not final_response and tools_executed) or \
+                        (final_response and len(final_response) < 500 and _no_files_loaded and not _is_simple_greeting)
         if _needs_summary:
             # Clear short response so summary replaces it
             if final_response and len(final_response) < 500:
