@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-验证脚本：检查 Agent 是否真正修复了代码，而不是修改 benchmark 文件
+Verification script: Check if Agent truly fixed code instead of modifying benchmark files.
 """
 
 import json
@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 def check_git_status():
-    """检查 git 状态，看是否有 benchmark 文件被修改"""
+    """Check git status to see if any benchmark files were modified"""
     result = subprocess.run(
         ["git", "diff", "--name-only"],
         capture_output=True,
@@ -18,35 +18,35 @@ def check_git_status():
         cwd="/home/lht/snap/brachyplan/BrachyBot"
     )
 
-    modified_files = result.stdout.strip().split("\n")
+    modified_files = result.stdout.strip().split("\n") if result.stdout.strip() else []
 
-    # 检查是否有 benchmark 文件被修改
+    # Check if any benchmark files were modified
     benchmark_modified = [f for f in modified_files if "benchmarks/" in f and f.endswith(".json")]
 
     if benchmark_modified:
-        print("❌ 违规：以下 benchmark 文件被修改了：")
+        print("❌ VIOLATION: The following benchmark files were modified:")
         for f in benchmark_modified:
             print(f"  - {f}")
         return False
 
-    # 检查是否有代码文件被修改
+    # Check if any code files were modified
     code_modified = [f for f in modified_files if f.endswith(".py") or f.endswith(".json")]
 
     if code_modified:
-        print("✅ 正确：以下代码文件被修改了：")
+        print("✅ CORRECT: The following code files were modified:")
         for f in code_modified:
             print(f"  - {f}")
         return True
 
-    print("⚠️  没有检测到任何文件修改")
+    print("⚠️  No file modifications detected")
     return True
 
 
 def verify_fix_quality():
-    """验证修复质量"""
-    print("\n=== 修复质量验证 ===\n")
+    """Verify fix quality"""
+    print("\n=== Fix Quality Verification ===\n")
 
-    # 检查 git diff
+    # Check git diff
     result = subprocess.run(
         ["git", "diff", "--stat"],
         capture_output=True,
@@ -54,10 +54,10 @@ def verify_fix_quality():
         cwd="/home/lht/snap/brachyplan/BrachyBot"
     )
 
-    print("代码修改统计：")
+    print("Code modification statistics:")
     print(result.stdout)
 
-    # 检查是否有 benchmark 文件
+    # Check if any benchmark files were modified
     result2 = subprocess.run(
         ["git", "diff", "--name-only"],
         capture_output=True,
@@ -69,28 +69,28 @@ def verify_fix_quality():
                       if "benchmarks/" in f and f.endswith(".json")]
 
     if benchmark_files:
-        print("\n❌ 违规：发现 benchmark 文件被修改：")
+        print("\n❌ VIOLATION: Benchmark files were modified:")
         for f in benchmark_files:
             print(f"  - {f}")
-        print("\n正确的做法是修复代码，而不是修改测试！")
+        print("\nCorrect approach: Fix code, not tests!")
         return False
 
-    print("\n✅ 验证通过：没有修改 benchmark 文件")
+    print("\n✅ Verification passed: No benchmark files were modified")
     return True
 
 
 if __name__ == "__main__":
-    print("=== BrachyBot 修复验证 ===\n")
+    print("=== BrachyBot Fix Verification ===\n")
 
-    # 检查 git 状态
+    # Check git status
     git_ok = check_git_status()
 
-    # 验证修复质量
+    # Verify fix quality
     quality_ok = verify_fix_quality()
 
     if git_ok and quality_ok:
-        print("\n✅ 验证通过：修复是正确的")
+        print("\n✅ Verification passed: Fix is correct")
         sys.exit(0)
     else:
-        print("\n❌ 验证失败：发现违规行为")
+        print("\n❌ Verification failed: Violations detected")
         sys.exit(1)

@@ -43,6 +43,7 @@
 BrachyBot is a **closed-loop, self-evolving AI agent** for brachytherapy treatment planning. It combines:
 
 - **LLM-driven decision making** with function calling across 15 LLM providers
+- **Smart context management** with entity tracking, topic detection, and relevance scoring
 - **Layered memory system** (L0-L4) for contextual information density maximization
 - **Trajectory-based self-reflection** (Reflexion pattern) for continuous learning
 - **Skill crystallization pipeline** that converts successful trajectories into reusable SOPs
@@ -411,6 +412,15 @@ Task: "Generate prostate plan"
 - **L2 Global Facts**: Confidence-scored stable knowledge
 - **L3 SOPs**: Reusable workflows with success rates
 - **L4 Session Archive**: Cross-session experience recall
+
+### 🧠 Smart Context Management (NEW)
+- **Intelligent Context Selection**: Selects relevant messages based on entity/topic overlap
+- **Entity Tracking**: Automatically tracks patients, doses, organs, tools, protocols
+- **Topic Tracking**: Detects and tracks conversation topics (dose_planning, segmentation, etc.)
+- **Importance Scoring**: Messages scored by importance (clinical values, questions, errors)
+- **Relevance Scoring**: Messages scored by relevance to current query (recency + entity + topic)
+- **Smart Compression**: Low-relevance messages compressed, high-importance messages preserved
+- **Timestamp Support**: All messages timestamped for time-based relevance decay
 
 ### 🔄 Self-Evolution
 - **Reflexion**: Automatic trajectory critique after every task

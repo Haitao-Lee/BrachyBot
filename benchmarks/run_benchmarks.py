@@ -31,12 +31,12 @@ CT_FILE = "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
 
 def verify_project_understanding():
     """
-    验证 Agent 是否理解了项目规则。
-    Agent 必须先读取所有准则文件，确认理解后才能开始测试。
+    Verify that the Agent understands project rules.
+    Agent must read all guideline files and confirm understanding before starting tests.
     """
-    print("\n=== 项目理解验证 ===\n")
+    print("\n=== Project Understanding Verification ===\n")
 
-    # 必须读取的文件
+    # Required files to read
     required_files = [
         "README.md",
         "GUIDELINES.md",
@@ -51,29 +51,29 @@ def verify_project_understanding():
             missing_files.append(f)
 
     if missing_files:
-        print("❌ 缺少必要文件:")
+        print("❌ Missing required files:")
         for f in missing_files:
             print(f"  - {f}")
-        print("\n请先创建这些文件，确保 Agent 理解项目规则。")
+        print("\nPlease create these files first to ensure Agent understands project rules.")
         return False
 
-    print("✅ 所有必要文件都存在")
-    print("\n请确保 Agent 已读取以下文件：")
+    print("✅ All required files exist")
+    print("\nPlease ensure Agent has read the following files:")
     for f in required_files:
         print(f"  - {f}")
 
-    print("\n关键规则摘要：")
-    print("  1. 禁止修改 .json 文件（benchmark 文件）")
-    print("  2. 只能修改 Python 代码文件")
-    print("  3. 修复后必须运行 verify_fix.py 验证")
-    print("  4. 目标是让 BrachyBot 变得更好，不是让测试通过")
+    print("\nKey Rules Summary:")
+    print("  1. DO NOT modify .json files (benchmark files)")
+    print("  2. ONLY modify Python code files")
+    print("  3. MUST run verify_fix.py after each fix")
+    print("  4. Goal is to improve BrachyBot, not just pass tests")
 
     return True
 
 
 def verify_fix_integrity():
-    """验证修复完整性：确保没有修改 benchmark 文件"""
-    print("\n=== 修复完整性验证 ===\n")
+    """Verify fix integrity: ensure no benchmark files were modified"""
+    print("\n=== Fix Integrity Verification ===\n")
 
     result = subprocess.run(
         ["git", "diff", "--name-only"],
@@ -84,26 +84,26 @@ def verify_fix_integrity():
 
     modified_files = result.stdout.strip().split("\n") if result.stdout.strip() else []
 
-    # 检查是否有 benchmark 文件被修改
+    # Check if any benchmark files were modified
     benchmark_modified = [f for f in modified_files if "benchmarks/" in f and f.endswith(".json")]
 
     if benchmark_modified:
-        print("❌ 违规：以下 benchmark 文件被修改了：")
+        print("❌ VIOLATION: The following benchmark files were modified:")
         for f in benchmark_modified:
             print(f"  - {f}")
-        print("\n正确的做法是修复代码，而不是修改测试！")
+        print("\nCorrect approach: Fix code, not tests!")
         return False
 
-    # 检查是否有代码文件被修改
+    # Check if any code files were modified
     code_modified = [f for f in modified_files if f.endswith(".py")]
 
     if code_modified:
-        print("✅ 正确：以下 Python 文件被修改了：")
+        print("✅ CORRECT: The following Python files were modified:")
         for f in code_modified:
             print(f"  - {f}")
         return True
 
-    print("⚠️  没有检测到任何文件修改")
+    print("⚠️  No file modifications detected")
     return True
 
 
@@ -734,29 +734,29 @@ if __name__ == "__main__":
     if args.stats:
         print_stats()
     elif args.verify:
-        # 验证项目理解
+        # Verify project understanding
         if verify_project_understanding():
-            print("\n✅ 项目理解验证通过，可以开始测试")
+            print("\n✅ Project understanding verified, ready to test")
         else:
-            print("\n❌ 项目理解验证失败，请先读取所有准则文件")
+            print("\n❌ Project understanding verification failed, please read all guidelines first")
             sys.exit(1)
     elif args.check_fix:
-        # 验证修复完整性
+        # Verify fix integrity
         if verify_fix_integrity():
-            print("\n✅ 修复完整性验证通过")
+            print("\n✅ Fix integrity verified")
         else:
-            print("\n❌ 修复完整性验证失败")
+            print("\n❌ Fix integrity verification failed")
             sys.exit(1)
     elif args.all:
-        # 先验证项目理解
+        # Verify project understanding first
         if not verify_project_understanding():
-            print("\n❌ 请先读取所有准则文件")
+            print("\n❌ Please read all guideline files first")
             sys.exit(1)
         run_all(verbose=args.verbose)
     elif args.category:
-        # 先验证项目理解
+        # Verify project understanding first
         if not verify_project_understanding():
-            print("\n❌ 请先读取所有准则文件")
+            print("\n❌ Please read all guideline files first")
             sys.exit(1)
         run_category(args.category, verbose=args.verbose)
     else:
