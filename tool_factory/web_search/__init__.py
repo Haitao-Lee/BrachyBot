@@ -677,30 +677,30 @@ GitHub Integration:
     def _simplify_query(self, query: str) -> str:
         """
         Simplify search query for better results.
-        Remove extra words that might limit PubMed results.
+        Remove filler words but keep important medical/technical terms.
         """
-        # Remove common filler words
+        # Only remove conversational filler words
         filler_words = [
             '是什么', '什么是', '你知道', '告诉我', '介绍一下',
             'what is', 'who is', 'can you', 'tell me', 'explain',
-            'system', 'platform', 'tool', 'software',
-            'brachytherapy', 'radiation', 'medical', 'AI',
+            '吗', '呢', '啊', '吧',  # Chinese question particles
+            'the', 'a', 'an', 'is', 'are', 'do', 'does',  # English articles/verbs
         ]
 
-        query_lower = query.lower()
-        words = query.split()
+        # Remove filler phrases first
+        simplified = query
+        for filler in ['是什么', '什么是', '你知道', '告诉我', '介绍一下']:
+            simplified = simplified.replace(filler, '')
 
-        # Keep only the main keywords (usually the first 1-2 words)
-        # For queries like "DeepRare system brachytherapy AI", keep "DeepRare"
+        # Then split and filter individual words
+        words = simplified.split()
         main_keywords = []
         for word in words:
-            if word.lower() not in [f.lower() for f in filler_words]:
+            if word.lower() not in filler_words:
                 main_keywords.append(word)
-                if len(main_keywords) >= 3:  # Max 3 keywords
-                    break
 
-        simplified = ' '.join(main_keywords) if main_keywords else query
-        return simplified
+        simplified = ' '.join(main_keywords).strip()
+        return simplified if simplified else query
 
     def _format_results(self, results: List[Dict], query: str) -> Dict:
         """Format search results into a structured response."""
