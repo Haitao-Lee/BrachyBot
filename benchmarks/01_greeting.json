@@ -2,6 +2,7 @@
   "category": "greeting",
   "description": "Basic conversation, greetings, user personality types",
   "requires_ct": false,
+  "_comment": "IMPORTANT: These tests verify natural conversational behavior. The system should respond to greetings warmly and professionally. Do NOT expect tool calls for simple greetings - the system should answer directly from its personality and knowledge.",
   "cases": [
     {
       "id": "Q0001",

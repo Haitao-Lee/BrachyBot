@@ -1,0 +1,98 @@
+{
+  "category": "performance_tracker",
+  "description": "Performance tracker tests - verify the system can log sessions, show trends, and provide improvement suggestions",
+  "requires_ct": false,
+  "_comment": "IMPORTANT: These tests verify that the system correctly tracks performance and provides improvement suggestions. The system should use the performance_tracker tool when users ask about performance. Do NOT expect tool names in responses - expect performance data and suggestions.",
+  "cases": [
+    {
+      "id": "PT001",
+      "input": "Show me the performance dashboard",
+      "expected_keywords": ["performance", "dashboard"],
+      "forbidden_keywords": ["performance_tracker"],
+      "difficulty": "easy",
+      "user_type": "experienced",
+      "_comment": "User asks for performance dashboard. System should present performance metrics."
+    },
+    {
+      "id": "PT002",
+      "input": "What are the performance trends over time?",
+      "expected_keywords": ["performance", "trends"],
+      "forbidden_keywords": ["performance_tracker"],
+      "difficulty": "medium",
+      "user_type": "experienced",
+      "_comment": "User asks about trends. System should present trend analysis."
+    },
+    {
+      "id": "PT003",
+      "input": "Give me improvement suggestions based on past performance",
+      "expected_keywords": ["improvement", "suggestions"],
+      "forbidden_keywords": ["performance_tracker"],
+      "difficulty": "medium",
+      "user_type": "experienced",
+      "_comment": "User asks for improvement suggestions. System should provide actionable suggestions."
+    },
+    {
+      "id": "PT004",
+      "input": "Log this session: prostate case, plan score 85, V100 95%",
+      "expected_keywords": ["log", "session", "prostate"],
+      "forbidden_keywords": ["performance_tracker"],
+      "difficulty": "medium",
+      "user_type": "experienced",
+      "_comment": "User asks to log a session. System should confirm the logging action."
+    },
+    {
+      "id": "PT005",
+      "input": "记录用户反馈：这个方案很好，评分5分",
+      "expected_keywords": ["记录", "反馈"],
+      "forbidden_keywords": ["performance_tracker"],
+      "difficulty": "medium",
+      "user_type": "chinese",
+      "_comment": "Chinese user asks to log feedback. System should respond in Chinese."
+    },
+    {
+      "id": "PT006",
+      "input": "How many sessions have we completed?",
+      "expected_keywords": ["session", "completed"],
+      "forbidden_keywords": ["performance_tracker"],
+      "difficulty": "easy",
+      "user_type": "experienced",
+      "_comment": "User asks about session count. System should present session statistics."
+    },
+    {
+      "id": "PT007",
+      "input": "What's our average plan score?",
+      "expected_keywords": ["average", "score"],
+      "forbidden_keywords": ["performance_tracker"],
+      "difficulty": "easy",
+      "user_type": "experienced",
+      "_comment": "User asks about average score. System should present the average."
+    },
+    {
+      "id": "PT008",
+      "input": "Log an error: dose engine timeout",
+      "expected_keywords": ["log", "error"],
+      "forbidden_keywords": ["performance_tracker"],
+      "difficulty": "medium",
+      "user_type": "experienced",
+      "_comment": "User asks to log an error. System should confirm the error logging."
+    },
+    {
+      "id": "PT009",
+      "input": "Show me evolution metrics",
+      "expected_keywords": ["evolution", "metrics"],
+      "forbidden_keywords": ["performance_tracker"],
+      "difficulty": "hard",
+      "user_type": "experienced",
+      "_comment": "User asks about evolution metrics. System should present self-evolution data."
+    },
+    {
+      "id": "PT010",
+      "input": "How can we improve the system performance?",
+      "expected_keywords": ["improve", "performance"],
+      "forbidden_keywords": ["performance_tracker"],
+      "difficulty": "medium",
+      "user_type": "experienced",
+      "_comment": "User asks for improvement suggestions. System should provide actionable recommendations."
+    }
+  ]
+}

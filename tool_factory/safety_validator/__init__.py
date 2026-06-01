@@ -25,14 +25,18 @@ Capabilities:
 - pre_export: Pre-export safety gate (all checks combined)"""
 
     input_schema = {
-        "action": {
-            "type": "string",
-            "description": "Action: validate, check_dose, check_coverage, check_hotspots, pre_export",
-            "enum": ["validate", "check_dose", "check_coverage", "check_hotspots", "pre_export"]
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "Action: validate, check_dose, check_coverage, check_hotspots, pre_export",
+                "enum": ["validate", "check_dose", "check_coverage", "check_hotspots", "pre_export"]
+            },
+            "plan": {"type": "object", "description": "Plan data with metrics"},
+            "organ": {"type": "string", "description": "Specific organ to check (for check_dose)"},
+            "strict": {"type": "boolean", "description": "Use strict mode (default: false)"},
         },
-        "plan": {"type": "object", "description": "Plan data with metrics"},
-        "organ": {"type": "string", "description": "Specific organ to check (for check_dose)"},
-        "strict": {"type": "boolean", "description": "Use strict mode (default: false)"},
+        "required": ["action"],
     }
     output_schema = {
         "success": {"type": "boolean"},
