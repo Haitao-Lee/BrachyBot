@@ -40,7 +40,7 @@
 
 ## 🌟 Overview
 
-BrachyBot is a **closed-loop, self-evolving AI agent** for brachytherapy (近距离放射治疗) treatment planning. It combines:
+BrachyBot is a **closed-loop, self-evolving AI agent** for brachytherapy treatment planning. It combines:
 
 - **LLM-driven decision making** with function calling across 15 LLM providers
 - **Layered memory system** (L0-L4) for contextual information density maximization
@@ -62,10 +62,10 @@ Seed Placement → Dose Calculation → Dose Evaluation → DICOM Export
 ```
 
 Supporting:
-- **Prostate** brachytherapy (前列腺癌近距离治疗)
-- **Pancreas** brachytherapy (胰腺癌近距离治疗)
-- **Intra-operative replanning** (术中重规划)
-- **Plan quality optimization** (计划质量优化)
+- **Prostate** brachytherapy
+- **Pancreas** brachytherapy
+- **Intra-operative replanning**
+- **Plan quality optimization**
 
 ### 📊 Project Statistics
 
@@ -539,11 +539,11 @@ print(f"D90: {result['metrics']['d90']:.2f}Gy")
 print(f"V100: {result['metrics']['v100']:.1%}")
 
 # Natural language chat (auto-triggers self-evolution)
-response = agent.chat("为胰腺癌患者生成治疗计划")
+response = agent.chat("Generate treatment plan for pancreatic cancer patient")
 print(response)
 
 # Chat with execution trace
-trace = agent.chat_with_trace("分割CTV和OAR，然后评估剂量")
+trace = agent.chat_with_trace("Segment CTV and OAR, then evaluate dose")
 for step in trace["steps"]:
     print(f"[{step['status']}] {step['title']}: {step['content'][:100]}")
 
@@ -581,15 +581,15 @@ python brachybot.py --server --port 8080
 
 | Command | Action | Auto-Triggers |
 |---------|--------|---------------|
-| `分割CTV` | CTV segmentation | Experience recording, SOP matching |
-| `分割OAR` | OAR segmentation | Experience recording, SOP matching |
-| `生成治疗计划` | Full planning pipeline | Reflexion, skill crystallization |
-| `RL规划` | RL-based seed planning | Parameter optimization |
-| `评估剂量` | Dose evaluation | Fact extraction, user profiling |
-| `优化计划` | Plan optimization suggestions | Failure pattern analysis |
-| `总结经验` | Manual evolution trigger | Full evolution cycle |
-| `写工具` | Create new tool via LLM | Tool code generation |
-| `状态` | Agent status report | Memory stats display |
+| `Segment CTV` | CTV segmentation | Experience recording, SOP matching |
+| `Segment OAR` | OAR segmentation | Experience recording, SOP matching |
+| `Generate plan` | Full planning pipeline | Reflexion, skill crystallization |
+| `RL planning` | RL-based seed planning | Parameter optimization |
+| `Evaluate dose` | Dose evaluation | Fact extraction, user profiling |
+| `Optimize plan` | Plan optimization suggestions | Failure pattern analysis |
+| `Self-evolve` | Manual evolution trigger | Full evolution cycle |
+| `Create tool` | Create new tool via LLM | Tool code generation |
+| `Status` | Agent status report | Memory stats display |
 
 ### Automatic Self-Evolution Flow
 
@@ -608,13 +608,13 @@ python brachybot.py --server --port 8080
 ### Example Session
 
 ```
-User: 分割CTV和OAR
+User: Segment CTV and OAR
 Agent: [Memory] Matched SOP: PancreasFull (85% success): CTV→OAR→Seed→Dose
        [Memory] Crystallized skill: Auto_Pancreas_COS (92%): CTV→OAR→Seed→Dose
        [Tool] CTV segmentation completed. CTV voxels: 15,234
        [Tool] OAR segmentation completed. Organs: stomach, duodenum, kidneys
 
-User: 生成治疗计划
+User: Generate treatment plan
 Agent: [Memory] Past failure warning: dose_evaluation - D90 too low
        [Memory] Lesson: Verify preconditions before calling dose_evaluation
        [Tool] Trajectory planning: 12 candidates generated
@@ -623,7 +623,7 @@ Agent: [Memory] Past failure warning: dose_evaluation - D90 too low
        [Critique] Multi-Agent Review: APPROVE (score: 9.2/10)
        [Evolution] Auto-evolution triggered: 1 new skill created
 
-User: 总结经验
+User: Self-evolve
 Agent: Self-evolution cycle complete:
        - New skills: 2 (Auto_Prostate_Quick, Auto_Pancreas_Detailed)
        - Lessons learned: 3
@@ -1046,16 +1046,16 @@ Skills are now defined in Markdown files with YAML frontmatter (Claude Code styl
 
 ```
 skills/markdown/
-├── standard_planning.md      # 标准治疗计划
-├── rl_planning.md            # 强化学习计划
-├── pancreas_segmentation.md  # 胰腺分割
-├── prostate_segmentation.md  # 前列腺分割
-├── generic_segmentation.md   # 通用分割
-├── dose_evaluation.md        # 剂量评估
-├── viewer_control.md         # 查看器控制
-├── dicom_export.md           # DICOM导出
-├── report_generation.md      # 报告生成
-└── intraop_replan.md         # 术中重新计划
+├── standard_planning.md      # Standard treatment planning
+├── rl_planning.md            # Reinforcement learning planning
+├── pancreas_segmentation.md  # Pancreas segmentation
+├── prostate_segmentation.md  # Prostate segmentation
+├── generic_segmentation.md   # Generic segmentation
+├── dose_evaluation.md        # Dose evaluation
+├── viewer_control.md         # Viewer control
+├── dicom_export.md           # DICOM export
+├── report_generation.md      # Report generation
+└── intraop_replan.md         # Intra-operative replanning
 ```
 
 **Skill Format Example**:
@@ -1065,8 +1065,8 @@ name: standard_planning
 description: Standard brachytherapy treatment planning workflow
 category: planning
 triggers:
-  - 规划
-  - 标准计划
+  - plan
+  - standard plan
   - treatment plan
 tool_sequence:
   - ctv_segmentation
