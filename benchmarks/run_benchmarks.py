@@ -213,14 +213,53 @@ def score_response(response: str, case: dict) -> Tuple[float, dict, List[str]]:
     accuracy_score = max(0.0, accuracy_score)
     scores["accuracy"] = accuracy_score
 
-    # 5. UX quality (10%) - response should be well-formatted
+    # 5. UX quality (10%) - response should be well-formatted and appropriately concise
     ux_score = 1.0
-    if len(response) > 5000:
-        ux_score = 0.7  # Too verbose
-        issues.append("Response too verbose")
-    elif len(response) < 50:
-        ux_score = 0.5  # Too brief
-        issues.append("Response too brief")
+    difficulty = case.get("difficulty", "medium")
+
+    # Adjust expected length based on question difficulty
+    if difficulty == "easy":
+        # Easy questions should have short, direct answers
+        if len(response) > 1000:
+            ux_score = 0.5  # Too verbose for easy question
+            issues.append(f"Too verbose for easy question: {len(response)} chars")
+        elif len(response) < 30:
+            ux_score = 0.5  # Too brief
+            issues.append(f"Too brief: {len(response)} chars")
+    elif difficulty == "medium":
+        # Medium questions can have moderate answers
+        if len(response) > 2000:
+            ux_score = 0.6  # Too verbose for medium question
+            issues.append(f"Too verbose for medium question: {len(response)} chars")
+        elif len(response) < 50:
+            ux_score = 0.5  # Too brief
+            issues.append(f"Too brief: {len(response)} chars")
+    else:  # hard
+        # Hard questions can have longer answers
+        if len(response) > 5000:
+            ux_score = 0.7  # Too verbose even for hard question
+            issues.append(f"Too verbose: {len(response)} chars")
+        elif len(response) < 100:
+            ux_score = 0.5  # Too brief for hard question
+            issues.append(f"Too brief for hard question: {len(response)} chars")
+
+    # Check for filler content that should be penalized
+    filler_phrases = [
+        "great question",
+        "that's an important",
+        "let me know if you have",
+        "i hope this helps",
+        "is there anything else",
+        "do you have any other",
+        "feel free to ask",
+        "i'd be happy to help",
+    ]
+    for filler in filler_phrases:
+        if filler in resp_lower:
+            ux_score -= 0.1
+            issues.append(f"Filler content: '{filler}'")
+
+    ux_score = max(0.0, ux_score)
     scores["ux"] = ux_score
 
     # Calculate total score
