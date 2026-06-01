@@ -1,0 +1,196 @@
+{
+  "category": "multi_turn",
+  "description": "Multi-turn conversation tests - context continuity across turns",
+  "requires_ct": false,
+  "_comment": "Tests the system's ability to maintain context across multiple conversation turns. Each turn builds on previous context.",
+  "cases": [
+    {
+      "id": "MT001",
+      "type": "multi_turn",
+      "description": "Basic dose question followed by follow-up",
+      "turns": [
+        {
+          "input": "What is the prescription dose for I-125 prostate brachytherapy?",
+          "expected_keywords": ["145", "Gy"],
+          "forbidden_keywords": ["clinical_kb"],
+          "pass_threshold": 0.6,
+          "difficulty": "easy"
+        },
+        {
+          "input": "And what about for Pd-103?",
+          "expected_keywords": ["Pd-103", "dose", "Gy"],
+          "forbidden_keywords": ["clinical_kb"],
+          "pass_threshold": 0.6,
+          "difficulty": "medium",
+          "_comment": "Context-dependent: 'what about' refers to prescription dose from previous turn"
+        }
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "user_type": "experienced",
+      "_comment": "Tests context continuity: second question refers to 'prescription dose' from first question"
+    },
+    {
+      "id": "MT002",
+      "type": "multi_turn",
+      "description": "Plan evaluation workflow",
+      "turns": [
+        {
+          "input": "What V100 should I aim for in prostate brachytherapy?",
+          "expected_keywords": ["V100", "95"],
+          "pass_threshold": 0.6,
+          "difficulty": "easy"
+        },
+        {
+          "input": "My plan has V100=93%, is that acceptable?",
+          "expected_keywords": ["93", "V100", "acceptable"],
+          "pass_threshold": 0.6,
+          "difficulty": "medium",
+          "_comment": "Uses the V100 target from previous turn to evaluate a specific plan"
+        },
+        {
+          "input": "What can I do to improve it?",
+          "expected_keywords": ["improve", "coverage", "seed"],
+          "pass_threshold": 0.5,
+          "difficulty": "medium",
+          "_comment": "Follow-up on how to improve the plan with V100=93%"
+        }
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "hard",
+      "user_type": "experienced",
+      "_comment": "Tests plan evaluation workflow: target definition → evaluation → improvement"
+    },
+    {
+      "id": "MT003",
+      "type": "multi_turn",
+      "description": "OAR constraint lookup and application",
+      "turns": [
+        {
+          "input": "What is the rectal dose constraint for prostate brachytherapy?",
+          "expected_keywords": ["rectum", "dose", "constraint"],
+          "pass_threshold": 0.6,
+          "difficulty": "easy"
+        },
+        {
+          "input": "My plan has D2cc=75 Gy for the rectum. Is that safe?",
+          "expected_keywords": ["75", "rectum", "D2cc"],
+          "pass_threshold": 0.6,
+          "difficulty": "medium",
+          "_comment": "Applies the constraint from previous turn to evaluate a specific case"
+        }
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "user_type": "experienced",
+      "_comment": "Tests constraint lookup and application workflow"
+    },
+    {
+      "id": "MT004",
+      "type": "multi_turn",
+      "description": "Language consistency across turns",
+      "turns": [
+        {
+          "input": "前列腺癌的处方剂量是多少？",
+          "expected_keywords": ["145", "Gy", "前列腺"],
+          "pass_threshold": 0.6,
+          "difficulty": "easy"
+        },
+        {
+          "input": "那V100目标呢？",
+          "expected_keywords": ["V100", "95"],
+          "pass_threshold": 0.6,
+          "difficulty": "easy",
+          "_comment": "Should respond in Chinese (matching first turn's language)"
+        }
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "user_type": "chinese",
+      "_comment": "Tests language consistency: if user writes in Chinese, all responses should be in Chinese"
+    },
+    {
+      "id": "MT005",
+      "type": "multi_turn",
+      "description": "Honesty across turns - admitting uncertainty",
+      "turns": [
+        {
+          "input": "What is the prescription dose for I-125 prostate brachytherapy?",
+          "expected_keywords": ["145", "Gy"],
+          "forbidden_keywords": ["I don't know"],
+          "pass_threshold": 0.6,
+          "difficulty": "easy",
+          "_comment": "Should answer confidently - this is well-established"
+        },
+        {
+          "input": "What about the 5-year survival rate at Memorial Hospital?",
+          "expected_keywords": ["don't have", "not available", "cannot provide"],
+          "forbidden_keywords": ["85%", "72%", "68%"],
+          "pass_threshold": 0.6,
+          "difficulty": "hard",
+          "_comment": "Should admit uncertainty - specific hospital data not available"
+        }
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "hard",
+      "user_type": "experienced",
+      "_comment": "Tests honesty consistency: confident on known facts, honest about unknowns"
+    },
+    {
+      "id": "MT006",
+      "type": "multi_turn",
+      "description": "Conciseness across turns",
+      "turns": [
+        {
+          "input": "What is V100?",
+          "expected_keywords": ["V100", "coverage"],
+          "pass_threshold": 0.6,
+          "difficulty": "easy",
+          "max_response_time_ms": 5000
+        },
+        {
+          "input": "And D90?",
+          "expected_keywords": ["D90", "dose"],
+          "pass_threshold": 0.6,
+          "difficulty": "easy",
+          "_comment": "Should be concise - just define D90, don't repeat V100 info"
+        }
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "user_type": "beginner",
+      "_comment": "Tests conciseness: each turn should answer only what was asked"
+    },
+    {
+      "id": "MT007",
+      "type": "multi_turn",
+      "description": "Context switching - changing topic",
+      "turns": [
+        {
+          "input": "What is the prostate dose constraint?",
+          "expected_keywords": ["145", "Gy", "prostate"],
+          "pass_threshold": 0.6,
+          "difficulty": "easy"
+        },
+        {
+          "input": "Now let's talk about cervical cancer. What is the HDR fractionation?",
+          "expected_keywords": ["HDR", "cervical", "fraction"],
+          "pass_threshold": 0.6,
+          "difficulty": "medium",
+          "_comment": "Explicitly switches topic - should not reference prostate"
+        },
+        {
+          "input": "What about the OAR constraints for that?",
+          "expected_keywords": ["OAR", "cervical", "constraint"],
+          "pass_threshold": 0.5,
+          "difficulty": "medium",
+          "_comment": "'that' refers to cervical cancer HDR from previous turn, not prostate"
+        }
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "hard",
+      "user_type": "experienced",
+      "_comment": "Tests context switching: system should track the current topic"
+    }
+  ]
+}

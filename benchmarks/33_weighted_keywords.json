@@ -1,0 +1,57 @@
+{
+  "category": "weighted_keywords",
+  "description": "Tests with weighted keywords - important terms have higher weight",
+  "requires_ct": false,
+  "_comment": "Demonstrates weighted keyword scoring. Important clinical values have higher weight than general terms.",
+  "cases": [
+    {
+      "id": "WK001",
+      "input": "What is the prescription dose for I-125 prostate brachytherapy?",
+      "expected_keywords": {
+        "145": {"weight": 0.5, "required": true, "_comment": "The exact dose value - most important"},
+        "Gy": {"weight": 0.3, "required": true, "_comment": "Unit of measurement - important"},
+        "I-125": {"weight": 0.1, "required": false, "_comment": "Isotope - helpful but not critical"},
+        "prostate": {"weight": 0.1, "required": false, "_comment": "Site - helpful but not critical"}
+      },
+      "forbidden_keywords": ["clinical_kb", "let me search"],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "user_type": "beginner",
+      "_comment": "Weighted test: '145' and 'Gy' are most important. Missing 'I-125' is acceptable."
+    },
+    {
+      "id": "WK002",
+      "input": "What V100 target should I aim for in prostate brachytherapy?",
+      "expected_keywords": {
+        "V100": {"weight": 0.3, "required": true},
+        "95": {"weight": 0.4, "required": true, "_comment": "The percentage value - critical"},
+        "prostate": {"weight": 0.1, "required": false},
+        "coverage": {"weight": 0.2, "required": false}
+      },
+      "forbidden_keywords": ["clinical_kb"],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "user_type": "beginner",
+      "_comment": "Weighted test: '95' percentage is most important."
+    },
+    {
+      "id": "WK003",
+      "input": "What are the OAR constraints for rectum in prostate brachytherapy?",
+      "expected_keywords": {
+        "rectum": {"weight": 0.3, "required": true},
+        "D2cc": {"weight": 0.3, "required": true, "_comment": "Specific metric - important"},
+        "Gy": {"weight": 0.2, "required": true},
+        "constraint": {"weight": 0.2, "required": false}
+      },
+      "equivalent_terms": {
+        "D2cc": ["D2 cm³", "D2 cubic centimeters", "D2cc max"],
+        "Gy": ["Gray", "gray"]
+      },
+      "forbidden_keywords": ["clinical_kb"],
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "user_type": "experienced",
+      "_comment": "Weighted test with equivalent terms. 'D2cc' can also match 'D2 cm³'."
+    }
+  ]
+}
