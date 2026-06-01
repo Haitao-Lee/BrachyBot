@@ -2144,135 +2144,16 @@ class BrachyAgent:
         ]
         _is_simple_greeting = any(re.match(p, message.lower().strip()) for p in _simple_patterns)
 
-        # If we executed tools but got no text response, or response is too short for a clinical question,
-        # call LLM one more time for a comprehensive summary
-        # BUT: Never summarize simple greetings - they should get direct responses
-        logger.info(f"Summary check: final_response={bool(final_response)}, tools_executed={tools_executed}, len={len(final_response) if final_response else 0}, is_greeting={_is_simple_greeting}")
-        _needs_summary = (not final_response and tools_executed) or \
-                        (final_response and len(final_response) < 500 and _no_files_loaded and not _is_simple_greeting)
-        if _needs_summary:
-            # Clear short response so summary replaces it
-            if final_response and len(final_response) < 500:
-                final_response = ""
-            # Yield a text_chunk to keep frontend alive during summary LLM call
-            yield yield_event("text_chunk", {"text": "\n\n"})
-            step_id_ref[0] += 1
-            summary_step = {
-                "id": step_id_ref[0],
-                "type": "thinking",
-                "title": "Generating summary...",
-                "content": "Asking AI to summarize tool results...",
-                "status": "pending",
-            }
-            steps.append(summary_step)
-            yield yield_event("step", summary_step)
-
-            try:
-                # Build focused summary messages - ONLY include meaningful content
-                # CRITICAL: Do NOT include system prompt, internal rules, or old context
-                summary_messages = [{"role": "system", "content": (
-                    "You are a medical AI assistant for brachytherapy. "
-                    "Respond in plain text only. Be concise. "
-                    "Answer the user's question based on the information provided. "
-                    "Use the same language as the user."
-                )}]
-
-                # Only include the user's original message
-                summary_messages.append({"role": "user", "content": message})
-
-                # Include ONLY meaningful tool results (filtered)
-                if self.memory.tool_results:
-                    tool_facts = []
-                    for tool_result in self.memory.tool_results[-5:]:
-                        tool_name = tool_result.get("tool", "")
-                        success = tool_result.get("success", False)
-                        result_msg = tool_result.get("message", "")
-
-                        # Filter out internal/system content
-                        if not success:
-                            continue
-                        if not result_msg or len(result_msg) < 20:
-                            continue
-                        # Skip if contains system prompt indicators
-                        if any(x in result_msg.lower() for x in ["you are", "you must", "tool usage", "system prompt", "critical:", "never "]):
-                            continue
-
-                        # Extract only the factual content
-                        tool_facts.append(f"[{tool_name}]: {result_msg[:300]}")
-
-                    if tool_facts:
-                        summary_messages.append({
-                            "role": "user",
-                            "content": "Relevant information:\n" + "\n".join(tool_facts)
-                        })
-
-                summary_messages.append({
-                    "role": "user",
-                    "content": "Now answer the user's question concisely based on the information above."
-                })
-                # Use non-streaming API for more reliable text generation
-                llm = self.brain_router._select_llm(None, "general")
-                if llm and hasattr(llm, '_chat'):
-                    response = llm._chat(messages=summary_messages, tools=None)
-                    # Track usage from summary call
-                    if response and response.usage:
-                        total_usage["prompt_tokens"] += response.usage.get("prompt_tokens", 0)
-                        total_usage["completion_tokens"] += response.usage.get("completion_tokens", 0)
-                        total_usage["total_tokens"] += response.usage.get("total_tokens", 0)
-                    llm_calls += 1
-                    logger.info(f"Summary response: content_len={len(response.content) if response.content else 0}, tool_calls={len(response.tool_calls) if response.tool_calls else 0}")
-                    if response and response.content:
-                        # Clean the response before yielding to frontend
-                        cleaned = self._clean_response_text(response.content)
-                        if cleaned:
-                            final_response = cleaned
-                            yield yield_event("text_chunk", {"text": cleaned})
-                        else:
-                            final_response = response.content
-                    elif response and response.tool_calls:
-                        # If LLM still returns tool calls, execute them and get result
-                        for tc in response.tool_calls:
-                            tn = tc.get("function", {}).get("name", "")
-                            raw_args = tc.get("function", {}).get("arguments", "{}")
-                            args = json.loads(raw_args) if isinstance(raw_args, str) and raw_args else {}
-                            if tn in self.registry.tool_names:
-                                result = self._execute_tool_with_memory(tn, args)
-                                result_text = result.message if result.success else f"Error: {result.error}"
-                            else:
-                                result_text = f"Unknown tool: {tn}"
-                            tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
-                            summary_messages.append({"role": "assistant", "content": [{"type": "tool_use", "id": tool_id, "name": tn, "input": args}]})
-                            summary_messages.append({"role": "user", "content": [{"type": "tool_result", "tool_use_id": tool_id, "content": result_text[:2000]}]})
-                        # Try once more with the tool results
-                        response2 = llm._chat(messages=summary_messages, tools=None)
-                        if response2 and response2.content:
-                            final_response = response2.content
-                            cleaned2 = self._clean_response_text(response2.content)
-                            if cleaned2:
-                                yield yield_event("text_chunk", {"text": cleaned2})
-                elif llm and hasattr(llm, 'chat_messages_stream'):
-                    # Fallback to streaming
-                    summary_content = ""
-                    summary_prev_len = 0
-                    for chunk in llm.chat_messages_stream(messages=summary_messages, tools=None):
-                        if isinstance(chunk, str):
-                            summary_content += chunk
-                            cleaned_content = self._clean_response_text(summary_content)
-                            if cleaned_content and len(cleaned_content) > summary_prev_len:
-                                new_text = cleaned_content[summary_prev_len:]
-                                if not re.match(r'(\[\s*\{\s*["\']type["\']\s*:\s*["\']tool_use|```tool_call|<minimax:tool_call>|\[\s*TOOL_CALL\s*\])', new_text):
-                                    summary_prev_len = len(cleaned_content)
-                                    yield yield_event("text_chunk", {"text": new_text})
-                        elif isinstance(chunk, dict) and chunk.get("type") == "final":
-                            break
-                    if summary_content:
-                        final_response = summary_content
-            except Exception as e:
-                logger.error(f"Summary LLM call failed: {e}")
-
-            summary_step["status"] = "done"
-            summary_step["content"] = "Summary generated" if final_response else "No summary"
-            yield yield_event("step", summary_step)
+        # SIMPLE FALLBACK: Only if tools executed but LLM generated NO text response
+        # This should rarely happen - the LLM should always generate text after tool calls
+        if not final_response and tools_executed:
+            logger.info("Tools executed but no text response - generating simple fallback")
+            # Build a minimal response based on tool results
+            tool_names = [r.get("tool", "") for r in self.memory.tool_results[-5:] if r.get("success")]
+            if tool_names:
+                final_response = f"已完成操作: {', '.join(tool_names)}。请问还有什么需要帮助的？"
+            else:
+                final_response = "操作已完成。请问还有什么需要帮助的？"
 
         if final_response:
             raw_final = final_response
