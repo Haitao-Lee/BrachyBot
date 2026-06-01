@@ -266,6 +266,9 @@ class SmartContextManager:
 
     def add_message(self, role: str, content: str) -> Message:
         """Add a message to the conversation with metadata extraction."""
+        # Log for debugging
+        logger.debug(f"SmartContext.add_message: role={role}, content_len={len(content)}, total_messages={len(self.messages)}")
+
         # Extract entities and topics
         entities = self._extract_entities(content)
         topics = self._detect_topics(content)
@@ -362,6 +365,10 @@ class SmartContextManager:
         """
         if max_tokens is None:
             max_tokens = self.max_context_tokens
+
+        # If no messages, return empty
+        if not self.messages:
+            return []
 
         # Extract entities and topics from current query
         current_entities = self._extract_entities(current_query)
@@ -582,12 +589,13 @@ class SmartContextManager:
         return summaries
 
     def clear(self):
-        """Clear all context."""
-        self.messages.clear()
-        self.entities.clear()
-        self.topics.clear()
+        """Clear all context completely."""
+        self.messages = []
+        self.entities = {}
+        self.topics = {}
         self.current_topic = None
         self._message_counter = 0
+        logger.info("SmartContext cleared - all messages and entities removed")
 
     def to_dict(self) -> dict:
         """Export state to dictionary."""
