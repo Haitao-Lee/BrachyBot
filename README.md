@@ -30,6 +30,7 @@
 - [API Reference](#-api-reference)
 - [Configuration](#-configuration)
 - [Web Interface](#-web-interface)
+- [Code Quality](#-code-quality)
 - [Testing](#-testing)
 - [Research & Citations](#-research--citations)
 - [Acknowledgements](#-acknowledgements)
@@ -41,7 +42,7 @@
 
 BrachyBot is a **closed-loop, self-evolving AI agent** for brachytherapy (近距离放射治疗) treatment planning. It combines:
 
-- **LLM-driven decision making** with function calling across 14+ LLM providers
+- **LLM-driven decision making** with function calling across 15 LLM providers
 - **Layered memory system** (L0-L4) for contextual information density maximization
 - **Trajectory-based self-reflection** (Reflexion pattern) for continuous learning
 - **Skill crystallization pipeline** that converts successful trajectories into reusable SOPs
@@ -66,6 +67,19 @@ Supporting:
 - **Intra-operative replanning** (术中重规划)
 - **Plan quality optimization** (计划质量优化)
 
+### 📊 Project Statistics
+
+| Metric | Value |
+|--------|-------|
+| Python files | ~290 |
+| Core code lines | ~60,000+ |
+| LLM providers | 15 |
+| Medical AI tools | 24 packages (50+ tools) |
+| Skill templates | 28+ |
+| VoCo model weights | 18 datasets |
+| Benchmark test cases | 889 (32 categories) |
+| Documentation files | 15+ markdown |
+
 ---
 
 ## 📸 Screenshot
@@ -84,7 +98,7 @@ Supporting:
 │                                                                         │
 │  ┌─────────────┐    ┌──────────────┐    ┌──────────────────────────┐   │
 │  │  LLM Brain  │───▶│ Tool Factory │───▶│  Medical AI Tools        │   │
-│  │  (14 prov.) │    │  (40+ tools) │    │  CT/CTV/OAR/Dose/Plan    │   │
+│  │  (15 prov.) │    │  (50+ tools) │    │  CT/CTV/OAR/Dose/Plan    │   │
 │  └──────┬──────┘    └──────┬───────┘    └──────────────────────────┘   │
 │         │                  │                                           │
 │         ▼                  ▼                                           │
@@ -129,7 +143,7 @@ Supporting:
 │  │                                                               │   │
 │  │  ┌─────────────────┐  ┌─────────────────┐                    │   │
 │  │  │ AgentMemory     │  │ ToolRegistry    │                    │   │
-│  │  │ - patient_data  │  │ - 40+ tools     │                    │   │
+│  │  │ - patient_data  │  │ - 50+ tools     │                    │   │
 │  │  │ - planning_res  │  │ - name-based    │                    │   │
 │  │  │ - conversation  │  │ - auto-inject   │                    │   │
 │  │  └────────┬────────┘  └────────┬────────┘                    │   │
@@ -387,7 +401,7 @@ Task: "Generate prostate plan"
 ## ✨ Key Features
 
 ### 🧠 LLM-Driven Decision Making
-- **14 LLM providers**: OpenAI, Anthropic, OpenRouter, Qwen, Kimi, MiniMax, GLM, Gemini, Groq, Grok, Mimo, DeepSeek, Tencent, Ollama, vLLM
+- **15 LLM providers**: OpenAI, Anthropic, OpenRouter, Qwen, Kimi, MiniMax, GLM, Gemini, Groq, Grok, Mimo, DeepSeek, Tencent, Ollama, vLLM
 - **Function calling**: LLM discovers and invokes tools via `tool_call` blocks
 - **Fallback mode**: Rule-based keyword matching when LLM unavailable
 
@@ -415,7 +429,13 @@ Task: "Generate prostate plan"
 - **TotalSegmentator**: 104 anatomical structures segmentation
 - **Rule-based + RL**: Dual seed planning modes
 - **DICOM Export**: RT Structure, RT Plan, RT Dose
-- **Autonomous Tool Creation**: LLM can create new tools on-demand via `code_writer`
+- **Autonomous Tool Creation**: LLM can create new tools on-demand via `tool_creator`
+- **Clinical Knowledge Base**: Dose constraints, organ tolerances, treatment protocols (`clinical_kb`)
+- **Case Memory**: Store, retrieve, and learn from past treatment plans (`case_memory`)
+- **Plan Comparator**: Multi-plan comparison, ranking, and recommendation (`plan_comparator`)
+- **Safety Validator**: Pre-export safety checks for dose constraints and coverage (`safety_validator`)
+- **Report Generator**: Clinical report generation in Markdown and JSON formats (`report_generator`)
+- **Performance Tracker**: System metrics, trends, and improvement suggestions (`performance_tracker`)
 
 ### 🎮 Interactive Viewer Control (NEW)
 - **viewer_command**: Direct LLM control of CT viewer (navigate, window/level, presets, overlays)
@@ -857,7 +877,7 @@ Agent: Self-evolution cycle complete:
 
 ## 🔧 Tool Factory
 
-### Tool Categories
+### Tool Categories (24 packages, 50+ tools)
 
 ```
 tool_factory/
@@ -915,6 +935,40 @@ tool_factory/
 │   ├── image_loader.py
 │   └── image_preprocessor.py
 │
+├── code_executor/        # Python code execution
+│
+├── filesystem_browser/   # File system navigation
+│
+├── env_manager/          # Python environment management
+│
+├── shell_executor/       # Shell command execution
+│
+├── tool_creator/         # Dynamic tool creation (self-evolution)
+│
+├── doc_reader/           # Document reading (PDF, Word, CSV, JSON)
+│
+├── ui_inspector/         # UI state inspection and component scanning
+│
+├── case_memory/          # Patient case database (NEW)
+│   └── __init__.py       # Store, retrieve, search past treatment plans
+│
+├── clinical_kb/          # Clinical knowledge base (NEW)
+│   └── __init__.py       # Dose constraints, organ tolerances, protocols
+│
+├── plan_comparator/      # Multi-plan comparison (NEW)
+│   └── __init__.py       # Compare, rank, recommend treatment plans
+│
+├── safety_validator/     # Pre-export safety checks (NEW)
+│   └── __init__.py       # Dose constraints, coverage, hotspots validation
+│
+├── report_generator/     # Clinical report generation (NEW)
+│   └── __init__.py       # Full reports, summaries, DVH analysis, export
+│
+├── performance_tracker/  # System performance tracking (NEW)
+│   └── __init__.py       # Session logging, feedback, trends, suggestions
+│
+├── viewer_command/       # CT viewer control
+│
 └── output/               # Export tools
     ├── dicom_rt_exporter.py
     ├── dose_exporter.py
@@ -949,7 +1003,7 @@ class ToolResult:
 
 ## 🧠 Brain System
 
-### LLM Providers (14 supported)
+### LLM Providers (15 supported)
 
 | Provider | Environment Variable | Model Options |
 |----------|---------------------|---------------|
@@ -958,7 +1012,7 @@ class ToolResult:
 | OpenRouter | `OPENROUTER_API_KEY` | 200+ models |
 | Qwen | `QWEN_API_KEY` | qwen-plus, qwen-max |
 | Kimi | `KIMI_API_KEY` | moonshot-v1 |
-| MiniMax | `MINIMAX_API_KEY` | minimax-01 |
+| MiniMax | `MINIMAX_API_KEY` | MiniMax-M2.7-highspeed (default) |
 | GLM | `GLM_API_KEY` | glm-4 |
 | Gemini | `GEMINI_API_KEY` | gemini-2.0-flash |
 | Groq | `GROQ_API_KEY` | llama-3, mixtral |
@@ -1224,7 +1278,78 @@ Single-page HTML interface at `web/app/index.html`:
 
 ---
 
+## 🔍 Code Quality
+
+### Code Review (2026-06-01)
+
+A comprehensive code review was conducted across the core modules with **4 rounds of auditing**:
+
+| Round | Issues Found | Issues Fixed | Key Findings |
+|-------|-------------|-------------|--------------|
+| Round 1 | 12 | 11 | Streaming filter, path validation, duplicate imports |
+| Round 2 | 2 | 2 | VoCo MODEL_PATH, if/if vs if/elif |
+| Round 3 | 7 | 6 | Path traversal, MiniMax format, oar_mask, color collision |
+| Round 4 | 5 | 5 | Missing tools, greedy regex, dead code |
+| **Total** | **26** | **24** | |
+
+**Critical fixes applied:**
+- **Path validation**: `_validate_path()` checks `..` before `normpath` resolves them
+- **Path traversal**: Symlink attacks prevented via `os.path.realpath()` resolution
+- **Axis consistency**: All viewer endpoints now use the same anatomical axis mapping
+- **Streaming filter**: Regex patterns refined to avoid filtering legitimate user text
+- **MiniMax format**: Non-streaming path now supports OpenAI format tool_calls
+- **OAR mask**: Correctly assigns SimpleITK image object instead of string path
+- **Color collision**: Golden-ratio HSV distribution for 57+ organs without modulo collision
+
+**Code cleanup:**
+- Removed 6 duplicate `import re as _re` statements across function bodies
+- Extracted `_normalize_tool_params()` method to eliminate duplicate parameter alias logic
+- Added lazy cleanup for rate-limit storage to prevent memory leaks
+- LLM streaming responses now extract usage statistics from API responses
+- Moved `_label_color` function to module level (was redefined per request)
+- Removed 5 missing tool registrations and phantom system prompt references
+
+See [`docs/CODE_REVIEW_REPORT.md`](docs/CODE_REVIEW_REPORT.md) for the full audit report.
+
+---
+
 ## 🧪 Testing
+
+### Benchmark Suite (889 test cases, 32 categories)
+
+```bash
+# Show benchmark statistics
+python web/test/benchmarks/run_benchmarks.py --stats
+
+# Run specific category
+python web/test/benchmarks/run_benchmarks.py --category greeting
+
+# Run all benchmarks
+python web/test/benchmarks/run_benchmarks.py --all
+
+# Run with CT upload (requires Playwright)
+python web/test/benchmarks/run_benchmarks.py --all --upload-ct
+
+# Run new tool tests
+python web/test/benchmarks/run_benchmarks.py --category case_memory
+python web/test/benchmarks/run_benchmarks.py --category clinical_kb
+python web/test/benchmarks/run_benchmarks.py --category safety_validator
+python web/test/benchmarks/run_benchmarks.py --category multi_turn
+python web/test/benchmarks/run_benchmarks.py --category clinical_workflow
+```
+
+### Benchmark Categories
+
+| Category | Cases | Description |
+|----------|-------|-------------|
+| Core Medical AI | 210 | CT analysis, CTV/OAR segmentation, planning, dose |
+| User Interaction | 172 | Greeting, multilingual, memory, multi-turn |
+| Safety & Security | 119 | Adversarial, safety, edge cases, hallucination |
+| Clinical & Compliance | 115 | Medical reasoning, compliance, medium complexity |
+| System Resilience | 110 | Stress, recovery, workflow |
+| New Tools | 75 | Case memory, clinical KB, plan comparator, safety validator, etc. |
+
+### Unit Tests
 
 ```bash
 # Test brain system
