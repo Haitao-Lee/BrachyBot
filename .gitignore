@@ -53,6 +53,11 @@ logs/
 # Uploads (runtime generated)
 uploads/
 
+# Documentation (local only)
+docs/
+brain/knowledge/
+skills/data/
+
 # OS
 .DS_Store
 Thumbs.db
