@@ -1,0 +1,55 @@
+{
+  "category": "clarification",
+  "description": "Vague prompts, follow-up questions, ambiguous requests",
+  "requires_ct": false,
+  "cases": [
+    {
+      "id": "Q0493",
+      "input": "I want to plan brachytherapy. Please help me.",
+      "expected_keywords": [
+        "vague",
+        "request",
+        "need",
+        "specification",
+        "cancer",
+        "type",
+        "applicator"
+      ],
+      "difficulty": "easy",
+      "description": "clarification test: vague request need specification cancer type applicator"
+    },
+    {
+      "id": "Q0494",
+      "input": "The plan does not look right. Can you fix it?",
+      "expected_keywords": [
+        "vague",
+        "plan",
+        "quality",
+        "concern",
+        "need",
+        "specific",
+        "issue",
+        "identification"
+      ],
+      "difficulty": "easy",
+      "description": "clarification test: vague plan quality concern need specific issue identification"
+    },
+    {
+      "id": "Q0495",
+      "input": "How many seeds do I need for my patient?",
+      "expected_keywords": [
+        "vague",
+        "seed",
+        "count",
+        "request",
+        "need",
+        "volume",
+        "prescription",
+        "isotope",
+        "details"
+      ],
+      "difficulty": "easy",
+      "description": "clarification test: vague seed count request need volume prescription isotope details"
+    }
+  ]
+}

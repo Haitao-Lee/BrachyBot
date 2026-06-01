@@ -1,0 +1,2867 @@
+{
+  "category": "medical_reasoning",
+  "description": "Domain knowledge, clinical decisions, medical expertise",
+  "requires_ct": false,
+  "cases": [
+    {
+      "id": "Q0026",
+      "input": "Explain the fundamental differences between LDR and HDR brachytherapy in terms of dose rate, treatment duration, radioactive sources used, and clinical applications. What are the specific indications where LDR is preferred over HDR and vice versa?",
+      "expected_keywords": [
+        "LDR",
+        "HDR",
+        "dose",
+        "rate",
+        "source",
+        "type",
+        "indications"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: LDR HDR dose rate source type indications"
+    },
+    {
+      "id": "Q0027",
+      "input": "A 68-year-old male with intermediate-risk prostate cancer (Gleason 3+4, PSA 12, Stage T2b) is being considered for brachytherapy alone. What are the dosimetric prescription requirements per the ABS guidelines? What target coverage values should I aim for with I-125 seeds?",
+      "expected_keywords": [
+        "ABS",
+        "guidelines",
+        "I-125",
+        "prostate",
+        "D90",
+        "V100",
+        "V150"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: ABS guidelines I-125 prostate D90 V100 V150"
+    },
+    {
+      "id": "Q0028",
+      "input": "Describe the Manchester system and its relationship to the Paris system for dose specification in brachytherapy. How do these systems differ in terms of dose calculation points and reference isodose surfaces?",
+      "expected_keywords": [
+        "Manchester",
+        "Paris",
+        "system",
+        "dose",
+        "specification"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: Manchester Paris system dose specification"
+    },
+    {
+      "id": "Q0029",
+      "input": "What are the TG-43 formalism components used in brachytherapy dose calculation? Please explain the geometry function, radial dose function, and anisotropy function, and how they contribute to the total dose calculation.",
+      "expected_keywords": [
+        "TG-43",
+        "formalism",
+        "geometry",
+        "radial",
+        "anisotropy"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: TG-43 formalism geometry radial anisotropy"
+    },
+    {
+      "id": "Q0030",
+      "input": "For a cervical cancer patient treated with HDR brachytherapy using a tandem and ovoids applicator, explain the ICRU 89 report recommendations for dose specification. What reference points and volumes are recommended for reporting?",
+      "expected_keywords": [
+        "ICRU",
+        "89",
+        "cervical",
+        "tandem",
+        "ovoid",
+        "reference",
+        "points"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: ICRU 89 cervical tandem ovoid reference points"
+    },
+    {
+      "id": "Q0031",
+      "input": "Explain the concept of the biologically effective dose (BED) in brachytherapy. How does the linear-quadratic model apply to fractionated HDR treatments, and why is the repair half-time important?",
+      "expected_keywords": [
+        "BED",
+        "linear-quadratic",
+        "model",
+        "repair",
+        "half-time",
+        "fractionation"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: BED linear-quadratic model repair half-time fractionation"
+    },
+    {
+      "id": "Q0032",
+      "input": "What is the concept of the prostate brachytherapy seed migration phenomenon? How does seed migration affect post-implant dosimetry, and what are the typical migration patterns for loose seeds versus stranded seeds?",
+      "expected_keywords": [
+        "seed",
+        "migration",
+        "loose",
+        "stranded",
+        "dosimetry",
+        "impact"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: seed migration loose stranded dosimetry impact"
+    },
+    {
+      "id": "Q0033",
+      "input": "Describe the GEC-ESTRO recommendations for MRI-based brachytherapy in locally advanced cervical cancer. What are the target volume concepts (D90, D98, D2cc) and how do they relate to local control and toxicity?",
+      "expected_keywords": [
+        "GEC-ESTRO",
+        "MRI",
+        "cervical",
+        "target",
+        "volume",
+        "D90",
+        "D2cc"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: GEC-ESTRO MRI cervical target volume D90 D2cc"
+    },
+    {
+      "id": "Q0034",
+      "input": "For prostate brachytherapy, explain the difference between intraoperative real-time planning and preplanning approaches. What are the advantages and limitations of each technique in terms of dose conformity and seed placement accuracy?",
+      "expected_keywords": [
+        "intraoperative",
+        "real-time",
+        "preplanning",
+        "prostate"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: intraoperative real-time preplanning prostate"
+    },
+    {
+      "id": "Q0035",
+      "input": "Explain the concept of source strength calibration in brachytherapy. What is air-kerma strength, how is it measured, and what are the decay characteristics of commonly used isotopes like I-125, Pd-103, Ir-192, and Co-60?",
+      "expected_keywords": [
+        "air-kerma",
+        "strength",
+        "calibration",
+        "decay",
+        "half-life"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: air-kerma strength calibration decay half-life"
+    },
+    {
+      "id": "Q0036",
+      "input": "What are the TG-137 and TG-138 recommendations for brachytherapy quality assurance? Describe the essential QA procedures for HDR afterloaders, including source strength verification and transfer tube integrity checks.",
+      "expected_keywords": [
+        "TG-137",
+        "TG-138",
+        "QA",
+        "afterloader",
+        "source",
+        "strength"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: TG-137 TG-138 QA afterloader source strength"
+    },
+    {
+      "id": "Q0037",
+      "input": "For endometrial cancer brachytherapy, describe the vaginal cuff brachytherapy technique. What applicator types are used, what prescription dose and fractionation are typical, and what are the relevant OAR constraints?",
+      "expected_keywords": [
+        "vaginal",
+        "cuff",
+        "brachytherapy",
+        "applicator",
+        "prescription",
+        "OAR"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: vaginal cuff brachytherapy applicator prescription OAR"
+    },
+    {
+      "id": "Q0038",
+      "input": "Explain the TG-100 comprehensive methodology for quality management in radiation oncology. How does it apply specifically to brachytherapy programs in terms of error prevention, detection, and mitigation?",
+      "expected_keywords": [
+        "TG-100",
+        "quality",
+        "management",
+        "FMEA",
+        "brachytherapy"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: TG-100 quality management FMEA brachytherapy"
+    },
+    {
+      "id": "Q0039",
+      "input": "What are the AAPM TG-59 recommendations for image-guided brachytherapy? How has the transition from 2D to 3D image-based planning changed brachytherapy practice for gynecologic cancers?",
+      "expected_keywords": [
+        "TG-59",
+        "image-guided",
+        "3D",
+        "planning",
+        "gynecologic"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: TG-59 image-guided 3D planning gynecologic"
+    },
+    {
+      "id": "Q0040",
+      "input": "Describe the physics of radiation dose distribution around a line source versus a point source. How does the line source geometry function G(r,theta) in TG-43 account for the finite length of brachytherapy sources?",
+      "expected_keywords": [
+        "line",
+        "source",
+        "point",
+        "source",
+        "geometry",
+        "function",
+        "TG-43"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: line source point source geometry function TG-43"
+    },
+    {
+      "id": "Q0041",
+      "input": "For a patient with anal cancer receiving concurrent chemoradiation with a brachytherapy boost, what are the typical treatment volume definitions and dose prescription? How does interstitial brachytherapy compare to endoluminal approaches?",
+      "expected_keywords": [
+        "anal",
+        "cancer",
+        "brachytherapy",
+        "boost",
+        "interstitial",
+        "endoluminal"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: anal cancer brachytherapy boost interstitial endoluminal"
+    },
+    {
+      "id": "Q0042",
+      "input": "Explain the concept of dose-volume histogram (DVH) analysis in brachytherapy. What are the key DVH parameters for prostate seed implants (D90, V100, V150, VC150) and what quality benchmarks define a well-optimized plan?",
+      "expected_keywords": [
+        "DVH",
+        "analysis",
+        "D90",
+        "V100",
+        "V150",
+        "prostate",
+        "quality",
+        "benchmark"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: DVH analysis D90 V100 V150 prostate quality benchmark"
+    },
+    {
+      "id": "Q0043",
+      "input": "What are the specific OAR dose constraints for HDR brachytherapy of cervical cancer per the EMBRACE studies? Please list the D2cc constraints for bladder, rectum, sigmoid, and bowel for both HDR and PDR treatments.",
+      "expected_keywords": [
+        "EMBRACE",
+        "OAR",
+        "constraints",
+        "cervical",
+        "D2cc",
+        "bladder",
+        "rectum"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: EMBRACE OAR constraints cervical D2cc bladder rectum"
+    },
+    {
+      "id": "Q0044",
+      "input": "Explain the concept of dwell position optimization in HDR brachytherapy. What are the differences between geometric optimization, dose-point optimization, and inverse planning with simulated annealing (IPSA)?",
+      "expected_keywords": [
+        "dwell",
+        "optimization",
+        "geometric",
+        "IPSA",
+        "inverse",
+        "planning"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: dwell optimization geometric IPSA inverse planning"
+    },
+    {
+      "id": "Q0045",
+      "input": "For brachytherapy in the treatment of oral cavity cancers, describe the template-guided interstitial technique. What are the typical needle spacing, implant geometry, and dose specification methods used?",
+      "expected_keywords": [
+        "oral",
+        "cavity",
+        "interstitial",
+        "template",
+        "needle",
+        "geometry"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: oral cavity interstitial template needle geometry"
+    },
+    {
+      "id": "Q0046",
+      "input": "What is the role of brachytherapy in the treatment of non-melanoma skin cancers? Describe the surface brachytherapy technique using HDR sources and the dose prescription for superficial lesions.",
+      "expected_keywords": [
+        "skin",
+        "brachytherapy",
+        "surface",
+        "applicator",
+        "HDR",
+        "superficial"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: skin brachytherapy surface applicator HDR superficial"
+    },
+    {
+      "id": "Q0047",
+      "input": "Explain the concept of the radiation safety precautions required during HDR brachytherapy. What shielding requirements, occupancy factors, and safety protocols must be in place according to NCRP 151 guidelines?",
+      "expected_keywords": [
+        "radiation",
+        "safety",
+        "NCRP",
+        "151",
+        "shielding",
+        "occupancy",
+        "HDR"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: radiation safety NCRP 151 shielding occupancy HDR"
+    },
+    {
+      "id": "Q0048",
+      "input": "What are the dosimetric differences between I-125 and Pd-103 seeds for permanent prostate implant brachytherapy? How does the choice of isotope affect the biological effective dose and clinical outcomes for different risk categories?",
+      "expected_keywords": [
+        "I-125",
+        "Pd-103",
+        "prostate",
+        "isotope",
+        "comparison",
+        "biological",
+        "dose"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: I-125 Pd-103 prostate isotope comparison biological dose"
+    },
+    {
+      "id": "Q0049",
+      "input": "Describe the technique of CT-guided percutaneous image-guided brachytherapy for liver metastases. What are the needle placement procedures, dose prescription, and organ-at-risk constraints for hepatic brachytherapy?",
+      "expected_keywords": [
+        "CT-guided",
+        "liver",
+        "brachytherapy",
+        "percutaneous",
+        "needle",
+        "OAR"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: CT-guided liver brachytherapy percutaneous needle OAR"
+    },
+    {
+      "id": "Q0050",
+      "input": "For brachytherapy treatment of nasopharyngeal carcinoma, describe the intracavitary technique. What applicator design is used, how is dose prescribed to the tumor target, and what are the critical structures to spare?",
+      "expected_keywords": [
+        "nasopharyngeal",
+        "intracavitary",
+        "brachytherapy",
+        "applicator",
+        "target",
+        "OAR"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: nasopharyngeal intracavitary brachytherapy applicator target OAR"
+    },
+    {
+      "id": "Q0051",
+      "input": "Explain the TG-129 report on brachytherapy risk assessment. What are the most common error types in brachytherapy, and what process modifications does it recommend to prevent patient harm?",
+      "expected_keywords": [
+        "TG-129",
+        "risk",
+        "assessment",
+        "error",
+        "types",
+        "brachytherapy",
+        "safety"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: TG-129 risk assessment error types brachytherapy safety"
+    },
+    {
+      "id": "Q0052",
+      "input": "What are the clinical indications for urethral-sparing brachytherapy techniques in prostate cancer? Describe the intraoperative techniques used to achieve urethral dose optimization and the associated dosimetric parameters.",
+      "expected_keywords": [
+        "urethral",
+        "sparing",
+        "prostate",
+        "brachytherapy",
+        "technique",
+        "dosimetry"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: urethral sparing prostate brachytherapy technique dosimetry"
+    },
+    {
+      "id": "Q0053",
+      "input": "For a patient with locally recurrent rectal cancer after prior external beam radiation, describe the feasibility and technique for interstitial brachytherapy re-irradiation. What are the dose constraints for previously irradiated tissues?",
+      "expected_keywords": [
+        "rectal",
+        "re-irradiation",
+        "interstitial",
+        "brachytherapy",
+        "prior",
+        "radiation"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: rectal re-irradiation interstitial brachytherapy prior radiation"
+    },
+    {
+      "id": "Q0054",
+      "input": "Explain the concept of isodose conformality index (ICI) and homogeneity index (HI) in brachytherapy plan evaluation. How do these metrics help compare treatment plans and what are target values for well-optimized implants?",
+      "expected_keywords": [
+        "isodose",
+        "conformality",
+        "homogeneity",
+        "index",
+        "plan",
+        "evaluation"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: isodose conformality homogeneity index plan evaluation"
+    },
+    {
+      "id": "Q0055",
+      "input": "Describe the use of MRI-compatible applicators for brachytherapy of locally advanced cervical cancer. What are the specific MRI sequences recommended for target and OAR delineation according to GEC-ESTRO guidelines?",
+      "expected_keywords": [
+        "MRI-compatible",
+        "applicator",
+        "cervical",
+        "GEC-ESTRO",
+        "sequence",
+        "protocol"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: MRI-compatible applicator cervical GEC-ESTRO sequence protocol"
+    },
+    {
+      "id": "Q0056",
+      "input": "What is the role of brachytherapy in the treatment of gallbladder cancer? Describe the technique for interstitial brachytherapy of unresectable gallbladder tumors and the associated dose constraints for the duodenum and liver.",
+      "expected_keywords": [
+        "gallbladder",
+        "interstitial",
+        "brachytherapy",
+        "duodenum",
+        "liver",
+        "constraint"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: gallbladder interstitial brachytherapy duodenum liver constraint"
+    },
+    {
+      "id": "Q0057",
+      "input": "Explain the concept of the source-to-target distance in brachytherapy and how it affects dose fall-off. How does the inverse square law influence needle or catheter placement strategies for different tumor volumes?",
+      "expected_keywords": [
+        "source-to-target",
+        "distance",
+        "inverse",
+        "square",
+        "dose",
+        "fall-off"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: source-to-target distance inverse square dose fall-off"
+    },
+    {
+      "id": "Q0058",
+      "input": "For breast cancer APBI using HDR brachytherapy with a MammoSite balloon catheter, describe the patient selection criteria, treatment technique, and dose prescription. What are the normal tissue constraints for skin and rib?",
+      "expected_keywords": [
+        "breast",
+        "APBI",
+        "MammoSite",
+        "balloon",
+        "catheter",
+        "prescription",
+        "skin",
+        "rib"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: breast APBI MammoSite balloon catheter prescription skin rib"
+    },
+    {
+      "id": "Q0059",
+      "input": "Explain the concept of pulsed-dose-rate (PDR) brachytherapy. How does PDR combine the radiobiological advantages of LDR with the logistical convenience of HDR, and what are its specific clinical indications?",
+      "expected_keywords": [
+        "pulsed-dose-rate",
+        "PDR",
+        "brachytherapy",
+        "LDR",
+        "HDR",
+        "combination"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: pulsed-dose-rate PDR brachytherapy LDR HDR combination"
+    },
+    {
+      "id": "Q0060",
+      "input": "What are the brachytherapy techniques for treatment of ampullary carcinoma? Describe the percutaneous interstitial approach, dose prescription, and constraints for the duodenum, common bile duct, and pancreas.",
+      "expected_keywords": [
+        "ampullary",
+        "brachytherapy",
+        "percutaneous",
+        "interstitial",
+        "duodenum"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: ampullary brachytherapy percutaneous interstitial duodenum"
+    },
+    {
+      "id": "Q0061",
+      "input": "Describe the tandem and ring applicator system for cervical brachytherapy. How does it differ from tandem and ovoids in terms of dose distribution, ease of use, and clinical outcomes?",
+      "expected_keywords": [
+        "tandem",
+        "ring",
+        "applicator",
+        "cervical",
+        "brachytherapy",
+        "comparison"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: tandem ring applicator cervical brachytherapy comparison"
+    },
+    {
+      "id": "Q0062",
+      "input": "Explain the concept of dose rate effects in brachytherapy. How does the dose rate influence the therapeutic ratio, and what are the clinical implications when comparing LDR, PDR, and HDR treatment approaches?",
+      "expected_keywords": [
+        "dose",
+        "rate",
+        "effects",
+        "therapeutic",
+        "ratio",
+        "LDR",
+        "PDR",
+        "HDR"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: dose rate effects therapeutic ratio LDR PDR HDR"
+    },
+    {
+      "id": "Q0063",
+      "input": "For prostate cancer patients with a prior transurethral resection of the prostate (TURP), what modifications are needed in the brachytherapy planning technique? How does a TURP defect affect dose coverage and seed placement?",
+      "expected_keywords": [
+        "TURP",
+        "prostate",
+        "brachytherapy",
+        "modification",
+        "defect",
+        "dosimetry"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: TURP prostate brachytherapy modification defect dosimetry"
+    },
+    {
+      "id": "Q0064",
+      "input": "What are the GYN brachytherapy applicator types used for vaginal cancer treatment? Describe the specific techniques for proximal versus distal vaginal tumors and the appropriate dose specification methods.",
+      "expected_keywords": [
+        "vaginal",
+        "cancer",
+        "applicator",
+        "technique",
+        "proximal",
+        "distal",
+        "dose"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: vaginal cancer applicator technique proximal distal dose"
+    },
+    {
+      "id": "Q0065",
+      "input": "Explain the concept of the peripheral zone and transition zone in prostate anatomy. How do these anatomic zones influence seed placement strategy and dose distribution for LDR brachytherapy?",
+      "expected_keywords": [
+        "prostate",
+        "peripheral",
+        "transition",
+        "zone",
+        "anatomy",
+        "seed",
+        "placement"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: prostate peripheral transition zone anatomy seed placement"
+    },
+    {
+      "id": "Q0066",
+      "input": "For brachytherapy of locally advanced vulvar cancer, describe the interstitial template technique. What needle configurations are used, and what are the OAR dose constraints for the urethra, anus, and vaginal mucosa?",
+      "expected_keywords": [
+        "vulvar",
+        "interstitial",
+        "template",
+        "needle",
+        "OAR",
+        "urethra",
+        "anus"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: vulvar interstitial template needle OAR urethra anus"
+    },
+    {
+      "id": "Q0067",
+      "input": "Explain the TG-43U1 update to the brachytherapy dose calculation formalism. What new considerations were added regarding scatter conditions, heterogeneity corrections, and Monte Carlo validation?",
+      "expected_keywords": [
+        "TG-43U1",
+        "update",
+        "scatter",
+        "heterogeneity",
+        "Monte",
+        "Carlo"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: TG-43U1 update scatter heterogeneity Monte Carlo"
+    },
+    {
+      "id": "Q0068",
+      "input": "What is the concept of the isotoxic rapid allocation technique in brachytherapy? How does it optimize dose distribution while respecting OAR tolerance constraints during inverse planning?",
+      "expected_keywords": [
+        "isotoxic",
+        "rapid",
+        "allocation",
+        "dose",
+        "optimization",
+        "OAR",
+        "constraint"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: isotoxic rapid allocation dose optimization OAR constraint"
+    },
+    {
+      "id": "Q0069",
+      "input": "For a patient with bile duct cancer (cholangiocarcinoma), describe the endoscopic brachytherapy technique. What source types are used, what is the typical prescription dose, and what are the constraints for the liver and duodenum?",
+      "expected_keywords": [
+        "cholangiocarcinoma",
+        "endoscopic",
+        "brachytherapy",
+        "liver",
+        "duodenum"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: cholangiocarcinoma endoscopic brachytherapy liver duodenum"
+    },
+    {
+      "id": "Q0070",
+      "input": "Explain the differences between manual afterloading and remote afterloading techniques in brachytherapy. Why was the transition to remote afterloading important for radiation safety, and what are the current industry standards?",
+      "expected_keywords": [
+        "manual",
+        "remote",
+        "afterloading",
+        "safety",
+        "HDR",
+        "afterloader"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: manual remote afterloading safety HDR afterloader"
+    },
+    {
+      "id": "Q0071",
+      "input": "Describe the interstitial brachytherapy technique for treatment of recurrent head and neck cancers. What are the Paris system dose specification rules for line sources, and how is dose modified at source discontinuities?",
+      "expected_keywords": [
+        "Paris",
+        "system",
+        "interstitial",
+        "line",
+        "source",
+        "head",
+        "neck",
+        "recurrent"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: Paris system interstitial line source head neck recurrent"
+    },
+    {
+      "id": "Q0072",
+      "input": "For cervical cancer brachytherapy, explain the concept of the therapeutic window between tumor control probability (TCP) and normal tissue complication probability (NTCP). How do D90 and D2cc values relate to TCP and NTCP?",
+      "expected_keywords": [
+        "TCP",
+        "NTCP",
+        "therapeutic",
+        "window",
+        "D90",
+        "D2cc",
+        "cervical"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: TCP NTCP therapeutic window D90 D2cc cervical"
+    },
+    {
+      "id": "Q0073",
+      "input": "What are the quality assurance steps required before each HDR brachytherapy treatment fraction? Describe the verification procedures for source strength, treatment plan integrity, and applicator position confirmation.",
+      "expected_keywords": [
+        "pre-fraction",
+        "QA",
+        "HDR",
+        "source",
+        "strength",
+        "plan",
+        "applicator",
+        "verification"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: pre-fraction QA HDR source strength plan applicator verification"
+    },
+    {
+      "id": "Q0074",
+      "input": "Explain the concept of effective plan length and active source length in HDR brachytherapy. How do these parameters affect dose distribution, and what rules should be followed to avoid dose heterogeneity at source ends?",
+      "expected_keywords": [
+        "effective",
+        "plan",
+        "length",
+        "active",
+        "source",
+        "HDR",
+        "dose",
+        "heterogeneity"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: effective plan length active source HDR dose heterogeneity"
+    },
+    {
+      "id": "Q0075",
+      "input": "For brachytherapy of the oral cavity, describe the mould brachytherapy technique for lip cancer. What applicator design is used, how is the prescription depth determined, and what are the dose constraints for the gingiva and mandible?",
+      "expected_keywords": [
+        "lip",
+        "mould",
+        "brachytherapy",
+        "applicator",
+        "prescription",
+        "gingiva",
+        "mandible"
+      ],
+      "difficulty": "medium",
+      "description": "Medical knowledge test: lip mould brachytherapy applicator prescription gingiva mandible"
+    },
+    {
+      "id": "Q0522",
+      "input": "Explain the radiobiological basis for the linear-quadratic model as it applies to brachytherapy dose fractionation. How does the alpha-beta ratio for cervical cancer differ from surrounding normal tissues like the rectum and bladder, and how does this knowledge inform the clinical decision to use HDR versus LDR brachytherapy? Provide specific alpha-beta values from the literature.",
+      "expected_keywords": [
+        "linear-quadratic",
+        "alpha-beta ratio",
+        "fractionation",
+        "HDR",
+        "LDR",
+        "cervical cancer",
+        "radiobiology"
+      ],
+      "difficulty": "advanced",
+      "description": "Radiobiological basis of LQ model in brachytherapy"
+    },
+    {
+      "id": "Q0523",
+      "input": "Describe the complete lymphatic drainage pattern of the uterine cervix and its clinical significance for brachytherapy treatment planning. How do Stage IIB versus Stage IIIB cervical cancers differ in their nodal involvement patterns, and how should these differences influence the choice of applicator type, prescription dose, and external beam field design?",
+      "expected_keywords": [
+        "lymphatic drainage",
+        "cervix",
+        "nodal involvement",
+        "applicator type",
+        "prescription",
+        "Stage IIB",
+        "Stage IIIB"
+      ],
+      "difficulty": "advanced",
+      "description": "Lymphatic drainage of the cervix and brachytherapy planning implications"
+    },
+    {
+      "id": "Q0524",
+      "input": "What is the evidence base for the GEC-ESTRO recommendations on MRI-based brachytherapy for cervical cancer? Discuss the key studies that established D90 and D2cc as dose metrics, the evolution from point-based to volume-based prescription, and how retrospective data from Vienna and Leiden has shaped current practice. Include specific survival data.",
+      "expected_keywords": [
+        "GEC-ESTRO",
+        "D90",
+        "D2cc",
+        "volume-based",
+        "Vienna",
+        "Leiden",
+        "MRI-based"
+      ],
+      "difficulty": "advanced",
+      "description": "Evidence base for GEC-ESTRO brachytherapy recommendations"
+    },
+    {
+      "id": "Q0525",
+      "input": "Explain the concept of the therapeutic ratio in brachytherapy and how dose escalation is achieved through the steep dose gradient. Using specific examples from prostate, cervical, and head and neck brachytherapy, describe how the physical dose distribution translates into a therapeutic advantage compared to external beam radiation therapy alone.",
+      "expected_keywords": [
+        "therapeutic ratio",
+        "dose gradient",
+        "dose escalation",
+        "prostate",
+        "cervical",
+        "head and neck"
+      ],
+      "difficulty": "medium",
+      "description": "Therapeutic ratio and dose gradient in brachytherapy"
+    },
+    {
+      "id": "Q0526",
+      "input": "Describe the pathophysiology of radiation-induced rectal toxicity following cervical brachytherapy. What are the dose-volume thresholds that correlate with proctitis, bleeding, fistula, and stenosis? How does the rectal dose-response relationship differ from that of the sigmoid colon, and what anatomical factors influence individual patient susceptibility?",
+      "expected_keywords": [
+        "rectal toxicity",
+        "dose-volume",
+        "D2cc",
+        "D1cc",
+        "proctitis",
+        "bleeding",
+        "sigmoid",
+        "dose-response"
+      ],
+      "difficulty": "advanced",
+      "description": "Radiation-induced rectal toxicity pathophysiology and dose thresholds"
+    },
+    {
+      "id": "Q0527",
+      "input": "Explain the mechanism of radiation-induced bladder toxicity in the context of brachytherapy for gynecological cancers. Differentiate between early and late bladder toxicity, describe the QUANTEC dose constraints for the bladder in brachytherapy, and explain why D2cc is used rather than mean dose. How does concurrent cisplatin chemotherapy modify the bladder dose-response?",
+      "expected_keywords": [
+        "bladder toxicity",
+        "QUANTEC",
+        "D2cc",
+        "cisplatin",
+        "dose constraint",
+        "early toxicity",
+        "late toxicity"
+      ],
+      "difficulty": "advanced",
+      "description": "Bladder toxicity mechanisms and dose constraints in brachytherapy"
+    },
+    {
+      "id": "Q0528",
+      "input": "Discuss the radiobiology of prostate cancer as it relates to brachytherapy. Why is prostate cancer considered a favorable candidate for brachytherapy based on its alpha-beta ratio? How does the low alpha-beta ratio of prostate cancer compare to that of surrounding tissues, and what are the implications for hypofractionation in both LDR permanent seed implantation and HDR brachytherapy?",
+      "expected_keywords": [
+        "alpha-beta",
+        "prostate cancer",
+        "hypofractionation",
+        "LDR",
+        "HDR",
+        "radiobiology",
+        "permanent seed"
+      ],
+      "difficulty": "advanced",
+      "description": "Radiobiology of prostate brachytherapy"
+    },
+    {
+      "id": "Q0529",
+      "input": "Explain the concept of biological effective dose (BED) in brachytherapy and its clinical significance. How is BED calculated for brachytherapy, particularly when the dose rate changes during treatment as in pulsed-dose-rate (PDR) brachytherapy? Provide the linear-quadratic formula modified for brachytherapy and explain each component.",
+      "expected_keywords": [
+        "BED",
+        "biological effective dose",
+        "LQ formula",
+        "PDR",
+        "dose rate",
+        "clinical significance"
+      ],
+      "difficulty": "advanced",
+      "description": "Biological effective dose calculation in brachytherapy"
+    },
+    {
+      "id": "Q0530",
+      "input": "Describe the oncological outcomes for definitive brachytherapy in early-stage (FIGO IA2-IB1) cervical cancer. What does the literature show regarding local control rates, disease-free survival, and overall survival for patients treated with brachytherapy alone versus combined EBRT plus brachytherapy? Include discussion of the SELECT trial and other relevant studies.",
+      "expected_keywords": [
+        "early-stage",
+        "FIGO IA2",
+        "IB1",
+        "local control",
+        "survival",
+        "SELECT trial",
+        "brachytherapy alone"
+      ],
+      "difficulty": "advanced",
+      "description": "Oncological outcomes for early-stage cervical brachytherapy"
+    },
+    {
+      "id": "Q0531",
+      "input": "Explain the concept of equivalent dose in 2 Gy fractions (EQD2) and its importance in cumulative dose reporting for brachytherapy. How should the EQD2 calculation account for incomplete repair when multiple fractions of HDR brachytherapy are delivered? What is the practical significance of the incomplete repair factor for clinical decision-making?",
+      "expected_keywords": [
+        "EQD2",
+        "equivalent dose",
+        "incomplete repair",
+        "cumulative dose",
+        "HDR",
+        "fractionation"
+      ],
+      "difficulty": "advanced",
+      "description": "EQD2 calculation and incomplete repair in brachytherapy"
+    },
+    {
+      "id": "Q0532",
+      "input": "Describe the evidence regarding the use of brachytherapy boost in the treatment of locally advanced rectal cancer. What are the results from the randomized trials comparing chemoradiation with versus without brachytherapy boost? How does the Dutch Rectal Cancer Trial and the EUROCARE data inform current practice, and what patient subgroups benefit most?",
+      "expected_keywords": [
+        "rectal cancer",
+        "brachytherapy boost",
+        "chemoradiation",
+        "Dutch trial",
+        "local control",
+        "patient selection"
+      ],
+      "difficulty": "advanced",
+      "description": "Evidence for brachytherapy boost in rectal cancer"
+    },
+    {
+      "id": "Q0533",
+      "input": "Explain the biological mechanisms underlying radiation resistance in hypoxic tumors and their relevance to brachytherapy. How does the oxygen enhancement ratio (OER) affect brachytherapy dose prescriptions? What evidence exists for the oxygen fixation hypothesis in interstitial brachytherapy, and how might this influence the choice between EBRT and brachytherapy?",
+      "expected_keywords": [
+        "hypoxia",
+        "oxygen enhancement ratio",
+        "OER",
+        "radiation resistance",
+        "oxygen fixation",
+        "interstitial"
+      ],
+      "difficulty": "advanced",
+      "description": "Radiation resistance mechanisms and OER in brachytherapy"
+    },
+    {
+      "id": "Q0534",
+      "input": "Discuss the molecular mechanisms of radiation-induced late effects in normal tissues following brachytherapy. Focus on fibrosis, vascular damage, and neural injury. How do these mechanisms differ from early radiation effects, and what is the time course for each type of late effect in organs commonly at risk during pelvic brachytherapy?",
+      "expected_keywords": [
+        "fibrosis",
+        "vascular damage",
+        "neural injury",
+        "late effects",
+        "early effects",
+        "time course",
+        "pelvic"
+      ],
+      "difficulty": "advanced",
+      "description": "Molecular mechanisms of radiation-induced late effects"
+    },
+    {
+      "id": "Q0535",
+      "input": "What is the current evidence for the abscopal effect in the context of brachytherapy combined with immunotherapy? Describe the biological rationale for combining brachytherapy with immune checkpoint inhibitors, review the ongoing clinical trials, and discuss which brachytherapy fractionation schemes may be most immunogenic.",
+      "expected_keywords": [
+        "abscopal effect",
+        "immunotherapy",
+        "checkpoint inhibitor",
+        "immunogenic",
+        "fractionation",
+        "clinical trial"
+      ],
+      "difficulty": "advanced",
+      "description": "Abscopal effect and brachytherapy-immunotherapy combinations"
+    },
+    {
+      "id": "Q0536",
+      "input": "Explain the role of brachytherapy in the management of non-melanoma skin cancers, particularly Merkel cell carcinoma and squamous cell carcinoma. What evidence supports the use of surface applicator brachytherapy versus interstitial implantation? Describe the dose-fractionation schemes used and expected local control rates based on tumor size and histology.",
+      "expected_keywords": [
+        "skin cancer",
+        "Merkel cell",
+        "squamous cell",
+        "surface applicator",
+        "interstitial",
+        "local control"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy for non-melanoma skin cancers"
+    },
+    {
+      "id": "Q0537",
+      "input": "Discuss the evidence for brachytherapy in the treatment of bile duct cholangiocarcinoma. What are the outcomes for adjuvant brachytherapy following surgical resection, and what is the role of intraluminal brachytherapy for unresectable disease? Include discussion of dose specifications, fractionation, and the impact on biliary patency and survival.",
+      "expected_keywords": [
+        "cholangiocarcinoma",
+        "bile duct",
+        "intraluminal",
+        "adjuvant",
+        "resection",
+        "biliary patency",
+        "survival"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy for cholangiocarcinoma"
+    },
+    {
+      "id": "Q0538",
+      "input": "Explain the pathophysiology of radiation-induced vaginal stenosis following cervical brachytherapy. What are the risk factors for developing vaginal stenosis, and how does the dose to the upper vagina correlate with stenosis severity? Describe the evidence for vaginal dilator therapy as a preventive measure, including optimal timing, duration, and compliance rates.",
+      "expected_keywords": [
+        "vaginal stenosis",
+        "dose correlation",
+        "dilator therapy",
+        "prevention",
+        "compliance",
+        "risk factors"
+      ],
+      "difficulty": "advanced",
+      "description": "Vaginal stenosis after cervical brachytherapy"
+    },
+    {
+      "id": "Q0539",
+      "input": "Describe the evidence supporting the use of image-guided adaptive brachytherapy (IGABT) for cervical cancer. Summarize the key findings from the RetroEMBRACE and EMBRACE studies, including how local control rates, overall survival, and toxicity outcomes compare with conventional point-based planning. What are the practical limitations of implementing IGABT in resource-limited settings?",
+      "expected_keywords": [
+        "IGABT",
+        "RetroEMBRACE",
+        "EMBRACE",
+        "local control",
+        "survival",
+        "toxicity",
+        "resource-limited"
+      ],
+      "difficulty": "advanced",
+      "description": "Evidence for image-guided adaptive brachytherapy in cervical cancer"
+    },
+    {
+      "id": "Q0540",
+      "input": "What is the current evidence for the use of brachytherapy in the treatment of anal canal cancer? Discuss the role of brachytherapy as a boost after chemoradiation, including the outcomes data from the EORTC 22861 trial and subsequent studies. How do interstitial brachytherapy outcomes compare with intracavitary approaches for anal cancer?",
+      "expected_keywords": [
+        "anal cancer",
+        "EORTC 22861",
+        "brachytherapy boost",
+        "interstitial",
+        "intracavitary",
+        "chemoradiation"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy for anal canal cancer"
+    },
+    {
+      "id": "Q0541",
+      "input": "Explain the concept of dose homogeneity in brachytherapy and why it differs fundamentally from external beam radiation therapy. What are the homogeneity index and conformity index as defined by ICRU 89, and how do they apply to brachytherapy plan evaluation? Why is perfect dose homogeneity neither achievable nor desirable in brachytherapy?",
+      "expected_keywords": [
+        "dose homogeneity",
+        "ICRU 89",
+        "homogeneity index",
+        "conformity index",
+        "dose distribution"
+      ],
+      "difficulty": "medium",
+      "description": "Dose homogeneity concepts in brachytherapy"
+    },
+    {
+      "id": "Q0542",
+      "input": "Discuss the role of brachytherapy in the treatment of endometrial cancer. What is the evidence for vaginal cuff brachytherapy as adjuvant treatment after hysterectomy? How do the PORTEC 1, PORTEC 2, and GOG 99 trials inform the decision to use brachytherapy versus EBRT for different risk groups? What are the specific dose and fractionation schemes used?",
+      "expected_keywords": [
+        "endometrial cancer",
+        "PORTEC",
+        "GOG 99",
+        "vaginal cuff",
+        "adjuvant",
+        "risk groups",
+        "dose"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy for endometrial cancer"
+    },
+    {
+      "id": "Q0543",
+      "input": "Explain the biological basis for combining brachytherapy with concurrent chemotherapy, commonly known as chemoradiation. How does cisplatin act as a radiosensitizer in the context of brachytherapy? What are the pharmacokinetic considerations for drug delivery to brachy-treated tissues, and how does the dose rate of HDR brachytherapy interact with the timing of chemotherapy?",
+      "expected_keywords": [
+        "chemoradiation",
+        "cisplatin",
+        "radiosensitizer",
+        "pharmacokinetics",
+        "dose rate",
+        "timing"
+      ],
+      "difficulty": "advanced",
+      "description": "Biological basis of chemoradiation in brachytherapy"
+    },
+    {
+      "id": "Q0544",
+      "input": "Describe the clinical significance of the GEC-ESTRO clinical recommendations for MRI-based cervical cancer brachytherapy. How do these recommendations differ from the earlier ICRU 38 and ICRU 58 reports? What specific target volume definitions are recommended, and how do they account for tumor regression during treatment?",
+      "expected_keywords": [
+        "GEC-ESTRO",
+        "ICRU 38",
+        "ICRU 58",
+        "target volume",
+        "tumor regression",
+        "MRI"
+      ],
+      "difficulty": "advanced",
+      "description": "GEC-ESTRO clinical recommendations for brachytherapy"
+    },
+    {
+      "id": "Q0545",
+      "input": "Discuss the radiobiological rationale for pulsed-dose-rate (PDR) brachytherapy. How does PDR brachytherapy mimic the biological effect of low-dose-rate (LDR) treatment while using a high-dose-rate source? Explain the interrupted repair concept and how pulse interval affects biological equivalence. What clinical scenarios favor PDR over HDR?",
+      "expected_keywords": [
+        "PDR",
+        "pulsed-dose-rate",
+        "LDR",
+        "interrupted repair",
+        "pulse interval",
+        "biological equivalence"
+      ],
+      "difficulty": "advanced",
+      "description": "Radiobiological rationale for PDR brachytherapy"
+    },
+    {
+      "id": "Q0546",
+      "input": "What is the evidence for the use of proton beam therapy as an alternative to brachytherapy boost for cervical cancer? Summarize the dosimetric comparison studies and the available clinical outcomes data. What are the advantages and limitations of proton therapy compared to brachytherapy for dose escalation to the cervix?",
+      "expected_keywords": [
+        "proton therapy",
+        "cervical cancer",
+        "dose escalation",
+        "dosimetric comparison",
+        "clinical outcomes"
+      ],
+      "difficulty": "advanced",
+      "description": "Proton therapy vs brachytherapy boost for cervical cancer"
+    },
+    {
+      "id": "Q0547",
+      "input": "Explain the significance of the tumor hypoxic fraction in determining brachytherapy outcomes. How does the proximity of radiation sources in brachytherapy potentially overcome the radioresistance of hypoxic tumor regions compared to external beam therapy? What evidence exists for the oxygen effect in interstitial brachytherapy implants?",
+      "expected_keywords": [
+        "hypoxic fraction",
+        "oxygen effect",
+        "radioresistance",
+        "interstitial",
+        "dose gradient"
+      ],
+      "difficulty": "advanced",
+      "description": "Tumor hypoxic fraction and brachytherapy outcomes"
+    },
+    {
+      "id": "Q0548",
+      "input": "Discuss the principles of source tracking and quality assurance for brachytherapy sources. What are the requirements for source calibration traceability to national standards? Explain the concept of source strength decay and how treatment planning systems account for radioactive decay. What are the IAEA and AAPM TG-43 recommendations?",
+      "expected_keywords": [
+        "source calibration",
+        "traceability",
+        "decay",
+        "TG-43",
+        "IAEA",
+        "source strength",
+        "QA"
+      ],
+      "difficulty": "medium",
+      "description": "Source tracking and quality assurance for brachytherapy"
+    },
+    {
+      "id": "Q0549",
+      "input": "Describe the current evidence for brachytherapy in the management of brain tumors, particularly glioblastoma multiforme. What are the results of interstitial brachytherapy studies for recurrent glioblastoma? How does the RTOG brachytherapy data inform current practice, and what are the radiation necrosis rates?",
+      "expected_keywords": [
+        "glioblastoma",
+        "brain tumor",
+        "interstitial",
+        "RTOG",
+        "radiation necrosis",
+        "recurrent"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy for brain tumors"
+    },
+    {
+      "id": "Q0550",
+      "input": "Explain the concept of equivalent uniform dose (EUD) and its application in brachytherapy plan optimization. How does EUD-based optimization differ from dose-volume based optimization? What are the advantages and limitations of using EUD as an objective function in brachytherapy inverse planning, and how does the generalized EUD (gEUD) formula account for tissue-specific radiosensitivity?",
+      "expected_keywords": [
+        "EUD",
+        "gEUD",
+        "optimization",
+        "inverse planning",
+        "objective function",
+        "radiosensitivity"
+      ],
+      "difficulty": "advanced",
+      "description": "EUD and gEUD in brachytherapy optimization"
+    },
+    {
+      "id": "Q0551",
+      "input": "Discuss the emerging evidence for brachytherapy in the treatment of unresectable locally advanced pancreatic cancer. What are the results from the ongoing prospective trials investigating neoadjuvant intraoperative brachytherapy? How do the dose requirements for pancreatic brachytherapy differ from those used for other gastrointestinal malignancies?",
+      "expected_keywords": [
+        "pancreatic cancer",
+        "intraoperative",
+        "neoadjuvant",
+        "locally advanced",
+        "dose",
+        "prospective trial"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy for pancreatic cancer"
+    },
+    {
+      "id": "Q0552",
+      "input": "Explain the concept of the biologically effective dose distribution in brachytherapy and how it differs from the physical dose distribution. Why is the biological effect at any point not simply determined by the physical dose delivered? Provide examples where the biological effective dose distribution leads to different clinical decisions than the physical dose distribution.",
+      "expected_keywords": [
+        "biological effective dose",
+        "physical dose",
+        "BED distribution",
+        "clinical decisions",
+        "dose-response"
+      ],
+      "difficulty": "advanced",
+      "description": "Biological vs physical dose distribution in brachytherapy"
+    },
+    {
+      "id": "Q0553",
+      "input": "What are the key differences between the Paris system, the Quimby system, and the Manchester system of dose specification for interstitial brachytherapy implants? For each system, describe the reference point definition, dose calculation method, and clinical applicability. In which clinical scenarios is each system most appropriate?",
+      "expected_keywords": [
+        "Paris system",
+        "Quimby system",
+        "Manchester system",
+        "interstitial",
+        "dose specification",
+        "reference point"
+      ],
+      "difficulty": "medium",
+      "description": "Comparison of interstitial brachytherapy dose specification systems"
+    },
+    {
+      "id": "Q0554",
+      "input": "Discuss the radiobiological evidence supporting the use of brachytherapy for anal canal cancers. How does the steep dose gradient of brachytherapy help spare the anal sphincter muscles while delivering tumoricidal doses? What are the long-term functional outcomes data regarding anal continence after brachytherapy compared to surgical approaches?",
+      "expected_keywords": [
+        "anal canal",
+        "sphincter sparing",
+        "dose gradient",
+        "functional outcomes",
+        "continence",
+        "brachytherapy"
+      ],
+      "difficulty": "advanced",
+      "description": "Radiobiological evidence for anal cancer brachytherapy"
+    },
+    {
+      "id": "Q0555",
+      "input": "Explain the principles of brachytherapy source dwell time optimization. How does the optimization algorithm adjust dwell times to achieve a conformal dose distribution? What are the differences between geometric optimization, volume optimization, and inverse optimization? How do dwell time modulation and source stepping patterns affect the final dose distribution?",
+      "expected_keywords": [
+        "dwell time",
+        "optimization",
+        "geometric optimization",
+        "volume optimization",
+        "inverse optimization",
+        "dose distribution"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy source dwell time optimization principles"
+    },
+    {
+      "id": "Q1036",
+      "input": "Explain the radiobiological differences between LDR and HDR brachytherapy including alpha/beta ratio considerations for different tumor types, linear-quadratic model application, and dose-rate effect influence. Discuss cervical cancer HDR with alpha/beta 10 for tumor and 3 for normal tissue.",
+      "expected_keywords": [
+        "radiobiology_LDR_HDR",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: radiobiology_LDR_HDR"
+    },
+    {
+      "id": "Q1037",
+      "input": "Explain GEC-ESTRO target volume definitions for cervical cancer brachytherapy: GTV-T, GTV-N, CTV-HR, CTV-BR, and how they relate to ICRU 38 point-based system. Include contouring guidelines, MRI role, and evidence for improved outcomes.",
+      "expected_keywords": [
+        "GEC-ESTRO_targets",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: GEC-ESTRO_targets"
+    },
+    {
+      "id": "Q1038",
+      "input": "Discuss TG-43 dosimetry formalism including dose-rate constant, radial dose function, 2D anisotropy function, and how these account for source geometry, scatter, and anisotropy. Discuss limitations in heterogeneous media and TG-186 Monte Carlo approaches.",
+      "expected_keywords": [
+        "TG43_formalism",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "expert",
+      "description": "Deep knowledge test: TG43_formalism"
+    },
+    {
+      "id": "Q1039",
+      "input": "Complete spectrum of acute and late toxicities for cervical cancer HDR brachytherapy by organ system (bladder, rectum, sigmoid, small bowel, vagina). Include pathophysiology, incidence, CTCAE grading, dose-volume correlation from EMBRACE, prevention, and management.",
+      "expected_keywords": [
+        "cervical_toxicity",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: cervical_toxicity"
+    },
+    {
+      "id": "Q1040",
+      "input": "Dose-rate effect in brachytherapy including biological effectiveness, repair half-time values, proraction effects, clinical evidence comparing LDR vs HDR, mathematical modeling approaches, and repair-misrepair model application.",
+      "expected_keywords": [
+        "dose_rate_effect",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "expert",
+      "description": "Deep knowledge test: dose_rate_effect"
+    },
+    {
+      "id": "Q1041",
+      "input": "Complete explanation of EQD2 as applied to brachytherapy including mathematical derivation, fractionation scheme conversion, cumulative dose combining for EBRT + brachytherapy, volume effects, and common pitfalls. Provide numerical examples.",
+      "expected_keywords": [
+        "EQD2_calculation",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: EQD2_calculation"
+    },
+    {
+      "id": "Q1042",
+      "input": "Pathophysiology of radiation-induced vaginal stenosis including cellular/molecular mechanisms, dose-volume relationship, fraction size effects, patient factors, natural history, and prevention strategies (dilation, estrogen, HBO).",
+      "expected_keywords": [
+        "vaginal_stenosis_pathophysiology",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: vaginal_stenosis_pathophysiology"
+    },
+    {
+      "id": "Q1043",
+      "input": "Compare CT, MRI, and ultrasound for brachytherapy applications including physical principles, soft tissue contrast, applicator artifacts, image fusion, and EMBRACE evidence for MRI over CT in cervical cancer.",
+      "expected_keywords": [
+        "imaging_modalities",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: imaging_modalities"
+    },
+    {
+      "id": "Q1044",
+      "input": "BED mathematical framework, tissue-specific alpha/beta ratios, comparison of fractionation schedules, therapeutic ratio optimization, and specific calculation examples for common brachytherapy schedules.",
+      "expected_keywords": [
+        "BED_application",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: BED_application"
+    },
+    {
+      "id": "Q1045",
+      "input": "Complete mechanism of cisplatin radiosensitization in cervical cancer including DNA damage mechanisms, synergy with radiation, optimal timing/dosing, GOG trial evidence, resistance mechanisms, and brachytherapy integration.",
+      "expected_keywords": [
+        "cisplatin_radiosensitizer",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: cisplatin_radiosensitizer"
+    },
+    {
+      "id": "Q1046",
+      "input": "Dosimetric and radiobiological considerations for combining EBRT and brachytherapy: therapeutic window, dose gradient advantage, combined dose optimization, timing, OAR dose budgeting, and sequential delivery rationale.",
+      "expected_keywords": [
+        "EBRT_brachytherapy_combination",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: EBRT_brachytherapy_combination"
+    },
+    {
+      "id": "Q1047",
+      "input": "Complete spectrum of prostate brachytherapy urinary toxicities: pathophysiology, dose to specific prostate zones, DVH parameters, natural history, risk factors, prevention strategies, and management approaches.",
+      "expected_keywords": [
+        "prostate_urinary_toxicity",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: prostate_urinary_toxicity"
+    },
+    {
+      "id": "Q1048",
+      "input": "Complete physics of inverse square law in brachytherapy: mathematical formulation, clinical implications for applicator selection, interaction with dwell time optimization, dose gradient index, and deviations from ideal behavior.",
+      "expected_keywords": [
+        "inverse_square_law",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: inverse_square_law"
+    },
+    {
+      "id": "Q1049",
+      "input": "Pathophysiology of radiation-induced rectal injury: cellular mechanisms, vasculature role, dose-volume relationship from EMBRACE, parallel architecture implications, molecular mediators (TGF-beta, VEGF), and prevention strategies.",
+      "expected_keywords": [
+        "rectal_injury_pathophysiology",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "expert",
+      "description": "Deep knowledge test: rectal_injury_pathophysiology"
+    },
+    {
+      "id": "Q1050",
+      "input": "Clinical evidence and radiobiological rationale for hypofractionated prostate brachytherapy: low alpha/beta ratio, BED equivalence between LDR and HDR, clinical trial evidence, long-term outcomes, and patient selection.",
+      "expected_keywords": [
+        "prostate_fractionation",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: prostate_fractionation"
+    },
+    {
+      "id": "Q1051",
+      "input": "Mechanism of applicator-related complications: organ perforation (incidence, risk factors, prevention), hemorrhage (vascular anatomy, hemostasis), infection (microbiology, prophylaxis), applicator migration, and nerve injury.",
+      "expected_keywords": [
+        "applicator_complications",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: applicator_complications"
+    },
+    {
+      "id": "Q1052",
+      "input": "Dose heterogeneity in brachytherapy: inherent vs unplanned, TCP/NTCP impact, dose non-uniformity ratio, clinical significance of hot/cold spots, and management strategies.",
+      "expected_keywords": [
+        "dose_heterogeneity",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: dose_heterogeneity"
+    },
+    {
+      "id": "Q1053",
+      "input": "Molecular biology of radiation-induced fibrosis: TGF-beta signaling, inflammatory cytokines, ROS mechanisms, cellular senescence, genetic susceptibility, temporal evolution, and anti-fibrotic therapeutic strategies.",
+      "expected_keywords": [
+        "radiation_fibrosis_molecular",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "expert",
+      "description": "Deep knowledge test: radiation_fibrosis_molecular"
+    },
+    {
+      "id": "Q1054",
+      "input": "Manchester system for intracavitary brachytherapy: point A/B definitions, biological significance, limitations of point-based dosimetry, applicator geometry effects, loading patterns, and evolution to volume-based dosimetry.",
+      "expected_keywords": [
+        "Manchester_system",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "medium",
+      "description": "Deep knowledge test: Manchester_system"
+    },
+    {
+      "id": "Q1055",
+      "input": "Complete evidence base for IGABT in cervical cancer: EMBRACE-I and II design/findings, comparative outcomes, local control rates, toxicity profiles, dose-response relationships, DVH constraints, and global practice impact.",
+      "expected_keywords": [
+        "EMBRACE_evidence",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: EMBRACE_evidence"
+    },
+    {
+      "id": "Q1056",
+      "input": "Pharmacokinetic and pharmacodynamic considerations for concurrent chemotherapy during brachytherapy: cell cycle effects, therapeutic ratio modification, drug mechanisms (cisplatin, 5-FU, MMC), timing, bone marrow recovery, wound healing, and trial evidence.",
+      "expected_keywords": [
+        "chemotherapy_brachytherapy_pharmacology",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "expert",
+      "description": "Deep knowledge test: chemotherapy_brachytherapy_pharmacology"
+    },
+    {
+      "id": "Q1057",
+      "input": "Complete physics of brachytherapy source calibration: RAKR definition, well chamber methodology, traceability chain (NIST/NPL), source decay characteristics (Ir-192, Co-60, Cs-137), verification procedures, and regulatory documentation.",
+      "expected_keywords": [
+        "source_calibration",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: source_calibration"
+    },
+    {
+      "id": "Q1058",
+      "input": "Four R's of radiobiology (Repair, Reassortment, Reoxygenation, Repopulation) applied to brachytherapy: biological mechanisms, time courses, brachytherapy-specific influences, clinical significance, and fractionation design.",
+      "expected_keywords": [
+        "four_Rs",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: four_Rs"
+    },
+    {
+      "id": "Q1059",
+      "input": "Complete evidence for brachytherapy in anal canal cancer: historical context (Nigro protocol), boost trials (RTOG 92-08, 98-11), technical aspects, dose/fractionation, OAR constraints, sphincter preservation rates, and NCCN guidelines.",
+      "expected_keywords": [
+        "anal_canal_evidence",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: anal_canal_evidence"
+    },
+    {
+      "id": "Q1060",
+      "input": "Complete DVH parameter concepts: D90, D100, V100, D2cc definitions and rationale, dose homogeneity index, parameter relationship in plan optimization, and site-specific targets (cervical D90 >85 Gy, prostate V100 >95%).",
+      "expected_keywords": [
+        "DVH_parameters",
+        "medical_knowledge",
+        "brachytherapy",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge test: DVH_parameters"
+    },
+    {
+      "id": "Q1061",
+      "input": "Compare Ir-192, Co-60, Cs-137, I-125, Pd-103, Yb-190 brachytherapy sources including energy spectra, half-lives, dose-rate constants, shielding requirements, handling considerations, and clinical application niches.",
+      "expected_keywords": [
+        "source_selection",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: source_selection"
+    },
+    {
+      "id": "Q1062",
+      "input": "Organ-at-risk dose constraints using bladder as example: serial vs parallel architecture, D2cc rationale, DVH parameters predicting toxicity, dose-volume correlation evidence from EMBRACE, EQD2 constraints for LDR/HDR, and EBRT contribution to OAR dose budgets.",
+      "expected_keywords": [
+        "OAR_constraints_bladder",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: OAR_constraints_bladder"
+    },
+    {
+      "id": "Q1063",
+      "input": "Complete evidence for brachytherapy in breast cancer: APBI trials (RAPID, NSABP B-39, IMPORT LOW), ASTRO/ESTRO guidelines, applicator selection, target volume definition, dose prescription, OAR constraints, and cosmetic outcomes.",
+      "expected_keywords": [
+        "breast_brachytherapy_evidence",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: breast_brachytherapy_evidence"
+    },
+    {
+      "id": "Q1064",
+      "input": "Therapeutic ratio concept in brachytherapy: mathematical definition (TCP/NTCP ratio), dose gradient exploitation, radiobiological basis, optimization strategies, EMBRACE evidence for improved TCP with lower NTCP, and conformal index.",
+      "expected_keywords": [
+        "therapeutic_ratio",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: therapeutic_ratio"
+    },
+    {
+      "id": "Q1065",
+      "input": "Complete TPS commissioning for brachytherapy: acceptance testing, TG-59 tests, source data verification, dose calculation algorithm validation, source exchange commissioning, imaging protocol optimization, and ongoing QA.",
+      "expected_keywords": [
+        "TPS_commissioning",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: TPS_commissioning"
+    },
+    {
+      "id": "Q1066",
+      "input": "Dose optimization in brachytherapy: forward vs inverse planning, optimization algorithms (gradient, simulated annealing, genetic), dwell time optimization, constrained vs unconstrained, objectives/constraints, clinical trade-offs, and ML in optimization.",
+      "expected_keywords": [
+        "dose_optimization",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: dose_optimization"
+    },
+    {
+      "id": "Q1067",
+      "input": "Tandem and ovoid applicator system: historical development, anatomical basis, mechanical principles, dosimetric characteristics, applicator selection criteria, loading patterns (Manchester vs modern), and ring vs ovoid design comparison.",
+      "expected_keywords": [
+        "tandem_ovoid_system",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: tandem_ovoid_system"
+    },
+    {
+      "id": "Q1068",
+      "input": "Permanent prostate seed implantation: seed design, dosimetric principles (peripheral loading), clinical evidence for monotherapy, implant technique, pre-planning methodology, intraoperative planning, post-implant evaluation, and quality indicators.",
+      "expected_keywords": [
+        "prostate_seed_principles",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: prostate_seed_principles"
+    },
+    {
+      "id": "Q1069",
+      "input": "Image-guided adaptive brachytherapy for cervical cancer: adaptive definition, MRI protocol, target delineation on MRI, dose optimization per fraction, cumulative dose reporting methodology, and clinical outcomes vs conventional 2D.",
+      "expected_keywords": [
+        "IGABT_concept",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: IGABT_concept"
+    },
+    {
+      "id": "Q1070",
+      "input": "Pulse-dose-rate brachytherapy: physical delivery method, radiobiological rationale, equivalence to LDR/HDR (incomplete repair model), clinical applications, technical advantages, dosimetric considerations, and clinical evidence.",
+      "expected_keywords": [
+        "PDR_brachytherapy",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: PDR_brachytherapy"
+    },
+    {
+      "id": "Q1071",
+      "input": "Brachytherapy for head and neck cancer: historical role in oral cavity, interstitial technique, dose/fractionation, OAR relationships (mandible, salivary glands), functional outcomes, current role vs IMRT/TORS, and remaining indications.",
+      "expected_keywords": [
+        "head_neck_brachytherapy",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: head_neck_brachytherapy"
+    },
+    {
+      "id": "Q1072",
+      "input": "DVH analysis in brachytherapy: cumulative vs differential DVH construction, statistical parameters, limitations as 2D representation, combined analysis with spatial maps, DSH for hollow organs, and GEC-ESTRO/EMBRACE reporting requirements.",
+      "expected_keywords": [
+        "DVH_analysis",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: DVH_analysis"
+    },
+    {
+      "id": "Q1073",
+      "input": "Brachytherapy for recurrent head and neck cancer after prior radiation: re-irradiation challenges, evidence for salvage, dose constraints for cumulative tolerance, applicator considerations in fibrotic tissue, complications (ORN, fistula), patient selection, and outcomes.",
+      "expected_keywords": [
+        "head_neck_re_irradiation",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: head_neck_re_irradiation"
+    },
+    {
+      "id": "Q1074",
+      "input": "Brachytherapy source security and transportation: NRC/state regulations, transportation procedures, storage requirements (vault design), chain of custody, source tracking systems, emergency procedures for loss/theft, training requirements, and violation penalties.",
+      "expected_keywords": [
+        "source_security",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: source_security"
+    },
+    {
+      "id": "Q1075",
+      "input": "Applicator reconstruction in treatment planning: 2D point-based vs 3D CT vs MRI methods, imaging protocols, challenges (artifacts), software tools, verification procedures, impact on dose calculation, and QA procedures.",
+      "expected_keywords": [
+        "applicator_reconstruction",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: applicator_reconstruction"
+    },
+    {
+      "id": "Q1076",
+      "input": "Tumor hypoxia and brachytherapy implications: mechanisms (perfusion vs diffusion-limited), OER value, oxygen fixation hypothesis, clinical evidence in gynecologic cancers, hypoxia assessment methods, strategies to overcome, and brachytherapy's dose escalation advantage.",
+      "expected_keywords": [
+        "tumor_hypoxia",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: tumor_hypoxia"
+    },
+    {
+      "id": "Q1077",
+      "input": "Radiation-induced second malignancies after brachytherapy: risk estimates, latency periods, dose-response models (LNT vs threshold), site-specific risks, dose gradient advantage vs EBRT, chemotherapy additive risk, and surveillance recommendations.",
+      "expected_keywords": [
+        "second_malignancies",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: second_malignancies"
+    },
+    {
+      "id": "Q1078",
+      "input": "Tumor control probability model in brachytherapy: Poisson formulation, parameter effects (cell density, radiosensitivity), dose heterogeneity impact, EUD concept, clinical validation (EMBRACE dose-response), limitations, and optimization application.",
+      "expected_keywords": [
+        "TCP_model",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: TCP_model"
+    },
+    {
+      "id": "Q1079",
+      "input": "Normal tissue complication probability model in brachytherapy: LKB formulation, organ parameters (TD50, m, n), volume effect for serial/parallel organs, DVH reduction rationale, EMBRACE validation, limitations, and multi-criteria optimization application.",
+      "expected_keywords": [
+        "NTCP_model",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: NTCP_model"
+    },
+    {
+      "id": "Q1080",
+      "input": "Plan quality metrics in brachytherapy: COIN definition/interpretation, homogeneity index, conformity index, coverage index, limitations of single metrics, clinical applications, and Pareto-optimal multi-objective evaluation.",
+      "expected_keywords": [
+        "plan_quality_metrics",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: plan_quality_metrics"
+    },
+    {
+      "id": "Q1081",
+      "input": "Pediatric brachytherapy: unique considerations (growth, second malignancy), common tumor sites (vaginal RMS, ependymoma, retinoblastoma), applicator design challenges, developing organ dose constraints, anesthesia requirements, psychosocial impact, and long-term follow-up.",
+      "expected_keywords": [
+        "pediatric_brachytherapy_considerations",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: pediatric_brachytherapy_considerations"
+    },
+    {
+      "id": "Q1082",
+      "input": "Radiation safety in brachytherapy: ALARA principle, time-distance-shielding, regulatory dose limits, HDR room design (interlocks, monitoring), permanent seed precautions, waste management, and emergency procedures (stuck source, contamination).",
+      "expected_keywords": [
+        "radiation_safety",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: radiation_safety"
+    },
+    {
+      "id": "Q1083",
+      "input": "Quality of life impact of cervical cancer brachytherapy: validated instruments (EORTC QLQ-CX24, FACT-Cx), affected domains, acute/long-term outcomes, sexual function impact, technique comparison (2D vs IGABT), interventions (dilation, rehabilitation), and decision-making integration.",
+      "expected_keywords": [
+        "cervical_QoL",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: cervical_QoL"
+    },
+    {
+      "id": "Q1084",
+      "input": "Brachytherapy for vulvar cancer: primary and adjuvant indications, applicator selection (interstitial, surface), target volume definition, dose/fractionation, OAR constraints (urethra, clitoris, femoral vessels), wound healing considerations, functional outcomes, and published evidence.",
+      "expected_keywords": [
+        "vulvar_brachytherapy",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: vulvar_brachytherapy"
+    },
+    {
+      "id": "Q1085",
+      "input": "Brachytherapy for esophageal cancer: historical role, indications (definitive, palliative, neoadjuvant), applicator selection, dose/fractionation, OAR constraints (trachea, aorta, spinal cord), complications (fistula, perforation), trial evidence, and current role.",
+      "expected_keywords": [
+        "esophageal_brachytherapy",
+        "medical_knowledge",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Deep knowledge: esophageal_brachytherapy"
+    },
+    {
+      "id": "Q0821",
+      "input": "A 55-year-old woman with Stage IIB cervical cancer has completed 45 Gy of pelvic EBRT and is now being evaluated for brachytherapy boost. The MRI shows a residual tumor with parametrial extension. The brachytherapy team is debating between a tandem and ovoids versus a tandem and interstitial needle approach. Analyze the clinical decision-making factors that should guide this choice, including tumor response, anatomy, expected dose coverage, and toxicity risks.",
+      "expected_keywords": [
+        "Stage IIB",
+        "applicator selection",
+        "tandem and ovoids",
+        "interstitial",
+        "tumor response",
+        "dose coverage",
+        "toxicity"
+      ],
+      "difficulty": "advanced",
+      "description": "Applicator selection clinical decision for cervical cancer"
+    },
+    {
+      "id": "Q0822",
+      "input": "A 70-year-old man with intermediate-risk prostate cancer is deciding between HDR brachytherapy, LDR permanent seed implantation, and external beam radiation therapy. Present a comprehensive comparison of these three options including cure rates, side effect profiles, treatment convenience, and patient quality of life considerations to support his shared decision-making process.",
+      "expected_keywords": [
+        "prostate cancer",
+        "HDR",
+        "LDR seeds",
+        "EBRT",
+        "comparison",
+        "cure rates",
+        "side effects",
+        "quality of life"
+      ],
+      "difficulty": "medium",
+      "description": "Prostate cancer treatment options comparison"
+    },
+    {
+      "id": "Q0823",
+      "input": "A 45-year-old woman with a Stage II vaginal cancer is being evaluated for treatment. The tumor is located in the upper third of the vagina. The multidisciplinary team must decide between primary brachytherapy, EBRT alone, or a combination. Discuss the evidence supporting each approach, the factors that should influence the treatment decision, and how the decision should be documented in the multidisciplinary tumor board.",
+      "expected_keywords": [
+        "Stage II vaginal",
+        "treatment decision",
+        "brachytherapy",
+        "EBRT",
+        "multidisciplinary",
+        "evidence"
+      ],
+      "difficulty": "advanced",
+      "description": "Vaginal cancer treatment decision analysis"
+    },
+    {
+      "id": "Q0824",
+      "input": "A patient with recurrent endometrial cancer at the vaginal cuff after hysterectomy is being considered for salvage brachytherapy. The recurrence is small (1.5 cm) and superficial. However, the patient also has severe cardiac disease limiting anesthesia options. Analyze the decision-making process for determining whether salvage brachytherapy is appropriate, what modifications might be needed, and how to counsel the patient about the risks and benefits.",
+      "expected_keywords": [
+        "recurrent endometrial",
+        "salvage brachytherapy",
+        "cardiac disease",
+        "anesthesia limitations",
+        "risk-benefit",
+        "counseling"
+      ],
+      "difficulty": "high",
+      "description": "Salvage brachytherapy decision with cardiac limitations"
+    },
+    {
+      "id": "Q0825",
+      "input": "A center must decide whether to implement MRI-guided brachytherapy given limited resources. Present a structured decision analysis framework that considers clinical evidence, cost-effectiveness, patient outcomes, staffing requirements, and the impact on existing brachytherapy workflows. What decision criteria should be used, and how should the decision be communicated to stakeholders?",
+      "expected_keywords": [
+        "MRI-guided",
+        "decision analysis",
+        "cost-effectiveness",
+        "clinical evidence",
+        "staffing",
+        "workflow impact"
+      ],
+      "difficulty": "advanced",
+      "description": "MRI-guided brachytherapy implementation decision"
+    },
+    {
+      "id": "Q0826",
+      "input": "A 62-year-old woman with a large (5 cm) Stage IVA cervical cancer with bladder involvement is being discussed at tumor board. The options include definitive chemoradiation with brachytherapy boost, neoadjuvant chemotherapy followed by surgery, or palliative care. Analyze the clinical decision-making process for this complex case, including the evidence for each approach, patient-specific factors, and how to communicate the recommendation to the patient.",
+      "expected_keywords": [
+        "Stage IVA",
+        "cervical cancer",
+        "bladder involvement",
+        "treatment options",
+        "evidence",
+        "patient factors"
+      ],
+      "difficulty": "high",
+      "description": "Complex Stage IVA cervical cancer decision analysis"
+    },
+    {
+      "id": "Q0827",
+      "input": "A 50-year-old man with recurrent anal cancer after complete response to initial chemoradiation is found to have a 2 cm local recurrence. The options include salvage surgery (abdominoperineal resection), re-irradiation with brachytherapy, or chemoradiation rechallenge. Analyze the decision-making process for this patient, considering the evidence for each option, the patient's functional status, and the goal of sphincter preservation.",
+      "expected_keywords": [
+        "recurrent anal cancer",
+        "salvage options",
+        "abdominoperineal resection",
+        "re-irradiation",
+        "sphincter preservation"
+      ],
+      "difficulty": "advanced",
+      "description": "Recurrent anal cancer treatment decision"
+    },
+    {
+      "id": "Q0828",
+      "input": "A center is evaluating whether to start offering brachytherapy for head and neck cancers. The nearest center offering this service is 300 miles away. Analyze the decision-making framework for establishing this service, including the required volume of cases to maintain competency, the infrastructure and staffing investments needed, and the expected impact on patient access and outcomes.",
+      "expected_keywords": [
+        "new service",
+        "head and neck",
+        "case volume",
+        "competency",
+        "infrastructure",
+        "patient access"
+      ],
+      "difficulty": "advanced",
+      "description": "Head and neck brachytherapy service establishment decision"
+    },
+    {
+      "id": "Q0829",
+      "input": "A 35-year-old woman with a small (2 cm) Stage IB1 cervical cancer is being counseled about her treatment options: radical hysterectomy with lymph node dissection, or definitive chemoradiation with brachytherapy. She is concerned about fertility preservation. Analyze the decision-making process considering oncological outcomes, fertility implications, treatment toxicity, and long-term quality of life.",
+      "expected_keywords": [
+        "Stage IB1",
+        "fertility preservation",
+        "radical hysterectomy",
+        "definitive chemoradiation",
+        "young patient",
+        "quality of life"
+      ],
+      "difficulty": "advanced",
+      "description": "Young cervical cancer patient treatment decision"
+    },
+    {
+      "id": "Q0830",
+      "input": "A 78-year-old man with a T1a glottic laryngeal cancer is being considered for brachytherapy versus transoral laser microsurgery. Both options have excellent local control rates. Analyze the decision-making process comparing these two organ-preserving approaches, considering voice quality outcomes, treatment invasiveness, patient preferences, and the available evidence from comparative studies.",
+      "expected_keywords": [
+        "T1a glottic",
+        "brachytherapy",
+        "transoral laser",
+        "voice quality",
+        "organ preservation",
+        "comparative"
+      ],
+      "difficulty": "medium",
+      "description": "Glottic cancer brachytherapy vs laser decision"
+    },
+    {
+      "id": "Q0831",
+      "input": "A multidisciplinary team is treating a 60-year-old woman with locally advanced vulvar cancer. The tumor is 4 cm and involves the clitoris and urethral meatus. Standard surgical treatment would require radical vulvectomy with尿流改道. The team is considering neoadjuvant chemoradiation followed by conservative surgery, or primary chemoradiation with brachytherapy boost. Analyze the decision-making process for this complex case.",
+      "expected_keywords": [
+        "vulvar cancer",
+        "urethral involvement",
+        "radical vulvectomy",
+        "neoadjuvant",
+        "brachytherapy boost",
+        "conservative surgery"
+      ],
+      "difficulty": "high",
+      "description": "Advanced vulvar cancer treatment decision"
+    },
+    {
+      "id": "Q0832",
+      "input": "A 55-year-old woman with a recurrence of cervical cancer in the pelvic sidewall after prior chemoradiation is being considered for re-irradiation with brachytherapy. The previous EBRT dose was 50 Gy and the recurrence is in an area that previously received significant dose. Analyze the decision-making process for re-irradiation including cumulative dose assessment, normal tissue tolerance, expected outcomes, and risk of severe late toxicity.",
+      "expected_keywords": [
+        "re-irradiation",
+        "recurrent cervical",
+        "cumulative dose",
+        "normal tissue tolerance",
+        "late toxicity",
+        "risk assessment"
+      ],
+      "difficulty": "high",
+      "description": "Re-irradiation decision for recurrent cervical cancer"
+    },
+    {
+      "id": "Q0833",
+      "input": "A 40-year-old man with penile cancer involving the glans and distal shaft is being evaluated for treatment. The options include partial penectomy, Mohs surgery with reconstruction, or brachytherapy. He is very concerned about organ preservation and sexual function. Analyze the clinical decision-making process for this patient, comparing the organ preservation approaches and their functional outcomes.",
+      "expected_keywords": [
+        "penile cancer",
+        "partial penectomy",
+        "Mohs surgery",
+        "brachytherapy",
+        "organ preservation",
+        "sexual function"
+      ],
+      "difficulty": "advanced",
+      "description": "Penile cancer organ preservation decision"
+    },
+    {
+      "id": "Q0834",
+      "input": "A center is deciding between two different brachytherapy treatment planning systems. Present a structured comparison framework that evaluates dose calculation accuracy, optimization capabilities, user interface, DICOM compatibility, vendor support, training requirements, and total cost of ownership. How should this comparison be presented to the hospital's technology evaluation committee?",
+      "expected_keywords": [
+        "TPS comparison",
+        "dose calculation",
+        "optimization",
+        "DICOM",
+        "vendor support",
+        "cost of ownership",
+        "technology evaluation"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy TPS selection comparison"
+    },
+    {
+      "id": "Q0835",
+      "input": "A patient with early-stage breast cancer had a lumpectomy with positive margins and is being considered for re-excision versus brachytherapy boost followed by whole breast radiation. Analyze the clinical decision-making process including the evidence for brachytherapy boost in this setting, the role of margin status in decision-making, and how to counsel the patient about the options.",
+      "expected_keywords": [
+        "breast cancer",
+        "positive margins",
+        "brachytherapy boost",
+        "re-excision",
+        "lumpectomy",
+        "margin status"
+      ],
+      "difficulty": "medium",
+      "description": "Breast cancer positive margin management decision"
+    },
+    {
+      "id": "Q0836",
+      "input": "A 68-year-old woman with recurrent rectal cancer after prior abdominoperineal resection is being considered for brachytherapy. The recurrence is in the presacral space and is deemed unresectable. Analyze the decision-making process for using brachytherapy in this palliative setting, including expected symptom control, survival benefit, quality of life impact, and alternatives to brachytherapy.",
+      "expected_keywords": [
+        "recurrent rectal",
+        "presacral",
+        "palliative",
+        "unresectable",
+        "symptom control",
+        "quality of life",
+        "alternatives"
+      ],
+      "difficulty": "high",
+      "description": "Palliative brachytherapy decision for rectal recurrence"
+    },
+    {
+      "id": "Q0837",
+      "input": "A center's quality metrics reveal that brachytherapy treatment times have been increasing over the past year, leading to patient scheduling delays. Analyze the decision-making process to identify root causes, evaluate potential solutions (such as workflow optimization, additional equipment, or staff training), and prioritize interventions based on impact and feasibility.",
+      "expected_keywords": [
+        "treatment time",
+        "scheduling delays",
+        "root cause analysis",
+        "workflow optimization",
+        "equipment",
+        "staff training"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy treatment time improvement decision"
+    },
+    {
+      "id": "Q0838",
+      "input": "A 72-year-old man with a T2N0M0 prostate cancer (Gleason 7, PSA 12) is evaluating brachytherapy options. He has significant lower urinary tract symptoms (IPSS score 18) and a prostate volume of 60 cc. Analyze whether he is a suitable candidate for brachytherapy considering his LUTS, prostate volume, and cancer risk group. What modifications to the standard approach might be needed?",
+      "expected_keywords": [
+        "prostate cancer",
+        "LUTS",
+        "IPSS",
+        "brachytherapy candidacy",
+        "prostate volume",
+        "modifications"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy candidacy with LUTS analysis"
+    },
+    {
+      "id": "Q0839",
+      "input": "A 48-year-old woman with recurrent cervical cancer after hysterectomy is being evaluated for pelvic exenteration versus definitive re-irradiation with brachytherapy. The surgical approach would be very morbid. Analyze the clinical decision-making process comparing these two radical treatment options, including expected outcomes, toxicity profiles, quality of life implications, and patient preference considerations.",
+      "expected_keywords": [
+        "pelvic exenteration",
+        "re-irradiation",
+        "recurrent cervical",
+        "morbid surgery",
+        "quality of life",
+        "patient preference"
+      ],
+      "difficulty": "high",
+      "description": "Pelvic exenteration vs re-irradiation decision"
+    },
+    {
+      "id": "Q0840",
+      "input": "A center is evaluating whether to offer outpatient HDR brachytherapy for cervical cancer. Currently, all treatments are performed as inpatient procedures. Analyze the decision-making process for transitioning to outpatient treatment, including patient selection criteria, safety requirements, cost implications, patient convenience, and the evidence supporting outpatient HDR brachytherapy.",
+      "expected_keywords": [
+        "outpatient HDR",
+        "inpatient",
+        "cervical cancer",
+        "patient selection",
+        "safety",
+        "cost",
+        "evidence"
+      ],
+      "difficulty": "medium",
+      "description": "Inpatient to outpatient HDR transition decision"
+    },
+    {
+      "id": "Q0841",
+      "input": "A 30-year-old woman with a history of familial adenomatous polyposis (FAP) and desmoid tumor of the mesentery requiring radiation is being considered for brachytherapy versus EBRT. The brachytherapy approach could potentially spare more bowel from radiation. Analyze the decision-making process considering her unique cancer predisposition, long-term radiation risks, and the importance of bowel preservation.",
+      "expected_keywords": [
+        "FAP",
+        "desmoid tumor",
+        "mesentery",
+        "bowel preservation",
+        "cancer predisposition",
+        "long-term risks"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy decision for FAP patient with desmoid tumor"
+    },
+    {
+      "id": "Q0842",
+      "input": "A patient with recurrent squamous cell carcinoma of the oropharynx after prior chemoradiation is being considered for salvage brachytherapy. The tumor is in the tongue base and is 3 cm. Analyze the decision-making process including the role of HPV status in prognosis, the evidence for salvage brachytherapy in this setting, functional outcome expectations, and the alternatives to brachytherapy.",
+      "expected_keywords": [
+        "oropharyngeal",
+        "salvage",
+        "HPV status",
+        "tongue base",
+        "functional outcomes",
+        "alternatives",
+        "recurrent"
+      ],
+      "difficulty": "advanced",
+      "description": "Salvage brachytherapy decision for recurrent oropharyngeal cancer"
+    },
+    {
+      "id": "Q0843",
+      "input": "A center's brachytherapy program has been treating 5 cases per month for the past 2 years. A new physician with brachytherapy expertise is joining the practice and wants to expand the program to 15 cases per month. Analyze the decision-making process for this expansion, including the required infrastructure changes, staffing implications, quality assurance considerations, and the evidence for maintaining competency with increased volume.",
+      "expected_keywords": [
+        "program expansion",
+        "case volume",
+        "infrastructure",
+        "staffing",
+        "QA",
+        "competency"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy program expansion decision"
+    },
+    {
+      "id": "Q0844",
+      "input": "A 65-year-old man with prostate cancer is being evaluated for brachytherapy as monotherapy. His prostate volume is 35 cc, PSA is 8 ng/mL, Gleason score is 3+4=7, and clinical stage is T1c. He also has a large inguinal hernia repair mesh that is adjacent to the prostate. Analyze whether he is an appropriate candidate for brachytherapy, considering both his cancer characteristics and the anatomical challenge posed by the hernia mesh.",
+      "expected_keywords": [
+        "prostate cancer",
+        "hernia mesh",
+        "brachytherapy candidacy",
+        "anatomical challenge",
+        "cancer characteristics",
+        "risk assessment"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy candidacy with hernia mesh"
+    },
+    {
+      "id": "Q0845",
+      "input": "A multidisciplinary team is discussing a patient with locally advanced pancreatic cancer. The options include standard chemoradiation, brachytherapy boost after chemoradiation, or stereotactic body radiation therapy (SBRT). Analyze the evidence supporting each approach, the patient-specific factors that should guide the decision, and how the decision should be communicated to the patient and family.",
+      "expected_keywords": [
+        "pancreatic cancer",
+        "chemoradiation",
+        "brachytherapy boost",
+        "SBRT",
+        "evidence",
+        "patient factors",
+        "communication"
+      ],
+      "difficulty": "advanced",
+      "description": "Locally advanced pancreatic cancer treatment decision"
+    },
+    {
+      "id": "Q0994",
+      "input": "A 70-year-old woman with recurrent endometrial cancer in the vaginal vault is being considered for pelvic exenteration versus palliative chemotherapy with or without brachytherapy. She has significant cardiac disease and limited functional status. Analyze the decision-making framework for this patient, weighing the curative intent of surgery against the lower morbidity of combined chemotherapy and brachytherapy, and discuss how to align treatment intensity with the patient goals of care and life expectancy.",
+      "expected_keywords": [
+        "pelvic exenteration",
+        "palliative",
+        "chemotherapy",
+        "brachytherapy",
+        "goals of care",
+        "cardiac disease",
+        "life expectancy"
+      ],
+      "difficulty": "high",
+      "description": "Recurrent endometrial cancer treatment decision with comorbidities"
+    },
+    {
+      "id": "Q1661",
+      "input": "I have a 62-year-old male with prostate cancer (Gleason 4+3, Stage T2c, PSA 14) who presents with two competing treatment options: (1) radical prostatectomy with extended lymph node dissection, or (2) external beam radiation therapy to 78 Gy plus brachytherapy boost. He has a strong family history of prostate cancer, an enlarged prostate (85 cc), and mild urinary symptoms (IPSS 12). He is otherwise healthy. As a multidisciplinary team, how should we counsel this patient? What are the comparative toxicities, quality of life impacts, and oncologic outcomes for each approach?",
+      "expected_keywords": [
+        "radical prostatectomy",
+        "EBRT",
+        "brachytherapy boost",
+        "toxicity",
+        "quality of life",
+        "comparative",
+        "guidelines"
+      ],
+      "difficulty": "hard",
+      "description": "Complex clinical decision requiring balanced comparison of treatment approaches"
+    },
+    {
+      "id": "Q1662",
+      "input": "I am treating a 55-year-old female with a Stage IIA cervical cancer (4.2 cm tumor, no parametrial extension on MRI). She is a candidate for either radical hysterectomy with lymphadenectomy or definitive chemoradiation with brachytherapy. She has no desire for future fertility. She is very anxious about treatment side effects. How should I counsel her regarding the two treatment approaches? What are the comparative outcomes, late effects, and what role does the tumor size play in treatment selection?",
+      "expected_keywords": [
+        "radical hysterectomy",
+        "definitive chemoradiation",
+        "brachytherapy",
+        "Stage IIA",
+        "outcomes",
+        "GOG",
+        "EORTC"
+      ],
+      "difficulty": "hard",
+      "description": "Clinical decision comparing surgery vs chemoradiation for Stage IIA cervical cancer"
+    },
+    {
+      "id": "Q1663",
+      "input": "I have a 70-year-old male with a 3 cm rectal cancer 5 cm from the anal verge (Stage II, T3N0M0). He has a cardiac history requiring a pacemaker and is on chronic anticoagulation with apixaban. He has moderate COPD (FEV1 55%). The tumor is staged as upper third of the rectum. Should I recommend neoadjuvant chemoradiation followed by surgery, or should I consider a watch-and-wait approach? If I recommend radiation, how do I manage his anticoagulation? What would be the role of brachytherapy boost in this case?",
+      "expected_keywords": [
+        "rectal cancer",
+        "neoadjuvant",
+        "watch and wait",
+        "anticoagulation",
+        "brachytherapy boost",
+        "comorbidities"
+      ],
+      "difficulty": "hard",
+      "description": "Complex clinical decision with multiple comorbidities affecting treatment approach"
+    },
+    {
+      "id": "Q1664",
+      "input": "I am evaluating a 45-year-old female with a 2.5 cm invasive ductal carcinoma of the breast (Stage I, ER/PR positive, HER2 negative). She had a lumpectomy with positive margins (close at 1 mm) and refuses re-excision. She wants breast-conserving therapy. Could brachytherapy be used as a boost to address the close margin? What are the pros and cons of using brachytherapy boost versus external beam boost in this scenario? What is the evidence for brachytherapy boost in breast cancer?",
+      "expected_keywords": [
+        "breast cancer",
+        "brachytherapy boost",
+        "close margin",
+        "lumpectomy",
+        "EBRT boost",
+        "evidence"
+      ],
+      "difficulty": "hard",
+      "description": "Clinical decision about brachytherapy boost for breast cancer with close margin"
+    },
+    {
+      "id": "Q1665",
+      "input": "I have a 80-year-old male with a 2 cm prostate cancer (Gleason 3+3, Stage T1c, PSA 5.8) who has a life expectancy of 5-7 years due to moderate heart failure (EF 35%). He is very active for his age and wants treatment. Should I recommend active surveillance, LDR brachytherapy, or external beam radiation? Given his cardiac status, which approach has the lowest treatment-related morbidity? What are the competing risks of cancer progression versus cardiac mortality?",
+      "expected_keywords": [
+        "elderly",
+        "prostate cancer",
+        "active surveillance",
+        "brachytherapy",
+        "cardiac",
+        "competing risks",
+        "life expectancy"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment selection for elderly prostate cancer patient with cardiac comorbidities"
+    },
+    {
+      "id": "Q1666",
+      "input": "I am treating a 35-year-old male with a 5 cm retroperitoneal seminoma (Stage IIC) after radical inguinal orchiectomy. He has completed 3 cycles of BEP chemotherapy with good response (residual mass 2 cm). The standard approach is to observe or perform retroperitoneal lymph node dissection. However, the patient wants to avoid surgery and asks about radiation options. Could brachytherapy be used for the residual retroperitoneal mass? What are the standard treatment options for post-chemotherapy residual seminoma?",
+      "expected_keywords": [
+        "seminoma",
+        "post-chemotherapy",
+        "residual mass",
+        "retroperitoneal",
+        "observation",
+        "RPLND"
+      ],
+      "difficulty": "hard",
+      "description": "Decision-making for post-chemotherapy residual seminoma"
+    },
+    {
+      "id": "Q1667",
+      "input": "I have a 50-year-old female with a Stage IIIA endometrial cancer (Grade 2, deep myometrial invasion, no cervical stromal invasion). She had a total hysterectomy with bilateral salpingo-oophorectomy and pelvic lymphadenectomy. Final pathology shows 2 of 12 lymph nodes positive with extracapsular extension. She needs adjuvant therapy. Should I recommend EBRT alone, vaginal cuff brachytherapy alone, or combined EBRT and brachytherapy? What is the optimal sequencing if I use both? What concurrent chemotherapy should I add?",
+      "expected_keywords": [
+        "Stage IIIA",
+        "adjuvant",
+        "EBRT",
+        "brachytherapy",
+        "sequencing",
+        "chemotherapy",
+        "lymph node"
+      ],
+      "difficulty": "hard",
+      "description": "Complex adjuvant therapy decision for Stage IIIA endometrial cancer"
+    },
+    {
+      "id": "Q1668",
+      "input": "I am evaluating a 40-year-old female with a recurrent cervical cancer after radical hysterectomy (Piver type III). She had adjuvant EBRT to 50.4 Gy with concurrent cisplatin. The recurrence is a 3 cm central pelvic mass at the vaginal cuff. She has bilateral hydronephrosis with ureteral stents. Given the prior radiation, what are the remaining tolerance doses? Should I recommend re-irradiation with brachytherapy, systemic therapy, or palliative care? What is the role of concurrent chemotherapy with re-irradiation?",
+      "expected_keywords": [
+        "re-irradiation",
+        "cumulative dose",
+        "prior radiation",
+        "systemic therapy",
+        "palliative",
+        "chemotherapy"
+      ],
+      "difficulty": "expert",
+      "description": "Complex decision for recurrent cervical cancer after prior chemoradiation"
+    },
+    {
+      "id": "Q1669",
+      "input": "I have a 65-year-old male with a large T3 prostate cancer (Gleason 4+4, PSA 25, 80 cc prostate) who presents with bilateral hydronephrosis from bladder outlet obstruction. He needs urgent urinary diversion. After nephrostomy tube placement and stabilization, what is the optimal treatment approach for his prostate cancer? Should I recommend neoadjuvant hormonal therapy before definitive radiation? What role does brachytherapy play for large prostate tumors? Should I consider combination EBRT and brachytherapy boost?",
+      "expected_keywords": [
+        "large prostate",
+        "T3",
+        "neoadjuvant hormonal",
+        "brachytherapy",
+        "combination",
+        "hydronephrosis"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment decision for large T3 prostate cancer with obstructive symptoms"
+    },
+    {
+      "id": "Q1670",
+      "input": "I am treating a 55-year-old female with a vulvar melanoma (Stage II, Breslow 3.0 mm, ulceration present, 1 mm deep margin after radical vulvectomy). She has no lymph node involvement on sentinel node biopsy. She wants to avoid adjuvant radiation. Given the high-risk features, should I recommend adjuvant radiation to the vulvar bed? What is the role of brachytherapy as adjuvant treatment? What are the comparative toxicities of EBRT versus brachytherapy for the vulvar bed? What is the evidence for adjuvant radiation in vulvar melanoma?",
+      "expected_keywords": [
+        "vulvar melanoma",
+        "adjuvant",
+        "brachytherapy",
+        "EBRT",
+        "toxicity",
+        "evidence",
+        "high-risk"
+      ],
+      "difficulty": "hard",
+      "description": "Decision about adjuvant radiation for high-risk vulvar melanoma"
+    },
+    {
+      "id": "Q1671",
+      "input": "I have a 42-year-old female with bilateral breast cancer (left: 2.5 cm invasive ductal ER+/HER2-, right: 1.5 cm invasive lobular ER+/HER2-). She had bilateral lumpectomies with positive margins on the left (3 mm) and clear margins on the right. She wants breast-conserving therapy bilaterally. For the left breast, should I recommend re-excision, brachytherapy boost, or observation? For the right breast, should I recommend brachytherapy as sole radiation or as a boost? What is the evidence for brachytherapy in bilateral breast cancer?",
+      "expected_keywords": [
+        "bilateral breast",
+        "positive margin",
+        "brachytherapy",
+        "boost",
+        "lobular",
+        "evidence",
+        "re-excision"
+      ],
+      "difficulty": "hard",
+      "description": "Complex decision for bilateral breast cancer with margin concerns"
+    },
+    {
+      "id": "Q1672",
+      "input": "I am evaluating a 75-year-old female with a 4 cm endometrial cancer (Grade 3, Stage IA, no myometrial invasion). She is morbidly obese (BMI 48) with severe sleep apnea and uncontrolled diabetes (HbA1c 10.2%). She is not a surgical candidate due to anesthesia risk. She wants definitive treatment. Should I recommend definitive brachytherapy alone, or should I add external beam radiation? What fractionation would be appropriate? How do I manage her diabetes during radiation therapy?",
+      "expected_keywords": [
+        "inoperable",
+        "endometrial",
+        "definitive brachytherapy",
+        "diabetes",
+        "fractionation",
+        "obesity"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment decision for inoperable endometrial cancer with multiple comorbidities"
+    },
+    {
+      "id": "Q1673",
+      "input": "I have a 50-year-old male with a 3 cm anal canal squamous cell carcinoma (Stage II, T2N0M0). He has HIV with CD4 count of 350 and is on antiretroviral therapy with undetectable viral load. Standard treatment is concurrent chemoradiation (Nigro protocol). Should I modify the standard radiation dose or fractionation given his HIV status? Should I consider brachytherapy boost? What are the radiation tolerance considerations in HIV-positive patients? Should I adjust the concurrent chemotherapy?",
+      "expected_keywords": [
+        "anal cancer",
+        "HIV",
+        "CD4",
+        "chemoradiation",
+        "brachytherapy boost",
+        "radiation tolerance"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment decision for anal cancer in HIV-positive patient"
+    },
+    {
+      "id": "Q1674",
+      "input": "I am treating a 60-year-old female with a 5 cm vaginal cancer (squamous cell, Stage II) who has a pelvic kidney. The ectopic kidney is located in the true pelvis, posterior to the tumor. She has never had prior treatment. Given the proximity of the pelvic kidney to the tumor, should I consider brachytherapy as primary treatment? What are the dose constraints for the pelvic kidney? Should I use a custom applicator to maximize distance from the kidney? How does the pelvic kidney affect treatment planning?",
+      "expected_keywords": [
+        "vaginal cancer",
+        "pelvic kidney",
+        "dose constraints",
+        "custom applicator",
+        "ectopic kidney",
+        "treatment planning"
+      ],
+      "difficulty": "expert",
+      "description": "Treatment decision for vaginal cancer with ectopic pelvic kidney"
+    },
+    {
+      "id": "Q1675",
+      "input": "I have a 38-year-old female with a Stage II endometrial cancer who desires fertility preservation. She has failed 6 months of progestin therapy with persistent disease on endometrial biopsy. She has no myometrial invasion on MRI. She wants to continue trying for pregnancy. Given the failed progestin therapy, should I recommend definitive treatment (hysterectomy) or should I try alternative medical therapies? What role could brachytherapy play in fertility preservation? What are the fertility outcomes after brachytherapy for endometrial cancer?",
+      "expected_keywords": [
+        "fertility preservation",
+        "endometrial",
+        "progestin failure",
+        "brachytherapy",
+        "fertility outcomes",
+        "organ preservation"
+      ],
+      "difficulty": "hard",
+      "description": "Complex fertility preservation decision after failed medical therapy"
+    },
+    {
+      "id": "Q1676",
+      "input": "I am evaluating a 72-year-old male with prostate cancer (Gleason 3+4, Stage T2b, PSA 10.5) who is on warfarin for a mechanical mitral valve (INR target 2.5-3.5). He has well-controlled type 2 diabetes (HbA1c 7.2%) and mild chronic kidney disease (GFR 52). He wants definitive treatment. Should I recommend LDR brachytherapy, EBRT, or watchful waiting? How should I manage his warfarin during brachytherapy? What INR threshold is safe for the procedure? Should I recommend bridging anticoagulation?",
+      "expected_keywords": [
+        "warfarin",
+        "mechanical valve",
+        "INR",
+        "brachytherapy",
+        "bridging",
+        "anticoagulation",
+        "treatment options"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment decision for prostate cancer with mechanical valve and anticoagulation"
+    },
+    {
+      "id": "Q1677",
+      "input": "I have a 45-year-old female with a 3 cm rectal cancer (Stage I, T1N0M0) that was initially staged as a T1 lesion on endoscopic ultrasound. After transanal endoscopic microsurgery (TEM), the pathology shows deep submucosal invasion (sm3) with lymphovascular invasion. She needs adjuvant therapy. Should I recommend observation, adjuvant chemotherapy alone, or chemoradiation? What role could brachytherapy play as adjuvant local therapy? What is the evidence for each approach?",
+      "expected_keywords": [
+        "rectal cancer",
+        "T1",
+        "adjuvant",
+        "brachytherapy",
+        "lymphovascular invasion",
+        "TEM",
+        "evidence"
+      ],
+      "difficulty": "hard",
+      "description": "Adjuvant therapy decision for high-risk T1 rectal cancer after TEM"
+    },
+    {
+      "id": "Q1678",
+      "input": "I am treating a 55-year-old female with a locally advanced vaginal cancer (Stage III, 7 cm tumor involving the anterior vaginal wall and bladder base). She has had a prior hysterectomy for benign disease. She has severe chronic kidney disease (GFR 22) on dialysis. Given her renal function, should I recommend definitive chemoradiation? What chemotherapy agents are safe in dialysis patients? How do I manage her dialysis schedule during radiation therapy? Should I consider brachytherapy boost?",
+      "expected_keywords": [
+        "dialysis",
+        "renal failure",
+        "chemotherapy",
+        "dialysis schedule",
+        "brachytherapy",
+        "vaginal cancer"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment decision for vaginal cancer in dialysis patient"
+    },
+    {
+      "id": "Q1679",
+      "input": "I have a 65-year-old male with a 4 cm rectal cancer (Stage IIA, T3N0M0) 4 cm from the anal verge. He has a hip replacement on the right side. He wants to avoid a permanent colostomy. Should I recommend neoadjuvant chemoradiation followed by sphincter-sparing surgery, or should I consider a watch-and-wait approach? If I recommend radiation, how does the hip replacement affect treatment planning? Could brachytherapy boost improve the chance of complete response for watch-and-wait?",
+      "expected_keywords": [
+        "rectal cancer",
+        "sphincter preservation",
+        "watch and wait",
+        "hip replacement",
+        "brachytherapy boost",
+        "organ preservation"
+      ],
+      "difficulty": "hard",
+      "description": "Decision about sphincter preservation with hip replacement complication"
+    },
+    {
+      "id": "Q1680",
+      "input": "I am evaluating a 40-year-old female with a 2 cm breast cancer (Stage I, ER+/PR+, HER2-) who wants the most cosmetically favorable treatment. She had a lumpectomy with clear margins. She is asking about the difference between whole breast radiation, partial breast irradiation, and brachytherapy. She is concerned about treatment time, side effects, and long-term cosmetic outcomes. Which approach should I recommend and why? What is the evidence for each approach in terms of local control and cosmesis?",
+      "expected_keywords": [
+        "partial breast",
+        "brachytherapy",
+        "cosmesis",
+        "whole breast",
+        "evidence",
+        "local control",
+        "treatment time"
+      ],
+      "difficulty": "hard",
+      "description": "Decision about radiation approach for early breast cancer focusing on cosmesis"
+    },
+    {
+      "id": "Q1681",
+      "input": "I have a 70-year-old male with a 2 cm prostate cancer (Gleason 3+3, Stage T1c, PSA 6.2) who has ulcerative colitis with chronic pelvic pain. He wants definitive treatment. Given his inflammatory bowel disease, should I avoid pelvic radiation? Should I recommend LDR brachytherapy over EBRT? What are the radiation tolerance considerations for the inflamed bowel? What monitoring should I perform during treatment?",
+      "expected_keywords": [
+        "IBD",
+        "ulcerative colitis",
+        "pelvic radiation",
+        "brachytherapy",
+        "bowel tolerance",
+        "monitoring"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment decision for prostate cancer with inflammatory bowel disease"
+    },
+    {
+      "id": "Q1682",
+      "input": "I am treating a 50-year-old female with a recurrent endometrial cancer after total hysterectomy and pelvic lymphadenectomy. She had prior adjuvant EBRT to 50.4 Gy. The recurrence is a 4 cm presacral mass. She has a well-functioning colostomy from a prior colexomy for diverticular disease. Given the prior radiation and altered anatomy, should I recommend re-irradiation with brachytherapy, systemic therapy, or palliative care? What are the remaining tissue tolerance doses? What systemic options exist for recurrent endometrial cancer?",
+      "expected_keywords": [
+        "re-irradiation",
+        "recurrent endometrial",
+        "prior radiation",
+        "systemic therapy",
+        "palliative",
+        "tissue tolerance"
+      ],
+      "difficulty": "expert",
+      "description": "Complex decision for recurrent endometrial cancer after prior radiation"
+    },
+    {
+      "id": "Q1683",
+      "input": "I have a 30-year-old male with a 6 cm mediastinal germ cell tumor (seminoma) who completed 4 cycles of BEP chemotherapy with good response (residual mass 3 cm). He has significant pulmonary toxicity (DLCO 40% predicted). He wants to avoid further treatment if possible. Should I recommend observation of the residual mass, radiation, or surgical resection? What is the natural history of residual seminoma masses after chemotherapy? How do I monitor the residual mass?",
+      "expected_keywords": [
+        "residual seminoma",
+        "observation",
+        "natural history",
+        "pulmonary toxicity",
+        "monitoring",
+        "mass"
+      ],
+      "difficulty": "hard",
+      "description": "Decision about residual seminoma mass management with pulmonary concerns"
+    },
+    {
+      "id": "Q1684",
+      "input": "I am evaluating a 60-year-old female with a 3 cm cervical cancer (Stage IB1) who is Jehovah Witness and refuses blood transfusions. She wants definitive treatment. Should I recommend radical hysterectomy or definitive chemoradiation with brachytherapy? What are the bleeding risks for each approach? How should I manage her treatment to minimize blood loss? Should I recommend brachytherapy over surgery to avoid surgical bleeding?",
+      "expected_keywords": [
+        "Jehovah Witness",
+        "transfusion refusal",
+        "bleeding risk",
+        "radical hysterectomy",
+        "brachytherapy",
+        "blood management"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment decision considering religious refusal of blood transfusion"
+    },
+    {
+      "id": "Q1685",
+      "input": "I have a 45-year-old male with a penile cancer (squamous cell, Stage T2N1M0) who had a partial penectomy with positive superficial inguinal node. He completed adjuvant inguinal radiation to 50 Gy. He now has a 1.5 cm local recurrence on the penile stump. He refuses radical penectomy. Could brachytherapy be used for this recurrence? What are the local control rates for brachytherapy in recurrent penile cancer? What fractionation would be appropriate?",
+      "expected_keywords": [
+        "penile cancer",
+        "recurrence",
+        "brachytherapy",
+        "local control",
+        "fractionation",
+        "penile stump"
+      ],
+      "difficulty": "hard",
+      "description": "Decision about brachytherapy for recurrent penile cancer"
+    },
+    {
+      "id": "Q1686",
+      "input": "I am treating a 55-year-old female with a 4 cm vulvar cancer (squamous cell, Stage II, 8 mm depth of invasion, 2 mm margins after radical vulvectomy). She has bilateral inguinal lymph node dissection with 1 of 12 nodes positive on the left. She needs adjuvant therapy. Should I recommend adjuvant radiation to the vulvar bed and inguinal regions? What dose and fractionation should I use? What concurrent chemotherapy would be appropriate? Should I consider brachytherapy boost to the vulvar bed?",
+      "expected_keywords": [
+        "vulvar cancer",
+        "adjuvant radiation",
+        "positive node",
+        "brachytherapy boost",
+        "chemotherapy",
+        "dose fractionation"
+      ],
+      "difficulty": "hard",
+      "description": "Adjuvant therapy decision for vulvar cancer with positive inguinal node"
+    },
+    {
+      "id": "Q1687",
+      "input": "I have a 65-year-old male with a 3 cm prostate cancer (Gleason 4+4, Stage T3a, PSA 18) who has a colocutaneous fistula from diverticular disease. He wants definitive treatment. Given the fistula, should I recommend brachytherapy, EBRT, or prostatectomy? How does the fistula affect brachytherapy applicator placement? What are the infection risks with brachytherapy in the presence of a fistula? Should I treat the fistula first?",
+      "expected_keywords": [
+        "fistula",
+        "prostate cancer",
+        "brachytherapy",
+        "infection risk",
+        "applicator",
+        "diverticular disease"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment decision complicated by colocutaneous fistula"
+    },
+    {
+      "id": "Q1688",
+      "input": "I am evaluating a 40-year-old female with a Stage IIA vaginal melanoma (Breslow 4 mm, ulcerated, 3 cm tumor in upper vagina). She had a radical vaginectomy with bilateral inguinal lymphadenectomy (all nodes negative). She wants adjuvant therapy. Given the high-risk features, should I recommend adjuvant radiation? What is the role of brachytherapy for the vaginal cuff? Should I consider concurrent immunotherapy (pembrolizumab) with radiation? What is the evidence for this combination?",
+      "expected_keywords": [
+        "vaginal melanoma",
+        "adjuvant radiation",
+        "brachytherapy",
+        "immunotherapy",
+        "pembrolizumab",
+        "evidence"
+      ],
+      "difficulty": "expert",
+      "description": "Adjuvant therapy decision for high-risk vaginal melanoma"
+    },
+    {
+      "id": "Q1689",
+      "input": "I have a 70-year-old male with prostate cancer (Gleason 3+4, Stage T2a, PSA 8.5) who has severe anxiety disorder requiring ongoing benzodiazepine therapy. He wants LDR brachytherapy but is very anxious about the procedure. How should I manage his anxiety during the procedure? Should I recommend general anesthesia versus local anesthesia? What modifications to the brachytherapy procedure are needed for anxious patients? Should I consider alternative treatment approaches?",
+      "expected_keywords": [
+        "anxiety",
+        "benzodiazepine",
+        "anesthesia",
+        "procedure modifications",
+        "patient comfort",
+        "alternative"
+      ],
+      "difficulty": "medium",
+      "description": "Management decision for anxious patient undergoing brachytherapy"
+    },
+    {
+      "id": "Q1690",
+      "input": "I am treating a 50-year-old female with a 3 cm vaginal cancer (squamous cell, Stage II). She has a history of pelvic organ prolapse with a vaginal mesh placement 5 years ago. The mesh is visible on imaging and is adjacent to the tumor. Should I recommend brachytherapy? How does the mesh affect applicator placement? What are the risks of radiation to the mesh? Should the mesh be removed before treatment?",
+      "expected_keywords": [
+        "vaginal mesh",
+        "brachytherapy",
+        "applicator",
+        "mesh complications",
+        "prolapse",
+        "multidisciplinary"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment decision complicated by vaginal mesh placement"
+    },
+    {
+      "id": "Q1691",
+      "input": "I have a 45-year-old male with a 5 cm anal canal adenocarcinoma (Stage III, T3N1M0). He has Crohn disease with an existing diverting colostomy. He has completed neoadjuvant chemoradiation (50.4 Gy with 5-FU/mitomycin-C) with partial response. The residual tumor is 2 cm. Should I recommend surgical resection (abdominoperineal resection) or should I consider brachytherapy boost? What is the evidence for brachytherapy in anal adenocarcinoma? Given his Crohn disease, what are the additional considerations?",
+      "expected_keywords": [
+        "anal adenocarcinoma",
+        "Crohn",
+        "brachytherapy boost",
+        "post-chemoradiation",
+        "APR",
+        "evidence"
+      ],
+      "difficulty": "expert",
+      "description": "Decision about residual anal adenocarcinoma after chemoradiation"
+    },
+    {
+      "id": "Q1692",
+      "input": "I am evaluating a 60-year-old female with a 4 cm endometrial cancer (Grade 3, Stage IB, deep myometrial invasion). She had a total hysterectomy with bilateral salpingo-oophorectomy and sentinel lymph node mapping (2 nodes removed, both negative). She needs adjuvant therapy. Should I recommend vaginal cuff brachytherapy alone, EBRT alone, or combined therapy? What is the evidence for each approach? What concurrent chemotherapy should I add?",
+      "expected_keywords": [
+        "Grade 3",
+        "Stage IB",
+        "adjuvant",
+        "brachytherapy",
+        "EBRT",
+        "chemotherapy",
+        "evidence"
+      ],
+      "difficulty": "hard",
+      "description": "Adjuvant therapy decision for high-grade early endometrial cancer"
+    },
+    {
+      "id": "Q1693",
+      "input": "I have a 35-year-old female with a 3 cm vaginal clear cell carcinoma (Stage I). She had a total hysterectomy with bilateral salpingo-oophorectomy. She wants to preserve her ovaries for hormonal function but has already had them removed. She is interested in hormone replacement therapy. Given the clear cell histology, should I recommend adjuvant radiation? What is the role of brachytherapy? Should she receive hormone replacement therapy? What is the evidence for HRT after vaginal clear cell carcinoma?",
+      "expected_keywords": [
+        "clear cell",
+        "vaginal cancer",
+        "adjuvant radiation",
+        "brachytherapy",
+        "HRT",
+        "hormone replacement"
+      ],
+      "difficulty": "hard",
+      "description": "Decision about adjuvant radiation and HRT for vaginal clear cell carcinoma"
+    },
+    {
+      "id": "Q1694",
+      "input": "I am treating a 55-year-old male with a 6 cm rectal cancer (Stage III, T3N1M0) 3 cm from the anal verge. He has severe obstructive sleep apnea requiring CPAP. He is morbidly obese (BMI 45). He wants to preserve sphincter function. Should I recommend neoadjuvant chemoradiation followed by sphincter-sparing surgery, or should I recommend APR? How does obesity affect neoadjuvant radiation delivery? Could brachytherapy boost improve complete response rates for watch-and-wait? What are the anesthetic considerations?",
+      "expected_keywords": [
+        "rectal cancer",
+        "obesity",
+        "sphincter preservation",
+        "brachytherapy boost",
+        "watch and wait",
+        "anesthetic"
+      ],
+      "difficulty": "hard",
+      "description": "Complex decision for rectal cancer in obese patient wanting sphincter preservation"
+    },
+    {
+      "id": "Q1695",
+      "input": "I have a 70-year-old female with a 2 cm endometrial cancer (Grade 1, Stage IA) who has severe dementia (MMSE 12). Her family wants definitive treatment. She has a well-functioning cardiac pacemaker. Given her cognitive impairment and pacemaker, should I recommend definitive brachytherapy or observation? How do I manage the pacemaker during radiation therapy? What are the ethical considerations for treating a cognitively impaired patient? Should I use hypofractionation to minimize treatment visits?",
+      "expected_keywords": [
+        "dementia",
+        "pacemaker",
+        "ethical",
+        "hypofractionation",
+        "definitive brachytherapy",
+        "cognitively impaired"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment decision for cognitively impaired patient with pacemaker"
+    },
+    {
+      "id": "Q1696",
+      "input": "I am evaluating a 40-year-old male with a 3 cm penile cancer (squamous cell, Stage T2N0M0) who had a partial penectomy. The surgical margin is 5 mm. He wants organ preservation and is willing to accept a higher recurrence risk. Should I recommend adjuvant radiation to the penile stump? What is the role of brachytherapy for adjuvant treatment? What fractionation would minimize long-term complications while providing adequate coverage? What is the evidence for adjuvant radiation after partial penectomy?",
+      "expected_keywords": [
+        "penile cancer",
+        "adjuvant radiation",
+        "brachytherapy",
+        "partial penectomy",
+        "fractionation",
+        "evidence"
+      ],
+      "difficulty": "hard",
+      "description": "Adjuvant therapy decision for penile cancer after partial penectomy"
+    },
+    {
+      "id": "Q1697",
+      "input": "I have a 55-year-old female with a 4 cm vaginal cancer (squamous cell, Stage III) who has a spinal cord stimulator for chronic pain. The stimulator battery is implanted in the buttock with leads in the spinal canal. How does the spinal cord stimulator affect radiation therapy planning? Should I recommend brachytherapy to minimize radiation to the device? What are the radiation tolerance limits for the spinal cord stimulator? Should I recommend device removal before treatment?",
+      "expected_keywords": [
+        "spinal cord stimulator",
+        "radiation tolerance",
+        "device",
+        "brachytherapy",
+        "lead",
+        "manufacturer"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment decision complicated by implanted spinal cord stimulator"
+    },
+    {
+      "id": "Q1698",
+      "input": "I am treating a 60-year-old male with prostate cancer (Gleason 4+3, Stage T2c, PSA 12) who has a history of bilateral deep vein thrombosis. He is on lifelong anticoagulation with rivaroxaban. He wants LDR brachytherapy. How should I manage his anticoagulation during the implant procedure? Should I use bridging therapy? What INR or anti-Xa level is safe for perineal needle insertion? Should I recommend EBRT instead to avoid bleeding risk?",
+      "expected_keywords": [
+        "anticoagulation",
+        "rivaroxaban",
+        "bridging",
+        "DVT",
+        "LDR brachytherapy",
+        "bleeding risk"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment decision for prostate cancer with anticoagulation requirement"
+    },
+    {
+      "id": "Q1699",
+      "input": "I have a 45-year-old female with a 2 cm breast cancer (Stage I, triple negative) who had a lumpectomy with close margins (1 mm). She refuses re-excision and wants breast-conserving therapy. She is BRCA1 positive with a strong family history. Given the triple negative histology and BRCA status, should I recommend brachytherapy boost? What are the local recurrence rates for triple negative breast cancer with brachytherapy? Should I recommend mastectomy instead?",
+      "expected_keywords": [
+        "triple negative",
+        "BRCA1",
+        "brachytherapy boost",
+        "close margin",
+        "local recurrence",
+        "breast conserving"
+      ],
+      "difficulty": "hard",
+      "description": "Decision about brachytherapy for triple negative breast cancer with close margin"
+    },
+    {
+      "id": "Q1700",
+      "input": "I am evaluating a 75-year-old male with a 3 cm prostate cancer (Gleason 3+4, Stage T2b, PSA 9.5) who has a life expectancy of 4-6 years due to metastatic lung cancer. He wants quality-of-life focused treatment. Should I recommend active surveillance, LDR brachytherapy, or observation? Given his limited life expectancy from lung cancer, what is the appropriate level of prostate cancer treatment? What are the competing risks? How should I counsel him about treatment goals?",
+      "expected_keywords": [
+        "competing mortality",
+        "life expectancy",
+        "quality of life",
+        "active surveillance",
+        "goals of care",
+        "lung cancer"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment decision for prostate cancer with competing metastatic disease"
+    },
+    {
+      "id": "Q1701",
+      "input": "I have a 50-year-old female with a 5 cm locally advanced cervical cancer (Stage IIB) who has been treated with concurrent cisplatin-based chemoradiation. At the time of brachytherapy, MRI shows a partial response with a 2 cm residual tumor. The tandem and ovoid applicator does not adequately cover the residual tumor. Should I consider interstitial brachytherapy to improve coverage? What are the benefits and risks of interstitial approach? Should I modify the concurrent chemotherapy during brachytherapy?",
+      "expected_keywords": [
+        "interstitial brachytherapy",
+        "residual tumor",
+        "cervical cancer",
+        "coverage",
+        "chemotherapy",
+        "IGABT"
+      ],
+      "difficulty": "hard",
+      "description": "Decision about interstitial brachytherapy for inadequate applicator coverage"
+    },
+    {
+      "id": "Q1702",
+      "input": "I am treating a 65-year-old male with a 4 cm rectal cancer (Stage II, T3N0M0) who has a hip replacement on the left side. He wants to avoid a permanent colostomy. Should I recommend neoadjuvant chemoradiation followed by low anterior resection, or should I consider brachytherapy boost for organ preservation? How does the hip replacement affect radiation treatment planning? What are the dosimetric implications of hip scatter?",
+      "expected_keywords": [
+        "hip replacement",
+        "rectal cancer",
+        "brachytherapy boost",
+        "organ preservation",
+        "scatter",
+        "treatment planning"
+      ],
+      "difficulty": "hard",
+      "description": "Decision about rectal cancer treatment with hip replacement complication"
+    },
+    {
+      "id": "Q1703",
+      "input": "I have a 40-year-old female with a 3 cm invasive ductal carcinoma of the breast (Stage I, ER+/PR+, HER2-) who had a lumpectomy with clear margins. She is very physically active and a competitive marathon runner. She is concerned about radiation affecting her training and competition schedule. Should I recommend accelerated partial breast irradiation (APBI) with brachytherapy to minimize treatment time? What are the comparative outcomes of APBI vs whole breast radiation for her cancer type? How quickly can she resume intense physical activity after brachytherapy?",
+      "expected_keywords": [
+        "APBI",
+        "brachytherapy",
+        "exercise",
+        "marathon",
+        "treatment time",
+        "accelerated"
+      ],
+      "difficulty": "medium",
+      "description": "Patient-centered decision about treatment approach for active patient"
+    },
+    {
+      "id": "Q1704",
+      "input": "I am evaluating a 55-year-old male with a 5 cm rectal cancer (Stage IIA, T3N0M0) who has a colostomy from prior diverticular disease perforation. He wants to avoid another abdominal surgery. Should I recommend neoadjuvant chemoradiation followed by resection, or should I consider definitive chemoradiation with brachytherapy boost? Given his prior surgery, what are the adhesions and altered anatomy concerns? How does the colostomy affect radiation treatment planning?",
+      "expected_keywords": [
+        "rectal cancer",
+        "colostomy",
+        "prior surgery",
+        "adhesions",
+        "brachytherapy boost",
+        "altered anatomy"
+      ],
+      "difficulty": "hard",
+      "description": "Decision about rectal cancer treatment with prior colostomy"
+    },
+    {
+      "id": "Q1705",
+      "input": "I have a 60-year-old female with a 2 cm endometrial cancer (Grade 2, Stage IA) who has a history of breast cancer treated with bilateral mastectomy and adjuvant tamoxifen for 5 years. She has been on tamoxifen for 3 years. Given her tamoxifen use, should I consider this as a risk factor? What are the implications of tamoxifen for endometrial cancer treatment? Should I recommend definitive brachytherapy? How does tamoxifen affect radiation sensitivity?",
+      "expected_keywords": [
+        "tamoxifen",
+        "endometrial cancer",
+        "breast cancer",
+        "brachytherapy",
+        "radiation sensitivity",
+        "risk factor"
+      ],
+      "difficulty": "hard",
+      "description": "Decision about endometrial cancer in tamoxifen-treated breast cancer survivor"
+    },
+    {
+      "id": "Q1706",
+      "input": "I am treating a 45-year-old male with a 4 cm anal canal squamous cell carcinoma (Stage II, T2N0M0) who has a perianal abscess that was drained 2 weeks ago. He has persistent perianal inflammation. Should I delay chemoradiation until the abscess heals? What is the optimal timing? Should I consider brachytherapy boost? How does the perianal abscess affect treatment planning and outcomes?",
+      "expected_keywords": [
+        "anal cancer",
+        "abscess",
+        "timing",
+        "chemoradiation",
+        "brachytherapy boost",
+        "healing"
+      ],
+      "difficulty": "hard",
+      "description": "Decision about timing of chemoradiation after perianal abscess"
+    },
+    {
+      "id": "Q1707",
+      "input": "I have a 35-year-old female with a 3 cm vaginal cancer (squamous cell, Stage II) who is pregnant at 10 weeks gestation. She wants to continue the pregnancy. Her obstetric team supports continuing the pregnancy. Should I recommend neoadjuvant chemotherapy followed by brachytherapy during pregnancy? What chemotherapy agents are safe during pregnancy? What is the fetal dose from vaginal brachytherapy? When should delivery be planned?",
+      "expected_keywords": [
+        "pregnancy",
+        "vaginal cancer",
+        "chemotherapy",
+        "fetal dose",
+        "brachytherapy",
+        "delivery timing"
+      ],
+      "difficulty": "expert",
+      "description": "Complex decision for vaginal cancer during pregnancy"
+    },
+    {
+      "id": "Q1708",
+      "input": "I am evaluating a 70-year-old male with a 3 cm prostate cancer (Gleason 3+4, Stage T2a, PSA 7.8) who has a colostomy from prior rectal cancer treatment. He wants LDR brachytherapy. How does the colostomy affect perineal access for seed implantation? Should I use a transperineal approach? Are there any modifications needed for applicator placement? What are the infection risks with the colostomy nearby?",
+      "expected_keywords": [
+        "colostomy",
+        "perineal access",
+        "LDR brachytherapy",
+        "applicator",
+        "infection risk",
+        "modifications"
+      ],
+      "difficulty": "hard",
+      "description": "Decision about prostate LDR brachytherapy with colostomy"
+    },
+    {
+      "id": "Q1709",
+      "input": "I have a 50-year-old female with a 4 cm vulvar melanoma (Stage II, Breslow 3.5 mm, ulcerated) who had a radical vulvectomy with bilateral inguinal lymph node dissection (1 of 8 nodes positive on right). She has a well-controlled seizure disorder on levetiracetam. She needs adjuvant radiation. Should I recommend adjuvant radiation to the vulvar bed and right inguinal region? Should I consider brachytherapy boost to the vulvar bed? What concurrent chemotherapy would be appropriate? How does levetiracetam interact with radiation therapy?",
+      "expected_keywords": [
+        "vulvar melanoma",
+        "adjuvant radiation",
+        "brachytherapy boost",
+        "levetiracetam",
+        "seizure",
+        "chemotherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Adjuvant therapy decision with seizure disorder comorbidity"
+    },
+    {
+      "id": "Q1710",
+      "input": "I am treating a 65-year-old male with a 3 cm prostate cancer (Gleason 4+3, Stage T3a, PSA 15) who has a heart transplant 5 years ago and is on chronic immunosuppression (tacrolimus, mycophenolate, prednisone). He wants definitive treatment. Given his immunosuppressed state, should I recommend brachytherapy, EBRT, or prostatectomy? How does immunosuppression affect radiation therapy? Should I modify the immunosuppressive regimen during treatment? What are the infection risks?",
+      "expected_keywords": [
+        "immunosuppression",
+        "heart transplant",
+        "brachytherapy",
+        "infection risk",
+        "transplant team",
+        "tacrolimus"
+      ],
+      "difficulty": "expert",
+      "description": "Treatment decision for prostate cancer in heart transplant recipient"
+    }
+  ]
+}

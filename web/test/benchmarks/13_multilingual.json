@@ -1,0 +1,471 @@
+{
+  "category": "multilingual",
+  "description": "Multi-language support, medical scenarios in various languages",
+  "requires_ct": false,
+  "cases": [
+    {
+      "id": "Q0401",
+      "input": "Bonjour, je suis Dr. Dubois de Paris. J'ai un patient atteint d'un cancer de la prostate qui nécessite un implant de graines LDR. Pouvez-vous m'aider à planifier le traitement en français?",
+      "expected_keywords": [
+        "French",
+        "prostate",
+        "LDR",
+        "planning",
+        "assistance"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: French prostate LDR planning assistance"
+    },
+    {
+      "id": "Q0402",
+      "input": "Guten Tag, ich bin Dr. Mueller aus Berlin. Ich benötige Hilfe bei der Planung einer HDR-Brachytherapie für einen Gebärmutterhalskrebs. Können Sie mir auf Deutsch helfen?",
+      "expected_keywords": [
+        "German",
+        "cervical",
+        "HDR",
+        "brachytherapy",
+        "planning",
+        "assistance"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: German cervical HDR brachytherapy planning assistance"
+    },
+    {
+      "id": "Q0403",
+      "input": "Hola, soy la Dra. Garcia de Madrid. Tengo un paciente con cáncer de próstata que necesita braquiterapia LDR con semillas de I-125. ¿Puede ayudarme con la planificación del tratamiento en español?",
+      "expected_keywords": [
+        "Spanish",
+        "prostate",
+        "LDR",
+        "I-125",
+        "brachytherapy",
+        "planning"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Spanish prostate LDR I-125 brachytherapy planning"
+    },
+    {
+      "id": "Q0404",
+      "input": "I am a Japanese radiation oncologist. For cervical cancer brachytherapy, please explain the concept of point A and the Manchester system in simple English that I can translate for my colleagues who do not speak English well.",
+      "expected_keywords": [
+        "Japanese",
+        "English",
+        "point",
+        "A",
+        "Manchester",
+        "system",
+        "simple",
+        "explanation"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Japanese English point A Manchester system simple explanation"
+    },
+    {
+      "id": "Q0405",
+      "input": "Je voudrais savoir quelle est la dose de prescription recommandée pour la braquithérapie LDR de la prostate avec des graines d'I-125 selon les recommandations de l'ABS. Pouvez-vous me donner la réponse en français?",
+      "expected_keywords": [
+        "French",
+        "I-125",
+        "prostate",
+        "prescription",
+        "ABS",
+        "recommendation"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: French I-125 prostate prescription ABS recommendation"
+    },
+    {
+      "id": "Q0406",
+      "input": "Chinese text: 我是一名来自中国的放射肿瘤科医生。我有一个宫颈癌患者需要HDR近距离放射治疗。请用中文解释Tandem和Ovoids施源器的工作原理和剂量分布特点。I need to explain the applicator geometry and dose specification to my Chinese colleagues who are setting up a new HDR program at our hospital. Can you provide a detailed explanation in Chinese about the tandem and ovoids system including the dose distribution around point A and the clinical significance of the Manchester system for cervical cancer brachytherapy? This will be used as educational material for our training program.",
+      "expected_keywords": [
+        "Chinese",
+        "cervical",
+        "HDR",
+        "tandem",
+        "ovoids",
+        "applicator",
+        "explanation"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Chinese cervical HDR tandem ovoids applicator explanation"
+    },
+    {
+      "id": "Q0407",
+      "input": "Buongiorno, sono il Dr. Rossi di Roma. Ho bisogno di aiuto per valutare un piano di brachiterapia LDR per la prostata. Il volume prostatico è di 35cc e il paziente ha un rischio intermedio. Può aiutarmi in italiano?",
+      "expected_keywords": [
+        "Italian",
+        "prostate",
+        "LDR",
+        "brachytherapy",
+        "planning",
+        "risk",
+        "assessment"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Italian prostate LDR brachytherapy planning risk assessment"
+    },
+    {
+      "id": "Q0408",
+      "input": "I need you to explain brachytherapy to my Korean-speaking patient. The patient has prostate cancer and is considering I-125 seed implant versus surgery. Please provide a patient-friendly explanation that I can translate into Korean.",
+      "expected_keywords": [
+        "Korean",
+        "patient",
+        "education",
+        "prostate",
+        "I-125",
+        "seed",
+        "implant",
+        "vs",
+        "surgery"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Korean patient education prostate I-125 seed implant vs surgery"
+    },
+    {
+      "id": "Q0409",
+      "input": "Bonjour, je suis un physicien médical à Montréal. Je dois vérifier les paramètres TG-43 pour unseed I-125. Quelle est la constante de débit de dose et les fonctions de dose radiale pour le modèle InterSource-125?",
+      "expected_keywords": [
+        "French",
+        "TG-43",
+        "InterSource-125",
+        "parameters",
+        "physicist",
+        "verification"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: French TG-43 InterSource-125 parameters physicist verification"
+    },
+    {
+      "id": "Q0410",
+      "input": "I am a Turkish radiation oncologist. I want to start an endometrial cancer brachytherapy program at my hospital. Can you explain the required equipment and training in simple language that I can share with my hospital administration?",
+      "expected_keywords": [
+        "Turkish",
+        "endometrial",
+        "brachytherapy",
+        "program",
+        "equipment",
+        "training",
+        "requirements"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Turkish endometrial brachytherapy program equipment training requirements"
+    },
+    {
+      "id": "Q0411",
+      "input": "Portuguese text: Sou médico radioterapeuta do Brasil. Preciso de ajuda para avaliar um plano de braquiterapia HDR para câncer cervicouterino. O aplicador é tandem e ovoids e a dose prescrita é 7 Gy por fração. Pode me ajudar em português?",
+      "expected_keywords": [
+        "Portuguese",
+        "cervical",
+        "HDR",
+        "tandem",
+        "ovoids",
+        "7",
+        "Gy",
+        "plan",
+        "evaluation"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Portuguese cervical HDR tandem ovoids 7 Gy plan evaluation"
+    },
+    {
+      "id": "Q0412",
+      "input": "I need to prepare a presentation for my Dutch colleagues about the latest advances in MRI-guided brachytherapy for cervical cancer. Can you provide key points from the EMBRACE studies that I should include in my talk?",
+      "expected_keywords": [
+        "Dutch",
+        "EMBRACE",
+        "MRI-guided",
+        "cervical",
+        "brachytherapy",
+        "presentation"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Dutch EMBRACE MRI-guided cervical brachytherapy presentation"
+    },
+    {
+      "id": "Q0413",
+      "input": "Russian text: Я врач-радиотерапевт из Москвы. У меня есть пациент с раком простаты, которому показана брахитерапия LDR. Помогите мне рассчитать необходимое количество семян I-125 для объема предстательной железы 40 куб.см.",
+      "expected_keywords": [
+        "Russian",
+        "prostate",
+        "I-125",
+        "seed",
+        "count",
+        "40cc",
+        "calculation"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Russian prostate I-125 seed count 40cc calculation"
+    },
+    {
+      "id": "Q0414",
+      "input": "I am a Chinese physicist. I need to understand the difference between the Paris system and the Manchester system for dose specification in interstitial brachytherapy. Please explain in simple Chinese-compatible terminology.",
+      "expected_keywords": [
+        "Chinese",
+        "physicist",
+        "Paris",
+        "Manchester",
+        "system",
+        "dose",
+        "specification",
+        "comparison"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Chinese physicist Paris Manchester system dose specification comparison"
+    },
+    {
+      "id": "Q0415",
+      "input": "Bonjour, je dois évaluer un plan de braquithérapie PDR pour un cancer du col utérin. La dose physique totale est de 60 Gy livrée en 0.5 Gy par impulsion toutes les heures. Pouvez-vous calculer le nombre d'impulsions nécessaires?",
+      "expected_keywords": [
+        "French",
+        "PDR",
+        "cervical",
+        "60",
+        "Gy",
+        "0.5",
+        "Gy",
+        "pulse",
+        "calculation"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: French PDR cervical 60 Gy 0.5 Gy pulse calculation"
+    },
+    {
+      "id": "Q0416",
+      "input": "I am a Korean medical physicist. I want to verify the source strength of our HDR Ir-192 source. Our well chamber reading is 36500 U but the calibration certificate says 37200 U. Is this within acceptable tolerance?",
+      "expected_keywords": [
+        "Korean",
+        "physicist",
+        "HDR",
+        "Ir-192",
+        "source",
+        "strength",
+        "well",
+        "chamber",
+        "tolerance"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Korean physicist HDR Ir-192 source strength well chamber tolerance"
+    },
+    {
+      "id": "Q0417",
+      "input": "Japanese text: 前立腺がんのLDR組織内照射において、I-125とPd-103の選択基準を教えてください。中リスクと高リスクの症例で異なる同位体を推奨しますか? I am a Japanese radiation oncologist treating prostate cancer patients with permanent seed implants. I need to understand the radiobiological rationale for choosing between I-125 and Pd-103 isotopes based on tumor risk categories. Can you explain the half-life differences, dose rate effects, and clinical evidence supporting isotope selection for low-risk versus intermediate-risk versus high-risk prostate cancer patients? This information will help me optimize our treatment protocols at our institution in Tokyo.",
+      "expected_keywords": [
+        "Japanese",
+        "I-125",
+        "Pd-103",
+        "selection",
+        "prostate",
+        "risk",
+        "category",
+        "criteria"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Japanese I-125 Pd-103 selection prostate risk category criteria"
+    },
+    {
+      "id": "Q0418",
+      "input": "I am a Spanish-speaking nurse practitioner. I need to explain to my patients what to expect during and after a prostate brachytherapy procedure. Can you provide a step-by-step explanation in simple Spanish?",
+      "expected_keywords": [
+        "Spanish",
+        "patient",
+        "education",
+        "prostate",
+        "brachytherapy",
+        "procedure",
+        "steps"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Spanish patient education prostate brachytherapy procedure steps"
+    },
+    {
+      "id": "Q0419",
+      "input": "Bonjour, je suis résidente en oncologie à Lyon. Je prépare mon examen de board et j'ai besoin d'aide pour comprendre la dosimétrie post-implant pour les implants prostatiques LDR. Pouvez-vous expliquer les étapes en français?",
+      "expected_keywords": [
+        "French",
+        "board",
+        "exam",
+        "LDR",
+        "prostate",
+        "post-implant",
+        "dosimetry",
+        "explanation"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: French board exam LDR prostate post-implant dosimetry explanation"
+    },
+    {
+      "id": "Q0420",
+      "input": "I am a German physicist. We are commissioning a new HDR afterloader. Can you explain the end-to-end testing procedure and what QA measurements are required before clinical use? Please provide details in German if possible.",
+      "expected_keywords": [
+        "German",
+        "HDR",
+        "afterloader",
+        "commissioning",
+        "end-to-end",
+        "QA",
+        "testing"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: German HDR afterloader commissioning end-to-end QA testing"
+    },
+    {
+      "id": "Q0421",
+      "input": "I need to write a research protocol for a multi-national brachytherapy trial. Please help me draft the dosimetry quality assurance section in clear, standardized English that can be translated to multiple languages.",
+      "expected_keywords": [
+        "multinational",
+        "trial",
+        "dosimetry",
+        "QA",
+        "protocol",
+        "standardized",
+        "English"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: multinational trial dosimetry QA protocol standardized English"
+    },
+    {
+      "id": "Q0422",
+      "input": "Chinese text: 请解释HDR近距离放射治疗中驻留位置优化的概念。几何优化、剂量点优化和IPSA之间有什么区别? I am a Chinese medical physicist responsible for HDR treatment planning at our cancer center. We recently upgraded our planning system and I need to understand the different optimization algorithms available. Can you explain the mathematical principles behind geometric optimization, dose-point optimization, and inverse planning with simulated annealing (IPSA) in the context of HDR brachytherapy? I need to know which algorithm is most appropriate for different clinical scenarios including prostate, cervical, and head and neck treatments.",
+      "expected_keywords": [
+        "Chinese",
+        "dwell",
+        "position",
+        "optimization",
+        "geometric",
+        "IPSA",
+        "explanation"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Chinese dwell position optimization geometric IPSA explanation"
+    },
+    {
+      "id": "Q0423",
+      "input": "I am a Polish radiation oncologist. I have a patient with anal cancer who needs brachytherapy boost. Can you explain the recommended technique and dose prescription in terms that I can discuss with my physics team?",
+      "expected_keywords": [
+        "Polish",
+        "anal",
+        "cancer",
+        "brachytherapy",
+        "boost",
+        "technique",
+        "dose",
+        "prescription"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Polish anal cancer brachytherapy boost technique dose prescription"
+    },
+    {
+      "id": "Q0424",
+      "input": "Bonjour, comment puis-je évaluer la qualité d'un implant prostatique LDR basé sur les critères ABS? Quels sont les paramètres DVH clés et leurs valeurs seuils?",
+      "expected_keywords": [
+        "French",
+        "ABS",
+        "prostate",
+        "LDR",
+        "quality",
+        "criteria",
+        "DVH",
+        "parameters",
+        "thresholds"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: French ABS prostate LDR quality criteria DVH parameters thresholds"
+    },
+    {
+      "id": "Q0425",
+      "input": "I am a Thai radiation oncologist. I want to understand the GEC-ESTRO target volume concepts for cervical brachytherapy. Please explain the HR-CTV, IR-CTV, and GTV definitions and their clinical significance.",
+      "expected_keywords": [
+        "Thai",
+        "GEC-ESTRO",
+        "cervical",
+        "HR-CTV",
+        "IR-CTV",
+        "GTV",
+        "target",
+        "volume"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Thai GEC-ESTRO cervical HR-CTV IR-CTV GTV target volume"
+    },
+    {
+      "id": "Q0426",
+      "input": "Japanese text: 子宮頸がんのHDR組織内照射において、EMBRACE研究から得られたOAR制約を教えてください。膀胱、直腸、S状結腸のD2cc制約は何ですか? I am preparing a comprehensive brachytherapy quality assurance protocol for our Japanese cancer center. I need accurate OAR dose constraint values based on the latest EMBRACE study evidence for cervical cancer HDR brachytherapy. Can you provide the specific D2cc constraint values for the bladder, rectum, and sigmoid colon, along with the corresponding EQD2 values and the clinical evidence supporting these constraints? This will be used to establish institutional dose limits for our treatment planning system.",
+      "expected_keywords": [
+        "Japanese",
+        "EMBRACE",
+        "OAR",
+        "D2cc",
+        "cervical",
+        "bladder",
+        "rectum",
+        "sigmoid",
+        "constraints"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Japanese EMBRACE OAR D2cc cervical bladder rectum sigmoid constraints"
+    },
+    {
+      "id": "Q0427",
+      "input": "I am a Portuguese-speaking dosimetrist. I need help understanding the concept of equivalent dose in 2 Gy fractions (EQD2) and how to convert HDR brachytherapy doses to EQD2. Can you provide the formula and an example?",
+      "expected_keywords": [
+        "Portuguese",
+        "EQD2",
+        "conversion",
+        "formula",
+        "HDR",
+        "brachytherapy",
+        "example"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Portuguese EQD2 conversion formula HDR brachytherapy example"
+    },
+    {
+      "id": "Q0428",
+      "input": "I am a Korean radiation oncologist. I have a question about the appropriate isotope selection for permanent prostate implants. When should I choose I-125 versus Pd-103 versus Cs-131? Please explain the clinical rationale.",
+      "expected_keywords": [
+        "Korean",
+        "isotope",
+        "selection",
+        "I-125",
+        "Pd-103",
+        "Cs-131",
+        "prostate",
+        "permanent",
+        "implant"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Korean isotope selection I-125 Pd-103 Cs-131 prostate permanent implant"
+    },
+    {
+      "id": "Q0429",
+      "input": "Bonjour, je travaille dans un centre hospitalier au Sénégal. Nous voulons démarrer un programme de braquithérapie pour le cancer du col de l'utérus. Quel équipement minimal est nécessaire et quelles sont les étapes pour l'installation?",
+      "expected_keywords": [
+        "French",
+        "Senegal",
+        "cervical",
+        "brachytherapy",
+        "minimal",
+        "equipment",
+        "resource-limited"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: French Senegal cervical brachytherapy minimal equipment resource-limited"
+    },
+    {
+      "id": "Q0430",
+      "input": "I am a Vietnamese radiation oncologist. I need to understand the dosimetric differences between 2D point-based planning and 3D volumetric planning for cervical brachytherapy. Can you explain the advantages of 3D planning?",
+      "expected_keywords": [
+        "Vietnamese",
+        "2D",
+        "versus",
+        "3D",
+        "cervical",
+        "brachytherapy",
+        "planning",
+        "advantages"
+      ],
+      "difficulty": "medium",
+      "description": "Multilingual test: Vietnamese 2D versus 3D cervical brachytherapy planning advantages"
+    }
+  ]
+}

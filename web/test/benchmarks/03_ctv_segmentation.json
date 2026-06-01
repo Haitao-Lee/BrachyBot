@@ -1,0 +1,387 @@
+{
+  "category": "ctv_segmentation",
+  "description": "Clinical Target Volume segmentation requests",
+  "requires_ct": true,
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "Q0101",
+      "input": "Please segment the clinical target volume (CTV) for a prostate cancer brachytherapy case. The CT scan shows the prostate with the following characteristics: the prostate volume is approximately 35cc, there is no extraprostatic extension visible, and the patient has intermediate-risk disease with Gleason 3+4. Include the entire prostate gland with a minimal margin for microscopic disease.",
+      "expected_keywords": [
+        "prostate",
+        "CTV",
+        "no",
+        "EPE",
+        "intermediate-risk",
+        "margin"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: prostate CTV no EPE intermediate-risk margin"
+    },
+    {
+      "id": "Q0102",
+      "input": "I need you to segment the HR-CTV for a cervical cancer patient receiving HDR brachytherapy with tandem and ovoids. The MRI shows a 4cm cervical tumor with 1cm parametrial extension on the right side. The applicator is in good position. Please delineate the high-risk clinical target volume including the entire cervix and any visible residual tumor.",
+      "expected_keywords": [
+        "cervical",
+        "HR-CTV",
+        "tandem",
+        "ovoid",
+        "MRI",
+        "parametrial",
+        "GEC-ESTRO"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: cervical HR-CTV tandem ovoid MRI parametrial GEC-ESTRO"
+    },
+    {
+      "id": "Q0103",
+      "input": "Please segment the clinical target volume for an endometrial cancer patient receiving vaginal cuff brachytherapy. The patient had a total hysterectomy for Stage IB endometrial cancer. The vaginal cuff is visible on CT with no residual disease. Define the treatment volume for the vaginal cuff boost.",
+      "expected_keywords": [
+        "vaginal",
+        "cuff",
+        "endometrial",
+        "adjuvant",
+        "boost",
+        "CTV"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: vaginal cuff endometrial adjuvant boost CTV"
+    },
+    {
+      "id": "Q0104",
+      "input": "I have a CT scan for a patient with anal cancer receiving chemoradiation followed by brachytherapy boost. The tumor is a 3cm lesion at the anal canal. Please segment the gross tumor volume (GTV) and clinical target volume (CTV) for the brachytherapy boost portion of treatment.",
+      "expected_keywords": [
+        "anal",
+        "cancer",
+        "GTV",
+        "CTV",
+        "boost",
+        "anal",
+        "canal",
+        "margin"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: anal cancer GTV CTV boost anal canal margin"
+    },
+    {
+      "id": "Q0105",
+      "input": "Please segment the CTV for a patient with a recurrent head and neck cancer in the oral tongue. The CT shows a 2.5cm recurrent squamous cell carcinoma in the left lateral tongue. Define the clinical target volume for interstitial brachytherapy, including the visible tumor and appropriate margins for microscopic spread.",
+      "expected_keywords": [
+        "oral",
+        "tongue",
+        "recurrent",
+        "CTV",
+        "microscopic",
+        "margin",
+        "interstitial"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: oral tongue recurrent CTV microscopic margin interstitial"
+    },
+    {
+      "id": "Q0106",
+      "input": "For a breast cancer patient undergoing APBI with MammoSite, please segment the lumpectomy cavity and the planning target volume (PTV). The CT shows the lumpectomy cavity in the upper outer quadrant of the left breast with no surgical clips visible. Define appropriate margins for the PTV.",
+      "expected_keywords": [
+        "breast",
+        "lumpectomy",
+        "cavity",
+        "PTV",
+        "APBI",
+        "MammoSite",
+        "margin"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: breast lumpectomy cavity PTV APBI MammoSite margin"
+    },
+    {
+      "id": "Q0107",
+      "input": "I need to segment the CTV for a patient with vaginal cancer. The tumor involves the upper third of the vagina, extending from the vaginal cuff to approximately 4cm distally. Please delineate the GTV and CTV for HDR brachytherapy, including the visible tumor and adjacent vaginal mucosa.",
+      "expected_keywords": [
+        "vaginal",
+        "cancer",
+        "GTV",
+        "CTV",
+        "upper",
+        "third",
+        "mucosa",
+        "HDR"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: vaginal cancer GTV CTV upper third mucosa HDR"
+    },
+    {
+      "id": "Q0108",
+      "input": "Please segment the prostate CTV for a patient with high-risk prostate cancer (Gleason 8, PSA 22, Stage T3a). The CT shows possible extraprostatic extension on the left side. Include the entire prostate and the region of suspected EPE with appropriate margins.",
+      "expected_keywords": [
+        "prostate",
+        "high-risk",
+        "CTV",
+        "EPE",
+        "margin",
+        "T3a"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: prostate high-risk CTV EPE margin T3a"
+    },
+    {
+      "id": "Q0109",
+      "input": "I have a CT scan for a patient with gallbladder cancer. The tumor is unresectable and interstitial brachytherapy is planned. Please segment the GTV encompassing the visible gallbladder tumor and define the CTV with appropriate margins considering the adjacent liver parenchyma and duodenum.",
+      "expected_keywords": [
+        "gallbladder",
+        "GTV",
+        "CTV",
+        "liver",
+        "duodenum",
+        "interstitial"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: gallbladder GTV CTV liver duodenum interstitial"
+    },
+    {
+      "id": "Q0110",
+      "input": "For a patient with rectal cancer at 3cm from the anal verge, please segment the CTV for brachytherapy boost after external beam chemoradiation. Include the tumor bed, mesorectal region, and perirectal lymph node stations in the CTV definition.",
+      "expected_keywords": [
+        "rectal",
+        "CTV",
+        "tumor",
+        "bed",
+        "mesorectal",
+        "boost"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: rectal CTV tumor bed mesorectal boost"
+    },
+    {
+      "id": "Q0111",
+      "input": "Please segment the HR-CTV and IR-CTV for a cervical cancer case with a larger tumor. The MRI shows a 6cm cervical tumor with bilateral parametrial invasion extending to the pelvic sidewall on the right. The tandem and ovoids are in place. Define both high-risk and intermediate-risk target volumes.",
+      "expected_keywords": [
+        "cervical",
+        "HR-CTV",
+        "IR-CTV",
+        "bilateral",
+        "parametrial",
+        "pelvic",
+        "sidewall"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: cervical HR-CTV IR-CTV bilateral parametrial pelvic sidewall"
+    },
+    {
+      "id": "Q0112",
+      "input": "I need to segment the treatment volume for a patient with penile cancer. The tumor is on the glans penis, approximately 2cm in diameter, with suspected invasion into the corpus spongiosum. Please define the GTV and CTV for interstitial brachytherapy.",
+      "expected_keywords": [
+        "penile",
+        "cancer",
+        "GTV",
+        "CTV",
+        "glans",
+        "corpus",
+        "spongiosum",
+        "interstitial"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: penile cancer GTV CTV glans corpus spongiosum interstitial"
+    },
+    {
+      "id": "Q0113",
+      "input": "Please segment the target volume for a patient with nasopharyngeal carcinoma receiving intracavitary brachytherapy boost. The post-EBRT CT shows residual mucosal disease in the nasopharynx. Define the CTV for the brachytherapy boost.",
+      "expected_keywords": [
+        "nasopharyngeal",
+        "CTV",
+        "intracavitary",
+        "boost",
+        "residual",
+        "mucosal"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: nasopharyngeal CTV intracavitary boost residual mucosal"
+    },
+    {
+      "id": "Q0114",
+      "input": "For a patient with a skin cancer on the scalp, please segment the GTV and treatment volume for surface brachytherapy. The lesion is a 3cm basal cell carcinoma with irregular borders. The CT shows no deep invasion. Define the appropriate treatment volume.",
+      "expected_keywords": [
+        "scalp",
+        "skin",
+        "cancer",
+        "GTV",
+        "treatment",
+        "volume",
+        "surface",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: scalp skin cancer GTV treatment volume surface brachytherapy"
+    },
+    {
+      "id": "Q0115",
+      "input": "I have a CT scan for a patient with urethral cancer involving the bulbar urethra. Please segment the GTV and CTV for HDR brachytherapy. The tumor extends approximately 3cm along the urethra. Define the treatment volumes for interstitial brachytherapy.",
+      "expected_keywords": [
+        "urethral",
+        "cancer",
+        "GTV",
+        "CTV",
+        "bulbar",
+        "urethra",
+        "interstitial"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: urethral cancer GTV CTV bulbar urethra interstitial"
+    },
+    {
+      "id": "Q0116",
+      "input": "Please segment the CTV for a patient with an anal margin cancer. The tumor is a 4cm lesion at the anal margin extending into the perianal skin. For the brachytherapy boost, define the target volume including the visible tumor and a 1cm margin.",
+      "expected_keywords": [
+        "anal",
+        "margin",
+        "CTV",
+        "boost",
+        "perianal",
+        "skin",
+        "margin"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: anal margin CTV boost perianal skin margin"
+    },
+    {
+      "id": "Q0117",
+      "input": "For a pancreatic cancer patient receiving intraoperative brachytherapy, please segment the tumor bed CTV. The patient had a partial resection with positive margins at the portal vein confluence. Define the CTV for the intraoperative HDR boost.",
+      "expected_keywords": [
+        "pancreatic",
+        "tumor",
+        "bed",
+        "CTV",
+        "positive",
+        "margin",
+        "portal",
+        "vein",
+        "intraoperative"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: pancreatic tumor bed CTV positive margin portal vein intraoperative"
+    },
+    {
+      "id": "Q0118",
+      "input": "I need to segment the treatment volume for a patient with vulvar cancer. The primary tumor is on the left labium majus with a 3cm lesion. There is also a separate satellite lesion on the right labium minus. Define the GTV and CTV for interstitial brachytherapy covering both lesions.",
+      "expected_keywords": [
+        "vulvar",
+        "cancer",
+        "GTV",
+        "CTV",
+        "bilateral",
+        "satellite",
+        "interstitial"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: vulvar cancer GTV CTV bilateral satellite interstitial"
+    },
+    {
+      "id": "Q0119",
+      "input": "Please segment the CTV for a patient with a urethral recurrence after radical prostatectomy. The CT shows soft tissue at the vesicourethral anastomosis. Define the target volume for salvage HDR brachytherapy including the anastomotic recurrence with appropriate margins.",
+      "expected_keywords": [
+        "vesicourethral",
+        "anastomosis",
+        "recurrence",
+        "salvage",
+        "HDR",
+        "CTV"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: vesicourethral anastomosis recurrence salvage HDR CTV"
+    },
+    {
+      "id": "Q0120",
+      "input": "For a patient with bile duct cancer, I need to segment the GTV and CTV for interstitial brachytherapy. The CT shows a tumor at the hilum of the liver involving the left and right hepatic ducts. Define the target volume considering the tumor extension along the bile ducts.",
+      "expected_keywords": [
+        "bile",
+        "duct",
+        "hilar",
+        "tumor",
+        "GTV",
+        "CTV",
+        "hepatic",
+        "ducts",
+        "interstitial"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: bile duct hilar tumor GTV CTV hepatic ducts interstitial"
+    },
+    {
+      "id": "Q0121",
+      "input": "Please segment the HR-CTV for a cervical cancer patient treated with MRI-guided brachytherapy. The MRI shows a 3cm residual tumor after 45Gy external beam. The tandem and ring applicator is in place. Define the high-risk CTV based on MRI findings.",
+      "expected_keywords": [
+        "cervical",
+        "MRI",
+        "HR-CTV",
+        "residual",
+        "tumor",
+        "tandem",
+        "ring"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: cervical MRI HR-CTV residual tumor tandem ring"
+    },
+    {
+      "id": "Q0122",
+      "input": "I have a CT scan for a patient with a parotid gland malignancy. The patient had a superficial parotidectomy and has a positive superficial margin. Please segment the surgical bed CTV for HDR brachytherapy boost with a 1cm margin.",
+      "expected_keywords": [
+        "parotid",
+        "surgical",
+        "bed",
+        "positive",
+        "margin",
+        "HDR",
+        "boost",
+        "CTV"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: parotid surgical bed positive margin HDR boost CTV"
+    },
+    {
+      "id": "Q0123",
+      "input": "For a patient with a recurrent tumor at the bronchial anastomosis after sleeve resection, please segment the GTV and CTV for endoluminal brachytherapy. The CT shows a 1.5cm nodule at the anastomosis site. Define the target volume for the endoluminal treatment.",
+      "expected_keywords": [
+        "bronchial",
+        "anastomosis",
+        "recurrent",
+        "endoluminal",
+        "CTV",
+        "sleeve",
+        "resection"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: bronchial anastomosis recurrent endoluminal CTV sleeve resection"
+    },
+    {
+      "id": "Q0124",
+      "input": "Please segment the CTV for a patient with a pediatric pelvic rhabdomyosarcoma. The patient is 6 years old with a bladder neck tumor. After chemotherapy, there is a residual 2cm mass. Define the brachytherapy boost target volume considering the small pelvic anatomy.",
+      "expected_keywords": [
+        "pediatric",
+        "pelvic",
+        "rhabdomyosarcoma",
+        "CTV",
+        "boost",
+        "bladder",
+        "neck"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: pediatric pelvic rhabdomyosarcoma CTV boost bladder neck"
+    },
+    {
+      "id": "Q0125",
+      "input": "I need to segment the target volumes for a patient with advanced cervical cancer undergoing MRI-guided adaptive brachytherapy. The pre-treatment MRI shows a 7cm tumor with bladder wall invasion and bilateral parametrial extension. Please segment the pre-treatment GTV, HR-CTV, and IR-CTV.",
+      "expected_keywords": [
+        "cervical",
+        "advanced",
+        "GTV",
+        "HR-CTV",
+        "IR-CTV",
+        "bladder",
+        "invasion",
+        "bilateral",
+        "parametrial"
+      ],
+      "difficulty": "hard",
+      "description": "CTV segmentation test: cervical advanced GTV HR-CTV IR-CTV bladder invasion bilateral parametrial"
+    }
+  ]
+}

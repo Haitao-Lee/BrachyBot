@@ -1,0 +1,2699 @@
+{
+  "category": "workflow",
+  "description": "End-to-end clinical workflow tests",
+  "requires_ct": true,
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "Q0501",
+      "input": "I need to start a new brachytherapy case for a 62-year-old female patient with cervical cancer FIGO stage IIB. She has completed external beam radiation therapy with 45 Gy in 25 fractions to the pelvis. The tandem and ring applicator has been selected. Walk me through the complete workflow from CT simulation through plan optimization and quality assurance checks before treatment delivery.",
+      "expected_keywords": [
+        "CT simulation",
+        "applicator reconstruction",
+        "contouring",
+        "optimization",
+        "dwell positions",
+        "plan evaluation",
+        "quality assurance"
+      ],
+      "difficulty": "medium",
+      "description": "Complete brachytherapy workflow for cervical cancer case"
+    },
+    {
+      "id": "Q0502",
+      "input": "A new resident is starting their first week in the brachytherapy suite. They need to understand the end-to-end process for a prostate high-dose-rate brachytherapy plan. Please provide a detailed description of each step from patient consultation and imaging through treatment delivery and post-treatment verification, including all critical safety checkpoints.",
+      "expected_keywords": [
+        "consultation",
+        "CT simulation",
+        "urethral catheter",
+        "prostate contouring",
+        "inverse planning",
+        "treatment delivery",
+        "safety"
+      ],
+      "difficulty": "medium",
+      "description": "Educational walkthrough of prostate HDR workflow for new residents"
+    },
+    {
+      "id": "Q0503",
+      "input": "Our department is transitioning from manual optimization to inverse planning for our brachytherapy cases. Describe the complete workflow changes that the physics and clinical teams need to adapt to, including how the optimization process differs, what new quality assurance procedures are required, and how plan evaluation criteria should be updated.",
+      "expected_keywords": [
+        "inverse planning",
+        "optimization",
+        "objective functions",
+        "constraints",
+        "dose-volume",
+        "plan evaluation",
+        "QA"
+      ],
+      "difficulty": "advanced",
+      "description": "Workflow transition from manual to inverse planning in brachytherapy"
+    },
+    {
+      "id": "Q0504",
+      "input": "For a complex endometrial cancer case with a large uterus and history of prior abdominal surgery, describe the workflow modifications needed compared to a standard tandem and ovoids application. Include specific considerations for applicator selection, imaging protocol modifications, contouring adjustments, and any additional quality assurance steps required.",
+      "expected_keywords": [
+        "applicator selection",
+        "tandem and ovoids",
+        "CT imaging",
+        "contouring",
+        "modified workflow",
+        "QA"
+      ],
+      "difficulty": "advanced",
+      "description": "Modified workflow for complex endometrial brachytherapy"
+    },
+    {
+      "id": "Q0505",
+      "input": "A patient is scheduled for interstitial brachytherapy for a recurrent vaginal cuff tumor, but the operating room has a hard stop at 3 PM. Describe the workflow adjustments needed to ensure the procedure is completed safely within this time constraint, including pre-procedure preparation shortcuts that do not compromise safety and contingency plans.",
+      "expected_keywords": [
+        "time constraint",
+        "pre-procedure",
+        "parallel processing",
+        "safety",
+        "contingency",
+        "workflow"
+      ],
+      "difficulty": "advanced",
+      "description": "Time-constrained workflow for interstitial brachytherapy"
+    },
+    {
+      "id": "Q0506",
+      "input": "We are setting up a new brachytherapy program at a community hospital. Describe the complete implementation workflow including equipment procurement, staff training requirements, physics commissioning, policy development, phantom testing, and the timeline for achieving clinical readiness.",
+      "expected_keywords": [
+        "equipment procurement",
+        "staff training",
+        "commissioning",
+        "policies",
+        "phantom testing",
+        "clinical readiness",
+        "timeline"
+      ],
+      "difficulty": "advanced",
+      "description": "New brachytherapy program implementation workflow"
+    },
+    {
+      "id": "Q0507",
+      "input": "For a post-hysterectomy vaginal cancer patient requiring brachytherapy, describe the complete workflow from applicator selection through treatment, highlighting how this differs from cervical cancer brachytherapy. Include specific differences in imaging protocols, contouring technique, dose prescription methodology, and organ-at-risk tolerance considerations.",
+      "expected_keywords": [
+        "post-hysterectomy",
+        "vaginal cylinder",
+        "applicator",
+        "contouring",
+        "prescription",
+        "OAR tolerance"
+      ],
+      "difficulty": "medium",
+      "description": "Workflow differences for post-hysterectomy vaginal brachytherapy"
+    },
+    {
+      "id": "Q0508",
+      "input": "A brachytherapy treatment was interrupted mid-delivery due to a mechanical issue with the afterloader. The patient had received approximately 60% of the prescribed dose to the tandem. Describe the complete workflow for handling this interruption, including patient assessment, decision-making for resuming treatment, and documentation requirements.",
+      "expected_keywords": [
+        "treatment interruption",
+        "afterloader",
+        "patient assessment",
+        "re-optimization",
+        "documentation",
+        "dose recalculation"
+      ],
+      "difficulty": "advanced",
+      "description": "Workflow for handling brachytherapy treatment interruption"
+    },
+    {
+      "id": "Q0509",
+      "input": "Our center performs both MRI-guided and CT-guided brachytherapy for cervical cancer. Describe the workflow differences between these two imaging approaches, including how applicator reconstruction differs, the impact on contouring accuracy, how dose calculation algorithms handle tissue heterogeneities differently, and the quality assurance implications.",
+      "expected_keywords": [
+        "MRI-guided",
+        "CT-guided",
+        "applicator reconstruction",
+        "contouring",
+        "dose calculation",
+        "heterogeneity",
+        "QA"
+      ],
+      "difficulty": "advanced",
+      "description": "Workflow comparison between MRI and CT guided brachytherapy"
+    },
+    {
+      "id": "Q0510",
+      "input": "For a pediatric patient with a vaginal rhabdomyosarcoma requiring brachytherapy as part of a multi-modal treatment including chemotherapy, describe the complete multidisciplinary workflow. Include how the brachytherapy plan must account for concurrent chemotherapy timing, growth considerations, age-appropriate sedation, and long-term follow-up planning.",
+      "expected_keywords": [
+        "pediatric",
+        "rhabdomyosarcoma",
+        "chemotherapy",
+        "sedation",
+        "anesthesia",
+        "growth",
+        "follow-up",
+        "multidisciplinary"
+      ],
+      "difficulty": "advanced",
+      "description": "Multidisciplinary workflow for pediatric brachytherapy"
+    },
+    {
+      "id": "Q0511",
+      "input": "A brachytherapy plan has been approved and the patient is being set up for treatment. Describe the complete patient-specific quality assurance workflow from the time the plan is transferred to the afterloader through the start of treatment. Include independent dose verification, applicator position verification, source strength confirmation, and emergency procedure readiness.",
+      "expected_keywords": [
+        "dose verification",
+        "applicator verification",
+        "source strength",
+        "afterloader",
+        "emergency procedures",
+        "QA"
+      ],
+      "difficulty": "medium",
+      "description": "Patient-specific QA workflow for brachytherapy"
+    },
+    {
+      "id": "Q0512",
+      "input": "Our institution wants to implement a standardized brachytherapy consent process. Describe the workflow from pre-consent patient education through signed consent, including what specific risks must be discussed for brachytherapy versus external beam radiation, how to document capacity assessment, and how to handle cultural objections.",
+      "expected_keywords": [
+        "informed consent",
+        "patient education",
+        "risks",
+        "capacity assessment",
+        "cultural",
+        "documentation"
+      ],
+      "difficulty": "medium",
+      "description": "Standardized brachytherapy consent workflow"
+    },
+    {
+      "id": "Q0513",
+      "input": "Describe the workflow for performing a brachytherapy treatment plan peer review session. Include how cases should be selected for review, what elements of each plan must be evaluated, how disagreements between reviewers are resolved, documentation requirements, and how quality metrics feed back into quality improvement.",
+      "expected_keywords": [
+        "peer review",
+        "plan evaluation",
+        "disagreement resolution",
+        "documentation",
+        "quality improvement"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy treatment plan peer review workflow"
+    },
+    {
+      "id": "Q0514",
+      "input": "A patient receiving HDR brachytherapy for cervical cancer has a bleeding disorder and is on anticoagulation therapy. Describe the modified workflow needed to safely manage this patient, including coordination with hematology, anticoagulation bridging protocols, applicator insertion modifications, and post-procedure monitoring.",
+      "expected_keywords": [
+        "anticoagulation",
+        "bleeding disorder",
+        "hematology",
+        "bridging",
+        "applicator insertion",
+        "monitoring"
+      ],
+      "difficulty": "advanced",
+      "description": "Modified workflow for anticoagulated brachytherapy patients"
+    },
+    {
+      "id": "Q0515",
+      "input": "Our afterloader is scheduled for annual maintenance next week and will be unavailable for 3 days. We have 6 patients scheduled for HDR brachytherapy during that period. Describe the workflow for managing this situation, including rescheduling protocols, communication with patients and physicians, coordination with the vendor for loaner equipment, and contingency options.",
+      "expected_keywords": [
+        "afterloader maintenance",
+        "rescheduling",
+        "communication",
+        "loaner equipment",
+        "contingency"
+      ],
+      "difficulty": "medium",
+      "description": "Workflow for managing afterloader maintenance downtime"
+    },
+    {
+      "id": "Q0516",
+      "input": "For a multi-fraction brachytherapy treatment course, describe the workflow for tracking cumulative dose across fractions. Include how to account for applicator repositioning between fractions, how to handle changes in organ-at-risk anatomy, when replanning is indicated, and how cumulative dose constraints are monitored.",
+      "expected_keywords": [
+        "cumulative dose",
+        "repositioning",
+        "anatomy change",
+        "replanning",
+        "dose constraints",
+        "tracking"
+      ],
+      "difficulty": "advanced",
+      "description": "Workflow for cumulative dose tracking across brachytherapy fractions"
+    },
+    {
+      "id": "Q0517",
+      "input": "Describe the workflow for a brachytherapy program's annual physics survey and quality audit. Include what equipment must be tested, calibration verification procedures, review of TPS commissioning data, analysis of clinical outcomes data for dose-response trends, and how findings should be reported and acted upon.",
+      "expected_keywords": [
+        "annual survey",
+        "calibration",
+        "commissioning",
+        "outcomes data",
+        "dose-response",
+        "audit"
+      ],
+      "difficulty": "medium",
+      "description": "Annual physics survey and quality audit workflow"
+    },
+    {
+      "id": "Q0518",
+      "input": "A brachytherapy patient requires emergent treatment but the standard treatment planning system is down for updates. Describe the workflow for providing brachytherapy treatment using manual calculation methods or backup systems, including safety verification steps, documentation requirements, and the criteria for deciding whether to proceed or postpone.",
+      "expected_keywords": [
+        "TPS downtime",
+        "manual calculation",
+        "backup system",
+        "emergency treatment",
+        "safety verification",
+        "documentation"
+      ],
+      "difficulty": "advanced",
+      "description": "Emergency workflow for brachytherapy during TPS downtime"
+    },
+    {
+      "id": "Q0519",
+      "input": "For a brachytherapy center participating in a multi-institutional clinical trial, describe the complete workflow for ensuring protocol compliance. Include pre-enrollment checklist verification, required imaging protocols and submission procedures, dose reporting requirements per ICRU 89, adverse event reporting timelines, and how to handle protocol deviations.",
+      "expected_keywords": [
+        "clinical trial",
+        "protocol compliance",
+        "ICRU 89",
+        "imaging protocol",
+        "adverse event",
+        "deviation"
+      ],
+      "difficulty": "advanced",
+      "description": "Clinical trial protocol compliance workflow for brachytherapy"
+    },
+    {
+      "id": "Q0520",
+      "input": "Describe the workflow for integrating 3D printing technology into brachytherapy applicator design and patient-specific QA. Cover the process from CT or MRI data acquisition through 3D model design, printing material selection and validation, sterilization procedures, and how printed models are used for treatment verification and patient education.",
+      "expected_keywords": [
+        "3D printing",
+        "patient-specific applicator",
+        "CT data",
+        "sterilization",
+        "treatment verification",
+        "patient education"
+      ],
+      "difficulty": "advanced",
+      "description": "Workflow for 3D printing in brachytherapy applications"
+    },
+    {
+      "id": "Q0521",
+      "input": "A center is implementing HDR brachytherapy for the first time and needs to establish a comprehensive safety workflow. Describe the creation of a brachytherapy-specific safety management system including hazard identification procedures, risk assessment methodologies, implementation of safety interlocks and checks, staff competency verification, and learning from near-miss events.",
+      "expected_keywords": [
+        "safety management",
+        "hazard identification",
+        "risk assessment",
+        "interlocks",
+        "competency",
+        "near-miss"
+      ],
+      "difficulty": "advanced",
+      "description": "Safety management system implementation for brachytherapy"
+    },
+    {
+      "id": "Q0982",
+      "input": "A brachytherapy center is implementing a new electronic health record system that will replace the current paper-based brachytherapy treatment documentation. Describe the complete workflow for migrating brachytherapy-specific documentation templates, training staff on the new system, validating data transfer accuracy, and maintaining treatment continuity during the transition period. What specific brachytherapy data elements must be preserved in the new EHR system?",
+      "expected_keywords": [
+        "EHR migration",
+        "brachytherapy documentation",
+        "templates",
+        "data transfer",
+        "continuity",
+        "validation"
+      ],
+      "difficulty": "medium",
+      "description": "EHR migration workflow for brachytherapy documentation"
+    },
+    {
+      "id": "Q1001",
+      "input": "I need to prepare a complete brachytherapy treatment plan for a 62-year-old female with stage IIB cervical cancer who has completed EBRT 45 Gy in 25 fractions with concurrent cisplatin. Post-EBRT MRI shows residual disease. She has a tandem and ovoid applicator in place. Walk me through the complete workflow from applicator placement verification to plan optimization, including imaging, dose prescription, OAR constraints, and plan evaluation.",
+      "expected_keywords": [
+        "applicator",
+        "HR-CTV",
+        "GEC-ESTRO",
+        "dose",
+        "optimization",
+        "DVH",
+        "OAR",
+        "EQD2"
+      ],
+      "difficulty": "hard",
+      "description": [
+        "cervical",
+        "brachytherapy",
+        "treatment_planning",
+        "workflow"
+      ]
+    },
+    {
+      "id": "Q1002",
+      "input": "Our department is setting up a new HDR brachytherapy program with an Elekta microSelectron (Ir-192, 10 Ci), Varian Acuity TPS, and Nucletron applicators. Outline the complete QA program including daily, monthly, and annual checks, source exchange procedures, TG-59 compliance, and documentation requirements.",
+      "expected_keywords": [
+        "QA",
+        "source",
+        "calibration",
+        "Ir-192",
+        "TG-59",
+        "source_exchange",
+        "interlock",
+        "end_to_end"
+      ],
+      "difficulty": "hard",
+      "description": [
+        "QA",
+        "HDR",
+        "program_setup",
+        "compliance"
+      ]
+    },
+    {
+      "id": "Q1003",
+      "input": "A 55-year-old male with intermediate-risk prostate cancer (Gleason 3+4=7, PSA 8.5, T2b, volume 45 cc, IPSS 18, prior TURP 3 years ago with 15g resection defect, Qmax 12 mL/s, PVR 80 mL) is being considered for prostate brachytherapy monotherapy. Should we proceed, and what modifications are needed? Describe the pre-implant evaluation, implant technique considerations, and post-implant dosimetry goals.",
+      "expected_keywords": [
+        "IPSS",
+        "TURP",
+        "prostate_volume",
+        "monotherapy",
+        "D90",
+        "V100",
+        "post_implant",
+        "urinary"
+      ],
+      "difficulty": "hard",
+      "description": [
+        "prostate",
+        "pre_implant",
+        "TURP",
+        "dosimetry"
+      ]
+    },
+    {
+      "id": "Q1004",
+      "input": "I need to prepare for tumor board discussing a 48-year-old woman with recurrent endometrial cancer (stage IIIC1 serous carcinoma, TAH/BSO 18 months ago, 6 cycles adjuvant carbo/paclitaxel). PET-CT shows FDG-avid 3.2 cm vaginal cuff recurrence with no distant disease. What treatment options should I present, including brachytherapy approaches, expected outcomes, dose considerations, and evidence to cite?",
+      "expected_keywords": [
+        "vaginal_cuff",
+        "recurrence",
+        "interstitial",
+        "brachytherapy",
+        "re_irradiation",
+        "EBRT",
+        "EQD2",
+        "multidisciplinary"
+      ],
+      "difficulty": "hard",
+      "description": [
+        "endometrial",
+        "recurrence",
+        "tumor_board",
+        "interstitial"
+      ]
+    },
+    {
+      "id": "Q1005",
+      "input": "We are implementing a new electronic brachytherapy documentation workflow. Describe the complete documentation requirements for cervical cancer HDR brachytherapy from initial consultation through treatment completion, including mandatory elements, imaging requirements, plan approval workflows, safety check documentation, treatment delivery records, and follow-up documentation.",
+      "expected_keywords": [
+        "documentation",
+        "checklist",
+        "treatment_record",
+        "plan_approval",
+        "imaging",
+        "follow_up",
+        "accreditation"
+      ],
+      "difficulty": "medium",
+      "description": [
+        "documentation",
+        "workflow",
+        "compliance"
+      ]
+    },
+    {
+      "id": "Q1006",
+      "input": "A 70-year-old male with locally advanced rectal cancer (cT3N1M0,距肛缘4 cm) completed neoadjuvant CRT 50.4 Gy with capecitabine. At 8-week MRI, there is a 1.5 cm equivocal residual area. He strongly prefers organ preservation. What brachytherapy options could be considered, and what would be the complete workflow including applicator selection, imaging, dose constraints, and follow-up?",
+      "expected_keywords": [
+        "endorectal",
+        "brachytherapy",
+        "boost",
+        "Papillon",
+        "organ_preservation",
+        "MRI",
+        "surveillance",
+        "fraction"
+      ],
+      "difficulty": "expert",
+      "description": [
+        "rectal",
+        "watch_and_wait",
+        "boost",
+        "organ_preservation"
+      ]
+    },
+    {
+      "id": "Q1007",
+      "input": "We need to establish standardized peer review criteria for HDR cervical cancer brachytherapy plans using tandem and ovoids. Create the complete plan review checklist including imaging quality, contouring accuracy, DVH parameters, plan optimization quality, source position verification, fractionation appropriateness, and safety considerations.",
+      "expected_keywords": [
+        "peer_review",
+        "checklist",
+        "contouring",
+        "DVH",
+        "D90",
+        "D2cc",
+        "EQD2",
+        "dwell_time",
+        "GEC-ESTRO"
+      ],
+      "difficulty": "hard",
+      "description": [
+        "peer_review",
+        "plan_review",
+        "quality"
+      ]
+    },
+    {
+      "id": "Q1008",
+      "input": "A 58-year-old woman with stage IIIA endometrial cancer (grade 2 endometrioid, deep myoinvasion, +pelvic nodes, LVSI+) completed adjuvant EBRT 45 Gy with weekly cisplatin after robotic TAH-BSO. Should she receive VBT, and if so, what is the appropriate prescription, applicator, and planning technique? Describe the complete workflow.",
+      "expected_keywords": [
+        "vaginal_cuff",
+        "brachytherapy",
+        "cylinder",
+        "prescription",
+        "fractionation",
+        "VBT",
+        "dose",
+        "planning"
+      ],
+      "difficulty": "medium",
+      "description": [
+        "endometrial",
+        "VBT",
+        "adjuvant",
+        "cylinder"
+      ]
+    },
+    {
+      "id": "Q1009",
+      "input": "I am a radiation oncology resident preparing for my first independent HDR brachytherapy treatment delivery. Walk me through the complete pre-treatment safety checklist from patient identification through source calibration confirmation, applicator verification, imaging, plan verification, treatment delivery, source retraction confirmation, and post-treatment documentation. Include critical safety checkpoints and failure protocols.",
+      "expected_keywords": [
+        "safety_checklist",
+        "patient_identification",
+        "source_calibration",
+        "applicator",
+        "dwell_position",
+        "source_retraction",
+        "emergency"
+      ],
+      "difficulty": "easy",
+      "description": [
+        "safety",
+        "treatment_delivery",
+        "checklist",
+        "HDR"
+      ]
+    },
+    {
+      "id": "Q1010",
+      "input": "Our department needs a comprehensive informed consent process for HDR brachytherapy for cervical cancer. Outline the complete consent content including specific risks with incidence rates, acute and late side effects, alternative treatments, treatment schedule, post-treatment care, and the process for meaningful informed consent.",
+      "expected_keywords": [
+        "informed_consent",
+        "risks",
+        "side_effects",
+        "vaginal_stenosis",
+        "proctitis",
+        "alternatives",
+        "consent_process"
+      ],
+      "difficulty": "medium",
+      "description": [
+        "informed_consent",
+        "patient_safety",
+        "documentation"
+      ]
+    },
+    {
+      "id": "Q1011",
+      "input": "We are preparing for ACR radiation oncology accreditation. Provide a comprehensive checklist of all documentation needed including policies, physics reports, equipment calibration records, TPS documentation, staff credentialing, patient records, incident reports, and QI data. What timeframe and format should records be in?",
+      "expected_keywords": [
+        "ACR",
+        "accreditation",
+        "documentation",
+        "policies",
+        "calibration",
+        "credentialing",
+        "QA",
+        "incident_reports"
+      ],
+      "difficulty": "hard",
+      "description": [
+        "accreditation",
+        "ACR",
+        "documentation"
+      ]
+    },
+    {
+      "id": "Q1012",
+      "input": "A 45-year-old woman with stage IVA cervical cancer completed definitive chemoradiation (EBRT 45 Gy + cisplatin/5-FU + 4 fractions HDR 28 Gy to point A). She now has a 2 cm exophytic vaginal apex recurrence 14 months later. Her renal function recovered after bilateral ureteral stents, ECOG 1. Outline the salvage treatment workflow including restaging, re-irradiation dose constraints, treatment options, and surveillance.",
+      "expected_keywords": [
+        "salvage",
+        "re_irradiation",
+        "recurrence",
+        "restaging",
+        "EQD2",
+        "cumulative",
+        "interstitial",
+        "tolerance"
+      ],
+      "difficulty": "expert",
+      "description": [
+        "cervical",
+        "recurrence",
+        "salvage",
+        "re_irradiation"
+      ]
+    },
+    {
+      "id": "Q1013",
+      "input": "I need to design a workflow for integrating MRI-guided adaptive brachytherapy (IGABT) into our cervical cancer program. We currently do CT-based HDR with tandem and ovoids, have access to 1.5T MRI, and plan to acquire MR-compatible Elekta ring applicator. Outline the workflow changes including applicator selection, MRI protocol, image fusion, adaptive planning, and transition timeline.",
+      "expected_keywords": [
+        "MRI",
+        "adaptive",
+        "IGABT",
+        "MR-compatible",
+        "applicator",
+        "T2",
+        "contouring",
+        "HR-CTV",
+        "commissioning"
+      ],
+      "difficulty": "expert",
+      "description": [
+        "MRI",
+        "adaptive",
+        "IGABT",
+        "implementation"
+      ]
+    },
+    {
+      "id": "Q1014",
+      "input": "Comprehensive brachytherapy question about incident_reporting. incident classification system for brachytherapy including applicator-related, source-related, planning errors, delivery deviations, patient ID errors, and radiation safety incidents. Include severity grading, reporting timelines, investigation procedures, and corrective actions.",
+      "expected_keywords": [
+        "incident_reporting",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Workflow test for incident_reporting"
+    },
+    {
+      "id": "Q1015",
+      "input": "Comprehensive brachytherapy question about permanent_seed_implant. Complete patient workflow for 68-year-old male with T1cN0M0 Gleason 3+4=7 prostate cancer (PSA 9.2, volume 55 cc) for permanent seed brachytherapy. Include pre-operative assessments, planning approach, implant technique, post-implant CT, and dosimetric goals (V100 >95%, D90 >100%).",
+      "expected_keywords": [
+        "permanent_seed_implant",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Workflow test for permanent_seed_implant"
+    },
+    {
+      "id": "Q1016",
+      "input": "Comprehensive brachytherapy question about emergency_hemorrhage. Emergency response protocol for 200 mL vaginal bleeding with hypotension (BP 85/55, HR 110) during fraction 3 of 4 HDR brachytherapy for cervical cancer. Include immediate management, applicator management, treatment modification, transfusion, documentation, and remaining fractions.",
+      "expected_keywords": [
+        "emergency_hemorrhage",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Workflow test for emergency_hemorrhage"
+    },
+    {
+      "id": "Q1017",
+      "input": "Comprehensive brachytherapy question about re_irradiation_interstitial. Treatment planning workflow for 52-year-old woman with 1.5 cm upper vaginal recurrence (FIGO I) after prior EBRT 50 Gy + HDR 24 Gy 8 years ago. Include surgical excision, pre-operative MRI, interstitial applicator selection, re-irradiation dose prescription, cumulative dose calculations, and post-operative care.",
+      "expected_keywords": [
+        "re_irradiation_interstitial",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "expert",
+      "description": "Workflow test for re_irradiation_interstitial"
+    },
+    {
+      "id": "Q1018",
+      "input": "Comprehensive brachytherapy question about QI_project. QI project to reduce treatment planning turnaround from 6 hours to under 4 hours for HDR brachytherapy. Include current state analysis, root cause identification, intervention strategies, metrics, PDSA cycles, data collection, and sustainability.",
+      "expected_keywords": [
+        "QI_project",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "medium",
+      "description": "Workflow test for QI_project"
+    },
+    {
+      "id": "Q1019",
+      "input": "Comprehensive brachytherapy question about palliative_bone. Complete workflow for MRI-guided adaptive brachytherapy for painful left ischial metastasis from renal cell carcinoma (2.8 cm, prior EBRT 30 Gy 6 months ago, ECOG 2). Include patient selection, imaging, applicator, re-irradiation dose, pain management, outcomes, and follow-up.",
+      "expected_keywords": [
+        "palliative_bone",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Workflow test for palliative_bone"
+    },
+    {
+      "id": "Q1020",
+      "input": "Comprehensive brachytherapy question about electronic_system. Data architecture for electronic brachytherapy treatment record system including treatment fraction data, CT/MRI image storage, plan versioning, approval workflows, source tracking, cumulative dose reporting, and Aria integration.",
+      "expected_keywords": [
+        "electronic_system",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Workflow test for electronic_system"
+    },
+    {
+      "id": "Q1021",
+      "input": "Comprehensive brachytherapy question about vaginal_stenosis. Management of vaginal stenosis (4 cm length, previously 8 cm) after brachytherapy 5 years ago for stage IIB cervical cancer. Include assessment, conservative management (dilators, topical estrogen), etiology, decision framework, sexual health counseling, and follow-up.",
+      "expected_keywords": [
+        "vaginal_stenosis",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "medium",
+      "description": "Workflow test for vaginal_stenosis"
+    },
+    {
+      "id": "Q1022",
+      "input": "Comprehensive brachytherapy question about tumor_board. Design multidisciplinary brachytherapy tumor board including meeting format, presentation template, required attendees, pre-meeting preparation, decision documentation, quality metrics, and outcome integration.",
+      "expected_keywords": [
+        "tumor_board",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "medium",
+      "description": "Workflow test for tumor_board"
+    },
+    {
+      "id": "Q1023",
+      "input": "Comprehensive brachytherapy question about anal_boost. Complete treatment workflow for 60-year-old woman with 3.5 cm anal canal cancer (T2N1M0) including brachytherapy boost after EBRT 36 Gy with 5-FU/MMC. Include applicator selection, MRI planning, target delineation, dose, OAR constraints, and functional outcome assessment.",
+      "expected_keywords": [
+        "anal_boost",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Workflow test for anal_boost"
+    },
+    {
+      "id": "Q1024",
+      "input": "Comprehensive brachytherapy question about Joint_Commission. Joint Commission radiation safety documentation for brachytherapy including radioactive material license, RSO responsibilities, sealed source accountability, personnel monitoring, area monitoring, leak test documentation, and emergency procedures.",
+      "expected_keywords": [
+        "Joint_Commission",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Workflow test for Joint_Commission"
+    },
+    {
+      "id": "Q1025",
+      "input": "Comprehensive brachytherapy question about melanoma_brachytherapy. Brachytherapy workflow for 48-year-old woman with 2.5 cm vaginal melanoma (Breslow 4.2 mm) after radical vulvovaginectomy with positive margins. Include custom applicator design, melanoma-specific dose, immunotherapy interaction, and surveillance.",
+      "expected_keywords": [
+        "melanoma_brachytherapy",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "expert",
+      "description": "Workflow test for melanoma_brachytherapy"
+    },
+    {
+      "id": "Q1026",
+      "input": "Comprehensive brachytherapy question about training_program. Comprehensive physicist training program for brachytherapy including orientation, supervised practice requirements, competency milestones, documentation, radiation safety training, TPS training, source handling, and timeline to independence.",
+      "expected_keywords": [
+        "training_program",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "medium",
+      "description": "Workflow test for training_program"
+    },
+    {
+      "id": "Q1027",
+      "input": "Comprehensive brachytherapy question about penile_preserving. Complete interstitial brachytherapy plan for penile cancer (T2N1M0, 2.5 cm glans lesion) after neoadjuvant chemotherapy. Include applicator design, MRI protocol, target delineation, dose (39-42 Gy in 13-14 fractions BID), OAR constraints, and functional outcomes.",
+      "expected_keywords": [
+        "penile_preserving",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "expert",
+      "description": "Workflow test for penile_preserving"
+    },
+    {
+      "id": "Q1028",
+      "input": "Comprehensive brachytherapy question about clinical_trial. Standardized procedures for EMBRACE-III trial participation including eligibility verification, MRI protocol standardization, contouring conventions, dose reporting, data submission, QA requirements, and deviation handling.",
+      "expected_keywords": [
+        "clinical_trial",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Workflow test for clinical_trial"
+    },
+    {
+      "id": "Q1029",
+      "input": "Comprehensive brachytherapy question about VBT_decision. Evidence-based decision-making for adjuvant VBT in 47-year-old woman with Stage IA2 endometrial cancer (Grade 1, <50% myoinvasion, no LVSI) post-TAH-BSO. Include PORTEC evidence, risk stratification, arguments for/against, and brachytherapy approach if elected.",
+      "expected_keywords": [
+        "VBT_decision",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "medium",
+      "description": "Workflow test for VBT_decision"
+    },
+    {
+      "id": "Q1030",
+      "input": "Comprehensive brachytherapy question about prostate_shared_decision. Shared decision-making framework for prostate brachytherapy including indications, alternatives comparison, 10-year outcomes, risks (urinary, ED, secondary malignancy), procedure description, post-implant safety, and decision aid tool.",
+      "expected_keywords": [
+        "prostate_shared_decision",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "medium",
+      "description": "Workflow test for prostate_shared_decision"
+    },
+    {
+      "id": "Q1031",
+      "input": "Comprehensive brachytherapy question about oropharyngeal_salvage. Role of brachytherapy in salvage for 59-year-old man with 2.0 cm retropharyngeal lymph node recurrence after definitive IMRT 70 Gy for HPV+ oropharyngeal cancer. Include re-irradiation considerations, applicator selection, surgical coordination, dose, and cumulative tolerance.",
+      "expected_keywords": [
+        "oropharyngeal_salvage",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "expert",
+      "description": "Workflow test for oropharyngeal_salvage"
+    },
+    {
+      "id": "Q1032",
+      "input": "Comprehensive brachytherapy question about RCA_near_miss. Root cause analysis for 3 brachytherapy near-misses (wrong applicator size, CT without applicator, dwell position discrepancy). Include RCA methodology, common root causes, corrective actions, system improvements, and monitoring plan.",
+      "expected_keywords": [
+        "RCA_near_miss",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Workflow test for RCA_near_miss"
+    },
+    {
+      "id": "Q1033",
+      "input": "Comprehensive brachytherapy question about ovarian_vaginal. Brachytherapy workflow for 72-year-old woman with 4 cm ovarian cancer vaginal metastasis (platinum-sensitive, partial response to carbo/gem). Include rationale, applicator selection, dose, fractionation, IP chemotherapy integration, and evidence.",
+      "expected_keywords": [
+        "ovarian_vaginal",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "expert",
+      "description": "Workflow test for ovarian_vaginal"
+    },
+    {
+      "id": "Q1034",
+      "input": "Comprehensive brachytherapy question about patient_satisfaction. Design brachytherapy-specific patient satisfaction survey covering pre-treatment experience, treatment experience, recovery, follow-up, and overall satisfaction. Include validated PROMs (EORTC QLQ-CX24, EPIC), Likert scales, and QI integration.",
+      "expected_keywords": [
+        "patient_satisfaction",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "medium",
+      "description": "Workflow test for patient_satisfaction"
+    },
+    {
+      "id": "Q1035",
+      "input": "Comprehensive brachytherapy question about ovarian_VBT_repeat. Treatment plan for 43-year-old woman with ovarian cancer vaginal apex recurrence (high-grade serous, R0 resection) after prior hysterectomy and EBRT 45 Gy 3 years ago. Include VBT evidence, applicator, dose, niraparib timing, and surveillance.",
+      "expected_keywords": [
+        "ovarian_VBT_repeat",
+        "brachytherapy",
+        "clinical",
+        "evidence_based"
+      ],
+      "difficulty": "hard",
+      "description": "Workflow test for ovarian_VBT_repeat"
+    },
+    {
+      "id": "Q0956",
+      "input": "A 52-year-old woman named Maria presents with Stage IIB squamous cell carcinoma of the cervix. She has completed 45 Gy in 25 fractions of pelvic EBRT with weekly cisplatin. MRI shows a 4 cm residual tumor extending into the left parametrium. She has a tandem and ring applicator in place. Her BMI is 32, she has type 2 diabetes, and she is very anxious about the brachytherapy procedure. Provide a comprehensive treatment plan recommendation and explain it to the patient in accessible language.",
+      "expected_keywords": [
+        "Stage IIB",
+        "cervical cancer",
+        "tandem and ring",
+        "EBRT",
+        "cisplatin",
+        "comorbidities",
+        "patient communication"
+      ],
+      "difficulty": "advanced",
+      "description": "Real patient: Stage IIB cervical cancer treatment plan"
+    },
+    {
+      "id": "Q0957",
+      "input": "A 68-year-old retired teacher named Robert has been diagnosed with favorable intermediate-risk prostate cancer (Gleason 3+4=7, PSA 9.5, clinical stage T1c, prostate volume 38 cc). He is very active and concerned about maintaining his quality of life, particularly sexual function and urinary control. He is considering between HDR brachytherapy monotherapy and LDR permanent seed implantation. Walk through the decision-making process with him.",
+      "expected_keywords": [
+        "prostate cancer",
+        "intermediate-risk",
+        "HDR",
+        "LDR seeds",
+        "shared decision",
+        "quality of life",
+        "sexual function"
+      ],
+      "difficulty": "medium",
+      "description": "Real patient: Prostate cancer treatment decision-making"
+    },
+    {
+      "id": "Q0958",
+      "input": "A 78-year-old woman named Dorothy is being treated for recurrent endometrial cancer at the vaginal cuff. She had a total hysterectomy 3 years ago and now has a 1.5 cm biopsy-proven recurrence at the vaginal apex. She has a history of congestive heart failure (EF 35%), chronic kidney disease stage 3, and is on warfarin for atrial fibrillation. Design a comprehensive treatment plan accounting for all her comorbidities.",
+      "expected_keywords": [
+        "recurrent endometrial",
+        "vaginal cuff",
+        "comorbidities",
+        "CHF",
+        "CKD",
+        "anticoagulation",
+        "treatment planning"
+      ],
+      "difficulty": "high",
+      "description": "Real patient: Recurrent endometrial cancer with complex comorbidities"
+    },
+    {
+      "id": "Q0959",
+      "input": "A 35-year-old woman named Aisha is 20 weeks pregnant and has been diagnosed with Stage IB2 cervical cancer. She and her husband desperately want to continue the pregnancy while receiving cancer treatment. The multidisciplinary team must balance fetal safety with maternal cancer treatment. Design a treatment approach that considers all aspects of this complex situation.",
+      "expected_keywords": [
+        "pregnancy",
+        "Stage IB2",
+        "cervical cancer",
+        "fetal safety",
+        "maternal treatment",
+        "multidisciplinary"
+      ],
+      "difficulty": "high",
+      "description": "Real patient: Pregnant cervical cancer treatment planning"
+    },
+    {
+      "id": "Q0960",
+      "input": "A 65-year-old man named James has a T3N0M0 anal canal squamous cell carcinoma. He has completed 54 Gy of concurrent chemoradiation with mitomycin C and 5-FU. The post-treatment MRI shows a good partial response with a 1.5 cm residual abnormality. The tumor board is discussing whether to recommend observation, completion surgery, or brachytherapy boost. Analyze the options and provide a recommendation.",
+      "expected_keywords": [
+        "anal cancer",
+        "T3N0M0",
+        "chemoradiation",
+        "partial response",
+        "brachytherapy boost",
+        "tumor board"
+      ],
+      "difficulty": "advanced",
+      "description": "Real patient: Residual anal cancer treatment decision"
+    },
+    {
+      "id": "Q0961",
+      "input": "A 45-year-old woman named Priya has a Stage IIIA endometrial cancer (serous histology) and has undergone total hysterectomy with bilateral salpingo-oophorectomy. The pathology shows deep myometrial invasion and lymphovascular space invasion. She needs adjuvant therapy and the team is considering EBRT alone versus EBRT with vaginal cuff brachytherapy boost. Analyze the treatment options for this patient.",
+      "expected_keywords": [
+        "Stage IIIA",
+        "endometrial",
+        "serous histology",
+        "adjuvant",
+        "EBRT",
+        "vaginal cuff brachytherapy",
+        "risk factors"
+      ],
+      "difficulty": "advanced",
+      "description": "Real patient: High-risk endometrial cancer adjuvant therapy"
+    },
+    {
+      "id": "Q0962",
+      "input": "A 72-year-old man named William has been diagnosed with a 5 mm Stage IA1 squamous cell carcinoma of the cervix with no lymphovascular invasion. He is asking whether he needs brachytherapy or whether surgery alone is sufficient. The gynecologic oncologist has recommended radical hysterectomy but is open to discussing brachytherapy as an alternative. How should this low-risk case be discussed with the patient?",
+      "expected_keywords": [
+        "Stage IA1",
+        "cervical cancer",
+        "low-risk",
+        "treatment options",
+        "surgery",
+        "brachytherapy",
+        "patient discussion"
+      ],
+      "difficulty": "medium",
+      "description": "Real patient: Early-stage cervical cancer treatment discussion"
+    },
+    {
+      "id": "Q0963",
+      "input": "A 58-year-old woman named Linda has a 3 cm rectal cancer located 5 cm from the anal verge. She has completed neoadjuvant chemoradiation with 50.4 Gy and capecitabine. The restaging MRI shows a good response with the tumor downsized to 1.5 cm. The surgeon believes she may be a candidate for watch-and-wait management, but the radiation oncologist is recommending a brachytherapy boost. Analyze this clinical scenario and the decision-making process.",
+      "expected_keywords": [
+        "rectal cancer",
+        "neoadjuvant",
+        "good response",
+        "watch-and-wait",
+        "brachytherapy boost",
+        "decision-making"
+      ],
+      "difficulty": "advanced",
+      "description": "Real patient: Rectal cancer post-neoadjuvant treatment decision"
+    },
+    {
+      "id": "Q0964",
+      "input": "A 82-year-old woman named Helen has a small vaginal cancer (1.5 cm, Stage I) and is being considered for brachytherapy. She lives alone, has mild cognitive impairment, and relies on her daughter who lives 45 minutes away for transportation. She also has osteoporosis and is on a bisphosphonate. Design a treatment approach that accounts for all of her practical and medical considerations.",
+      "expected_keywords": [
+        "vaginal cancer",
+        "Stage I",
+        "elderly",
+        "cognitive impairment",
+        "transportation",
+        "osteoporosis",
+        "treatment approach"
+      ],
+      "difficulty": "high",
+      "description": "Real patient: Elderly vaginal cancer with practical challenges"
+    },
+    {
+      "id": "Q0965",
+      "input": "A 40-year-old man named Carlos has a penile cancer involving the glans penis (Stage T2). He is very concerned about sexual function and body image. The options discussed at tumor board include partial penectomy, brachytherapy, or Mohs surgery. He wants to understand the pros and cons of each option specifically in terms of sexual function outcomes. Provide a detailed comparison tailored to his concerns.",
+      "expected_keywords": [
+        "penile cancer",
+        "Stage T2",
+        "partial penectomy",
+        "brachytherapy",
+        "Mohs surgery",
+        "sexual function",
+        "body image"
+      ],
+      "difficulty": "advanced",
+      "description": "Real patient: Penile cancer treatment options with sexual function focus"
+    },
+    {
+      "id": "Q0966",
+      "input": "A 60-year-old woman named Fatima has a recurrent cervical cancer after hysterectomy. The PET-CT shows a 3 cm pelvic sidewall recurrence adjacent to the left ureter. She has had prior EBRT of 50 Gy. The team is discussing re-irradiation with brachytherapy versus systemic chemotherapy. She is asking about the chances of cure versus palliation and what the treatment will be like. Address both the medical decision-making and the patient communication aspects.",
+      "expected_keywords": [
+        "recurrent cervical",
+        "pelvic sidewall",
+        "re-irradiation",
+        "brachytherapy",
+        "palliation",
+        "cure",
+        "patient communication"
+      ],
+      "difficulty": "high",
+      "description": "Real patient: Recurrent cervical cancer re-irradiation decision"
+    },
+    {
+      "id": "Q0967",
+      "input": "A 55-year-old man named Thomas has a large (80 cc) prostate with low-risk prostate cancer (Gleason 3+3=6, PSA 5.5, Stage T1c). He is interested in brachytherapy but has significant lower urinary tract symptoms with an IPSS of 16. He wants to know whether brachytherapy will worsen his urinary symptoms and whether he is a good candidate. Evaluate his candidacy and explain the expected urinary outcomes.",
+      "expected_keywords": [
+        "prostate cancer",
+        "low-risk",
+        "large prostate",
+        "LUTS",
+        "IPSS",
+        "brachytherapy candidacy",
+        "urinary outcomes"
+      ],
+      "difficulty": "advanced",
+      "description": "Real patient: Large prostate with LUTS brachytherapy candidacy"
+    },
+    {
+      "id": "Q0968",
+      "input": "A 48-year-old woman named Mei has been diagnosed with a rare clear cell adenocarcinoma of the vagina. The tumor is 4 cm and involves the upper two-thirds of the vagina. She has no prior history of pelvic radiation. The multidisciplinary team is unfamiliar with this rare histology and is unsure about the optimal treatment approach. Research the evidence for this rare tumor type and recommend a treatment plan.",
+      "expected_keywords": [
+        "clear cell adenocarcinoma",
+        "vaginal cancer",
+        "rare histology",
+        "multidisciplinary",
+        "evidence research",
+        "treatment plan"
+      ],
+      "difficulty": "advanced",
+      "description": "Real patient: Rare clear cell vaginal adenocarcinoma"
+    },
+    {
+      "id": "Q0969",
+      "input": "A 70-year-old man named Richard has been treated with HDR brachytherapy for prostate cancer and is 2 years post-treatment. He presents with new-onset rectal bleeding. He is worried about cancer recurrence. Evaluate the likely causes of his rectal bleeding, the workup needed, and how to counsel him while managing his anxiety about recurrence.",
+      "expected_keywords": [
+        "rectal bleeding",
+        "post-brachytherapy",
+        "prostate cancer",
+        "recurrence concern",
+        "workup",
+        "patient counseling"
+      ],
+      "difficulty": "medium",
+      "description": "Real patient: Post-brachytherapy rectal bleeding evaluation"
+    },
+    {
+      "id": "Q0970",
+      "input": "A 38-year-old woman named Amara has a Stage IVA cervical cancer with bladder wall involvement. She has completed 45 Gy of EBRT with cisplatin. The MRI shows good response with tumor shrinkage, but there is still residual disease extending into the bladder wall. The team is debating whether brachytherapy boost is feasible given the bladder involvement, or whether the patient should be offered pelvic exenteration. Analyze this complex clinical scenario.",
+      "expected_keywords": [
+        "Stage IVA",
+        "cervical cancer",
+        "bladder involvement",
+        "EBRT response",
+        "brachytherapy boost",
+        "pelvic exenteration"
+      ],
+      "difficulty": "high",
+      "description": "Real patient: Stage IVA cervical cancer treatment analysis"
+    },
+    {
+      "id": "Q0971",
+      "input": "A 62-year-old man named George has been treated with interstitial brachytherapy for a recurrent squamous cell carcinoma of the oral tongue. He had prior surgery (partial glossectomy) and chemoradiation. The interstitial implant used 6 needles and the treatment was completed uneventfully. He now presents 2 weeks post-treatment with pain, swelling, and purulent discharge from the implant sites. Evaluate his symptoms and design a management plan.",
+      "expected_keywords": [
+        "post-treatment infection",
+        "interstitial",
+        "oral tongue",
+        "pain",
+        "swelling",
+        "discharge",
+        "management plan"
+      ],
+      "difficulty": "high",
+      "description": "Real patient: Post-interstitial brachytherapy oral tongue infection"
+    },
+    {
+      "id": "Q0972",
+      "input": "A 75-year-old woman named Dorothy2 has a Stage IIA cervical cancer. She is a Jehovah's Witness and has stated that she will not accept blood transfusions under any circumstances. She needs brachytherapy with interstitial needle placement. Given the bleeding risk associated with interstitial procedures, discuss how to manage this patient safely while respecting her religious beliefs.",
+      "expected_keywords": [
+        "Jehovah's Witness",
+        "blood transfusion",
+        "religious beliefs",
+        "interstitial",
+        "bleeding risk",
+        "patient safety",
+        "respect"
+      ],
+      "difficulty": "high",
+      "description": "Real patient: Brachytherapy in Jehovah's Witness patient"
+    },
+    {
+      "id": "Q0973",
+      "input": "A 50-year-old man named Ahmed has prostate cancer with a very large prostate (140 cc), Gleason score 4+3=7, PSA 15, and Stage T2c. He is interested in HDR brachytherapy as monotherapy but the large prostate size raises concerns about catheter placement and dose coverage. Evaluate his candidacy for HDR brachytherapy and discuss any modifications needed for his large prostate.",
+      "expected_keywords": [
+        "large prostate",
+        "140 cc",
+        "HDR monotherapy",
+        "catheter placement",
+        "dose coverage",
+        "candidacy",
+        "modifications"
+      ],
+      "difficulty": "advanced",
+      "description": "Real patient: Very large prostate HDR brachytherapy candidacy"
+    },
+    {
+      "id": "Q0974",
+      "input": "A 42-year-old woman named Sarah has a Stage II vaginal clear cell carcinoma. She had a prior history of diethylstilbestrol (DES) exposure in utero. The tumor is located in the upper third of the vagina and is 3 cm. She is being treated at a center where the radiation oncologist has limited experience with vaginal brachytherapy. How should this rare case be managed, and what resources should be sought to ensure optimal treatment?",
+      "expected_keywords": [
+        "vaginal clear cell",
+        "DES exposure",
+        "Stage II",
+        "rare tumor",
+        "limited experience",
+        "resource optimization",
+        "referral"
+      ],
+      "difficulty": "advanced",
+      "description": "Real patient: DES-related vaginal clear cell carcinoma management"
+    },
+    {
+      "id": "Q0975",
+      "input": "A 67-year-old woman named Patricia has completed brachytherapy for cervical cancer and is 6 months post-treatment. She reports difficulty with vaginal dilator use due to pain and is concerned about vaginal stenosis. She is also experiencing depression related to her cancer treatment. Address both the physical (vaginal stenosis prevention) and psychological (depression, treatment anxiety) aspects of her post-treatment care.",
+      "expected_keywords": [
+        "vaginal stenosis",
+        "dilator therapy",
+        "pain",
+        "depression",
+        "psychological",
+        "post-treatment",
+        "survivorship"
+      ],
+      "difficulty": "medium",
+      "description": "Real patient: Post-brachytherapy physical and psychological care"
+    },
+    {
+      "id": "Q0976",
+      "input": "A 55-year-old man named Michael has a recurrence of squamous cell carcinoma in the base of tongue after prior transoral robotic surgery (TORS) and adjuvant chemoradiation. The recurrence is 2 cm and confined to the tongue base. The ENT surgeon is recommending salvage surgery (total glossectomy), but the radiation oncologist believes salvage brachytherapy may be feasible. Analyze the options considering his functional outcome expectations (speech and swallowing).",
+      "expected_keywords": [
+        "recurrent oropharyngeal",
+        "base of tongue",
+        "salvage",
+        "TORS",
+        "total glossectomy",
+        "brachytherapy",
+        "functional outcomes"
+      ],
+      "difficulty": "high",
+      "description": "Real patient: Recurrent oropharyngeal cancer salvage decision"
+    },
+    {
+      "id": "Q0977",
+      "input": "A 80-year-old woman named Eleanor has a recurrent endometrial cancer at the vaginal vault. She has a history of aortic valve replacement (mechanical valve) requiring lifelong warfarin. She needs brachytherapy but the anticoagulation complicates the procedure. The cardiology team is concerned about bridging anticoagulation. Design a comprehensive management plan that balances cancer treatment, bleeding risk, and thromboembolic risk.",
+      "expected_keywords": [
+        "recurrent endometrial",
+        "mechanical heart valve",
+        "warfarin",
+        "bridging",
+        "bleeding risk",
+        "thromboembolic risk",
+        "management plan"
+      ],
+      "difficulty": "high",
+      "description": "Real patient: Recurrent endometrial cancer with mechanical heart valve"
+    },
+    {
+      "id": "Q0978",
+      "input": "A 29-year-old woman named Zara has a Stage IA1 cervical adenocarcinoma with lymphovascular invasion. She is nulliparous and desires future fertility. The options discussed are cold knife conization, radical trachelectomy with lymph node dissection, or definitive chemoradiation with brachytherapy. Analyze the evidence for each option in terms of oncological safety and fertility preservation for this young patient.",
+      "expected_keywords": [
+        "Stage IA1",
+        "adenocarcinoma",
+        "LVI",
+        "fertility preservation",
+        "radical trachelectomy",
+        "brachytherapy",
+        "young patient"
+      ],
+      "difficulty": "advanced",
+      "description": "Real patient: Young cervical cancer fertility-sparing treatment"
+    },
+    {
+      "id": "Q0979",
+      "input": "A 73-year-old man named Joseph has had a total hip replacement on the right side and requires HDR brachytherapy for a left-sided prostate cancer. The right hip prosthesis limits his positioning on the treatment table and may cause metal artifacts on CT. He also has a right inguinal hernia. Describe the complete treatment planning and delivery approach for this patient with multiple anatomical challenges.",
+      "expected_keywords": [
+        "hip prosthesis",
+        "prostate cancer",
+        "metal artifacts",
+        "positioning",
+        "hernia",
+        "treatment planning",
+        "multiple challenges"
+      ],
+      "difficulty": "advanced",
+      "description": "Real patient: Prostate HDR with hip prosthesis and hernia"
+    },
+    {
+      "id": "Q0980",
+      "input": "A 60-year-old woman named Grace has a Stage IIB cervical cancer. She has completed 45 Gy of EBRT and is scheduled for brachytherapy. However, she develops a pulmonary embolism 2 days before the planned brachytherapy procedure. She is started on therapeutic anticoagulation with enoxaparin. The team must decide whether to proceed with brachytherapy or delay treatment. Analyze the risks and benefits of proceeding versus delaying.",
+      "expected_keywords": [
+        "pulmonary embolism",
+        "anticoagulation",
+        "cervical cancer",
+        "treatment delay",
+        "risk-benefit",
+        "timing decision"
+      ],
+      "difficulty": "high",
+      "description": "Real patient: Brachytherapy timing after pulmonary embolism"
+    },
+    {
+      "id": "Q0981",
+      "input": "A 45-year-old woman named Kim has a Stage II vaginal cancer treated with combined EBRT and brachytherapy. Five years after treatment, she develops a new primary breast cancer. She asks whether her prior pelvic radiation has any impact on her breast cancer treatment options, particularly regarding radiation therapy for the breast. Provide evidence-based counseling about the interaction between prior pelvic radiation and breast cancer management.",
+      "expected_keywords": [
+        "prior radiation",
+        "second primary",
+        "breast cancer",
+        "radiation interaction",
+        "survivorship",
+        "counseling",
+        "evidence"
+      ],
+      "difficulty": "advanced",
+      "description": "Real patient: Prior radiation and second primary cancer interaction"
+    },
+    {
+      "id": "Q1000",
+      "input": "A 55-year-old woman named Eleanor presents with Stage IIB cervical cancer. She has completed 45 Gy of pelvic EBRT with concurrent cisplatin. She has a tandem and ring applicator in place for brachytherapy. However, she also has a history of lupus nephritis and is on chronic immunosuppressive therapy with mycophenolate. Her creatinine clearance is 45 mL/min. Design a comprehensive treatment plan that addresses her cancer treatment needs while accounting for her autoimmune disease, renal impairment, and immunosuppressed status.",
+      "expected_keywords": [
+        "Stage IIB",
+        "cervical cancer",
+        "lupus nephritis",
+        "immunosuppressive",
+        "renal impairment",
+        "cisplatin",
+        "treatment planning"
+      ],
+      "difficulty": "advanced",
+      "description": "Real patient: Cervical cancer with lupus nephritis and immunosuppression"
+    },
+    {
+      "id": "Q1441",
+      "input": "52yo F, 4.5cm IIB cervical SCC, HPV16+, left parametrial to pelvic sidewall, 2cm left external iliac LN. Post-EBRT 45Gy/cisplatin with LN response. Tandem/ovoid in place. Hgb 10.2, Cr 1.1, ECOG 1. Comprehensive treatment plan including applicator modifications, dose, optimization, and follow-up.",
+      "expected_keywords": [
+        "cervical_IIB_parametrial",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_IIB_parametrial"
+    },
+    {
+      "id": "Q1442",
+      "input": "68yo M, Gleason 4+5=9, PSA 22.5, T3b, 85cc prostate. Completed EBRT 50Gy/docetaxel. HDR boost planned. Large median lobe, IPSS 22, prior TURP 5y ago (20g). Complete plan addressing anatomy, urinary risk, and dose.",
+      "expected_keywords": [
+        "prostate_high_risk_complex",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_high_risk_complex"
+    },
+    {
+      "id": "Q1443",
+      "input": "35yo F at 24 weeks gestation with 3.5cm IB2 cervical SCC. Wishes to continue pregnancy (delivery at 32 weeks). On neoadjuvant cis/gem. Comprehensive multidisciplinary plan including fetal protection and delivery planning.",
+      "expected_keywords": [
+        "cervical_pregnancy",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_pregnancy"
+    },
+    {
+      "id": "Q1444",
+      "input": "45yo F with 3cm vaginal cuff recurrence (Grade 3 serous) after TAH-BSO + EBRT 45Gy 2y ago. BMI 42, HbA1c 8.2%, OSA on CPAP. Interstitial brachytherapy plan addressing comorbidities and technical challenges.",
+      "expected_keywords": [
+        "endometrial_recurrence_obesity",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: endometrial_recurrence_obesity"
+    },
+    {
+      "id": "Q1445",
+      "input": "60yo M, recurrent Gleason 4+4=8 prostate after RP + EBRT 64Gy. PSMA PET: anastomotic + SV bed recurrence. CAD (recent stent, dual antiplatelet), DM, BMI 34. Salvage HDR plan with cardiac and bleeding risk management.",
+      "expected_keywords": [
+        "prostate_salvage_cardiac",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_salvage_cardiac"
+    },
+    {
+      "id": "Q1446",
+      "input": "28yo F with 2cm IA2 cervical adenocarcinoma, cold knife conization with negative margins. Desires fertility preservation. Pre-conization MRI no residual. LVSI negative. 3mm DOI. Observation vs adjuvant VBT decision.",
+      "expected_keywords": [
+        "cervical_fertility_preservation",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_fertility_preservation"
+    },
+    {
+      "id": "Q1447",
+      "input": "70yo F with 5cm cT3N1M0 rectal cancer (3cm from anal verge), post-nCRT with good response. Organ preservation with brachytherapy boost. COPD (FEV1 45%), CKD (GFR 35), PVD. Comorbidity management and plan.",
+      "expected_keywords": [
+        "rectal_organ_preservation",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: rectal_organ_preservation"
+    },
+    {
+      "id": "Q1448",
+      "input": "42yo M with 2cm T1N0M0 anal canal SCC, complete response post-EBRT 45Gy/5-FU/MMC. Brachytherapy boost planned. HIV+ (CD4 650, undetectable on ART). HIV-specific considerations and monitoring.",
+      "expected_keywords": [
+        "anal_HIV",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: anal_HIV"
+    },
+    {
+      "id": "Q1449",
+      "input": "55yo F with 3cm vaginal melanoma (Breslow 3.5mm) after excision with 0.5mm deep margin. Right nephrectomy 10y ago (solitary left kidney, GFR 55). Adjuvant interstitial plan with renal considerations.",
+      "expected_keywords": [
+        "melanoma_solitary_kidney",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: melanoma_solitary_kidney"
+    },
+    {
+      "id": "Q1450",
+      "input": "65yo M, intermediate-risk prostate (T2b, 38cc). Permanent I-125 seed implant. Penile prosthesis, left hip replacement, bilateral hand arthritis. Positioning and procedural challenges.",
+      "expected_keywords": [
+        "prostate_positioning_challenges",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_positioning_challenges"
+    },
+    {
+      "id": "Q1451",
+      "input": "48yo F with IIIC2 cervical cancer post-EBRT. Tandem/ring + interstitial needles. Day 2 post-placement: fever 38.5C, lower abdominal pain, WBC 12,500. Blood cultures pending. Emergency management.",
+      "expected_keywords": [
+        "cervical_infection_emergency",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_infection_emergency"
+    },
+    {
+      "id": "Q1452",
+      "input": "72yo F with recurrent IIIB cervical cancer (4cm, right parametrium) after definitive CRT. Pelvic exenteration + IORT considered. EF 35%, DM, mild cognitive impairment. Complex management plan.",
+      "expected_keywords": [
+        "cervical_IORT_cardiac",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_IORT_cardiac"
+    },
+    {
+      "id": "Q1453",
+      "input": "14yo F with 3cm pelvic RMS (bladder/prostate, stage III, Group III). Post VAC/VI with partial response. Brachytherapy boost, Tanner I, organ preservation. Pediatric-specific plan.",
+      "expected_keywords": [
+        "pediatric_RMS_bladder",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: pediatric_RMS_bladder"
+    },
+    {
+      "id": "Q1454",
+      "input": "59yo M, recurrent HPV+ oropharyngeal cancer (2.5cm retropharyngeal LN) after IMRT 70Gy + TORS 2y ago. ORN of mandible, xerostomia. Salvage plan addressing prior complications.",
+      "expected_keywords": [
+        "oropharyngeal_salvage_complex",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: oropharyngeal_salvage_complex"
+    },
+    {
+      "id": "Q1455",
+      "input": "45yo F with 2cm Stage I vaginal SCC. SLE on HCQ + prednisone. Definitive brachytherapy. Autoimmune considerations: flare risk, immunosuppression, infection monitoring.",
+      "expected_keywords": [
+        "vaginal_autoimmune",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: vaginal_autoimmune"
+    },
+    {
+      "id": "Q1456",
+      "input": "58yo M, Gleason 3+4=7, PSA 12, T2c, 72cc. EBRT + HDR boost. Bilateral hip replacements, severe kyphoscoliosis. Positioning challenges and needle placement modifications.",
+      "expected_keywords": [
+        "prostate_ortho_challenges",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_ortho_challenges"
+    },
+    {
+      "id": "Q1457",
+      "input": "55yo F with 2.5cm recurrent Grade 2 endometrial at vaginal cuff after TAH-BSO + VBT 21Gy/3fx 5y ago. Hypothyroidism, HTN, osteoporosis (T-score -3.0). Repeat VBT plan.",
+      "expected_keywords": [
+        "endometrial_repeat_vbt_comorbidities",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: endometrial_repeat_vbt_comorbidities"
+    },
+    {
+      "id": "Q1458",
+      "input": "50yo F with IIB cervical cancer, posterior tumor 2mm from rectum. Tandem/ovoid in place. On warfarin for DVT (bridging to LMWH). Tight posterior margin and anticoagulation management.",
+      "expected_keywords": [
+        "cervical_posterior_anticoagulation",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_posterior_anticoagulation"
+    },
+    {
+      "id": "Q1459",
+      "input": "70yo F with 2.5cm ovarian cancer vaginal cuff recurrence after R0 resection. Prior breast cancer (ER+ PR+ HER2-, on tamoxifen 8y ago). Adjuvant VBT plan with tamoxifen interaction.",
+      "expected_keywords": [
+        "ovarian_vaginal_tamoxifen",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: ovarian_vaginal_tamoxifen"
+    },
+    {
+      "id": "Q1460",
+      "input": "42yo F with IB1 cervical adenocarcinoma after radical trachelectomy + PLND (nodes negative). Desires fertility (12 oocytes frozen). Bicornuate uterus with functional right horn. Fertility-preserving VBT.",
+      "expected_keywords": [
+        "cervical_trachelectomy_bicornuate",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_trachelectomy_bicornuate"
+    },
+    {
+      "id": "Q1461",
+      "input": "60yo M, recurrent Gleason 4+5=9 prostate after RP + EBRT 66Gy. Anastomotic site recurrence. Parkinson's disease (tremor, bradykinesia, carbidopa-levodopa). Salvage HDR with neurological considerations.",
+      "expected_keywords": [
+        "prostate_Parkinson",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_Parkinson"
+    },
+    {
+      "id": "Q1462",
+      "input": "48yo F with 4cm IIIC2 endometrial cancer (Grade 2 endometrioid). Post TAH-BSO + PLND. EBRT 45Gy/carbo. VBT planned. Renal transplant 8y ago (tacrolimus, mycophenolate). Immunocompromised management.",
+      "expected_keywords": [
+        "endometrial_transplant",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: endometrial_transplant"
+    },
+    {
+      "id": "Q1463",
+      "input": "60yo M with 2cm T2N0M0 anal canal SCC, complete response post-nCRT. Liver transplant 5y ago (tacrolimus, mycophenolate). Colostomy from diverticulitis. Definitive brachytherapy with immunosuppression.",
+      "expected_keywords": [
+        "anal_transplant_colostomy",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: anal_transplant_colostomy"
+    },
+    {
+      "id": "Q1464",
+      "input": "35yo F with IA2 cervical SCC (no LVSI, negative conization margins). Desires fertility. Bipolar disorder (lithium, controlled), hypothyroidism, BMI 38. Fertility-preserving VBT with psychiatric and metabolic comorbidities.",
+      "expected_keywords": [
+        "cervical_lithium_obesity",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_lithium_obesity"
+    },
+    {
+      "id": "Q1465",
+      "input": "70yo M, recurrent Gleason 4+5=9 after RP + EBRT 66Gy. Anastomotic + bilateral pelvic LN (3 nodes). Mechanical aortic valve (warfarin), HTN, DM. Salvage HDR + abiraterone with anticoagulation management.",
+      "expected_keywords": [
+        "prostate_mechanical_valve",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_mechanical_valve"
+    },
+    {
+      "id": "Q1466",
+      "input": "55yo F with IIB cervical cancer (6cm tumor). EBRT 45Gy + cisplatin completed. Tandem placed. On imaging, tandem perforated uterine fundus into cul-de-sac. Hemodynamically stable. Emergency management.",
+      "expected_keywords": [
+        "cervical_perforation",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_perforation"
+    },
+    {
+      "id": "Q1467",
+      "input": "42yo M, T1cN0M0 Gleason 3+3=6, PSA 5.2, 32cc prostate. Focal hemi-gland brachytherapy. Tumor right peripheral zone mid-gland. Family history (father, brother). Anxiety, normal sexual function. Focal treatment plan.",
+      "expected_keywords": [
+        "prostate_penile_implant_TURP",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_penile_implant_TURP"
+    },
+    {
+      "id": "Q1468",
+      "input": "55yo F with IB2 cervical SCC. EBRT 45Gy/cisplatin completed. Tandem/ovoid in place. Jehovah's Witness (no blood products). Hgb 8.5, symptomatic anemia. Outpatient treatment. Management without transfusion.",
+      "expected_keywords": [
+        "cervical_Jehovah_anemia",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_Jehovah_anemia"
+    },
+    {
+      "id": "Q1469",
+      "input": "68yo M with 3cm Gleason 4+3=7 (T2c, 58cc). Permanent Pd-103 seed implant. Bladder augmentation (ileocystoplasty), suprapubic catheter, colostomy. Complex abdominal anatomy plan.",
+      "expected_keywords": [
+        "prostate_bladder_augmentation",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_bladder_augmentation"
+    },
+    {
+      "id": "Q1470",
+      "input": "32yo F with 1.5cm Stage I vaginal clear cell adenocarcinoma (no DES exposure). Fertility-sparing brachytherapy. Normal ovarian function (AMH 3.2). Comprehensive fertility-preserving plan.",
+      "expected_keywords": [
+        "vaginal_clear_cell_fertility",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: vaginal_clear_cell_fertility"
+    },
+    {
+      "id": "Q1471",
+      "input": "60yo M with 4cm cT3N1M0 rectal cancer (2.5cm from anal verge), post-nCRT with good response. Severe claustrophobia (no MRI), pacemaker (MRI-conditional), chronic constipation. Endorectal brachytherapy with CT-based planning.",
+      "expected_keywords": [
+        "rectal_pacemaker_claustrophobia",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: rectal_pacemaker_claustrophobia"
+    },
+    {
+      "id": "Q1472",
+      "input": "45yo F with 3cm recurrent IIB cervical cancer (left parametrium) after RP + EBRT 50Gy 3y ago. Colostomy (diverticulitis), left nephrostomy (ureteral stricture). Interstitial brachytherapy with altered anatomy.",
+      "expected_keywords": [
+        "cervical_colostomy_nephrostomy",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_colostomy_nephrostomy"
+    },
+    {
+      "id": "Q1473",
+      "input": "70yo F with 2cm recurrent Grade 1 endometrial at vaginal apex after hysterectomy + EBRT 45Gy 4y ago. Severe kyphosis (Cobb 65), COPD on O2, mild dementia (MMSE 22). Daughter has healthcare POA. Complex management.",
+      "expected_keywords": [
+        "endometrial_kyphosis_dementia",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: endometrial_kyphosis_dementia"
+    },
+    {
+      "id": "Q1474",
+      "input": "52yo M, T1cN0M0 Gleason 3+4=7, PSA 9.8, 50cc. HDR monotherapy 36Gy/4fx. Spinal cord stimulator, DVT 2y ago (off anticoagulation), severe needle phobia. Device safety and anxiety management.",
+      "expected_keywords": [
+        "prostate_SCS_DVT_phobia",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_SCS_DVT_phobia"
+    },
+    {
+      "id": "Q1475",
+      "input": "65yo F with 3.5cm IVA vaginal SCC (bladder base involvement). Renal transplant 8y ago (tacrolimus, mycophenolate, prednisone). Immunosuppression, skin fragility. Definitive chemoradiation + brachytherapy.",
+      "expected_keywords": [
+        "vaginal_transplant_skin",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: vaginal_transplant_skin"
+    },
+    {
+      "id": "Q1476",
+      "input": "48yo M, recurrent HPV- oropharyngeal cancer (2cm surgical bed) after IMRT 70Gy + TORS 2y ago. Severe dysphagia (MDADI 45/100), PEG-dependent, bilateral vocal cord paralysis. Salvage interstitial plan.",
+      "expected_keywords": [
+        "oropharyngeal_dysphagia",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: oropharyngeal_dysphagia"
+    },
+    {
+      "id": "Q1477",
+      "input": "55yo F, recurrent IIB cervical cancer (1.5cm left parametrium) after CRT. Crohn's disease (infliximab, remission), severe aortic stenosis (valve area 0.8cm), bilateral LE lymphedema. Interstitial plan with multiple comorbidities.",
+      "expected_keywords": [
+        "cervical_crohn_aortic",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_crohn_aortic"
+    },
+    {
+      "id": "Q1478",
+      "input": "48yo F with IIB cervical cancer (6cm), EBRT 45Gy + cisplatin. Tandem/ring + 4 interstitial needles. Fraction 2 completed. AKI: creatinine 0.9→2.1, oliguria. Emergency management plan.",
+      "expected_keywords": [
+        "cervical_nephrotoxicity",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_nephrotoxicity"
+    },
+    {
+      "id": "Q1479",
+      "input": "72yo F, recurrent Grade 3 serous endometrial (2cm vaginal cuff) after hysterectomy + EBRT 45Gy 3y ago. Severe neuropathy (taxane, walking aid), bilateral LE edema, recurrent UTIs. Interstitial plan with functional limitations.",
+      "expected_keywords": [
+        "endometrial_neuropathy_edema",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: endometrial_neuropathy_edema"
+    },
+    {
+      "id": "Q1480",
+      "input": "60yo M, 3cm T2N0M0 prostate (Gleason 4+3=7, PSA 12, 50cc). Combined EBRT 46Gy + HDR boost 18Gy/2fx. Total colectomy (end ileostomy), neurogenic bladder (CIC 4x daily), peripheral neuropathy. Absent rectum plan.",
+      "expected_keywords": [
+        "prostate_colostomy_neurogenic",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_colostomy_neurogenic"
+    },
+    {
+      "id": "Q1481",
+      "input": "48yo F, IIB cervical cancer (5cm), EBRT 45Gy/carboplatin (cisplatin intolerance). Tandem/ovoid in place. Residual 2.5cm, left parametrial. CINV history, anxiety (sertraline), GERD (omeprazole). Supportive care challenges.",
+      "expected_keywords": [
+        "cervical_cINV_anxiety_GERD",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_cINV_anxiety_GERD"
+    },
+    {
+      "id": "Q1482",
+      "input": "70yo M, recurrent Gleason 5+4=9 (T3bN0M0) after RP + salvage EBRT 64Gy 5y ago. Anastomotic mass 2cm extending to bladder neck. Bladder diverticulum 2.5cm, ureteral stricture disease. Salvage HDR plan.",
+      "expected_keywords": [
+        "prostate_bladder_diverticulum",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_bladder_diverticulum"
+    },
+    {
+      "id": "Q1483",
+      "input": "38yo F, IIIC1 cervical cancer (4cm), EBRT 45Gy/cisplatin. Tandem/ovoid in place. Olympic track cyclist. Iron deficiency anemia, left tibial stress fracture (healed 6mo ago), OCP use. Athletic performance concerns.",
+      "expected_keywords": [
+        "cervical_athlete",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_athlete"
+    },
+    {
+      "id": "Q1484",
+      "input": "65yo M, 3cm Gleason 4+5=9 prostate (T3a, PSA 25, 75cc). EBRT 50Gy + HDR boost 26Gy/2fx. Prior APR 10y ago (colostomy), right inguinal hernia mesh. Altered pelvic anatomy plan.",
+      "expected_keywords": [
+        "prostate_APR_mesh",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_APR_mesh"
+    },
+    {
+      "id": "Q1485",
+      "input": "52yo F, 2.5cm recurrent Grade 3 serous endometrial at vaginal apex after hysterectomy + EBRT 45Gy 3y ago. New breast cancer (ER+ PR+ HER2-, 1.5cm, node-negative). Treatment sequencing for two cancers.",
+      "expected_keywords": [
+        "endometrial_breast_sequencing",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: endometrial_breast_sequencing"
+    },
+    {
+      "id": "Q1486",
+      "input": "45yo M, 2cm T1N0M0 penile cancer (glans) after Fournier gangrene (3y ago, scarring). Type 1 DM (insulin pump, HbA1c 7.2%), smoking history. Penile-preserving brachytherapy with wound healing concerns.",
+      "expected_keywords": [
+        "penile_Fournier_diabetes",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: penile_Fournier_diabetes"
+    },
+    {
+      "id": "Q1487",
+      "input": "60yo F, 3.5cm IIIC1 endometrial cancer (Grade 2 endometrioid). Post TAH-BSO + EBRT 45Gy/carbo. VBT planned. Post-gastric bypass (BMI 35, from 48), IDDM (HbA1c 8.5%), OSA (BiPAP). VBT with altered anatomy.",
+      "expected_keywords": [
+        "endometrial_post_bypass",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: endometrial_post_bypass"
+    },
+    {
+      "id": "Q1488",
+      "input": "75yo M, recurrent Gleason 3+4=7 (PSA 6.5) after RP + salvage EBRT 66Gy 6y ago. Solitary anastomotic recurrence. ESRD (dialysis 3x/wk), CAD (2 MIs, EF 30%), bilateral BKA. Wheelchair user. Salvage HDR with severe functional limitations.",
+      "expected_keywords": [
+        "prostate_ESRD_amputations",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_ESRD_amputations"
+    },
+    {
+      "id": "Q1489",
+      "input": "32yo F, IA2 cervical adenocarcinoma with LVSI (conization specimen), negative margins. Desires fertility preservation. Observation vs adjuvant VBT decision framework with competing risks.",
+      "expected_keywords": [
+        "cervical_LVSI_fertility",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_LVSI_fertility"
+    },
+    {
+      "id": "Q1490",
+      "input": "58yo M, T1cN0M0 Gleason 3+4=7, PSA 10.5, 42cc. Permanent seed implant. Bilateral hip replacements, severe lumbar stenosis (epidural q3mo), bilateral carpal tunnel (post-decompression L). Positioning challenges.",
+      "expected_keywords": [
+        "prostate_hip_spinal",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_hip_spinal"
+    },
+    {
+      "id": "Q1491",
+      "input": "45yo F, IIB cervical cancer (4cm). EBRT 45Gy/cisplatin. Tandem/ovoid + 4 needles. Fraction 1 delivered. TPS software error: dwell times based on incorrect source strength (actual 10% weaker). Immediate response.",
+      "expected_keywords": [
+        "cervical_TPS_error",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_TPS_error"
+    },
+    {
+      "id": "Q1492",
+      "input": "58yo F, recurrent high-grade serous ovarian cancer (platinum-sensitive, 20mo relapse). 3.5cm vaginal + 1.5cm peritoneal deposit. Post-6x carbo/gem with response. Debulking + IP chemo + VBT boost. Prior bowel obstruction.",
+      "expected_keywords": [
+        "ovarian_IP_chemo",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: ovarian_IP_chemo"
+    },
+    {
+      "id": "Q1493",
+      "input": "42yo M, 2cm T1N0M0 oral tongue SCC after partial glossectomy, 1mm positive margin. Adjuvant interstitial brachytherapy. Alcohol use disorder (sober 5y, naltrexone), HCV (SVR), nicotine dependence. Anxiety about speech/swallowing.",
+      "expected_keywords": [
+        "oral_tongue_alcohol",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: oral_tongue_alcohol"
+    },
+    {
+      "id": "Q1494",
+      "input": "70yo F, recurrent IIIB cervical cancer (2.5cm central) after CRT. Pelvic exenteration + IORT. Severe aortic stenosis (valve area 0.6cm, NYHA III), severe osteoporosis (T-score -4.0, 3 vertebral fractures), rivaroxaban. Complex pre-operative plan.",
+      "expected_keywords": [
+        "cervical_aortic_osteoporosis",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_aortic_osteoporosis"
+    },
+    {
+      "id": "Q1495",
+      "input": "55yo M, 2.5cm Gleason 3+4=7 (T2b, 42cc). Permanent seed implant. Crohn's (ileocolonic, adalimumab, remission), prior small bowel resection (20cm ileum), reversed loop ileostomy, bile acid malabsorption. Plan with IBD.",
+      "expected_keywords": [
+        "prostate_Crohn_bowel",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_Crohn_bowel"
+    },
+    {
+      "id": "Q1496",
+      "input": "48yo F, 2.5cm Stage I vaginal SCC. Definitive interstitial brachytherapy. BMI 45, IDDM (insulin pump, HbA1c 9.0%), severe OSA (AHI 45, CPAP), bilateral LE lymphedema, chronic pain (gabapentin, duloxetine). Multiple comorbidities plan.",
+      "expected_keywords": [
+        "vaginal_obesity_multimorbid",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: vaginal_obesity_multimorbid"
+    },
+    {
+      "id": "Q1497",
+      "input": "65yo M, 3cm T2N0M0 Gleason 4+3=7 (PSA 12, 50cc). EBRT 46Gy + HDR boost 18Gy/2fx. Total colectomy for UC (end ileostomy), neurogenic bladder (CIC 4x daily), peripheral neuropathy. HDR with absent rectum.",
+      "expected_keywords": [
+        "prostate_absent_rectum",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_absent_rectum"
+    },
+    {
+      "id": "Q1498",
+      "input": "45yo F, IIB cervical cancer (5cm). EBRT 45Gy/cisplatin. Tandem/ovoid placed. Latex allergy (anaphylaxis). Standard applicator has latex components. Alternative approach and emergency preparedness.",
+      "expected_keywords": [
+        "cervical_latex_allergy",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_latex_allergy"
+    },
+    {
+      "id": "Q1499",
+      "input": "70yo M, 3cm Gleason 4+3=7 (T3a, PSA 15, 65cc). EBRT 50Gy + HDR boost 26Gy/2fx. Metastatic colon cancer (liver resected 8y ago, disease-free), T1DM (insulin pump, HbA1c 7.5%), cardiac stent (aspirin + clopidogrel). Multiple cancer and comorbidity management.",
+      "expected_keywords": [
+        "prostate_colon_diabetes_stent",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: prostate_colon_diabetes_stent"
+    },
+    {
+      "id": "Q1500",
+      "input": "52yo F, 2.5cm Stage I vaginal SCC (posterior wall). Definitive interstitial brachytherapy. Severe claustrophobia (no MRI), latex allergy (anaphylaxis), mechanical mitral valve (warfarin INR 2.5), CKD (GFR 42). Multiple medical constraints plan.",
+      "expected_keywords": [
+        "cervical_multiple_constraints",
+        "real_patient",
+        "clinical",
+        "complex"
+      ],
+      "difficulty": "hard",
+      "description": "Real patient: cervical_multiple_constraints"
+    },
+    {
+      "id": "Q1951",
+      "input": "I have a 52-year-old female with a Stage IIIB cervical cancer (FIGO 2018). MRI shows a 7 cm cervical tumor with bilateral parametrial extension reaching the pelvic sidewall on the left. She has bilateral hydronephrosis with ureteral stents in place. She has a 20-year history of type 2 diabetes (HbA1c 8.5%), hypertension requiring 3 medications (BP 150/92), and chronic kidney disease stage 3b (GFR 42). She has never been pregnant. She completed 45 Gy pelvic EBRT with weekly cisplatin (dose-reduced due to CKD). She is now being evaluated for brachytherapy. MRI shows partial response with residual 4 cm central tumor. How should I approach her brachytherapy? What applicator should I use? What dose modifications are needed for her comorbidities? How should I manage her diabetes and hypertension during treatment?",
+      "expected_keywords": [
+        "cervical cancer",
+        "Stage IIIB",
+        "brachytherapy",
+        "comorbidities",
+        "partial response",
+        "applicator"
+      ],
+      "difficulty": "expert",
+      "description": "Complex real patient with locally advanced cervical cancer and multiple comorbidities"
+    },
+    {
+      "id": "Q1952",
+      "input": "I am treating a 68-year-old male with prostate cancer (Gleason 4+5, Stage T3b, PSA 35, node-positive on PET-CT). He has a history of Crohn disease with an end colostomy, moderate COPD (FEV1 52%), and a mechanical aortic valve requiring lifelong warfarin (INR target 2.5-3.5). Current INR is 2.8. He had a DVT 2 years ago on a previous anticoagulation regimen. He wants definitive treatment. Given his extensive comorbidities, what treatment approach would you recommend? How do I manage his warfarin during brachytherapy? What concurrent chemotherapy should I add? What are the competing mortality risks?",
+      "expected_keywords": [
+        "prostate cancer",
+        "warfarin",
+        "mechanical valve",
+        "Crohn",
+        "anticoagulation",
+        "competing risks",
+        "chemotherapy"
+      ],
+      "difficulty": "expert",
+      "description": "Extremely complex patient with prostate cancer and multiple life-threatening comorbidities"
+    },
+    {
+      "id": "Q1953",
+      "input": "I have a 35-year-old female at 22 weeks gestation with a 4 cm Stage IB1 cervical cancer (squamous cell carcinoma). She strongly desires to continue the pregnancy. Her obstetric team at a tertiary center supports continuing the pregnancy. MRI shows the tumor confined to the cervix with no parametrial extension. She has no prior treatment, no comorbidities, and normal labs. What is the recommended treatment approach? What chemotherapy agents are safe during pregnancy? What brachytherapy modifications are needed? What is the estimated fetal dose? When should delivery be planned? What is the prognosis with this approach?",
+      "expected_keywords": [
+        "pregnancy",
+        "cervical cancer",
+        "chemotherapy safety",
+        "fetal dose",
+        "brachytherapy modification",
+        "delivery timing"
+      ],
+      "difficulty": "expert",
+      "description": "Complex pregnancy scenario requiring multidisciplinary oncology-obstetrics management"
+    },
+    {
+      "id": "Q1954",
+      "input": "I am managing a 75-year-old male with prostate cancer (Gleason 3+3, Stage T1c, PSA 6.5) who has advanced Alzheimer dementia (MMSE 10) and lives in a nursing home. His family insists on active treatment despite a life expectancy estimate of 3-4 years from dementia. He has a well-functioning cardiac pacemaker. He has no other significant comorbidities. Given his cognitive impairment and limited life expectancy, should I recommend LDR brachytherapy as a single outpatient procedure, EBRT course, or watchful waiting? What are the ethical considerations? How do I handle informed consent for a cognitively impaired patient?",
+      "expected_keywords": [
+        "dementia",
+        "Alzheimer",
+        "ethical",
+        "informed consent",
+        "life expectancy",
+        "competing risks",
+        "treatment options"
+      ],
+      "difficulty": "hard",
+      "description": "Ethical scenario with cognitively impaired elderly patient"
+    },
+    {
+      "id": "Q1955",
+      "input": "I have a 45-year-old female with a 3 cm endometrial cancer (Grade 1, Stage IA) who has a bicornuate uterus. She strongly desires fertility preservation and has been trying to conceive for 2 years. She has no prior treatment, no comorbidities. Her reproductive endocrinologist has assessed her fertility potential as moderate. MRI shows the tumor is limited to the endometrium with no myometrial invasion. She has failed 6 months of high-dose progestin therapy with persistent disease on biopsy. Given her desire for fertility and failed medical therapy, what are her options? Could brachytherapy be used as a fertility-sparing approach? What applicator would fit her bicornuate uterus? What is the evidence for fertility outcomes after brachytherapy for endometrial cancer?",
+      "expected_keywords": [
+        "fertility preservation",
+        "bicornuate uterus",
+        "endometrial cancer",
+        "progestin failure",
+        "brachytherapy",
+        "fertility outcomes"
+      ],
+      "difficulty": "expert",
+      "description": "Complex fertility preservation scenario with uterine anomaly"
+    },
+    {
+      "id": "Q1956",
+      "input": "I am treating a 60-year-old male with a 4 cm anal canal squamous cell carcinoma (Stage III, T3N1M0). He has well-controlled HIV with CD4 count of 420 and undetectable viral load on antiretroviral therapy. He has a history of IV drug use (clean for 5 years) and hepatitis C (SVR achieved). He has moderate depression requiring sertraline. He has no prior radiation. Standard treatment is concurrent chemoradiation (Nigro protocol). Should I modify the standard radiation dose or fractionation given his HIV status? Should I consider brachytherapy boost? What concurrent chemotherapy would be appropriate? How should I manage his depression during treatment?",
+      "expected_keywords": [
+        "anal cancer",
+        "HIV",
+        "CD4",
+        "chemoradiation",
+        "brachytherapy boost",
+        "depression",
+        "chemotherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Complex anal cancer in HIV-positive patient with psychiatric comorbidity"
+    },
+    {
+      "id": "Q1957",
+      "input": "I have a 72-year-old female with a 3 cm vaginal cancer (squamous cell, Stage II) who has severe rheumatoid arthritis requiring chronic prednisone 15 mg daily and methotrexate. She has bilateral total knee replacements and is confined to a wheelchair. She has osteoporosis with a T-score of -3.5 and has had 2 vertebral compression fractures. She has never had prior treatment. Given her severe arthritis, she cannot tolerate the lithotomy position for standard applicator placement. How should I modify the brachytherapy approach? What applicator alternatives exist for her positioning limitations? How does chronic steroid use affect radiation tolerance? Should I continue methotrexate during treatment?",
+      "expected_keywords": [
+        "rheumatoid arthritis",
+        "steroid",
+        "positioning",
+        "applicator",
+        "methotrexate",
+        "radiation tolerance",
+        "osteoporosis"
+      ],
+      "difficulty": "expert",
+      "description": "Complex patient with positioning limitations and immunosuppression"
+    },
+    {
+      "id": "Q1958",
+      "input": "I am managing a 55-year-old male with recurrent rectal cancer after anterior resection and adjuvant chemoradiation (50.4 Gy EBRT + capecitabine completed 18 months ago). The recurrence is a 5 cm anastomotic recurrence involving the bladder dome and seminal vesicles. He has bilateral hydronephrosis requiring nephrostomy tubes. He has a well-functioning colostomy from the prior surgery. Given the prior radiation, what are the remaining tissue tolerance doses for re-irradiation? Should I recommend re-irradiation with brachytherapy boost, systemic therapy, or palliative care? What systemic options exist for recurrent rectal cancer? Should I consider immunotherapy given his MSI status (MSI-H)?",
+      "expected_keywords": [
+        "re-irradiation",
+        "rectal cancer",
+        "recurrence",
+        "cumulative dose",
+        "MSI-H",
+        "immunotherapy",
+        "palliative"
+      ],
+      "difficulty": "expert",
+      "description": "Complex recurrent rectal cancer with re-irradiation decision"
+    },
+    {
+      "id": "Q1959",
+      "input": "I have a 40-year-old female with a 5 cm vulvar melanoma (Stage II, Breslow 4.5 mm, ulcerated, LVSI positive) who had a radical vulvectomy with bilateral inguinal lymphadenectomy (2 of 14 nodes positive on right with extracapsular extension). She has a BRCA2 mutation and a personal history of breast cancer treated with bilateral mastectomy 5 years ago. She has no other comorbidities. She needs adjuvant therapy for her vulvar melanoma. Should I recommend adjuvant radiation? What is the role of immunotherapy (pembrolizumab) in this setting? What brachytherapy approach could address the vulvar bed and inguinal nodes? How does her BRCA2 status affect treatment decisions?",
+      "expected_keywords": [
+        "vulvar melanoma",
+        "adjuvant radiation",
+        "immunotherapy",
+        "BRCA2",
+        "brachytherapy",
+        "extracapsular"
+      ],
+      "difficulty": "expert",
+      "description": "Complex vulvar melanoma with BRCA2 mutation and prior breast cancer"
+    },
+    {
+      "id": "Q1960",
+      "input": "I am treating a 65-year-old male with a 2 cm prostate cancer (Gleason 3+4, Stage T2a, PSA 8.2) who has a left total hip arthroplasty and a right total knee arthroplasty. The hip replacement causes significant streak artifacts on CT simulation. He also has a spinal cord stimulator for chronic back pain with the battery implanted in the right buttock and leads in the spinal canal at L3-L4. He wants LDR brachytherapy. How do the hip implant and spinal cord stimulator affect brachytherapy planning? Should I use MRI-based planning? What are the radiation dose considerations for the spinal cord stimulator? Should I recommend EBRT instead?",
+      "expected_keywords": [
+        "hip replacement",
+        "spinal cord stimulator",
+        "MRI planning",
+        "radiation dose",
+        "implanted device",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Complex patient with multiple implanted devices affecting brachytherapy"
+    },
+    {
+      "id": "Q1961",
+      "input": "I have a 48-year-old female with Stage IIIA endometrial cancer (Grade 3, deep myometrial invasion, 3 of 20 pelvic nodes positive with extracapsular extension). She had a total hysterectomy with bilateral salpingo-oophorectomy and pelvic lymphadenectomy. She has a history of breast cancer treated 10 years ago with lumpectomy and adjuvant tamoxifen for 5 years. She has well-controlled hypertension. She needs adjuvant therapy. Should I recommend EBRT alone, vaginal cuff brachytherapy alone, or combined therapy? What concurrent chemotherapy should I add? Given her breast cancer history, should I consider the risk of secondary malignancies from pelvic radiation? What is the optimal treatment sequence?",
+      "expected_keywords": [
+        "Stage IIIA",
+        "endometrial",
+        "adjuvant",
+        "EBRT",
+        "brachytherapy",
+        "chemotherapy",
+        "secondary malignancy"
+      ],
+      "difficulty": "hard",
+      "description": "Complex adjuvant therapy decision with prior breast cancer history"
+    },
+    {
+      "id": "Q1962",
+      "input": "I am managing a 30-year-old male with a recurrent yolk sac tumor of the testis. He had a radical inguinal orchiectomy 2 years ago and completed 4 cycles of BEP chemotherapy. He now has a 5 cm retroperitoneal lymph node recurrence. He has not banked sperm and strongly desires fertility preservation. He has a history of depression treated with fluoxetine. His renal function is borderline (GFR 58) possibly from prior cisplatin. Given the retroperitoneal location, could brachytherapy be used? How should I address his fertility concerns? What second-line chemotherapy options exist? How does his depression affect treatment planning?",
+      "expected_keywords": [
+        "yolk sac tumor",
+        "retroperitoneal",
+        "fertility preservation",
+        "second-line",
+        "chemotherapy",
+        "depression",
+        "cisplatin"
+      ],
+      "difficulty": "expert",
+      "description": "Complex recurrent germ cell tumor with fertility and psychiatric concerns"
+    },
+    {
+      "id": "Q1963",
+      "input": "I have a 55-year-old female with a 3 cm vaginal cancer (squamous cell, Stage II) who has systemic lupus erythematosus requiring chronic hydroxychloroquine, mycophenolate, and low-dose prednisone. Her immunosuppression has resulted in 2 opportunistic infections in the past year (pneumocystis pneumonia and CMV colitis). She has had no prior radiation. Given her severely compromised immune system, should I recommend brachytherapy or systemic therapy alone? How does her immunosuppression affect radiation therapy? Should I modify her immunosuppressive regimen? What are the infection risks during brachytherapy?",
+      "expected_keywords": [
+        "SLE",
+        "immunosuppression",
+        "infection risk",
+        "mycophenolate",
+        "rheumatology",
+        "brachytherapy"
+      ],
+      "difficulty": "expert",
+      "description": "Complex case with severe immunosuppression from autoimmune disease"
+    },
+    {
+      "id": "Q1964",
+      "input": "I am treating a 70-year-old male with a 4 cm prostate cancer (Gleason 4+3, Stage T3a, PSA 16) who has severe obstructive sleep apnea requiring CPAP, a BMI of 42, type 2 diabetes on insulin (HbA1c 9.1%), and coronary artery disease with a recent stent placement 4 months ago (on dual antiplatelet therapy with aspirin and clopidogrel). He wants definitive treatment. Given his cardiac risk, obesity, and diabetes, should I recommend LDR brachytherapy, EBRT, or watchful waiting? How do I manage his antiplatelet therapy during brachytherapy? What anesthesia considerations are important for this patient?",
+      "expected_keywords": [
+        "obesity",
+        "cardiac",
+        "antiplatelet",
+        "diabetes",
+        "anesthesia",
+        "prostate",
+        "treatment options"
+      ],
+      "difficulty": "hard",
+      "description": "Complex patient with multiple cardiovascular and metabolic comorbidities"
+    },
+    {
+      "id": "Q1965",
+      "input": "I have a 42-year-old female with a 6 cm cervical cancer (Stage IIB) who is a Jehovah Witness and refuses blood transfusions. She has no prior treatment and no significant comorbidities. She wants definitive treatment. Should I recommend radical hysterectomy or definitive chemoradiation with brachytherapy? What are the bleeding risks for each approach? How should I manage her treatment to minimize blood loss? What blood conservation strategies can be employed? What are the ethical considerations for treating a patient who refuses transfusions?",
+      "expected_keywords": [
+        "Jehovah Witness",
+        "transfusion refusal",
+        "bleeding risk",
+        "blood conservation",
+        "ethical",
+        "radical hysterectomy",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Ethical scenario requiring treatment approach modification for transfusion refusal"
+    },
+    {
+      "id": "Q1966",
+      "input": "I am managing a 62-year-old male with a 3 cm rectal cancer (Stage II, T3N0M0) 3 cm from the anal verge who also has a 2 cm renal cell carcinoma in his left kidney. Both cancers were diagnosed simultaneously. He wants to preserve sphincter function and renal function. He has well-controlled hypertension and no other comorbidities. Should I treat both cancers simultaneously or sequentially? What is the optimal treatment approach for each cancer? Could brachytherapy boost improve the chance of complete response for the rectal cancer? What are the renal dose considerations for pelvic radiation?",
+      "expected_keywords": [
+        "synchronous cancers",
+        "rectal cancer",
+        "renal cell carcinoma",
+        "brachytherapy boost",
+        "renal dose",
+        "sequential treatment"
+      ],
+      "difficulty": "expert",
+      "description": "Complex scenario with synchronous rectal and renal cancers"
+    },
+    {
+      "id": "Q1967",
+      "input": "I have a 50-year-old female with a 2 cm breast cancer (Stage I, ER+/PR+, HER2-) who had a lumpectomy with close margins (1 mm). She is BRCA1 positive and has a strong family history of ovarian and breast cancer. She wants breast-conserving therapy and refuses mastectomy. She is very anxious about cancer recurrence and has been researching treatment options extensively online. She asks about combining brachytherapy boost with PARP inhibitor therapy. Given her BRCA status and anxiety, how should I counsel her? What is the evidence for brachytherapy boost in BRCA-positive breast cancer? Should she consider PARP inhibitor therapy?",
+      "expected_keywords": [
+        "BRCA1",
+        "breast cancer",
+        "brachytherapy boost",
+        "PARP inhibitor",
+        "anxiety",
+        "counseling"
+      ],
+      "difficulty": "hard",
+      "description": "Complex patient with BRCA-positive breast cancer and treatment anxiety"
+    },
+    {
+      "id": "Q1968",
+      "input": "I am treating a 38-year-old female with a recurrent endometrial stromal sarcoma (low-grade) after hysterectomy and BSO. She had adjuvant megestrol acetate for 2 years. The recurrence is a 5 cm presacral mass. She has a history of deep vein thrombosis and is on lifelong anticoagulation with apixaban. She has a well-functioning IVC filter. Given the hormone-sensitive nature of the tumor, the anticoagulation requirement, and the presacral location, what treatment approach should I recommend? Should I combine brachytherapy with hormonal therapy? How do I manage anticoagulation during interstitial brachytherapy? What are the dose constraints for the sacral plexus?",
+      "expected_keywords": [
+        "ESS",
+        "hormonal therapy",
+        "anticoagulation",
+        "apixaban",
+        "presacral",
+        "brachytherapy",
+        "sacral plexus"
+      ],
+      "difficulty": "expert",
+      "description": "Complex recurrent sarcoma with anticoagulation and hormone therapy considerations"
+    },
+    {
+      "id": "Q1969",
+      "input": "I have a 65-year-old male with a 5 cm rectal cancer (Stage III, T3N1M0) 5 cm from the anal verge. He has a history of Parkinson disease (Hoehn-Yahr stage 3) requiring carbidopa-levodopa and pramipexole. He has moderate cognitive impairment from his Parkinson disease (MoCA 20). He has frequent falls. He wants to avoid a permanent colostomy. Given his neurological condition, cognitive impairment, and desire for sphincter preservation, what treatment approach should I recommend? How does Parkinson disease affect anesthesia and recovery? Should I consider hypofractionated radiation to reduce treatment visits? What are the implications of his cognitive impairment for informed consent and treatment compliance?",
+      "expected_keywords": [
+        "Parkinson disease",
+        "cognitive impairment",
+        "sphincter preservation",
+        "hypofractionation",
+        "anesthesia",
+        "consent",
+        "falls"
+      ],
+      "difficulty": "hard",
+      "description": "Complex scenario with neurological disease affecting treatment approach"
+    },
+    {
+      "id": "Q1970",
+      "input": "I am managing a 28-year-old female with a 4 cm Ewing sarcoma of the pelvis (Stage III). She completed neoadjuvant VAC/IE chemotherapy with good response. The residual tumor is 3 cm and abuts the left sacroiliac joint. She has severe chemotherapy-induced peripheral neuropathy (CTCAE grade 3) requiring gabapentin. She has a history of anxiety and is on sertraline. She wants to preserve fertility and has not yet had children. Given the pelvic location, young age, fertility desires, and chemotherapy neuropathy, what role should brachytherapy play? Should I use HDR or LDR? What are the dose constraints for her developing pelvic organs? How does her neuropathy affect treatment planning?",
+      "expected_keywords": [
+        "Ewing sarcoma",
+        "pelvic",
+        "fertility",
+        "neuropathy",
+        "brachytherapy",
+        "developing organs",
+        "young adult"
+      ],
+      "difficulty": "expert",
+      "description": "Complex young adult sarcoma with fertility preservation and chemotherapy toxicity"
+    },
+    {
+      "id": "Q1971",
+      "input": "I have a 55-year-old male with prostate cancer (Gleason 4+4, Stage T2c, PSA 14) who has a history of liver cirrhosis (Child-Pugh class B) from alcohol abuse. He has been sober for 5 years. He has thrombocytopenia (platelets 75,000) and elevated INR (1.6) from his cirrhosis. He has portal hypertension with moderate ascites. He wants definitive treatment. Given his liver disease and coagulopathy, should I recommend LDR brachytherapy, EBRT, or active surveillance? How does his coagulopathy affect the safety of perineal needle placement? Should I treat his ascites first? What concurrent treatments are safe with his liver disease?",
+      "expected_keywords": [
+        "cirrhosis",
+        "coagulopathy",
+        "thrombocytopenia",
+        "ascites",
+        "prostate",
+        "treatment options",
+        "liver disease"
+      ],
+      "difficulty": "hard",
+      "description": "Complex patient with liver disease affecting brachytherapy feasibility"
+    },
+    {
+      "id": "Q1972",
+      "input": "I am treating a 45-year-old female with a 3 cm cervical cancer (Stage IB1) who has a bicornuate uterus with a rudimentary left horn. She also has a history of stage 3B chronic kidney disease (GFR 35) from lupus nephritis. She is on mycophenolate and losartan. She has no prior treatment. She wants fertility preservation. Given her uterine anomaly, renal impairment, and desire for fertility, what treatment approach should I recommend? Can brachytherapy be performed with a bicornuate uterus? What applicator modifications are needed? How does her CKD affect cisplatin dosing? What are the fetal implications if she becomes pregnant after treatment?",
+      "expected_keywords": [
+        "bicornuate uterus",
+        "CKD",
+        "fertility preservation",
+        "cisplatin dosing",
+        "applicator",
+        "lupus nephritis"
+      ],
+      "difficulty": "expert",
+      "description": "Complex scenario with uterine anomaly, renal disease, and fertility desires"
+    },
+    {
+      "id": "Q1973",
+      "input": "I have a 72-year-old male with a 2 cm prostate cancer (Gleason 3+3, Stage T1c, PSA 6.0) who has end-stage renal disease on hemodialysis (3 times weekly). He has a well-functioning arteriovenous fistula in his left arm. He has a history of renal cell carcinoma treated with right nephrectomy 10 years ago. He is on warfarin for atrial fibrillation (target INR 2.0-3.0, current INR 2.4). He wants definitive treatment. Given his ESRD, warfarin use, and solitary kidney history, should I recommend LDR brachytherapy? How do I manage his warfarin and dialysis schedule around the procedure? What dose modifications are needed?",
+      "expected_keywords": [
+        "ESRD",
+        "dialysis",
+        "warfarin",
+        "solitary kidney",
+        "prostate",
+        "anticoagulation",
+        "dose modification"
+      ],
+      "difficulty": "hard",
+      "description": "Complex patient with ESRD requiring specialized brachytherapy approach"
+    },
+    {
+      "id": "Q1974",
+      "input": "I am managing a 35-year-old male with a 3 cm penile cancer (squamous cell, Stage T2N1M0) who had a partial penectomy with 6 mm margins. He has a positive right inguinal lymph node (1 cm, without extracapsular extension). He completed adjuvant inguinal radiation to 50 Gy. He now has a local recurrence on the penile stump 1.5 cm from the meatus. He refuses radical penectomy and wants organ preservation. He has a history of severe phimosis that was treated with circumcision 5 years ago. He is HIV negative. Could brachytherapy be used for this recurrence? What applicator technique would work for the penile stump? What local control rates can be expected?",
+      "expected_keywords": [
+        "penile cancer",
+        "recurrence",
+        "brachytherapy",
+        "penile stump",
+        "organ preservation",
+        "local control"
+      ],
+      "difficulty": "hard",
+      "description": "Recurrent penile cancer requiring organ preservation approach"
+    },
+    {
+      "id": "Q1975",
+      "input": "I have a 60-year-old female with a 4 cm endometrial cancer (Grade 3, Stage IB) who is a professional opera singer. She had a total hysterectomy with BSO and pelvic lymphadenectomy (negative nodes). She needs adjuvant therapy. She is very concerned about vaginal stenosis and its impact on her singing career (she uses her pelvic floor extensively for singing technique). She wants to minimize treatment-related side effects. Should I recommend vaginal cuff brachytherapy alone or combined EBRT and brachytherapy? What fractionation would minimize vaginal side effects? What vaginal dilation protocol should I recommend?",
+      "expected_keywords": [
+        "endometrial",
+        "vaginal stenosis",
+        "adjuvant",
+        "brachytherapy",
+        "vaginal preservation",
+        "singing",
+        "quality of life"
+      ],
+      "difficulty": "hard",
+      "description": "Patient-centered decision minimizing vaginal toxicity for occupational needs"
+    },
+    {
+      "id": "Q1976",
+      "input": "I am treating a 55-year-old female with a 5 cm vaginal cancer (squamous cell, Stage III) who has a history of granulomatosis with polyangiitis (Wegener disease) treated with rituximab. She has chronic kidney disease stage 4 (GFR 22) from renal involvement of her vasculitis. She has bilateral sensorineural hearing loss from prior ototoxic medications. She has a tracheostomy from subglottic stenosis. She has never had prior radiation. Given her complex multisystem disease, should I recommend definitive chemoradiation? What modifications are needed? How do I manage her renal function during treatment? Should I avoid cisplatin?",
+      "expected_keywords": [
+        "granulomatosis",
+        "polyangiitis",
+        "renal failure",
+        "ototoxicity",
+        "tracheostomy",
+        "chemoradiation",
+        "modifications"
+      ],
+      "difficulty": "expert",
+      "description": "Extremely complex multisystem disease requiring comprehensive treatment modification"
+    },
+    {
+      "id": "Q1977",
+      "input": "I have a 48-year-old male with a 4 cm prostate cancer (Gleason 4+3, Stage T2c, PSA 12) who has a ventriculoperitoneal shunt for normal pressure hydrocephalus. The VP shunt tubing runs through the lower pelvis near the prostate on imaging. He has well-controlled epilepsy on levetiracetam. He has no other significant comorbidities. He wants LDR brachytherapy. Could the VP shunt tubing affect seed placement or dose distribution? Are there concerns about radiation damage to the shunt? Should I consider EBRT instead? How does his epilepsy affect the procedure?",
+      "expected_keywords": [
+        "VP shunt",
+        "prostate",
+        "seed placement",
+        "radiation effects",
+        "epilepsy",
+        "EBRT alternatives"
+      ],
+      "difficulty": "hard",
+      "description": "Patient with VP shunt requiring specialized brachytherapy approach"
+    },
+    {
+      "id": "Q1978",
+      "input": "I am managing a 42-year-old female with a Stage II vaginal clear cell adenocarcinoma (3 cm, upper vagina) with a history of in utero DES exposure. She has a history of bilateral nephrectomy for renal cell carcinoma 8 years ago and is on hemodialysis 3 times weekly. She has a well-functioning AV fistula. She wants definitive treatment. Given her dialysis status and DES-related cancer, what treatment approach should I recommend? How do I manage her dialysis schedule around brachytherapy? What dose modifications are needed? Should she receive adjuvant chemotherapy?",
+      "expected_keywords": [
+        "DES",
+        "clear cell",
+        "vaginal cancer",
+        "dialysis",
+        "dose modification",
+        "chemotherapy"
+      ],
+      "difficulty": "expert",
+      "description": "Complex scenario combining DES-related cancer with dialysis"
+    },
+    {
+      "id": "Q1979",
+      "input": "I have a 65-year-old male with a 3 cm prostate cancer (Gleason 3+4, Stage T2a, PSA 9.0) who has a history of pelvic radiation for rectal cancer 15 years ago (54 Gy in 30 fractions). He now has a well-healed colostomy from his rectal cancer surgery. Given his prior pelvic radiation, what are his remaining tissue tolerance limits? Should I recommend LDR brachytherapy, EBRT boost, or radical prostatectomy? What dose constraints apply for the previously irradiated rectum and bladder? Can brachytherapy be safely performed near the colostomy site?",
+      "expected_keywords": [
+        "prior radiation",
+        "EQD2",
+        "re-irradiation",
+        "colostomy",
+        "prostate",
+        "tissue tolerance",
+        "dose constraints"
+      ],
+      "difficulty": "expert",
+      "description": "Prostate cancer with prior pelvic radiation requiring re-irradiation assessment"
+    },
+    {
+      "id": "Q1980",
+      "input": "I am treating a 50-year-old female with a 4 cm vulvar cancer (squamous cell, Stage II, depth of invasion 5 mm, 2 mm margins after radical vulvectomy). She has a positive left inguinal sentinel lymph node (0.3 mm deposit). She has a history of morbid obesity (BMI 48, lost 30 kg with bariatric surgery 2 years ago, current BMI 35). She has residual redundant skin in the inguinal region. She has well-controlled type 2 diabetes (HbA1c 7.0%). She needs adjuvant therapy. Should I recommend adjuvant radiation to the vulvar bed and inguinal regions? What brachytherapy approach could address the vulvar bed? How does her body habitus affect radiation planning?",
+      "expected_keywords": [
+        "vulvar cancer",
+        "adjuvant radiation",
+        "brachytherapy",
+        "obesity",
+        "body habitus",
+        "sentinel node"
+      ],
+      "difficulty": "hard",
+      "description": "Vulvar cancer with obesity affecting radiation planning"
+    },
+    {
+      "id": "Q1981",
+      "input": "I have a 70-year-old female with a 2 cm endometrial cancer (Grade 1, Stage IA) who has severe aortic stenosis (valve area 0.7 cm2, peak gradient 58 mmHg). She is not a surgical candidate due to her cardiac risk. Her cardiologist says she has a 5-year survival of approximately 40% from her cardiac disease. She wants definitive treatment. Should I recommend definitive brachytherapy alone? What fractionation would minimize treatment visits? What anesthesia considerations are important? Should I consider active surveillance given her limited cardiac life expectancy?",
+      "expected_keywords": [
+        "aortic stenosis",
+        "definitive brachytherapy",
+        "anesthesia",
+        "cardiac risk",
+        "hypofractionation",
+        "competing mortality"
+      ],
+      "difficulty": "hard",
+      "description": "Inoperable endometrial cancer with severe cardiac disease"
+    },
+    {
+      "id": "Q1982",
+      "input": "I am managing a 32-year-old female with a recurrent cervical cancer (Stage IIIB) after radical hysterectomy and adjuvant chemoradiation (50.4 Gy EBRT + cisplatin + 30 Gy brachytherapy boost completed 10 months ago). The recurrence is a 4 cm central pelvic mass with bladder invasion causing hematuria. She has bilateral hydronephrosis requiring nephrostomy tubes. Her performance status is ECOG 2. Her creatinine is 2.8 (baseline 0.8). She has lost 15 kg in the past 3 months. Given the extensive prior radiation, poor performance status, and renal impairment, should I recommend re-irradiation, systemic therapy, or best supportive care? What systemic options exist?",
+      "expected_keywords": [
+        "recurrence",
+        "re-irradiation",
+        "prior radiation",
+        "systemic therapy",
+        "palliative",
+        "performance status",
+        "renal impairment"
+      ],
+      "difficulty": "expert",
+      "description": "Complex recurrence with poor performance status requiring goals-of-care discussion"
+    },
+    {
+      "id": "Q1983",
+      "input": "I have a 58-year-old male with a 5 cm prostate cancer (Gleason 5+4, Stage T3b, PSA 42) who has bilateral ureteral stents for obstructive uropathy. He has well-controlled type 2 diabetes (HbA1c 7.5%), mild peripheral neuropathy from prior chemotherapy for testicular cancer (cisplatin 15 years ago), and a history of radiation pneumonitis from prior chest radiation for mediastinal seminoma (25 years ago). Given his complex oncologic history, should I recommend combined EBRT and brachytherapy boost? What are the remaining organ tolerances from prior radiation? How do I manage the ureteral stents during brachytherapy?",
+      "expected_keywords": [
+        "prostate cancer",
+        "prior radiation",
+        "ureteral stents",
+        "combined EBRT boost",
+        "organ tolerance",
+        "cisplatin neuropathy"
+      ],
+      "difficulty": "expert",
+      "description": "Complex oncologic history with multiple prior treatments affecting current planning"
+    },
+    {
+      "id": "Q1984",
+      "input": "I am treating a 45-year-old female with a 3 cm breast cancer (Stage I, triple negative, BRCA1 positive) who had a lumpectomy with close margins (1 mm). She is very physically active and a competitive swimmer. She wants breast-conserving therapy and refuses re-excision. She is concerned about long-term radiation effects on her swimming performance. She asks about the comparison between whole breast radiation, accelerated partial breast irradiation with brachytherapy, and proton therapy. She wants the treatment with the fewest side effects and shortest treatment duration. Given her triple negative histology and BRCA status, which approach would you recommend?",
+      "expected_keywords": [
+        "triple negative",
+        "BRCA1",
+        "brachytherapy",
+        "APBI",
+        "comparison",
+        "athletic",
+        "cosmetic"
+      ],
+      "difficulty": "hard",
+      "description": "Patient-centered decision for active patient with high-risk breast cancer"
+    },
+    {
+      "id": "Q1985",
+      "input": "I have a 65-year-old male with a 3 cm rectal cancer (Stage II, T3N0M0) 4 cm from the anal verge who has severe anxiety disorder requiring ongoing benzodiazepine therapy and has had 2 prior psychiatric hospitalizations for panic attacks. He is terrified of surgery and refuses any operation. He wants non-surgical treatment. He has well-controlled hypertension and no other comorbidities. Should I recommend neoadjuvant chemoradiation alone? What role could brachytherapy boost play for organ preservation? How do I manage his severe anxiety during radiation treatments? What are the watch-and-wait criteria?",
+      "expected_keywords": [
+        "anxiety",
+        "rectal cancer",
+        "non-surgical",
+        "brachytherapy boost",
+        "watch and wait",
+        "organ preservation",
+        "anxiety management"
+      ],
+      "difficulty": "hard",
+      "description": "Patient with severe anxiety requiring non-surgical rectal cancer management"
+    },
+    {
+      "id": "Q1986",
+      "input": "I am managing a 40-year-old female with a 4 cm invasive ductal carcinoma of the right breast (Stage IIA, ER+/PR+, HER2 negative, Oncotype DX score 28). She had a lumpectomy with clear margins. She is pregnant at 16 weeks gestation and wants to continue the pregnancy. Her obstetric team is supportive. She has no other comorbidities. Given her pregnancy and intermediate Oncotype score, should she receive chemotherapy during pregnancy? What brachytherapy approach could be used after delivery? What is the fetal dose from breast radiation? Should I modify the fractionation for a pregnant patient?",
+      "expected_keywords": [
+        "pregnancy",
+        "breast cancer",
+        "chemotherapy",
+        "fetal dose",
+        "brachytherapy",
+        "Oncotype",
+        "fractionation"
+      ],
+      "difficulty": "expert",
+      "description": "Pregnancy with breast cancer requiring modified treatment approach"
+    },
+    {
+      "id": "Q1987",
+      "input": "I have a 72-year-old male with a 2 cm prostate cancer (Gleason 3+3, Stage T1c, PSA 5.5) who has moderate-to-severe COPD (FEV1 40% predicted, on home oxygen 2 L/min). He has a history of bilateral deep vein thrombosis and is on lifelong rivaroxaban. He has well-controlled atrial fibrillation. He wants definitive treatment. Given his severe COPD, anticoagulation, and atrial fibrillation, should I recommend active surveillance, LDR brachytherapy, or EBRT? What anesthesia considerations are important for a patient on home oxygen? How should I manage his rivaroxaban around the brachytherapy procedure?",
+      "expected_keywords": [
+        "COPD",
+        "oxygen",
+        "anticoagulation",
+        "rivaroxaban",
+        "prostate",
+        "anesthesia",
+        "treatment options"
+      ],
+      "difficulty": "hard",
+      "description": "Complex patient with severe COPD and anticoagulation for prostate brachytherapy"
+    },
+    {
+      "id": "Q1988",
+      "input": "I am treating a 55-year-old female with a 5 cm locally advanced cervical cancer (Stage IIIB) who has a history of morbid obesity (BMI 50). She has obstructive sleep apnea requiring CPAP, type 2 diabetes on insulin (HbA1c 9.5%), and non-alcoholic steatohepatitis with liver enzymes 3x normal. Standard tandem and ovoid applicators cannot reach the tumor due to her body habitus. MRI shows the tumor extending to the pelvic sidewall. She has never had prior treatment. What applicator alternatives should I consider? How does obesity affect dose distribution? What anesthetic considerations are critical for this patient? Should I recommend neoadjuvant chemotherapy to shrink the tumor before brachytherapy?",
+      "expected_keywords": [
+        "obesity",
+        "applicator",
+        "OSA",
+        "anesthesia",
+        "dose distribution",
+        "neoadjuvant",
+        "cervical cancer"
+      ],
+      "difficulty": "expert",
+      "description": "Morbidly obese patient requiring specialized applicator and anesthesia planning"
+    },
+    {
+      "id": "Q1989",
+      "input": "I have a 38-year-old female with a Stage IIA cervical cancer (3.5 cm tumor) who desires fertility preservation. She has a history of Crohn disease with an ileorectal anastomosis (subtotal colectomy 5 years ago). She has well-controlled disease on infliximab. Her Crohn disease has not flared in 3 years. She wants to preserve her fertility. Should I recommend neoadjuvant chemotherapy followed by trachelectomy, or should I consider brachytherapy alone? What chemotherapy agents are safe with infliximab? How does her altered pelvic anatomy from colectomy affect brachytherapy applicator placement? What are the fertility outcomes with each approach?",
+      "expected_keywords": [
+        "fertility preservation",
+        "cervical cancer",
+        "Crohn",
+        "trachelectomy",
+        "brachytherapy",
+        "infliximab",
+        "altered anatomy"
+      ],
+      "difficulty": "expert",
+      "description": "Fertility preservation with Crohn disease and altered pelvic anatomy"
+    },
+    {
+      "id": "Q1990",
+      "input": "I am managing a 60-year-old male with a 4 cm rectal cancer (Stage III, T3N1M0) 6 cm from the anal verge who has a history of bilateral lower extremity amputations (below-knee) from peripheral vascular disease. He uses a wheelchair. He has well-controlled diabetes (HbA1c 7.0%) and hypertension. He wants to avoid a permanent colostomy. Given his physical limitations, should I recommend neoadjuvant chemoradiation? How do his amputations affect radiation positioning? What assistive devices might be needed for treatment? Should I consider short-course radiation to minimize treatment visits? What are the implications of his VTD for wound healing after surgery?",
+      "expected_keywords": [
+        "amputations",
+        "rectal cancer",
+        "positioning",
+        "assistive devices",
+        "short-course radiation",
+        "wound healing"
+      ],
+      "difficulty": "hard",
+      "description": "Physically disabled patient requiring specialized positioning and treatment approach"
+    },
+    {
+      "id": "Q1991",
+      "input": "I have a 50-year-old female with a 3 cm vaginal cancer (squamous cell, Stage II) who has a history of systemic mastocytosis requiring ongoing treatment with midostaurin. She has recurrent episodes of anaphylaxis requiring epinephrine auto-injectors. She carries an EpiPen at all times. She has osteoporosis with multiple vertebral fractures. She has never had prior radiation. Given her mastocytosis and anaphylaxis risk, how should I manage her during brachytherapy procedures? What anesthesia considerations are critical? Should I avoid certain applicators? What medications should be available during the procedure?",
+      "expected_keywords": [
+        "mastocytosis",
+        "anaphylaxis",
+        "epinephrine",
+        "anesthesia",
+        "brachytherapy",
+        "emergency medications"
+      ],
+      "difficulty": "expert",
+      "description": "Rare systemic disease requiring specialized anesthesia and emergency management"
+    },
+    {
+      "id": "Q1992",
+      "input": "I am treating a 65-year-old male with prostate cancer (Gleason 4+3, Stage T3a, PSA 18) who has a history of bilateral adrenal insufficiency requiring lifelong hydrocortisone replacement. He had a pituitary adenoma treated with surgery and radiation 20 years ago. He has hypothyroidism on levothyroxine and growth hormone deficiency on replacement therapy. He has well-controlled hypertension. He wants definitive treatment. Given his multiple endocrine deficiencies, should I modify his treatment approach? What are the implications of adrenal insufficiency for radiation therapy? How should I manage his steroid replacement during treatment?",
+      "expected_keywords": [
+        "adrenal insufficiency",
+        "hydrocortisone",
+        "endocrine",
+        "radiation therapy",
+        "steroid replacement",
+        "pituitary"
+      ],
+      "difficulty": "hard",
+      "description": "Complex endocrine disorder affecting radiation therapy management"
+    },
+    {
+      "id": "Q1993",
+      "input": "I have a 42-year-old female with a 4 cm breast cancer (Stage IIA, triple negative, no BRCA mutation) who had a lumpectomy with close margins (1 mm). She is a nursing mother with a 6-month-old infant. She wants to continue breastfeeding if possible. She is very concerned about the impact of radiation on her breast milk and her baby. She wants to understand her treatment options. Should she wean before starting radiation? What is the effect of radiation on breast milk? Could brachytherapy be used as part of her treatment? What are her options for continuing to breastfeed during treatment?",
+      "expected_keywords": [
+        "breastfeeding",
+        "breast cancer",
+        "radiation",
+        "weaning",
+        "brachytherapy",
+        "nursing",
+        "triple negative"
+      ],
+      "difficulty": "hard",
+      "description": "Unique scenario combining breast cancer treatment with breastfeeding"
+    },
+    {
+      "id": "Q1994",
+      "input": "I am managing a 55-year-old male with a 5 cm locally advanced prostate cancer (Gleason 5+4, Stage T3b, PSA 50, node-positive) who has a history of liver transplantation for hepatitis C 8 years ago. He is on lifelong immunosuppression (tacrolimus, mycophenolate, prednisone). His liver function is stable with normal liver enzymes. He has chronic kidney disease stage 3a (GFR 55) from tacrolimus nephrotoxicity. He wants definitive treatment. Given his transplant status, should I recommend brachytherapy, EBRT, or prostatectomy? How does immunosuppression affect radiation therapy? Should I modify his immunosuppressive regimen during treatment?",
+      "expected_keywords": [
+        "liver transplant",
+        "immunosuppression",
+        "tacrolimus",
+        "prostate cancer",
+        "brachytherapy",
+        "transplant"
+      ],
+      "difficulty": "expert",
+      "description": "Prostate cancer in transplant recipient requiring integrated management"
+    },
+    {
+      "id": "Q1995",
+      "input": "I have a 70-year-old female with a 2 cm endometrial cancer (Grade 1, Stage IA) who has severe dementia (MMSE 8, bedbound). She is in a nursing home and cannot communicate. Her healthcare proxy (daughter) wants aggressive treatment. Her son (also a healthcare proxy) wants comfort care only. There is a family conflict about treatment. Given the excellent prognosis of Grade 1 Stage IA endometrial cancer and her severe dementia with limited life expectancy, what should I recommend? What are the ethical considerations for treating a bedbound, non-communicative patient? How do I handle the family conflict?",
+      "expected_keywords": [
+        "dementia",
+        "endometrial",
+        "ethical",
+        "family conflict",
+        "quality of life",
+        "palliative",
+        "healthcare proxy"
+      ],
+      "difficulty": "hard",
+      "description": "Ethical scenario with family conflict over treatment of cognitively impaired patient"
+    },
+    {
+      "id": "Q1996",
+      "input": "I am treating a 45-year-old male with a 4 cm anal canal squamous cell carcinoma (Stage II, T2N0M0) who has severe inflammatory bowel disease (Crohn disease with perianal and colonic involvement). He has a diverting colostomy from a recent abscess drainage. He is on infliximab and azathioprine. His CD4 count is 280 from immunosuppression. He has iron deficiency anemia (hemoglobin 8.5 g/dL) requiring IV iron infusions. Standard concurrent chemoradiation (Nigro protocol) with 5-FU and mitomycin-C is planned. Given his IBD, immunosuppression, and anemia, should I modify the standard approach? How does his Crohn disease affect radiation tolerance? Should I consider brachytherapy boost?",
+      "expected_keywords": [
+        "anal cancer",
+        "Crohn",
+        "immunosuppression",
+        "anemia",
+        "chemoradiation",
+        "brachytherapy boost"
+      ],
+      "difficulty": "expert",
+      "description": "Complex anal cancer in immunosuppressed patient with IBD"
+    },
+    {
+      "id": "Q1997",
+      "input": "I have a 60-year-old female with a 3 cm vaginal cancer (squamous cell, Stage II) who is a professional opera singer. She had no prior treatment. She is extremely concerned about the impact of treatment on her singing voice and career. She has no significant comorbidities. She wants the treatment with the least impact on her quality of life and career. Should I recommend brachytherapy alone, combined EBRT and brachytherapy, or surgery? How do I minimize treatment side effects that could affect her career? What is the evidence for each approach in terms of long-term toxicity?",
+      "expected_keywords": [
+        "vaginal cancer",
+        "quality of life",
+        "career",
+        "brachytherapy",
+        "toxicity",
+        "evidence",
+        "singing"
+      ],
+      "difficulty": "hard",
+      "description": "Patient-centered decision for professional singer with vaginal cancer"
+    },
+    {
+      "id": "Q1998",
+      "input": "I am managing a 48-year-old male with a 5 cm prostate cancer (Gleason 4+4, Stage T3a, PSA 22) who has a history of severe opioid use disorder (in sustained remission for 3 years on buprenorphine/naloxone). He has chronic pain from degenerative disc disease requiring ongoing opioid management. He has well-controlled hepatitis C from his prior IV drug use (SVR achieved). He has depression treated with venlafaxine. He wants definitive treatment. Given his substance abuse history and ongoing opioid use, should I recommend LDR brachytherapy? How does his buprenorphine/naloxone affect treatment? Should I adjust his pain management during brachytherapy? What are the implications for treatment compliance?",
+      "expected_keywords": [
+        "opioid use disorder",
+        "buprenorphine",
+        "prostate cancer",
+        "pain management",
+        "compliance",
+        "substance abuse"
+      ],
+      "difficulty": "hard",
+      "description": "Complex patient with substance abuse history and chronic pain requiring specialized management"
+    },
+    {
+      "id": "Q1999",
+      "input": "I have a 35-year-old female with a 3 cm cervical cancer (Stage IB1) who has a history of Turner syndrome (45,XO) with a hypoplastic uterus. She has never menstruated and has primary amenorrhea. She has coarctation of the aorta (repaired in childhood) with residual bicuspid aortic valve and mild aortic regurgitation. She has type 1 diabetes. She wants fertility preservation despite her complex medical history. Her reproductive endocrinologist has discussed potential gestational surrogacy using donor eggs. Given her hypoplastic uterus, Turner syndrome, cardiac history, and desire for fertility preservation, what treatment approach should I recommend? Can brachytherapy be performed in a hypoplastic uterus?",
+      "expected_keywords": [
+        "Turner syndrome",
+        "hypoplastic uterus",
+        "cardiac",
+        "fertility preservation",
+        "brachytherapy",
+        "cervical cancer"
+      ],
+      "difficulty": "expert",
+      "description": "Extremely complex case with Turner syndrome, cardiac disease, and fertility desires"
+    },
+    {
+      "id": "Q2000",
+      "input": "I am treating a 50-year-old female with a 4 cm cervical cancer (Stage IIB) who is a healthcare worker (ICU nurse) during a pandemic. She has two young children (ages 4 and 6) and is the primary caregiver. Her husband works overseas and is not currently in the country. She has no significant comorbidities. She wants definitive treatment but is concerned about time away from her children and infection risk during hospital visits. She asks about treatment options that minimize hospital visits. Should I recommend brachytherapy fractionation that reduces visits? How do I balance her oncologic needs with her family and occupational concerns? What support resources should I recommend?",
+      "expected_keywords": [
+        "cervical cancer",
+        "healthcare worker",
+        "pandemic",
+        "fractionation",
+        "family support",
+        "psychosocial",
+        "minimize visits"
+      ],
+      "difficulty": "hard",
+      "description": "Complex psychosocial scenario balancing cancer treatment with occupational and family concerns"
+    }
+  ]
+}

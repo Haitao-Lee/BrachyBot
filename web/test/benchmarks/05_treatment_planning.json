@@ -1,0 +1,1771 @@
+{
+  "category": "treatment_planning",
+  "description": "Seed planning, trajectory planning workflows",
+  "requires_ct": false,
+  "cases": [
+    {
+      "id": "Q0151",
+      "input": "I need help planning an LDR prostate brachytherapy case using I-125 seeds. The patient is 65 years old with intermediate-risk prostate cancer (Gleason 3+4, PSA 9.8, T2a). The prostate volume is 32cc. Please create a preplan with appropriate seed loading, including peripheral loading pattern with a minimum of 100 seeds. The prescription dose should be 145 Gy.",
+      "expected_keywords": [
+        "I-125",
+        "prostate",
+        "preplan",
+        "peripheral",
+        "loading",
+        "145",
+        "Gy",
+        "intermediate",
+        "risk"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: I-125 prostate preplan peripheral loading 145 Gy intermediate risk"
+    },
+    {
+      "id": "Q0152",
+      "input": "For a cervical cancer patient, I need an HDR brachytherapy plan using tandem and ovoids applicator. The tandem length is 6cm, ovoid diameter is 2.5cm. The prescription dose is 5.5 Gy per fraction to point A, delivered in 5 fractions with 2 fractions per day. Please optimize the dwell positions and dwell times to maximize target coverage while respecting OAR constraints.",
+      "expected_keywords": [
+        "HDR",
+        "tandem",
+        "ovoid",
+        "cervical",
+        "point",
+        "A",
+        "5.5",
+        "Gy",
+        "fractionation",
+        "dwell",
+        "optimization"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: HDR tandem ovoid cervical point A 5.5 Gy fractionation dwell optimization"
+    },
+    {
+      "id": "Q0153",
+      "input": "Please plan a breast APBI treatment using a MammoSite balloon catheter. The balloon-to-skin distance is 7mm, and the balloon volume is 42cc. The prescription dose is 34 Gy in 10 fractions. I need the dwell positions optimized to provide adequate dose coverage of the PTV while minimizing skin dose.",
+      "expected_keywords": [
+        "MammoSite",
+        "APBI",
+        "34",
+        "Gy",
+        "balloon",
+        "dwell",
+        "optimization",
+        "skin",
+        "dose"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: MammoSite APBI 34 Gy balloon dwell optimization skin dose"
+    },
+    {
+      "id": "Q0154",
+      "input": "I have an endometrial cancer patient who needs vaginal cuff brachytherapy. The patient is post-hysterectomy. Using a vaginal cylinder applicator with 2.5cm diameter, please plan the HDR treatment with a prescription dose of 3 Gy per fraction to 0.5cm depth, delivered in 5 fractions for adjuvant treatment.",
+      "expected_keywords": [
+        "vaginal",
+        "cuff",
+        "cylinder",
+        "3",
+        "Gy",
+        "adjuvant",
+        "endometrial",
+        "HDR"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: vaginal cuff cylinder 3 Gy adjuvant endometrial HDR"
+    },
+    {
+      "id": "Q0155",
+      "input": "For a prostate cancer patient with a large prostate of 75cc, I need help with neoadjuvant hormonal therapy planning followed by brachytherapy. After 3 months of LHRH agonist, the prostate has shrunk to 52cc. Please create an LDR plan using Pd-103 seeds with a prescription dose of 100 Gy.",
+      "expected_keywords": [
+        "Pd-103",
+        "LDR",
+        "prostate",
+        "neoadjuvant",
+        "hormonal",
+        "100",
+        "Gy",
+        "large",
+        "prostate"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: Pd-103 LDR prostate neoadjuvant hormonal 100 Gy large prostate"
+    },
+    {
+      "id": "Q0156",
+      "input": "Please create an HDR brachytherapy plan for an anal cancer boost. The patient has a 3cm anal canal tumor and has received 45Gy in 25 fractions of external beam. The boost plan should use a single-channel rectal applicator with 3 fractions of 5 Gy each. Optimize dwell positions to cover the tumor while sparing the bladder and rectum.",
+      "expected_keywords": [
+        "anal",
+        "boost",
+        "rectal",
+        "applicator",
+        "HDR",
+        "5",
+        "Gy",
+        "boost",
+        "OAR",
+        "optimization"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: anal boost rectal applicator HDR 5 Gy boost OAR optimization"
+    },
+    {
+      "id": "Q0157",
+      "input": "I need an HDR plan for a patient with oral tongue cancer receiving interstitial brachytherapy. The implant has 8 needles placed 1cm apart in a single plane. The active length of each needle is 4cm. The prescription dose is 6 Gy per fraction in 3 fractions. Please optimize the dwell positions to achieve a uniform dose distribution across the implant.",
+      "expected_keywords": [
+        "oral",
+        "tongue",
+        "interstitial",
+        "single-plane",
+        "8-needle",
+        "6",
+        "Gy",
+        "uniform",
+        "dose"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: oral tongue interstitial single-plane 8-needle 6 Gy uniform dose"
+    },
+    {
+      "id": "Q0158",
+      "input": "For a patient with recurrent endometrial cancer at the vaginal cuff, I need a PDR brachytherapy plan. The prescription dose is equivalent to 60 Gy in 2 Gy fractions using LDR equivalent calculations. The pulse schedule should be 0.5 Gy per hour over 48 hours. Please create the plan using a vaginal cylinder with dwell positions.",
+      "expected_keywords": [
+        "PDR",
+        "vaginal",
+        "cuff",
+        "endometrial",
+        "recurrent",
+        "0.5",
+        "Gy",
+        "pulse",
+        "equivalent",
+        "dose"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: PDR vaginal cuff endometrial recurrent 0.5 Gy pulse equivalent dose"
+    },
+    {
+      "id": "Q0159",
+      "input": "Please plan an HDR prostate brachytherapy case using a template-guided approach. The patient has a 28cc prostate with a planned 18 needles. The prescription dose is 9 Gy per fraction in 2 fractions. Optimize the dwell positions across all needles to achieve D90 > 100% and V100 > 95% while keeping the urethral Dmax below 110% of the prescription dose.",
+      "expected_keywords": [
+        "template",
+        "HDR",
+        "prostate",
+        "9",
+        "Gy",
+        "D90",
+        "V100",
+        "urethral",
+        "dose",
+        "optimization"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: template HDR prostate 9 Gy D90 V100 urethral dose optimization"
+    },
+    {
+      "id": "Q0160",
+      "input": "I have a cervical cancer patient with a tandem and ring applicator. The tandem is 6cm with a 15-degree curvature. The ring diameter is 26mm. Please plan the HDR treatment with 4 fractions of 7 Gy each, delivered twice daily. The target is HR-CTV D90 > 87 Gy EQD2, and I need the D2cc of the bladder < 80 Gy EQD2 and rectum < 70 Gy EQD2.",
+      "expected_keywords": [
+        "tandem",
+        "ring",
+        "cervical",
+        "HR-CTV",
+        "D90",
+        "EQD2",
+        "OAR",
+        "D2cc",
+        "constraint"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: tandem ring cervical HR-CTV D90 EQD2 OAR D2cc constraint"
+    },
+    {
+      "id": "Q0161",
+      "input": "For a head and neck cancer patient, please plan an interstitial brachytherapy boost using the Paris system. The implant consists of 6 parallel needles at 1.8cm spacing with an active length of 5cm. The prescription dose is 20 Gy delivered in 4 fractions. The treatment volume is a 3cm x 2.5cm x 2cm tumor in the buccal mucosa.",
+      "expected_keywords": [
+        "Paris",
+        "system",
+        "interstitial",
+        "head",
+        "neck",
+        "buccal",
+        "20",
+        "Gy",
+        "4",
+        "fractions",
+        "needle",
+        "spacing"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: Paris system interstitial head neck buccal 20 Gy 4 fractions needle spacing"
+    },
+    {
+      "id": "Q0162",
+      "input": "Please create a prostate brachytherapy preplan for a patient with a prior TURP. The prostate volume is 28cc with a TURP defect in the median lobe. The prescription dose is 145 Gy with I-125 seeds. I need the plan to account for the TURP defect by adjusting seed positions to avoid the defect region while maintaining adequate peripheral dose.",
+      "expected_keywords": [
+        "TURP",
+        "prostate",
+        "I-125",
+        "preplan",
+        "defect",
+        "adjustment",
+        "145",
+        "Gy"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: TURP prostate I-125 preplan defect adjustment 145 Gy"
+    },
+    {
+      "id": "Q0163",
+      "input": "For a vulvar cancer patient, I need an HDR interstitial brachytherapy plan. The template has 10 needles placed in a modified Paris configuration around a 4cm tumor on the left labium. The prescription dose is 4 Gy per fraction in 8 fractions. Optimize dwell times to achieve good target coverage while keeping the urethral and rectal doses within tolerance.",
+      "expected_keywords": [
+        "vulvar",
+        "interstitial",
+        "modified",
+        "Paris",
+        "4",
+        "Gy",
+        "urethral",
+        "rectal",
+        "optimization"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: vulvar interstitial modified Paris 4 Gy urethral rectal optimization"
+    },
+    {
+      "id": "Q0164",
+      "input": "I need an HDR plan for endoluminal brachytherapy of a bronchial tumor. The patient has a 2cm endobronchial lesion in the right main bronchus. Using a 6 French catheter with 6 dwell positions, plan the treatment with 5 Gy per fraction in 3 fractions. The dose should be prescribed at 1cm from the source axis.",
+      "expected_keywords": [
+        "endoluminal",
+        "bronchial",
+        "HDR",
+        "catheter",
+        "dwell",
+        "positions",
+        "5",
+        "Gy",
+        "prescription"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: endoluminal bronchial HDR catheter dwell positions 5 Gy prescription"
+    },
+    {
+      "id": "Q0165",
+      "input": "For a gallbladder cancer case, please plan an interstitial HDR brachytherapy treatment. The GTV is approximately 4cm x 3cm x 3cm adjacent to the liver hilum. I plan to place 6 needles through the percutaneous approach. The prescription dose is 6 Gy per fraction in 3 fractions. Optimize dwell positions to cover the GTV while limiting the duodenal D2cc.",
+      "expected_keywords": [
+        "gallbladder",
+        "interstitial",
+        "6",
+        "needles",
+        "6",
+        "Gy",
+        "GTV",
+        "duodenal",
+        "dose",
+        "optimization"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: gallbladder interstitial 6 needles 6 Gy GTV duodenal dose optimization"
+    },
+    {
+      "id": "Q0166",
+      "input": "Please create a surface brachytherapy plan for a skin cancer on the chest wall. The lesion is 3cm x 2cm, and I am using a custom surface applicator with 4 dwell positions. The prescription dose is 4 Gy per fraction in 8 fractions to 5mm depth. Optimize to provide uniform dose across the treatment area while limiting dose to the underlying lung.",
+      "expected_keywords": [
+        "surface",
+        "applicator",
+        "skin",
+        "4",
+        "Gy",
+        "5mm",
+        "depth",
+        "uniform",
+        "dose",
+        "lung",
+        "sparing"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: surface applicator skin 4 Gy 5mm depth uniform dose lung sparing"
+    },
+    {
+      "id": "Q0167",
+      "input": "I have a patient with a large rectal tumor (5cm from anal verge, T3N1) who has completed 45Gy EBRT. I need a brachytherapy boost plan using HDR. Place 8 interstitial needles through a transperineal approach around the tumor. Plan with 3 fractions of 5 Gy each. Optimize to cover the tumor while respecting the prostate and bladder dose constraints.",
+      "expected_keywords": [
+        "rectal",
+        "interstitial",
+        "boost",
+        "8",
+        "needles",
+        "5",
+        "Gy",
+        "prostate",
+        "bladder",
+        "constraint"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: rectal interstitial boost 8 needles 5 Gy prostate bladder constraint"
+    },
+    {
+      "id": "Q0168",
+      "input": "For a patient with urethral cancer, please plan an HDR interstitial brachytherapy treatment. The tumor involves 4cm of the bulbar urethra. Using a template with 8 needles, plan 4 fractions of 4.5 Gy each. The urethra must be at the center of the implant, and the plan must limit the rectal D2cc while maintaining target coverage.",
+      "expected_keywords": [
+        "urethral",
+        "interstitial",
+        "8",
+        "needles",
+        "4.5",
+        "Gy",
+        "rectal",
+        "D2cc",
+        "central",
+        "urethra"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: urethral interstitial 8 needles 4.5 Gy rectal D2cc central urethra"
+    },
+    {
+      "id": "Q0169",
+      "input": "I need a combined EBRT plus brachytherapy plan for a patient with locally advanced cervical cancer. The patient will receive 45Gy in 25 fractions to the pelvis followed by HDR brachytherapy. Using a tandem and ovoids applicator, plan 4 fractions of 7 Gy each to point A. Calculate the total EQD2 to point A and the relevant OARs.",
+      "expected_keywords": [
+        "cervical",
+        "combined",
+        "EBRT",
+        "HDR",
+        "45Gy",
+        "tandem",
+        "ovoid",
+        "EQD2",
+        "point",
+        "A"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: cervical combined EBRT HDR 45Gy tandem ovoid EQD2 point A"
+    },
+    {
+      "id": "Q0170",
+      "input": "For a prostate cancer patient with bilateral hip replacements causing artifact, plan an LDR I-125 seed implant. The prostate volume is 38cc. Due to the artifact, CT-based dose calculation may be inaccurate. Please plan using modified seed positions that avoid the regions with severe artifact and discuss the limitations of the plan.",
+      "expected_keywords": [
+        "I-125",
+        "prostate",
+        "hip",
+        "replacement",
+        "artifact",
+        "modified",
+        "seed",
+        "plan",
+        "limitations"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: I-125 prostate hip replacement artifact modified seed plan limitations"
+    },
+    {
+      "id": "Q0171",
+      "input": "Please plan an HDR brachytherapy treatment for a patient with nasopharyngeal carcinoma. The patient has residual mucosal disease after 70Gy EBRT. Using an intracavitary applicator, plan 3 fractions of 5 Gy each. The dose must cover the nasopharyngeal mucosa while sparing the brainstem (D2cc < 60 Gy EQD2) and temporal lobes.",
+      "expected_keywords": [
+        "nasopharyngeal",
+        "intracavitary",
+        "5",
+        "Gy",
+        "brainstem",
+        "temporal",
+        "lobe",
+        "OAR"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: nasopharyngeal intracavitary 5 Gy brainstem temporal lobe OAR"
+    },
+    {
+      "id": "Q0172",
+      "input": "I have a pediatric patient with a bladder neck rhabdomyosarcoma, age 6. After 3 cycles of VAC chemotherapy, the residual tumor is 2cm. Please plan a brachytherapy boost using interstitial needles placed under anesthesia. The prescription dose should be 1.5 Gy per fraction twice daily for 5 days (total 15 Gy).",
+      "expected_keywords": [
+        "pediatric",
+        "bladder",
+        "rhabdomyosarcoma",
+        "interstitial",
+        "boost",
+        "1.5",
+        "Gy",
+        "BID"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: pediatric bladder rhabdomyosarcoma interstitial boost 1.5 Gy BID"
+    },
+    {
+      "id": "Q0173",
+      "input": "For a patient with a penile cancer (2cm lesion on glans), please plan an interstitial HDR brachytherapy treatment. Using 6 needles in a single plane, plan 3 fractions of 6 Gy each. The plan must maintain the urethral dose below the prescription dose and cover the visible tumor with at least 95% of the prescription isodose.",
+      "expected_keywords": [
+        "penile",
+        "interstitial",
+        "single",
+        "plane",
+        "6",
+        "Gy",
+        "urethral",
+        "sparing",
+        "95%",
+        "coverage"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: penile interstitial single plane 6 Gy urethral sparing 95% coverage"
+    },
+    {
+      "id": "Q0174",
+      "input": "I need an HDR plan for a patient with a bile duct cancer. The tumor is at the hepatic hilum, and the plan is for percutaneous interstitial brachytherapy. Place 4 needles under CT guidance. The prescription dose is 7.5 Gy per fraction in 2 fractions. The plan must limit the duodenal D2cc to less than 75 Gy EQD2 and the liver V20 to less than 30%.",
+      "expected_keywords": [
+        "biliary",
+        "interstitial",
+        "CT-guided",
+        "7.5",
+        "Gy",
+        "duodenal",
+        "liver",
+        "constraint"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: biliary interstitial CT-guided 7.5 Gy duodenal liver constraint"
+    },
+    {
+      "id": "Q0175",
+      "input": "For a patient with a vaginal melanoma in the upper third, please plan an HDR interstitial brachytherapy treatment. The template has 12 needles in a modified Heyman configuration. The prescription dose is 3.5 Gy per fraction in 10 fractions. Optimize to cover the tumor while sparing the bladder (D2cc < 70 Gy EQD2) and rectum (D2cc < 65 Gy EQD2).",
+      "expected_keywords": [
+        "vaginal",
+        "melanoma",
+        "interstitial",
+        "12",
+        "needles",
+        "bladder",
+        "rectum",
+        "D2cc",
+        "constraint"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: vaginal melanoma interstitial 12 needles bladder rectum D2cc constraint"
+    },
+    {
+      "id": "Q0176",
+      "input": "Please plan a prostate brachytherapy case using stranded I-125 seeds. The prostate volume is 42cc, intermediate-risk disease. The strands are loaded with 10 seeds each at 1cm spacing. Create a preplan with 4 strands placed in the peripheral zone and 2 strands in the transition zone. Prescription dose is 145 Gy.",
+      "expected_keywords": [
+        "stranded",
+        "I-125",
+        "prostate",
+        "peripheral",
+        "transition",
+        "zone",
+        "145",
+        "Gy"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: stranded I-125 prostate peripheral transition zone 145 Gy"
+    },
+    {
+      "id": "Q0177",
+      "input": "For a cervical cancer patient with a tandem and ovoids applicator, I need a plan that maximizes the dose to HR-CTV while keeping the bladder D2cc below 75 Gy EQD2 and rectum D2cc below 65 Gy EQD2. The prescribed dose to point A is 7 Gy per fraction for 4 fractions. Please perform inverse planning optimization.",
+      "expected_keywords": [
+        "cervical",
+        "inverse",
+        "planning",
+        "HR-CTV",
+        "bladder",
+        "rectum",
+        "D2cc",
+        "EQD2",
+        "constraint"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: cervical inverse planning HR-CTV bladder rectum D2cc EQD2 constraint"
+    },
+    {
+      "id": "Q0178",
+      "input": "I need to create a treatment plan for a patient with an anal canal cancer who will receive EBRT 45Gy/25fx followed by brachytherapy boost. The boost plan uses HDR with a single-channel endorectal applicator. Prescribe 3 fractions of 6 Gy each at 0.5cm depth from the applicator surface. Optimize dwell positions for uniform anal canal coverage.",
+      "expected_keywords": [
+        "anal",
+        "boost",
+        "endorectal",
+        "applicator",
+        "6",
+        "Gy",
+        "uniform",
+        "coverage",
+        "EBRT"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: anal boost endorectal applicator 6 Gy uniform coverage EBRT"
+    },
+    {
+      "id": "Q0179",
+      "input": "For a breast APBI case with a SAVI applicator (6 channels), please plan the HDR treatment. The PTV is 55cc, and the skin distance is 8mm. Prescribe 34 Gy in 10 fractions. Optimize dwell times across all 6 channels to achieve PTV D90 > 90% and V90 > 90%, while keeping the skin Dmax < 100% of the prescription dose.",
+      "expected_keywords": [
+        "SAVI",
+        "6-channel",
+        "breast",
+        "APBI",
+        "34",
+        "Gy",
+        "PTV",
+        "D90",
+        "skin",
+        "Dmax",
+        "optimization"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: SAVI 6-channel breast APBI 34 Gy PTV D90 skin Dmax optimization"
+    },
+    {
+      "id": "Q0180",
+      "input": "I have a patient with head and neck cancer requiring bilateral neck dissection and brachytherapy boost. The primary tumor in the oropharynx has been treated to 50Gy with IMRT. The brachytherapy boost plan uses 10 interstitial needles placed through a template. Prescribe 3 fractions of 4 Gy each. Optimize to cover the GTV while sparing the carotid arteries.",
+      "expected_keywords": [
+        "oropharyngeal",
+        "interstitial",
+        "10",
+        "needles",
+        "4",
+        "Gy",
+        "carotid",
+        "GTV",
+        "optimization"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: oropharyngeal interstitial 10 needles 4 Gy carotid GTV optimization"
+    },
+    {
+      "id": "Q0181",
+      "input": "Please create a PDR brachytherapy plan for a cervical cancer patient who cannot undergo HDR treatment due to logistics. The tandem and ovoids are in place. Prescribe a dose equivalent to 70 Gy in 2 Gy fractions to HR-CTV. Use 0.5 Gy pulses every hour over 70 hours. Calculate the required number of pulses and create the plan.",
+      "expected_keywords": [
+        "PDR",
+        "cervical",
+        "tandem",
+        "ovoid",
+        "0.5",
+        "Gy",
+        "pulse",
+        "70",
+        "hours",
+        "equivalent",
+        "dose"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: PDR cervical tandem ovoid 0.5 Gy pulse 70 hours equivalent dose"
+    },
+    {
+      "id": "Q0182",
+      "input": "For a patient with a skin cancer on the ear (pinna), please plan a surface brachytherapy treatment using a custom mold applicator. The lesion is 1.5cm x 1cm on the helix. Prescribe 4 Gy per fraction in 8 fractions to 5mm depth. The plan must limit the dose to the underlying cartilage.",
+      "expected_keywords": [
+        "pinna",
+        "surface",
+        "brachytherapy",
+        "custom",
+        "mold",
+        "4",
+        "Gy",
+        "cartilage",
+        "dose"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: pinna surface brachytherapy custom mold 4 Gy cartilage dose"
+    },
+    {
+      "id": "Q0183",
+      "input": "I need an HDR plan for a patient with endometrial cancer and a positive vaginal cuff margin after hysterectomy. The vaginal cylinder is 2.5cm diameter, 7cm length. Prescribe 6 Gy per fraction at 0.5cm depth for 3 fractions for the boost. Then plan adjuvant treatment at 3 Gy per fraction for 3 fractions at 0.5cm depth to the full vaginal length.",
+      "expected_keywords": [
+        "vaginal",
+        "cuff",
+        "two-phase",
+        "boost",
+        "adjuvant",
+        "positive",
+        "margin",
+        "cylinder",
+        "HDR"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: vaginal cuff two-phase boost adjuvant positive margin cylinder HDR"
+    },
+    {
+      "id": "Q0184",
+      "input": "For a patient with a recurrent tumor at the gastroesophageal junction, please plan an endoluminal brachytherapy boost. Using a single-channel applicator with 8 dwell positions, prescribe 5 Gy per fraction in 3 fractions. The dose should be prescribed at 1cm from the source axis. Optimize to cover the tumor while sparing the heart and lungs.",
+      "expected_keywords": [
+        "gastroesophageal",
+        "endoluminal",
+        "8",
+        "dwell",
+        "5",
+        "Gy",
+        "heart",
+        "lung",
+        "sparing"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: gastroesophageal endoluminal 8 dwell 5 Gy heart lung sparing"
+    },
+    {
+      "id": "Q0185",
+      "input": "I need an interstitial brachytherapy plan for a patient with a recurrent tumor in the neck after prior surgery and radiation. The recurrence is a 2cm nodule in the right neck. Using 6 needles, prescribe 4 Gy per fraction in 5 fractions. Optimize to cover the recurrence while limiting the spinal cord Dmax to 40 Gy EQD2 and the carotid artery Dmax to 50 Gy EQD2.",
+      "expected_keywords": [
+        "neck",
+        "interstitial",
+        "re-irradiation",
+        "6",
+        "needles",
+        "spinal",
+        "cord",
+        "carotid",
+        "dose",
+        "constraint"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: neck interstitial re-irradiation 6 needles spinal cord carotid dose constraint"
+    },
+    {
+      "id": "Q0186",
+      "input": "For a patient with a large 85cc prostate, plan an LDR I-125 seed implant. Due to the large volume, consider using a combination of peripheral and central seed placement. The prescription dose is 145 Gy. Calculate the expected number of seeds needed and create a plan with at least 110 seeds loaded across multiple planes.",
+      "expected_keywords": [
+        "I-125",
+        "large",
+        "prostate",
+        "85cc",
+        "peripheral",
+        "central",
+        "loading",
+        "145",
+        "Gy",
+        "seed",
+        "count"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: I-125 large prostate 85cc peripheral central loading 145 Gy seed count"
+    },
+    {
+      "id": "Q0187",
+      "input": "I have a patient with bilateral synchronous breast cancers requiring bilateral APBI. The left breast has a lumpectomy cavity in the upper outer quadrant (30cc), and the right breast has a cavity in the lower inner quadrant (25cc). Plan both treatments using MammoSite applicators with 34 Gy in 10 fractions each.",
+      "expected_keywords": [
+        "bilateral",
+        "breast",
+        "APBI",
+        "MammoSite",
+        "34",
+        "Gy",
+        "synchronous",
+        "bilateral"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: bilateral breast APBI MammoSite 34 Gy synchronous bilateral"
+    },
+    {
+      "id": "Q0188",
+      "input": "For a cervical cancer patient with a known kidney transplant on the right side, plan an HDR brachytherapy treatment using tandem and ovoids. The transplanted kidney is in the right iliac fossa. Prescribe 7 Gy x 4 fractions to point A. The plan must limit the right kidney D2cc to less than 20 Gy EQD2 to preserve transplant function.",
+      "expected_keywords": [
+        "cervical",
+        "HDR",
+        "kidney",
+        "transplant",
+        "right",
+        "iliac",
+        "fossa",
+        "renal",
+        "protection"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: cervical HDR kidney transplant right iliac fossa renal protection"
+    },
+    {
+      "id": "Q0189",
+      "input": "I need to plan an HDR brachytherapy treatment for a patient with a urethral stricture disease and a 2cm urethral cancer. The tumor is located in the membranous urethra. Using a template with 4 needles, plan 5 fractions of 4 Gy each. The plan must carefully spare the external anal sphincter and the external urethral sphincter.",
+      "expected_keywords": [
+        "membranous",
+        "urethral",
+        "4",
+        "needles",
+        "4",
+        "Gy",
+        "sphincter",
+        "sparing"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: membranous urethral 4 needles 4 Gy sphincter sparing"
+    },
+    {
+      "id": "Q0190",
+      "input": "For a patient with a tracheal tumor causing 60% luminal obstruction, plan an endoluminal HDR brachytherapy treatment. Using a 4 French catheter with 5 dwell positions, prescribe 7 Gy per fraction in 3 fractions. The dose should be prescribed at 0.5cm from the source axis. Optimize to cover the tumor while limiting the dose to the esophagus and great vessels.",
+      "expected_keywords": [
+        "tracheal",
+        "endoluminal",
+        "4F",
+        "catheter",
+        "7",
+        "Gy",
+        "esophagus",
+        "great",
+        "vessel"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: tracheal endoluminal 4F catheter 7 Gy esophagus great vessel"
+    },
+    {
+      "id": "Q0191",
+      "input": "I have a patient with a parotid gland cancer who had a superficial parotidectomy with positive margins. Please plan an HDR brachytherapy boost using 4 interstitial needles placed in the surgical bed. Prescribe 4 Gy per fraction in 5 fractions. Optimize to cover the surgical bed while sparing the facial nerve region and the spinal cord.",
+      "expected_keywords": [
+        "parotid",
+        "surgical",
+        "bed",
+        "positive",
+        "margin",
+        "4",
+        "needles",
+        "facial",
+        "nerve",
+        "spinal",
+        "cord"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: parotid surgical bed positive margin 4 needles facial nerve spinal cord"
+    },
+    {
+      "id": "Q0192",
+      "input": "For a patient with a T2N0 glottic laryngeal cancer, plan an interstitial HDR brachytherapy boost after 50Gy EBRT. Using 4 needles placed through a laryngeal template, prescribe 3 fractions of 4 Gy each. The plan must spare the thyroid cartilage and limit the dose to the spinal cord.",
+      "expected_keywords": [
+        "glottic",
+        "laryngeal",
+        "interstitial",
+        "4",
+        "needles",
+        "thyroid",
+        "cartilage",
+        "spinal",
+        "cord"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: glottic laryngeal interstitial 4 needles thyroid cartilage spinal cord"
+    },
+    {
+      "id": "Q0193",
+      "input": "I need a plan for a patient with a liver metastasis from colorectal cancer. The lesion is 3cm in segment VI, and the plan is for CT-guided percutaneous interstitial HDR brachytherapy. Place 3 needles through the liver parenchyma. Prescribe 10 Gy per fraction in 2 fractions. Limit the liver V15 to less than 50% and the risk of radiation-induced liver disease (RILD).",
+      "expected_keywords": [
+        "liver",
+        "interstitial",
+        "CT-guided",
+        "10",
+        "Gy",
+        "RILD",
+        "liver",
+        "V15",
+        "colorectal",
+        "metastasis"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: liver interstitial CT-guided 10 Gy RILD liver V15 colorectal metastasis"
+    },
+    {
+      "id": "Q0194",
+      "input": "For a patient with an anal margin cancer (2cm lesion), plan an HDR interstitial brachytherapy boost using 6 needles in a single plane. The prescription dose is 4 Gy per fraction in 5 fractions. Optimize the plan to cover the tumor with the 100% isodose line while keeping the anal sphincter Dmax below the prescription dose.",
+      "expected_keywords": [
+        "anal",
+        "margin",
+        "interstitial",
+        "6",
+        "needles",
+        "4",
+        "Gy",
+        "anal",
+        "sphincter",
+        "isodose"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: anal margin interstitial 6 needles 4 Gy anal sphincter isodose"
+    },
+    {
+      "id": "Q0195",
+      "input": "I have a patient with a large vulvar tumor (6cm) requiring interstitial HDR brachytherapy. The template has 16 needles in a modified Heyman pattern. The prescription dose is 3 Gy per fraction in 12 fractions. Optimize to achieve adequate coverage of the large treatment volume while respecting the tolerance of the urethra (D2cc < 65 Gy EQD2) and anus (D2cc < 60 Gy EQD2).",
+      "expected_keywords": [
+        "vulvar",
+        "large",
+        "16",
+        "needles",
+        "3",
+        "Gy",
+        "urethra",
+        "anus",
+        "D2cc",
+        "EQD2",
+        "constraint"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: vulvar large 16 needles 3 Gy urethra anus D2cc EQD2 constraint"
+    },
+    {
+      "id": "Q0196",
+      "input": "For a patient with a post-prostatectomy anastomotic recurrence, plan a salvage HDR brachytherapy treatment. The recurrence is at the vesicourethral anastomosis, visible on CT as a 1.5cm nodule. Using 4 interstitial needles, prescribe 6 Gy per fraction in 5 fractions. The plan must cover the anastomotic recurrence while limiting the bladder and rectal doses.",
+      "expected_keywords": [
+        "salvage",
+        "HDR",
+        "post-prostatectomy",
+        "anastomotic",
+        "recurrence",
+        "6",
+        "Gy",
+        "bladder",
+        "rectal"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: salvage HDR post-prostatectomy anastomotic recurrence 6 Gy bladder rectal"
+    },
+    {
+      "id": "Q0197",
+      "input": "I need an HDR plan for a patient with a recurrent endometrial cancer at the pelvic sidewall. The recurrence is a 3cm nodule adjacent to the right iliac vessels. Using 6 interstitial needles, prescribe 4 Gy per fraction in 6 fractions. The plan must limit the iliac vessel Dmax to 50 Gy EQD2 while covering the recurrence.",
+      "expected_keywords": [
+        "pelvic",
+        "sidewall",
+        "recurrent",
+        "endometrial",
+        "6",
+        "needles",
+        "iliac",
+        "vessel",
+        "Dmax"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: pelvic sidewall recurrent endometrial 6 needles iliac vessel Dmax"
+    },
+    {
+      "id": "Q0198",
+      "input": "For a patient with a penile cancer involving both the glans and the distal shaft (3cm length), plan an interstitial HDR brachytherapy treatment. Use 10 needles in two parallel planes, 5 needles per plane. Prescribe 4 Gy per fraction in 7 fractions. The plan must preserve the urethra and maintain penile function.",
+      "expected_keywords": [
+        "penile",
+        "interstitial",
+        "10",
+        "needles",
+        "two",
+        "planes",
+        "4",
+        "Gy",
+        "urethral",
+        "preservation"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: penile interstitial 10 needles two planes 4 Gy urethral preservation"
+    },
+    {
+      "id": "Q0199",
+      "input": "I have a patient with a cervical cancer and a retroverted uterus. The tandem and ovoids applicator has been placed, but the tandem angle is 30 degrees posterior. Plan the HDR treatment with 4 fractions of 7 Gy each to point A. The posterior tandem orientation may shift the dose distribution. Optimize dwell times to maintain target coverage despite the unusual geometry.",
+      "expected_keywords": [
+        "cervical",
+        "retroverted",
+        "uterus",
+        "tandem",
+        "posterior",
+        "angle",
+        "7",
+        "Gy",
+        "optimization"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: cervical retroverted uterus tandem posterior angle 7 Gy optimization"
+    },
+    {
+      "id": "Q0200",
+      "input": "For a patient with bilateral inguinal lymph node metastases from vulvar cancer, plan a concurrent interstitial HDR brachytherapy treatment for the bilateral inguinal regions. Use 8 needles per side (16 total) placed in a template. Prescribe 3 Gy per fraction in 10 fractions. Optimize to cover the bilateral inguinal nodal volumes while sparing the femoral vessels.",
+      "expected_keywords": [
+        "bilateral",
+        "inguinal",
+        "interstitial",
+        "16",
+        "needles",
+        "femoral",
+        "vessel",
+        "vulvar"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment planning test: bilateral inguinal interstitial 16 needles femoral vessel vulvar"
+    },
+    {
+      "id": "Q0556",
+      "input": "For a cervical cancer patient with a large exophytic tumor extending to the pelvic sidewall, describe the advanced treatment planning approach using tandem and interstitial needle applicator. How do you determine the optimal needle configuration, dwell positions, and dwell times to achieve adequate tumor coverage while respecting rectal and bladder dose constraints?",
+      "expected_keywords": [
+        "tandem",
+        "interstitial",
+        "needle configuration",
+        "dwell positions",
+        "dwell times",
+        "planning objectives"
+      ],
+      "difficulty": "advanced",
+      "description": "Advanced planning for complex cervical cancer with interstitial applicator"
+    },
+    {
+      "id": "Q0557",
+      "input": "Describe the inverse planning process for prostate HDR brachytherapy using a multi-catheter approach. How do you set up the objective functions and constraints to optimize the plan for prostate coverage while minimizing dose to the urethra, rectum, and bladder? What specific DVH parameters should be optimized, and what are typical optimization convergence issues?",
+      "expected_keywords": [
+        "inverse planning",
+        "prostate HDR",
+        "multi-catheter",
+        "DVH",
+        "urethra",
+        "rectum",
+        "optimization convergence"
+      ],
+      "difficulty": "advanced",
+      "description": "Inverse planning for prostate HDR brachytherapy"
+    },
+    {
+      "id": "Q0558",
+      "input": "A patient with a vaginal cuff recurrence after prior hysterectomy requires brachytherapy planning using a custom vaginal cylinder. The CT scan shows the cylinder is displaced anteriorly due to a rectocele. Describe the advanced planning techniques needed to account for this displacement, including applicator reconstruction adjustments and dose optimization strategies.",
+      "expected_keywords": [
+        "vaginal cylinder",
+        "rectocele",
+        "applicator reconstruction",
+        "dose optimization",
+        "contouring modification"
+      ],
+      "difficulty": "advanced",
+      "description": "Advanced planning for displaced vaginal cylinder"
+    },
+    {
+      "id": "Q0559",
+      "input": "For a patient with bilateral hip prostheses requiring interstitial brachytherapy of the prostate, describe how the metal artifacts affect CT-based treatment planning and what advanced techniques can mitigate these issues. Include discussion of metal artifact reduction algorithms, MRI fusion strategies, and how the TPS handles high-density implants.",
+      "expected_keywords": [
+        "hip prostheses",
+        "metal artifact",
+        "MRI fusion",
+        "artifact reduction",
+        "CT planning",
+        "high-density"
+      ],
+      "difficulty": "advanced",
+      "description": "Planning for prostate brachytherapy with bilateral hip prostheses"
+    },
+    {
+      "id": "Q0560",
+      "input": "Describe the planning optimization workflow for a complex head and neck brachytherapy case using interstitial implants for a recurrent oral tongue cancer. The patient has had prior surgery with plate and screw hardware in the mandible. How do you optimize the dose distribution to cover the target while avoiding the hardware and sparing the contralateral salivary glands?",
+      "expected_keywords": [
+        "head and neck",
+        "interstitial",
+        "oral tongue",
+        "hardware",
+        "dose optimization",
+        "mandibular constraint",
+        "salivary glands"
+      ],
+      "difficulty": "advanced",
+      "description": "Advanced planning for head and neck interstitial brachytherapy"
+    },
+    {
+      "id": "Q0561",
+      "input": "For an endometrial cancer patient with a bulky cervix and extensive parametrial disease, explain the advanced planning approach for combining EBRT with brachytherapy boost. How do you calculate the combined EQD2 doses to organs at risk when both EBRT and brachytherapy contribute? What specific DVH parameters should be used to evaluate the combined plan?",
+      "expected_keywords": [
+        "EBRT",
+        "brachytherapy boost",
+        "EQD2",
+        "combined dose",
+        "DVH parameters",
+        "parametrial"
+      ],
+      "difficulty": "advanced",
+      "description": "Combined EBRT and brachytherapy planning for advanced endometrial cancer"
+    },
+    {
+      "id": "Q0562",
+      "input": "Describe the treatment planning approach for a pediatric patient with a bladder rhabdomyosarcoma requiring brachytherapy. The bladder volume is approximately 80 mL, and the target encompasses a large proportion of the organ. How do you balance target coverage with bladder function preservation, and what modified planning constraints should be used compared to adult protocols?",
+      "expected_keywords": [
+        "pediatric",
+        "bladder rhabdomyosarcoma",
+        "target coverage",
+        "bladder preservation",
+        "modified constraints",
+        "small organ"
+      ],
+      "difficulty": "advanced",
+      "description": "Pediatric bladder brachytherapy planning"
+    },
+    {
+      "id": "Q0563",
+      "input": "A prostate cancer patient has a very large prostate gland (120 cc) requiring HDR brachytherapy. Describe the advanced planning approach to achieve adequate dose coverage while managing the increased number of catheters and dwell positions. What specific optimization challenges arise with large prostate volumes, and how do you address catheter convergence and cold spots?",
+      "expected_keywords": [
+        "large prostate",
+        "120 cc",
+        "HDR",
+        "catheter convergence",
+        "cold spots",
+        "optimization",
+        "dwell positions"
+      ],
+      "difficulty": "advanced",
+      "description": "Advanced planning for large volume prostate HDR brachytherapy"
+    },
+    {
+      "id": "Q0564",
+      "input": "For a cervical cancer patient where MRI-guided brachytherapy is being used, describe the advanced adaptive planning workflow. How do you handle tumor regression between fractions, what are the criteria for plan adaptation versus replanning, and how do you account for changes in applicator-tissue geometry across fractions?",
+      "expected_keywords": [
+        "adaptive planning",
+        "MRI-guided",
+        "tumor regression",
+        "replanning",
+        "applicator geometry",
+        "fraction"
+      ],
+      "difficulty": "advanced",
+      "description": "Adaptive planning workflow for MRI-guided cervical brachytherapy"
+    },
+    {
+      "id": "Q0565",
+      "input": "Describe the treatment planning process for PDR brachytherapy of a cervical cancer patient. How do you determine the pulse dose, pulse interval, and total treatment time to achieve biological equivalence with HDR fractionation? What specific considerations apply to the repair kinetics of cervical tumors versus rectal tissue in PDR scheduling?",
+      "expected_keywords": [
+        "PDR",
+        "pulse dose",
+        "pulse interval",
+        "biological equivalence",
+        "repair kinetics",
+        "HDR comparison"
+      ],
+      "difficulty": "advanced",
+      "description": "PDR brachytherapy planning for cervical cancer"
+    },
+    {
+      "id": "Q0566",
+      "input": "For a patient with rectal cancer requiring brachytherapy boost after neoadjuvant chemoradiation, describe the advanced planning approach. The tumor is in the mid-rectum at 7 cm from the anal verge. How do you optimize the dose distribution using endoluminal applicators to boost residual tumor while respecting dose limits to surrounding structures?",
+      "expected_keywords": [
+        "rectal cancer",
+        "brachytherapy boost",
+        "endoluminal applicator",
+        "dose optimization",
+        "neoadjuvant",
+        "mid-rectum"
+      ],
+      "difficulty": "advanced",
+      "description": "Rectal cancer brachytherapy boost planning"
+    },
+    {
+      "id": "Q0567",
+      "input": "A brachytherapy plan is being optimized for a patient with recurrent endometrial cancer in the vaginal apex. Previous surgery left dense fibrosis and adhesions limiting catheter placement. Describe the advanced planning strategies to achieve optimal dose coverage despite these anatomical constraints, including alternative applicator configurations and dwell position modifications.",
+      "expected_keywords": [
+        "recurrent endometrial",
+        "fibrosis",
+        "adhesions",
+        "alternative applicator",
+        "dwell modification",
+        "dose painting"
+      ],
+      "difficulty": "advanced",
+      "description": "Advanced planning for recurrent endometrial cancer with anatomical constraints"
+    },
+    {
+      "id": "Q0568",
+      "input": "Explain the process of creating a patient-specific quality assurance plan for complex brachytherapy treatments. How do you verify that the optimized dose distribution will be accurately delivered? Describe independent dose calculation methods, Monte Carlo verification techniques, and end-to-end testing using anthropomorphic phantoms.",
+      "expected_keywords": [
+        "patient-specific QA",
+        "independent calculation",
+        "Monte Carlo",
+        "end-to-end testing",
+        "phantom",
+        "dose verification"
+      ],
+      "difficulty": "advanced",
+      "description": "Patient-specific QA planning for complex brachytherapy"
+    },
+    {
+      "id": "Q0569",
+      "input": "For a brachytherapy case requiring simultaneous optimization of tandem and ring applicator dwell positions with interstitial needles, describe the multi-applicator optimization approach. How does the planning system handle dose contributions from different applicator types simultaneously, and what are the specific challenges in achieving a conformal dose distribution?",
+      "expected_keywords": [
+        "multi-applicator",
+        "tandem",
+        "ring",
+        "interstitial needles",
+        "simultaneous optimization",
+        "conformal"
+      ],
+      "difficulty": "advanced",
+      "description": "Multi-applicator optimization for complex brachytherapy"
+    },
+    {
+      "id": "Q0570",
+      "input": "Describe the treatment planning considerations for brachytherapy of a urethral cancer involving the prostatic and membranous urethra with a suprapubic catheter in place. How do you optimize dwell positions and times to cover the entire urethral tumor while minimizing dose to the rectum, bladder neck, and external urethral sphincter?",
+      "expected_keywords": [
+        "urethral cancer",
+        "prostatic urethra",
+        "membranous urethra",
+        "dwell optimization",
+        "sphincter sparing",
+        "applicator"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy planning for urethral cancer"
+    },
+    {
+      "id": "Q0571",
+      "input": "A center is implementing a new treatment planning system for brachytherapy and needs to validate the dose calculation algorithms. Describe the comprehensive commissioning workflow including TG-43 based dose calculation verification, heterogeneity correction testing, applicator library validation, and parallel calculations with the existing system during transition.",
+      "expected_keywords": [
+        "TPS commissioning",
+        "TG-43",
+        "heterogeneity correction",
+        "applicator library",
+        "parallel calculation"
+      ],
+      "difficulty": "advanced",
+      "description": "TPS commissioning for brachytherapy"
+    },
+    {
+      "id": "Q0572",
+      "input": "For a patient with advanced vulvar cancer requiring interstitial brachytherapy after surgical resection, the resection bed extends from the mons pubis to the posterior fourchette requiring a complex multi-plane implant. How do you optimize dose distribution to cover the surgical bed while avoiding the urethra, anal sphincter, and contralateral labium?",
+      "expected_keywords": [
+        "vulvar cancer",
+        "interstitial",
+        "surgical bed",
+        "multi-plane implant",
+        "urethra",
+        "anal sphincter"
+      ],
+      "difficulty": "advanced",
+      "description": "Treatment planning for vulvar cancer interstitial brachytherapy"
+    },
+    {
+      "id": "Q0573",
+      "input": "Explain the concept of dose painting in brachytherapy and its clinical application. How can dose painting be used to deliver differential doses to different regions of a tumor based on biological imaging such as PET or DW-MRI? Describe the planning workflow for implementing dose painting and the clinical evidence.",
+      "expected_keywords": [
+        "dose painting",
+        "PET",
+        "DW-MRI",
+        "biological imaging",
+        "differential dose",
+        "planning workflow"
+      ],
+      "difficulty": "advanced",
+      "description": "Dose painting in brachytherapy using biological imaging"
+    },
+    {
+      "id": "Q0574",
+      "input": "A brachytherapy plan needs to account for a patient with a hip replacement that restricts positioning of the treatment delivery device. How does this physical constraint affect the applicator angle, dwell position selection, and dose distribution? What specific planning modifications are needed to maintain target coverage within mechanical limitations?",
+      "expected_keywords": [
+        "hip replacement",
+        "applicator angle",
+        "dwell position",
+        "mechanical limitation",
+        "target coverage",
+        "planning modification"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy planning with hip replacement constraints"
+    },
+    {
+      "id": "Q0575",
+      "input": "Describe the planning process for HDR brachytherapy boost in squamous cell carcinoma of the anal canal. The tumor extends from 2 cm to 5 cm from the anal verge with internal anal sphincter involvement. How do you optimize the dose distribution using a combination of endoluminal and interstitial applicators to maximize tumor control while preserving sphincter function?",
+      "expected_keywords": [
+        "anal canal",
+        "HDR boost",
+        "endoluminal",
+        "interstitial",
+        "sphincter preservation",
+        "squamous cell"
+      ],
+      "difficulty": "advanced",
+      "description": "HDR brachytherapy boost planning for anal canal cancer"
+    },
+    {
+      "id": "Q0576",
+      "input": "For a center treating multiple brachytherapy sites (gynecological, prostate, head and neck), describe the treatment planning standardization approach. How do you create standardized planning templates and optimization objective libraries for each site? What are the criteria for customizing templates for individual patients?",
+      "expected_keywords": [
+        "standardization",
+        "planning templates",
+        "optimization objectives",
+        "customization",
+        "validation",
+        "multiple sites"
+      ],
+      "difficulty": "medium",
+      "description": "Treatment planning standardization across brachytherapy sites"
+    },
+    {
+      "id": "Q0577",
+      "input": "Explain the role of Monte Carlo dose calculation in brachytherapy planning. How does Monte Carlo simulation differ from TG-43 based dose calculation, particularly in heterogeneous tissues near bone or air interfaces? What are the computational requirements, accuracy improvements, and clinical scenarios where Monte Carlo provides the most benefit?",
+      "expected_keywords": [
+        "Monte Carlo",
+        "TG-43",
+        "heterogeneous",
+        "dose calculation",
+        "bone interface",
+        "accuracy",
+        "computation"
+      ],
+      "difficulty": "advanced",
+      "description": "Monte Carlo dose calculation in brachytherapy"
+    },
+    {
+      "id": "Q0578",
+      "input": "A patient with recurrent cancer of the Bartholin gland requires brachytherapy after surgical excision. The wound bed is irregular and extends deep into the ischiorectal fossa. Describe the advanced planning approach for this uncommon scenario, including applicator design considerations, optimization strategy, and plan adequacy evaluation.",
+      "expected_keywords": [
+        "Bartholin gland",
+        "recurrent",
+        "ischiorectal fossa",
+        "applicator design",
+        "optimization",
+        "complex anatomy"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy planning for Bartholin gland recurrence"
+    },
+    {
+      "id": "Q0579",
+      "input": "Describe the planning considerations for using surface applicators in the treatment of non-melanoma skin cancers near the eye. How do you optimize the dose distribution to cover the superficial target while minimizing dose to the lens, cornea, and lacrimal gland? What specific applicator modifications are available for periocular treatment?",
+      "expected_keywords": [
+        "skin cancer",
+        "surface applicator",
+        "periocular",
+        "lens dose",
+        "cornea",
+        "lacrimal gland",
+        "applicator contact"
+      ],
+      "difficulty": "advanced",
+      "description": "Surface applicator brachytherapy planning near the eye"
+    },
+    {
+      "id": "Q0580",
+      "input": "For a patient with T2 glottic laryngeal cancer treated with definitive radiation who has persistent or recurrent tumor, describe the salvage brachytherapy planning approach. How does post-irradiation anatomy affect applicator placement, and what specific planning modifications are needed for fibrosis, reduced tissue elasticity, and potential cartilage compromise?",
+      "expected_keywords": [
+        "glottic",
+        "salvage",
+        "recurrent",
+        "post-irradiation",
+        "fibrosis",
+        "applicator placement",
+        "cartilage"
+      ],
+      "difficulty": "advanced",
+      "description": "Salvage brachytherapy planning for recurrent laryngeal cancer"
+    },
+    {
+      "id": "Q0581",
+      "input": "Describe the treatment planning workflow for HDR brachytherapy of Stage III endometrial cancer with cervical extension. The plan must incorporate combined EBRT and brachytherapy dose contributions. How do you calculate composite dose to the rectum, sigmoid, and small bowel, and what planning strategies reduce cumulative dose to these organs?",
+      "expected_keywords": [
+        "Stage III",
+        "endometrial",
+        "composite dose",
+        "EBRT",
+        "brachytherapy",
+        "rectum",
+        "sigmoid",
+        "small bowel"
+      ],
+      "difficulty": "advanced",
+      "description": "Composite dose planning for advanced endometrial cancer"
+    },
+    {
+      "id": "Q0582",
+      "input": "A center is developing a brachytherapy planning protocol for pancreatic cancer using intraoperative placement of flexible catheters. Describe the planning approach including CTV definition around the pancreatic tumor bed, how to optimize catheter dwell positions to avoid the duodenum and stomach, and how intraoperative ultrasound guides catheter placement.",
+      "expected_keywords": [
+        "pancreatic",
+        "intraoperative",
+        "flexible catheters",
+        "CTV",
+        "duodenum",
+        "stomach",
+        "ultrasound"
+      ],
+      "difficulty": "advanced",
+      "description": "Intraoperative brachytherapy planning for pancreatic cancer"
+    },
+    {
+      "id": "Q0583",
+      "input": "Explain how to create a brachytherapy plan for a patient with bilateral hip replacements requiring HDR treatment for vaginal cancer. The hip prostheses limit applicator insertion angles. How do you work around these limitations using modified applicator approaches, and what dose calculation considerations arise when treating near high-density metal implants?",
+      "expected_keywords": [
+        "bilateral hip prostheses",
+        "vaginal cancer",
+        "applicator angle",
+        "dose calculation",
+        "metal implant",
+        "modified approach"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy planning with bilateral hip prostheses"
+    },
+    {
+      "id": "Q1086",
+      "input": "Complex HDR plan for 54-year-old woman with 5.2 cm cervical tumor (IIB) with significant anterior bladder component. Tandem 6 cm, ovoids 20 mm. Address asymmetric disease with dwell time optimization, specific OAR constraints, and left parametrial dose escalation.",
+      "expected_keywords": [
+        "asymmetric_planning",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: asymmetric_planning"
+    },
+    {
+      "id": "Q1087",
+      "input": "Salvage HDR for 65-year-old man with recurrent prostate cancer post-prostatectomy (PSA 4.2, 2.1 cm retrovesical mass) after prior EBRT 66 Gy 3 years ago. Include applicator selection, cumulative dose constraints, and re-irradiation rationale.",
+      "expected_keywords": [
+        "prostate_salvage_HDR",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: prostate_salvage_HDR"
+    },
+    {
+      "id": "Q1088",
+      "input": "Interstitial brachytherapy for 42-year-old woman with 2.8 cm vaginal melanoma (Breslow 3.2 mm) after excision with positive deep margins. Syed-Neblett template, melanoma-specific dose, and organ preservation approach.",
+      "expected_keywords": [
+        "vaginal_melanoma_interstitial",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: vaginal_melanoma_interstitial"
+    },
+    {
+      "id": "Q1089",
+      "input": "Endorectal brachytherapy boost for 70-year-old man with residual 1.5 cm lower rectal cancer after neoadjuvant CRT. Custom applicator design, MRI-based target delineation, dose/fractionation, and QA for custom applicator use.",
+      "expected_keywords": [
+        "endorectal_boost",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: endorectal_boost"
+    },
+    {
+      "id": "Q1090",
+      "input": "Interstitial brachytherapy using Syed-Neblett template for 58-year-old woman with 3.8 cm vaginal apex recurrence of endometrial cancer after prior VBT 25 Gy in 5 fractions. Include cumulative EQD2 calculations.",
+      "expected_keywords": [
+        "interstitial_re_irradiation",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: interstitial_re_irradiation"
+    },
+    {
+      "id": "Q1091",
+      "input": "Brachytherapy boost for 60-year-old woman with anal canal cancer (T2N0M0, above dentate line) after complete response to neoadjuvant chemoradiation. Endoluminal applicator, dose to achieve total 59.4 Gy, and anal sphincter constraints.",
+      "expected_keywords": [
+        "anal_brachytherapy_boost",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: anal_brachytherapy_boost"
+    },
+    {
+      "id": "Q1092",
+      "input": "MRI-guided adaptive plan for 48-year-old woman with 6 cm cervical tumor with vesicovaginal component. Tandem and ring applicator, MRI protocol, contouring strategy for extension, dose optimization near bladder, and adaptive approach.",
+      "expected_keywords": [
+        "IGABT_bladder_proximity",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: IGABT_bladder_proximity"
+    },
+    {
+      "id": "Q1093",
+      "input": "HDR boost for 72-year-old man with T3a Gleason 4+3=7 prostate cancer (70 cc). 15 interstitial needles, 21 Gy in 2 fractions, urethral sparing optimization, and combined EQD2 reporting with prior EBRT 46 Gy.",
+      "expected_keywords": [
+        "HDR_boost_prostate",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: HDR_boost_prostate"
+    },
+    {
+      "id": "Q1094",
+      "input": "Brachytherapy during pregnancy for 35-year-old at 20 weeks with IB2 cervical cancer. Discuss fetal dose considerations, applicator modification, shielding, fractionation, and delivery planning.",
+      "expected_keywords": [
+        "pregnancy_brachytherapy",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: pregnancy_brachytherapy"
+    },
+    {
+      "id": "Q1095",
+      "input": "Freehand interstitial plan for 48-year-old woman with 2.0 cm recurrent endometrial cancer at vaginal cuff after prior EBRT 45 Gy. Needle placement technique, target delineation, re-irradiation dose, and QA for freehand placement.",
+      "expected_keywords": [
+        "freehand_interstitial",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: freehand_interstitial"
+    },
+    {
+      "id": "Q1096",
+      "input": "Interstitial brachytherapy plan for 55-year-old man with recurrent base of tongue cancer after TORS and prior IMRT 70 Gy. Post-surgical defect, re-irradiation constraints, dose, and swallowing rehabilitation.",
+      "expected_keywords": [
+        "TORS_brachytherapy",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: TORS_brachytherapy"
+    },
+    {
+      "id": "Q1097",
+      "input": "Permanent seed implant with seminal vesicle boost for 62-year-old with intermediate-risk prostate cancer and suspicious left SV. Seed distribution for prostate + SV, dosimetric goals, and post-implant evaluation.",
+      "expected_keywords": [
+        "prostate_SV_boost",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: prostate_SV_boost"
+    },
+    {
+      "id": "Q1098",
+      "input": "Combined intracavitary + interstitial brachytherapy for 48-year-old woman with 7 cm IIB cervical cancer with bilateral parametrial involvement. Needle placement strategy, dose prescription, and cumulative considerations.",
+      "expected_keywords": [
+        "interstitial_parametrial",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: interstitial_parametrial"
+    },
+    {
+      "id": "Q1099",
+      "input": "Interstitial brachytherapy plan for 65-year-old man with painful left femoral head metastasis from renal cell carcinoma (1.8 cm). Applicator selection, dose/fractionation, OAR constraints, and pain management integration.",
+      "expected_keywords": [
+        "palliative_bone_interstitial",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: palliative_bone_interstitial"
+    },
+    {
+      "id": "Q1100",
+      "input": "Brachytherapy plan for 52-year-old woman with 2.2 cm IVA vaginal clear cell carcinoma involving anterior vaginal wall and bladder base. Applicator selection, MRI planning, and anterior wall dose optimization.",
+      "expected_keywords": [
+        "anterior_vaginal_wall",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: anterior_vaginal_wall"
+    },
+    {
+      "id": "Q1101",
+      "input": "Interstitial melanoma plan using customized template for 60-year-old woman with 3 cm vaginal melanoma (Breslow 4.2 mm) after excision with 0.3 mm deep margin. Template design, melanoma dose considerations, and accelerated BID fractionation.",
+      "expected_keywords": [
+        "melanoma_template",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: melanoma_template"
+    },
+    {
+      "id": "Q1102",
+      "input": "Focal hemi-gland brachytherapy for 70-year-old man with 1.2 cm low-risk prostate cancer in right peripheral zone. Patient selection, target definition, seed distribution, urethra/NVB preservation, and focal vs whole-gland rationale.",
+      "expected_keywords": [
+        "focal_hemi_prostate",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: focal_hemi_prostate"
+    },
+    {
+      "id": "Q1103",
+      "input": "Surface applicator plan for perianal 3.0 cm squamous cell carcinoma extending to perianal skin. Custom applicator design, dose to complement 45 Gy EBRT, anal sphincter constraints, and perianal wound care.",
+      "expected_keywords": [
+        "perianal_surface",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: perianal_surface"
+    },
+    {
+      "id": "Q1104",
+      "input": "Interstitial plan using Syed-Neblett template for 58-year-old woman with 2.5 cm recurrent cervical cancer in fibrotic vaginal vault after prior hysterectomy and EBRT 50 Gy. Address fibrosis impact on needle placement.",
+      "expected_keywords": [
+        "fibrotic_vaginal_interstitial",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: fibrotic_vaginal_interstitial"
+    },
+    {
+      "id": "Q1105",
+      "input": "Interstitial brachytherapy for 40-year-old male with 2.5 cm T2N0M0 penile cancer on dorsal glans with coronal sulcus involvement. Custom template, dose 60-65 Gy in BID fractions, urethra sparing, and functional outcomes.",
+      "expected_keywords": [
+        "penile_interstitial_plan",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: penile_interstitial_plan"
+    },
+    {
+      "id": "Q1106",
+      "input": "CT-guided interstitial plan for 62-year-old woman with 4.5 cm recurrent endometrial stromal sarcoma at left pelvic sidewall after prior pelvic RT 50.4 Gy. Needle configuration, re-irradiation dose, and ureter management.",
+      "expected_keywords": [
+        "pelvic_sidewall_interstitial",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: pelvic_sidewall_interstitial"
+    },
+    {
+      "id": "Q1107",
+      "input": "Tandem and ovoid plan for 45-year-old woman with cervical cancer where posterior tumor edge is 3 mm from rectal mucosa. Dwell time strategies, applicator positioning, gradient optimization, and rectal dose constraints.",
+      "expected_keywords": [
+        "posterior_tumor_rectal_proximity",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: posterior_tumor_rectal_proximity"
+    },
+    {
+      "id": "Q1108",
+      "input": "Salvage HDR for 68-year-old man with recurrent Gleason 4+5=9 prostate cancer post-prostatectomy and EBRT 66 Gy. PSMA PET shows prostate bed + SV bed recurrence. Interstitial needles, re-irradiation dose, and cumulative EQD2.",
+      "expected_keywords": [
+        "salvage_HDR_prostate_SV",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: salvage_HDR_prostate_SV"
+    },
+    {
+      "id": "Q1109",
+      "input": "Definitive interstitial plan for 50-year-old woman with 2.8 cm Stage I vaginal cancer on right lateral wall. Syed-Neblett vs freestyle, target delineation, 65-75 Gy EQD2 in BID fractions, and outcomes data.",
+      "expected_keywords": [
+        "definitive_vaginal_interstitial",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: definitive_vaginal_interstitial"
+    },
+    {
+      "id": "Q1110",
+      "input": "IORT plan for 43-year-old woman with recurrent IIIB cervical cancer (3.5 cm central pelvic + left parametrial) after definitive chemoradiation. Pelvic exenteration with IORT applicator, dose, and post-operative management.",
+      "expected_keywords": [
+        "IORT_pelvic_exenteration",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: IORT_pelvic_exenteration"
+    },
+    {
+      "id": "Q1111",
+      "input": "Repeat VBT plan for 55-year-old woman with 1.8 cm recurrent Grade 1 endometrial cancer at vaginal apex after prior VBT 21 Gy in 3 fractions 4 years ago. Cumulative EQD2, modified dose, and enhanced surveillance.",
+      "expected_keywords": [
+        "repeat_VBT",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: repeat_VBT"
+    },
+    {
+      "id": "Q1112",
+      "input": "Interstitial brachytherapy for 30-year-old male with 2.0 cm low-grade mucoepidermoid carcinoma of hard palate (T1N0M0). Palatal implant design, dose 65-70 Gy EQD2 in BID fractions, and functional outcomes.",
+      "expected_keywords": [
+        "palatal_interstitial",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: palatal_interstitial"
+    },
+    {
+      "id": "Q1113",
+      "input": "Interstitial plan using Syed-Neblett template for 72-year-old woman with 3.2 cm recurrent cervical cancer (post-radical hysterectomy and EBRT 50 Gy 5 years ago). Parametrial disease, cumulative EQD2, and prior surgery impact.",
+      "expected_keywords": [
+        "post_surgical_interstitial",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: post_surgical_interstitial"
+    },
+    {
+      "id": "Q1114",
+      "input": "Salvage interstitial plan for 55-year-old man with 1.5 cm recurrent anal canal cancer (T1N0M0) after prior chemoradiation 54 Gy. Local excision with positive margins, re-irradiation dose, and sphincter preservation.",
+      "expected_keywords": [
+        "anal_salvage_interstitial",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: anal_salvage_interstitial"
+    },
+    {
+      "id": "Q1115",
+      "input": "Endoluminal brachytherapy boost for 60-year-old man with T2N0M0 upper esophageal cancer (25 cm from incisors) after EBRT 50 Gy + carbo/paclitaxel. Applicator, dose, OAR constraints (trachea, aorta), and endoscopic follow-up.",
+      "expected_keywords": [
+        "esophageal_endoluminal_boost",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: esophageal_endoluminal_boost"
+    },
+    {
+      "id": "Q1116",
+      "input": "Simultaneous integrated boost concept for 45-year-old woman with IB2 cervical cancer. Tandem/ovoid, SIB rationale (GTV higher dose), dose prescription for GTV vs CTV-HR, optimization strategy, and EMBRACE evidence.",
+      "expected_keywords": [
+        "SIB_brachytherapy",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: SIB_brachytherapy"
+    },
+    {
+      "id": "Q1117",
+      "input": "Interstitial plan for 68-year-old woman with recurrent vulvar melanoma (2.0 cm at vulvar scar) after radical vulvectomy. Custom implant, melanoma dose/BID fractionation, urethra/clitoris preservation, and wound management.",
+      "expected_keywords": [
+        "vulvar_melanoma_interstitial",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: vulvar_melanoma_interstitial"
+    },
+    {
+      "id": "Q1118",
+      "input": "Adjuvant interstitial plan for 55-year-old man with 2.5 cm recurrent hypopharyngeal cancer (partial pharyngectomy, positive margins) after prior IMRT 70 Gy. Re-irradiation dose, carotid constraint, and swallowing rehabilitation.",
+      "expected_keywords": [
+        "hypopharynx_adjuvant",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: hypopharynx_adjuvant"
+    },
+    {
+      "id": "Q1119",
+      "input": "Management of tandem deviation to right due to pelvic mass for 45-year-old woman with IIA2 cervical cancer. Left parametrial disease not covered. Repositioning strategies, interstitial needle addition, and decision criteria.",
+      "expected_keywords": [
+        "applicator_deviation",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: applicator_deviation"
+    },
+    {
+      "id": "Q1120",
+      "input": "Permanent seed implant for 58-year-old with intermediate-risk prostate cancer (48 cc, asymmetric right lobe 20% larger, 0.8 cm calcification). Asymmetric seed loading, calcification impact on dose calculation, and QA.",
+      "expected_keywords": [
+        "prostate_asymmetric_calcification",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: prostate_asymmetric_calcification"
+    },
+    {
+      "id": "Q1121",
+      "input": "IORT plan for 60-year-old woman with 4.0 cm recurrent IIIB cervical cancer (right parametrium + pelvic sidewall) after failed definitive chemoradiation. Pelvic exenteration, electron applicator vs HDR interstitial, dose, and advantages over EBRT re-irradiation.",
+      "expected_keywords": [
+        "IORT_extended",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: IORT_extended"
+    },
+    {
+      "id": "Q1122",
+      "input": "Syed-Neblett template plan for 40-year-old woman with 2.8 cm vaginal apex + left lateral wall recurrence (prior hysterectomy + VBT 25 Gy in 5 fractions 3 years ago). Re-irradiation dose and cumulative EQD2 for vaginal mucosa.",
+      "expected_keywords": [
+        "interstitial_lateral_wall",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: interstitial_lateral_wall"
+    },
+    {
+      "id": "Q1123",
+      "input": "Custom template interstitial plan for 65-year-old man with 3.0 cm recurrent anal canal cancer after prior chemoradiation 54 Gy. Template design, re-irradiation dose, sphincter constraint, and published outcomes data.",
+      "expected_keywords": [
+        "anal_salvage_custom_template",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: anal_salvage_custom_template"
+    },
+    {
+      "id": "Q1124",
+      "input": "Conservative tandem/ovoid plan for 35-year-old woman with 1.5 cm recurrent cervical cancer after radical trachelectomy. Fertility preservation, conservative dose, ovarian sparing, and pregnancy monitoring plan.",
+      "expected_keywords": [
+        "trachelectomy_fertility",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: trachelectomy_fertility"
+    },
+    {
+      "id": "Q1125",
+      "input": "HDR boost for 70-year-old with Gleason 4+5=9 prostate cancer (70 cc, T3a, PSA 18.5). 15-20 needles covering prostate + SV bases, 26 Gy in 2 fractions, urethral sparing, and rationale for EBRT + HDR boost.",
+      "expected_keywords": [
+        "HDR_boost_high_risk_prostate",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: HDR_boost_high_risk_prostate"
+    },
+    {
+      "id": "Q1126",
+      "input": "Freehand interstitial plan for 48-year-old woman with 2.0 cm recurrent vaginal melanoma (post-hysterectomy, prior VBT). Needle arrangement, re-irradiation dose, freehand placement technique, and QA verification.",
+      "expected_keywords": [
+        "freehand_vaginal_melanoma",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: freehand_vaginal_melanoma"
+    },
+    {
+      "id": "Q1127",
+      "input": "MRI-guided interstitial plan for 55-year-old woman with 3.0 cm recurrent IIIB cervical cancer in left parametrium to pelvic sidewall after definitive chemoradiation. MRI protocol for needle visualization, configuration, and cumulative EQD2.",
+      "expected_keywords": [
+        "MRI_guided_interstitial",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: MRI_guided_interstitial"
+    },
+    {
+      "id": "Q1128",
+      "input": "Interstitial plan for 62-year-old man with 2.5 cm recurrent floor of mouth cancer after partial glossectomy + post-operative IMRT 60 Gy. Re-irradiation dose, mandible constraint, and swallowing rehabilitation.",
+      "expected_keywords": [
+        "floor_mouth_salvage_interstitial",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: floor_mouth_salvage_interstitial"
+    },
+    {
+      "id": "Q1129",
+      "input": "Freestyle interstitial plan for 70-year-old woman with 1.8 cm recurrent Grade 3 serous endometrial cancer at vaginal apex after prior EBRT 45 Gy. Obesity (BMI 38), diabetes, freestyle needle placement, and cumulative EQD2.",
+      "expected_keywords": [
+        "freestyle_endometrial_recurrent",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: freestyle_endometrial_recurrent"
+    },
+    {
+      "id": "Q1130",
+      "input": "Dose painting concept for 45-year-old woman with IIB cervical cancer. Tandem/ovoid, GTV vs CTV-HR differential dose, optimization strategy, OAR constraints, and EMBRACE dose-escalation evidence.",
+      "expected_keywords": [
+        "dose_painting",
+        "treatment_planning",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Advanced planning: dose_painting"
+    }
+  ]
+}

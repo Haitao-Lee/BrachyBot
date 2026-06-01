@@ -1,0 +1,396 @@
+{
+  "category": "oar_segmentation",
+  "description": "Organs At Risk segmentation requests",
+  "requires_ct": true,
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "Q0126",
+      "input": "Please segment the organs at risk for a prostate brachytherapy case. The CT scan shows the pelvis with the prostate, bladder, rectum, and femoral heads clearly visible. Segment the bladder, rectum from the rectosigmoid junction to the anal verge, bilateral femoral heads, and the penile bulb.",
+      "expected_keywords": [
+        "bladder",
+        "rectum",
+        "femoral",
+        "heads",
+        "penile",
+        "bulb",
+        "pelvic"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: bladder rectum femoral heads penile bulb pelvic"
+    },
+    {
+      "id": "Q0127",
+      "input": "For this cervical cancer brachytherapy case, please segment the critical OARs including the bladder (entire organ), rectum from peritoneal reflection to anal verge, sigmoid colon, and small bowel loops in the pelvis. The tandem and ovoids applicator is in place.",
+      "expected_keywords": [
+        "bladder",
+        "rectum",
+        "sigmoid",
+        "small",
+        "bowel",
+        "cervical",
+        "applicator"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: bladder rectum sigmoid small bowel cervical applicator"
+    },
+    {
+      "id": "Q0128",
+      "input": "Please segment the OARs for a head and neck interstitial brachytherapy case. The patient has a floor of mouth tumor. Segment the mandible, bilateral parotid glands, spinal cord, brainstem, and the contralateral submandibular gland.",
+      "expected_keywords": [
+        "mandible",
+        "parotid",
+        "spinal",
+        "cord",
+        "brainstem",
+        "submandibular",
+        "head",
+        "neck"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: mandible parotid spinal cord brainstem submandibular head neck"
+    },
+    {
+      "id": "Q0129",
+      "input": "I need OAR segmentation for a breast APBI case using MammoSite. The CT shows the left breast with the lumpectomy cavity. Please segment the heart, bilateral lungs, contralateral breast, skin surface, and ribs on the treated side.",
+      "expected_keywords": [
+        "heart",
+        "lung",
+        "contralateral",
+        "breast",
+        "skin",
+        "ribs",
+        "breast",
+        "APBI"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: heart lung contralateral breast skin ribs breast APBI"
+    },
+    {
+      "id": "Q0130",
+      "input": "For this rectal cancer brachytherapy boost case, please segment the OARs. The tumor is at 5cm from the anal verge. Segment the bladder, reproductive organs (prostate in this male patient), bilateral femoral heads, and the small bowel loops within the pelvis.",
+      "expected_keywords": [
+        "bladder",
+        "prostate",
+        "femoral",
+        "heads",
+        "small",
+        "bowel",
+        "rectal",
+        "boost"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: bladder prostate femoral heads small bowel rectal boost"
+    },
+    {
+      "id": "Q0131",
+      "input": "Please segment the OARs for a patient receiving endoluminal brachytherapy for esophageal cancer. The CT covers the thorax. Segment the spinal cord, lungs, heart, trachea, and left main bronchus. Pay attention to the proximity of the tumor to these structures.",
+      "expected_keywords": [
+        "spinal",
+        "cord",
+        "lungs",
+        "heart",
+        "trachea",
+        "bronchus",
+        "esophageal"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: spinal cord lungs heart trachea bronchus esophageal"
+    },
+    {
+      "id": "Q0132",
+      "input": "For a penile cancer interstitial brachytherapy case, please segment the OARs. The tumor is on the glans. Segment the urethra along its entire penile and bulbar course, the testes, and the anal sphincter complex. These structures must be carefully spared.",
+      "expected_keywords": [
+        "urethra",
+        "testes",
+        "anal",
+        "sphincter",
+        "penile",
+        "interstitial"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: urethra testes anal sphincter penile interstitial"
+    },
+    {
+      "id": "Q0133",
+      "input": "Please segment the OARs for a gallbladder interstitial brachytherapy case. The CT shows the upper abdomen. Segment the liver (uninvolved portion), duodenum, stomach, right kidney, and the spinal cord. The tumor is adjacent to the hepatic hilum.",
+      "expected_keywords": [
+        "liver",
+        "duodenum",
+        "stomach",
+        "kidney",
+        "spinal",
+        "cord",
+        "gallbladder"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: liver duodenum stomach kidney spinal cord gallbladder"
+    },
+    {
+      "id": "Q0134",
+      "input": "For this anal cancer case receiving brachytherapy boost, please segment the OARs including the bladder, femoral heads, external anal sphincter, internal anal sphincter, and the vulva/perineal skin. The tumor is at the dentate line.",
+      "expected_keywords": [
+        "bladder",
+        "femoral",
+        "heads",
+        "anal",
+        "sphincter",
+        "perineal",
+        "skin",
+        "anal",
+        "cancer"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: bladder femoral heads anal sphincter perineal skin anal cancer"
+    },
+    {
+      "id": "Q0135",
+      "input": "I need OAR segmentation for a nasopharyngeal carcinoma intracavitary brachytherapy case. Please segment the brainstem, spinal cord, bilateral temporal lobes, bilateral parotid glands, optic nerves, and the pituitary gland.",
+      "expected_keywords": [
+        "brainstem",
+        "spinal",
+        "cord",
+        "temporal",
+        "lobes",
+        "parotid",
+        "optic",
+        "nerve",
+        "nasopharyngeal"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: brainstem spinal cord temporal lobes parotid optic nerve nasopharyngeal"
+    },
+    {
+      "id": "Q0136",
+      "input": "Please segment the OARs for a vaginal cancer brachytherapy case. The tumor is in the upper vagina. Segment the bladder, rectum, sigmoid colon, and bilateral ureters from the renal pelvis to the bladder insertion.",
+      "expected_keywords": [
+        "bladder",
+        "rectum",
+        "sigmoid",
+        "ureters",
+        "vaginal"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: bladder rectum sigmoid ureters vaginal"
+    },
+    {
+      "id": "Q0137",
+      "input": "For a skin cancer on the nose receiving surface brachytherapy, please segment the critical structures. The lesion is on the nasal dorsum. Segment the eyeballs (bilateral), optic nerves, lens (bilateral), and the nasal cartilage framework.",
+      "expected_keywords": [
+        "eyeball",
+        "optic",
+        "nerve",
+        "lens",
+        "nasal",
+        "cartilage",
+        "skin",
+        "surface"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: eyeball optic nerve lens nasal cartilage skin surface"
+    },
+    {
+      "id": "Q0138",
+      "input": "Please segment the OARs for a liver metastases interstitial brachytherapy case. The CT shows two lesions in the right hepatic lobe. Segment the remaining liver parenchyma, hepatic vasculature (portal vein, hepatic veins, IVC), and both kidneys.",
+      "expected_keywords": [
+        "liver",
+        "portal",
+        "vein",
+        "hepatic",
+        "veins",
+        "IVC",
+        "kidneys",
+        "interstitial"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: liver portal vein hepatic veins IVC kidneys interstitial"
+    },
+    {
+      "id": "Q0139",
+      "input": "For a pediatric bladder rhabdomyosarcoma case, please segment the OARs in the small pelvis. The patient is 5 years old. Segment the bladder (if preserved), rectum, bilateral hip joints, and the growth plates of the proximal femurs.",
+      "expected_keywords": [
+        "bladder",
+        "rectum",
+        "hip",
+        "joints",
+        "growth",
+        "plates",
+        "pediatric"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: bladder rectum hip joints growth plates pediatric"
+    },
+    {
+      "id": "Q0140",
+      "input": "Please segment the OARs for a patient with biliary tract cancer receiving interstitial brachytherapy. The tumor is at the pancreatic head. Segment the duodenum (C-loop), stomach, right kidney, spinal cord, and the portal vein.",
+      "expected_keywords": [
+        "duodenum",
+        "stomach",
+        "kidney",
+        "spinal",
+        "cord",
+        "portal",
+        "vein",
+        "biliary"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: duodenum stomach kidney spinal cord portal vein biliary"
+    },
+    {
+      "id": "Q0141",
+      "input": "For a vulvar cancer interstitial brachytherapy case, please segment the OARs. The tumor is on the left labium majus. Segment the urethra, vaginal canal, rectum, anus, and bilateral inguinal regions to define dose limits for lymph node sparing.",
+      "expected_keywords": [
+        "urethra",
+        "vaginal",
+        "canal",
+        "rectum",
+        "anus",
+        "inguinal",
+        "vulvar"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: urethra vaginal canal rectum anus inguinal vulvar"
+    },
+    {
+      "id": "Q0142",
+      "input": "Please segment the OARs for a urethral cancer case receiving HDR interstitial brachytherapy. The tumor involves the bulbar urethra. Segment the bladder, rectum, anal sphincter, and the penile shaft distal to the tumor for dose assessment.",
+      "expected_keywords": [
+        "bladder",
+        "rectum",
+        "anal",
+        "sphincter",
+        "penile",
+        "shaft",
+        "urethral"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: bladder rectum anal sphincter penile shaft urethral"
+    },
+    {
+      "id": "Q0143",
+      "input": "For an endometrial cancer case receiving vaginal cuff brachytherapy, please segment the OARs. The patient is post-hysterectomy. Segment the bladder, rectum, sigmoid colon, and the small bowel loops adjacent to the vaginal cuff.",
+      "expected_keywords": [
+        "bladder",
+        "rectum",
+        "sigmoid",
+        "small",
+        "bowel",
+        "vaginal",
+        "cuff",
+        "endometrial"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: bladder rectum sigmoid small bowel vaginal cuff endometrial"
+    },
+    {
+      "id": "Q0144",
+      "input": "Please segment the OARs for a patient with head and neck cancer receiving interstitial brachytherapy of the buccal mucosa. The tumor is in the right cheek. Segment the parotid glands (bilateral), mandible, spinal cord, and the muscles of mastication on the left side.",
+      "expected_keywords": [
+        "parotid",
+        "mandible",
+        "spinal",
+        "cord",
+        "mastication",
+        "buccal",
+        "head",
+        "neck"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: parotid mandible spinal cord mastication buccal head neck"
+    },
+    {
+      "id": "Q0145",
+      "input": "For a prostate brachytherapy case with a hip replacement artifact, please segment the OARs while accounting for the metal artifact. The left hip has a total hip replacement causing significant streak artifact. Segment the bladder, rectum, and note how the artifact may affect dose calculation.",
+      "expected_keywords": [
+        "bladder",
+        "rectum",
+        "hip",
+        "replacement",
+        "artifact",
+        "metal",
+        "dose",
+        "calculation"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: bladder rectum hip replacement artifact metal dose calculation"
+    },
+    {
+      "id": "Q0146",
+      "input": "Please segment the OARs for a case of anal canal cancer receiving concurrent chemoradiation with brachytherapy boost. The patient has a colostomy. The tumor is at 2cm from the anal verge. Segment the bladder, reproductive organs, and the colostomy stoma for dose assessment.",
+      "expected_keywords": [
+        "bladder",
+        "reproductive",
+        "organs",
+        "colostomy",
+        "anal",
+        "canal",
+        "boost"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: bladder reproductive organs colostomy anal canal boost"
+    },
+    {
+      "id": "Q0147",
+      "input": "For a cervical cancer brachytherapy case, please segment the pelvic bones for dose evaluation. The patient has a tandem and ring applicator. Segment the sacrum, bilateral iliac bones, bilateral ischium, and bilateral acetabula to evaluate bone dose.",
+      "expected_keywords": [
+        "sacrum",
+        "iliac",
+        "ischium",
+        "acetabulum",
+        "pelvic",
+        "bones",
+        "cervical"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: sacrum iliac ischium acetabulum pelvic bones cervical"
+    },
+    {
+      "id": "Q0148",
+      "input": "Please segment the OARs for a patient with an ocular melanoma receiving plaque brachytherapy. The CT shows the orbit with the globe. Segment the optic nerve, lens, lacrimal gland, and the contralateral eye for dose comparison.",
+      "expected_keywords": [
+        "optic",
+        "nerve",
+        "lens",
+        "lacrimal",
+        "gland",
+        "contralateral",
+        "eye",
+        "ocular"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: optic nerve lens lacrimal gland contralateral eye ocular"
+    },
+    {
+      "id": "Q0149",
+      "input": "For a head and neck cancer interstitial brachytherapy case, please segment the major blood vessels. The tumor is at the base of tongue. Segment the internal carotid arteries (bilateral), external carotid arteries, and the jugular veins to ensure safe dose delivery.",
+      "expected_keywords": [
+        "carotid",
+        "artery",
+        "jugular",
+        "vein",
+        "base",
+        "tongue",
+        "head",
+        "neck",
+        "vascular"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: carotid artery jugular vein base tongue head neck vascular"
+    },
+    {
+      "id": "Q0150",
+      "input": "Please segment the OARs for a patient with a large prostate (80cc) for LDR brachytherapy planning. The CT shows significant prostatic calcifications. Segment the bladder, rectum, urethra (identified by Foley catheter), and bilateral obturator internus muscles.",
+      "expected_keywords": [
+        "bladder",
+        "rectum",
+        "urethra",
+        "obturator",
+        "prostate",
+        "large",
+        "calcification"
+      ],
+      "difficulty": "hard",
+      "description": "OAR segmentation test: bladder rectum urethra obturator prostate large calcification"
+    }
+  ]
+}

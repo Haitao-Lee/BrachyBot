@@ -1,0 +1,2228 @@
+{
+  "category": "dose_evaluation",
+  "description": "Dose metrics, DVH analysis, plan quality",
+  "requires_ct": false,
+  "cases": [
+    {
+      "id": "Q0201",
+      "input": "Please evaluate the dose distribution for a completed prostate LDR brachytherapy plan. The DVH shows D90 = 148 Gy, V100 = 94%, V150 = 52%, V200 = 18%. The rectal D1cc is 125 Gy and the urethral Dmax is 168 Gy. Evaluate these parameters against the ABS quality guidelines and provide a comprehensive assessment.",
+      "expected_keywords": [
+        "DVH",
+        "D90",
+        "V100",
+        "V150",
+        "rectal",
+        "D1cc",
+        "urethral",
+        "Dmax",
+        "ABS",
+        "guidelines"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: DVH D90 V100 V150 rectal D1cc urethral Dmax ABS guidelines"
+    },
+    {
+      "id": "Q0202",
+      "input": "I have a post-implant CT scan for a prostate I-125 seed implant. The dosimetric evaluation shows D90 = 135 Gy, V100 = 88%, V150 = 65%, and VC150 = 45%. The prostate volume edema was 30% on day 1 and has resolved to baseline by day 30. Evaluate whether the plan meets quality benchmarks and discuss the impact of edema resolution on the final dosimetry.",
+      "expected_keywords": [
+        "post-implant",
+        "D90",
+        "V100",
+        "edema",
+        "resolution",
+        "quality",
+        "benchmark"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: post-implant D90 V100 edema resolution quality benchmark"
+    },
+    {
+      "id": "Q0203",
+      "input": "Please evaluate this HDR cervical cancer brachytherapy plan. The HR-CTV D90 is 85 Gy EQD2, the bladder D2cc is 78 Gy EQD2, the rectum D2cc is 68 Gy EQD2, and the sigmoid D2cc is 62 Gy EQD2. The patient has received 45Gy EBRT plus 4 fractions of 7Gy HDR. Assess the plan quality according to GEC-ESTRO and EMBRACE criteria.",
+      "expected_keywords": [
+        "cervical",
+        "HR-CTV",
+        "D90",
+        "EMBRACE",
+        "GEC-ESTRO",
+        "OAR",
+        "D2cc",
+        "EQD2"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: cervical HR-CTV D90 EMBRACE GEC-ESTRO OAR D2cc EQD2"
+    },
+    {
+      "id": "Q0204",
+      "input": "I need to evaluate the dose to the femoral heads for a prostate brachytherapy case. The right femoral head Dmax is 82 Gy and the left femoral head Dmax is 95 Gy. The patient had a prior hip replacement on the left. Evaluate the clinical significance of these doses and recommend whether any corrective action is needed.",
+      "expected_keywords": [
+        "femoral",
+        "head",
+        "dose",
+        "prostate",
+        "asymmetric",
+        "hip",
+        "replacement"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: femoral head dose prostate asymmetric hip replacement"
+    },
+    {
+      "id": "Q0205",
+      "input": "Please evaluate the DVH parameters for a breast APBI case using MammoSite. The PTV D90 is 33.2 Gy, V90 is 92%, and the skin Dmax is 34.8 Gy. The chest wall dose is minimal. Evaluate whether these parameters meet the ABS and ASTRO consensus guidelines for APBI and identify any concerns.",
+      "expected_keywords": [
+        "breast",
+        "APBI",
+        "PTV",
+        "D90",
+        "V90",
+        "skin",
+        "Dmax",
+        "ABS",
+        "ASTRO",
+        "MammoSite"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: breast APBI PTV D90 V90 skin Dmax ABS ASTRO MammoSite"
+    },
+    {
+      "id": "Q0206",
+      "input": "I have a post-implant dosimetry report for a Pd-103 prostate implant. The D90 is 98 Gy, V100 is 92%, and V150 is 55%. The prostate volume was 45cc and 85 seeds were implanted. Evaluate the implant quality and compare the results with published benchmarks for Pd-103 implants.",
+      "expected_keywords": [
+        "Pd-103",
+        "prostate",
+        "D90",
+        "V100",
+        "V150",
+        "implant",
+        "quality",
+        "benchmark"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: Pd-103 prostate D90 V100 V150 implant quality benchmark"
+    },
+    {
+      "id": "Q0207",
+      "input": "Please evaluate the dose distribution for an endometrial cancer vaginal cuff brachytherapy plan. The prescription is 3 Gy x 5 fractions to 0.5cm depth. The vaginal mucosal Dmax is 158% of the prescription dose. The bladder D2cc is 4.2 Gy per fraction and the rectum D2cc is 3.8 Gy per fraction. Assess the plan quality and discuss the significance of the vaginal mucosal hotspot.",
+      "expected_keywords": [
+        "vaginal",
+        "cuff",
+        "mucosal",
+        "hotspot",
+        "bladder",
+        "rectum",
+        "D2cc",
+        "fraction",
+        "dose"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: vaginal cuff mucosal hotspot bladder rectum D2cc fraction dose"
+    },
+    {
+      "id": "Q0208",
+      "input": "For a rectal cancer interstitial brachytherapy boost case, evaluate the plan quality. The GTV D90 is 18.5 Gy in 3 fractions (total boost 18.5 Gy after 45Gy EBRT). The rectal D2cc is 5.5 Gy per fraction and the prostate Dmax is 4.8 Gy per fraction. Calculate the total EQD2 to the GTV and evaluate the OAR constraints.",
+      "expected_keywords": [
+        "rectal",
+        "boost",
+        "GTV",
+        "D90",
+        "EQD2",
+        "combined",
+        "EBRT",
+        "OAR",
+        "constraint",
+        "calculation"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: rectal boost GTV D90 EQD2 combined EBRT OAR constraint calculation"
+    },
+    {
+      "id": "Q0209",
+      "input": "Please evaluate the dose coverage for a head and neck interstitial brachytherapy case. The treatment volume is 12cc. The D90 is 5.8 Gy per fraction in 3 fractions. The D100 is 4.2 Gy per fraction. The mandible D2cc is 6.2 Gy per fraction. Evaluate the plan quality per Paris system criteria and discuss the clinical implications of the mandible dose.",
+      "expected_keywords": [
+        "head",
+        "neck",
+        "interstitial",
+        "Paris",
+        "D90",
+        "D100",
+        "mandible",
+        "D2cc"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: head neck interstitial Paris D90 D100 mandible D2cc"
+    },
+    {
+      "id": "Q0210",
+      "input": "I have a completed prostate brachytherapy plan that was evaluated on both CT and MRI. The CT-based D90 is 142 Gy and the MRI-based D90 is 148 Gy. The V100 on CT is 93% and on MRI is 95%. Evaluate the discrepancy between CT and MRI-based dosimetry and discuss which modality provides more reliable dose assessment for prostate brachytherapy.",
+      "expected_keywords": [
+        "CT",
+        "MRI",
+        "prostate",
+        "dosimetry",
+        "D90",
+        "V100",
+        "discrepancy",
+        "reliability",
+        "comparison"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: CT MRI prostate dosimetry D90 V100 discrepancy reliability comparison"
+    },
+    {
+      "id": "Q0211",
+      "input": "Please evaluate the dosimetric quality of a vaginal cancer interstitial brachytherapy plan. The HR-CTV D90 is 72 Gy EQD2. The bladder D2cc is 74 Gy EQD2, rectum D2cc is 68 Gy EQD2, and the sigmoid D2cc is 65 Gy EQD2. The patient received 45Gy EBRT prior to brachytherapy. Evaluate whether the plan meets GEC-ESTRO recommendations and if any OAR constraint is violated.",
+      "expected_keywords": [
+        "vaginal",
+        "interstitial",
+        "HR-CTV",
+        "D90",
+        "GEC-ESTRO",
+        "OAR",
+        "D2cc",
+        "constraint",
+        "violation"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: vaginal interstitial HR-CTV D90 GEC-ESTRO OAR D2cc constraint violation"
+    },
+    {
+      "id": "Q0212",
+      "input": "For a penile cancer interstitial brachytherapy plan, evaluate the following: GTV D90 is 5.6 Gy per fraction in 3 fractions, the urethral Dmax is 5.8 Gy per fraction, and the penile shaft Dmax is 6.2 Gy per fraction. The GTV is 8cc. Evaluate the plan quality and discuss the clinical implications of urethral and penile shaft dose.",
+      "expected_keywords": [
+        "penile",
+        "GTV",
+        "D90",
+        "urethral",
+        "Dmax",
+        "penile",
+        "shaft",
+        "dose",
+        "fraction"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: penile GTV D90 urethral Dmax penile shaft dose fraction"
+    },
+    {
+      "id": "Q0213",
+      "input": "Please evaluate the dose distribution for a case of anal cancer brachytherapy boost. The GTV D90 is 15.5 Gy in 3 fractions. The anal sphincter Dmax is 16.8 Gy. The bladder D2cc is 8.2 Gy and the vaginal D2cc is 9.5 Gy (female patient). Calculate the total EQD2 for the GTV and all OARs, and assess plan quality.",
+      "expected_keywords": [
+        "anal",
+        "boost",
+        "GTV",
+        "D90",
+        "EQD2",
+        "anal",
+        "sphincter",
+        "bladder",
+        "vaginal",
+        "total",
+        "dose"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: anal boost GTV D90 EQD2 anal sphincter bladder vaginal total dose"
+    },
+    {
+      "id": "Q0214",
+      "input": "I need to evaluate the isodose distribution for a prostate preplan. The 145 Gy isodose line covers 95% of the prostate, but there is a cold spot of 120 Gy in the left base region. The 200 Gy hot spot volume is 18% of the prostate. Evaluate the clinical significance of the cold spot and hot spot and recommend modifications.",
+      "expected_keywords": [
+        "prostate",
+        "preplan",
+        "isodose",
+        "cold",
+        "spot",
+        "hot",
+        "spot",
+        "145",
+        "Gy",
+        "200",
+        "Gy",
+        "modification"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: prostate preplan isodose cold spot hot spot 145 Gy 200 Gy modification"
+    },
+    {
+      "id": "Q0215",
+      "input": "For a nasopharyngeal intracavitary brachytherapy case, evaluate the plan. The nasopharyngeal mucosal D90 is 18 Gy in 3 fractions after 66Gy EBRT. The brainstem D2cc is 58 Gy EQD2. The right temporal lobe D2cc is 52 Gy EQD2. The optic chiasm Dmax is 54 Gy EQD2. Evaluate plan quality and identify any OAR constraints at risk.",
+      "expected_keywords": [
+        "nasopharyngeal",
+        "brainstem",
+        "temporal",
+        "lobe",
+        "optic",
+        "chiasm",
+        "D2cc",
+        "EQD2",
+        "tolerance"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: nasopharyngeal brainstem temporal lobe optic chiasm D2cc EQD2 tolerance"
+    },
+    {
+      "id": "Q0216",
+      "input": "Please evaluate the cumulative DVH for a patient who received prior pelvic EBRT (45Gy) and is now receiving HDR brachytherapy for a cervical cancer recurrence. The total cumulative doses are: bladder D2cc = 82 Gy EQD2, rectum D2cc = 75 Gy EQD2, sigmoid D2cc = 71 Gy EQD2. Assess whether these cumulative doses are within acceptable tolerance limits for re-irradiation.",
+      "expected_keywords": [
+        "cumulative",
+        "EQD2",
+        "cervical",
+        "re-irradiation",
+        "bladder",
+        "rectum",
+        "sigmoid",
+        "tolerance"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: cumulative EQD2 cervical re-irradiation bladder rectum sigmoid tolerance"
+    },
+    {
+      "id": "Q0217",
+      "input": "I have a prostate brachytherapy post-implant scan with the following results: D90 = 138 Gy, V100 = 91%, V150 = 60%, urethral Dmax = 172 Gy (119% of Rx), rectal D1cc = 132 Gy. The patient reports significant urinary symptoms (IPSS score 24). Evaluate the dosimetric parameters in the context of the patient's symptoms and recommend clinical management.",
+      "expected_keywords": [
+        "post-implant",
+        "D90",
+        "V100",
+        "urethral",
+        "Dmax",
+        "IPSS",
+        "urinary",
+        "symptoms",
+        "correlation"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: post-implant D90 V100 urethral Dmax IPSS urinary symptoms correlation"
+    },
+    {
+      "id": "Q0218",
+      "input": "For a vaginal cuff brachytherapy plan using a tandem applicator for a patient with vaginal melanoma, evaluate the dose distribution. The prescription is 3.5 Gy x 10 fractions. The vaginal mucosal Dmax is 5.2 Gy per fraction. The bladder D2cc is 3.0 Gy per fraction and rectum D2cc is 2.8 Gy per fraction. Assess plan quality for this radiosensitive tumor.",
+      "expected_keywords": [
+        "vaginal",
+        "melanoma",
+        "mucosal",
+        "hotspot",
+        "OAR",
+        "D2cc",
+        "fraction",
+        "radiosensitive"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: vaginal melanoma mucosal hotspot OAR D2cc fraction radiosensitive"
+    },
+    {
+      "id": "Q0219",
+      "input": "Please evaluate the dose coverage for a liver interstitial brachytherapy case. The GTV D90 is 18 Gy in 2 fractions. The liver V15 is 28%, and the liver mean dose is 12 Gy. The right kidney Dmax is 8 Gy. The duodenal D2cc is 7.5 Gy. Evaluate plan quality and assess the risk of radiation-induced liver disease (RILD).",
+      "expected_keywords": [
+        "liver",
+        "GTV",
+        "D90",
+        "RILD",
+        "risk",
+        "liver",
+        "V15",
+        "mean",
+        "dose",
+        "duodenal",
+        "kidney"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: liver GTV D90 RILD risk liver V15 mean dose duodenal kidney"
+    },
+    {
+      "id": "Q0220",
+      "input": "For a completed prostate brachytherapy plan, evaluate the intraoperative dosimetry versus the post-implant day 30 dosimetry. Intraoperative: D90 = 148 Gy, V100 = 96%. Day 30 post-implant: D90 = 139 Gy, V100 = 92%. The prostate volume decreased by 15% due to edema resolution. Explain the dosimetric changes and assess whether they are within expected parameters.",
+      "expected_keywords": [
+        "intraoperative",
+        "day",
+        "30",
+        "post-implant",
+        "edema",
+        "resolution",
+        "D90",
+        "V100",
+        "change"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: intraoperative day 30 post-implant edema resolution D90 V100 change"
+    },
+    {
+      "id": "Q0221",
+      "input": "Please evaluate the OAR doses for an anal cancer brachytherapy boost plan. The cumulative doses after EBRT (45Gy) and brachytherapy boost (15Gy) are: bladder D2cc = 55 Gy EQD2, rectum D2cc = 58 Gy EQD2, small bowel D2cc = 48 Gy EQD2, femoral heads Dmax = 42 Gy EQD2. Are these cumulative doses within safe tolerance limits?",
+      "expected_keywords": [
+        "anal",
+        "cancer",
+        "cumulative",
+        "OAR",
+        "EQD2",
+        "tolerance",
+        "bladder",
+        "rectum",
+        "bowel",
+        "femoral"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: anal cancer cumulative OAR EQD2 tolerance bladder rectum bowel femoral"
+    },
+    {
+      "id": "Q0222",
+      "input": "I have a breast APBI plan using a multi-channel catheter. The DVH shows PTV D90 = 32.5 Gy, V90 = 88%, Dmax = 37.2 Gy. The skin Dmax is 36.5 Gy (7mm from applicator). The rib Dmax is 34.8 Gy. Evaluate whether this plan meets ABS criteria and identify any areas of concern for potential toxicity.",
+      "expected_keywords": [
+        "breast",
+        "multi-channel",
+        "APBI",
+        "PTV",
+        "D90",
+        "V90",
+        "skin",
+        "rib",
+        "Dmax",
+        "ABS",
+        "criteria"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: breast multi-channel APBI PTV D90 V90 skin rib Dmax ABS criteria"
+    },
+    {
+      "id": "Q0223",
+      "input": "For a head and neck cancer case, evaluate the dose to critical structures after interstitial brachytherapy boost. The cumulative EQD2 values are: spinal cord Dmax = 48 Gy, brainstem Dmax = 50 Gy, mandible D2cc = 72 Gy, bilateral parotids mean = 28 Gy (right) and 32 Gy (left). Assess these cumulative doses against published tolerance values and identify potential complications.",
+      "expected_keywords": [
+        "head",
+        "neck",
+        "cumulative",
+        "EQD2",
+        "spinal",
+        "cord",
+        "brainstem",
+        "mandible",
+        "parotid",
+        "tolerance"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: head neck cumulative EQD2 spinal cord brainstem mandible parotid tolerance"
+    },
+    {
+      "id": "Q0224",
+      "input": "Please evaluate the dose homogeneity for a prostate preplan using stranded I-125 seeds. The homogeneity index (HI) is 0.42, the conformal index (CI) is 1.8, and the D90/V100 ratio is 1.03. The prostate volume is 40cc with 100 seeds loaded. Evaluate these plan quality metrics and compare them to published standards.",
+      "expected_keywords": [
+        "prostate",
+        "homogeneity",
+        "index",
+        "conformal",
+        "index",
+        "I-125",
+        "stranded",
+        "D90",
+        "V100"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: prostate homogeneity index conformal index I-125 stranded D90 V100"
+    },
+    {
+      "id": "Q0225",
+      "input": "For a cervical cancer patient with a large HR-CTV volume (85cc) after EBRT, evaluate whether the brachytherapy plan achieves adequate coverage. The HR-CTV D90 is 78 Gy EQD2 (below the target of 87 Gy EQD2). The bladder D2cc is 82 Gy EQD2 (above the limit of 80). The rectum D2cc is 66 Gy EQD2. Evaluate the plan deficiencies and recommend strategies to improve coverage while respecting OAR constraints.",
+      "expected_keywords": [
+        "cervical",
+        "HR-CTV",
+        "D90",
+        "deficit",
+        "bladder",
+        "D2cc",
+        "violation",
+        "improvement",
+        "strategy"
+      ],
+      "difficulty": "medium",
+      "description": "Dose evaluation test: cervical HR-CTV D90 deficit bladder D2cc violation improvement strategy"
+    },
+    {
+      "id": "Q0584",
+      "input": "Evaluate the following brachytherapy dose distribution for a cervical cancer patient: The D90 to the HR-CTV is 82 Gy EQD2, the D2cc to the rectum is 68 Gy EQD2, and the D2cc to the bladder is 78 Gy EQD2. The sigmoid D2cc is 62 Gy EQD2. Are these dose parameters acceptable according to current GEC-ESTRO recommendations? Provide a detailed analysis of each parameter and the overall plan quality.",
+      "expected_keywords": [
+        "D90",
+        "HR-CTV",
+        "D2cc",
+        "rectum",
+        "bladder",
+        "sigmoid",
+        "GEC-ESTRO",
+        "EQD2"
+      ],
+      "difficulty": "advanced",
+      "description": "Dose parameter evaluation against GEC-ESTRO guidelines"
+    },
+    {
+      "id": "Q0585",
+      "input": "A prostate HDR brachytherapy plan has been generated with the following parameters: V100 of the prostate is 95%, V150 is 35%, the urethral Dmax is 115% of the prescribed dose, and the anterior rectal wall Dmax is 80% of the prescribed dose. Analyze this plan critically. What modifications would you recommend, and which dose-volume parameters are most concerning?",
+      "expected_keywords": [
+        "V100",
+        "V150",
+        "prostate",
+        "urethral Dmax",
+        "rectal Dmax",
+        "dose-volume",
+        "plan evaluation"
+      ],
+      "difficulty": "advanced",
+      "description": "Prostate HDR plan dose evaluation"
+    },
+    {
+      "id": "Q0586",
+      "input": "For a vaginal cylinder brachytherapy plan treating a vaginal cuff recurrence, the plan shows excellent coverage of the target with V100 = 98%, but the D2cc to the sigmoid is 65 Gy EQD2 and the D2cc to the bladder is 72 Gy EQD2. The patient also received 45 Gy EBRT to the pelvis. Evaluate whether these cumulative dose constraints are within acceptable limits and discuss any concerns.",
+      "expected_keywords": [
+        "V100",
+        "D2cc",
+        "sigmoid",
+        "bladder",
+        "cumulative dose",
+        "EBRT",
+        "EQD2"
+      ],
+      "difficulty": "advanced",
+      "description": "Cumulative dose constraint evaluation for vaginal brachytherapy"
+    },
+    {
+      "id": "Q0587",
+      "input": "Compare the dose evaluation methodology between ICRU 38 (point-based) and ICRU 89 (volume-based) for a cervical cancer brachytherapy plan. Using a specific clinical example, demonstrate how the same physical dose distribution can be evaluated differently under each reporting system, and explain which methodology provides more clinically relevant information.",
+      "expected_keywords": [
+        "ICRU 38",
+        "ICRU 89",
+        "point A",
+        "volume-based",
+        "dose reporting",
+        "cervical cancer"
+      ],
+      "difficulty": "advanced",
+      "description": "ICRU 38 vs ICRU 89 dose evaluation comparison"
+    },
+    {
+      "id": "Q0588",
+      "input": "A brachytherapy plan for a tongue cancer shows a D90 of 60 Gy to the PTV and D2cc of 55 Gy to the contralateral parotid gland. The patient has a history of xerostomia from prior EBRT. Evaluate the plan with respect to parotid gland tolerance, discuss the cumulative dose to the parotid from both EBRT and brachytherapy, and recommend whether the plan should be modified.",
+      "expected_keywords": [
+        "D90",
+        "parotid",
+        "xerostomia",
+        "cumulative dose",
+        "EBRT",
+        "brachytherapy",
+        "organ tolerance"
+      ],
+      "difficulty": "advanced",
+      "description": "Parotid dose evaluation in head and neck brachytherapy"
+    },
+    {
+      "id": "Q0589",
+      "input": "Explain how the concept of D0.1cc, D1cc, and D2cc differs from Dmax in evaluating organ-at-risk doses in brachytherapy. Using a rectal dose example, demonstrate why volume-based dose metrics are more clinically meaningful than point doses. How do these metrics relate to the probability of radiation proctitis?",
+      "expected_keywords": [
+        "D0.1cc",
+        "D1cc",
+        "D2cc",
+        "Dmax",
+        "rectal dose",
+        "proctitis",
+        "volume-based"
+      ],
+      "difficulty": "advanced",
+      "description": "Volume-based OAR dose metrics in brachytherapy"
+    },
+    {
+      "id": "Q0590",
+      "input": "A brachytherapy plan for a patient with recurrent anal cancer shows a highly conformal dose distribution but with a small cold spot at the posterior margin of the target volume. The cold spot represents approximately 5% of the PTV receiving less than 90% of the prescribed dose. Evaluate the clinical significance of this cold spot, discuss the potential impact on local control, and recommend whether replanning is indicated.",
+      "expected_keywords": [
+        "cold spot",
+        "conformal",
+        "PTV coverage",
+        "local control",
+        "replanning",
+        "dose coverage"
+      ],
+      "difficulty": "advanced",
+      "description": "Cold spot evaluation in brachytherapy plan"
+    },
+    {
+      "id": "Q0591",
+      "input": "For a PDR brachytherapy plan of a cervical cancer, the planned pulse schedule delivers 0.8 Gy per hour for 24 hours with a total of 19.2 Gy over the course. The tumor has an alpha-beta ratio of 10 and the rectum has an alpha-beta ratio of 3. Calculate the BED for both the tumor and rectum, and evaluate whether the therapeutic ratio is adequate. How would reducing the pulse interval affect the BED?",
+      "expected_keywords": [
+        "BED calculation",
+        "PDR",
+        "alpha-beta",
+        "pulse interval",
+        "therapeutic ratio",
+        "tumor",
+        "rectum"
+      ],
+      "difficulty": "advanced",
+      "description": "BED calculation and evaluation for PDR brachytherapy"
+    },
+    {
+      "id": "Q0592",
+      "input": "Evaluate a brachytherapy plan for a pediatric patient with a nasopharyngeal rhabdomyosarcoma. The plan delivers 36 Gy in 12 fractions to the PTV, with D2cc to the brainstem of 42 Gy EQD2 and D2cc to the temporal lobes of 48 Gy EQD2. Given that this is a pediatric patient with long life expectancy, evaluate these dose constraints in the context of late effects risk and age-dependent tissue sensitivity.",
+      "expected_keywords": [
+        "pediatric",
+        "rhabdomyosarcoma",
+        "brainstem",
+        "temporal lobe",
+        "late effects",
+        "age-dependent",
+        "dose constraint"
+      ],
+      "difficulty": "advanced",
+      "description": "Pediatric brachytherapy dose evaluation"
+    },
+    {
+      "id": "Q0593",
+      "input": "A center has treated 50 cervical cancer patients with brachytherapy over the past year. Describe the process of performing a comprehensive dose audit for these patients. How would you analyze the dose-volume histogram data to identify trends, evaluate compliance with institutional dose constraints, correlate dose parameters with clinical outcomes, and present findings to the department?",
+      "expected_keywords": [
+        "dose audit",
+        "DVH analysis",
+        "dose constraints",
+        "clinical outcomes",
+        "compliance",
+        "trends"
+      ],
+      "difficulty": "advanced",
+      "description": "Comprehensive brachytherapy dose audit process"
+    },
+    {
+      "id": "Q0594",
+      "input": "Explain the clinical significance of the V100 and V150 parameters in LDR prostate brachytherapy plan evaluation. For a patient with a prostate volume of 45 cc, the plan shows V100 = 94%, V150 = 52%, and V200 = 18%. Evaluate these parameters according to theASTRO and ABS guidelines. What is the clinical significance of an elevated V150?",
+      "expected_keywords": [
+        "V100",
+        "V150",
+        "V200",
+        "LDR",
+        "prostate",
+        "ASTRO",
+        "ABS",
+        "plan evaluation"
+      ],
+      "difficulty": "advanced",
+      "description": "LDR prostate plan parameter evaluation"
+    },
+    {
+      "id": "Q0595",
+      "input": "A brachytherapy plan for a cervical cancer patient shows excellent target coverage (D90 = 85 Gy EQD2) but the D2cc to the rectum is 72 Gy EQD2, which is above the institutional tolerance of 70 Gy EQD2. The sigmoid D2cc is 58 Gy EQD2. Discuss the risk-benefit analysis for accepting this plan versus replanning to reduce rectal dose. What are the potential clinical consequences of the elevated rectal dose?",
+      "expected_keywords": [
+        "D90",
+        "rectum",
+        "D2cc",
+        "tolerance",
+        "risk-benefit",
+        "replanning",
+        "sigmoid"
+      ],
+      "difficulty": "advanced",
+      "description": "Risk-benefit analysis for elevated rectal dose plan"
+    },
+    {
+      "id": "Q0596",
+      "input": "Evaluate the quality of an endometrial cancer vaginal cuff brachytherapy plan where the阴道 cylinder length is 4 cm, the prescribed dose is 21 Gy in 3 fractions, and the treatment depth at the vaginal surface is 5 mm. The D2cc to the rectum is 48 Gy EQD2 and the D2cc to the bladder is 52 Gy EQD2. Are these dose parameters adequate for tumor control while maintaining acceptable OAR doses?",
+      "expected_keywords": [
+        "vaginal cylinder",
+        "prescription",
+        "treatment depth",
+        "D2cc",
+        "rectum",
+        "bladder",
+        "EQD2"
+      ],
+      "difficulty": "medium",
+      "description": "Vaginal cuff brachytherapy plan quality evaluation"
+    },
+    {
+      "id": "Q0597",
+      "input": "For a patient treated with interstitial brachytherapy for a recurrent cervical cancer, the plan shows D90 = 75 Gy EQD2, D98 = 65 Gy EQD2, and D2cc to the sigmoid is 64 Gy EQD2. Explain the clinical significance of the difference between D90 and D98, discuss what this tells you about dose homogeneity within the target, and evaluate the overall plan quality.",
+      "expected_keywords": [
+        "D90",
+        "D98",
+        "dose homogeneity",
+        "interstitial",
+        "target coverage",
+        "sigmoid",
+        "plan quality"
+      ],
+      "difficulty": "advanced",
+      "description": "Dose homogeneity evaluation in interstitial brachytherapy"
+    },
+    {
+      "id": "Q0598",
+      "input": "A brachytherapy plan for anal cancer uses a combination of endoluminal and interstitial applicators. The plan evaluation shows D90 = 58 Gy to the GTV, D90 = 52 Gy to the CTV, and the D2cc to the anal sphincter is 62 Gy. Evaluate the dose gradient between GTV and CTV, discuss whether the anal sphincter dose is within tolerance for maintaining continence, and recommend any plan modifications.",
+      "expected_keywords": [
+        "GTV",
+        "CTV",
+        "D90",
+        "dose gradient",
+        "anal sphincter",
+        "continence",
+        "tolerance"
+      ],
+      "difficulty": "advanced",
+      "description": "Dose gradient and sphincter tolerance evaluation"
+    },
+    {
+      "id": "Q0599",
+      "input": "Explain the methodology for independent dose verification in brachytherapy. What are the steps involved in performing an independent check of a brachytherapy treatment plan? What level of discrepancy between the planning system calculation and the independent check is considered acceptable, and what actions should be taken when discrepancies exceed tolerance?",
+      "expected_keywords": [
+        "independent verification",
+        "dose check",
+        "discrepancy",
+        "tolerance",
+        "QA",
+        "brachytherapy"
+      ],
+      "difficulty": "medium",
+      "description": "Independent dose verification methodology"
+    },
+    {
+      "id": "Q0600",
+      "input": "A brachytherapy plan for a vaginal cancer patient shows V100 of 96% for the target, but the dose distribution is highly inhomogeneous with a Dmax that is 180% of the prescribed dose. Discuss the clinical implications of the high dose maximum, the potential for necrosis at the high-dose region, and how this compares to the expected dose heterogeneity for this type of applicator.",
+      "expected_keywords": [
+        "Dmax",
+        "dose heterogeneity",
+        "necrosis",
+        "V100",
+        "vaginal",
+        "high dose region",
+        "applicator"
+      ],
+      "difficulty": "advanced",
+      "description": "High dose maximum evaluation in vaginal brachytherapy"
+    },
+    {
+      "id": "Q0601",
+      "input": "Evaluate a brachytherapy plan for a patient with recurrent endometrial cancer where the vaginal apex is treated with a custom mold applicator. The prescription is 30 Gy in 5 fractions. The DVH shows D2cc rectum = 55 Gy EQD2, D2cc sigmoid = 48 Gy EQD2, and D2cc bladder = 60 Gy EQD2. The patient previously received 50 Gy EBRT with concurrent cisplatin. Discuss the cumulative dose constraints and whether the plan is safe to deliver.",
+      "expected_keywords": [
+        "cumulative dose",
+        "EQD2",
+        "rectum",
+        "sigmoid",
+        "bladder",
+        "EBRT",
+        "cisplatin",
+        "tolerance"
+      ],
+      "difficulty": "advanced",
+      "description": "Cumulative dose safety evaluation"
+    },
+    {
+      "id": "Q0602",
+      "input": "Describe the quality metrics that should be tracked for a brachytherapy program to ensure consistent plan quality. What indices should be computed for each treatment plan, how should they be benchmarked against published data, and what thresholds should trigger a quality improvement review?",
+      "expected_keywords": [
+        "quality metrics",
+        "benchmarking",
+        "DVH indices",
+        "plan quality",
+        "quality improvement",
+        "thresholds"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy plan quality metrics and benchmarking"
+    },
+    {
+      "id": "Q0603",
+      "input": "For a patient with a large cervical tumor treated with MRI-guided adaptive brachytherapy, evaluate the adaptive plan across three treatment fractions. The HR-CTV D90 values are 86, 82, and 84 Gy EQD2 for fractions 1, 2, and 3 respectively. The rectum D2cc values are 65, 68, and 70 Gy EQD2. Analyze the trends in these dose parameters and discuss whether the increasing rectal dose across fractions is clinically significant.",
+      "expected_keywords": [
+        "adaptive",
+        "HR-CTV",
+        "D90",
+        "D2cc",
+        "rectum",
+        "trends",
+        "fractions",
+        "clinical significance"
+      ],
+      "difficulty": "advanced",
+      "description": "Dose parameter trend analysis across adaptive fractions"
+    },
+    {
+      "id": "Q0604",
+      "input": "Explain how to evaluate the dose to the small bowel in a pelvic brachytherapy plan. What contouring and dose evaluation methods are recommended? How do you distinguish between loops of small bowel that are truly at risk versus those that are simply adjacent to the treatment volume? What are the published D2cc tolerance values for small bowel?",
+      "expected_keywords": [
+        "small bowel",
+        "contouring",
+        "D2cc",
+        "tolerance",
+        "pelvic",
+        "dose evaluation",
+        "loops"
+      ],
+      "difficulty": "advanced",
+      "description": "Small bowel dose evaluation in pelvic brachytherapy"
+    },
+    {
+      "id": "Q1131",
+      "input": "Evaluate HDR plan for cervical cancer: tandem/ovoid with given dwell times. D90=89% of prescription, bladder D2cc=5.8 Gy, rectum D2cc=6.5 Gy. Is this acceptable? Recommend improvements.",
+      "expected_keywords": [
+        "plan_eval_cervical",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: plan_eval_cervical"
+    },
+    {
+      "id": "Q1132",
+      "input": "Compare three plans for same patient: Plan A (D90=82, OAR low), Plan B (D90=91, OAR high), Plan C (D90=95, OAR acceptable with interstitial). Select best plan with dosimetric rationale.",
+      "expected_keywords": [
+        "plan_comparison",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: plan_comparison"
+    },
+    {
+      "id": "Q1133",
+      "input": "Analyze cumulative doses at fraction 3 of 4. Projected final rectum D2cc=76 Gy EQD2 (exceeds 70 Gy limit). Recommend modifications for fraction 4.",
+      "expected_keywords": [
+        "cumulative_fraction_modification",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: cumulative_fraction_modification"
+    },
+    {
+      "id": "Q1134",
+      "input": "Evaluate Day 0 post-implant CT for prostate seed implant: V100=91%, D90=108 Gy, urethra D10=118 Gy. Compare Day 0 vs expected Day 30 and discuss clinical significance.",
+      "expected_keywords": [
+        "prostate_post_implant",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: prostate_post_implant"
+    },
+    {
+      "id": "Q1135",
+      "input": "Analyze multi-catheter APBI plan: PTV V100=95%, V150=28%, D90=35.2 Gy, lung V20=12%, heart Dmax=4.8 Gy, skin D0.1cc=42 Gy. Evaluate per ABS/ESTRO guidelines.",
+      "expected_keywords": [
+        "APBI_breast_plan",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: APBI_breast_plan"
+    },
+    {
+      "id": "Q1136",
+      "input": "Compare HDR plans using 5 mm vs 2.5 mm step sizes. Discuss dose homogeneity, conformity, treatment time, and clinical implications.",
+      "expected_keywords": [
+        "step_size_comparison",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: step_size_comparison"
+    },
+    {
+      "id": "Q1137",
+      "input": "Calculate BED and EQD2 for prostate HDR (15 needles, 38 Gy/4fx): prostate BED, urethra BED, rectum BED. Evaluate therapeutic ratio.",
+      "expected_keywords": [
+        "HDR_prostate_biologic",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: HDR_prostate_biologic"
+    },
+    {
+      "id": "Q1138",
+      "input": "Evaluate VBT plan (30 Gy/5fx at 0.5 cm depth): mucosal surface dose 180%, D2cc values. Discuss prescription depth significance and mucosal tolerance.",
+      "expected_keywords": [
+        "vaginal_cylinder_eval",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: vaginal_cylinder_eval"
+    },
+    {
+      "id": "Q1139",
+      "input": "Analyze dose heterogeneity: D10=142%, D50=105%, D90=98%, D100=75%, DNR=1.85. Discuss clinical significance and improvement strategies.",
+      "expected_keywords": [
+        "dose_heterogeneity_analysis",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: dose_heterogeneity_analysis"
+    },
+    {
+      "id": "Q1140",
+      "input": "Analyze cumulative doses at fraction 2. Projected rectum D2cc=78 Gy EQD2. Recommend fraction 3-4 modifications per EMBRACE constraints.",
+      "expected_keywords": [
+        "cumulative_projection_analysis",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: cumulative_projection_analysis"
+    },
+    {
+      "id": "Q1141",
+      "input": "Compare tandem/ovoid vs tandem/ring dosimetry: O, D90=88/92, OAR doses differ. Discuss applicator-specific advantages and clinical decision-making.",
+      "expected_keywords": [
+        "applicator_dosimetry_comparison",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: applicator_dosimetry_comparison"
+    },
+    {
+      "id": "Q1142",
+      "input": "Evaluate 10-catheter APBI: PTV V100=92%, skin D0.1cc=38 Gy, rib D0.1cc=40 Gy. Discuss cosmetic outcome risks and long-term toxicities.",
+      "expected_keywords": [
+        "APBI_interstitial_cosmesis",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: APBI_interstitial_cosmesis"
+    },
+    {
+      "id": "Q1143",
+      "input": "Evaluate 12-needle vaginal interstitial plan (42 Gy/14fx BID): target V100=96%, urethra Dmax=110%. Discuss mucosal tolerance and fractionation.",
+      "expected_keywords": [
+        "vaginal_interstitial_mucosal",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: vaginal_interstitial_mucosal"
+    },
+    {
+      "id": "Q1144",
+      "input": "Evaluate three Pareto-optimal plans: Plan X (high coverage, high OAR), Plan Y (balanced), Plan Z (OAR-sparing, lower coverage). Select optimal plan.",
+      "expected_keywords": [
+        "MCO_evaluation",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: MCO_evaluation"
+    },
+    {
+      "id": "Q1145",
+      "input": "Evaluate QA results: source strength 0.8% difference, dwell position max 0.8 mm deviation, point dose 1.7% difference. Are these within TG-59 tolerance?",
+      "expected_keywords": [
+        "QA_dosimetry_eval",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: QA_dosimetry_eval"
+    },
+    {
+      "id": "Q1146",
+      "input": "Calculate PDR BED for 30 Gy/60 pulses with 1-hour intervals (repair half-time 1.5 hours). Compare to equivalent HDR 38 Gy/4fx.",
+      "expected_keywords": [
+        "PDR_BED_calculation",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: PDR_BED_calculation"
+    },
+    {
+      "id": "Q1147",
+      "input": "Evaluate Day 30 post-implant: V100=96%, V150=48%, D90=112 Gy, urethra D10=122 Gy. Evaluate per ABS guidelines with clinical significance.",
+      "expected_keywords": [
+        "prostate_seed_ABS_eval",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: prostate_seed_ABS_eval"
+    },
+    {
+      "id": "Q1148",
+      "input": "Evaluate combined EBRT 46 Gy + HDR 25 Gy boost: prostate D90 BED=285, urethra BED=245, rectum BED=168. Discuss therapeutic ratio and expected outcomes.",
+      "expected_keywords": [
+        "combined_EBRT_HDR_BED",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: combined_EBRT_HDR_BED"
+    },
+    {
+      "id": "Q1149",
+      "input": "Evaluate IGABT plan: HR-CTV D90=6.8 Gy (97%), GTV D90=7.5 Gy (107%). Discuss GTV dose escalation significance and adaptive vs non-adaptive.",
+      "expected_keywords": [
+        "IGABT_adaptive_eval",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: IGABT_adaptive_eval"
+    },
+    {
+      "id": "Q1150",
+      "input": "Evaluate interstitial plan for recurrent endometrial cancer (re-irradiation): target V100=94%, mucosal surface 149% of Rx. Discuss cumulative dose implications.",
+      "expected_keywords": [
+        "re_irradiation_interstitial_eval",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: re_irradiation_interstitial_eval"
+    },
+    {
+      "id": "Q1151",
+      "input": "Interpret DVH for cervical brachytherapy: D90=92% Rx, D2cc bladder=65 Gy, D2cc rectum=68 Gy, sigmoid D2cc=55 Gy. Evaluate against EMBRACE constraints.",
+      "expected_keywords": [
+        "cervical_DVH_interpretation",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: cervical_DVH_interpretation"
+    },
+    {
+      "id": "Q1152",
+      "input": "Analyze optimization tradeoffs: increasing D90 from 85 to 95 Gy raises rectum D2cc from 62 to 74 Gy. Discuss clinical decision-making.",
+      "expected_keywords": [
+        "plan_optimization_tradeoffs",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: plan_optimization_tradeoffs"
+    },
+    {
+      "id": "Q1153",
+      "input": "Verify point dose: measured 7.15 Gy, planned 7.00 Gy (2.1% difference). Discuss tolerance, causes for discrepancy, and actions required.",
+      "expected_keywords": [
+        "dose_calculation_verification",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: dose_calculation_verification"
+    },
+    {
+      "id": "Q1154",
+      "input": "Calculate total EQD2 for EBRT 45 Gy + HDR 7 Gy x4 + VBT 5 Gy x3 at point A. Include OAR cumulative doses.",
+      "expected_keywords": [
+        "cumulative_VBT_HDR",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: cumulative_VBT_HDR"
+    },
+    {
+      "id": "Q1155",
+      "input": "Evaluate seed implant quality: D90=115%, V100=97%, V150=45%, V200=12%, urethra D10=118%. Compare to ABS and ESTRO guidelines.",
+      "expected_keywords": [
+        "prostate_seed_quality_indicators",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: prostate_seed_quality_indicators"
+    },
+    {
+      "id": "Q1156",
+      "input": "Calculate total treatment time and dose rate for HDR plan. Discuss whether it meets HDR classification.",
+      "expected_keywords": [
+        "treatment_time_dose_rate",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: treatment_time_dose_rate"
+    },
+    {
+      "id": "Q1157",
+      "input": "Calculate Ir-192 source decay over 90 days from 8.5 Ci. Determine treatment time changes and replacement action level.",
+      "expected_keywords": [
+        "source_decay_impact",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: source_decay_impact"
+    },
+    {
+      "id": "Q1158",
+      "input": "Analyze dwell time distribution for tandem/ovoid plan. Calculate total time, tandem/ovoid ratio, and transit time.",
+      "expected_keywords": [
+        "dwell_time_distribution",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: dwell_time_distribution"
+    },
+    {
+      "id": "Q1159",
+      "input": "Calculate dose-rate at point A from dwell time distribution. Verify HDR classification.",
+      "expected_keywords": [
+        "point_A_dose_calculation",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: point_A_dose_calculation"
+    },
+    {
+      "id": "Q1160",
+      "input": "Calculate corrected air-kerma rate from well chamber measurement with temperature-pressure correction.",
+      "expected_keywords": [
+        "well_chamber_measurement",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: well_chamber_measurement"
+    },
+    {
+      "id": "Q1161",
+      "input": "Compare BED for three HDR fractionation schedules (38/4, 36/4, 30/5). Determine best therapeutic ratio.",
+      "expected_keywords": [
+        "prostate_BED_comparison",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: prostate_BED_comparison"
+    },
+    {
+      "id": "Q1162",
+      "input": "Calculate vaginal mucosal surface dose using inverse square law approximation. Evaluate against mucosal tolerance.",
+      "expected_keywords": [
+        "vaginal_mucosa_dose",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: vaginal_mucosa_dose"
+    },
+    {
+      "id": "Q1163",
+      "input": "Verify dwell positions from 2D diode array measurement. Calculate radial deviations and RMS.",
+      "expected_keywords": [
+        "dwell_position_verification",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: dwell_position_verification"
+    },
+    {
+      "id": "Q1164",
+      "input": "Compare TPS dose (4.92 Gy/hr) vs measured (4.85 Gy/hr). Calculate percentage difference and evaluate against TG-59.",
+      "expected_keywords": [
+        "TPS_vs_measurement",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: TPS_vs_measurement"
+    },
+    {
+      "id": "Q1165",
+      "input": "Calculate required lead shielding for HDR room with Ir-192. Include workload, distance, and HVL considerations.",
+      "expected_keywords": [
+        "shielding_calculation",
+        "dose_evaluation",
+        "dosimetry"
+      ],
+      "difficulty": "hard",
+      "description": "Dose evaluation: shielding_calculation"
+    },
+    {
+      "id": "Q0795",
+      "input": "Explain the complete TG-43 formalism for brachytherapy dose calculation. Write out the full equation including the dose rate constant, radial dose function, and 2D anisotropy function. For each component, explain the physical basis, how it is measured, and its clinical significance. Provide a numerical example using an Ir-192 source.",
+      "expected_keywords": [
+        "TG-43",
+        "dose rate constant",
+        "radial dose function",
+        "anisotropy function",
+        "Ir-192",
+        "numerical example"
+      ],
+      "difficulty": "advanced",
+      "description": "Complete TG-43 formalism explanation"
+    },
+    {
+      "id": "Q0796",
+      "input": "Describe the differences between the TG-43 1D, 2D, and 3D dose calculation formalisms. When is each formalism appropriate for clinical use? What are the additional parameters required for the 2D and 3D formalisms compared to the 1D approach, and how do these additional parameters improve dose calculation accuracy?",
+      "expected_keywords": [
+        "TG-43 1D",
+        "TG-43 2D",
+        "TG-43 3D",
+        "formalism comparison",
+        "clinical application",
+        "accuracy"
+      ],
+      "difficulty": "advanced",
+      "description": "TG-43 formalism comparison (1D vs 2D vs 3D)"
+    },
+    {
+      "id": "Q0797",
+      "input": "A medical physicist needs to perform absolute dose calibration for an HDR brachytherapy source using a well chamber. Describe the complete calibration procedure including the well chamber setup, measurement geometry, temperature and pressure corrections, and how to convert the raw reading to air-kerma strength. What are the traceability requirements to national standards?",
+      "expected_keywords": [
+        "absolute calibration",
+        "well chamber",
+        "air-kerma strength",
+        "temperature correction",
+        "traceability",
+        "national standards"
+      ],
+      "difficulty": "advanced",
+      "description": "HDR source absolute calibration procedure"
+    },
+    {
+      "id": "Q0798",
+      "input": "Explain the concept of the radial dose function g(r) in the TG-43 formalism. How is it measured and what does it represent physically? Using an Ir-192 source as an example, describe how the radial dose function varies with distance and explain the physical mechanisms underlying this variation. At what distances does the radial dose function deviate most from unity?",
+      "expected_keywords": [
+        "radial dose function",
+        "g(r)",
+        "TG-43",
+        "physical mechanism",
+        "Ir-192",
+        "distance dependence"
+      ],
+      "difficulty": "advanced",
+      "description": "Radial dose function explanation and physical basis"
+    },
+    {
+      "id": "Q0799",
+      "input": "Describe the measurement and clinical significance of the 2D anisotropy function F(r, theta) for a brachytherapy source. Why does the dose distribution around a brachytherapy source exhibit angular dependence? How does the anisotropy function affect dose calculations near the ends of an active source length, and what clinical implications does this have for treatment planning?",
+      "expected_keywords": [
+        "anisotropy function",
+        "F(r, theta)",
+        "angular dependence",
+        "source ends",
+        "clinical implications",
+        "measurement"
+      ],
+      "difficulty": "advanced",
+      "description": "2D anisotropy function measurement and significance"
+    },
+    {
+      "id": "Q0800",
+      "input": "A center is commissioning a new Ir-192 HDR source. Describe the complete dosimetric characterization process including air-kerma strength measurement, dose rate constant determination, radial dose function measurement, and anisotropy function measurement. What phantoms and detectors are used, and what are the acceptance criteria for each measurement?",
+      "expected_keywords": [
+        "source commissioning",
+        "air-kerma strength",
+        "dose rate constant",
+        "radial dose function",
+        "anisotropy",
+        "acceptance criteria"
+      ],
+      "difficulty": "advanced",
+      "description": "New HDR source dosimetric characterization"
+    },
+    {
+      "id": "Q0801",
+      "input": "Explain the concept of tissue heterogeneity correction in brachytherapy dose calculation. How do inhomogeneities such as bone, air, and soft tissue affect the dose distribution compared to the water-equivalent TG-43 calculation? Describe the available correction methods including equivalent path length, power law, and Monte Carlo approaches, and discuss when each is most appropriate.",
+      "expected_keywords": [
+        "heterogeneity correction",
+        "bone",
+        "air",
+        "equivalent path length",
+        "power law",
+        "Monte Carlo",
+        "TG-43"
+      ],
+      "difficulty": "advanced",
+      "description": "Tissue heterogeneity correction in brachytherapy"
+    },
+    {
+      "id": "Q0802",
+      "input": "Describe the TG-43 based dose calculation for a tandem applicator in cervical brachytherapy. Calculate the dose rate at Point A (2 cm lateral from the tandem axis at the level of the flange) for a 6 cm tandem with an Ir-192 source having an air-kerma strength of 40,000 uCi. Show all steps of the calculation including the geometric function.",
+      "expected_keywords": [
+        "tandem applicator",
+        "Point A",
+        "dose rate calculation",
+        "TG-43",
+        "geometric function",
+        "Ir-192"
+      ],
+      "difficulty": "advanced",
+      "description": "Tandem applicator TG-43 dose calculation"
+    },
+    {
+      "id": "Q0803",
+      "input": "Explain the AAPM TG-119 recommendations for reporting the results of Monte Carlo dose calculations in brachytherapy. What parameters should be reported, how should uncertainty be quantified, and what are the recommended validation procedures for Monte Carlo dose calculations before clinical use?",
+      "expected_keywords": [
+        "TG-119",
+        "Monte Carlo",
+        "uncertainty",
+        "validation",
+        "reporting",
+        "brachytherapy"
+      ],
+      "difficulty": "advanced",
+      "description": "TG-119 Monte Carlo reporting recommendations"
+    },
+    {
+      "id": "Q0804",
+      "input": "A brachytherapy source has a non-uniform active length due to manufacturing variations. Describe how this non-uniformity affects the dose distribution, how it is characterized in the source data used for TG-43 calculations, and what clinical impact it has on treatment planning and dose delivery accuracy.",
+      "expected_keywords": [
+        "non-uniform active length",
+        "manufacturing variation",
+        "dose distribution",
+        "source data",
+        "clinical impact",
+        "TG-43"
+      ],
+      "difficulty": "advanced",
+      "description": "Non-uniform active length impact on dose distribution"
+    },
+    {
+      "id": "Q0805",
+      "input": "Explain the differences in dose calculation between a point source approximation and a line source approximation in the TG-43 formalism. For each approximation, write the geometric function and discuss when each is clinically appropriate. Using a specific example, calculate the dose difference between the two approximations at a clinically relevant distance.",
+      "expected_keywords": [
+        "point source",
+        "line source",
+        "geometric function",
+        "TG-43",
+        "dose difference",
+        "clinical appropriateness"
+      ],
+      "difficulty": "advanced",
+      "description": "Point source vs line source TG-43 comparison"
+    },
+    {
+      "id": "Q0806",
+      "input": "Describe the process of TG-43 source data generation for a new brachytherapy source design. What measurements are required, what Monte Carlo simulation parameters must be specified, how is the data validated, and what are the AAPM recommendations for source data publication and distribution?",
+      "expected_keywords": [
+        "source data generation",
+        "measurements",
+        "Monte Carlo",
+        "validation",
+        "AAPM",
+        "publication"
+      ],
+      "difficulty": "advanced",
+      "description": "TG-43 source data generation for new source design"
+    },
+    {
+      "id": "Q0807",
+      "input": "Explain the concept of the dose distribution around a single dwell position in HDR brachytherapy. How does the dose fall off with distance from the source, what is the practical range of therapeutic dose, and how does this relate to the concept of dose gradient? Quantify the dose gradient for a typical Ir-192 source at clinical distances.",
+      "expected_keywords": [
+        "dwell position",
+        "dose fall off",
+        "dose gradient",
+        "Ir-192",
+        "therapeutic range",
+        "quantification"
+      ],
+      "difficulty": "medium",
+      "description": "Single dwell position dose distribution and gradient"
+    },
+    {
+      "id": "Q0808",
+      "input": "Describe the quality assurance procedures for a brachytherapy well chamber used for source calibration. What are the chamber specifications, how should the chamber be maintained, what are the calibration procedures including the use of calibration coefficients, and how do you account for chamber aging and drift?",
+      "expected_keywords": [
+        "well chamber",
+        "QA",
+        "calibration",
+        "calibration coefficient",
+        "aging",
+        "drift",
+        "maintenance"
+      ],
+      "difficulty": "medium",
+      "description": "Well chamber QA for source calibration"
+    },
+    {
+      "id": "Q0809",
+      "input": "Explain the dose calculation differences between TG-43 based calculation and model-based dose calculation algorithms (e.g., collapsed cone, pencil beam) in brachytherapy. For what clinical scenarios do model-based algorithms provide significant improvement over TG-43, and what validation studies should be performed before clinical implementation?",
+      "expected_keywords": [
+        "TG-43",
+        "model-based calculation",
+        "collapsed cone",
+        "pencil beam",
+        "validation",
+        "clinical improvement"
+      ],
+      "difficulty": "advanced",
+      "description": "TG-43 vs model-based dose calculation comparison"
+    },
+    {
+      "id": "Q0810",
+      "input": "A brachytherapy physicist is evaluating the uncertainty in dose delivery. Perform an uncertainty analysis for a typical HDR brachytherapy treatment considering uncertainties in source strength calibration (2%), dwell time accuracy (1%), source position accuracy (1.5 mm), applicator reconstruction accuracy (1 mm), and dose calculation algorithm accuracy (3%). What is the combined uncertainty using the RSS method?",
+      "expected_keywords": [
+        "uncertainty analysis",
+        "source calibration",
+        "dwell time",
+        "source position",
+        "applicator reconstruction",
+        "RSS",
+        "combined uncertainty"
+      ],
+      "difficulty": "advanced",
+      "description": "HDR brachytherapy dose uncertainty analysis"
+    },
+    {
+      "id": "Q0811",
+      "input": "Describe the concept of reference air-kerma rate (RAKR) and how it relates to the dose calculation in brachytherapy. How is RAKR measured and what are its units? Explain the conversion between RAKR and the dose rate at a point in water, including all relevant TG-43 parameters.",
+      "expected_keywords": [
+        "RAKR",
+        "reference air-kerma rate",
+        "dose rate",
+        "conversion",
+        "TG-43",
+        "units"
+      ],
+      "difficulty": "advanced",
+      "description": "Reference air-kerma rate and dose rate conversion"
+    },
+    {
+      "id": "Q0812",
+      "input": "Explain the dosimetric implications of source exchange in HDR brachytherapy. When a source is replaced, how do you ensure dose calculation accuracy for the new source? What measurements must be performed, how do you verify that the TPS correctly models the new source, and what documentation is required?",
+      "expected_keywords": [
+        "source exchange",
+        "dosimetry",
+        "new source verification",
+        "TPS validation",
+        "documentation",
+        "QA"
+      ],
+      "difficulty": "medium",
+      "description": "Dosimetric implications of source exchange"
+    },
+    {
+      "id": "Q0813",
+      "input": "Describe the physical basis for the dose rate variation along the length of a brachytherapy source. Why is the dose rate not uniform along the active length? How does this variation affect the treatment planning process, particularly for dwell time optimization and the assessment of dose homogeneity?",
+      "expected_keywords": [
+        "dose rate variation",
+        "active length",
+        "physical basis",
+        "dwell time optimization",
+        "dose homogeneity",
+        "planning"
+      ],
+      "difficulty": "advanced",
+      "description": "Dose rate variation along source length"
+    },
+    {
+      "id": "Q0814",
+      "input": "Explain the dosimetry of a vaginal cylinder applicator in HDR brachytherapy. How does the dose distribution differ from that of a tandem applicator? Calculate the dose rate at a point 5 mm from the cylinder surface for a 2.5 cm diameter cylinder with a single dwell position at the center of the active length. What is the effect of cylinder diameter on the dose distribution?",
+      "expected_keywords": [
+        "vaginal cylinder",
+        "dose distribution",
+        "dose calculation",
+        "cylinder diameter",
+        "dwell position",
+        "comparison"
+      ],
+      "difficulty": "advanced",
+      "description": "Vaginal cylinder dosimetry and calculation"
+    },
+    {
+      "id": "Q0815",
+      "input": "Describe the process of generating a brachytherapy dose distribution using dwell time optimization. Explain how the dose contribution matrix is constructed, how the optimization algorithm solves for dwell times, and what are the mathematical constraints and objectives. How does the choice of optimization algorithm affect the final dose distribution?",
+      "expected_keywords": [
+        "dwell time optimization",
+        "dose matrix",
+        "optimization algorithm",
+        "constraints",
+        "objectives",
+        "mathematical"
+      ],
+      "difficulty": "advanced",
+      "description": "Dwell time optimization process explanation"
+    },
+    {
+      "id": "Q0816",
+      "input": "A brachytherapy physicist needs to verify the accuracy of the treatment planning system dose calculation. Describe a comprehensive verification methodology including the use of measurement-based benchmarks, TG-43-based independent calculations, comparison with published source data, and systematic evaluation across different applicator types and clinical scenarios.",
+      "expected_keywords": [
+        "TPS verification",
+        "measurement benchmark",
+        "independent calculation",
+        "published data",
+        "applicator types",
+        "clinical scenarios"
+      ],
+      "difficulty": "advanced",
+      "description": "Comprehensive TPS dose calculation verification"
+    },
+    {
+      "id": "Q0817",
+      "input": "Explain the concept of dose rate constant (Lambda) and its physical significance in the TG-43 formalism. How is the dose rate constant determined experimentally and by Monte Carlo simulation? What are the typical values for Ir-192 sources from different manufacturers, and how do manufacturing differences affect this parameter?",
+      "expected_keywords": [
+        "dose rate constant",
+        "Lambda",
+        "TG-43",
+        "experimental determination",
+        "Monte Carlo",
+        "manufacturing differences"
+      ],
+      "difficulty": "advanced",
+      "description": "Dose rate constant explanation and determination"
+    },
+    {
+      "id": "Q0818",
+      "input": "Describe the dosimetric considerations for treating very small targets with brachytherapy, such as early-stage lip cancer or small skin lesions. How does the source size relative to the target size affect dose distribution, what applicator types are appropriate, and how do you verify dose delivery accuracy for small-field brachytherapy?",
+      "expected_keywords": [
+        "small target",
+        "small field",
+        "lip cancer",
+        "skin lesion",
+        "source size",
+        "dose verification",
+        "applicator"
+      ],
+      "difficulty": "advanced",
+      "description": "Small-target brachytherapy dosimetry"
+    },
+    {
+      "id": "Q0819",
+      "input": "Explain the concept of scattered radiation dose in brachytherapy and how it differs from the primary radiation dose. How does the scatter contribution vary with implant geometry, tissue composition, and source arrangement? What are the implications for dose calculation accuracy when using the TG-43 formalism versus Monte Carlo methods?",
+      "expected_keywords": [
+        "scatter dose",
+        "primary dose",
+        "implant geometry",
+        "tissue composition",
+        "TG-43",
+        "Monte Carlo"
+      ],
+      "difficulty": "advanced",
+      "description": "Scattered radiation dose in brachytherapy"
+    },
+    {
+      "id": "Q0820",
+      "input": "A physicist is designing a quality control test for verifying the source position accuracy of an HDR afterloader. Describe the experimental setup, measurement methodology, acceptance criteria based on TG-59 recommendations, and how to interpret results that fall near the tolerance boundary. What actions are needed when results exceed tolerance?",
+      "expected_keywords": [
+        "source position",
+        "afterloader",
+        "QC test",
+        "TG-59",
+        "acceptance criteria",
+        "tolerance",
+        "measurement"
+      ],
+      "difficulty": "medium",
+      "description": "Afterloader source position QC test design"
+    },
+    {
+      "id": "Q0993",
+      "input": "A medical physicist is commissioning a new brachytherapy source with an air-kerma strength that is outside the range of the standard well chamber calibration coefficient. Explain how to perform the calibration using alternative methods, discuss the uncertainty implications of extrapolating outside the calibration range, and describe the procedures for obtaining a site-specific calibration coefficient through a national standards laboratory.",
+      "expected_keywords": [
+        "out of range",
+        "calibration coefficient",
+        "alternative methods",
+        "uncertainty",
+        "national standards",
+        "extrapolation"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy source calibration outside standard range"
+    },
+    {
+      "id": "Q1611",
+      "input": "I need a detailed explanation of the TG-43 formalism for brachytherapy dose calculation. Specifically, I want to understand: (1) the role of the dose-rate constant Lambda, (2) the geometry function G(r,theta) and how it differs between line-source and point-source approximations, (3) the radial dose function g(r) and what physical effects it accounts for, and (4) the 2D anisotropy function F(r,theta) and why it is important for HDR sources. Please include the mathematical formulas and explain when the point-source approximation is inadequate.",
+      "expected_keywords": [
+        "TG-43",
+        "dose-rate constant",
+        "geometry function",
+        "radial dose",
+        "anisotropy",
+        "line-source"
+      ],
+      "difficulty": "hard",
+      "description": "Detailed TG-43 formalism explanation request"
+    },
+    {
+      "id": "Q1612",
+      "input": "I am trying to understand the limitations of TG-43 dose calculations in heterogeneous media. For a prostate LDR seed implant, the seeds are surrounded by prostate tissue, periprostatic fat, and potentially the pelvic bone. How do these different tissues affect the dose distribution compared to the water-equivalent assumption in TG-43? Specifically, what are the errors introduced by assuming water equivalence for: (1) bone interface near the implant, (2) air pockets in the prostate, and (3) calcifications within the prostate?",
+      "expected_keywords": [
+        "heterogeneous",
+        "water equivalent",
+        "bone",
+        "air",
+        "calcification",
+        "Monte Carlo",
+        "TG-43 limitations"
+      ],
+      "difficulty": "expert",
+      "description": "Test understanding of TG-43 limitations in heterogeneous media"
+    },
+    {
+      "id": "Q1613",
+      "input": "I need to calculate the anisotropy function for an Ir-192 HDR source at 2 cm distance from the source center, at angles of 0, 30, 60, and 90 degrees. The source has an active length of 3.5 mm. I know the anisotropy function values from the TG-43 data for this source model. How do I apply these values in my treatment planning system? What is the difference between the 2D anisotropy function and the 1D anisotropy factor? When should I use each one?",
+      "expected_keywords": [
+        "anisotropy function",
+        "1D factor",
+        "2D function",
+        "Ir-192",
+        "HDR",
+        "TG-43 data"
+      ],
+      "difficulty": "hard",
+      "description": "Detailed question about anisotropy function application in dose calculation"
+    },
+    {
+      "id": "Q1614",
+      "input": "I am designing a research study comparing TG-43 dose calculations with Monte Carlo simulations for a novel Cesium-131 prostate seed. The seed has a titanium shell with a ceramic CsI core. What specific dosimetric parameters should I compare between TG-43 and Monte Carlo? What are the expected sources of discrepancy? How should I report the differences in a peer-reviewed publication? Please reference relevant AAPM task group reports.",
+      "expected_keywords": [
+        "Monte Carlo",
+        "TG-43",
+        "comparison",
+        "Cs-131",
+        "discrepancy",
+        "AAPM",
+        "TG-129"
+      ],
+      "difficulty": "expert",
+      "description": "Research methodology question comparing dose calculation methods"
+    },
+    {
+      "id": "Q1615",
+      "input": "I need to understand the dose-rate dependence of brachytherapy sources. For Ir-192 HDR treatments, the dose rate at the prescription point is typically 5-12 Gy/hr. For Pd-103 LDR seeds, the initial dose rate is approximately 18 cGy/hr. How does the dose-rate effect (the 4 Rs of radiobiology) affect the biological effectiveness of these different brachytherapy approaches? Should I apply a biological effective dose (BED) correction when comparing HDR and LDR treatments?",
+      "expected_keywords": [
+        "dose-rate effect",
+        "4 Rs",
+        "BED",
+        "HDR",
+        "LDR",
+        "biological effectiveness",
+        "repair"
+      ],
+      "difficulty": "hard",
+      "description": "Question about dose-rate dependence and biological effectiveness in brachytherapy"
+    },
+    {
+      "id": "Q1616",
+      "input": "I am implementing a brachytherapy treatment planning system from scratch. For the dose calculation engine, I need to implement the TG-43 formalism. Specifically, I need to calculate dose from an Ir-192 HDR source at an arbitrary point in 3D space. The source is modeled as a line source of active length 3.5 mm. Walk me through the step-by-step implementation of the geometry function for a line source, including the calculation of the angles theta_1 and theta_2, and the function G_L(r,theta).",
+      "expected_keywords": [
+        "geometry function",
+        "line source",
+        "theta_1",
+        "theta_2",
+        "implementation",
+        "TG-43"
+      ],
+      "difficulty": "expert",
+      "description": "Implementation-level question about TG-43 geometry function calculation"
+    },
+    {
+      "id": "Q1617",
+      "input": "I need to understand the AAPM TG-43U1 supplement to the original TG-43 formalism. What were the key changes and additions in TG-43U1 compared to the original TG-43 report? Specifically, how does TG-43U1 address: (1) the recommendation for 2D versus 1D data, (2) the definition of the dose-rate constant, (3) the air-kerma strength calibration, and (4) the uncertainty analysis requirements?",
+      "expected_keywords": [
+        "TG-43U1",
+        "updates",
+        "2D data",
+        "dose-rate constant",
+        "air-kerma strength",
+        "uncertainty"
+      ],
+      "difficulty": "hard",
+      "description": "Detailed question about TG-43U1 updates and modifications"
+    },
+    {
+      "id": "Q1618",
+      "input": "I am performing a TG-43 based dose calculation for a prostate LDR implant using I-125 seeds. The seeds are placed in a 3D pattern based on post-implant CT. The treatment planning system reports D90 of 165 Gy for the prostate. However, when I check the TG-43 data sheet for the seed model, the dose-rate constant is 0.965 cGy/(hr U). The total air-kerma strength of all seeds is 32.5 U. Can you verify whether the D90 calculation is reasonable by doing an approximate analytical check? What are the key assumptions in this verification?",
+      "expected_keywords": [
+        "D90",
+        "TG-43",
+        "air-kerma strength",
+        "dose-rate constant",
+        "verification",
+        "analytical"
+      ],
+      "difficulty": "hard",
+      "description": "Dose verification question using TG-43 analytical methods"
+    },
+    {
+      "id": "Q1619",
+      "input": "I need to understand how the American Association of Physicists in Medicine (AAPM) TG-129 report addresses the limitations of TG-43 for clinical brachytherapy. What are the specific recommendations in TG-129 regarding: (1) when TG-43 is adequate, (2) when model-based dose calculations should be used instead, (3) what level of accuracy is clinically acceptable, and (4) what are the specific clinical scenarios where TG-43 fails most significantly?",
+      "expected_keywords": [
+        "TG-129",
+        "model-based",
+        "accuracy",
+        "TG-43 limitations",
+        "clinical scenarios",
+        "recommendations"
+      ],
+      "difficulty": "expert",
+      "description": "Detailed question about AAPM TG-129 recommendations for dose calculation"
+    },
+    {
+      "id": "Q1620",
+      "input": "I am comparing the dosimetric characteristics of three different HDR brachytherapy source models: Ir-192 (VariSource), Ir-192 (GammaMed), and Co-60 (BEBIG). I need to understand how the dose distribution differs between these sources due to their different energy spectra. Specifically: (1) How does the Co-60 energy (1.17 and 1.33 MeV) compare to Ir-192 (average 0.38 MeV) in terms of tissue penetration, (2) How do the anisotropy functions differ between these source types, and (3) What are the clinical implications of using Co-60 vs Ir-192 for HDR treatments?",
+      "expected_keywords": [
+        "Ir-192",
+        "Co-60",
+        "energy spectrum",
+        "anisotropy",
+        "penetration",
+        "clinical implications"
+      ],
+      "difficulty": "hard",
+      "description": "Comparative dosimetry question about different brachytherapy source types"
+    },
+    {
+      "id": "Q1621",
+      "input": "I need to calculate the biological effective dose (BED) for an HDR brachytherapy treatment of cervical cancer. The treatment delivers 6 Gy per fraction x 5 fractions (total 30 Gy) to point A. The tumor alpha/beta ratio is 10 Gy and the repair half-time for late effects is 1.5 hours. Using the linear-quadratic model with incomplete repair, calculate: (1) the BED for the tumor, (2) the BED for late effects with alpha/beta = 3 Gy, and (3) the EQD2 for both tumor and late effects. Show your calculations.",
+      "expected_keywords": [
+        "BED",
+        "EQD2",
+        "linear-quadratic",
+        "incomplete repair",
+        "alpha/beta",
+        "fractionation"
+      ],
+      "difficulty": "hard",
+      "description": "Detailed BED calculation for HDR brachytherapy"
+    },
+    {
+      "id": "Q1622",
+      "input": "I am studying the effects of source position uncertainty in HDR brachytherapy. In clinical practice, the actual source positions during treatment may differ from the planned positions due to applicator flexing, patient movement, or reconstruction errors. For a cervical cancer T&O application, if the tandem source position is shifted 3 mm superiorly and 2 mm posteriorly, what is the approximate effect on the dose to point A, the rectal reference point, and the bladder reference point? How sensitive is the dose distribution to source positioning errors?",
+      "expected_keywords": [
+        "source position",
+        "uncertainty",
+        "point A",
+        "sensitivity",
+        "quality assurance",
+        "applicator"
+      ],
+      "difficulty": "hard",
+      "description": "Question about source position uncertainty effects on dose distribution"
+    },
+    {
+      "id": "Q1623",
+      "input": "I need to understand the concept of reference air-kerma rate (RAKR) and how it relates to the air-kerma strength (Sk) used in the AAPM TG-43 formalism. What is the difference between RAKR and Sk? How does the NIST 1999 and NIST 2001 calibration standards differ? If I have a source calibrated with the old NIST 1999 standard, how do I convert the air-kerma strength to the new NIST 2001 standard? What is the conversion factor for Ir-192?",
+      "expected_keywords": [
+        "RAKR",
+        "air-kerma strength",
+        "NIST",
+        "calibration",
+        "conversion",
+        "Ir-192"
+      ],
+      "difficulty": "hard",
+      "description": "Technical question about source calibration standards and conversion"
+    },
+    {
+      "id": "Q1624",
+      "input": "I am implementing a Monte Carlo dose calculation for a novel brachytherapy source. The source has a complex geometry with multiple radioactive layers and a tungsten marker. I need to understand: (1) What specific physics models should I use in MCNP or Geant4 for photon transport at brachytherapy energies, (2) How should I model the source geometry including the radioactive core, encapsulation, and marker, (3) What statistical convergence criteria should I use for the dose scoring tally, and (4) How should I validate my Monte Carlo simulation against experimental measurements?",
+      "expected_keywords": [
+        "Monte Carlo",
+        "MCNP",
+        "Geant4",
+        "source modeling",
+        "convergence",
+        "validation",
+        "experimental"
+      ],
+      "difficulty": "expert",
+      "description": "Advanced Monte Carlo implementation question for brachytherapy dose calculation"
+    },
+    {
+      "id": "Q1625",
+      "input": "I need to understand the concept of dose homogeneity index (DHI) and its clinical significance in brachytherapy. For a prostate LDR implant, the DHI is calculated as (prescribed dose - minimum peripheral dose) / prescribed dose. My plan shows a DHI of 0.55. What does this value mean clinically? How does DHI relate to the V150 and V200 metrics? What are the target values for DHI in prostate LDR brachytherapy according to the RTOG protocols? What are the limitations of using DHI alone to evaluate plan quality?",
+      "expected_keywords": [
+        "DHI",
+        "dose homogeneity",
+        "V150",
+        "V200",
+        "RTOG",
+        "prostate",
+        "plan quality"
+      ],
+      "difficulty": "medium",
+      "description": "Question about dose homogeneity index and plan quality evaluation"
+    },
+    {
+      "id": "Q1626",
+      "input": "I am reviewing a brachytherapy plan for cervical cancer using a tandem and ovoid applicator. The plan shows point A dose of 6.0 Gy per fraction, with the following OAR doses: rectal point 4.2 Gy, bladder point 4.8 Gy. The prescription is for 5 fractions. I want to understand the TG-43 uncertainty budget for this plan. What are the main sources of uncertainty in the dose calculation? How should I combine the individual uncertainties? What is the total uncertainty at the 95% confidence level?",
+      "expected_keywords": [
+        "uncertainty",
+        "TG-43",
+        "dose calculation",
+        "confidence level",
+        "propagation",
+        "sources"
+      ],
+      "difficulty": "hard",
+      "description": "Detailed uncertainty analysis question for brachytherapy dose calculation"
+    },
+    {
+      "id": "Q1627",
+      "input": "I need to compare the radial dose function g(r) for three different I-125 seed models: model 6711, model 2301, and model 1251. How do the radial dose functions differ between these seed models? What physical factors cause these differences? How do these differences affect clinical dose distributions for prostate implants? I need this comparison for a quality assurance study comparing different seed models.",
+      "expected_keywords": [
+        "radial dose function",
+        "I-125",
+        "seed models",
+        "comparison",
+        "physical factors",
+        "clinical implications"
+      ],
+      "difficulty": "hard",
+      "description": "Comparative dosimetry question about I-125 seed models"
+    },
+    {
+      "id": "Q1628",
+      "input": "I am trying to understand the concept of dose rate constant (Lambda) in the TG-43 formalism for an Ir-192 HDR source. The dose rate constant is defined as the dose rate to water per unit air-kerma strength at the reference point. How is this parameter measured experimentally? What are the main sources of uncertainty in the measurement? How does the dose rate constant depend on the source design (active length, diameter, encapsulation)?",
+      "expected_keywords": [
+        "dose rate constant",
+        "measurement",
+        "uncertainty",
+        "source design",
+        "Ir-192",
+        "calibration"
+      ],
+      "difficulty": "hard",
+      "description": "Detailed question about dose rate constant measurement and design dependence"
+    },
+    {
+      "id": "Q1629",
+      "input": "I need to understand how image artifact correction affects brachytherapy dose calculation. In post-implant CT for prostate LDR brachytherapy, I observe significant streak artifacts from the metallic seeds. How do these artifacts affect: (1) the accuracy of seed localization, (2) the accuracy of prostate contouring, and (3) the dose calculation if the treatment planning system uses CT-based electron density? What correction methods exist for seed artifact reduction?",
+      "expected_keywords": [
+        "CT artifact",
+        "seed localization",
+        "electron density",
+        "artifact correction",
+        "prostate",
+        "dose calculation"
+      ],
+      "difficulty": "hard",
+      "description": "Question about image artifact effects on brachytherapy dose calculation"
+    },
+    {
+      "id": "Q1630",
+      "input": "I am performing quality assurance on an HDR brachytherapy afterloader. The TG-56 and TG-59 reports provide guidance on QA procedures. What are the key QA tests required for: (1) source position accuracy, (2) source dwell time accuracy, (3) source transit time measurement, (4) dose-rate constancy, and (5) interlock and safety system verification? What are the acceptable tolerance values for each test?",
+      "expected_keywords": [
+        "QA",
+        "TG-56",
+        "TG-59",
+        "source position",
+        "dwell time",
+        "transit time",
+        "tolerance"
+      ],
+      "difficulty": "medium",
+      "description": "QA procedure question for HDR brachytherapy afterloader"
+    },
+    {
+      "id": "Q1631",
+      "input": "I need to calculate the TG-43 dose distribution for a tandem and ovoid applicator used in cervical cancer brachytherapy. The tandem has an active length of 6 cm, and the ovoids have a diameter of 2 cm each. For a point at the left ovoid surface (the leftmost ovoid reference point), how do I calculate the dose contribution from: (1) the tandem source, (2) the left ovoid source, and (3) the right ovoid source? What is the total dose at this point?",
+      "expected_keywords": [
+        "tandem",
+        "ovoid",
+        "dose contribution",
+        "TG-43",
+        "multiple sources",
+        "point calculation"
+      ],
+      "difficulty": "hard",
+      "description": "TG-43 application question for tandem and ovoid dose calculation"
+    },
+    {
+      "id": "Q1632",
+      "input": "I am studying the effect of radioactive source decay on brachytherapy dose delivery. For Ir-192 with a half-life of 73.83 days, if I calibrate a source on January 1 and plan to use it for treatments throughout the year, how does the source strength change over time? Calculate the source strength remaining at 3 months, 6 months, and 12 months. If I need a minimum dose-rate of 5 Gy/hr for HDR treatments, what is the practical useful life of the source?",
+      "expected_keywords": [
+        "decay",
+        "half-life",
+        "Ir-192",
+        "source strength",
+        "useful life",
+        "dose-rate"
+      ],
+      "difficulty": "medium",
+      "description": "Question about radioactive decay effects on brachytherapy source strength"
+    },
+    {
+      "id": "Q1633",
+      "input": "I need to understand the TG-138 report on dose calculation accuracy in brachytherapy. What are the specific recommendations in TG-138 regarding: (1) when model-based dose calculations should be used instead of TG-43, (2) what level of dose calculation accuracy is required for different clinical scenarios, (3) how to validate model-based calculations against measurements, and (4) what clinical scenarios show the largest discrepancies between TG-43 and model-based calculations?",
+      "expected_keywords": [
+        "TG-138",
+        "model-based",
+        "accuracy",
+        "validation",
+        "clinical scenarios",
+        "discrepancies"
+      ],
+      "difficulty": "expert",
+      "description": "Detailed question about AAPM TG-138 dose calculation accuracy recommendations"
+    },
+    {
+      "id": "Q1634",
+      "input": "I am performing a post-implant dosimetry analysis for a prostate LDR brachytherapy implant using I-125 seeds. I need to understand the importance of CT-MRI fusion for post-implant evaluation. How does MRI improve prostate contouring compared to CT alone? What are the recommended timing and imaging protocols for post-implant dosimetry? How do the dose-volume histogram parameters (D90, V100, V150) differ between CT-only and CT-MRI fusion-based evaluations?",
+      "expected_keywords": [
+        "CT-MRI fusion",
+        "post-implant",
+        "prostate contouring",
+        "D90",
+        "V100",
+        "V150",
+        "imaging protocol"
+      ],
+      "difficulty": "hard",
+      "description": "Question about CT-MRI fusion for post-implant dosimetry evaluation"
+    },
+    {
+      "id": "Q1635",
+      "input": "I need to understand the concept of the Paris system for dosimetry of interstitial brachytherapy implants. How does the Paris system differ from the TG-43 formalism in terms of dose specification? What are the key rules for source arrangement in the Paris system? How is the prescribed dose defined in the Paris system compared to the ICRU 38/58 recommendations? When should I use the Paris system versus TG-43-based dose specification?",
+      "expected_keywords": [
+        "Paris system",
+        "ICRU 38",
+        "ICRU 58",
+        "dose specification",
+        "source arrangement",
+        "comparison"
+      ],
+      "difficulty": "hard",
+      "description": "Comparative question about Paris system vs TG-43 dosimetry"
+    },
+    {
+      "id": "Q1636",
+      "input": "I am performing a treatment plan evaluation for a prostate LDR brachytherapy implant. The plan shows the following DVH parameters: prostate D90 = 185 Gy, prostate V100 = 95%, prostate V150 = 65%, prostate V200 = 35%, rectal D2cc = 125 Gy, urethral Dmax = 198 Gy, urethral D10 = 172 Gy. Evaluate this plan according to RTOG 98-05 and RTOG 0126 protocols. Are there any quality concerns? What modifications would you recommend?",
+      "expected_keywords": [
+        "DVH",
+        "RTOG 98-05",
+        "RTOG 0126",
+        "D90",
+        "V100",
+        "V150",
+        "plan evaluation"
+      ],
+      "difficulty": "hard",
+      "description": "Plan evaluation question using RTOG protocol criteria"
+    },
+    {
+      "id": "Q1637",
+      "input": "I need to understand the effect of applicator heterogeneity on dose calculation in brachytherapy. For a vaginal cylinder applicator made of Delrin (plastic), how does the applicator material affect the dose distribution compared to water? What is the attenuation coefficient of Delrin for Ir-192 gamma rays? How should the applicator be modeled in the treatment planning system? What errors are introduced by assuming the applicator is water-equivalent?",
+      "expected_keywords": [
+        "applicator heterogeneity",
+        "Delrin",
+        "attenuation",
+        "water equivalent",
+        "TPS modeling",
+        "errors"
+      ],
+      "difficulty": "hard",
+      "description": "Question about applicator material effects on dose calculation"
+    },
+    {
+      "id": "Q1638",
+      "input": "I am studying the AAPM TG-182 report on the clinical implementation of model-based dose calculation algorithms for brachytherapy. What are the specific recommendations in TG-182 regarding: (1) when model-based calculations should be clinically implemented, (2) what validation and commissioning procedures are required, (3) how to handle the transition from TG-43 to model-based calculations, and (4) what are the reported clinical impact of switching from TG-43 to model-based calculations?",
+      "expected_keywords": [
+        "TG-182",
+        "model-based",
+        "commissioning",
+        "clinical implementation",
+        "validation",
+        "transition"
+      ],
+      "difficulty": "expert",
+      "description": "Detailed question about AAPM TG-182 implementation recommendations"
+    },
+    {
+      "id": "Q1639",
+      "input": "I need to calculate the dose distribution for a multi-catheter breast brachytherapy applicator. The applicator has 15 catheters with a total of 85 dwell positions. The prescription dose is 3.4 Gy per fraction x 10 fractions to a 1 cm margin around the applicator. Using TG-43 formalism, how would I approach the dose optimization for this plan? What are the key considerations for dwell time optimization? How do I ensure adequate coverage of the target volume while minimizing hot spots?",
+      "expected_keywords": [
+        "multi-catheter",
+        "breast",
+        "dwell time optimization",
+        "TG-43",
+        "target coverage",
+        "hot spots"
+      ],
+      "difficulty": "hard",
+      "description": "Question about multi-catheter breast brachytherapy planning optimization"
+    },
+    {
+      "id": "Q1640",
+      "input": "I am reviewing a brachytherapy treatment plan for a rectal cancer boost. The plan uses a customized applicator with 5 catheters. The prescription is 5 Gy x 5 fractions to the tumor. The treatment planning system uses TG-43 dose calculation. I notice the dose distribution shows significant dose variation within the target volume. What optimization techniques could I use to improve dose homogeneity? How does the inverse planning simulated annealing (IPSA) algorithm work for brachytherapy optimization? What are the limitations of IPSA?",
+      "expected_keywords": [
+        "optimization",
+        "IPSA",
+        "inverse planning",
+        "dose homogeneity",
+        "rectal",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Question about brachytherapy optimization techniques including IPSA"
+    },
+    {
+      "id": "Q1641",
+      "input": "I need to understand the concept of the dose to a small volume (D0.1cc, D1cc, D2cc) versus the dose to a point in brachytherapy planning. Why has the radiation oncology community moved from point-based dose specification to volume-based dose specification? What are the advantages of dose to small volumes for predicting normal tissue complications? How do I calculate D0.1cc, D1cc, and D2cc from a dose-volume histogram? What are the typical D2cc constraints for organs at risk in cervical brachytherapy?",
+      "expected_keywords": [
+        "D0.1cc",
+        "D1cc",
+        "D2cc",
+        "volume-based",
+        "OAR constraints",
+        "DVH",
+        "point-based"
+      ],
+      "difficulty": "hard",
+      "description": "Question about transition from point-based to volume-based dose specification"
+    },
+    {
+      "id": "Q1642",
+      "input": "I am performing a TG-43 based dose calculation for a cervical cancer brachytherapy plan. I want to calculate the dose at an arbitrary point in 3D space due to a single dwell position in the tandem. The dwell position is at coordinates (0, 0, 0) in the applicator coordinate system. The point of interest is at (2.0, 1.5, 0.8) cm from the dwell position. Given the TG-43 parameters for the Ir-192 source (dose-rate constant = 1.108 cGy/(hr U), geometry function, radial dose function, and anisotropy function at this distance and angle), calculate the dose rate at this point.",
+      "expected_keywords": [
+        "TG-43",
+        "dose calculation",
+        "step-by-step",
+        "geometry function",
+        "radial dose",
+        "anisotropy"
+      ],
+      "difficulty": "expert",
+      "description": "Step-by-step TG-43 dose calculation demonstration"
+    },
+    {
+      "id": "Q1643",
+      "input": "I need to understand the TG-229 report on brachytherapy source strength standards. What are the key changes in TG-229 compared to previous reports? How does TG-229 address: (1) the recommended calibration standards, (2) the traceability to national standards, (3) the uncertainty requirements for source calibration, and (4) the inter-institutional comparison of source strength measurements? What are the practical implications of TG-229 for clinical brachytherapy programs?",
+      "expected_keywords": [
+        "TG-229",
+        "calibration",
+        "traceability",
+        "uncertainty",
+        "inter-institutional",
+        "practical"
+      ],
+      "difficulty": "expert",
+      "description": "Detailed question about AAPM TG-229 source strength standards"
+    },
+    {
+      "id": "Q1644",
+      "input": "I am evaluating the effect of edema on prostate brachytherapy dose distributions. After seed implantation, the prostate typically swells by 20-40% in the first 24 hours. How does this edema affect the dose distribution? What is the edema decay function, and how does it relate to the prostate volume changes? How should I account for edema in the treatment planning? What is the significance of the edema-corrected dose-volume histogram parameters?",
+      "expected_keywords": [
+        "edema",
+        "prostate",
+        "volume change",
+        "edema decay",
+        "DVH",
+        "dose distribution"
+      ],
+      "difficulty": "hard",
+      "description": "Question about edema effects on prostate brachytherapy dose distribution"
+    },
+    {
+      "id": "Q1645",
+      "input": "I need to understand the TG-43U1 S5 supplement regarding air-kerma strength measurements for brachytherapy sources. What specific changes were introduced in S5? How does S5 affect: (1) the traceability of source strength measurements, (2) the uncertainty analysis requirements, (3) the reporting of calibration results, and (4) the inter-comparison of measurements between institutions? What are the practical implications for clinical programs?",
+      "expected_keywords": [
+        "TG-43U1 S5",
+        "air-kerma",
+        "traceability",
+        "uncertainty",
+        "inter-comparison",
+        "practical"
+      ],
+      "difficulty": "hard",
+      "description": "Technical question about TG-43U1 S5 supplement"
+    },
+    {
+      "id": "Q1646",
+      "input": "I am performing a research study comparing the dose distributions of different HDR brachytherapy source models used clinically. I need to understand: (1) How do the TG-43 parameters differ between source models from different manufacturers, (2) What are the typical differences in dose-rate constant, radial dose function, and anisotropy function between Ir-192 source models, (3) How do these differences affect clinical dose distributions for cervical and prostate brachytherapy, and (4) What standardization efforts exist to harmonize source data across institutions?",
+      "expected_keywords": [
+        "source models",
+        "TG-43 parameters",
+        "comparison",
+        "Ir-192",
+        "standardization",
+        "clinical effects"
+      ],
+      "difficulty": "hard",
+      "description": "Research question comparing brachytherapy source dosimetry parameters"
+    },
+    {
+      "id": "Q1647",
+      "input": "I need to understand how dose calculation accuracy affects clinical outcomes in brachytherapy. What is the evidence that TG-43 based dose calculations are clinically adequate for different brachytherapy applications? What are the specific clinical scenarios where TG-43 dose calculation errors may lead to clinical consequences? How do the published clinical outcome data correlate with dose calculation accuracy?",
+      "expected_keywords": [
+        "dose accuracy",
+        "clinical outcomes",
+        "TG-43",
+        "evidence",
+        "consequences",
+        "adequacy"
+      ],
+      "difficulty": "hard",
+      "description": "Question about the clinical significance of dose calculation accuracy"
+    },
+    {
+      "id": "Q1648",
+      "input": "I am implementing a brachytherapy treatment planning system and need to understand the coordinate system transformations required. The source coordinate system has its origin at the source center with the z-axis along the source axis. The applicator coordinate system has its origin at the applicator reference point. The patient coordinate system is based on the treatment isocenter. How do I transform between these coordinate systems? What rotations and translations are required? How do I handle applicator flex and source position uncertainties in these transformations?",
+      "expected_keywords": [
+        "coordinate system",
+        "transformation",
+        "rotation",
+        "translation",
+        "applicator flex",
+        "source position"
+      ],
+      "difficulty": "expert",
+      "description": "Technical question about coordinate system transformations in brachytherapy TPS"
+    },
+    {
+      "id": "Q1649",
+      "input": "I need to understand the AAPM TG-240 report on brachytherapy quality assurance. What are the key recommendations in TG-240 for: (1) TG-43 data acquisition and reporting, (2) dose calculation algorithm commissioning, (3) treatment planning system validation, (4) end-to-end testing procedures, and (5) ongoing quality assurance programs? What are the specific tolerance values recommended for each test?",
+      "expected_keywords": [
+        "TG-240",
+        "quality assurance",
+        "commissioning",
+        "end-to-end",
+        "tolerance",
+        "TG-43 data"
+      ],
+      "difficulty": "hard",
+      "description": "Detailed question about AAPM TG-240 QA recommendations"
+    },
+    {
+      "id": "Q1650",
+      "input": "I am reviewing a brachytherapy treatment plan that uses a hybrid intracavitary-interstitial approach for cervical cancer. The plan combines a tandem with needle-based interstitial components. I need to understand: (1) How does the TG-43 dose calculation handle the combination of intracavitary and interstitial sources, (2) What are the dosimetric advantages of the hybrid approach over intracavitary alone, (3) How should I evaluate the plan quality using both TG-43 and ICRU 89 recommendations, and (4) What are the typical OAR dose constraints for hybrid approaches?",
+      "expected_keywords": [
+        "hybrid",
+        "intracavitary",
+        "interstitial",
+        "TG-43",
+        "ICRU 89",
+        "OAR constraints"
+      ],
+      "difficulty": "hard",
+      "description": "Question about hybrid intracavitary-interstitial brachytherapy dosimetry"
+    },
+    {
+      "id": "Q1651",
+      "input": "I need to understand the TG-119 report on intensity-modulated radiation therapy (IMRT) commissioning and testing. Although TG-119 focuses on external beam, many of the QA concepts apply to brachytherapy. How do the TG-119 end-to-end testing concepts apply to brachytherapy treatment planning? What specific tests from TG-119 are relevant for brachytherapy TPS commissioning? How should I adapt the TG-119 pass/fail criteria for brachytherapy applications?",
+      "expected_keywords": [
+        "TG-119",
+        "end-to-end",
+        "commissioning",
+        "QA",
+        "adaptation",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Question about applying TG-119 QA concepts to brachytherapy"
+    },
+    {
+      "id": "Q1652",
+      "input": "I am performing a dose calculation for a prostate LDR implant using Pd-103 seeds. I need to understand the biological effective dose (BED) comparison between Pd-103 and I-125 implants. Given that Pd-103 has a half-life of 17 days versus 59.4 days for I-125, how does the dose-rate effect affect the biological effectiveness? What alpha/beta ratio should I use for prostate cancer? How do the BED values compare for equivalent physical dose prescriptions?",
+      "expected_keywords": [
+        "Pd-103",
+        "I-125",
+        "BED",
+        "dose-rate effect",
+        "alpha/beta",
+        "biological effectiveness"
+      ],
+      "difficulty": "hard",
+      "description": "Radiobiology question comparing Pd-103 and I-125 biological effectiveness"
+    },
+    {
+      "id": "Q1653",
+      "input": "I need to understand the TG-167 report on the calibration of brachytherapy sources. What are the key recommendations in TG-167 regarding: (1) the recommended traceability chain for source calibration, (2) the uncertainty requirements at each level of the traceability chain, (3) the role of the ADCL ( Accredited Dosimetry Calibration Laboratory) in the calibration process, and (4) how to verify source strength measurements? What are the practical steps for a clinical program to comply with TG-167?",
+      "expected_keywords": [
+        "TG-167",
+        "traceability",
+        "ADCL",
+        "uncertainty",
+        "calibration",
+        "compliance"
+      ],
+      "difficulty": "hard",
+      "description": "Detailed question about AAPM TG-167 calibration recommendations"
+    },
+    {
+      "id": "Q1654",
+      "input": "I am evaluating the effect of brachytherapy applicator displacement on dose distribution. For a cervical cancer T&O application, the applicator may shift during the course of treatment due to patient movement, uterine changes, or tumor regression. If the applicator shifts 5 mm between fractions, what is the effect on the cumulative dose distribution? How should I account for applicator displacement in treatment planning? Should I use image-guided adaptive brachytherapy (IGABT) to address this issue?",
+      "expected_keywords": [
+        "applicator displacement",
+        "IGABT",
+        "adaptive",
+        "dose distribution",
+        "cumulative dose",
+        "image-guided"
+      ],
+      "difficulty": "hard",
+      "description": "Question about applicator displacement effects and adaptive brachytherapy"
+    },
+    {
+      "id": "Q1655",
+      "input": "I need to understand the TG-232 report on source calibration for brachytherapy. What are the specific recommendations for: (1) the frequency of source calibration checks, (2) the methods for source strength verification, (3) how to handle discrepancies between expected and measured source strength, and (4) the documentation requirements for source calibration? What are the tolerance values for source strength verification?",
+      "expected_keywords": [
+        "TG-232",
+        "source calibration",
+        "verification",
+        "tolerance",
+        "documentation",
+        "frequency"
+      ],
+      "difficulty": "hard",
+      "description": "Detailed question about AAPM TG-232 source calibration recommendations"
+    },
+    {
+      "id": "Q1656",
+      "input": "I am studying the effect of interseed attenuation in prostate LDR brachytherapy. When multiple I-125 seeds are implanted in close proximity, the seeds can attenuate each other's radiation. How significant is the interseed attenuation effect? What is the typical dose reduction at the midplane between two seeds spaced 5 mm apart? How does interseed attenuation affect the TG-43 dose calculation? Should I apply an interseed attenuation correction factor in my treatment planning?",
+      "expected_keywords": [
+        "interseed attenuation",
+        "I-125",
+        "dose reduction",
+        "correction factor",
+        "TG-43",
+        "prostate"
+      ],
+      "difficulty": "hard",
+      "description": "Question about interseed attenuation effects in prostate brachytherapy"
+    },
+    {
+      "id": "Q1657",
+      "input": "I need to understand the TG-218 report on tolerance formalism and methodology for radiation oncology. How do the TG-218 tolerance categories apply to brachytherapy? What are the specific tolerance values for: (1) source strength calibration, (2) source position accuracy, (3) dose calculation accuracy, and (4) dose delivery accuracy? How should I implement TG-218 tolerance checking in my brachytherapy QA program?",
+      "expected_keywords": [
+        "TG-218",
+        "tolerance",
+        "QA program",
+        "source strength",
+        "position accuracy",
+        "dose accuracy"
+      ],
+      "difficulty": "hard",
+      "description": "Question about TG-218 tolerance methodology for brachytherapy"
+    },
+    {
+      "id": "Q1658",
+      "input": "I am performing a dose calculation comparison between a brachytherapy TPS and an independent dose calculation program. The TPS uses TG-43 dose calculation, and I want to verify the dose at the prescription point. How should I set up the independent dose calculation? What TG-43 parameters should I use? What is the acceptable tolerance between the TPS and independent calculation? How do I document the verification?",
+      "expected_keywords": [
+        "independent calculation",
+        "TG-43",
+        "verification",
+        "tolerance",
+        "documentation",
+        "dose comparison"
+      ],
+      "difficulty": "medium",
+      "description": "Practical question about independent dose calculation verification"
+    },
+    {
+      "id": "Q1659",
+      "input": "I need to understand the TG-91 report on the clinical use of LDR prostate brachytherapy. What are the specific recommendations in TG-91 regarding: (1) patient selection criteria, (2) treatment planning methodology, (3) intraoperative quality assurance, (4) post-implant dosimetry evaluation, and (5) follow-up protocols? How do the TG-91 recommendations compare with current clinical practice?",
+      "expected_keywords": [
+        "TG-91",
+        "LDR prostate",
+        "patient selection",
+        "treatment planning",
+        "post-implant",
+        "follow-up"
+      ],
+      "difficulty": "hard",
+      "description": "Comprehensive question about AAPM TG-91 LDR prostate brachytherapy recommendations"
+    },
+    {
+      "id": "Q1660",
+      "input": "I am implementing a quality assurance program for an HDR brachytherapy clinic. I need to understand the TG-142 report recommendations for QA in radiation oncology. What are the specific TG-142 recommendations that apply to brachytherapy? How should I categorize the QA tests (daily, monthly, annual)? What are the specific tolerance values for brachytherapy equipment? How do I document and track QA results?",
+      "expected_keywords": [
+        "TG-142",
+        "QA program",
+        "HDR",
+        "tolerance",
+        "documentation",
+        "QA categories"
+      ],
+      "difficulty": "medium",
+      "description": "Comprehensive question about implementing TG-142 QA for brachytherapy"
+    }
+  ]
+}
