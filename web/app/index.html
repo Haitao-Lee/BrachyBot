@@ -398,12 +398,17 @@
             font-weight: 600;
         }
         .md-list, .md-ordered-list {
-            margin: 0.15rem 0;
-            padding-left: 1.3rem;
+            margin: 0.1rem 0;
+            padding-left: 1.2rem;
         }
         .md-list-item, .md-ordered-item {
-            margin: 0.05rem 0;
-            line-height: 1.4;
+            margin: 0;
+            padding: 0;
+            line-height: 1.3;
+        }
+        .md-list-item::marker, .md-ordered-item::marker {
+            margin: 0;
+            padding: 0;
         }
         .md-hr {
             border: none;
@@ -5110,31 +5115,42 @@ function renderMarkdown(text) {
     html = html.replace(/^### (.+)$/gm, '<h4 class="md-h3">$1</h4>');
     html = html.replace(/^## (.+)$/gm, '<h3 class="md-h2">$1</h3>');
     html = html.replace(/^# (.+)$/gm, '<h2 class="md-h1">$1</h2>');
-    
-    // Unordered lists
-    html = html.replace(/^- (.+)$/gm, '<li class="md-list-item">$1</li>');
-    html = html.replace(/(<li class="md-list-item">.*<\/li>\n?)+/g, (match) => {
-        return `<ul class="md-list">${match}</ul>`;
+
+    // Unordered lists - capture the whole block at once
+    html = html.replace(/(^- .+$\n?)+/gm, (match) => {
+        const items = match.trim().split('\n')
+            .filter(line => line.startsWith('- '))
+            .map(line => `<li class="md-list-item">${line.substring(2)}</li>`)
+            .join('');
+        return `<ul class="md-list">${items}</ul>`;
     });
-    
-    // Ordered lists
-    html = html.replace(/^\d+\. (.+)$/gm, '<li class="md-ordered-item">$1</li>');
-    html = html.replace(/(<li class="md-ordered-item">.*<\/li>\n?)+/g, (match) => {
-        return `<ol class="md-ordered-list">${match}</ol>`;
+
+    // Ordered lists - capture the whole block at once
+    html = html.replace(/(^\d+\. .+$\n?)+/gm, (match) => {
+        const items = match.trim().split('\n')
+            .filter(line => /^\d+\./.test(line))
+            .map(line => `<li class="md-ordered-item">${line.replace(/^\d+\.\s*/, '')}</li>`)
+            .join('');
+        return `<ol class="md-ordered-list">${items}</ol>`;
     });
-    
+
     // Horizontal rule (---)
     html = html.replace(/^---$/gm, '<hr class="md-hr">');
-    
+
     // Line breaks - wrap non-block text in <p> tags
+    // First normalize newlines, then handle double newlines as paragraph breaks
     html = html.replace(/\n\n+/g, '</p><p>');
+    // Don't convert single newlines to <br> inside lists (already handled above)
     html = html.replace(/\n/g, '<br>');
 
-    // Clean up extra <br> after block elements
+    // Clean up extra <br> after/before block elements
     html = html.replace(/<\/(pre|h[2-4]|table|ul|ol|hr)><br>/g, '</$1>');
     html = html.replace(/<br><(pre|h[2-4]|table|ul|ol|hr)/g, '<$1');
     html = html.replace(/<\/p><br>/g, '</p>');
     html = html.replace(/<br><p>/g, '<p>');
+    // Remove <br> inside list items
+    html = html.replace(/<li([^>]*)><br>/g, '<li$1>');
+    html = html.replace(/<br><\/li>/g, '</li>');
 
     // Wrap in paragraph if not already wrapped
     if (!html.startsWith('<p>') && !html.startsWith('<pre>') && !html.startsWith('<h') && !html.startsWith('<table>') && !html.startsWith('<ul>') && !html.startsWith('<ol>') && !html.startsWith('<hr')) {
