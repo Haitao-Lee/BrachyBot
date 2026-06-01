@@ -1,0 +1,186 @@
+{
+  "dose_constraints": {
+    "prostate": {
+      "ctv_v100": {
+        "target": ">=95%",
+        "description": "CTV should receive 100% of prescription dose"
+      },
+      "ctv_d90": {
+        "target": ">=100%",
+        "description": "90% of CTV should get full prescription"
+      },
+      "rectum_d0.1cc": {
+        "limit": "<=150%",
+        "description": "Rectum max dose per 0.1cc"
+      },
+      "rectum_d1cc": {
+        "limit": "<=120%",
+        "description": "Rectum max dose per 1cc"
+      },
+      "bladder_d0.1cc": {
+        "limit": "<=150%",
+        "description": "Bladder max dose per 0.1cc"
+      },
+      "urethra_d0.1cc": {
+        "limit": "<=120%",
+        "description": "Urethra max dose per 0.1cc"
+      },
+      "v200": {
+        "limit": "<=35%",
+        "description": "Volume receiving 200% dose"
+      }
+    },
+    "cervical": {
+      "ctv_v100": {
+        "target": ">=90%",
+        "description": "CTV coverage"
+      },
+      "bladder_d2cc": {
+        "limit": "<=90Gy",
+        "description": "Bladder D2cc EQD2"
+      },
+      "rectum_d2cc": {
+        "limit": "<=75Gy",
+        "description": "Rectum D2cc EQD2"
+      },
+      "sigmoid_d2cc": {
+        "limit": "<=75Gy",
+        "description": "Sigmoid D2cc EQD2"
+      }
+    },
+    "lung": {
+      "ctv_v100": {
+        "target": ">=95%",
+        "description": "CTV coverage"
+      },
+      "spinal_cord_d0.1cc": {
+        "limit": "<=45Gy",
+        "description": "Spinal cord max dose"
+      },
+      "esophagus_d0.1cc": {
+        "limit": "<=60Gy",
+        "description": "Esophagus max dose"
+      },
+      "heart_d0.1cc": {
+        "limit": "<=60Gy",
+        "description": "Heart max dose"
+      }
+    },
+    "liver": {
+      "ctv_v100": {
+        "target": ">=90%",
+        "description": "CTV coverage"
+      },
+      "normal_liver_mean": {
+        "limit": "<=30Gy",
+        "description": "Normal liver mean dose"
+      },
+      "spinal_cord_d0.1cc": {
+        "limit": "<=45Gy",
+        "description": "Spinal cord max dose"
+      }
+    },
+    "head_neck": {
+      "ctv_v100": {
+        "target": ">=95%",
+        "description": "CTV coverage"
+      },
+      "spinal_cord_d0.1cc": {
+        "limit": "<=45Gy",
+        "description": "Spinal cord max dose"
+      },
+      "brainstem_d0.1cc": {
+        "limit": "<=54Gy",
+        "description": "Brainstem max dose"
+      },
+      "parotid_mean": {
+        "limit": "<=26Gy",
+        "description": "Parotid mean dose"
+      }
+    }
+  },
+  "organ_tolerances": {
+    "spinal_cord": {
+      "max_dose_gy": 45,
+      "tolerance": "Very sensitive"
+    },
+    "brainstem": {
+      "max_dose_gy": 54,
+      "tolerance": "Sensitive"
+    },
+    "heart": {
+      "max_dose_gy": 60,
+      "tolerance": "Sensitive"
+    },
+    "esophagus": {
+      "max_dose_gy": 60,
+      "tolerance": "Moderate"
+    },
+    "small_bowel": {
+      "max_dose_gy": 50,
+      "tolerance": "Sensitive"
+    },
+    "rectum": {
+      "max_dose_gy": 75,
+      "tolerance": "Moderate"
+    },
+    "bladder": {
+      "max_dose_gy": 90,
+      "tolerance": "Moderate"
+    },
+    "kidney": {
+      "mean_dose_gy": 18,
+      "tolerance": "Sensitive"
+    },
+    "liver": {
+      "mean_dose_gy": 30,
+      "tolerance": "Moderate"
+    },
+    "lung": {
+      "mean_dose_gy": 20,
+      "tolerance": "Sensitive"
+    }
+  },
+  "treatment_protocols": {
+    "prostate_low_risk": {
+      "description": "Low-risk prostate cancer monotherapy",
+      "prescription_dose_gy": 145,
+      "seeds_per_cc": 0.7,
+      "technique": "Peripheral loading with modified uniform distribution"
+    },
+    "prostate_intermediate_risk": {
+      "description": "Intermediate-risk prostate cancer with boost",
+      "prescription_dose_gy": 110,
+      "boost_dose_gy": 90,
+      "technique": "Combined EBRT + HDR boost"
+    },
+    "cervical_hdr": {
+      "description": "Cervical cancer HDR brachytherapy",
+      "prescription_dose_gy": 28,
+      "fractions": 4,
+      "technique": "Intracavitary with tandem/ovoids"
+    }
+  },
+  "plan_quality_benchmarks": {
+    "excellent": {
+      "min_score": 90,
+      "v100_min": 0.95,
+      "v200_max": 0.25
+    },
+    "good": {
+      "min_score": 80,
+      "v100_min": 0.9,
+      "v200_max": 0.35
+    },
+    "acceptable": {
+      "min_score": 70,
+      "v100_min": 0.85,
+      "v200_max": 0.4
+    },
+    "marginal": {
+      "min_score": 60,
+      "v100_min": 0.8,
+      "v200_max": 0.45
+    }
+  }
+}
