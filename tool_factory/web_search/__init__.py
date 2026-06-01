@@ -165,13 +165,13 @@ GitHub Integration:
     def _search_duckduckgo(self, query: str, max_results: int = 5) -> List[Dict]:
         """
         Search using DuckDuckGo Instant Answer API.
-        Falls back to HTML scraping if API doesn't return results.
+        Falls back to Wikipedia API if DuckDuckGo fails.
         Uses shorter timeouts for faster failure.
         """
         results = []
 
+        # Try DuckDuckGo API first
         try:
-            # Try DuckDuckGo Instant Answer API first (short timeout)
             api_url = "https://api.duckduckgo.com/"
             params = {
                 "q": query,
@@ -235,6 +235,23 @@ GitHub Integration:
 
             except Exception as e:
                 logger.warning(f"Web search fallback error: {e}")
+
+        # If still no results, try Wikipedia API (very reliable, fast)
+        if not results:
+            try:
+                wiki_url = "https://en.wikipedia.org/api/rest_v1/page/summary/" + quote_plus(query)
+                response = requests.get(wiki_url, timeout=3)  # 3秒超时
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("extract"):
+                        results.append({
+                            "title": data.get("title", query),
+                            "snippet": data["extract"][:500],
+                            "url": data.get("content_urls", {}).get("desktop", {}).get("page", ""),
+                            "source": "Wikipedia"
+                        })
+            except Exception as e:
+                logger.warning(f"Wikipedia API error: {e}")
 
         return results[:max_results]
 
