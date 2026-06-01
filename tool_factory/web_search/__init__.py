@@ -258,8 +258,7 @@ GitHub Integration:
     def _search_bing(self, query: str, max_results: int = 5) -> List[Dict]:
         """
         Search using Bing Web Search API.
-        Requires BING_SEARCH_API_KEY environment variable.
-        Falls back to scraping if no API key.
+        Uses official API if BING_SEARCH_API_KEY is set, otherwise uses public endpoint.
         """
         results = []
         api_key = os.environ.get("BING_SEARCH_API_KEY")
@@ -287,42 +286,61 @@ GitHub Integration:
             except Exception as e:
                 logger.warning(f"Bing API error: {e}")
         else:
-            # Fallback: scrape Bing search results
+            # Use Bing public search (no API key required)
             try:
-                search_url = f"https://www.bing.com/search?q={quote_plus(query)}"
+                # Use Bing's public API endpoint
+                search_url = "https://api.bing.com/osjson.aspx"
+                params = {
+                    "query": query,
+                    "market": "en-US"
+                }
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                }
+                response = requests.get(search_url, params=params, headers=headers, timeout=5)
+                if response.status_code == 200:
+                    # This returns suggestions, not full results
+                    # Let's use a different approach - Bing's search results page
+                    pass
+
+                # Fallback: Try scraping Bing search results
+                search_url = f"https://www.bing.com/search?q={quote_plus(query)}&count={max_results}"
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.5"
                 }
                 response = requests.get(search_url, headers=headers, timeout=5)
                 if response.status_code == 200:
                     text = response.text
-                    # Extract search results from Bing HTML
-                    # Look for result snippets
-                    snippet_pattern = r'<p class="b_lineclamp[2-4]">(.*?)</p>'
-                    snippets = re.findall(snippet_pattern, text, re.DOTALL)
+                    # Try to extract results using multiple patterns
+                    # Pattern 1: Look for result blocks
+                    result_pattern = r'<li class="b_algo">(.*?)</li>'
+                    result_blocks = re.findall(result_pattern, text, re.DOTALL)
 
-                    # Extract titles
-                    title_pattern = r'<a[^>]*class="tilk"[^>]*>(.*?)</a>'
-                    titles = re.findall(title_pattern, text, re.DOTALL)
+                    for block in result_blocks[:max_results]:
+                        # Extract title and URL from <h2><a> tag
+                        title_match = re.search(r'<h2><a[^>]*href="([^"]*)"[^>]*>(.*?)</a></h2>', block)
+                        if title_match:
+                            url = title_match.group(1)
+                            title = re.sub(r'<[^>]+>', '', title_match.group(2)).strip()
 
-                    # Extract URLs
-                    url_pattern = r'<a[^>]*class="tilk"[^>]*href="(.*?)"'
-                    urls = re.findall(url_pattern, text)
+                            # Extract snippet
+                            snippet_match = re.search(r'<p[^>]*>(.*?)</p>', block, re.DOTALL)
+                            snippet = ""
+                            if snippet_match:
+                                snippet = re.sub(r'<[^>]+>', '', snippet_match.group(1)).strip()
 
-                    for i in range(min(len(snippets), max_results)):
-                        clean_snippet = re.sub(r'<[^>]+>', '', snippets[i]).strip()
-                        clean_title = re.sub(r'<[^>]+>', '', titles[i]).strip() if i < len(titles) else f"Result {i+1}"
-                        clean_url = urls[i] if i < len(urls) else ""
+                            if title and snippet:
+                                results.append({
+                                    "title": title[:200],
+                                    "snippet": snippet[:300],
+                                    "url": url,
+                                    "source": "Bing"
+                                })
 
-                        if clean_snippet:
-                            results.append({
-                                "title": clean_title,
-                                "snippet": clean_snippet[:300],
-                                "url": clean_url,
-                                "source": "Bing"
-                            })
             except Exception as e:
-                logger.warning(f"Bing scraping error: {e}")
+                logger.warning(f"Bing search error: {e}")
 
         return results[:max_results]
 
