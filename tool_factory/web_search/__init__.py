@@ -739,6 +739,30 @@ GitHub Integration:
 
         return simplified
 
+    def _simplify_for_pubmed(self, query: str) -> str:
+        """
+        Simplify query specifically for PubMed search.
+        PubMed works best with simple keyword queries.
+        """
+        # Remove common filler words
+        filler_words = [
+            'AI', 'agent', 'system', 'model', 'tool', 'platform',
+            'artificial', 'intelligence', 'machine', 'learning',
+            'deep', 'learning', 'neural', 'network',
+        ]
+
+        words = query.split()
+        # Keep only the main keywords (max 3)
+        main_keywords = []
+        for word in words:
+            if word.lower() not in [f.lower() for f in filler_words]:
+                main_keywords.append(word)
+                if len(main_keywords) >= 3:
+                    break
+
+        simplified = ' '.join(main_keywords)
+        return simplified if simplified else query
+
     def _format_results(self, results: List[Dict], query: str) -> Dict:
         """Format search results into a structured response."""
         if not results:
@@ -909,7 +933,11 @@ GitHub Integration:
             optimized_query = self._optimize_search_query(query, search_type)
             logger.info(f"Optimized query: '{query}' -> '{optimized_query}'")
 
-            pubmed_results = self._search_pubmed(optimized_query, max_results=max_results)
+            # For PubMed, use a simpler query (PubMed works best with keywords)
+            pubmed_query = self._simplify_for_pubmed(optimized_query)
+            logger.info(f"PubMed query: '{optimized_query}' -> '{pubmed_query}'")
+
+            pubmed_results = self._search_pubmed(pubmed_query, max_results=max_results)
             results.extend(pubmed_results)
 
             # Only try other sources if PubMed returned nothing
