@@ -702,6 +702,30 @@ GitHub Integration:
         simplified = ' '.join(main_keywords).strip()
         return simplified if simplified else query
 
+    def _optimize_search_query(self, query: str, search_type: str = "general") -> str:
+        """
+        Optimize search query for different search engines.
+        Inspired by Higress ai-search plugin.
+        """
+        # Simplify the query first
+        simplified = self._simplify_query(query)
+
+        # For PubMed, add medical context if not present
+        if search_type == "clinical":
+            medical_terms = ['brachytherapy', 'radiation', 'dose', 'treatment', 'cancer']
+            if not any(term in simplified.lower() for term in medical_terms):
+                simplified += " brachytherapy"
+
+        # For general search, try to make it more search-friendly
+        # Convert questions to keywords
+        question_words = ['what', 'who', 'when', 'where', 'why', 'how', 'which']
+        words = simplified.split()
+        filtered_words = [w for w in words if w.lower() not in question_words]
+        if filtered_words:
+            simplified = ' '.join(filtered_words)
+
+        return simplified
+
     def _format_results(self, results: List[Dict], query: str) -> Dict:
         """Format search results into a structured response."""
         if not results:
@@ -868,20 +892,20 @@ GitHub Integration:
 
         else:
             # General search: PubMed first (most reliable from this network)
-            # Simplify query for better PubMed results
-            simplified_query = self._simplify_query(query)
-            logger.info(f"Simplified query: '{query}' -> '{simplified_query}'")
+            # Optimize query for better results (inspired by Higress ai-search)
+            optimized_query = self._optimize_search_query(query, search_type)
+            logger.info(f"Optimized query: '{query}' -> '{optimized_query}'")
 
-            pubmed_results = self._search_pubmed(simplified_query, max_results=max_results)
+            pubmed_results = self._search_pubmed(optimized_query, max_results=max_results)
             results.extend(pubmed_results)
 
             # Only try other sources if PubMed returned nothing
             if not results:
-                bing_results = self._search_bing(simplified_query, max_results)
+                bing_results = self._search_bing(optimized_query, max_results)
                 results.extend(bing_results)
 
             if not results:
-                baidu_results = self._search_baidu(simplified_query, max_results)
+                baidu_results = self._search_baidu(optimized_query, max_results)
                 results.extend(baidu_results)
 
             # Skip DuckDuckGo - it always times out from this network
