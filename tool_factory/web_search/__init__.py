@@ -166,11 +166,12 @@ GitHub Integration:
         """
         Search using DuckDuckGo Instant Answer API.
         Falls back to HTML scraping if API doesn't return results.
+        Uses shorter timeouts for faster failure.
         """
         results = []
 
         try:
-            # Try DuckDuckGo Instant Answer API first
+            # Try DuckDuckGo Instant Answer API first (short timeout)
             api_url = "https://api.duckduckgo.com/"
             params = {
                 "q": query,
@@ -179,7 +180,7 @@ GitHub Integration:
                 "skip_disambig": 1
             }
 
-            response = requests.get(api_url, params=params, timeout=10)
+            response = requests.get(api_url, params=params, timeout=5)  # 5秒超时
             if response.status_code == 200:
                 data = response.json()
 
@@ -213,7 +214,7 @@ GitHub Integration:
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                 }
-                response = requests.get(search_url, headers=headers, timeout=15)
+                response = requests.get(search_url, headers=headers, timeout=8)  # 8秒超时
                 if response.status_code == 200:
                     # Simple extraction of results
                     text = response.text
@@ -252,7 +253,7 @@ GitHub Integration:
                 "sort": "relevance"
             }
 
-            response = requests.get(search_url, params=params, timeout=10)
+            response = requests.get(search_url, params=params, timeout=5)  # 5秒超时
             if response.status_code == 200:
                 data = response.json()
                 ids = data.get("esearchresult", {}).get("idlist", [])
@@ -266,7 +267,7 @@ GitHub Integration:
                         "retmode": "json"
                     }
 
-                    fetch_response = requests.get(fetch_url, params=fetch_params, timeout=10)
+                    fetch_response = requests.get(fetch_url, params=fetch_params, timeout=5)  # 5秒超时
                     if fetch_response.status_code == 200:
                         summaries = fetch_response.json().get("result", {})
                         for pmid in ids:
