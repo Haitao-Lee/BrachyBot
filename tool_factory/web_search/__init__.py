@@ -368,11 +368,11 @@ GitHub Integration:
         return results[:max_results]
 
     def _search_pubmed(self, query: str, max_results: int = 3) -> List[Dict]:
-        """Search PubMed for clinical literature."""
+        """Search PubMed for clinical literature with abstracts."""
         results = []
 
         try:
-            # Use PubMed E-utilities
+            # Use PubMed E-utilities to search
             search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
             params = {
                 "db": "pubmed",
@@ -382,13 +382,13 @@ GitHub Integration:
                 "sort": "relevance"
             }
 
-            response = requests.get(search_url, params=params, timeout=5)  # 5秒超时
+            response = requests.get(search_url, params=params, timeout=5)
             if response.status_code == 200:
                 data = response.json()
                 ids = data.get("esearchresult", {}).get("idlist", [])
 
                 if ids:
-                    # Fetch article details
+                    # Fetch article details including abstract
                     fetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
                     fetch_params = {
                         "db": "pubmed",
@@ -396,15 +396,54 @@ GitHub Integration:
                         "retmode": "json"
                     }
 
-                    fetch_response = requests.get(fetch_url, params=fetch_params, timeout=5)  # 5秒超时
+                    fetch_response = requests.get(fetch_url, params=fetch_params, timeout=5)
                     if fetch_response.status_code == 200:
                         summaries = fetch_response.json().get("result", {})
+
+                        # Also fetch abstracts using efetch
+                        efetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+                        efetch_params = {
+                            "db": "pubmed",
+                            "id": ",".join(ids),
+                            "rettype": "abstract",
+                            "retmode": "text"
+                        }
+                        abstract_response = requests.get(efetch_url, params=efetch_params, timeout=5)
+                        abstracts = {}
+                        if abstract_response.status_code == 200:
+                            # Parse abstracts from plain text response
+                            abstract_text = abstract_response.text
+                            # Split by PMID markers
+                            for pmid in ids:
+                                # Find abstract for this PMID
+                                idx = abstract_text.find(pmid)
+                                if idx != -1:
+                                    # Extract abstract (up to next PMID or end)
+                                    next_pmid_idx = abstract_text.find("\n\nPMID:", idx + 10)
+                                    if next_pmid_idx == -1:
+                                        chunk = abstract_text[idx:]
+                                    else:
+                                        chunk = abstract_text[idx:next_pmid_idx]
+                                    # Clean up and get abstract
+                                    lines = chunk.split("\n")
+                                    abstract_lines = []
+                                    for line in lines[2:]:  # Skip PMID and title lines
+                                        if line.strip() and not line.startswith("PMID:"):
+                                            abstract_lines.append(line.strip())
+                                    abstracts[pmid] = " ".join(abstract_lines)[:500]
+
                         for pmid in ids:
                             article = summaries.get(pmid, {})
                             if article:
+                                title = article.get("title", "Unknown")
+                                abstract = abstracts.get(pmid, "")
+                                snippet = f"PubMed ID: {pmid}. {article.get('sortpubdate', '')}"
+                                if abstract:
+                                    snippet += f". {abstract}"
+
                                 results.append({
-                                    "title": article.get("title", "Unknown"),
-                                    "snippet": f"PubMed ID: {pmid}. {article.get('sortpubdate', '')}",
+                                    "title": title,
+                                    "snippet": snippet[:500],
                                     "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
                                     "source": "PubMed"
                                 })
