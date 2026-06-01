@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import logging
+import time
 import threading
 import secrets
 import hashlib
@@ -188,25 +189,66 @@ def create_app(config: Optional[Dict] = None):
     if config is None:
         config = {}
 
-    agent = None
+    # Session management: each session gets its own agent instance
+    _sessions: Dict[str, Any] = {}  # session_id -> BrachyAgent
+    _session_timestamps: Dict[str, float] = {}  # session_id -> last access time
+    _default_session_id = config.get("session_id", "web")
+    _max_sessions = 50  # Maximum number of concurrent sessions
+    _session_timeout = 3600  # Session timeout in seconds (1 hour)
     websocket_clients = []
 
-    def get_agent():
-        nonlocal agent
-        if agent is None:
-            try:
-                from AgenticSys import BrachyAgent
-                agent = BrachyAgent(
-                    session_id=config.get("session_id", "web"),
-                    config=config.get("agent_config", {})
-                )
-                logger.info("BrachyAgent initialized for web server")
-            except Exception as e:
-                import traceback
-                logger.error(f"Failed to initialize BrachyAgent: {e}")
-                logger.error(traceback.format_exc())
-                return None
-        return agent
+    def get_agent(session_id: str = None):
+        """Get or create an agent for the given session."""
+        nonlocal _sessions, _session_timestamps
+
+        if session_id is None:
+            session_id = _default_session_id
+
+        # Clean up old sessions periodically
+        _cleanup_old_sessions()
+
+        # Return existing agent if session exists
+        if session_id in _sessions:
+            _session_timestamps[session_id] = time.time()
+            return _sessions[session_id]
+
+        # Check if we've hit the max sessions limit
+        if len(_sessions) >= _max_sessions:
+            # Remove the oldest session
+            oldest_session = min(_session_timestamps, key=_session_timestamps.get)
+            _sessions.pop(oldest_session, None)
+            _session_timestamps.pop(oldest_session, None)
+            logger.info(f"Removed oldest session: {oldest_session}")
+
+        # Create new agent for this session
+        try:
+            from AgenticSys import BrachyAgent
+            agent = BrachyAgent(
+                session_id=session_id,
+                config=config.get("agent_config", {})
+            )
+            _sessions[session_id] = agent
+            _session_timestamps[session_id] = time.time()
+            logger.info(f"Created new agent for session: {session_id}")
+            return agent
+        except Exception as e:
+            import traceback
+            logger.error(f"Failed to initialize BrachyAgent for session {session_id}: {e}")
+            logger.error(traceback.format_exc())
+            return None
+
+    def _cleanup_old_sessions():
+        """Remove sessions that have exceeded the timeout."""
+        nonlocal _sessions, _session_timestamps
+        current_time = time.time()
+        expired_sessions = [
+            sid for sid, timestamp in _session_timestamps.items()
+            if current_time - timestamp > _session_timeout
+        ]
+        for sid in expired_sessions:
+            _sessions.pop(sid, None)
+            _session_timestamps.pop(sid, None)
+            logger.info(f"Removed expired session: {sid}")
 
     @app.route("/")
     def index():
@@ -970,10 +1012,6 @@ def create_app(config: Optional[Dict] = None):
     @rate_limit
     def api_chat():
         """Natural language chat interface with execution trace."""
-        agent = get_agent()
-        if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
-
         data = request.get_json() or {}
         message = data.get("message", "")
         ui_state = data.get("ui_state", {})
@@ -982,15 +1020,13 @@ def create_app(config: Optional[Dict] = None):
         clear_context = data.get("clear_context", False)  # Optional: clear conversation history
         session_id = data.get("session_id", None)  # Optional: session ID for isolation
 
-        # Handle session isolation for benchmarks
-        if session_id:
-            # If session ID changed, always clear context for fresh start
-            if not hasattr(agent, '_current_session_id') or agent._current_session_id != session_id:
-                agent.memory.clear_conversation()
-                agent._current_session_id = session_id
-                logger.info(f"New session started: {session_id}")
-        elif clear_context:
-            # Clear conversation context if requested (for fresh start between tests)
+        # Get or create agent for this session
+        agent = get_agent(session_id)
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        # Handle clear_context for backward compatibility
+        if clear_context:
             agent.memory.clear_conversation()
             logger.info("Conversation context cleared")
 

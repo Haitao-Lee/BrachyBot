@@ -247,6 +247,11 @@ class AgentMemory:
             self.smart_context.clear()
             logger.info("Smart context cleared")
 
+        # Clear experience memory
+        if hasattr(self, 'exp_memory') and self.exp_memory:
+            self.exp_memory.clear()
+            logger.info("Experience memory cleared")
+
         # Clear all enhanced integration components
         if hasattr(self, 'enhanced') and self.enhanced:
             try:

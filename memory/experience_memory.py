@@ -98,6 +98,12 @@ class ExperienceMemory:
         except Exception as e:
             logger.warning(f"Failed to save patterns: {e}")
 
+    def clear(self):
+        """Clear all experiences and patterns."""
+        self.experiences.clear()
+        self.patterns.clear()
+        logger.info(f"ExperienceMemory: Cleared all experiences for session {self.session_id}")
+
     def record(self, user_intent: str, context: Dict, tool_chain: List[Dict],
                outcome: str, success: bool, metrics: Dict = None,
                lesson: str = "", tags: List[str] = None) -> ExperienceEntry:
