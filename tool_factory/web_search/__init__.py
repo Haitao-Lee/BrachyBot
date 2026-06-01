@@ -1,8 +1,13 @@
 """
-Web Search Tool
-===============
-Provides internet search capability for BrachyBot to find information
-that is not in its training data or local knowledge base.
+Web Search Tool with Evidence Chain
+====================================
+Provides internet search capability for BrachyBot with full evidence traceability.
+
+CRITICAL: Every piece of information from the internet MUST have:
+1. Source URL (permanent link when possible)
+2. Access timestamp
+3. Source type and confidence level
+4. Evidence chain for audit trail
 
 Use cases:
 - Recent clinical guidelines or publications
@@ -10,11 +15,19 @@ Use cases:
 - Institutional data not available locally
 - Drug pricing or availability
 - Historical details about specific procedures
+- Code and repository search (GitHub)
 
 Search strategy:
 1. First try to answer from knowledge
 2. If uncertain, search the web
-3. If search doesn't find answer, honestly say "I don't know"
+3. ALWAYS cite sources when using web-sourced information
+4. If search doesn't find answer, honestly say "I don't know"
+
+Evidence chain ensures:
+- Complete traceability of all sourced information
+- Audit trail for compliance
+- Cross-referencing for verification
+- Confidence scoring for reliability assessment
 """
 
 import os
@@ -28,6 +41,10 @@ from urllib.parse import quote_plus
 import requests
 
 from tool_factory import BaseTool, ToolResult
+from tool_factory.web_search.evidence_chain import (
+    EvidenceChain, EvidenceRecord, EvidenceTracker,
+    get_evidence_tracker, start_evidence_chain
+)
 
 logger = logging.getLogger(__name__)
 
@@ -527,20 +544,43 @@ GitHub Integration:
         }
 
     def _execute(self, **kwargs) -> ToolResult:
-        """Execute web search."""
+        """Execute web search with evidence tracking."""
         query = kwargs.get("query", "")
         search_type = kwargs.get("search_type", "general")
         max_results = kwargs.get("max_results", 5)
         clone_repo = kwargs.get("clone_repo", "")
         search_local_repo = kwargs.get("search_local_repo", "")
+        claim = kwargs.get("claim", "")  # Specific claim being verified
+
+        # Start evidence chain for this search
+        evidence_chain = start_evidence_chain(query)
 
         # Handle GitHub clone request
         if clone_repo:
             logger.info(f"Cloning GitHub repository: {clone_repo}")
             clone_result = self._clone_github_repo(clone_repo)
+
+            # Track evidence for clone
+            if clone_result["success"]:
+                evidence_chain.create_evidence_from_search(
+                    {
+                        "title": f"Repository: {clone_repo}",
+                        "snippet": clone_result["message"],
+                        "url": clone_repo,
+                        "source": "GitHub Repository"
+                    },
+                    search_query=query,
+                    search_type="github_clone",
+                    claim=f"Repository cloned: {clone_repo}"
+                )
+
             return ToolResult(
                 success=clone_result["success"],
-                data=clone_result,
+                data={
+                    **clone_result,
+                    "evidence_chain_id": evidence_chain.response_id,
+                    "evidence_summary": evidence_chain.get_evidence_summary()
+                },
                 message=clone_result["message"]
             )
 
@@ -549,6 +589,19 @@ GitHub Integration:
             logger.info(f"Searching local repository: {search_local_repo}")
             results = self._search_local_repo(search_local_repo, query, max_results)
             formatted = self._format_results(results, query)
+
+            # Track evidence for local search
+            for result in results:
+                evidence_chain.create_evidence_from_search(
+                    result,
+                    search_query=query,
+                    search_type="local_repo",
+                    claim=result.get("snippet", "")[:200]
+                )
+
+            formatted["evidence_chain_id"] = evidence_chain.response_id
+            formatted["evidence_summary"] = evidence_chain.get_evidence_summary()
+
             return ToolResult(
                 success=True,
                 data=formatted,
@@ -567,6 +620,18 @@ GitHub Integration:
         if not search_type.startswith("github"):
             cached = self._get_cached_result(query)
             if cached:
+                # Still track evidence from cache
+                for result in cached.get("results", []):
+                    evidence_chain.create_evidence_from_search(
+                        result,
+                        search_query=query,
+                        search_type=search_type,
+                        claim=claim or result.get("snippet", "")[:200]
+                    )
+
+                cached["evidence_chain_id"] = evidence_chain.response_id
+                cached["evidence_summary"] = evidence_chain.get_evidence_summary()
+
                 return ToolResult(
                     success=True,
                     data=cached,
@@ -609,12 +674,33 @@ GitHub Integration:
             # General search
             results = self._search_duckduckgo(query, max_results)
 
+        # Track evidence for all results
+        for result in results:
+            evidence_chain.create_evidence_from_search(
+                result,
+                search_query=query,
+                search_type=search_type,
+                claim=claim or result.get("snippet", "")[:200]
+            )
+
+        # Check for cross-references if multiple results
+        if len(results) >= 2:
+            evidence_chain.verify_consensus(min_sources=2)
+
         # Format results
         formatted = self._format_results(results, query)
+
+        # Add evidence chain information
+        formatted["evidence_chain_id"] = evidence_chain.response_id
+        formatted["evidence_summary"] = evidence_chain.get_evidence_summary()
+        formatted["citations"] = evidence_chain.get_citations("inline")
 
         # Cache results (don't cache GitHub searches)
         if not search_type.startswith("github"):
             self._save_to_cache(query, formatted)
+
+        # Save evidence chain for audit trail
+        evidence_chain.save()
 
         return ToolResult(
             success=True,
