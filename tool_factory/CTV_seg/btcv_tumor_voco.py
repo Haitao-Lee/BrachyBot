@@ -25,8 +25,8 @@ class VoCoBTCVTumorTool(BaseTool):
     Suitable for liver, kidney, spleen, and pancreas tumors.
     """
 
-    MODEL_PATH = os.environ.get("VOCO_MODEL_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "VoCo", "BTCV", "model_voco.pt"))
-    OUT_CHANNELS = 2
+    MODEL_PATH = os.environ.get("VOCO_MODEL_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "VoCo", "BTCV", "model_voco_86.64.pt"))
+    OUT_CHANNELS = 14
     FEATURE_SIZE = 48
     ROI_SIZE = (96, 96, 96)
     SPACING = (1.5, 1.5, 1.5)
@@ -85,7 +85,6 @@ class VoCoBTCVTumorTool(BaseTool):
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         model = SwinUNETR(
-            img_size=self.ROI_SIZE,
             in_channels=1,
             out_channels=self.OUT_CHANNELS,
             feature_size=self.FEATURE_SIZE,
@@ -101,7 +100,7 @@ class VoCoBTCVTumorTool(BaseTool):
 
     def _get_transforms(self):
         from monai.transforms import Compose, LoadImaged, EnsureChannelFirstd, Orientationd
-        from monai.transforms import Spacingd, ScaleIntensityRanged, CropForegroundd, SpatialPadd
+        from monai.transforms import Spacingd, ScaleIntensityRanged, CropForegroundd, SpatialPadd, Invertd
 
         return Compose([
             LoadImaged(keys=["image"]),
@@ -116,6 +115,7 @@ class VoCoBTCVTumorTool(BaseTool):
     def _inference(self, image: sitk.Image) -> np.ndarray:
         from monai.inferers import sliding_window_inference
         from monai.data import Dataset, DataLoader
+        from monai.transforms import Spacingd, Orientationd
 
         if self._model is None:
             self._model = self._load_model()
@@ -123,6 +123,8 @@ class VoCoBTCVTumorTool(BaseTool):
         self._model.eval()
         transforms = self._get_transforms()
 
+        # Save original image metadata for inverse resampling
+        original_size = image.GetSize()  # (X, Y, Z)
         original_spacing = image.GetSpacing()
         original_origin = image.GetOrigin()
         original_direction = image.GetDirection()
@@ -148,12 +150,25 @@ class VoCoBTCVTumorTool(BaseTool):
                 with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=torch.cuda.is_available()):
                     logits = model_inferer(data)
                 output = logits.argmax(1, keepdim=True)
+                pred_array = output.squeeze(0).squeeze(0).cpu().numpy()
 
-                output_image = sitk.GetImageFromArray(output.squeeze(0).squeeze(0).cpu().numpy())
-                output_image.SetSpacing(original_spacing)
-                output_image.SetOrigin(original_origin)
-                output_image.SetDirection(original_direction)
-                return sitk.GetArrayFromImage(output_image)
+                # Create prediction image in transformed space
+                pred_image = sitk.GetImageFromArray(pred_array)
+                # Set spacing to the resampled spacing (1.5, 1.5, 1.5)
+                pred_image.SetSpacing(self.SPACING)
+                # Set origin and direction to match the transformed image
+                # The transforms change orientation to RAS, so we need to account for that
+                pred_image.SetOrigin(image.GetOrigin())
+                pred_image.SetDirection(image.GetDirection())
+
+                # Resample prediction back to original image space using nearest neighbor
+                resampler = sitk.ResampleImageFilter()
+                resampler.SetReferenceImage(image)
+                resampler.SetInterpolator(sitk.sitkNearestNeighbor)
+                resampler.SetDefaultPixelValue(0)
+                resampled_pred = resampler.Execute(pred_image)
+
+                return sitk.GetArrayFromImage(resampled_pred)
         return np.zeros(image.GetSize()[::-1], dtype=np.int64)
 
     def _execute(self, **kwargs) -> ToolResult:
