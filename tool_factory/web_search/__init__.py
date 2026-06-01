@@ -812,18 +812,18 @@ GitHub Integration:
         results = []
 
         if search_type == "clinical":
-            # For clinical queries, search PubMed first (most reliable for medical content)
+            # For clinical queries, search PubMed only (most reliable)
             pubmed_results = self._search_pubmed(query, max_results=max_results)
             results.extend(pubmed_results)
+            # Skip other sources for clinical queries
 
         elif search_type == "equipment":
-            # For equipment queries, try Bing CN first, then Baidu, then DuckDuckGo
+            # For equipment queries, try Bing CN first, then Baidu
             enhanced_query = f"{query} specifications datasheet"
             results = self._search_bing(enhanced_query, max_results)
             if not results:
                 results = self._search_baidu(enhanced_query, max_results)
-            if not results:
-                results = self._search_duckduckgo(enhanced_query, max_results)
+            # Skip DuckDuckGo - it always times out
 
         elif search_type == "github_repos":
             # Search GitHub repositories
@@ -838,25 +838,21 @@ GitHub Integration:
             results = self._search_github(query, max_results, search_type="issues")
 
         else:
-            # General search: PubMed (medical) → Bing CN → Baidu → DuckDuckGo
-            # PubMed for medical content
-            pubmed_results = self._search_pubmed(query, max_results=2)
+            # General search: PubMed first (most reliable from this network)
+            # Skip DuckDuckGo and Wikipedia as they timeout
+            pubmed_results = self._search_pubmed(query, max_results=max_results)
             results.extend(pubmed_results)
 
-            # Bing CN as primary general search
-            if len(results) < max_results:
-                bing_results = self._search_bing(query, max_results=max_results - len(results))
+            # Only try other sources if PubMed returned nothing
+            if not results:
+                bing_results = self._search_bing(query, max_results)
                 results.extend(bing_results)
 
-            # Baidu as fallback
-            if len(results) < max_results:
-                baidu_results = self._search_baidu(query, max_results=max_results - len(results))
+            if not results:
+                baidu_results = self._search_baidu(query, max_results)
                 results.extend(baidu_results)
 
-            # DuckDuckGo as last resort
-            if len(results) < max_results:
-                ddg_results = self._search_duckduckgo(query, max_results=max_results - len(results))
-                results.extend(ddg_results)
+            # Skip DuckDuckGo - it always times out from this network
 
         # Track evidence for all results
         for result in results:
