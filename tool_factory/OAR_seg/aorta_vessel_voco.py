@@ -25,7 +25,7 @@ class VoCoAortaVesselTool(BaseTool):
     Suitable for aorta and major vessel segmentation as OAR.
     """
 
-    MODEL_PATH = os.environ.get("VOCO_MODEL_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "VoCo", "Aorta", "model_voco.pt"))
+    MODEL_PATH = os.environ.get("VOCO_MODEL_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "VoCo", "Aorta", "model_69.64.pt"))
     OUT_CHANNELS = 2
     FEATURE_SIZE = 48
     ROI_SIZE = (96, 96, 96)
