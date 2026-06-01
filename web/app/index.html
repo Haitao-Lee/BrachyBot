@@ -420,9 +420,13 @@
             font-weight: 600;
             line-height: 1.2;
         }
-        .md-h1 { font-size: 1.1rem; }
-        .md-h2 { font-size: 0.95rem; }
-        .md-h3 { font-size: 0.85rem; }
+        .md-h1 { font-size: 1.1rem; margin-top: 0.8rem; }
+        .md-h2 { font-size: 0.95rem; margin-top: 0.6rem; }
+        .md-h3 { font-size: 0.85rem; margin-top: 0.4rem; }
+        /* First heading should not have top margin */
+        .md-h1:first-child, .md-h2:first-child, .md-h3:first-child {
+            margin-top: 0;
+        }
 
         /* ============ AVATARS ============ */
         .chat-row {
