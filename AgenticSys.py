@@ -2166,35 +2166,47 @@ class BrachyAgent:
             yield yield_event("step", summary_step)
 
             try:
-                # Build focused summary messages - only include user question and tool results
-                # DO NOT include system prompt or old context to avoid pollution
+                # Build focused summary messages - ONLY include meaningful content
+                # CRITICAL: Do NOT include system prompt, internal rules, or old context
                 summary_messages = [{"role": "system", "content": (
-                    "You are a helpful medical AI assistant specializing in brachytherapy. "
-                    "You must respond with plain text only. Never call any tools. "
-                    "Provide a clear, concise response based on the tool results below. "
-                    "If tool results show errors or no data, say so briefly and suggest alternatives. "
-                    "Respond in the same language as the user's question."
+                    "You are a medical AI assistant for brachytherapy. "
+                    "Respond in plain text only. Be concise. "
+                    "Answer the user's question based on the information provided. "
+                    "Use the same language as the user."
                 )}]
 
-                # Only include the user's original message and tool results
+                # Only include the user's original message
                 summary_messages.append({"role": "user", "content": message})
 
-                # Include tool results if available
+                # Include ONLY meaningful tool results (filtered)
                 if self.memory.tool_results:
-                    tool_summary = "Tool execution results:\n"
-                    for tool_result in self.memory.tool_results[-5:]:  # Last 5 tool results
-                        tool_name = tool_result.get("tool", "unknown")
+                    tool_facts = []
+                    for tool_result in self.memory.tool_results[-5:]:
+                        tool_name = tool_result.get("tool", "")
                         success = tool_result.get("success", False)
-                        result_msg = tool_result.get("message", "")[:500]
-                        tool_summary += f"- {tool_name}: {'✓' if success else '✗'} {result_msg}\n"
-                    summary_messages.append({"role": "user", "content": tool_summary})
+                        result_msg = tool_result.get("message", "")
+
+                        # Filter out internal/system content
+                        if not success:
+                            continue
+                        if not result_msg or len(result_msg) < 20:
+                            continue
+                        # Skip if contains system prompt indicators
+                        if any(x in result_msg.lower() for x in ["you are", "you must", "tool usage", "system prompt", "critical:", "never "]):
+                            continue
+
+                        # Extract only the factual content
+                        tool_facts.append(f"[{tool_name}]: {result_msg[:300]}")
+
+                    if tool_facts:
+                        summary_messages.append({
+                            "role": "user",
+                            "content": "Relevant information:\n" + "\n".join(tool_facts)
+                        })
 
                 summary_messages.append({
                     "role": "user",
-                    "content": (
-                        "Based on the tool results above, provide a clear response to the user's question. "
-                        "Be concise. Do NOT repeat the tool results. Respond in the same language the user used."
-                    )
+                    "content": "Now answer the user's question concisely based on the information above."
                 })
                 # Use non-streaming API for more reliable text generation
                 llm = self.brain_router._select_llm(None, "general")
