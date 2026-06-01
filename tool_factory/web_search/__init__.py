@@ -61,7 +61,14 @@ Search sources:
 - PubMed for clinical literature
 - AAPM/ESTRO guidelines
 - Manufacturer websites for equipment specs
-- General medical information sites"""
+- General medical information sites
+- GitHub for code, repositories, and documentation
+
+GitHub Integration:
+- Search repositories, code, and issues
+- Clone repositories for local analysis
+- Search within cloned repositories
+- Useful for finding implementation examples, tools, and libraries"""
 
     input_schema = {
         "type": "object",
@@ -72,14 +79,22 @@ Search sources:
             },
             "search_type": {
                 "type": "string",
-                "description": "Type of search: clinical, equipment, general",
-                "enum": ["clinical", "equipment", "general"],
+                "description": "Type of search: clinical, equipment, general, github_repos, github_code, github_issues",
+                "enum": ["clinical", "equipment", "general", "github_repos", "github_code", "github_issues"],
                 "default": "general"
             },
             "max_results": {
                 "type": "integer",
                 "description": "Maximum number of results to return (1-10)",
                 "default": 5
+            },
+            "clone_repo": {
+                "type": "string",
+                "description": "GitHub URL to clone (e.g., https://github.com/user/repo)"
+            },
+            "search_local_repo": {
+                "type": "string",
+                "description": "Path to local repository to search within"
             }
         },
         "required": ["query"]
@@ -252,6 +267,226 @@ Search sources:
 
         return results
 
+    def _search_github(self, query: str, max_results: int = 5, search_type: str = "repositories") -> List[Dict]:
+        """
+        Search GitHub for code, repositories, and documentation.
+
+        Args:
+            query: Search query
+            max_results: Maximum results to return
+            search_type: 'repositories', 'code', or 'issues'
+        """
+        results = []
+
+        try:
+            # GitHub Search API (no auth required for basic search)
+            api_url = "https://api.github.com/search"
+
+            if search_type == "repositories":
+                url = f"{api_url}/repositories"
+                params = {
+                    "q": query,
+                    "sort": "stars",
+                    "order": "desc",
+                    "per_page": max_results
+                }
+            elif search_type == "code":
+                url = f"{api_url}/code"
+                params = {
+                    "q": query,
+                    "per_page": max_results
+                }
+            else:  # issues
+                url = f"{api_url}/issues"
+                params = {
+                    "q": query,
+                    "sort": "relevance",
+                    "per_page": max_results
+                }
+
+            headers = {
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "BrachyBot-Agent"
+            }
+
+            # Check for GitHub token in environment
+            github_token = os.environ.get("GITHUB_TOKEN")
+            if github_token:
+                headers["Authorization"] = f"token {github_token}"
+
+            response = requests.get(url, params=params, headers=headers, timeout=15)
+
+            if response.status_code == 200:
+                data = response.json()
+                items = data.get("items", [])
+
+                for item in items[:max_results]:
+                    if search_type == "repositories":
+                        results.append({
+                            "title": item.get("full_name", ""),
+                            "snippet": item.get("description", "No description"),
+                            "url": item.get("html_url", ""),
+                            "source": "GitHub",
+                            "metadata": {
+                                "stars": item.get("stargazers_count", 0),
+                                "language": item.get("language", ""),
+                                "forks": item.get("forks_count", 0),
+                                "updated": item.get("updated_at", "")
+                            }
+                        })
+                    elif search_type == "code":
+                        repo = item.get("repository", {})
+                        results.append({
+                            "title": f"{repo.get('full_name', '')}/{item.get('name', '')}",
+                            "snippet": item.get("path", ""),
+                            "url": item.get("html_url", ""),
+                            "source": "GitHub Code"
+                        })
+                    else:  # issues
+                        results.append({
+                            "title": item.get("title", ""),
+                            "snippet": f"#{item.get('number', '')} in {item.get('repository', {}).get('full_name', '')}",
+                            "url": item.get("html_url", ""),
+                            "source": "GitHub Issue"
+                        })
+            else:
+                logger.warning(f"GitHub API returned status {response.status_code}")
+
+        except Exception as e:
+            logger.warning(f"GitHub search error: {e}")
+
+        return results
+
+    def _clone_github_repo(self, repo_url: str, target_dir: str = None) -> Dict:
+        """
+        Clone a GitHub repository.
+
+        Args:
+            repo_url: GitHub repository URL (e.g., https://github.com/user/repo)
+            target_dir: Target directory (optional, defaults to /tmp/brachybot_repos/)
+
+        Returns:
+            Dict with success status, path, and message
+        """
+        import subprocess
+
+        if target_dir is None:
+            target_dir = os.path.join("/tmp", "brachybot_repos")
+
+        os.makedirs(target_dir, exist_ok=True)
+
+        # Extract repo name from URL
+        repo_name = repo_url.split("/")[-1].replace(".git", "")
+        clone_path = os.path.join(target_dir, repo_name)
+
+        # Check if already cloned
+        if os.path.exists(clone_path):
+            # Pull latest changes
+            try:
+                subprocess.run(
+                    ["git", "-C", clone_path, "pull"],
+                    capture_output=True, text=True, timeout=60
+                )
+                return {
+                    "success": True,
+                    "path": clone_path,
+                    "message": f"Repository updated: {clone_path}"
+                }
+            except Exception as e:
+                logger.warning(f"Git pull failed: {e}")
+
+        # Clone the repository
+        try:
+            result = subprocess.run(
+                ["git", "clone", "--depth", "1", repo_url, clone_path],
+                capture_output=True, text=True, timeout=120
+            )
+
+            if result.returncode == 0:
+                return {
+                    "success": True,
+                    "path": clone_path,
+                    "message": f"Repository cloned to: {clone_path}"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": result.stderr,
+                    "message": f"Failed to clone repository: {result.stderr}"
+                }
+
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "error": "Timeout",
+                "message": "Clone operation timed out (120s limit)"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Clone failed: {str(e)}"
+            }
+
+    def _search_local_repo(self, repo_path: str, query: str, max_results: int = 5) -> List[Dict]:
+        """
+        Search within a cloned repository for code and documentation.
+
+        Args:
+            repo_path: Path to the cloned repository
+            query: Search query (keywords)
+            max_results: Maximum results to return
+        """
+        results = []
+
+        if not os.path.exists(repo_path):
+            return results
+
+        try:
+            # Search in Python files
+            for root, dirs, files in os.walk(repo_path):
+                # Skip hidden directories and common non-essential dirs
+                dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['__pycache__', 'node_modules', '.git']]
+
+                for file in files:
+                    if file.endswith(('.py', '.md', '.txt', '.json', '.yaml', '.yml')):
+                        file_path = os.path.join(root, file)
+                        try:
+                            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                content = f.read()
+
+                            # Simple keyword matching
+                            query_lower = query.lower()
+                            content_lower = content.lower()
+
+                            if query_lower in content_lower:
+                                # Find the matching context
+                                idx = content_lower.find(query_lower)
+                                start = max(0, idx - 100)
+                                end = min(len(content), idx + len(query) + 100)
+                                snippet = content[start:end].strip()
+
+                                # Get relative path
+                                rel_path = os.path.relpath(file_path, repo_path)
+
+                                results.append({
+                                    "title": f"{rel_path}",
+                                    "snippet": snippet[:200],
+                                    "url": f"file://{file_path}",
+                                    "source": "Local Repository"
+                                })
+
+                                if len(results) >= max_results:
+                                    return results
+
+                        except Exception:
+                            continue
+
+        except Exception as e:
+            logger.warning(f"Local repo search error: {e}")
+
+        return results
+
     def _format_results(self, results: List[Dict], query: str) -> Dict:
         """Format search results into a structured response."""
         if not results:
@@ -296,6 +531,29 @@ Search sources:
         query = kwargs.get("query", "")
         search_type = kwargs.get("search_type", "general")
         max_results = kwargs.get("max_results", 5)
+        clone_repo = kwargs.get("clone_repo", "")
+        search_local_repo = kwargs.get("search_local_repo", "")
+
+        # Handle GitHub clone request
+        if clone_repo:
+            logger.info(f"Cloning GitHub repository: {clone_repo}")
+            clone_result = self._clone_github_repo(clone_repo)
+            return ToolResult(
+                success=clone_result["success"],
+                data=clone_result,
+                message=clone_result["message"]
+            )
+
+        # Handle local repo search
+        if search_local_repo:
+            logger.info(f"Searching local repository: {search_local_repo}")
+            results = self._search_local_repo(search_local_repo, query, max_results)
+            formatted = self._format_results(results, query)
+            return ToolResult(
+                success=True,
+                data=formatted,
+                message=f"Found {len(results)} results in local repository"
+            )
 
         if not query:
             return ToolResult(
@@ -305,14 +563,15 @@ Search sources:
 
         logger.info(f"Web search: {query} (type: {search_type})")
 
-        # Check cache first
-        cached = self._get_cached_result(query)
-        if cached:
-            return ToolResult(
-                success=True,
-                data=cached,
-                message=f"Found {len(cached.get('results', []))} results (cached)"
-            )
+        # Check cache first (don't cache GitHub searches)
+        if not search_type.startswith("github"):
+            cached = self._get_cached_result(query)
+            if cached:
+                return ToolResult(
+                    success=True,
+                    data=cached,
+                    message=f"Found {len(cached.get('results', []))} results (cached)"
+                )
 
         # Perform search based on type
         results = []
@@ -334,6 +593,18 @@ Search sources:
             enhanced_query = f"{query} specifications datasheet"
             results = self._search_duckduckgo(enhanced_query, max_results)
 
+        elif search_type == "github_repos":
+            # Search GitHub repositories
+            results = self._search_github(query, max_results, search_type="repositories")
+
+        elif search_type == "github_code":
+            # Search GitHub code
+            results = self._search_github(query, max_results, search_type="code")
+
+        elif search_type == "github_issues":
+            # Search GitHub issues
+            results = self._search_github(query, max_results, search_type="issues")
+
         else:
             # General search
             results = self._search_duckduckgo(query, max_results)
@@ -341,8 +612,9 @@ Search sources:
         # Format results
         formatted = self._format_results(results, query)
 
-        # Cache results
-        self._save_to_cache(query, formatted)
+        # Cache results (don't cache GitHub searches)
+        if not search_type.startswith("github"):
+            self._save_to_cache(query, formatted)
 
         return ToolResult(
             success=True,
