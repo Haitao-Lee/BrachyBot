@@ -143,14 +143,32 @@ def load_category(name: str) -> Optional[dict]:
 # API Communication
 # ============================================================================
 
-def send_message(text: str, timeout: int = TIMEOUT, clear_context: bool = True) -> dict:
-    """Send a message to BrachyBot via HTTP API and collect response."""
+def send_message(text: str, timeout: int = TIMEOUT, session_id: str = None, clear_context: bool = True) -> dict:
+    """
+    Send a message to BrachyBot via HTTP API and collect response.
+
+    Args:
+        text: Message to send
+        timeout: Request timeout in seconds
+        session_id: Unique session ID for isolation (recommended for benchmarks)
+        clear_context: Whether to clear conversation context (used for multi-turn within same session)
+    """
     import urllib.request
     start = time.time()
+
+    # Use unique session ID if not provided
+    if session_id is None:
+        session_id = f"benchmark_{int(time.time() * 1000)}"
+
     try:
+        payload = {
+            "message": text,
+            "clear_context": clear_context,
+            "session_id": session_id
+        }
         req = urllib.request.Request(
             f"{SERVER_URL}/api/chat",
-            data=json.dumps({"message": text, "clear_context": clear_context}).encode("utf-8"),
+            data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"}
         )
         response = urllib.request.urlopen(req, timeout=timeout)
@@ -173,19 +191,29 @@ def send_message(text: str, timeout: int = TIMEOUT, clear_context: bool = True) 
         return {
             "success": True,
             "response": full_text.strip(),
-            "elapsed": time.time() - start
+            "elapsed": time.time() - start,
+            "session_id": session_id
         }
     except Exception as e:
-        return {"success": False, "error": str(e), "elapsed": time.time() - start}
+        return {"success": False, "error": str(e), "elapsed": time.time() - start, "session_id": session_id}
 
 
-def send_multi_turn_messages(turns: List[dict], timeout: int = TIMEOUT) -> List[dict]:
-    """Send multiple messages in sequence (multi-turn conversation)."""
+def send_multi_turn_messages(turns: List[dict], timeout: int = TIMEOUT, session_id: str = None) -> List[dict]:
+    """
+    Send multiple messages in sequence (multi-turn conversation).
+
+    All turns share the same session_id to maintain context.
+    Only the first turn clears context.
+    """
+    # Use same session ID for all turns in a multi-turn test
+    if session_id is None:
+        session_id = f"benchmark_multiturn_{int(time.time() * 1000)}"
+
     results = []
     for i, turn in enumerate(turns):
         # Only clear context on first turn
         clear_context = (i == 0)
-        result = send_message(turn["input"], timeout=timeout, clear_context=clear_context)
+        result = send_message(turn["input"], timeout=timeout, session_id=session_id, clear_context=clear_context)
         results.append({
             "turn": i + 1,
             "input": turn["input"],
@@ -439,7 +467,10 @@ def score_response(response: str, case: dict) -> Tuple[float, dict, List[str]]:
 # ============================================================================
 
 def run_single_test(case: dict, category: dict) -> dict:
-    """Run a single test case and return results."""
+    """Run a single test case with session isolation."""
+    # Generate unique session ID for this test to ensure complete isolation
+    test_session_id = f"test_{case['id']}_{int(time.time() * 1000)}"
+
     result = {
         "id": case["id"],
         "input": case["input"],
@@ -454,11 +485,12 @@ def run_single_test(case: dict, category: dict) -> dict:
         "issues": [],
         "passed": False,
         "elapsed": 0,
+        "session_id": test_session_id,
         "timestamp": datetime.now().isoformat()
     }
 
-    # Send message to API
-    api_result = send_message(case["input"])
+    # Send message with unique session ID for complete isolation
+    api_result = send_message(case["input"], session_id=test_session_id)
     result["elapsed"] = api_result.get("elapsed", 0)
 
     # Check response time threshold
@@ -490,10 +522,13 @@ def run_single_test(case: dict, category: dict) -> dict:
 
 
 def run_multi_turn_test(case: dict, category: dict) -> dict:
-    """Run a multi-turn conversation test."""
+    """Run a multi-turn conversation test with shared session."""
     turns = case.get("turns", [])
     if not turns:
         return run_single_test(case, category)
+
+    # All turns in this test share the same session ID
+    multi_turn_session_id = f"multiturn_{case['id']}_{int(time.time() * 1000)}"
 
     result = {
         "id": case["id"],
@@ -505,11 +540,12 @@ def run_multi_turn_test(case: dict, category: dict) -> dict:
         "overall_score": 0.0,
         "overall_passed": False,
         "issues": [],
+        "session_id": multi_turn_session_id,
         "timestamp": datetime.now().isoformat()
     }
 
-    # Send multi-turn messages
-    turn_results = send_multi_turn_messages(turns)
+    # Send multi-turn messages with shared session ID
+    turn_results = send_multi_turn_messages(turns, session_id=multi_turn_session_id)
     result["turns"] = turn_results
 
     # Score each turn
