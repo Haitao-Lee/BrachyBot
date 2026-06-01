@@ -46,6 +46,13 @@ output/
 *.log
 logs/
 
+# Claude Code
+.claude/
+.codegraph/
+
+# Uploads (runtime generated)
+uploads/
+
 # OS
 .DS_Store
 Thumbs.db
