@@ -15,11 +15,14 @@ Features:
 import json
 import time
 import re
+import logging
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Tuple, Set
 from datetime import datetime, timedelta
 from collections import defaultdict
 import hashlib
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
