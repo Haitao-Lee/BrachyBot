@@ -446,12 +446,58 @@ Task: "Generate prostate plan"
 - **Safety Validator**: Pre-export safety checks for dose constraints and coverage (`safety_validator`)
 - **Report Generator**: Clinical report generation in Markdown and JSON formats (`report_generator`)
 - **Performance Tracker**: System metrics, trends, and improvement suggestions (`performance_tracker`)
+- **🌐 Web Search (NEW)**: Internet search for uncertain knowledge (`web_search`)
+  - PubMed API for clinical literature
+  - DuckDuckGo for general/equipment search
+  - 24-hour result caching
+  - Transparent search behavior (mentions when searching)
+  - Graceful fallback when search fails
 
 ### 🎮 Interactive Viewer Control (NEW)
 - **viewer_command**: Direct LLM control of CT viewer (navigate, window/level, presets, overlays)
 - **auto_navigate**: Automatic navigation to tumor/organ locations from segmentation
 - **query_metrics**: Query dose metrics, plan quality, organ volumes via conversation
 - **Smart Commands**: "Go to the tumor", "Show me slice 50", "What is the V100?"
+
+### 🌐 Internet Search Capability (NEW)
+BrachyBot now has intelligent internet search for uncertain knowledge:
+
+**When to Search:**
+- Specific equipment specifications (Varian, Elekta, Nucletron devices)
+- Recent clinical trials or publications (EMBRACE, PORTEC, ASCENDE-RT)
+- Drug pricing, availability, or manufacturer information
+- Historical details about specific procedures
+- Any fact the system is uncertain about
+
+**When NOT to Search:**
+- Basic clinical facts (145 Gy for I-125, 73.83 days for Ir-192 half-life)
+- Standard dose constraints and protocols
+- Information already in clinical_kb
+- Fictional/hypothetical scenarios
+
+**Search Behavior:**
+1. **Answer from knowledge** if confident → direct answer
+2. **Search the web** if uncertain → cite source if found
+3. **Admit ignorance** if search fails → recommend specific resource
+
+**Example Responses:**
+```
+# Equipment query (searches)
+"What is the dose rate constant for IsoAid Advantage?"
+→ "Based on manufacturer specifications [source], the TG-43 dose rate constant is..."
+
+# Recent trial (searches)
+"What were the EMBRACE II results?"
+→ "According to published literature [PubMed], the local control rate was..."
+
+# Basic knowledge (no search)
+"What is the I-125 prescription dose?"
+→ "145 Gy for low-risk prostate cancer monotherapy per AAPM/ABS guidelines."
+
+# Fictional (no search, rejects)
+"What is quantum brachytherapy?"
+→ "This is not a recognized brachytherapy technique."
+```
 
 ### 🌐 Web Interface
 - **Real-time CT Viewer**: 3D Slicer-level slice interaction with volume rendering
