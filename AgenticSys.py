@@ -431,7 +431,7 @@ class BrachyAgent:
                 llm_config = {
                     "anthropic": {
                         "enabled": True,
-                        "model": "MiniMax-M2.7-highspeed",
+                        "model": "MiniMax-M3",
                         "base_url": "https://api.minimaxi.com/anthropic",
                         "api_key": "sk-cp-JTtRZ0CJJmTv7-39iG-3mWH8ebyitJDwep48dEspT48aoJHhDIJSPrPYAxVg7AY-mVeNQOwWRNUobHvyRxPYwN0rex-MAZHHINmL_kQP5skhWbVE7zREXXM",
                     }
