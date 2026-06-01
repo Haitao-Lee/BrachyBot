@@ -2166,47 +2166,34 @@ class BrachyAgent:
             yield yield_event("step", summary_step)
 
             try:
-                # Build summary messages with explicit instruction
-                # Convert Anthropic-format messages to plain text for OpenAI-compatible API
+                # Build focused summary messages - only include user question and tool results
+                # DO NOT include system prompt or old context to avoid pollution
                 summary_messages = [{"role": "system", "content": (
                     "You are a helpful medical AI assistant specializing in brachytherapy. "
                     "You must respond with plain text only. Never call any tools. "
-                    "Provide a complete, detailed clinical response. "
-                    "If tool results show errors or no data, ignore them and answer the user's original question "
-                    "using your medical knowledge. Always address all parts of the user's question. "
-                    "Provide your response in the same language as the user's question."
+                    "Provide a clear, concise response based on the tool results below. "
+                    "If tool results show errors or no data, say so briefly and suggest alternatives. "
+                    "Respond in the same language as the user's question."
                 )}]
-                for msg in messages:
-                    if msg.get("role") == "system":
-                        continue  # Skip duplicate system messages
-                    content = msg.get("content", "")
-                    if isinstance(content, str):
-                        summary_messages.append({"role": msg["role"], "content": content})
-                    elif isinstance(content, list):
-                        # Convert Anthropic tool_use/tool_result format to plain text
-                        text_parts = []
-                        for block in content:
-                            if isinstance(block, dict):
-                                if block.get("type") == "text":
-                                    text_parts.append(block.get("text", ""))
-                                elif block.get("type") == "tool_use":
-                                    tool_name = block.get("name", "unknown")
-                                    text_parts.append(f"[Called {tool_name}]")
-                                elif block.get("type") == "tool_result":
-                                    result_content = block.get("content", "")
-                                    if isinstance(result_content, list):
-                                        for rc in result_content:
-                                            if isinstance(rc, dict) and rc.get("type") == "text":
-                                                text_parts.append(rc.get("text", ""))
-                                    elif isinstance(result_content, str):
-                                        text_parts.append(result_content)
-                        if text_parts:
-                            summary_messages.append({"role": msg["role"], "content": "\n".join(text_parts)})
+
+                # Only include the user's original message and tool results
+                summary_messages.append({"role": "user", "content": message})
+
+                # Include tool results if available
+                if self.memory.tool_results:
+                    tool_summary = "Tool execution results:\n"
+                    for tool_result in self.memory.tool_results[-5:]:  # Last 5 tool results
+                        tool_name = tool_result.get("tool", "unknown")
+                        success = tool_result.get("success", False)
+                        result_msg = tool_result.get("message", "")[:500]
+                        tool_summary += f"- {tool_name}: {'✓' if success else '✗'} {result_msg}\n"
+                    summary_messages.append({"role": "user", "content": tool_summary})
+
                 summary_messages.append({
                     "role": "user",
                     "content": (
-                        "Based on the information above, please provide a clear, comprehensive response to the user's original question. "
-                        "Do NOT call any tools. Respond in the same language the user used."
+                        "Based on the tool results above, provide a clear response to the user's question. "
+                        "Be concise. Do NOT repeat the tool results. Respond in the same language the user used."
                     )
                 })
                 # Use non-streaming API for more reliable text generation
