@@ -673,6 +673,34 @@ GitHub Integration:
 
         return results
 
+    def _simplify_query(self, query: str) -> str:
+        """
+        Simplify search query for better results.
+        Remove extra words that might limit PubMed results.
+        """
+        # Remove common filler words
+        filler_words = [
+            '是什么', '什么是', '你知道', '告诉我', '介绍一下',
+            'what is', 'who is', 'can you', 'tell me', 'explain',
+            'system', 'platform', 'tool', 'software',
+            'brachytherapy', 'radiation', 'medical', 'AI',
+        ]
+
+        query_lower = query.lower()
+        words = query.split()
+
+        # Keep only the main keywords (usually the first 1-2 words)
+        # For queries like "DeepRare system brachytherapy AI", keep "DeepRare"
+        main_keywords = []
+        for word in words:
+            if word.lower() not in [f.lower() for f in filler_words]:
+                main_keywords.append(word)
+                if len(main_keywords) >= 3:  # Max 3 keywords
+                    break
+
+        simplified = ' '.join(main_keywords) if main_keywords else query
+        return simplified
+
     def _format_results(self, results: List[Dict], query: str) -> Dict:
         """Format search results into a structured response."""
         if not results:
@@ -839,17 +867,20 @@ GitHub Integration:
 
         else:
             # General search: PubMed first (most reliable from this network)
-            # Skip DuckDuckGo and Wikipedia as they timeout
-            pubmed_results = self._search_pubmed(query, max_results=max_results)
+            # Simplify query for better PubMed results
+            simplified_query = self._simplify_query(query)
+            logger.info(f"Simplified query: '{query}' -> '{simplified_query}'")
+
+            pubmed_results = self._search_pubmed(simplified_query, max_results=max_results)
             results.extend(pubmed_results)
 
             # Only try other sources if PubMed returned nothing
             if not results:
-                bing_results = self._search_bing(query, max_results)
+                bing_results = self._search_bing(simplified_query, max_results)
                 results.extend(bing_results)
 
             if not results:
-                baidu_results = self._search_baidu(query, max_results)
+                baidu_results = self._search_baidu(simplified_query, max_results)
                 results.extend(baidu_results)
 
             # Skip DuckDuckGo - it always times out from this network
