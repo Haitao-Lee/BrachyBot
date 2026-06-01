@@ -413,25 +413,38 @@ GitHub Integration:
                         if abstract_response.status_code == 200:
                             # Parse abstracts from plain text response
                             abstract_text = abstract_response.text
-                            # Simple approach: find the abstract content
-                            # The abstract is typically the longest paragraph in the response
-                            paragraphs = abstract_text.split("\n\n")
-                            for pmid in ids:
-                                # Find the longest paragraph (likely the abstract)
-                                longest_paragraph = ""
-                                for para in paragraphs:
-                                    # Skip title, authors, affiliations
-                                    if len(para) > len(longest_paragraph) and "Author information:" not in para and "(" not in para[:10]:
-                                        longest_paragraph = para
+                            # Look for abstract content using common patterns
+                            # Abstracts typically start with background/purpose statements
+                            abstract_patterns = [
+                                r'Rare diseases affect',
+                                r'BACKGROUND:',
+                                r'PURPOSE:',
+                                r'OBJECTIVE:',
+                                r'METHODS:',
+                                r'RESULTS:',
+                                r'CONCLUSIONS:',
+                                r'Here we present',
+                                r'We present',
+                                r'This study',
+                            ]
 
-                                if longest_paragraph:
-                                    # Clean up the abstract
-                                    abstract = longest_paragraph.strip()
-                                    # Remove citation numbers like 1-3, 4,5
-                                    import re
-                                    abstract = re.sub(r'\d+[-–]\d+', '', abstract)
-                                    abstract = re.sub(r'\d+,\d+', '', abstract)
-                                    abstracts[pmid] = abstract[:500]
+                            for pmid in ids:
+                                for pattern in abstract_patterns:
+                                    match = re.search(pattern, abstract_text, re.IGNORECASE)
+                                    if match:
+                                        # Get text from this match to the copyright/DOI
+                                        start = match.start()
+                                        end = abstract_text.find('©', start)
+                                        if end == -1:
+                                            end = abstract_text.find('DOI:', start)
+                                        if end == -1:
+                                            end = len(abstract_text)
+                                        abstract = abstract_text[start:end].strip()
+                                        # Clean up citation numbers
+                                        abstract = re.sub(r'\d+[-–]\d+', '', abstract)
+                                        abstract = re.sub(r'\d+,\d+', '', abstract)
+                                        abstracts[pmid] = abstract[:500]
+                                        break
 
                         for pmid in ids:
                             article = summaries.get(pmid, {})
