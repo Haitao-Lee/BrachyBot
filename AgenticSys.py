@@ -1460,6 +1460,11 @@ class BrachyAgent:
         cleaned = re.sub(r'<minimax:tool_call>.*?</minimax:tool_call>', '', cleaned, flags=re.DOTALL).strip()
         # Also remove incomplete/opening minimax tool_call tags
         cleaned = re.sub(r'<minimax:tool_call>.*', '', cleaned, flags=re.DOTALL).strip()
+        # Remove malformed minimax tags like ]<]minimax>[[
+        cleaned = re.sub(r'\]<\]minimax\[>\[.*', '', cleaned, flags=re.DOTALL).strip()
+        # Remove ```tool_call followed by garbage
+        cleaned = re.sub(r'```tool_call\s*\n?.*?```', '', cleaned, flags=re.DOTALL).strip()
+        cleaned = re.sub(r'```tool_call.*', '', cleaned, flags=re.DOTALL).strip()
         cleaned = re.sub(r'<invoke.*?</invoke>', '', cleaned, flags=re.DOTALL).strip()
         # Remove Anthropic tool_use JSON/Python dict blocks with nested dicts
         # Use non-greedy match with depth limit to avoid eating legitimate text after tool_use
