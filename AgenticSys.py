@@ -678,6 +678,14 @@ class BrachyAgent:
         except ImportError as e:
             logger.warning(f"PerformanceTrackerTool not available: {e}")
 
+        # Web search tool for internet connectivity
+        try:
+            from tool_factory.web_search import WebSearchTool
+            self.registry.register(WebSearchTool())
+            logger.info("WebSearchTool registered for internet search capability")
+        except ImportError as e:
+            logger.warning(f"WebSearchTool not available: {e}")
+
         logger.info(f"Registered {len(self.registry.tool_names)} tools: {self.registry.tool_names}")
     
     def _execute_tool_with_memory(self, tool_name: str, params: Dict, progress_callback=None) -> Any:
@@ -996,6 +1004,18 @@ class BrachyAgent:
             "- **USE clinical_kb tool ONLY when** the user explicitly asks to search the knowledge database:\n"
             "  - Use action='search' to search the knowledge base for specific data points\n"
             "  - After getting clinical_kb results, present them clearly to the user\n"
+            "- **USE web_search tool when** you need to find information you're not certain about:\n"
+            "  - Specific equipment specifications (Varian, Elekta, Nucletron devices)\n"
+            "  - Recent clinical trials, publications, or guideline updates\n"
+            "  - Drug pricing, availability, or manufacturer information\n"
+            "  - Institutional-specific data you don't have access to\n"
+            "  - Historical details about specific procedures or inventions\n"
+            "  - When you're unsure about a fact and want to verify it\n"
+            "  - Search types: 'clinical' (PubMed), 'equipment' (manufacturer specs), 'general'\n"
+            "  - After searching, if you find relevant info, cite the source\n"
+            "  - After searching, if you STILL can't find the answer, honestly say: "
+            "'I searched for this information but could not find a reliable answer. "
+            "I recommend checking [specific resource] or consulting with [appropriate expert].'\n"
             "- **ALWAYS USE case_memory tool** when the user asks to:\n"
             "  - Save/store/archive a treatment plan or case\n"
             "  - Search/find/retrieve past cases or treatment plans\n"
@@ -1642,6 +1662,18 @@ class BrachyAgent:
             "- **USE clinical_kb tool ONLY when** the user explicitly asks to search the knowledge database:\n"
             "  - Use action='search' to search the knowledge base for specific data points\n"
             "  - After getting clinical_kb results, present them clearly to the user\n"
+            "- **USE web_search tool when** you need to find information you're not certain about:\n"
+            "  - Specific equipment specifications (Varian, Elekta, Nucletron devices)\n"
+            "  - Recent clinical trials, publications, or guideline updates\n"
+            "  - Drug pricing, availability, or manufacturer information\n"
+            "  - Institutional-specific data you don't have access to\n"
+            "  - Historical details about specific procedures or inventions\n"
+            "  - When you're unsure about a fact and want to verify it\n"
+            "  - Search types: 'clinical' (PubMed), 'equipment' (manufacturer specs), 'general'\n"
+            "  - After searching, if you find relevant info, cite the source\n"
+            "  - After searching, if you STILL can't find the answer, honestly say: "
+            "'I searched for this information but could not find a reliable answer. "
+            "I recommend checking [specific resource] or consulting with [appropriate expert].'\n"
             "- **ALWAYS USE case_memory tool** when the user asks to:\n"
             "  - Save/store/archive a treatment plan or case\n"
             "  - Search/find/retrieve past cases or treatment plans\n"
