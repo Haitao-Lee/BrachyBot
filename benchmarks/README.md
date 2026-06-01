@@ -220,8 +220,8 @@ These phrases trigger automatic penalties:
 {
   "id": "REG001",
   "type": "regression",
-  "input": "你好",
-  "expected_keywords": ["你好", "hello"],
+  "input": "Hello",
+  "expected_keywords": ["hello", "hi"],
   "forbidden_keywords": ["clinical_kb", "urethra"],
   "related_fix": "commit a526f39",
   "description": "Greeting should NOT trigger clinical_kb"
@@ -341,6 +341,32 @@ Tests can specify maximum response time.
 {
   "input": "What is V100?",
   "max_response_time_ms": 5000
+}
+```
+
+### Smart Context Management
+
+BrachyBot now has intelligent context management that:
+- **Tracks entities**: Automatically identifies patients, doses, organs, tools, protocols
+- **Tracks topics**: Detects conversation topics (dose_planning, segmentation, etc.)
+- **Scores importance**: Messages scored by importance (clinical values, questions, errors)
+- **Scores relevance**: Messages scored by relevance to current query
+- **Smart compression**: Low-relevance messages compressed, high-importance preserved
+
+**How it works:**
+1. User asks: "What is the prostate dose?"
+2. System responds: "145 Gy for I-125"
+3. User asks: "And V100?"
+4. System uses context to understand "V100" refers to prostate brachytherapy
+
+**Testing context continuity:**
+```json
+{
+  "type": "multi_turn",
+  "turns": [
+    {"input": "What is the prostate dose?", "expected": ["145", "Gy"]},
+    {"input": "And V100?", "expected": ["V100", "95"], "_comment": "Context-dependent"}
+  ]
 }
 ```
 
