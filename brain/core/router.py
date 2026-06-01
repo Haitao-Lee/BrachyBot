@@ -218,7 +218,20 @@ class LLMRouter:
             yield {"type": "error", "content": "Error: No LLM provider available"}
             return
         try:
-            yield from llm.chat_messages_stream(messages=messages, tools=tools, **kwargs)
+            # Check if provider has streaming support
+            if hasattr(llm, 'chat_messages_stream'):
+                yield from llm.chat_messages_stream(messages=messages, tools=tools, **kwargs)
+            else:
+                # Fallback to non-streaming — yield only the final dict
+                # (content is included in the dict; yielding it separately causes double content)
+                response = llm._chat(messages, tools=tools, **kwargs)
+                yield {
+                    "type": "final",
+                    "content": response.content or "",
+                    "finish_reason": response.finish_reason,
+                    "tool_calls": response.tool_calls if response.tool_calls else None,
+                    "usage": response.usage,
+                }
         except Exception as e:
             logger.error(f"LLM stream call failed: {e}")
             yield {"type": "error", "content": f"Error: {str(e)}"}

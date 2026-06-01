@@ -87,8 +87,39 @@ class TaskManager:
 task_manager = TaskManager()
 
 
+import colorsys
+
+def _label_color(label_id: int) -> tuple:
+    """Generate visually distinct color for organ label using golden-ratio HSV.
+
+    Provides unique colors for 57+ organs without modulo collision.
+    """
+    golden_ratio = 0.618033988749895
+    h = (label_id * golden_ratio) % 1.0
+    s = 0.65 + (label_id % 3) * 0.12  # 0.65/0.77/0.89
+    v = 0.85 + (label_id % 2) * 0.10   # 0.85/0.95
+    r, g, b = colorsys.hsv_to_rgb(h, s, v)
+    return (int(r * 255), int(g * 255), int(b * 255))
+
+
+_rate_limit_cleanup_counter = 0
+
+
 def _check_rate_limit(client_ip: str) -> bool:
+    global _rate_limit_cleanup_counter
     now = datetime.now().timestamp()
+
+    # Lazy cleanup: every 100 requests, purge all expired entries
+    _rate_limit_cleanup_counter += 1
+    if _rate_limit_cleanup_counter >= 100:
+        _rate_limit_cleanup_counter = 0
+        expired_ips = [
+            ip for ip, timestamps in _rate_limit_store.items()
+            if all(now - t >= RATE_LIMIT_WINDOW for t in timestamps)
+        ]
+        for ip in expired_ips:
+            del _rate_limit_store[ip]
+
     if client_ip not in _rate_limit_store:
         _rate_limit_store[client_ip] = []
     _rate_limit_store[client_ip] = [
@@ -101,10 +132,16 @@ def _check_rate_limit(client_ip: str) -> bool:
 
 
 def _validate_path(path: str) -> bool:
+    """Validate a file path is safe (no traversal attacks).
+
+    Allows absolute paths (required for CT image paths) but rejects
+    paths containing '..' traversal components.
+    Check BEFORE normpath resolves them, so raw '..' segments are caught.
+    """
     if not path:
         return False
-    normalized = os.path.normpath(path)
-    if normalized.startswith("..") or normalized.startswith("/"):
+    # Check raw segments BEFORE normpath resolves '..' away
+    if '..' in path.replace('\\', '/').split('/'):
         return False
     return True
 
@@ -208,6 +245,26 @@ def create_app(config: Optional[Dict] = None):
             "filename": save_name,
             "size": os.path.getsize(abs_path),
         })
+
+    @app.route("/api/viewer/image", methods=["GET"])
+    def api_viewer_image():
+        """Serve an image file from the server."""
+        image_path = request.args.get("path", "")
+        if not image_path or not os.path.exists(image_path):
+            return jsonify({"error": "Image not found"}), 404
+
+        # Security check: only serve files from uploads directory
+        # Use realpath to resolve symlinks and prevent traversal attacks
+        upload_dir = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads"))
+        real_image_path = os.path.realpath(image_path)
+        if not real_image_path.startswith(upload_dir + os.sep) and real_image_path != upload_dir:
+            return jsonify({"error": "Access denied"}), 403
+
+        try:
+            from flask import send_file
+            return send_file(real_image_path, mimetype='image/png')
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
     @app.route("/api/viewer/load", methods=["POST"])
     def api_viewer_load():
@@ -476,16 +533,6 @@ def create_app(config: Optional[Dict] = None):
             else:
                 # OAR: per-organ colors with visibility/opacity filtering
                 unique_labels = np.unique(mask_slice[mask_slice > 0])
-                default_colors = [
-                    (0, 255, 0),     # green
-                    (0, 200, 255),   # cyan
-                    (255, 200, 0),   # yellow
-                    (255, 0, 255),   # magenta
-                    (0, 255, 200),   # teal
-                    (255, 100, 0),   # orange
-                    (100, 0, 255),   # purple
-                    (0, 255, 100),   # lime
-                ]
                 for label in unique_labels:
                     label_int = int(label)
                     # Check visibility - use label_int (actual mask value) for filtering
@@ -496,8 +543,8 @@ def create_app(config: Optional[Dict] = None):
                         alpha = int(organ_opacities[str(label_int)] * 255)
                     else:
                         alpha = int(oar_opacity * 255)
-                    # Use label_int to index colors so mapping is consistent
-                    color = default_colors[label_int % len(default_colors)]
+                    # Use golden-ratio HSV for visually distinct per-organ colors
+                    color = _label_color(label_int)
                     overlay[mask_slice == label] = [*color, alpha]
 
             img = Image.fromarray(overlay, 'RGBA')
@@ -583,7 +630,10 @@ def create_app(config: Optional[Dict] = None):
             import numpy as np
 
             mask = (ct_data >= lower) & (ct_data <= upper)
-            mask_slice = np.take(mask, slice_index, axis={'axial': 0, 'sagittal': 1, 'coronal': 2}.get(axis, 0))
+            axis_map = agent.memory.retrieve("ct_axis_map") or {
+                'axial': 0, 'sagittal': 2, 'coronal': 1,
+            }
+            mask_slice = np.take(mask, slice_index, axis=axis_map.get(axis, 0))
 
             # Count voxels
             total_voxels = int(mask.sum())
@@ -928,14 +978,30 @@ def create_app(config: Optional[Dict] = None):
         message = data.get("message", "")
         ui_state = data.get("ui_state", {})
         stream = data.get("stream", True)  # Default to streaming
+        image_path = data.get("image_path", None)  # Optional image path
+        clear_context = data.get("clear_context", False)  # Optional: clear conversation history
 
-        if not message:
-            return jsonify({"error": "message is required"}), 400
+        # Clear conversation context if requested (for fresh start between tests)
+        if clear_context:
+            agent.memory.clear_conversation()
+            logger.info("Conversation context cleared")
+
+        if not message and not image_path:
+            return jsonify({"error": "message or image is required"}), 400
+
+        # If image provided but no message, use default prompt
+        if image_path and not message:
+            message = "Please analyze this image"
+
+        # Include image path in message if provided
+        full_message = message
+        if image_path:
+            full_message = f"{message}\n\n[Uploaded image path: {image_path}]"
 
         if stream:
             def generate():
                 agent.memory.set_ui_state(ui_state)
-                for event in agent.chat_with_stream(message):
+                for event in agent.chat_with_stream(full_message):
                     yield event
 
             return Response(
@@ -950,7 +1016,7 @@ def create_app(config: Optional[Dict] = None):
         else:
             try:
                 agent.memory.set_ui_state(ui_state)
-                result = agent.chat_with_trace(message)
+                result = agent.chat_with_trace(full_message)
                 return jsonify({
                     "response": result["response"],
                     "steps": result["steps"],
