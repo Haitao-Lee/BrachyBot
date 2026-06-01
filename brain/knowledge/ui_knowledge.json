@@ -1,0 +1,352 @@
+{
+  "meta": {
+    "version": "1.0",
+    "description": "BrachyBot UI 深度知识库 - 让 LLM 真正理解界面",
+    "last_updated": "2026-05-29"
+  },
+
+  "architecture": {
+    "frontend": "单页应用 (HTML/CSS/JS)，无框架",
+    "backend": "Flask REST API + SSE 流式响应",
+    "communication": "REST API + Server-Sent Events (SSE)",
+    "state_management": "全局 JS 变量 + Agent 内存"
+  },
+
+  "panels": {
+    "left": {
+      "name": "聊天面板",
+      "description": "用户与 BrachyBot 对话的区域",
+      "components": {
+        "chat_messages": {
+          "description": "聊天消息列表",
+          "supports": ["text", "markdown", "images", "tool_calls", "thinking_steps"],
+          "auto_scroll": true
+        },
+        "chat_input": {
+          "description": "文本输入框",
+          "features": ["text input", "slash commands", "image upload"],
+          "placeholder": "描述你的问题或输入 / 查看命令..."
+        },
+        "image_upload": {
+          "description": "图片上传按钮",
+          "icon": "📷",
+          "supported_formats": ["png", "jpg", "jpeg", "gif", "bmp"],
+          "max_size": "10MB"
+        },
+        "slash_commands": {
+          "/help": "显示帮助信息",
+          "/plan": "启动自动规划流程",
+          "/segment": "启动分割流程",
+          "/evaluate": "评估当前计划",
+          "/export": "导出 DICOM 文件",
+          "/viewer": "显示查看器帮助",
+          "/clear": "清空对话历史"
+        }
+      }
+    },
+
+    "right": {
+      "name": "功能面板",
+      "tabs": {
+        "input": {
+          "name": "Input",
+          "icon": "📁",
+          "description": "文件上传和参数设置",
+          "components": {
+            "ct_upload": {
+              "description": "CT 图像上传",
+              "accepted_formats": [".nii", ".nii.gz", ".mhd", ".raw", ".dcm"],
+              "button_text": "Browse",
+              "api_endpoint": "/api/upload",
+              "after_upload": "自动加载到查看器并显示元数据"
+            },
+            "ctv_upload": {
+              "description": "CTV（肿瘤靶区）掩码上传",
+              "accepted_formats": [".nii", ".nii.gz"],
+              "required_for": ["分割评估", "剂量评估"]
+            },
+            "oar_upload": {
+              "description": "OAR（危及器官）掩码上传",
+              "accepted_formats": [".nii", ".nii.gz"],
+              "required_for": ["OAR 剂量评估"]
+            },
+            "hyperparameters": {
+              "description": "高级参数设置",
+              "sections": {
+                "seed_params": "种子参数（长度、活度等）",
+                "dose_params": "剂量参数（处方剂量、网格大小等）",
+                "optimization": "优化参数（迭代次数、收敛阈值等）"
+              }
+            }
+          }
+        },
+
+        "metrics": {
+          "name": "Analysis",
+          "icon": "📊",
+          "description": "剂量评估结果和 DVH 曲线",
+          "components": {
+            "plan_score": {
+              "description": "计划质量总分（0-100）",
+              "indicators": {
+                "green": ">80 优秀",
+                "yellow": "60-80 良好",
+                "red": "<60 需改进"
+              }
+            },
+            "dvh_chart": {
+              "description": "剂量体积直方图",
+              "library": "Plotly.js",
+              "features": ["zoom", "hover info", "export"]
+            },
+            "oar_table": {
+              "description": "OAR 剂量统计表",
+              "columns": ["器官", "Dmax", "Dmean", "D2cc", "V100"]
+            },
+            "target_metrics": {
+              "description": "靶区剂量指标",
+              "metrics": ["V100", "V150", "V200", "D90", "D95", "D99", "HI", "CI"]
+            }
+          }
+        },
+
+        "seeds": {
+          "name": "Seeds",
+          "icon": "💉",
+          "description": "种子位置和轨迹信息",
+          "components": {
+            "seed_list": {
+              "description": "种子位置列表",
+              "columns": ["ID", "X", "Y", "Z", "Dose"],
+              "features": ["sort", "filter", "export"]
+            },
+            "trajectory_list": {
+              "description": "轨迹列表",
+              "columns": ["ID", "进针点", "方向", "深度"]
+            }
+          }
+        },
+
+        "viewers": {
+          "name": "Viewers",
+          "icon": "👁️",
+          "description": "医学图像查看器",
+          "components": {
+            "layout_controls": {
+              "description": "布局控制按钮",
+              "layouts": {
+                "vertical": "纵向排列（默认）",
+                "horizontal": "横向排列",
+                "grid": "2x2 网格",
+                "3d-top": "3D 在上，切面在下",
+                "3d-bottom": "切面在上，3D 在下"
+              }
+            },
+            "window_level": {
+              "description": "窗宽窗位控制",
+              "presets": {
+                "soft_tissue": "软组织窗 (W:400 L:40)",
+                "lung": "肺窗 (W:1500 L:-600)",
+                "bone": "骨窗 (W:2000 L:400)",
+                "abdomen": "腹部窗 (W:350 L:40)",
+                "brain": "脑窗 (W:80 L:40)"
+              }
+            },
+            "zoom_control": {
+              "description": "缩放控制",
+              "range": ["25%", "50%", "75%", "100%", "150%", "200%"],
+              "features": ["scroll zoom", "button zoom", "box zoom"]
+            },
+            "overlay_control": {
+              "description": "叠加层控制",
+              "options": {
+                "ct_only": "仅显示 CT",
+                "ct_label": "CT + 分割标注",
+                "ct_dose": "CT + 剂量分布"
+              },
+              "toggles": {
+                "ctv": "显示/隐藏 CTV",
+                "oar": "显示/隐藏 OAR",
+                "dose": "显示/隐藏剂量"
+              }
+            },
+            "slice_viewers": {
+              "axial": {
+                "name": "轴位",
+                "description": "横断面（从头到脚）",
+                "axis": "Z轴",
+                "controls": ["slice slider", "fullscreen"]
+              },
+              "sagittal": {
+                "name": "矢状位",
+                "description": "前后方向切面",
+                "axis": "X轴",
+                "controls": ["slice slider", "fullscreen"]
+              },
+              "coronal": {
+                "name": "冠状位",
+                "description": "上下方向切面",
+                "axis": "Y轴",
+                "controls": ["slice slider", "fullscreen"]
+              }
+            },
+            "3d_viewer": {
+              "description": "3D 重建查看器",
+              "features": ["旋转", "缩放", "透明度调节"],
+              "api_endpoint": "/api/viewer/3d"
+            },
+            "data_tree": {
+              "description": "数据树（显示已加载的数据）",
+              "features": ["visibility toggle", "opacity slider", "3D reconstruction"]
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "workflows": {
+    "complete_planning": {
+      "name": "完整治疗计划流程",
+      "steps": [
+        {
+          "step": 1,
+          "action": "上传 CT 图像",
+          "how": "点击 Input 标签 → CT Image 的 Browse 按钮",
+          "result": "CT 图像加载到查看器"
+        },
+        {
+          "step": 2,
+          "action": "分割 CTV 和 OAR",
+          "how": "在聊天框输入 '分割' 或点击 /segment",
+          "tool": "ctv_segmentation + oar_segmentation",
+          "result": "自动生成 CTV 和 OAR 掩码"
+        },
+        {
+          "step": 3,
+          "action": "规划轨迹",
+          "how": "自动执行或输入 '规划轨迹'",
+          "tool": "trajectory_planning",
+          "result": "生成穿刺针轨迹"
+        },
+        {
+          "step": 4,
+          "action": "布置种子",
+          "how": "自动执行或输入 '布置种子'",
+          "tool": "seed_planning",
+          "result": "优化种子位置"
+        },
+        {
+          "step": 5,
+          "action": "计算剂量",
+          "how": "自动执行或输入 '计算剂量'",
+          "tool": "dose_engine",
+          "result": "生成 3D 剂量分布"
+        },
+        {
+          "step": 6,
+          "action": "评估计划",
+          "how": "自动执行或输入 '评估'",
+          "tool": "dose_evaluation",
+          "result": "显示 DVH 和质量指标"
+        },
+        {
+          "step": 7,
+          "action": "导出 DICOM",
+          "how": "输入 '导出' 或点击 /export",
+          "tool": "dicom_rt_exporter",
+          "result": "生成可导入 TPS 的文件"
+        }
+      ]
+    },
+
+    "quick_segmentation": {
+      "name": "快速分割",
+      "trigger": "用户说 '分割' 或 'segment'",
+      "tools": ["ctv_segmentation", "oar_segmentation"],
+      "parallel": true
+    },
+
+    "quick_analysis": {
+      "name": "快速分析",
+      "trigger": "用户说 '分析' 或 'analyze'",
+      "tool": "code_executor",
+      "code": "使用 SimpleITK 分析图像元数据"
+    }
+  },
+
+  "tools_reference": {
+    "ctv_segmentation": {
+      "description": "CTV（肿瘤靶区）自动分割",
+      "input": {"image": "CT图像", "tumor_type": "肿瘤类型"},
+      "output": {"ctv_array": "3D numpy数组"},
+      "models": ["VoCo (3D Slicer)", "nnU-Net"],
+      "supported_tumors": ["pancreatic", "liver", "kidney", "prostate", "lung", "colon", "head_neck"]
+    },
+    "oar_segmentation": {
+      "description": "OAR（危及器官）自动分割",
+      "input": {"image": "CT图像"},
+      "output": {"oar_array": "3D标注数组", "organ_names": "器官名称列表"},
+      "models": ["TotalSegmentator"],
+      "supported_organs": "57+ 器官"
+    },
+    "trajectory_planning": {
+      "description": "穿刺针轨迹规划",
+      "input": {"ctv_array": "CTV掩码", "oar_array": "OAR掩码"},
+      "output": {"trajectories": "轨迹列表"},
+      "algorithm": "避障路径规划"
+    },
+    "seed_planning": {
+      "description": "放射源（种子）优化布置",
+      "input": {"trajectories": "轨迹", "ctv_array": "CTV掩码"},
+      "output": {"seed_positions": "种子位置", "dose_distribution": "剂量分布"},
+      "algorithms": ["rule_based", "reinforcement_learning"]
+    },
+    "dose_engine": {
+      "description": "剂量计算引擎",
+      "input": {"seeds": "种子位置", "ct_image": "CT图像"},
+      "output": {"dose_array": "3D剂量分布"},
+      "models": ["Gaussian", "CNN"]
+    },
+    "dose_evaluation": {
+      "description": "剂量质量评估",
+      "input": {"dose_array": "剂量", "ctv_mask": "CTV", "oar_mask": "OAR"},
+      "output": {"metrics": "质量指标", "dvh": "DVH数据"},
+      "metrics": ["V100", "V150", "D90", "D95", "HI", "CI"]
+    },
+    "code_executor": {
+      "description": "Python 代码执行",
+      "sandbox": true,
+      "available_libs": ["numpy", "scipy", "SimpleITK", "nibabel", "matplotlib", "pandas"]
+    },
+    "env_manager": {
+      "description": "虚拟环境和包管理",
+      "actions": ["create_env", "install", "uninstall", "list_envs", "list_packages"]
+    },
+    "tool_creator": {
+      "description": "动态创建新工具",
+      "actions": ["create", "register", "list", "delete", "test"]
+    },
+    "shell_executor": {
+      "description": "Shell 命令执行",
+      "capabilities": ["install packages", "file operations", "system commands"]
+    }
+  },
+
+  "common_issues": {
+    "ct_not_loaded": {
+      "symptom": "用户说 '分析图像' 但没有上传 CT",
+      "solution": "提示用户先在 Input 标签上传 CT 图像"
+    },
+    "segmentation_failed": {
+      "symptom": "分割失败",
+      "possible_causes": ["图像格式不支持", "图像质量差", "模型加载失败"],
+      "solution": "检查图像格式，尝试重新上传"
+    },
+    "dose_evaluation_missing": {
+      "symptom": "无法评估剂量",
+      "possible_causes": ["没有计算剂量", "没有 CTV 掩码"],
+      "solution": "确保先完成剂量计算和 CTV 分割"
+    }
+  }
+}
