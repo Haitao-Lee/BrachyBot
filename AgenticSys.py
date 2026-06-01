@@ -241,6 +241,12 @@ class AgentMemory:
         self.context_summary = ""
         self.compaction_count = 0
         self.tool_results = []
+
+        # Also clear smart context manager to prevent old context pollution
+        if hasattr(self, 'smart_context') and self.smart_context:
+            self.smart_context.clear()
+            logger.info("Smart context cleared")
+
         logger.info(f"Conversation cleared for session {self.session_id}")
 
     def get_clean_context(self) -> str:
