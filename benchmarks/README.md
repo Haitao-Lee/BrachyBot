@@ -158,7 +158,7 @@ These phrases trigger automatic penalties:
 
 ## Benchmark JSON Structure
 
-### Required Fields
+### Standard Test Case
 
 ```json
 {
@@ -174,18 +174,76 @@ These phrases trigger automatic penalties:
 }
 ```
 
+### Weighted Keywords (Advanced)
+
+```json
+{
+  "id": "WK001",
+  "input": "What is the prescription dose?",
+  "expected_keywords": {
+    "145": {"weight": 0.5, "required": true},
+    "Gy": {"weight": 0.3, "required": true},
+    "prostate": {"weight": 0.2, "required": false}
+  },
+  "equivalent_terms": {
+    "Gy": ["Gray", "gray", "Gy"],
+    "145": ["145.0", "145 Gy"]
+  }
+}
+```
+
+### Multi-Turn Conversation
+
+```json
+{
+  "id": "MT001",
+  "type": "multi_turn",
+  "turns": [
+    {
+      "input": "What is the prostate dose?",
+      "expected_keywords": ["145", "Gy"],
+      "pass_threshold": 0.6
+    },
+    {
+      "input": "And what about for Pd-103?",
+      "expected_keywords": ["Pd-103", "dose"],
+      "pass_threshold": 0.6,
+      "_comment": "Context: refers to 'prescription dose' from previous turn"
+    }
+  ]
+}
+```
+
+### Regression Test
+
+```json
+{
+  "id": "REG001",
+  "type": "regression",
+  "input": "你好",
+  "expected_keywords": ["你好", "hello"],
+  "forbidden_keywords": ["clinical_kb", "urethra"],
+  "related_fix": "commit a526f39",
+  "description": "Greeting should NOT trigger clinical_kb"
+}
+```
+
 ### Field Definitions
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `id` | Yes | Unique test case identifier |
 | `input` | Yes | User's question |
-| `expected_keywords` | Yes | Terms that must appear in correct response |
-| `forbidden_keywords` | No | Terms that must not appear (tool names, etc.) |
+| `type` | No | `standard`, `multi_turn`, or `regression` |
+| `expected_keywords` | Yes | List or weighted dict of required terms |
+| `forbidden_keywords` | No | Terms that must not appear |
 | `hallucination_keywords` | No | Signs of uncertainty or fabrication |
+| `equivalent_terms` | No | Alternative forms of keywords |
 | `pass_threshold` | No | Minimum score to pass (default: 0.6) |
-| `difficulty` | No | easy, medium, or hard |
-| `user_type` | No | beginner, experienced, or chinese |
+| `difficulty` | No | `easy`, `medium`, or `hard` |
+| `user_type` | No | `beginner`, `experienced`, or `chinese` |
+| `max_response_time_ms` | No | Maximum response time in milliseconds |
+| `related_fix` | No | Commit hash for regression tests |
 | `_comment` | No | Explanation of test purpose |
 
 ---
@@ -220,6 +278,70 @@ def execute(self, **kwargs):
 
 ```
 "Use clinical_kb when the user explicitly asks to search the knowledge base"  // ✅ Natural
+```
+
+---
+
+## New Features (v2)
+
+### Weighted Keywords
+
+Keywords can have different weights. Important terms (like dose values) have higher weight than general terms.
+
+```json
+"expected_keywords": {
+  "145": {"weight": 0.5, "required": true},
+  "Gy": {"weight": 0.3, "required": true},
+  "prostate": {"weight": 0.2, "required": false}
+}
+```
+
+### Equivalent Terms
+
+Keywords can match alternative forms. For example, "Gy" can also match "Gray".
+
+```json
+"equivalent_terms": {
+  "Gy": ["Gray", "gray", "Gy"],
+  "D2cc": ["D2 cm³", "D2 cubic centimeters"]
+}
+```
+
+### Multi-Turn Conversations
+
+Tests that span multiple conversation turns. Each turn builds on previous context.
+
+```json
+{
+  "type": "multi_turn",
+  "turns": [
+    {"input": "What is the prostate dose?", "expected_keywords": ["145", "Gy"]},
+    {"input": "And for Pd-103?", "expected_keywords": ["Pd-103", "dose"]}
+  ]
+}
+```
+
+### Regression Tests
+
+Tests linked to specific fixes. If they fail, a previously fixed bug has returned.
+
+```json
+{
+  "type": "regression",
+  "related_fix": "commit a526f39",
+  "description": "Greeting should NOT trigger clinical_kb"
+}
+```
+
+### Response Time Tracking
+
+Tests can specify maximum response time.
+
+```json
+{
+  "input": "What is V100?",
+  "max_response_time_ms": 5000
+}
 ```
 
 ---
@@ -260,6 +382,9 @@ def execute(self, **kwargs):
 | 30_multi_turn | 25 | Multi-turn conversations |
 | 31_clinical_workflow | 25 | End-to-end workflows |
 | 32_tool_integration | 5 | Tool integration |
+| 33_weighted_keywords | 3 | Weighted keyword tests |
+| 34_multi_turn | 7 | Multi-turn conversation tests |
+| 35_regression | 10 | Regression tests |
 
 ---
 
