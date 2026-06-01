@@ -1,0 +1,1250 @@
+{
+  "category": "precision",
+  "description": "Technical accuracy, numerical precision, calculations",
+  "requires_ct": false,
+  "cases": [
+    {
+      "id": "Q0620",
+      "input": "For a cervical cancer brachytherapy case, the tandem is placed at an angle of 60 degrees from the horizontal. If the tandem length is 6 cm and the source dwell positions are spaced at 5 mm intervals, calculate the expected dose rate at Point A (2 cm lateral and 2 cm superior from the tandem tip) using the TG-43 formalism for an Ir-192 source with an air-kerma strength of 40,000 uCi.",
+      "expected_keywords": [
+        "dose rate",
+        "TG-43",
+        "Point A",
+        "tandem",
+        "Ir-192",
+        "air-kerma strength",
+        "calculation"
+      ],
+      "difficulty": "advanced",
+      "description": "Point A dose rate calculation using TG-43"
+    },
+    {
+      "id": "Q0621",
+      "input": "A brachytherapy source has an air-kerma strength of 38,500 uCi as measured on January 15. The source decay constant for Ir-192 is 0.00974 day^-1. Calculate the expected air-kerma strength on February 15 (31 days later) and determine the required treatment time to deliver 6 Gy at a reference point if the dose rate at that point on January 15 was 200 cGy/min.",
+      "expected_keywords": [
+        "air-kerma strength",
+        "decay constant",
+        "Ir-192",
+        "treatment time",
+        "dose rate",
+        "calculation"
+      ],
+      "difficulty": "medium",
+      "description": "Source decay and treatment time calculation"
+    },
+    {
+      "id": "Q0622",
+      "input": "A prostate HDR brachytherapy plan uses 16 catheters with a total of 96 dwell positions. The average dwell time is 8.5 seconds per position, and the source speed is 25 cm/sec. Calculate the total source travel time, the estimated treatment delivery time (excluding transit), and determine whether the treatment can be completed within a 45-minute appointment slot including setup and verification time.",
+      "expected_keywords": [
+        "dwell time",
+        "source speed",
+        "travel time",
+        "delivery time",
+        "prostate HDR",
+        "scheduling"
+      ],
+      "difficulty": "medium",
+      "description": "HDR treatment delivery time calculation"
+    },
+    {
+      "id": "Q0623",
+      "input": "For a vaginal cylinder brachytherapy treatment, the prescription is 5 Gy per fraction at a depth of 5 mm from the cylinder surface. The cylinder diameter is 2.5 cm. Using the TG-43 formalism for a line source, calculate the dwell time required at the central dwell position to achieve the prescribed dose. Assume an Ir-192 source with air-kerma strength of 35,000 uCi.",
+      "expected_keywords": [
+        "vaginal cylinder",
+        "dwell time",
+        "TG-43",
+        "line source",
+        "prescription depth",
+        "calculation"
+      ],
+      "difficulty": "advanced",
+      "description": "Vaginal cylinder dwell time calculation"
+    },
+    {
+      "id": "Q0624",
+      "input": "A brachytherapy plan requires the calculation of the equivalent dose in 2 Gy fractions (EQD2) for a cumulative rectal dose. The patient received 45 Gy in 25 fractions of external beam radiation (alpha/beta = 3 for rectum), followed by brachytherapy delivering 28 Gy in 4 fractions of 7 Gy each. Calculate the total EQD2 to the rectum, assuming the brachytherapy dose is delivered to D2cc.",
+      "expected_keywords": [
+        "EQD2",
+        "cumulative dose",
+        "rectum",
+        "EBRT",
+        "brachytherapy",
+        "alpha-beta",
+        "calculation"
+      ],
+      "difficulty": "advanced",
+      "description": "Cumulative EQD2 calculation for rectum"
+    },
+    {
+      "id": "Q0625",
+      "input": "A treatment plan uses a ring applicator with an inner diameter of 2.6 cm. The prescribed dose is delivered at the isodose surface that encompasses 100% of the applicator surface. If the dose at the applicator surface is 150% of the prescription dose, calculate the dose at 5 mm and 10 mm from the applicator surface using the point source approximation. Discuss the accuracy limitations of this approximation.",
+      "expected_keywords": [
+        "ring applicator",
+        "dose calculation",
+        "point source",
+        "distance",
+        "accuracy",
+        "approximation"
+      ],
+      "difficulty": "advanced",
+      "description": "Dose calculation from ring applicator"
+    },
+    {
+      "id": "Q0626",
+      "input": "For a complex interstitial brachytherapy implant of the cervix using 8 needles with an average of 5 dwell positions each, calculate the total number of dwell time optimization parameters. If the optimizer uses a gradient-based algorithm with a convergence threshold of 0.1%, estimate the number of iterations required for convergence. How does this compare to a 5-needle configuration?",
+      "expected_keywords": [
+        "interstitial",
+        "optimization",
+        "dwell positions",
+        "convergence",
+        "gradient algorithm",
+        "iterations"
+      ],
+      "difficulty": "medium",
+      "description": "Optimization parameter calculation for interstitial brachytherapy"
+    },
+    {
+      "id": "Q0627",
+      "input": "A brachytherapy source is calibrated to have an air-kerma strength of 40,000 uCi. The treatment is planned for 14 days after calibration. Using the AAPM TG-43 formalism, calculate the required correction factor for the changed source strength on the treatment day, and determine the adjusted treatment time if the planned time at calibration was 350 seconds.",
+      "expected_keywords": [
+        "air-kerma strength",
+        "TG-43",
+        "correction factor",
+        "treatment time",
+        "calibration",
+        "decay"
+      ],
+      "difficulty": "medium",
+      "description": "Source strength correction calculation"
+    },
+    {
+      "id": "Q0628",
+      "input": "For a patient with a tandem and ovoids applicator, the tandem angle is 70 degrees and the ovoid separation is 2 cm. Calculate the dose contribution from each dwell position in the tandem to the ICRU 38 bladder point (located 2 cm posterior and 2 cm superior from the tandem-ovoid junction). Present the calculation for a 6 cm tandem with 12 dwell positions at 5 mm intervals.",
+      "expected_keywords": [
+        "tandem",
+        "ovoids",
+        "ICRU 38",
+        "bladder point",
+        "dose contribution",
+        "calculation",
+        "dwell positions"
+      ],
+      "difficulty": "advanced",
+      "description": "Dose contribution calculation to ICRU 38 bladder point"
+    },
+    {
+      "id": "Q0629",
+      "input": "A center needs to verify the positional accuracy of its afterloader source stepping mechanism. The afterloader is programmed to place the source at positions 0, 10, 20, 30, 40, and 50 mm from a reference point. Using radiochromic film measurements, the actual source positions were measured as 0.2, 10.1, 19.8, 30.3, 39.9, and 50.1 mm. Evaluate these measurements against the TG-59 tolerance criteria and determine if the afterloader passes the positional accuracy test.",
+      "expected_keywords": [
+        "source positioning",
+        "afterloader",
+        "TG-59",
+        "positional accuracy",
+        "tolerance",
+        "radiochromic film"
+      ],
+      "difficulty": "advanced",
+      "description": "Afterloader positional accuracy evaluation"
+    },
+    {
+      "id": "Q0630",
+      "input": "Calculate the volume of the high-risk clinical target volume (HR-CTV) for a cervical cancer patient based on the following MRI measurements: the tumor extends 3.5 cm craniocaudally, 4.2 cm transversely, and 3.8 cm anteroposteriorly. Using an ellipsoidal volume approximation, calculate the HR-CTV volume and compare it to the typical HR-CTV volumes reported in the EMBRACE studies. Is this volume consistent with a Stage IIB cervical cancer?",
+      "expected_keywords": [
+        "HR-CTV",
+        "volume calculation",
+        "ellipsoidal",
+        "EMBRACE",
+        "MRI",
+        "Stage IIB",
+        "cervical"
+      ],
+      "difficulty": "medium",
+      "description": "HR-CTV volume calculation and EMBRACE comparison"
+    },
+    {
+      "id": "Q0631",
+      "input": "A brachytherapy plan uses geometric optimization with a reference point at the isocenter of the applicator. The plan has 8 dwell positions with equal initial dwell times of 10 seconds. After optimization, the dwell times range from 2.5 seconds to 18.7 seconds. Calculate the dwell time modulation ratio (maximum/minimum) and evaluate whether this modulation is clinically acceptable. What is the typical range of modulation ratios seen in clinical practice?",
+      "expected_keywords": [
+        "geometric optimization",
+        "dwell time",
+        "modulation ratio",
+        "optimization",
+        "clinical acceptability"
+      ],
+      "difficulty": "medium",
+      "description": "Dwell time modulation ratio evaluation"
+    },
+    {
+      "id": "Q0632",
+      "input": "For a patient receiving pulsed-dose-rate (PDR) brachytherapy, the planned dose rate at the reference point is 0.5 Gy/hour with pulses delivered every hour. The prescribed dose is 30 Gy delivered over 60 hours. Calculate the dose per pulse, the total number of pulses, and determine the BED for tumor (alpha/beta = 10) and late-responding normal tissue (alpha/beta = 3).",
+      "expected_keywords": [
+        "PDR",
+        "dose per pulse",
+        "BED",
+        "alpha-beta",
+        "tumor",
+        "normal tissue",
+        "calculation"
+      ],
+      "difficulty": "advanced",
+      "description": "PDR parameter and BED calculation"
+    },
+    {
+      "id": "Q0633",
+      "input": "A center is validating its treatment planning system dose calculation for a ring applicator. The TG-43 based calculation at 1 cm from the ring center gives 8.5 Gy/min. An independent calculation using a spreadsheet-based TG-43 algorithm gives 8.3 Gy/min. Calculate the percentage discrepancy between the two calculations and evaluate whether it falls within the TG-59 recommended tolerance of 5% for independent dose verification.",
+      "expected_keywords": [
+        "TG-43",
+        "dose verification",
+        "discrepancy",
+        "ring applicator",
+        "TG-59",
+        "tolerance"
+      ],
+      "difficulty": "medium",
+      "description": "Dose calculation discrepancy evaluation"
+    },
+    {
+      "id": "Q0634",
+      "input": "Calculate the dose rate constant (Lambda) corrected dose rate at 1 cm from an Ir-192 source with an air-kerma strength of 42,000 uCi. Use the TG-43 dose rate constant of 1.108 cGy/(hr*uCi) and the geometry function for a line source of length 3.5 mm at a distance of 1 cm. Show all steps of the calculation.",
+      "expected_keywords": [
+        "dose rate constant",
+        "TG-43",
+        "Ir-192",
+        "geometry function",
+        "line source",
+        "calculation"
+      ],
+      "difficulty": "advanced",
+      "description": "TG-43 corrected dose rate calculation"
+    },
+    {
+      "id": "Q0635",
+      "input": "A brachytherapy center treats 200 patients per year with an average of 4 fractions per patient. Each fraction requires approximately 45 minutes of physicist time for plan review and treatment supervision. Calculate the annual physicist time commitment for brachytherapy, convert to FTE, and evaluate whether the center has adequate physicist staffing based on the AAPM TG-301 recommendation of 1 physicist FTE per 150 brachytherapy patients per year.",
+      "expected_keywords": [
+        "physicist time",
+        "FTE",
+        "staffing",
+        "AAPM TG-301",
+        "patient volume",
+        "calculation"
+      ],
+      "difficulty": "medium",
+      "description": "Physicist staffing adequacy calculation"
+    },
+    {
+      "id": "Q0636",
+      "input": "For a prostate HDR treatment using 18 catheters, each with 15 dwell positions spaced at 5 mm intervals, calculate the total number of potential source positions. If the treatment planning system optimizes dwell times for all positions, what is the total number of dwell time variables? If the source can be placed at any 1 mm increment instead of 5 mm, how does this affect the number of optimization variables?",
+      "expected_keywords": [
+        "catheters",
+        "dwell positions",
+        "optimization variables",
+        "source positions",
+        "spacing",
+        "prostate HDR"
+      ],
+      "difficulty": "medium",
+      "description": "Source position and optimization variable calculation"
+    },
+    {
+      "id": "Q0637",
+      "input": "A patient receives a vaginal cuff brachytherapy boost of 15 Gy in 5 fractions following 50 Gy of EBRT. The vaginal cylinder has a diameter of 2.5 cm and the prescribed depth is 5 mm. Calculate the D2cc to the rectum and sigmoid from the brachytherapy boost alone using published dose-volume data for similar cylinder sizes. Then calculate the cumulative EQD2 to these organs from both EBRT and brachytherapy.",
+      "expected_keywords": [
+        "vaginal cylinder",
+        "D2cc",
+        "rectum",
+        "sigmoid",
+        "cumulative EQD2",
+        "EBRT",
+        "calculation"
+      ],
+      "difficulty": "advanced",
+      "description": "Vaginal cylinder organ dose and cumulative EQD2 calculation"
+    },
+    {
+      "id": "Q0638",
+      "input": "A brachytherapy source has completed 50% of its useful life (based on the manufacturer's specification of 5 half-lives or 3.8 years for Ir-192). Calculate the current air-kerma strength if the initial strength was 50,000 uCi. Determine whether the source should be replaced according to the manufacturer's recommendations and AAPM TG-59 guidelines.",
+      "expected_keywords": [
+        "source life",
+        "air-kerma strength",
+        "half-life",
+        "Ir-192",
+        "replacement",
+        "TG-59"
+      ],
+      "difficulty": "medium",
+      "description": "Source strength and replacement evaluation"
+    },
+    {
+      "id": "Q0639",
+      "input": "Calculate the tissue attenuation correction factor for a brachytherapy source at a distance of 3 cm from a dwell position, assuming soft tissue with a linear attenuation coefficient of 0.105 cm^-1 for Ir-192 gamma rays. Compare this to the TG-43 water-based calculation which does not account for tissue heterogeneities. What is the percentage difference?",
+      "expected_keywords": [
+        "tissue attenuation",
+        "correction factor",
+        "Ir-192",
+        "heterogeneity",
+        "TG-43",
+        "calculation"
+      ],
+      "difficulty": "advanced",
+      "description": "Tissue attenuation correction calculation"
+    },
+    {
+      "id": "Q0640",
+      "input": "For an interstitial brachytherapy implant using the Paris system, the implant consists of 6 needles arranged in a triangular configuration with 1.5 cm spacing. The active length of each needle is 4 cm. Calculate the reference dose rate at the central axis of the implant and determine the treatment time required to deliver 30 Gy at the reference dose rate.",
+      "expected_keywords": [
+        "Paris system",
+        "interstitial",
+        "reference dose",
+        "implant geometry",
+        "treatment time",
+        "calculation"
+      ],
+      "difficulty": "advanced",
+      "description": "Paris system dose rate and treatment time calculation"
+    },
+    {
+      "id": "Q1191",
+      "input": "Calculate total EQD2 at point A for EBRT 45 Gy/25fx + HDR 7 Gy x4 (alpha/beta 10). Also calculate bladder D2cc EQD2 (EBRT 55 Gy + HDR 6.2 Gy x4, alpha/beta 3). Show all steps.",
+      "expected_keywords": [
+        "EQD2_combined",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: EQD2_combined"
+    },
+    {
+      "id": "Q1192",
+      "input": "Calculate total air-kerma strength (90 seeds x 0.5 U), dose-rate at prescription point (Lambda=1.27 cGy/U/hr), and time to deliver 145 Gy. Discuss I-125 decay (t1/2=59.4 days).",
+      "expected_keywords": [
+        "I125_seed_calc",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: I125_seed_calc"
+    },
+    {
+      "id": "Q1193",
+      "input": "Calculate BED and EQD2 for prostate (ab=1.5), urethra (ab=3), rectum (ab=3) with 38 Gy/4fx: D90=40, urethra Dmax=44, rectum D2cc=30. Show all calculation steps.",
+      "expected_keywords": [
+        "HDR_prostate_BED",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: HDR_prostate_BED"
+    },
+    {
+      "id": "Q1194",
+      "input": "Calculate cumulative EQD2 for EBRT 50.4 Gy/28fx + HDR 30 Gy/5fx: point A tumor (ab=10), bladder D2cc (48 Gy EBRT + 6.5 Gy/fx HDR, ab=3), rectum D2cc (52 Gy EBRT + 5.8 Gy/fx HDR, ab=3).",
+      "expected_keywords": [
+        "EBRT_HDR_cumulative",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: EBRT_HDR_cumulative"
+    },
+    {
+      "id": "Q1195",
+      "input": "Ir-192 RAKR verification: measured 4.85 at 45 days, initial 6.12. t1/2=73.83 days. Calculate expected RAKR, percentage discrepancy, and required actions.",
+      "expected_keywords": [
+        "source_decay_verification",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: source_decay_verification"
+    },
+    {
+      "id": "Q1196",
+      "input": "Calculate dwell time for 3.5 Gy at 2 cm from Ir-192 source: Lambda=1.108, g(2)=0.985, F(2,pi/2)=1.0, SK=37,300 U. Show TG-43 steps.",
+      "expected_keywords": [
+        "TG43_dwell_time",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: TG43_dwell_time"
+    },
+    {
+      "id": "Q1197",
+      "input": "Calculate total treatment time (sum of 4,250 sec dwell times), dose-rate at D90 point, and verify HDR classification (>12 Gy/hr).",
+      "expected_keywords": [
+        "treatment_time_HDR",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: treatment_time_HDR"
+    },
+    {
+      "id": "Q1198",
+      "input": "Calculate PDR BED for 30 Gy/60 pulses (0.5 Gy/pulse, 1-hour interval, repair half-time 1.5 hr). Compare to equivalent HDR 38 Gy/4fx for late tissue.",
+      "expected_keywords": [
+        "PDR_BED_incomplete_repair",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: PDR_BED_incomplete_repair"
+    },
+    {
+      "id": "Q1199",
+      "input": "Calculate dose at 1.5 cm from 3.5 cm Ir-192 line source using TG-43. Include geometry function for line source, dose-rate, and 5-minute delivery.",
+      "expected_keywords": [
+        "TG43_line_source",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: TG43_line_source"
+    },
+    {
+      "id": "Q1200",
+      "input": "Calculate total air-kerma (80 x 0.85 U), initial dose-rate (Lambda=1.25), and time to 50% of 100 Gy prescription. Compare Pd-103 decay to I-125.",
+      "expected_keywords": [
+        "Pd103_seed_calc",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: Pd103_seed_calc"
+    },
+    {
+      "id": "Q1201",
+      "input": "Verify TG-43: measured 125.4 cGy/hr vs planned 124.8 cGy/hr at 1 cm. Calculate percentage difference, evaluate TG-59 tolerance, and dose in 45 seconds.",
+      "expected_keywords": [
+        "point_dose_verification",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: point_dose_verification"
+    },
+    {
+      "id": "Q1202",
+      "input": "Calculate cumulative EQD2 across EBRT 45 Gy + HDR 7 Gy x4 + VBT 5 Gy x3 for tumor, bladder, and rectum (ab=10 tumor, ab=3 OARs).",
+      "expected_keywords": [
+        "three_modality_EQD2",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: three_modality_EQD2"
+    },
+    {
+      "id": "Q1203",
+      "input": "Calculate from nomogram: 85 seeds for 42 cc prostate, Rx=145 Gy, seed SK=0.42 U. Total air-kerma, estimated D90 (1.15 x Rx), and urethra D0.1cc at 120% Rx.",
+      "expected_keywords": [
+        "prostate_nomogram_calc",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: prostate_nomogram_calc"
+    },
+    {
+      "id": "Q1204",
+      "input": "Calculate vaginal mucosa surface dose using inverse square law (surface at 0.1 cm vs Rx at 0.5 cm). Total over 3 fractions. Evaluate against mucosal tolerance.",
+      "expected_keywords": [
+        "mucosal_surface_dose",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: mucosal_surface_dose"
+    },
+    {
+      "id": "Q1205",
+      "input": "Calculate average deviation, max deviation, and RMS from measured dwell positions (10 positions at 5 mm). Evaluate against TG-59 tolerance (1 mm).",
+      "expected_keywords": [
+        "dwell_position_accuracy",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: dwell_position_accuracy"
+    },
+    {
+      "id": "Q1206",
+      "input": "Calculate Ir-192 source strength decay over 90 days from 8.5 Ci. Calculate Day 30/60/90 strengths, percentage decrease, treatment time changes, and replacement action level.",
+      "expected_keywords": [
+        "Ir129_decay_90days",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: Ir129_decay_90days"
+    },
+    {
+      "id": "Q1207",
+      "input": "Calculate total treatment time from given tandem/ovoid dwell times. Calculate tandem/ovoid ratio and estimate transit time.",
+      "expected_keywords": [
+        "dwell_time_total",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: dwell_time_total"
+    },
+    {
+      "id": "Q1208",
+      "input": "Independent TG-43 calculation: SK=38,500, Lambda=1.108, G=0.185, g=0.978, F=0.965. Calculate dose-rate and compare to TPS 85.3 cGy/hr.",
+      "expected_keywords": [
+        "independent_TG43_calc",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: independent_TG43_calc"
+    },
+    {
+      "id": "Q1209",
+      "input": "Calculate femoral head dose (D2cc=8.5 Gy) as % of 145 Gy prescription. Calculate BED (ab=3) and EQD2. Compare to 50 Gy EQD2 fracture tolerance.",
+      "expected_keywords": [
+        "femoral_head_dose",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: femoral_head_dose"
+    },
+    {
+      "id": "Q1210",
+      "input": "Calculate dose at point A from given dwell time distribution (tandem + ovoid). Verify HDR dose-rate classification.",
+      "expected_keywords": [
+        "point_A_from_dwell_times",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: point_A_from_dwell_times"
+    },
+    {
+      "id": "Q1211",
+      "input": "Calculate PDR BED for 30 Gy/60 pulses (0.5 Gy, 1 hr intervals, t1/2=1.5 hr). Compare to continuous LDR 30 Gy/60 hr.",
+      "expected_keywords": [
+        "PDR_BED_calculation",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: PDR_BED_calculation"
+    },
+    {
+      "id": "Q1212",
+      "input": "Calculate corrected air-kerma from well chamber: reading 12.85 nC, calibration 5.23x10^4 Gy/C, temp 22C, pressure 101.3 kPa, electrometer 1.003.",
+      "expected_keywords": [
+        "well_chamber_corrections",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: well_chamber_corrections"
+    },
+    {
+      "id": "Q1213",
+      "input": "Calculate DGI (D2cc/D100) and HI (D2-D98/D50) for prostate HDR plan. Evaluate plan quality.",
+      "expected_keywords": [
+        "DGI_HI_calculation",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: DGI_HI_calculation"
+    },
+    {
+      "id": "Q1214",
+      "input": "Calculate 95% CI for mean dwell position deviation (0.15 mm, SD=0.35, n=20) and process capability index (Cp with tolerance 1 mm).",
+      "expected_keywords": [
+        "statistical_analysis_dwell",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: statistical_analysis_dwell"
+    },
+    {
+      "id": "Q1215",
+      "input": "Calculate dose-rate at point A using Manchester system loading pattern for tandem and ovoids.",
+      "expected_keywords": [
+        "Manchester_dose_calc",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: Manchester_dose_calc"
+    },
+    {
+      "id": "Q1216",
+      "input": "Evaluate end-to-end test results: source strength 0.4%, dwell position 0.6 mm max, dwell time 0.2%, point dose 2.1%. Determine pass/fail per TG-59.",
+      "expected_keywords": [
+        "end_to_end_evaluation",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: end_to_end_evaluation"
+    },
+    {
+      "id": "Q1217",
+      "input": "Calculate EUD for prostate HDR using power-law formula (a=-10) with given dose-volume distribution. Interpret result.",
+      "expected_keywords": [
+        "EUD_calculation",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: EUD_calculation"
+    },
+    {
+      "id": "Q1218",
+      "input": "Calculate projected final EQD2 for bladder, rectum, sigmoid after fraction 4. Determine which OARs exceed 70 Gy tolerance.",
+      "expected_keywords": [
+        "cumulative_fraction_EQD2",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: cumulative_fraction_EQD2"
+    },
+    {
+      "id": "Q1219",
+      "input": "Calculate 2D radial deviations and RMS from measured dwell positions. Evaluate against TG-59 tolerance.",
+      "expected_keywords": [
+        "2D_dwell_position",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: 2D_dwell_position"
+    },
+    {
+      "id": "Q1220",
+      "input": "Calculate dose-rate at 3 cm from tandem using inverse square law (1.5 Gy/sec at 1 cm). Total dose for 25 sec dwell time over 4 fractions. Compare to tolerance.",
+      "expected_keywords": [
+        "small_bowel_inverse_square",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: small_bowel_inverse_square"
+    },
+    {
+      "id": "Q1221",
+      "input": "Compare TPS (4.92 Gy/hr) vs measured (4.85 Gy/hr). Calculate percentage difference, absolute difference for 30 sec dwell, and cumulative effect over 50 uses.",
+      "expected_keywords": [
+        "TPS_measurement_comparison",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: TPS_measurement_comparison"
+    },
+    {
+      "id": "Q1222",
+      "input": "Calculate lead shielding thickness for HDR room: Ir-192 HVL=0.6 cm, max permissible 2 mGy/week, 10 Ci source, 3 m distance.",
+      "expected_keywords": [
+        "shielding_thickness",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: shielding_thickness"
+    },
+    {
+      "id": "Q1223",
+      "input": "Calculate D90%, D100%, conformity index for APBI plan. Evaluate per ABS guidelines.",
+      "expected_keywords": [
+        "APBI_DVH_parameters",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: APBI_DVH_parameters"
+    },
+    {
+      "id": "Q1224",
+      "input": "Calculate BED for three prostate HDR schedules (38/4, 36/4, 30/5) for tumor (ab=1.5) and normal tissue (ab=3). Determine best therapeutic ratio.",
+      "expected_keywords": [
+        "BED_fractionation_comparison",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: BED_fractionation_comparison"
+    },
+    {
+      "id": "Q1225",
+      "input": "Evaluate measured dose (7.12 Gy) vs planned (7.00 Gy). Calculate % difference, total difference over 4 fractions, EQD2 difference, and clinical acceptability.",
+      "expected_keywords": [
+        "point_dose_measurement_eval",
+        "calculation",
+        "dosimetry",
+        "precision"
+      ],
+      "difficulty": "hard",
+      "description": "Precise calculation: point_dose_measurement_eval"
+    },
+    {
+      "id": "Q0713",
+      "input": "Describe the complete quality assurance program for an HDR brachytherapy afterloader system per AAPM TG-59. Include daily, monthly, and annual testing procedures, acceptance criteria for each test, documentation requirements, and the process for handling failed QA tests. How do you establish an action level versus a tolerance level?",
+      "expected_keywords": [
+        "TG-59",
+        "daily checks",
+        "monthly tests",
+        "annual survey",
+        "acceptance criteria",
+        "action level",
+        "tolerance"
+      ],
+      "difficulty": "advanced",
+      "description": "Complete HDR afterloader QA program"
+    },
+    {
+      "id": "Q0714",
+      "input": "A monthly output check of the HDR afterloader reveals a 4.2% deviation from the expected dose rate. This exceeds the 3% tolerance level established by the department. Describe the investigation procedure, the potential causes of the deviation, the corrective actions needed, and the documentation and reporting requirements. How do you determine whether previously treated patients were affected?",
+      "expected_keywords": [
+        "output deviation",
+        "tolerance",
+        "investigation",
+        "corrective actions",
+        "patient impact",
+        "documentation"
+      ],
+      "difficulty": "high",
+      "description": "HDR afterloader output deviation investigation"
+    },
+    {
+      "id": "Q0715",
+      "input": "Describe the quality assurance procedures for a brachytherapy treatment planning system. Cover the commissioning tests, dose calculation verification, applicator library validation, CT and MRI image transfer accuracy testing, and the ongoing QA procedures. How often should each QA test be performed, and what are the acceptance criteria?",
+      "expected_keywords": [
+        "TPS QA",
+        "commissioning",
+        "dose calculation",
+        "applicator library",
+        "image transfer",
+        "acceptance criteria"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy TPS quality assurance procedures"
+    },
+    {
+      "id": "Q0716",
+      "input": "A brachytherapy center has identified that the applicator library in the treatment planning system does not match the actual applicator dimensions. The ring applicator model in the TPS has a 2 mm larger inner diameter than the physical applicator. Describe the impact of this discrepancy on dose calculation, the steps to correct the issue, and the QA procedures that should have caught this error earlier.",
+      "expected_keywords": [
+        "applicator library",
+        "dimension discrepancy",
+        "dose calculation impact",
+        "corrective action",
+        "QA prevention"
+      ],
+      "difficulty": "high",
+      "description": "Applicator library discrepancy investigation"
+    },
+    {
+      "id": "Q0717",
+      "input": "Describe the end-to-end quality assurance test for a brachytherapy treatment process. How do you verify the entire chain from CT simulation through applicator reconstruction, treatment planning, plan transfer, and simulated treatment delivery? What anthropomorphic phantoms are available, and how do you interpret the results of the end-to-end test?",
+      "expected_keywords": [
+        "end-to-end testing",
+        "phantom",
+        "CT simulation",
+        "applicator reconstruction",
+        "treatment planning",
+        "plan transfer"
+      ],
+      "difficulty": "advanced",
+      "description": "End-to-end brachytherapy QA testing"
+    },
+    {
+      "id": "Q0718",
+      "input": "A center performs brachytherapy using both CT and MRI for image guidance. Describe the QA procedures needed to ensure accurate image fusion between CT and MRI datasets. What phantoms and test objects are used, what are the acceptance criteria for registration accuracy, and how often should fusion QA be performed?",
+      "expected_keywords": [
+        "CT-MRI fusion",
+        "image registration",
+        "accuracy",
+        "phantom",
+        "acceptance criteria",
+        "QA frequency"
+      ],
+      "difficulty": "advanced",
+      "description": "CT-MRI fusion QA for brachytherapy"
+    },
+    {
+      "id": "Q0719",
+      "input": "Describe the quality assurance program for source strength calibration in brachytherapy. How do you ensure traceability to national standards, what are the procedures for annual source calibration verification, how do you handle source exchange, and what documentation is required for regulatory compliance?",
+      "expected_keywords": [
+        "source calibration",
+        "traceability",
+        "national standards",
+        "source exchange",
+        "regulatory compliance",
+        "documentation"
+      ],
+      "difficulty": "advanced",
+      "description": "Source strength calibration QA program"
+    },
+    {
+      "id": "Q0720",
+      "input": "A center is implementing a new brachytherapy quality management system. Describe the key performance indicators (KPIs) that should be tracked, how to establish baseline performance metrics, methods for data analysis and trending, and how to use KPI data to drive quality improvement initiatives in the brachytherapy program.",
+      "expected_keywords": [
+        "KPIs",
+        "quality management",
+        "baseline metrics",
+        "trending",
+        "quality improvement",
+        "data analysis"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy quality management system design"
+    },
+    {
+      "id": "Q0721",
+      "input": "Describe the peer review process for brachytherapy treatment plans. How should plans be selected for review, what elements of each plan should be evaluated, how are disagreements documented and resolved, and how does the peer review process integrate with the overall quality assurance program?",
+      "expected_keywords": [
+        "peer review",
+        "plan evaluation",
+        "disagreement resolution",
+        "documentation",
+        "QA integration"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy peer review process"
+    },
+    {
+      "id": "Q0722",
+      "input": "A near-miss event occurred during brachytherapy when the wrong patient's plan was loaded onto the afterloader. The error was caught before treatment delivery. Describe the root cause analysis process, the system improvements needed to prevent recurrence, the reporting requirements, and how to communicate the event to staff without creating a culture of blame.",
+      "expected_keywords": [
+        "near-miss",
+        "wrong patient",
+        "root cause analysis",
+        "system improvement",
+        "reporting",
+        "safety culture"
+      ],
+      "difficulty": "high",
+      "description": "Near-miss event root cause analysis"
+    },
+    {
+      "id": "Q0723",
+      "input": "Describe the quality assurance procedures for brachytherapy applicators. Cover the inspection requirements before each use, cleaning and sterilization procedures, dimensional verification, damage assessment, and documentation. How do you handle findings of applicator damage or dimensional deviation during QA inspection?",
+      "expected_keywords": [
+        "applicator QA",
+        "inspection",
+        "sterilization",
+        "dimensional verification",
+        "damage assessment",
+        "documentation"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy applicator QA procedures"
+    },
+    {
+      "id": "Q0724",
+      "input": "A center wants to implement statistical process control (SPC) for brachytherapy output measurements. Describe how to set up control charts for tracking HDR afterloader output, how to interpret control chart patterns (trends, shifts, cycles), what actions should be taken when out-of-control signals are detected, and how SPC differs from simple tolerance-based QA.",
+      "expected_keywords": [
+        "statistical process control",
+        "control charts",
+        "output measurements",
+        "trends",
+        "out-of-control",
+        "SPC vs tolerance"
+      ],
+      "difficulty": "advanced",
+      "description": "Statistical process control for brachytherapy QA"
+    },
+    {
+      "id": "Q0725",
+      "input": "Describe the quality assurance requirements for brachytherapy treatment documentation. What elements must be included in the treatment record per regulatory requirements, how should dose calculations be documented, what is the role of the treatment record in legal and regulatory compliance, and how do you ensure completeness and accuracy of brachytherapy records?",
+      "expected_keywords": [
+        "treatment documentation",
+        "regulatory requirements",
+        "dose calculations",
+        "legal compliance",
+        "record completeness",
+        "accuracy"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy documentation QA requirements"
+    },
+    {
+      "id": "Q0726",
+      "input": "A brachytherapy center is preparing for an IAEA or American College of Radiology (ACR) accreditation survey. Describe the preparation process, the specific brachytherapy-related requirements that must be met, the documentation that needs to be assembled, how to conduct a mock survey, and common areas where programs fail to meet accreditation standards.",
+      "expected_keywords": [
+        "accreditation",
+        "IAEA",
+        "ACR",
+        "preparation",
+        "documentation",
+        "mock survey",
+        "common deficiencies"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy accreditation preparation"
+    },
+    {
+      "id": "Q0727",
+      "input": "Describe the emergency response quality assurance procedures for brachytherapy. How should staff be trained for brachytherapy-specific emergencies such as a stuck source, patient injury during applicator insertion, or a medical emergency during treatment delivery? What are the drill requirements, how often should emergency drills be performed, and how should performance be evaluated?",
+      "expected_keywords": [
+        "emergency response",
+        "stuck source",
+        "patient injury",
+        "emergency drills",
+        "training",
+        "performance evaluation"
+      ],
+      "difficulty": "high",
+      "description": "Emergency response QA for brachytherapy"
+    },
+    {
+      "id": "Q0989",
+      "input": "A brachytherapy center performs a failure mode and effects analysis (FMEA) for its HDR treatment process. Identify the key failure modes in the brachytherapy workflow from patient setup through treatment delivery, calculate risk priority numbers for each failure mode, and describe the mitigation strategies for the highest-risk failure modes. How should the FMEA be updated and how often should it be reviewed?",
+      "expected_keywords": [
+        "FMEA",
+        "failure modes",
+        "risk priority number",
+        "HDR",
+        "mitigation",
+        "process analysis"
+      ],
+      "difficulty": "advanced",
+      "description": "Failure mode and effects analysis for HDR brachytherapy"
+    },
+    {
+      "id": "Q1336",
+      "input": "Develop comprehensive QA program for HDR: acceptance testing, commissioning, daily/monthly/annual procedures, source exchange, and documentation requirements per TG-59.",
+      "expected_keywords": [
+        "HDR_QA_program",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: HDR_QA_program"
+    },
+    {
+      "id": "Q1337",
+      "input": "Design QA protocol for brachytherapy planning: TPS commissioning, dose calculation verification, plan review, contouring QA, and export verification.",
+      "expected_keywords": [
+        "planning_QA",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: planning_QA"
+    },
+    {
+      "id": "Q1338",
+      "input": "Develop source management QA: inventory system, chain of custody, decay verification, source strength measurement, source exchange procedures, and regulatory documentation.",
+      "expected_keywords": [
+        "source_management_QA",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: source_management_QA"
+    },
+    {
+      "id": "Q1339",
+      "input": "Design emergency response for brachytherapy: stuck source, source exposure, contamination, applicator complications (perforation, hemorrhage), and notification requirements.",
+      "expected_keywords": [
+        "emergency_protocol",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: emergency_protocol"
+    },
+    {
+      "id": "Q1340",
+      "input": "Develop QA for applicator placement: selection verification, placement quality metrics, imaging verification, reconstruction accuracy, and peer review process.",
+      "expected_keywords": [
+        "applicator_placement_QA",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: applicator_placement_QA"
+    },
+    {
+      "id": "Q1341",
+      "input": "Design quality metrics dashboard: treatment delivery, plan quality, safety, patient experience, and operational efficiency metrics. Include display format and QI integration.",
+      "expected_keywords": [
+        "quality_dashboard",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: quality_dashboard"
+    },
+    {
+      "id": "Q1342",
+      "input": "Develop peer review program: schedule, criteria/checklist, reviewer qualifications, documentation, conflict resolution, and outcome tracking.",
+      "expected_keywords": [
+        "peer_review_program",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: peer_review_program"
+    },
+    {
+      "id": "Q1343",
+      "input": "Design equipment maintenance QA: preventive maintenance, corrective maintenance, performance monitoring, vendor requirements, spare parts, and downtime minimization.",
+      "expected_keywords": [
+        "equipment_maintenance_QA",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: equipment_maintenance_QA"
+    },
+    {
+      "id": "Q1344",
+      "input": "Develop competency assessment: domains for all roles, assessment methods (observation, exams, simulation), frequency, remediation process, and documentation.",
+      "expected_keywords": [
+        "competency_assessment",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: competency_assessment"
+    },
+    {
+      "id": "Q1345",
+      "input": "Design infection control for brachytherapy: sterile technique, antibiotic prophylaxis, applicator reprocessing/sterilization, OR requirements, and wound care protocols.",
+      "expected_keywords": [
+        "infection_control",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: infection_control"
+    },
+    {
+      "id": "Q1346",
+      "input": "Develop radiation safety QA: ALARA implementation, personnel monitoring, area monitoring, license compliance, and training requirements per NRC regulations.",
+      "expected_keywords": [
+        "radiation_safety_QA",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: radiation_safety_QA"
+    },
+    {
+      "id": "Q1347",
+      "input": "Design QI framework: project identification, PDSA cycles, data collection/analysis, intervention evaluation, sustainability, and reporting requirements.",
+      "expected_keywords": [
+        "QI_framework",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: QI_framework"
+    },
+    {
+      "id": "Q1348",
+      "input": "Develop consent QA: content requirements, documentation standards, language access, pediatric considerations, emergency consent, and audit process.",
+      "expected_keywords": [
+        "informed_consent_QA",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: informed_consent_QA"
+    },
+    {
+      "id": "Q1349",
+      "input": "Design treatment delivery QA: pre-treatment verification, intra-treatment monitoring, post-treatment documentation, fraction tracking, cumulative dose reporting, and error prevention.",
+      "expected_keywords": [
+        "delivery_QA",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: delivery_QA"
+    },
+    {
+      "id": "Q1350",
+      "input": "Develop imaging QA: CT/MRI quality testing, applicator visualization verification, image fusion assessment, artifact management, and protocol optimization.",
+      "expected_keywords": [
+        "imaging_QA",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: imaging_QA"
+    },
+    {
+      "id": "Q1351",
+      "input": "Design RCA protocol: incident classification, methodology (5-Why, fishbone), team composition, timeline, corrective action tracking, and learning dissemination.",
+      "expected_keywords": [
+        "RCA_protocol",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: RCA_protocol"
+    },
+    {
+      "id": "Q1352",
+      "input": "Develop outcome tracking QA: metrics (local control, survival, toxicity), data collection (NCDB, registry), analysis methods, benchmarking, and reporting.",
+      "expected_keywords": [
+        "outcome_tracking_QA",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: outcome_tracking_QA"
+    },
+    {
+      "id": "Q1353",
+      "input": "Design training QA: curriculum design, simulation requirements, competency milestones, continuing education, and documentation requirements.",
+      "expected_keywords": [
+        "training_QA",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: training_QA"
+    },
+    {
+      "id": "Q1354",
+      "input": "Develop documentation completeness QA: required elements per phase, completeness audits, ICRU/GEC-ESTRO standards, electronic documentation, and compliance monitoring.",
+      "expected_keywords": [
+        "documentation_completeness",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: documentation_completeness"
+    },
+    {
+      "id": "Q1355",
+      "input": "Design patient ID and safety verification: two-identifier process, site verification, timeout procedure, applicator/prescription verification, and error prevention.",
+      "expected_keywords": [
+        "patient_ID_verification",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: patient_ID_verification"
+    },
+    {
+      "id": "Q1356",
+      "input": "Develop calculation QA: independent verification, TG-43 audit, point dose measurement, DVH verification, and cumulative dose calculation verification.",
+      "expected_keywords": [
+        "calculation_QA",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: calculation_QA"
+    },
+    {
+      "id": "Q1357",
+      "input": "Design QA for transition to electronic documentation: system selection, workflow redesign, data migration, training, go-live support, and post-implementation monitoring.",
+      "expected_keywords": [
+        "electronic_transition_QA",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: electronic_transition_QA"
+    },
+    {
+      "id": "Q1358",
+      "input": "Develop research data QA: data management plan, source data verification, database security, audit trails, data sharing protocols, and ICH-GCP compliance.",
+      "expected_keywords": [
+        "research_data_integrity",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: research_data_integrity"
+    },
+    {
+      "id": "Q1359",
+      "input": "Design vendor management QA: qualification, SLAs, maintenance contracts, emergency service, spare parts management, and performance monitoring.",
+      "expected_keywords": [
+        "vendor_management_QA",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: vendor_management_QA"
+    },
+    {
+      "id": "Q1360",
+      "input": "Develop tumor board QA: case selection, presentation standards, multidisciplinary participation, decision documentation, action tracking, and outcome correlation.",
+      "expected_keywords": [
+        "tumor_board_QA",
+        "quality_assurance",
+        "QA",
+        "safety"
+      ],
+      "difficulty": "hard",
+      "description": "QA: tumor_board_QA"
+    }
+  ]
+}

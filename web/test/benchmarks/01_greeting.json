@@ -1,0 +1,292 @@
+{
+  "category": "greeting",
+  "description": "Basic conversation, greetings, user personality types",
+  "requires_ct": false,
+  "cases": [
+    {
+      "id": "Q0001",
+      "input": "Hello BrachyBot, I am Dr. Sarah Chen from the radiation oncology department at Memorial Hospital. I have a new prostate cancer patient and I would like to start the brachytherapy planning process. Could you please introduce yourself and tell me what capabilities you have for helping me with this treatment plan?",
+      "expected_keywords": [
+        "introduction",
+        "capabilities"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: introduction capabilities"
+    },
+    {
+      "id": "Q0002",
+      "input": "Hi there! I am a medical physicist who just joined the brachytherapy team. I have never used an AI assistant for treatment planning before. What exactly can you do to help me with prostate LDR brachytherapy seed implant planning and quality assurance?",
+      "expected_keywords": [
+        "new",
+        "user",
+        "onboarding",
+        "LDR"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: new user onboarding LDR"
+    },
+    {
+      "id": "Q0003",
+      "input": "Good morning. This is Dr. Patel, a radiation oncologist. I need to evaluate a cervical cancer patient for HDR brachytherapy. I have a CT scan loaded and I want to know if you can help me with tandem and ovoid applicator planning. Please explain your workflow.",
+      "expected_keywords": [
+        "HDR",
+        "cervical",
+        "applicator",
+        "workflow"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: HDR cervical applicator workflow"
+    },
+    {
+      "id": "Q0004",
+      "input": "Hey, I am an intern at the cancer center. Dr. Kim asked me to run the brachytherapy bot for a breast cancer APBI case. I have never done this before. Can you walk me through what I need to do step by step?",
+      "expected_keywords": [
+        "intern",
+        "training",
+        "breast",
+        "APBI"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: intern training breast APBI"
+    },
+    {
+      "id": "Q0005",
+      "input": "Hello. I am a dosimetrist working on a complex head and neck interstitial brachytherapy case. The patient has a recurrent squamous cell carcinoma of the oral tongue. Can you assist me with the planning process from CT import to dose evaluation?",
+      "expected_keywords": [
+        "H&N",
+        "interstitial",
+        "brachytherapy"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: H&N interstitial brachytherapy"
+    },
+    {
+      "id": "Q0006",
+      "input": "Hi BrachyBot, is this system connected to my treatment planning system or does it work independently? I want to understand the integration architecture before I start using it for patient cases.",
+      "expected_keywords": [
+        "system",
+        "architecture",
+        "integration"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: system architecture integration"
+    },
+    {
+      "id": "Q0007",
+      "input": "Good afternoon. I am a nurse practitioner in the radiation therapy department. I do not do planning, but I heard this bot can help explain brachytherapy procedures to patients. Is that true? Can you help me prepare patient education materials?",
+      "expected_keywords": [
+        "patient",
+        "education",
+        "non-planner"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: patient education non-planner"
+    },
+    {
+      "id": "Q0008",
+      "input": "Hello, I am reviewing a prostate brachytherapy preplan from another institution. The case uses I-125 seeds. I need to verify the plan quality. Can you load the CT and help me evaluate the dose coverage and hot spot locations?",
+      "expected_keywords": [
+        "plan",
+        "review",
+        "I-125",
+        "prostate"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: plan review I-125 prostate"
+    },
+    {
+      "id": "Q0009",
+      "input": "Hi! I am conducting a research study on AI-assisted brachytherapy planning for endometrial cancer. I need to process 50 cases. Does this system support batch processing of multiple patients?",
+      "expected_keywords": [
+        "research",
+        "batch",
+        "processing"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: research batch processing"
+    },
+    {
+      "id": "Q0010",
+      "input": "Good morning BrachyBot. I am a resident on my first rotation in brachytherapy. I would like to understand what imaging modalities you support. Can you work with MRI-only plans or do you require CT scans?",
+      "expected_keywords": [
+        "imaging",
+        "modality",
+        "support",
+        "resident"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: imaging modality support resident"
+    },
+    {
+      "id": "Q0011",
+      "input": "Hello. I represent the quality assurance committee at our cancer center. We are evaluating AI tools for brachytherapy. What validation studies have been performed on this system? How accurate is the automated segmentation compared to manual contouring?",
+      "expected_keywords": [
+        "QA",
+        "committee",
+        "validation"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: QA committee validation"
+    },
+    {
+      "id": "Q0012",
+      "input": "Hey there. I have a bladder cancer case that needs HDR brachytherapy. The tumor is at the bladder dome. I have a CT scan ready. Can you help me plan this case using a single-channel technique?",
+      "expected_keywords": [
+        "bladder",
+        "HDR",
+        "dome",
+        "tumor"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: bladder HDR dome tumor"
+    },
+    {
+      "id": "Q0013",
+      "input": "Hi, I am a radiation safety officer. Before I allow this system to be used in our department, I need to understand what patient data is processed, where it is stored, and whether it complies with HIPAA regulations.",
+      "expected_keywords": [
+        "HIPAA",
+        "data",
+        "privacy",
+        "compliance"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: HIPAA data privacy compliance"
+    },
+    {
+      "id": "Q0014",
+      "input": "Good evening. I have an emergency case - a patient with massive vaginal bleeding from cervical cancer. We need to plan an urgent HDR brachytherapy session tonight. Can you help me plan quickly?",
+      "expected_keywords": [
+        "emergency",
+        "case",
+        "cervical"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: emergency case cervical"
+    },
+    {
+      "id": "Q0015",
+      "input": "Hello BrachyBot. I am Dr. Tanaka from Japan. I would like to use this system but I have some questions about language support. Can you respond in Japanese? Does the system support multilingual interfaces?",
+      "expected_keywords": [
+        "multilingual",
+        "Japanese",
+        "support"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: multilingual Japanese support"
+    },
+    {
+      "id": "Q0016",
+      "input": "Hi, I am a medical student doing a rotation in radiation oncology. I am writing a thesis on brachytherapy dose optimization. Can you help me understand the mathematical principles behind inverse planning for HDR prostate brachytherapy?",
+      "expected_keywords": [
+        "medical",
+        "student",
+        "thesis",
+        "education"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: medical student thesis education"
+    },
+    {
+      "id": "Q0017",
+      "input": "Good morning. I just received a CT scan of a patient with rectal cancer. I need to evaluate whether the patient is a candidate for endorectal brachytherapy boost. Can you analyze the CT and give me your assessment?",
+      "expected_keywords": [
+        "rectal",
+        "brachytherapy",
+        "candidacy"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: rectal brachytherapy candidacy"
+    },
+    {
+      "id": "Q0018",
+      "input": "Hello. I am setting up a new brachytherapy program at a rural hospital. We have limited resources. Can this system help us plan cases even without a dedicated treatment planning system?",
+      "expected_keywords": [
+        "rural",
+        "hospital",
+        "resource",
+        "limitation"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: rural hospital resource limitation"
+    },
+    {
+      "id": "Q0019",
+      "input": "Hey BrachyBot! I am a physicist trying to commission a new HDR afterloader. Can you help me verify the source positioning accuracy by analyzing a phantom CT scan?",
+      "expected_keywords": [
+        "afterloader",
+        "commissioning",
+        "physicist"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: afterloader commissioning physicist"
+    },
+    {
+      "id": "Q0020",
+      "input": "Hi there. I have a pediatric patient with a vaginal rhabdomyosarcoma who needs brachytherapy. This is a very delicate case. Can you help me plan it with appropriate organ-at-risk constraints for a child?",
+      "expected_keywords": [
+        "pediatric",
+        "rhabdomyosarcoma"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: pediatric rhabdomyosarcoma"
+    },
+    {
+      "id": "Q0021",
+      "input": "Good afternoon. I am the department director and I need a summary report of all brachytherapy cases planned this month. Can you generate a quality metrics report?",
+      "expected_keywords": [
+        "department",
+        "report",
+        "quality",
+        "metrics"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: department report quality metrics"
+    },
+    {
+      "id": "Q0022",
+      "input": "Hello BrachyBot. I am a new user and I accidentally uploaded the wrong CT scan. How do I clear the current data and start over with the correct patient scan?",
+      "expected_keywords": [
+        "wrong",
+        "CT",
+        "upload",
+        "correction"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: wrong CT upload correction"
+    },
+    {
+      "id": "Q0023",
+      "input": "Hi. I work in a department that primarily uses cobalt-60 for HDR brachytherapy instead of iridium-192. Can this system handle Co-60 source data for dose calculations?",
+      "expected_keywords": [
+        "cobalt-60",
+        "HDR",
+        "support"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: cobalt-60 HDR support"
+    },
+    {
+      "id": "Q0024",
+      "input": "Good morning. I am preparing for a board certification exam in radiation oncology. Can you help me review brachytherapy concepts and quiz me on treatment planning principles?",
+      "expected_keywords": [
+        "board",
+        "exam",
+        "preparation"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: board exam preparation"
+    },
+    {
+      "id": "Q0025",
+      "input": "Hello. Before I begin, I want to make sure I understand the scope of this tool. Is BrachyBot intended to replace the physicist's judgment, or is it a decision-support tool? What are the limitations?",
+      "expected_keywords": [
+        "scope",
+        "limitations",
+        "decision",
+        "support"
+      ],
+      "difficulty": "easy",
+      "description": "Greeting and introduction test: scope limitations decision support"
+    }
+  ]
+}

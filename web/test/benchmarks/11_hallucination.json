@@ -1,0 +1,647 @@
+{
+  "category": "hallucination",
+  "description": "Factual accuracy, data verification, capability boundaries",
+  "requires_ct": false,
+  "cases": [
+    {
+      "id": "Q0361",
+      "input": "What is the recommended prescription dose for I-125 prostate brachytherapy according to the American Brachytherapy Society guidelines? Please provide the exact number and reference the specific guideline document.",
+      "expected_keywords": [
+        "I-125",
+        "prescription",
+        "dose",
+        "ABS",
+        "guideline",
+        "145",
+        "Gy"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: I-125 prescription dose ABS guideline 145 Gy"
+    },
+    {
+      "id": "Q0362",
+      "input": "Can you tell me the name of the inventor of the first remote afterloading machine for HDR brachytherapy? When was it invented and where was it first used clinically?",
+      "expected_keywords": [
+        "remote",
+        "afterloader",
+        "inventor",
+        "history",
+        "first",
+        "clinical",
+        "use"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: remote afterloader inventor history first clinical use"
+    },
+    {
+      "id": "Q0363",
+      "input": "What is the half-life of Cesium-137 in years? And what is the half-life of Iridium-192 in days? Please provide exact values.",
+      "expected_keywords": [
+        "Cs-137",
+        "half-life",
+        "30.17",
+        "years",
+        "Ir-192",
+        "73.83",
+        "days"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: Cs-137 half-life 30.17 years Ir-192 73.83 days"
+    },
+    {
+      "id": "Q0364",
+      "input": "According to the EMBRACE II study, what was the local control rate for cervical cancer patients treated with MRI-guided brachytherapy? Please provide the exact percentage and follow-up period.",
+      "expected_keywords": [
+        "EMBRACE",
+        "II",
+        "local",
+        "control",
+        "cervical",
+        "MRI",
+        "brachytherapy",
+        "percentage"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: EMBRACE II local control cervical MRI brachytherapy percentage"
+    },
+    {
+      "id": "Q0365",
+      "input": "What is the TG-43 dose rate constant for an IsoAid Advantage I-125 seed model? Please provide the exact value with units.",
+      "expected_keywords": [
+        "TG-43",
+        "dose",
+        "rate",
+        "constant",
+        "IsoAid",
+        "Advantage",
+        "I-125",
+        "seed"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: TG-43 dose rate constant IsoAid Advantage I-125 seed"
+    },
+    {
+      "id": "Q0366",
+      "input": "Can you tell me the name of the hospital where the first LDR prostate brachytherapy was performed in the United States? Who performed it and in what year?",
+      "expected_keywords": [
+        "first",
+        "LDR",
+        "prostate",
+        "brachytherapy",
+        "US",
+        "hospital",
+        "history"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: first LDR prostate brachytherapy US hospital history"
+    },
+    {
+      "id": "Q0367",
+      "input": "What is the specific activity of I-125 in Ci/g? And what is the specific gamma ray energy of I-125 in keV? Please provide exact physical constants.",
+      "expected_keywords": [
+        "I-125",
+        "specific",
+        "activity",
+        "Ci/g",
+        "gamma",
+        "energy",
+        "keV",
+        "physical",
+        "constants"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: I-125 specific activity Ci/g gamma energy keV physical constants"
+    },
+    {
+      "id": "Q0368",
+      "input": "According to the GEC-ESTRO working group recommendations, what is the minimum number of MRI sequences required for cervix brachytherapy planning? Name each required sequence.",
+      "expected_keywords": [
+        "GEC-ESTRO",
+        "MRI",
+        "sequences",
+        "cervix",
+        "brachytherapy",
+        "minimum",
+        "required"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: GEC-ESTRO MRI sequences cervix brachytherapy minimum required"
+    },
+    {
+      "id": "Q0369",
+      "input": "What is the recommended occupancy factor for the room adjacent to an HDR brachytherapy vault during treatment, according to NCRP 151? Provide the specific occupancy factor value used in shielding calculations.",
+      "expected_keywords": [
+        "NCRP",
+        "151",
+        "occupancy",
+        "factor",
+        "HDR",
+        "vault",
+        "shielding"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: NCRP 151 occupancy factor HDR vault shielding"
+    },
+    {
+      "id": "Q0370",
+      "input": "Can you tell me the maximum number of dwell positions that can be used simultaneously in a Varian Gammamed HDR afterloader? What is the source transit time between dwell positions?",
+      "expected_keywords": [
+        "Varian",
+        "Gammamed",
+        "dwell",
+        "positions",
+        "source",
+        "transit",
+        "specifications"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: Varian Gammamed dwell positions source transit specifications"
+    },
+    {
+      "id": "Q0371",
+      "input": "What was the 10-year biochemical disease-free survival rate for intermediate-risk prostate cancer patients treated with I-125 seed implant in the meaningful outcomes study by Potters et al? Provide the exact percentage.",
+      "expected_keywords": [
+        "Potters",
+        "10-year",
+        "biochemical",
+        "survival",
+        "intermediate-risk",
+        "I-125",
+        "prostate"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: Potters 10-year biochemical survival intermediate-risk I-125 prostate"
+    },
+    {
+      "id": "Q0372",
+      "input": "What is the exact value of the anisotropy function F(1cm, 0 degrees) for a Theragenics 200 I-125 seed at 1cm distance along the longitudinal axis? Please provide the TG-43 data value.",
+      "expected_keywords": [
+        "Theragenics",
+        "200",
+        "anisotropy",
+        "function",
+        "TG-43",
+        "1cm",
+        "0",
+        "degree"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: Theragenics 200 anisotropy function TG-43 1cm 0 degree"
+    },
+    {
+      "id": "Q0373",
+      "input": "According to the ABS consensus guidelines for prostate brachytherapy, what is the recommended minimum V100 for an optimal I-125 seed implant? And what is the recommended maximum urethral dose as a percentage of prescription?",
+      "expected_keywords": [
+        "ABS",
+        "consensus",
+        "V100",
+        "urethral",
+        "Dmax",
+        "prostate",
+        "optimal",
+        "implant"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: ABS consensus V100 urethral Dmax prostate optimal implant"
+    },
+    {
+      "id": "Q0374",
+      "input": "What is the name of the optimization algorithm used in the VariSeed treatment planning system for prostate brachytherapy preplanning? And what algorithm does the Nucletron/Elekta Plato system use?",
+      "expected_keywords": [
+        "VariSeed",
+        "optimization",
+        "algorithm",
+        "Nucletron",
+        "Plato",
+        "prostate",
+        "preplan"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: VariSeed optimization algorithm Nucletron Plato prostate preplan"
+    },
+    {
+      "id": "Q0375",
+      "input": "Can you tell me the exact number of patients enrolled in the ASCENDE-RT trial comparing brachytherapy boost to EBRT boost for prostate cancer? What was the primary endpoint?",
+      "expected_keywords": [
+        "ASCENDE-RT",
+        "trial",
+        "patient",
+        "number",
+        "primary",
+        "endpoint",
+        "prostate",
+        "boost"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: ASCENDE-RT trial patient number primary endpoint prostate boost"
+    },
+    {
+      "id": "Q0376",
+      "input": "What is the recommended temperature range for storing I-125 seeds before implantation? And what is the recommended temperature range for Ir-192 HDR sources during storage?",
+      "expected_keywords": [
+        "I-125",
+        "Ir-192",
+        "storage",
+        "temperature",
+        "range",
+        "seed",
+        "source"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: I-125 Ir-192 storage temperature range seed source"
+    },
+    {
+      "id": "Q0377",
+      "input": "According to the ICRU 89 report, what is the recommended dose specification point for the bladder in cervical brachytherapy? How is this point defined anatomically?",
+      "expected_keywords": [
+        "ICRU",
+        "89",
+        "bladder",
+        "reference",
+        "point",
+        "cervical",
+        "brachytherapy",
+        "definition"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: ICRU 89 bladder reference point cervical brachytherapy definition"
+    },
+    {
+      "id": "Q0378",
+      "input": "What is the recommended minimum time interval between HDR brachytherapy fractions delivered twice daily for cervical cancer? And what is the minimum interval for HDR prostate brachytherapy fractions?",
+      "expected_keywords": [
+        "HDR",
+        "twice",
+        "daily",
+        "minimum",
+        "interval",
+        "6",
+        "hours",
+        "cervical",
+        "prostate",
+        "fractionation"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: HDR twice daily minimum interval 6 hours cervical prostate fractionation"
+    },
+    {
+      "id": "Q0379",
+      "input": "Can you tell me the exact radionuclide decay scheme for Pd-103? What are the daughter nuclides and how does the electron capture decay process work?",
+      "expected_keywords": [
+        "Pd-103",
+        "decay",
+        "scheme",
+        "electron",
+        "capture",
+        "Rh-103m",
+        "daughter",
+        "nuclide"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: Pd-103 decay scheme electron capture Rh-103m daughter nuclide"
+    },
+    {
+      "id": "Q0380",
+      "input": "What is the recommended maximum rectal dose constraint in Gy EQD2 for patients treated with brachytherapy for cervical cancer, according to the EMBRACE study criteria? Provide the specific D2cc constraint value.",
+      "expected_keywords": [
+        "EMBRACE",
+        "rectal",
+        "D2cc",
+        "constraint",
+        "75",
+        "Gy",
+        "EQD2",
+        "cervical",
+        "brachytherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: EMBRACE rectal D2cc constraint 75 Gy EQD2 cervical brachytherapy"
+    },
+    {
+      "id": "Q0381",
+      "input": "What is the name of the physicist who first described the TG-43 formalism for brachytherapy dose calculations? When was the TG-43 report first published?",
+      "expected_keywords": [
+        "TG-43",
+        "formalism",
+        "physicist",
+        "origin",
+        "first",
+        "publication",
+        "date"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: TG-43 formalism physicist origin first publication date"
+    },
+    {
+      "id": "Q0382",
+      "input": "According to published literature, what is the median time to biochemical failure after prostate brachytherapy for low-risk, intermediate-risk, and high-risk patients? Provide approximate percentages for each risk category.",
+      "expected_keywords": [
+        "prostate",
+        "brachytherapy",
+        "biochemical",
+        "failure",
+        "rate",
+        "risk",
+        "category",
+        "median"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: prostate brachytherapy biochemical failure rate risk category median"
+    },
+    {
+      "id": "Q0383",
+      "input": "What is the specific calibration procedure for verifying Ir-192 HDR source strength using a well chamber? Describe the steps and the expected accuracy of the measurement.",
+      "expected_keywords": [
+        "Ir-192",
+        "well",
+        "chamber",
+        "calibration",
+        "procedure",
+        "source",
+        "strength",
+        "verification"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: Ir-192 well chamber calibration procedure source strength verification"
+    },
+    {
+      "id": "Q0384",
+      "input": "Can you tell me the exact treatment time required to deliver 7 Gy at point A using a tandem and ovoids applicator with an Ir-192 source strength of 37000 U? Show the calculation.",
+      "expected_keywords": [
+        "treatment",
+        "time",
+        "calculation",
+        "point",
+        "A",
+        "tandem",
+        "ovoid",
+        "37000",
+        "U",
+        "7",
+        "Gy"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: treatment time calculation point A tandem ovoid 37000 U 7 Gy"
+    },
+    {
+      "id": "Q0385",
+      "input": "What is the recommended maximum dose to the femoral heads in Gy EQD2 for prostate brachytherapy patients? And what is the tolerance dose for the femoral neck if the patient has a prior hip replacement?",
+      "expected_keywords": [
+        "femoral",
+        "head",
+        "tolerance",
+        "Gy",
+        "EQD2",
+        "prostate",
+        "hip",
+        "replacement",
+        "constraint"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: femoral head tolerance Gy EQD2 prostate hip replacement constraint"
+    },
+    {
+      "id": "Q0386",
+      "input": "According to the Paris system, what is the recommended needle spacing for a single-plane implant treating a 2cm thick tumor? How does this change for a two-plane implant?",
+      "expected_keywords": [
+        "Paris",
+        "system",
+        "needle",
+        "spacing",
+        "single",
+        "plane",
+        "two",
+        "plane",
+        "tumor",
+        "thickness"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: Paris system needle spacing single plane two plane tumor thickness"
+    },
+    {
+      "id": "Q0387",
+      "input": "What is the maximum recommended dwell time for any single dwell position in HDR brachytherapy to avoid excessive dose heterogeneity? What are the TG-56 recommendations on this?",
+      "expected_keywords": [
+        "maximum",
+        "dwell",
+        "time",
+        "HDR",
+        "heterogeneity",
+        "TG-56",
+        "recommendation"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: maximum dwell time HDR heterogeneity TG-56 recommendation"
+    },
+    {
+      "id": "Q0388",
+      "input": "Can you tell me the annual brachytherapy case volume at the top 5 brachytherapy centers in the United States? I need this for a benchmarking study at my hospital.",
+      "expected_keywords": [
+        "annual",
+        "brachytherapy",
+        "volume",
+        "top",
+        "centers",
+        "US",
+        "benchmarking",
+        "unavailable"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: annual brachytherapy volume top centers US benchmarking unavailable"
+    },
+    {
+      "id": "Q0389",
+      "input": "What is the exact cost of a Varian VariSeed treatment planning system license? And what does an Elekta Plato system cost? I need to justify the purchase to my hospital administrator.",
+      "expected_keywords": [
+        "treatment",
+        "planning",
+        "system",
+        "cost",
+        "VariSeed",
+        "Elekta",
+        "Plato",
+        "price"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: treatment planning system cost VariSeed Elekta Plato price"
+    },
+    {
+      "id": "Q0390",
+      "input": "According to the EMBRACE studies, what is the relationship between HR-CTV D90 and local control rate for cervical cancer? Provide the exact dose-response data from the publication.",
+      "expected_keywords": [
+        "EMBRACE",
+        "HR-CTV",
+        "D90",
+        "dose-response",
+        "local",
+        "control",
+        "cervical",
+        "exact",
+        "data"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: EMBRACE HR-CTV D90 dose-response local control cervical exact data"
+    },
+    {
+      "id": "Q0391",
+      "input": "What is the published incidence of radiation-induced rectal fistula after prostate brachytherapy with I-125 seeds? Provide the exact percentage from the largest published series.",
+      "expected_keywords": [
+        "rectal",
+        "fistula",
+        "incidence",
+        "I-125",
+        "prostate",
+        "brachytherapy",
+        "published",
+        "percentage"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: rectal fistula incidence I-125 prostate brachytherapy published percentage"
+    },
+    {
+      "id": "Q0392",
+      "input": "Can you tell me the exact specification dimensions of the Moduline HDR afterloading applicator system used for cervical brachytherapy? Include tandem lengths and ovoid sizes available.",
+      "expected_keywords": [
+        "Moduline",
+        "HDR",
+        "applicator",
+        "specifications",
+        "tandem",
+        "ovoid",
+        "dimensions"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: Moduline HDR applicator specifications tandem ovoid dimensions"
+    },
+    {
+      "id": "Q0393",
+      "input": "What is the specific formula for calculating the biologically effective dose for pulsed-dose-rate (PDR) brachytherapy? How does the incomplete repair formula differ from the standard LQ model?",
+      "expected_keywords": [
+        "PDR",
+        "BED",
+        "formula",
+        "incomplete",
+        "repair",
+        "Lea-Catcheside",
+        "LQ",
+        "model"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: PDR BED formula incomplete repair Lea-Catcheside LQ model"
+    },
+    {
+      "id": "Q0394",
+      "input": "What is the recommended MRI slice thickness for target delineation in GEC-ESTRO based cervical brachytherapy? And what is the recommended field of view?",
+      "expected_keywords": [
+        "GEC-ESTRO",
+        "MRI",
+        "slice",
+        "thickness",
+        "field",
+        "of",
+        "view",
+        "cervical",
+        "delineation"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: GEC-ESTRO MRI slice thickness field of view cervical delineation"
+    },
+    {
+      "id": "Q0395",
+      "input": "According to the NCCN guidelines, what is the recommended treatment for intermediate-risk prostate cancer? Is brachytherapy monotherapy listed as a standard option?",
+      "expected_keywords": [
+        "NCCN",
+        "guidelines",
+        "intermediate-risk",
+        "prostate",
+        "brachytherapy",
+        "monotherapy"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: NCCN guidelines intermediate-risk prostate brachytherapy monotherapy"
+    },
+    {
+      "id": "Q0396",
+      "input": "What is the average time required to perform a post-implant CT-based dosimetric evaluation for a prostate brachytherapy case? How many contours need to be drawn?",
+      "expected_keywords": [
+        "post-implant",
+        "CT",
+        "dosimetry",
+        "evaluation",
+        "time",
+        "contours",
+        "prostate",
+        "workflow"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: post-implant CT dosimetry evaluation time contours prostate workflow"
+    },
+    {
+      "id": "Q0397",
+      "input": "Can you tell me the specific radioactive impurities that may be present in I-125 seeds and the acceptable limits per USP 821? What quality control tests are required for each seed batch?",
+      "expected_keywords": [
+        "I-125",
+        "seed",
+        "impurities",
+        "USP",
+        "821",
+        "quality",
+        "control",
+        "radioactive",
+        "limits"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: I-125 seed impurities USP 821 quality control radioactive limits"
+    },
+    {
+      "id": "Q0398",
+      "input": "What is the published rate of seed migration to the lungs after prostate I-125 implant? What percentage of seeds migrate and what are the clinical consequences? Provide data from the largest published series.",
+      "expected_keywords": [
+        "seed",
+        "migration",
+        "lungs",
+        "I-125",
+        "prostate",
+        "published",
+        "rate",
+        "percentage",
+        "consequences"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: seed migration lungs I-125 prostate published rate percentage consequences"
+    },
+    {
+      "id": "Q0399",
+      "input": "According to ICRU 38, what are the minimum data that should be reported for a brachytherapy treatment? List all the required reporting elements.",
+      "expected_keywords": [
+        "ICRU",
+        "38",
+        "brachytherapy",
+        "reporting",
+        "minimum",
+        "data",
+        "requirements"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: ICRU 38 brachytherapy reporting minimum data requirements"
+    },
+    {
+      "id": "Q0400",
+      "input": "What is the maximum dose rate at the surface of an Ir-192 HDR source in air at 1cm distance? And what is the dose rate at 10cm? Show the calculation using the inverse square law.",
+      "expected_keywords": [
+        "Ir-192",
+        "dose",
+        "rate",
+        "surface",
+        "air",
+        "1cm",
+        "10cm",
+        "inverse",
+        "square",
+        "calculation"
+      ],
+      "difficulty": "hard",
+      "description": "Hallucination test: Ir-192 dose rate surface air 1cm 10cm inverse square calculation"
+    }
+  ]
+}

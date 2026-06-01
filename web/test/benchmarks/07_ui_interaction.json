@@ -1,0 +1,457 @@
+{
+  "category": "ui_interaction",
+  "description": "UI commands, viewer control, layout modes",
+  "requires_ct": false,
+  "cases": [
+    {
+      "id": "Q0251",
+      "input": "I want to upload a new CT scan for a prostate cancer patient. Please guide me through the process of uploading the DICOM files, selecting the correct series, and importing them into the system. I have the files on a USB drive.",
+      "expected_keywords": [
+        "DICOM",
+        "upload",
+        "series",
+        "selection",
+        "import"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: DICOM upload series selection import"
+    },
+    {
+      "id": "Q0252",
+      "input": "How do I switch between the axial, sagittal, and coronal views of the CT scan? I need to view the scan in all three planes to properly evaluate the anatomy for brachytherapy planning.",
+      "expected_keywords": [
+        "axial",
+        "sagittal",
+        "coronal",
+        "view",
+        "switching",
+        "multi-planar"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: axial sagittal coronal view switching multi-planar"
+    },
+    {
+      "id": "Q0253",
+      "input": "I need to adjust the window and level settings to better visualize the prostate on this CT scan. The default window is not showing adequate soft tissue contrast. Please help me optimize the display settings for pelvic anatomy.",
+      "expected_keywords": [
+        "window",
+        "level",
+        "soft",
+        "tissue",
+        "contrast",
+        "pelvic",
+        "display",
+        "settings"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: window level soft tissue contrast pelvic display settings"
+    },
+    {
+      "id": "Q0254",
+      "input": "Can you show me the DVH curves for this treatment plan? I need to evaluate the dose-volume histogram for the prostate, bladder, rectum, and femoral heads. Please display the DVH graph and list the key parameters.",
+      "expected_keywords": [
+        "DVH",
+        "curves",
+        "prostate",
+        "bladder",
+        "rectum",
+        "femoral",
+        "heads",
+        "display"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: DVH curves prostate bladder rectum femoral heads display"
+    },
+    {
+      "id": "Q0255",
+      "input": "I want to measure the distance between the applicator tip and the bladder wall on this cervical cancer CT. Please activate the measurement tool and help me place calipers to measure this distance.",
+      "expected_keywords": [
+        "measurement",
+        "tool",
+        "calipers",
+        "applicator",
+        "bladder",
+        "distance"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: measurement tool calipers applicator bladder distance"
+    },
+    {
+      "id": "Q0256",
+      "input": "How do I zoom and pan the CT image to examine the seed distribution in this post-implant scan? I need to see individual seeds clearly in the prostate region. Please demonstrate the zoom and pan controls.",
+      "expected_keywords": [
+        "zoom",
+        "pan",
+        "seed",
+        "visualization",
+        "post-implant"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: zoom pan seed visualization post-implant"
+    },
+    {
+      "id": "Q0257",
+      "input": "I need to export the current treatment plan report as a PDF file. Please show me the export options, including which parameters to include in the report and how to save it to a specific location.",
+      "expected_keywords": [
+        "export",
+        "PDF",
+        "treatment",
+        "plan",
+        "report",
+        "parameters",
+        "save"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: export PDF treatment plan report parameters save"
+    },
+    {
+      "id": "Q0258",
+      "input": "Can you overlay the dose color wash on the CT scan? I want to see the 100%, 150%, and 200% isodose lines for this prostate brachytherapy plan. Please display the isodose lines with appropriate colors.",
+      "expected_keywords": [
+        "isodose",
+        "overlay",
+        "color",
+        "wash",
+        "dose",
+        "lines",
+        "CT",
+        "display"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: isodose overlay color wash dose lines CT display"
+    },
+    {
+      "id": "Q0259",
+      "input": "I need to create a 3D rendering of the brachytherapy implant to visualize the seed distribution in three dimensions. Please generate a 3D volume rendering showing the seeds, prostate, and critical structures.",
+      "expected_keywords": [
+        "3D",
+        "volume",
+        "rendering",
+        "seed",
+        "distribution",
+        "prostate",
+        "OAR",
+        "visualization"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: 3D volume rendering seed distribution prostate OAR visualization"
+    },
+    {
+      "id": "Q0260",
+      "input": "How do I navigate to a specific slice in the CT scan? I need to go to slice number 45 where the prostate base is visible. Please show me the navigation controls and slice selection method.",
+      "expected_keywords": [
+        "slice",
+        "navigation",
+        "specific",
+        "slice",
+        "number",
+        "prostate",
+        "base"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: slice navigation specific slice number prostate base"
+    },
+    {
+      "id": "Q0261",
+      "input": "I want to compare two treatment plans side by side. Please load Plan A and Plan B and display their DVH curves together so I can evaluate the dosimetric differences between the two optimization approaches.",
+      "expected_keywords": [
+        "compare",
+        "plans",
+        "side",
+        "by",
+        "side",
+        "DVH",
+        "optimization",
+        "comparison"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: compare plans side by side DVH optimization comparison"
+    },
+    {
+      "id": "Q0262",
+      "input": "Can you display the crosshair cursor on the CT scan? I need to use the crosshair to identify the prostate center and measure its position relative to the isocenter. Please activate the crosshair tool.",
+      "expected_keywords": [
+        "crosshair",
+        "cursor",
+        "prostate",
+        "center",
+        "isocenter",
+        "measurement"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: crosshair cursor prostate center isocenter measurement"
+    },
+    {
+      "id": "Q0263",
+      "input": "I need to adjust the color map of the CT scan to better visualize the brachytherapy needles. The default grayscale is not showing the needle trajectories clearly. Please suggest alternative color maps.",
+      "expected_keywords": [
+        "color",
+        "map",
+        "CT",
+        "needle",
+        "trajectory",
+        "visualization",
+        "alternative"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: color map CT needle trajectory visualization alternative"
+    },
+    {
+      "id": "Q0264",
+      "input": "Please help me create a snapshot of the current CT view with the dose overlay for documentation purposes. I need to save this image with the patient name, date, and plan information visible.",
+      "expected_keywords": [
+        "snapshot",
+        "CT",
+        "dose",
+        "overlay",
+        "documentation",
+        "save",
+        "annotated"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: snapshot CT dose overlay documentation save annotated"
+    },
+    {
+      "id": "Q0265",
+      "input": "How do I modify the contour of the prostate CTV? I need to adjust the superior border to include a small region that was missed in the original segmentation. Please show me the editing tools.",
+      "expected_keywords": [
+        "contour",
+        "editing",
+        "tools",
+        "CTV",
+        "prostate",
+        "modification",
+        "adjustment"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: contour editing tools CTV prostate modification adjustment"
+    },
+    {
+      "id": "Q0266",
+      "input": "I want to measure the volume of the prostate on this CT scan. Please use the segmentation tool to calculate the prostate volume and display it in cubic centimeters. I also need the anterior-posterior, lateral, and superior-inferior dimensions.",
+      "expected_keywords": [
+        "volume",
+        "measurement",
+        "prostate",
+        "segmentation",
+        "dimensions",
+        "cc"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: volume measurement prostate segmentation dimensions cc"
+    },
+    {
+      "id": "Q0267",
+      "input": "Can you show me the seed positions as markers on the CT scan? I want to verify that the seed coordinates match the planned positions. Please display each seed as a labeled point with its position coordinates.",
+      "expected_keywords": [
+        "seed",
+        "position",
+        "markers",
+        "coordinates",
+        "CT",
+        "verification"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: seed position markers coordinates CT verification"
+    },
+    {
+      "id": "Q0268",
+      "input": "I need to load a previous treatment plan for this patient who is returning for a boost treatment. Please access the patient's plan history and load the most recent plan for reference.",
+      "expected_keywords": [
+        "plan",
+        "history",
+        "patient",
+        "record",
+        "previous",
+        "plan",
+        "load"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: plan history patient record previous plan load"
+    },
+    {
+      "id": "Q0269",
+      "input": "How do I toggle the visibility of different structures on the CT scan? I want to show only the prostate, bladder, and rectum while hiding the femoral heads and other structures to get a clearer view.",
+      "expected_keywords": [
+        "structure",
+        "visibility",
+        "toggle",
+        "show",
+        "hide",
+        "organs",
+        "clear",
+        "view"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: structure visibility toggle show hide organs clear view"
+    },
+    {
+      "id": "Q0270",
+      "input": "I need to measure the balloon-to-skin distance for this breast APBI case. Please place measurement points from the balloon surface to the skin surface at the 12 o'clock, 3 o'clock, 6 o'clock, and 9 o'clock positions.",
+      "expected_keywords": [
+        "balloon-to-skin",
+        "measurement",
+        "breast",
+        "APBI",
+        "four",
+        "positions",
+        "clock"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: balloon-to-skin measurement breast APBI four positions clock"
+    },
+    {
+      "id": "Q0271",
+      "input": "Can you display the needle trajectories on the CT scan as lines from skin entry to target? I need to verify that the needle paths are safe and avoid critical structures. Please show the projected needle paths.",
+      "expected_keywords": [
+        "needle",
+        "trajectory",
+        "projected",
+        "paths",
+        "safety",
+        "verification",
+        "CT"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: needle trajectory projected paths safety verification CT"
+    },
+    {
+      "id": "Q0272",
+      "input": "I want to create a printout of the treatment plan summary for the patient chart. Please format a summary including prescription dose, DVH parameters, OAR constraints, and plan quality metrics.",
+      "expected_keywords": [
+        "print",
+        "plan",
+        "summary",
+        "prescription",
+        "DVH",
+        "OAR",
+        "quality",
+        "format"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: print plan summary prescription DVH OAR quality format"
+    },
+    {
+      "id": "Q0273",
+      "input": "How do I adjust the brightness and contrast of the CT scan for better visualization of the pelvic floor muscles? The current settings are too dark for the soft tissue structures inferior to the prostate.",
+      "expected_keywords": [
+        "brightness",
+        "contrast",
+        "pelvic",
+        "floor",
+        "muscle",
+        "soft",
+        "tissue",
+        "adjustment"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: brightness contrast pelvic floor muscle soft tissue adjustment"
+    },
+    {
+      "id": "Q0274",
+      "input": "I need to draw a region of interest (ROI) around a suspected recurrence at the anastomosis site. Please activate the freehand ROI tool and help me trace the outline of the suspicious lesion.",
+      "expected_keywords": [
+        "ROI",
+        "freehand",
+        "tool",
+        "recurrence",
+        "tracing",
+        "anastomosis"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: ROI freehand tool recurrence tracing anastomosis"
+    },
+    {
+      "id": "Q0275",
+      "input": "Can you show me the CT scan with a different window preset optimized for bone visualization? I need to evaluate the pelvic bones and assess for any lytic or blastic lesions that might affect seed placement.",
+      "expected_keywords": [
+        "bone",
+        "window",
+        "preset",
+        "pelvic",
+        "bone",
+        "visualization",
+        "lytic",
+        "blastic"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: bone window preset pelvic bone visualization lytic blastic"
+    },
+    {
+      "id": "Q0276",
+      "input": "I want to add a text annotation to the CT scan marking the location of the tumor for documentation. Please help me place a text label at the tumor site with a description of the finding.",
+      "expected_keywords": [
+        "text",
+        "annotation",
+        "CT",
+        "tumor",
+        "marking",
+        "documentation",
+        "label"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: text annotation CT tumor marking documentation label"
+    },
+    {
+      "id": "Q0277",
+      "input": "How do I measure the angle between the tandem and the uterine axis on this cervical cancer CT? I need to document the tandem geometry for the treatment plan. Please show me the angle measurement tool.",
+      "expected_keywords": [
+        "angle",
+        "measurement",
+        "tandem",
+        "uterine",
+        "axis",
+        "cervical",
+        "documentation"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: angle measurement tandem uterine axis cervical documentation"
+    },
+    {
+      "id": "Q0278",
+      "input": "I need to review the contouring quality for this case. Please display all contoured structures simultaneously and identify any potential contouring errors or inconsistencies between the CTV and OAR boundaries.",
+      "expected_keywords": [
+        "contouring",
+        "quality",
+        "review",
+        "all",
+        "structures",
+        "errors",
+        "boundary",
+        "check"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: contouring quality review all structures errors boundary check"
+    },
+    {
+      "id": "Q0279",
+      "input": "Can you generate a dose profile along a line drawn through the prostate from anterior to posterior? I want to see the dose distribution across the prostate to evaluate the dose homogeneity.",
+      "expected_keywords": [
+        "dose",
+        "profile",
+        "line",
+        "anterior",
+        "posterior",
+        "prostate",
+        "homogeneity"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: dose profile line anterior posterior prostate homogeneity"
+    },
+    {
+      "id": "Q0280",
+      "input": "I want to change the color scheme of the DVH curves. Please assign distinct colors to each structure: red for prostate, blue for bladder, green for rectum, and yellow for femoral heads. This will make the DVH easier to read.",
+      "expected_keywords": [
+        "DVH",
+        "color",
+        "scheme",
+        "custom",
+        "assignment",
+        "structure",
+        "visualization"
+      ],
+      "difficulty": "easy",
+      "description": "UI interaction test: DVH color scheme custom assignment structure visualization"
+    }
+  ]
+}

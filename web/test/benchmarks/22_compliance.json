@@ -1,0 +1,1400 @@
+{
+  "category": "compliance",
+  "description": "Clinical standards, protocol compliance, guidelines",
+  "requires_ct": false,
+  "cases": [
+    {
+      "id": "Q0605",
+      "input": "Review the following brachytherapy treatment plan for compliance with the ABS guidelines for cervical cancer brachytherapy. The prescription is 5.5 Gy per fraction x 4 fractions to point A. D2cc to the rectum is 3.5 Gy per fraction, and D2cc to the bladder is 4.0 Gy per fraction. Does this plan comply with ABS dose constraints? Identify any deviations and describe the appropriate action.",
+      "expected_keywords": [
+        "ABS guidelines",
+        "cervical",
+        "point A",
+        "D2cc",
+        "dose constraints",
+        "compliance"
+      ],
+      "difficulty": "medium",
+      "description": "ABS guideline compliance review for cervical brachytherapy"
+    },
+    {
+      "id": "Q0606",
+      "input": "A center is performing brachytherapy without MRI guidance and using CT-only planning. Evaluate whether this practice complies with current GEC-ESTRO recommendations for cervical cancer brachytherapy. What are the documented limitations of CT-only planning, and what additional quality assurance measures should be implemented to mitigate these limitations?",
+      "expected_keywords": [
+        "GEC-ESTRO",
+        "CT-only",
+        "MRI guidance",
+        "compliance",
+        "limitations",
+        "quality assurance"
+      ],
+      "difficulty": "advanced",
+      "description": "CT-only brachytherapy compliance evaluation"
+    },
+    {
+      "id": "Q0607",
+      "input": "A brachytherapy treatment was delivered to a patient with a prescription dose of 6 Gy x 4 fractions. During post-treatment verification, it was discovered that the source dwell time for one dwell position was 15% longer than planned. This resulted in an estimated over-dose to a small region of tissue. Describe the regulatory reporting requirements for this event, the corrective actions needed, and how to document the incident per AAPM TG-59 guidelines.",
+      "expected_keywords": [
+        "dwell time error",
+        "over-dose",
+        "regulatory reporting",
+        "AAPM TG-59",
+        "corrective actions",
+        "incident documentation"
+      ],
+      "difficulty": "high",
+      "description": "Regulatory reporting for brachytherapy delivery error"
+    },
+    {
+      "id": "Q0608",
+      "input": "Evaluate whether the following brachytherapy practice complies with state radiation safety regulations: The center treats HDR brachytherapy patients without a medical physicist present during treatment delivery, relying instead on trained radiation therapy technologists. The physicist is available by phone. Discuss the regulatory requirements for physicist presence during HDR treatments in different jurisdictions.",
+      "expected_keywords": [
+        "physicist presence",
+        "HDR",
+        "regulations",
+        "state requirements",
+        "safety",
+        "technologist",
+        "compliance"
+      ],
+      "difficulty": "high",
+      "description": "Physicist presence requirements for HDR brachytherapy"
+    },
+    {
+      "id": "Q0609",
+      "input": "A center has changed its brachytherapy source from an Ir-192 HDR source to a different manufacturer's source with different air-kerma strength characteristics. Describe the complete regulatory and quality assurance compliance checklist for this source change, including NRC notification requirements, calibration verification procedures, treatment planning system updates, and staff training requirements.",
+      "expected_keywords": [
+        "source change",
+        "Ir-192",
+        "NRC",
+        "calibration",
+        "TPS update",
+        "staff training",
+        "regulatory"
+      ],
+      "difficulty": "advanced",
+      "description": "Regulatory compliance for brachytherapy source change"
+    },
+    {
+      "id": "Q0610",
+      "input": "Review the informed consent documentation for a brachytherapy procedure. The current consent form mentions general risks of radiation therapy but does not specifically address brachytherapy-specific risks such as applicator-related complications, organ perforation, or the risk of fistula formation. Evaluate whether this consent form meets the standard of care for brachytherapy informed consent.",
+      "expected_keywords": [
+        "informed consent",
+        "risks",
+        "applicator complications",
+        "organ perforation",
+        "fistula",
+        "standard of care"
+      ],
+      "difficulty": "high",
+      "description": "Brachytherapy informed consent compliance evaluation"
+    },
+    {
+      "id": "Q0611",
+      "input": "A multi-institutional clinical trial protocol requires brachytherapy dose reporting per ICRU 89 format. One of the participating centers has been reporting doses using ICRU 38 point-based format instead. Calculate the potential impact on data quality for the trial, describe the corrective actions needed, and explain how to prevent similar protocol deviations in the future.",
+      "expected_keywords": [
+        "ICRU 89",
+        "ICRU 38",
+        "clinical trial",
+        "protocol deviation",
+        "dose reporting",
+        "data quality"
+      ],
+      "difficulty": "advanced",
+      "description": "Clinical trial dose reporting compliance"
+    },
+    {
+      "id": "Q0612",
+      "input": "Evaluate the following brachytherapy quality assurance program against the requirements of AAPM TG-56 and TG-59. The program includes daily equipment checks, monthly output measurements, annual comprehensive physics surveys, and treatment plan reviews. Identify any gaps in the QA program and recommend additions to ensure full compliance.",
+      "expected_keywords": [
+        "AAPM TG-56",
+        "AAPM TG-59",
+        "QA program",
+        "equipment checks",
+        "output measurements",
+        "annual survey"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy QA program compliance evaluation"
+    },
+    {
+      "id": "Q0613",
+      "input": "A brachytherapy center treats an average of 15 patients per week and performs a peer review of treatment plans for approximately 30% of cases. Evaluate whether this peer review rate meets the standard of care and regulatory requirements. What percentage of plans should be reviewed, and what are the documentation requirements for peer review decisions?",
+      "expected_keywords": [
+        "peer review",
+        "compliance",
+        "review rate",
+        "documentation",
+        "standard of care",
+        "regulatory"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy peer review compliance"
+    },
+    {
+      "id": "Q0614",
+      "input": "A medical physicist has been performing brachytherapy source calibrations monthly. However, the most recent calibration shows a 3% deviation from the expected value based on source decay calculations. Evaluate whether this deviation is within acceptable limits, describe the investigation process per AAPM TG-40 guidelines, and outline the corrective actions that should be taken.",
+      "expected_keywords": [
+        "source calibration",
+        "deviation",
+        "AAPM TG-40",
+        "investigation",
+        "corrective actions",
+        "decay calculation"
+      ],
+      "difficulty": "high",
+      "description": "Source calibration deviation investigation"
+    },
+    {
+      "id": "Q0615",
+      "input": "A center performs brachytherapy on pediatric patients but does not have specific pediatric dose constraints in its treatment planning system. The clinical team uses adult dose constraints for pediatric patients. Evaluate the compliance implications of this practice, discuss the specific considerations for pediatric dose constraints, and recommend the necessary changes to ensure regulatory and clinical compliance.",
+      "expected_keywords": [
+        "pediatric",
+        "dose constraints",
+        "compliance",
+        "adult constraints",
+        "pediatric considerations",
+        "regulatory"
+      ],
+      "difficulty": "high",
+      "description": "Pediatric dose constraint compliance"
+    },
+    {
+      "id": "Q0616",
+      "input": "Review the radiation safety documentation for a brachytherapy program. The program has written procedures for source management, emergency response, and leak testing, but is missing documented procedures for patient identification verification before treatment and independent dose calculation verification. Evaluate the completeness of the radiation safety program and recommend additions.",
+      "expected_keywords": [
+        "radiation safety",
+        "source management",
+        "emergency response",
+        "patient identification",
+        "independent verification",
+        "documentation"
+      ],
+      "difficulty": "medium",
+      "description": "Radiation safety program completeness evaluation"
+    },
+    {
+      "id": "Q0617",
+      "input": "A brachytherapy center uses a CT-based treatment planning system that has not been recalculated against TG-43 data in over 18 months. The vendor has released updates to the dose calculation algorithm. Evaluate the compliance of continued clinical use without updating, describe the validation requirements for TPS algorithm updates, and outline the timeline for implementation.",
+      "expected_keywords": [
+        "TPS update",
+        "TG-43",
+        "dose calculation",
+        "compliance",
+        "validation",
+        "vendor update"
+      ],
+      "difficulty": "advanced",
+      "description": "TPS update compliance evaluation"
+    },
+    {
+      "id": "Q0618",
+      "input": "A center is considering implementing a new brachytherapy technique using MRI-guided adaptive brachytherapy. Before clinical implementation, what compliance requirements must be met? Discuss the equipment commissioning, staff credentialing, protocol development, and regulatory approval processes required before the first patient can be treated.",
+      "expected_keywords": [
+        "MRI-guided",
+        "adaptive",
+        "commissioning",
+        "credentialing",
+        "protocol development",
+        "regulatory",
+        "implementation"
+      ],
+      "difficulty": "advanced",
+      "description": "Pre-implementation compliance for MRI-guided adaptive brachytherapy"
+    },
+    {
+      "id": "Q0619",
+      "input": "Evaluate the compliance of a brachytherapy program that treats patients using a single-channel vaginal cylinder applicator for all vaginal cancer cases regardless of tumor size or location. Discuss whether this approach meets the standard of care for brachytherapy, the limitations of a single-channel approach, and the equipment and training requirements for offering multi-channel applicator treatments.",
+      "expected_keywords": [
+        "single-channel",
+        "vaginal cylinder",
+        "compliance",
+        "standard of care",
+        "multi-channel",
+        "limitations",
+        "training"
+      ],
+      "difficulty": "advanced",
+      "description": "Single-channel applicator compliance evaluation"
+    },
+    {
+      "id": "Q0983",
+      "input": "A brachytherapy center is being evaluated for radiation safety compliance by the state regulatory agency. The inspectors request documentation for source calibration records, personnel dosimetry reports, emergency response procedures, and QA test results from the past 3 years. Identify any compliance gaps that might exist in a typical brachytherapy program and describe how to address them proactively before the audit.",
+      "expected_keywords": [
+        "regulatory audit",
+        "compliance gaps",
+        "source calibration",
+        "personnel dosimetry",
+        "QA records",
+        "proactive"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy regulatory audit compliance preparation"
+    },
+    {
+      "id": "Q1166",
+      "input": "ICRU Report 58 compliance for cervical brachytherapy: target volume definitions, dose reporting, specification points, DVH, and outcome documentation. How to organize for surveyor review.",
+      "expected_keywords": [
+        "ICRU_58",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: ICRU_58"
+    },
+    {
+      "id": "Q1167",
+      "input": "GEC-ESTRO guidelines compliance: contouring practices, dose reporting standards, DVH requirements, QA recommendations, and evidence base vs ICRU 38 point-based reporting.",
+      "expected_keywords": [
+        "GEC_ESTRO_guidelines",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: GEC_ESTRO_guidelines"
+    },
+    {
+      "id": "Q1168",
+      "input": "ABS site visit preparation: staffing requirements, equipment, TPS specifications, QA protocols, documentation standards, and clinical outcome metrics.",
+      "expected_keywords": [
+        "ABS_accreditation",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: ABS_accreditation"
+    },
+    {
+      "id": "Q1169",
+      "input": "NRC compliance framework: 10 CFR 35, authorized user requirements, RSO responsibilities, sealed source accountability, personnel monitoring, and incident reporting.",
+      "expected_keywords": [
+        "NRC_regulations",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: NRC_regulations"
+    },
+    {
+      "id": "Q1170",
+      "input": "TG-43 and TG-59 compliance: dose calculation formalism, source data documentation, QA protocol elements (daily/monthly/annual), tolerances, and documentation requirements.",
+      "expected_keywords": [
+        "TG43_TG59_compliance",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: TG43_TG59_compliance"
+    },
+    {
+      "id": "Q1171",
+      "input": "Informed consent compliance: legal requirements, disclosure elements, documentation, limited capacity, interpreter services, and emergency consent procedures.",
+      "expected_keywords": [
+        "informed_consent_compliance",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: informed_consent_compliance"
+    },
+    {
+      "id": "Q1172",
+      "input": "TPS compliance checklist: software validation (TG-53), commissioning (TG-59), ongoing QA, data backup, cybersecurity, user access, change management, and vendor qualification.",
+      "expected_keywords": [
+        "TPS_compliance_checklist",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: TPS_compliance_checklist"
+    },
+    {
+      "id": "Q1173",
+      "input": "Joint Commission requirements: Environment of Care, NPSGs, Provision of Care, Rights and Responsibilities, Performance Improvement, and Staff Education standards.",
+      "expected_keywords": [
+        "Joint_Commission_standards",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: Joint_Commission_standards"
+    },
+    {
+      "id": "Q1174",
+      "input": "State radiation control program: licensing, authorized user designations, RSO requirements, facility design/shielding, equipment registration, personnel monitoring, and records retention.",
+      "expected_keywords": [
+        "state_regulation",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: state_regulation"
+    },
+    {
+      "id": "Q1175",
+      "input": "Radiation safety compliance: facility shielding (maze, door, concrete), access control, surveillance, survey instruments, personnel dosimetry, area monitoring, and emergency equipment.",
+      "expected_keywords": [
+        "radiation_safety_compliance",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: radiation_safety_compliance"
+    },
+    {
+      "id": "Q1176",
+      "input": "ASTRO cervical brachytherapy guidelines: patient selection, treatment technique, dose prescription, QA requirements, and outcome reporting standards.",
+      "expected_keywords": [
+        "ASTRO_guidelines",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: ASTRO_guidelines"
+    },
+    {
+      "id": "Q1177",
+      "input": "Clinical trial compliance: protocol adherence, data submission (REDCap), monitoring/auditing, adverse event reporting, protocol deviation documentation, and regulatory requirements.",
+      "expected_keywords": [
+        "clinical_trial_compliance",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: clinical_trial_compliance"
+    },
+    {
+      "id": "Q1178",
+      "input": "CMS Conditions of Participation: patient rights, care planning, documentation standards, QAPI, staffing requirements, and patient safety requirements.",
+      "expected_keywords": [
+        "CMS_participation",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: CMS_participation"
+    },
+    {
+      "id": "Q1179",
+      "input": "TG-59 comprehensive QA: daily/monthly/annual procedures, source exchange, documentation requirements, test parameters, acceptance tolerances, and tolerance exceedance actions.",
+      "expected_keywords": [
+        "TG59_QA_framework",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: TG59_QA_framework"
+    },
+    {
+      "id": "Q1180",
+      "input": "RO-ILS incident reporting: reportable events, timelines, required information, root cause analysis, corrective action documentation, and learning from events.",
+      "expected_keywords": [
+        "RO_ILS_reporting",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: RO_ILS_reporting"
+    },
+    {
+      "id": "Q1181",
+      "input": "ICRU 89 compliance: prescribed dose, recorded dose, reported dose, DVH requirements, and transition from ICRU 38/58.",
+      "expected_keywords": [
+        "ICRU_89",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: ICRU_89"
+    },
+    {
+      "id": "Q1182",
+      "input": "ACR quality management framework: peer review requirements, outcome tracking, clinical trials, equipment maintenance, and radiation safety compliance.",
+      "expected_keywords": [
+        "ACR_quality_management",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: ACR_quality_management"
+    },
+    {
+      "id": "Q1183",
+      "input": "Training compliance: initial training requirements, competency assessment, continuing education, documentation requirements, and regulatory standards for different personnel roles.",
+      "expected_keywords": [
+        "training_compliance",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: training_compliance"
+    },
+    {
+      "id": "Q1184",
+      "input": "HIPAA compliance for brachytherapy: patient privacy, data security, consent for treatment, electronic health records, and breach notification requirements.",
+      "expected_keywords": [
+        "HIPAA_compliance",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: HIPAA_compliance"
+    },
+    {
+      "id": "Q1185",
+      "input": "Patient safety compliance: WHO checklist adaptation for brachytherapy, timeout procedures, medication safety, and infection control for invasive procedures.",
+      "expected_keywords": [
+        "patient_safety_compliance",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: patient_safety_compliance"
+    },
+    {
+      "id": "Q1186",
+      "input": "NPSG 01.01.01 compliance for brachytherapy: two-identifier verification, documentation requirements, handling discrepancies, and special considerations.",
+      "expected_keywords": [
+        "NPSG_patient_ID",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: NPSG_patient_ID"
+    },
+    {
+      "id": "Q1187",
+      "input": "Emergency preparedness compliance: radiation incidents, medical emergencies, fire safety, evacuation procedures, and drill documentation requirements.",
+      "expected_keywords": [
+        "emergency_preparedness",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: emergency_preparedness"
+    },
+    {
+      "id": "Q1188",
+      "input": "Equipment management compliance: inventory, preventive maintenance, repair documentation, safety inspection, and testing after repair requirements.",
+      "expected_keywords": [
+        "equipment_management_compliance",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: equipment_management_compliance"
+    },
+    {
+      "id": "Q1189",
+      "input": "Governance compliance: committee structure (radiation safety, QA, tumor board), meeting frequency, credentialing, privileging, and OPPE requirements.",
+      "expected_keywords": [
+        "governance_compliance",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: governance_compliance"
+    },
+    {
+      "id": "Q1190",
+      "input": "Research compliance: IRB requirements, common rule (45 CFR 46), DSMB requirements, adverse event reporting, and documentation for research involving brachytherapy.",
+      "expected_keywords": [
+        "research_compliance",
+        "compliance",
+        "regulatory",
+        "documentation"
+      ],
+      "difficulty": "hard",
+      "description": "Compliance: research_compliance"
+    },
+    {
+      "id": "Q0868",
+      "input": "Design a brachytherapy treatment protocol for locally advanced cervical cancer (FIGO Stage IIB-IIIB) that integrates MRI-guided adaptive brachytherapy with concurrent cisplatin-based chemoradiation. Include the target volume definitions, dose constraints, fractionation scheme, concurrent chemotherapy schedule, imaging requirements, and plan evaluation criteria per GEC-ESTRO recommendations.",
+      "expected_keywords": [
+        "treatment protocol",
+        "cervical cancer",
+        "MRI-guided",
+        "IGABT",
+        "cisplatin",
+        "GEC-ESTRO",
+        "dose constraints"
+      ],
+      "difficulty": "advanced",
+      "description": "Locally advanced cervical cancer brachytherapy protocol"
+    },
+    {
+      "id": "Q0869",
+      "input": "Develop a brachytherapy protocol for early-stage (T1-T2) vaginal cancer. The protocol should specify patient eligibility criteria, imaging requirements, applicator selection guidelines, prescription dose and fractionation, organ-at-risk dose constraints, and follow-up schedule. How should the protocol be validated before clinical implementation?",
+      "expected_keywords": [
+        "vaginal cancer",
+        "early-stage",
+        "protocol",
+        "eligibility",
+        "applicator selection",
+        "fractionation",
+        "validation"
+      ],
+      "difficulty": "advanced",
+      "description": "Early-stage vaginal cancer brachytherapy protocol"
+    },
+    {
+      "id": "Q0870",
+      "input": "Design a quality assurance protocol for an HDR brachytherapy program that meets AAPM TG-56 and TG-59 requirements. Include daily, monthly, and annual QA procedures, acceptance criteria, documentation requirements, staff training requirements, and the process for handling QA failures. How should the protocol be adapted for a center treating multiple brachytherapy sites?",
+      "expected_keywords": [
+        "QA protocol",
+        "AAPM TG-56",
+        "TG-59",
+        "HDR",
+        "acceptance criteria",
+        "documentation",
+        "multi-site"
+      ],
+      "difficulty": "advanced",
+      "description": "HDR brachytherapy QA protocol design"
+    },
+    {
+      "id": "Q0871",
+      "input": "Develop a brachytherapy treatment protocol for prostate cancer using HDR brachytherapy as monotherapy for intermediate-risk disease. Include the patient selection criteria, imaging and applicator requirements, prescription dose and fractionation, dose constraints for organs at risk, and the recommended follow-up schedule with PSA monitoring.",
+      "expected_keywords": [
+        "prostate cancer",
+        "HDR monotherapy",
+        "intermediate-risk",
+        "patient selection",
+        "fractionation",
+        "dose constraints",
+        "follow-up"
+      ],
+      "difficulty": "advanced",
+      "description": "Prostate HDR monotherapy protocol"
+    },
+    {
+      "id": "Q0872",
+      "input": "Create a brachytherapy protocol for palliative treatment of painful bone metastases using HDR brachytherapy. Include the indications, patient selection criteria, treatment planning guidelines, dose prescription, fractionation options, pain assessment methodology, and outcome measurement criteria. How should the protocol address patients with limited life expectancy?",
+      "expected_keywords": [
+        "palliative",
+        "bone metastases",
+        "pain",
+        "HDR",
+        "fractionation",
+        "outcome measurement",
+        "limited life expectancy"
+      ],
+      "difficulty": "medium",
+      "description": "Palliative bone metastases brachytherapy protocol"
+    },
+    {
+      "id": "Q0873",
+      "input": "Design a brachytherapy protocol for a clinical trial investigating the combination of brachytherapy with immunotherapy in cervical cancer. Include the trial design (phase, randomization), eligibility criteria, brachytherapy specifications, immunotherapy regimen, primary and secondary endpoints, safety monitoring plan, and statistical considerations.",
+      "expected_keywords": [
+        "clinical trial",
+        "immunotherapy",
+        "cervical cancer",
+        "brachytherapy",
+        "trial design",
+        "endpoints",
+        "safety monitoring"
+      ],
+      "difficulty": "advanced",
+      "description": "Brachytherapy-immunotherapy clinical trial protocol"
+    },
+    {
+      "id": "Q0874",
+      "input": "Develop a protocol for the safe management of radiation emergencies during brachytherapy treatments. Include procedures for stuck source, patient medical emergencies, equipment failure, radioactive contamination, and natural disasters. The protocol should specify notification chains, evacuation procedures, and recovery processes.",
+      "expected_keywords": [
+        "emergency protocol",
+        "stuck source",
+        "medical emergency",
+        "equipment failure",
+        "contamination",
+        "evacuation"
+      ],
+      "difficulty": "high",
+      "description": "Brachytherapy emergency management protocol"
+    },
+    {
+      "id": "Q0875",
+      "input": "Create a protocol for brachytherapy peer review that defines the criteria for case selection, the composition of the review panel, the evaluation methodology, documentation requirements, and the process for addressing disagreements. How should the protocol ensure consistent and constructive peer review?",
+      "expected_keywords": [
+        "peer review",
+        "case selection",
+        "review panel",
+        "evaluation",
+        "documentation",
+        "disagreements"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy peer review protocol design"
+    },
+    {
+      "id": "Q0876",
+      "input": "Design a protocol for the management of brachytherapy treatment interruptions due to equipment failure or patient factors. Include the criteria for interrupting treatment, dose accounting methods, re-optimization procedures, patient assessment requirements, and documentation specifications.",
+      "expected_keywords": [
+        "treatment interruption",
+        "equipment failure",
+        "dose accounting",
+        "re-optimization",
+        "patient assessment",
+        "documentation"
+      ],
+      "difficulty": "high",
+      "description": "Brachytherapy treatment interruption protocol"
+    },
+    {
+      "id": "Q0877",
+      "input": "Develop a protocol for establishing and maintaining a brachytherapy source inventory management system. Include source ordering procedures, receipt verification, strength verification, decay tracking, source exchange logistics, regulatory documentation, and emergency source replacement procedures.",
+      "expected_keywords": [
+        "source inventory",
+        "ordering",
+        "verification",
+        "decay tracking",
+        "source exchange",
+        "regulatory",
+        "emergency replacement"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy source inventory management protocol"
+    },
+    {
+      "id": "Q0878",
+      "input": "Create a protocol for the use of 3D-printed patient-specific brachytherapy applicators. Include the design validation process, material requirements, sterilization procedures, quality assurance testing, documentation requirements, and the clinical workflow for integrating 3D-printed applicators into treatment planning and delivery.",
+      "expected_keywords": [
+        "3D printing",
+        "patient-specific",
+        "applicator",
+        "validation",
+        "sterilization",
+        "QA",
+        "clinical workflow"
+      ],
+      "difficulty": "advanced",
+      "description": "3D-printed applicator protocol"
+    },
+    {
+      "id": "Q0879",
+      "input": "Design a protocol for brachytherapy in a resource-limited setting where MRI guidance is not available. Include modifications to the standard of care for CT-only planning, recommendations for applicator selection without MRI-based planning, dose constraints appropriate for the available technology, and strategies for maintaining treatment quality without advanced imaging.",
+      "expected_keywords": [
+        "resource-limited",
+        "CT-only",
+        "modified protocol",
+        "applicator selection",
+        "dose constraints",
+        "quality maintenance"
+      ],
+      "difficulty": "advanced",
+      "description": "Resource-limited setting brachytherapy protocol"
+    },
+    {
+      "id": "Q0880",
+      "input": "Develop a protocol for managing brachytherapy patients who require concurrent anticoagulation therapy. Include patient risk stratification, bridging protocols, applicator insertion modifications, post-procedure monitoring requirements, and the criteria for resuming anticoagulation after treatment.",
+      "expected_keywords": [
+        "anticoagulation",
+        "bridging",
+        "risk stratification",
+        "applicator insertion",
+        "monitoring",
+        "resumption"
+      ],
+      "difficulty": "high",
+      "description": "Anticoagulation management protocol for brachytherapy"
+    },
+    {
+      "id": "Q0881",
+      "input": "Create a protocol for credentialing and privileging physicians and physicists to perform brachytherapy. Include the training requirements, case volume requirements for initial competency, ongoing volume requirements to maintain competency, proctored case requirements, and the process for re-credentialing.",
+      "expected_keywords": [
+        "credentialing",
+        "privileging",
+        "training requirements",
+        "case volume",
+        "competency",
+        "proctored cases",
+        "re-credentialing"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy practitioner credentialing protocol"
+    },
+    {
+      "id": "Q0882",
+      "input": "Design a protocol for patient follow-up after brachytherapy treatment of cervical cancer. Include the follow-up schedule, imaging requirements, clinical examination frequency, symptom assessment tools, criteria for detecting recurrence, and the management algorithm for suspected recurrence.",
+      "expected_keywords": [
+        "follow-up",
+        "cervical cancer",
+        "imaging",
+        "recurrence detection",
+        "symptom assessment",
+        "management algorithm"
+      ],
+      "difficulty": "medium",
+      "description": "Post-brachytherapy follow-up protocol for cervical cancer"
+    },
+    {
+      "id": "Q0883",
+      "input": "Create a protocol for dose reporting in brachytherapy that complies with ICRU 89 recommendations. Include the required dose parameters for different tumor sites, the format for dose reporting, how to report cumulative doses from combined EBRT and brachytherapy, and the documentation requirements for clinical trials.",
+      "expected_keywords": [
+        "ICRU 89",
+        "dose reporting",
+        "tumor sites",
+        "cumulative dose",
+        "documentation",
+        "clinical trials"
+      ],
+      "difficulty": "advanced",
+      "description": "ICRU 89 compliant dose reporting protocol"
+    },
+    {
+      "id": "Q0884",
+      "input": "Design a protocol for quality improvement in a brachytherapy program. Include the key performance indicators to be tracked, the data collection methodology, the frequency of performance reviews, the threshold for initiating quality improvement projects, and the methodology for evaluating the effectiveness of improvement interventions.",
+      "expected_keywords": [
+        "quality improvement",
+        "KPIs",
+        "data collection",
+        "performance review",
+        "improvement projects",
+        "evaluation"
+      ],
+      "difficulty": "medium",
+      "description": "Brachytherapy quality improvement protocol"
+    },
+    {
+      "id": "Q0885",
+      "input": "Create a protocol for the safe implementation of new brachytherapy technology or techniques. Include the pre-implementation assessment requirements, phased introduction strategy, training requirements, QA validation during implementation, and the criteria for full clinical adoption.",
+      "expected_keywords": [
+        "new technology",
+        "implementation",
+        "phased introduction",
+        "training",
+        "QA validation",
+        "adoption criteria"
+      ],
+      "difficulty": "advanced",
+      "description": "New brachytherapy technology implementation protocol"
+    },
+    {
+      "id": "Q0886",
+      "input": "Design a brachytherapy protocol for pediatric patients with genitourinary rhabdomyosarcoma. Include age-specific applicator selection, modified dose constraints for growing tissues, anesthesia requirements, concurrent chemotherapy considerations, and long-term follow-up requirements for late effects monitoring.",
+      "expected_keywords": [
+        "pediatric",
+        "rhabdomyosarcoma",
+        "genitourinary",
+        "age-specific",
+        "dose constraints",
+        "anesthesia",
+        "long-term follow-up"
+      ],
+      "difficulty": "advanced",
+      "description": "Pediatric rhabdomyosarcoma brachytherapy protocol"
+    },
+    {
+      "id": "Q0887",
+      "input": "Create a protocol for the use of brachytherapy in the treatment of non-melanoma skin cancers. Include patient selection criteria for surface applicator brachytherapy versus interstitial brachytherapy, dose and fractionation guidelines based on tumor size and histology, applicator selection criteria, and treatment verification procedures.",
+      "expected_keywords": [
+        "skin cancer",
+        "surface applicator",
+        "interstitial",
+        "tumor size",
+        "fractionation",
+        "verification"
+      ],
+      "difficulty": "medium",
+      "description": "Non-melanoma skin cancer brachytherapy protocol"
+    },
+    {
+      "id": "Q0996",
+      "input": "Design a brachytherapy protocol for the treatment of recurrent endometrial cancer in the vaginal vault after prior hysterectomy. The protocol should include patient selection criteria, imaging requirements, applicator selection guidelines, prescription dose for the re-irradiation setting, modified organ-at-risk constraints accounting for prior radiation, and the process for determining cumulative dose tolerance.",
+      "expected_keywords": [
+        "re-irradiation",
+        "recurrent endometrial",
+        "vaginal vault",
+        "modified constraints",
+        "cumulative dose",
+        "patient selection"
+      ],
+      "difficulty": "advanced",
+      "description": "Re-irradiation brachytherapy protocol for recurrent endometrial cancer"
+    },
+    {
+      "id": "Q1751",
+      "input": "I need to develop an institutional protocol for MRI-guided adaptive brachytherapy (IGABT) for locally advanced cervical cancer. The protocol should cover: (1) patient selection criteria, (2) imaging requirements and MRI protocol, (3) applicator selection and insertion technique, (4) target volume delineation guidelines (HR-CTV, IR-CTV, organs at risk), (5) dose prescription and fractionation, (6) dose constraints for OARs, and (7) quality assurance procedures. Please provide a comprehensive draft protocol that can be adapted for our institution.",
+      "expected_keywords": [
+        "IGABT",
+        "protocol",
+        "MRI",
+        "cervical cancer",
+        "dose constraints",
+        "quality assurance"
+      ],
+      "difficulty": "hard",
+      "description": "Comprehensive protocol development for IGABT cervical cancer program"
+    },
+    {
+      "id": "Q1752",
+      "input": "I am developing a quality assurance protocol for HDR brachytherapy at our institution. We have a microSelectron afterloader with Ir-192 sources. The protocol needs to cover: daily QA checks, monthly QA tests, annual QA tests, and end-to-end testing. Please provide specific test descriptions, acceptable tolerance values, and documentation requirements for each QA level. Reference relevant AAPM task group reports.",
+      "expected_keywords": [
+        "QA protocol",
+        "HDR",
+        "tolerance",
+        "daily",
+        "monthly",
+        "annual",
+        "AAPM"
+      ],
+      "difficulty": "hard",
+      "description": "Comprehensive QA protocol development for HDR brachytherapy"
+    },
+    {
+      "id": "Q1753",
+      "input": "I need to create a clinical pathway for the management of early-stage endometrial cancer suitable for brachytherapy. The pathway should include: (1) diagnostic workup and staging requirements, (2) multidisciplinary tumor board criteria, (3) patient selection for definitive brachytherapy, (4) treatment delivery protocol (fractionation, applicator selection, dose specification), (5) follow-up schedule and surveillance, and (6) criteria for treatment response assessment. Please provide this as a flowchart-style pathway document.",
+      "expected_keywords": [
+        "clinical pathway",
+        "endometrial",
+        "staging",
+        "follow-up",
+        "treatment response",
+        "flowchart"
+      ],
+      "difficulty": "hard",
+      "description": "Clinical pathway development for early-stage endometrial cancer brachytherapy"
+    },
+    {
+      "id": "Q1754",
+      "input": "I need to develop a brachytherapy consent form for prostate LDR seed implantation. The consent form should include: (1) description of the procedure in patient-friendly language, (2) indications and expected benefits, (3) alternative treatment options, (4) risks and complications (short-term and long-term), (5) expected recovery timeline, (6) follow-up requirements, and (7) contact information for emergencies. Please draft this consent form.",
+      "expected_keywords": [
+        "consent form",
+        "prostate LDR",
+        "risks",
+        "benefits",
+        "alternatives",
+        "patient-friendly"
+      ],
+      "difficulty": "medium",
+      "description": "Consent form development for prostate LDR brachytherapy"
+    },
+    {
+      "id": "Q1755",
+      "input": "I need to create a staff training protocol for our new HDR brachytherapy program. The protocol should cover: (1) physicist training requirements and competency assessment, (2) physician training and credentialing, (3) nursing training for brachytherapy patient care, (4) simulation of emergency scenarios (source stuck, equipment malfunction), (5) annual competency re-assessment, and (6) documentation requirements. Please provide a comprehensive training protocol.",
+      "expected_keywords": [
+        "training protocol",
+        "competency",
+        "emergency scenarios",
+        "credentialing",
+        "documentation",
+        "HDR"
+      ],
+      "difficulty": "hard",
+      "description": "Staff training protocol for new HDR brachytherapy program"
+    },
+    {
+      "id": "Q1756",
+      "input": "I need to develop an institutional protocol for the management of brachytherapy-related complications. Specifically, I need protocols for: (1) acute radiation proctitis management, (2) vaginal stenosis prevention and treatment, (3) urinary complications after prostate brachytherapy, (4) seed migration management after LDR implant, and (5) infection management after interstitial brachytherapy. Each protocol should include grading criteria, management algorithms, and referral criteria.",
+      "expected_keywords": [
+        "complication management",
+        "proctitis",
+        "vaginal stenosis",
+        "seed migration",
+        "infection",
+        "grading"
+      ],
+      "difficulty": "hard",
+      "description": "Complication management protocol for brachytherapy program"
+    },
+    {
+      "id": "Q1757",
+      "input": "I need to create a brachytherapy referral and consultation protocol for our regional cancer center. The protocol should include: (1) referral criteria for brachytherapy consultation, (2) required imaging and pathology for referral, (3) multidisciplinary tumor board discussion requirements, (4) time-to-treatment targets, (5) communication templates between referring and treating physicians, and (6) patient triage criteria. Please draft this protocol.",
+      "expected_keywords": [
+        "referral protocol",
+        "consultation",
+        "tumor board",
+        "time-to-treatment",
+        "triage",
+        "communication"
+      ],
+      "difficulty": "hard",
+      "description": "Referral and consultation protocol for brachytherapy center"
+    },
+    {
+      "id": "Q1758",
+      "input": "I need to develop a radiation safety protocol for a new brachytherapy program using both HDR Ir-192 and LDR I-125/Pd-103 sources. The protocol should cover: (1) radiation safety officer responsibilities, (2) personnel monitoring and dose limits, (3) public dose limits and signage requirements, (4) radioactive material storage and security, (5) transportation regulations, (6) spill response procedures, and (7) radioactive waste disposal. Reference NRC and state regulatory requirements.",
+      "expected_keywords": [
+        "radiation safety",
+        "NRC",
+        "personnel monitoring",
+        "storage",
+        "transportation",
+        "spill response"
+      ],
+      "difficulty": "hard",
+      "description": "Radiation safety protocol for brachytherapy program"
+    },
+    {
+      "id": "Q1759",
+      "input": "I need to create a protocol for brachytherapy applicator cleaning, decontamination, and sterilization. The protocol should cover: (1) immediate post-procedure cleaning steps, (2) decontamination procedures for radioactive contamination, (3) cleaning verification (wipe tests), (4) sterilization methods (autoclave, chemical), (5) storage requirements, and (6) documentation and tracking. Please provide a step-by-step protocol.",
+      "expected_keywords": [
+        "applicator cleaning",
+        "decontamination",
+        "sterilization",
+        "wipe test",
+        "autoclave",
+        "documentation"
+      ],
+      "difficulty": "medium",
+      "description": "Applicator cleaning and sterilization protocol"
+    },
+    {
+      "id": "Q1760",
+      "input": "I need to develop a protocol for image acquisition during brachytherapy fractions for cervical cancer IGABT. The protocol should specify: (1) imaging modality selection (CT vs MRI vs both), (2) imaging protocol at each fraction (sequences, planes, resolution), (3) applicator filling protocol for MRI, (4) timing of imaging relative to applicator insertion, (5) image quality assessment criteria, and (6) decision criteria for repeating images. Please provide detailed specifications.",
+      "expected_keywords": [
+        "imaging protocol",
+        "MRI sequences",
+        "fraction imaging",
+        "applicator filling",
+        "image quality",
+        "IGABT"
+      ],
+      "difficulty": "hard",
+      "description": "Image acquisition protocol for IGABT fractions"
+    },
+    {
+      "id": "Q1761",
+      "input": "I need to create an institutional protocol for brachytherapy dose reporting. The protocol should include: (1) ICRU 89 dose reporting requirements for cervical cancer, (2) GTV, CTV, and OAR dose reporting specifications, (3) DVH reporting requirements, (4) dose-volume parameter definitions and calculations, (5) cumulative dose reporting for fractionated treatments, and (6) template for brachytherapy dose report. Please provide a comprehensive reporting protocol with template.",
+      "expected_keywords": [
+        "dose reporting",
+        "ICRU 89",
+        "DVH",
+        "cumulative dose",
+        "template",
+        "specifications"
+      ],
+      "difficulty": "hard",
+      "description": "Dose reporting protocol with ICRU 89 compliance"
+    },
+    {
+      "id": "Q1762",
+      "input": "I need to develop a clinical trial protocol for a phase II study of brachytherapy boost in intermediate-risk prostate cancer. The study should compare EBRT alone (78 Gy) vs EBRT (60 Gy) plus HDR brachytherapy boost (21 Gy in 3 fractions). Please help design: (1) primary endpoint, (2) secondary endpoints, (3) eligibility criteria, (4) sample size calculation, (5) statistical analysis plan, and (6) quality assurance requirements for the brachytherapy component.",
+      "expected_keywords": [
+        "clinical trial",
+        "phase II",
+        "prostate",
+        "brachytherapy boost",
+        "sample size",
+        "statistical analysis"
+      ],
+      "difficulty": "expert",
+      "description": "Clinical trial protocol design for brachytherapy boost study"
+    },
+    {
+      "id": "Q1763",
+      "input": "I need to create a protocol for patient immobilization during brachytherapy. For gynecologic brachytherapy, the patient is typically in lithotomy position. For prostate LDR, the patient is in dorsal lithotomy. For breast interstitial brachytherapy, the patient position varies. Please develop immobilization protocols for each of these brachytherapy applications, including position verification methods, comfort measures, and safety considerations.",
+      "expected_keywords": [
+        "immobilization",
+        "positioning",
+        "lithotomy",
+        "verification",
+        "comfort",
+        "safety"
+      ],
+      "difficulty": "medium",
+      "description": "Patient immobilization protocols for various brachytherapy applications"
+    },
+    {
+      "id": "Q1764",
+      "input": "I need to develop a protocol for brachytherapy treatment plan evaluation and approval workflow. The protocol should specify: (1) plan evaluation criteria (dosimetric and clinical), (2) independent plan review requirements, (3) physician approval workflow, (4) plan modification criteria, (5) documentation requirements, and (6) time targets for plan completion. Please provide a detailed workflow protocol.",
+      "expected_keywords": [
+        "plan evaluation",
+        "approval workflow",
+        "independent review",
+        "dosimetric criteria",
+        "documentation",
+        "time targets"
+      ],
+      "difficulty": "hard",
+      "description": "Treatment plan evaluation and approval workflow protocol"
+    },
+    {
+      "id": "Q1765",
+      "input": "I need to create a brachytherapy patient follow-up protocol for cervical cancer patients. The protocol should include: (1) follow-up schedule (first year, second year, beyond), (2) clinical examination requirements, (3) imaging surveillance (CT, MRI, PET), (4) laboratory monitoring (tumor markers), (5) toxicity assessment tools (CTCAE, PRO-CTCAE), (6) criteria for recurrence detection, and (7) survivorship care plan elements. Please provide a comprehensive follow-up protocol.",
+      "expected_keywords": [
+        "follow-up",
+        "surveillance",
+        "imaging",
+        "toxicity assessment",
+        "recurrence detection",
+        "survivorship"
+      ],
+      "difficulty": "hard",
+      "description": "Comprehensive follow-up protocol for cervical cancer brachytherapy patients"
+    },
+    {
+      "id": "Q1766",
+      "input": "I need to develop a brachytherapy emergency response protocol. The protocol should cover: (1) source stuck in patient emergency, (2) applicator dislodgement during treatment, (3) equipment malfunction during treatment, (4) radiation spill during source exchange, (5) patient medical emergency during brachytherapy procedure, and (6) after-hours emergency contact procedures. For each scenario, please provide step-by-step response procedures.",
+      "expected_keywords": [
+        "emergency",
+        "source stuck",
+        "equipment malfunction",
+        "spill",
+        "medical emergency",
+        "response"
+      ],
+      "difficulty": "hard",
+      "description": "Emergency response protocol for brachytherapy program"
+    },
+    {
+      "id": "Q1767",
+      "input": "I need to create a protocol for the management of brachytherapy in pregnant patients. Given the rarity of this scenario, the protocol should cover: (1) eligibility criteria for brachytherapy during pregnancy, (2) radiation safety considerations for the fetus, (3) modified treatment planning approaches, (4) concurrent chemotherapy modifications, (5) delivery planning and timing, (6) neonatal follow-up requirements, and (7) documentation and ethics committee requirements. Please provide this rare-scenario protocol.",
+      "expected_keywords": [
+        "pregnancy",
+        "fetal dose",
+        "radiation safety",
+        "delivery planning",
+        "neonatal",
+        "ethics"
+      ],
+      "difficulty": "expert",
+      "description": "Specialized protocol for brachytherapy during pregnancy"
+    },
+    {
+      "id": "Q1768",
+      "input": "I need to develop a protocol for brachytherapy quality improvement (QI) program. The protocol should include: (1) quality metrics to track (treatment times, dose deviations, complication rates), (2) data collection methods and frequency, (3) benchmarking against national standards, (4) root cause analysis procedures for incidents, (5) PDSA cycle implementation, and (6) annual QI report requirements. Please provide a comprehensive QI protocol.",
+      "expected_keywords": [
+        "quality improvement",
+        "metrics",
+        "benchmarking",
+        "root cause analysis",
+        "PDSA",
+        "QI report"
+      ],
+      "difficulty": "hard",
+      "description": "Quality improvement protocol for brachytherapy program"
+    },
+    {
+      "id": "Q1769",
+      "input": "I need to create a protocol for brachytherapy in low-resource settings. The protocol should address: (1) minimum equipment requirements for brachytherapy, (2) manual dose calculation methods when TPS is unavailable, (3) applicator sterilization with limited resources, (4) source safety with limited radiation safety infrastructure, (5) training requirements for non-specialist staff, and (6) IAEA guidelines compliance. Please provide a practical protocol adapted for low-resource environments.",
+      "expected_keywords": [
+        "low-resource",
+        "IAEA",
+        "manual calculation",
+        "minimum equipment",
+        "training",
+        "practical"
+      ],
+      "difficulty": "hard",
+      "description": "Practical brachytherapy protocol for low-resource settings"
+    },
+    {
+      "id": "Q1770",
+      "input": "I need to develop a protocol for brachytherapy informed consent specific to prostate seed implantation. The consent should cover: (1) procedure description with diagrams, (2) expected urinary, sexual, and bowel outcomes with percentages, (3) seed migration possibility, (4) need for supplementary treatment, (5) post-implant activity restrictions, (6) radiation safety precautions for family members, and (7) follow-up schedule. Please draft a comprehensive consent document.",
+      "expected_keywords": [
+        "informed consent",
+        "prostate seed",
+        "outcomes",
+        "radiation safety",
+        "family precautions",
+        "follow-up"
+      ],
+      "difficulty": "medium",
+      "description": "Comprehensive informed consent document for prostate seed implantation"
+    },
+    {
+      "id": "Q1771",
+      "input": "I need to develop a protocol for brachytherapy competency assessment for radiation oncology residents at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "competency",
+        "residents",
+        "training",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for brachytherapy competency assessment for radiation oncology residents"
+    },
+    {
+      "id": "Q1772",
+      "input": "I need to develop a protocol for protocol for brachytherapy in patients with metallic implants at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "metallic implants",
+        "artifacts",
+        "planning",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for protocol for brachytherapy in patients with metallic implants"
+    },
+    {
+      "id": "Q1773",
+      "input": "I need to develop a protocol for infection control protocol for interstitial brachytherapy procedures at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "infection control",
+        "interstitial",
+        "sterilization",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for infection control protocol for interstitial brachytherapy procedures"
+    },
+    {
+      "id": "Q1774",
+      "input": "I need to develop a protocol for brachytherapy data management and registry protocol at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "data management",
+        "registry",
+        "quality",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for brachytherapy data management and registry protocol"
+    },
+    {
+      "id": "Q1775",
+      "input": "I need to develop a protocol for protocol for brachytherapy in adolescent and young adult patients at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "AYA",
+        "adolescent",
+        "young adult",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for protocol for brachytherapy in adolescent and young adult patients"
+    },
+    {
+      "id": "Q1776",
+      "input": "I need to develop a protocol for patient education protocol for brachytherapy preparation at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "patient education",
+        "preparation",
+        "counseling",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for patient education protocol for brachytherapy preparation"
+    },
+    {
+      "id": "Q1777",
+      "input": "I need to develop a protocol for brachytherapy peer review and plan audit protocol at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "peer review",
+        "audit",
+        "quality",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for brachytherapy peer review and plan audit protocol"
+    },
+    {
+      "id": "Q1778",
+      "input": "I need to develop a protocol for protocol for combining brachytherapy with immunotherapy at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "immunotherapy",
+        "combination",
+        "systemic",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for protocol for combining brachytherapy with immunotherapy"
+    },
+    {
+      "id": "Q1779",
+      "input": "I need to develop a protocol for brachytherapy credentialing protocol for cooperative group trials at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "credentialing",
+        "trials",
+        "cooperative group",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for brachytherapy credentialing protocol for cooperative group trials"
+    },
+    {
+      "id": "Q1780",
+      "input": "I need to develop a protocol for protocol for managing brachytherapy patients with pacemakers at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "pacemaker",
+        "implanted device",
+        "management",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for protocol for managing brachytherapy patients with pacemakers"
+    },
+    {
+      "id": "Q1781",
+      "input": "I need to develop a protocol for brachytherapy tissue sampling and pathology protocol at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "pathology",
+        "biopsy",
+        "tissue sampling",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for brachytherapy tissue sampling and pathology protocol"
+    },
+    {
+      "id": "Q1782",
+      "input": "I need to develop a protocol for protocol for pediatric brachytherapy sedation and anesthesia at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "pediatric",
+        "sedation",
+        "anesthesia",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for protocol for pediatric brachytherapy sedation and anesthesia"
+    },
+    {
+      "id": "Q1783",
+      "input": "I need to develop a protocol for brachytherapy dose verification and chart check protocol at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "dose verification",
+        "chart check",
+        "QA",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for brachytherapy dose verification and chart check protocol"
+    },
+    {
+      "id": "Q1784",
+      "input": "I need to develop a protocol for protocol for brachytherapy in patients with spinal cord stimulators at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "spinal cord stimulator",
+        "implanted device",
+        "management",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for protocol for brachytherapy in patients with spinal cord stimulators"
+    },
+    {
+      "id": "Q1785",
+      "input": "I need to develop a protocol for brachytherapy clinical documentation and medical record protocol at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "documentation",
+        "medical record",
+        "clinical",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for brachytherapy clinical documentation and medical record protocol"
+    },
+    {
+      "id": "Q1786",
+      "input": "I need to develop a protocol for protocol for brachytherapy concurrent with targeted therapy at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "targeted therapy",
+        "concurrent",
+        "systemic",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for protocol for brachytherapy concurrent with targeted therapy"
+    },
+    {
+      "id": "Q1787",
+      "input": "I need to develop a protocol for brachytherapy treatment interruption and break protocol at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "treatment interruption",
+        "breaks",
+        "management",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for brachytherapy treatment interruption and break protocol"
+    },
+    {
+      "id": "Q1788",
+      "input": "I need to develop a protocol for protocol for brachytherapy in patients with dementia at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "dementia",
+        "cognitive impairment",
+        "ethical",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for protocol for brachytherapy in patients with dementia"
+    },
+    {
+      "id": "Q1789",
+      "input": "I need to develop a protocol for brachytherapy source exchange and ordering protocol at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "source exchange",
+        "ordering",
+        "logistics",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for brachytherapy source exchange and ordering protocol"
+    },
+    {
+      "id": "Q1790",
+      "input": "I need to develop a protocol for protocol for brachytherapy in morbidly obese patients at our institution. Please provide a comprehensive draft covering all relevant aspects with evidence-based recommendations and practical implementation steps.",
+      "expected_keywords": [
+        "protocol",
+        "obesity",
+        "applicator",
+        "modified approach",
+        "evidence",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "description": "Protocol development for protocol for brachytherapy in morbidly obese patients"
+    }
+  ]
+}

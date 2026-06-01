@@ -1,0 +1,468 @@
+{
+  "category": "tool_calling",
+  "description": "Tool execution, parameter passing, results",
+  "requires_ct": false,
+  "cases": [
+    {
+      "id": "Q0281",
+      "input": "Please run the automatic prostate segmentation tool on the loaded CT scan. I need the system to identify and segment the prostate gland, seminal vesicles, bladder, and rectum automatically. Then compare the auto-segmentation with the manual contours I have drawn.",
+      "expected_keywords": [
+        "automatic",
+        "segmentation",
+        "prostate",
+        "seminal",
+        "vesicles",
+        "comparison"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: automatic segmentation prostate seminal vesicles comparison"
+    },
+    {
+      "id": "Q0282",
+      "input": "I need you to call the dose calculation engine to recalculate the dose distribution for this HDR plan. The dwell times have been modified, and I need to see the updated DVH. Please run the dose calculation with the current dwell positions and times.",
+      "expected_keywords": [
+        "dose",
+        "calculation",
+        "engine",
+        "HDR",
+        "dwell",
+        "time",
+        "recalculation",
+        "DVH"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: dose calculation engine HDR dwell time recalculation DVH"
+    },
+    {
+      "id": "Q0283",
+      "input": "Please use the isodose fitting tool to find the best-fit prescription isodose for this prostate preplan. I want to identify the isodose line that most closely conforms to the prostate contour while achieving at least 95% target coverage.",
+      "expected_keywords": [
+        "isodose",
+        "fitting",
+        "tool",
+        "prostate",
+        "preplan",
+        "prescription",
+        "optimization"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: isodose fitting tool prostate preplan prescription optimization"
+    },
+    {
+      "id": "Q0284",
+      "input": "Run the plan quality evaluation tool on this completed prostate brachytherapy plan. I need the tool to calculate all ABS-recommended quality metrics including D90, V100, V150, V200, rectal D1cc, and urethral Dmax. Display the results as a quality report.",
+      "expected_keywords": [
+        "plan",
+        "quality",
+        "evaluation",
+        "ABS",
+        "metrics",
+        "D90",
+        "V100",
+        "report"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: plan quality evaluation ABS metrics D90 V100 report"
+    },
+    {
+      "id": "Q0285",
+      "input": "Please execute the CT-MRI fusion algorithm to register the pre-treatment MRI with the planning CT for this cervical cancer case. The MRI shows better tumor delineation than CT. Run the registration and display the fused images.",
+      "expected_keywords": [
+        "CT-MRI",
+        "fusion",
+        "registration",
+        "cervical",
+        "cancer",
+        "algorithm"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: CT-MRI fusion registration cervical cancer algorithm"
+    },
+    {
+      "id": "Q0286",
+      "input": "I need you to run the seed identification algorithm on this post-implant CT scan. The algorithm should automatically detect and label each I-125 seed in the prostate. Then calculate the seed-to-seed spacing and identify any potential cold spots.",
+      "expected_keywords": [
+        "seed",
+        "identification",
+        "algorithm",
+        "post-implant",
+        "detection",
+        "labeling",
+        "spacing"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: seed identification algorithm post-implant detection labeling spacing"
+    },
+    {
+      "id": "Q0287",
+      "input": "Please invoke the treatment plan comparison tool to compare the current plan with the original preplan. I need to see the differences in seed positions, dose coverage, and OAR doses between the two plans.",
+      "expected_keywords": [
+        "treatment",
+        "plan",
+        "comparison",
+        "tool",
+        "preplan",
+        "seed",
+        "positions",
+        "dosimetry"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: treatment plan comparison tool preplan seed positions dosimetry"
+    },
+    {
+      "id": "Q0288",
+      "input": "Run the automatic dwell position optimization algorithm for this HDR cervical cancer plan. I want to use inverse planning with simulated annealing (IPSA) to optimize the dwell times while respecting the OAR constraints.",
+      "expected_keywords": [
+        "IPSA",
+        "inverse",
+        "planning",
+        "optimization",
+        "dwell",
+        "time",
+        "HDR",
+        "cervical"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: IPSA inverse planning optimization dwell time HDR cervical"
+    },
+    {
+      "id": "Q0289",
+      "input": "Please use the DVH calculation tool to compute the DVH for a hypothetical scenario where I increase the prescription dose by 10%. I need to see how this dose escalation affects the OAR doses while maintaining target coverage.",
+      "expected_keywords": [
+        "DVH",
+        "calculation",
+        "hypothetical",
+        "dose",
+        "escalation",
+        "scenario",
+        "OAR",
+        "impact"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: DVH calculation hypothetical dose escalation scenario OAR impact"
+    },
+    {
+      "id": "Q0290",
+      "input": "Execute the edema correction tool on this post-implant dosimetry scan. The scan was taken on day 1 when the prostate was 30% larger due to edema. Apply the edema correction factor and recalculate the dose distribution.",
+      "expected_keywords": [
+        "edema",
+        "correction",
+        "post-implant",
+        "day",
+        "1",
+        "prostate",
+        "recalculation"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: edema correction post-implant day 1 prostate recalculation"
+    },
+    {
+      "id": "Q0291",
+      "input": "Please call the image segmentation evaluation tool to compare the auto-segmented CTV with the manually drawn CTV. Calculate the Dice similarity coefficient, Hausdorff distance, and mean surface distance between the two contours.",
+      "expected_keywords": [
+        "segmentation",
+        "evaluation",
+        "Dice",
+        "Hausdorff",
+        "mean",
+        "surface",
+        "distance",
+        "comparison"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: segmentation evaluation Dice Hausdorff mean surface distance comparison"
+    },
+    {
+      "id": "Q0292",
+      "input": "Run the dose reporting tool to generate a comprehensive brachytherapy treatment report. Include the prescription details, DVH parameters for all structures, OAR constraint evaluation, and plan quality metrics in a formatted report.",
+      "expected_keywords": [
+        "dose",
+        "reporting",
+        "tool",
+        "treatment",
+        "report",
+        "prescription",
+        "DVH",
+        "OAR",
+        "formatted"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: dose reporting tool treatment report prescription DVH OAR formatted"
+    },
+    {
+      "id": "Q0293",
+      "input": "I need you to execute the applicator reconstruction tool for this cervical cancer case. The tandem and ovoids are visible on CT. Please reconstruct the applicator geometry including tandem length, ovoid positions, and source positions within the applicator.",
+      "expected_keywords": [
+        "applicator",
+        "reconstruction",
+        "tandem",
+        "ovoid",
+        "geometry",
+        "source",
+        "positions"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: applicator reconstruction tandem ovoid geometry source positions"
+    },
+    {
+      "id": "Q0294",
+      "input": "Please invoke the seed migration detection tool on this follow-up CT scan taken 3 months after implantation. Compare the seed positions with the original post-implant scan to identify any seeds that have migrated from the prostate.",
+      "expected_keywords": [
+        "seed",
+        "migration",
+        "detection",
+        "tool",
+        "comparison",
+        "follow-up"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: seed migration detection tool comparison follow-up"
+    },
+    {
+      "id": "Q0295",
+      "input": "Run the 3D dose distribution visualization tool to generate a color-wash display of the dose distribution through the prostate in all three planes. I need to see the axial, sagittal, and coronal dose distributions simultaneously.",
+      "expected_keywords": [
+        "3D",
+        "dose",
+        "visualization",
+        "color-wash",
+        "three",
+        "planes",
+        "simultaneous"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: 3D dose visualization color-wash three planes simultaneous"
+    },
+    {
+      "id": "Q0296",
+      "input": "Please use the template matching tool to verify that the interstitial needle positions match the planned template geometry. The template has 16 needles in a 4x4 grid with 1.5cm spacing.",
+      "expected_keywords": [
+        "template",
+        "matching",
+        "tool",
+        "needle",
+        "positions",
+        "verification",
+        "4x4",
+        "grid"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: template matching tool needle positions verification 4x4 grid"
+    },
+    {
+      "id": "Q0297",
+      "input": "Execute the treatment plan export tool to export the current HDR plan to the DICOM-RT format. I need to export the dose, structure set, and plan objects for import into the treatment planning system.",
+      "expected_keywords": [
+        "DICOM-RT",
+        "export",
+        "HDR",
+        "plan",
+        "dose",
+        "structure",
+        "set"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: DICOM-RT export HDR plan dose structure set"
+    },
+    {
+      "id": "Q0298",
+      "input": "Please call the organ motion analysis tool to evaluate the inter-fraction organ motion for this cervical cancer patient. Compare the applicator position across the 4 treatment fractions to assess setup variability.",
+      "expected_keywords": [
+        "organ",
+        "motion",
+        "analysis",
+        "inter-fraction",
+        "applicator",
+        "position",
+        "variability"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: organ motion analysis inter-fraction applicator position variability"
+    },
+    {
+      "id": "Q0299",
+      "input": "Run the plan robustness evaluation tool to assess how sensitive this prostate preplan is to seed placement uncertainties. Simulate ±3mm positional errors in seed locations and evaluate the impact on dose coverage.",
+      "expected_keywords": [
+        "plan",
+        "robustness",
+        "evaluation",
+        "seed",
+        "placement",
+        "uncertainty",
+        "simulation"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: plan robustness evaluation seed placement uncertainty simulation"
+    },
+    {
+      "id": "Q0300",
+      "input": "I need you to use the contour propagation tool to propagate the CTV contours from the planning CT to the verification CT taken at the time of treatment. Use deformable registration to map the contours.",
+      "expected_keywords": [
+        "contour",
+        "propagation",
+        "deformable",
+        "registration",
+        "CTV",
+        "mapping",
+        "verification"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: contour propagation deformable registration CTV mapping verification"
+    },
+    {
+      "id": "Q0301",
+      "input": "Please execute the dose-point optimization tool to optimize dwell times at specific dose prescription points. I want to place 5 dose points within the CTV and 3 constraint points at OAR surfaces. Run the optimization.",
+      "expected_keywords": [
+        "dose-point",
+        "optimization",
+        "CTV",
+        "prescription",
+        "OAR",
+        "constraint",
+        "points"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: dose-point optimization CTV prescription OAR constraint points"
+    },
+    {
+      "id": "Q0302",
+      "input": "Run the source strength verification tool to check whether the HDR source strength matches the calibration certificate. The source is Ir-192 with a certificate value of 37000 U. The measured value should be within ±5% of the certificate value.",
+      "expected_keywords": [
+        "source",
+        "strength",
+        "verification",
+        "Ir-192",
+        "calibration",
+        "certificate",
+        "measurement"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: source strength verification Ir-192 calibration certificate measurement"
+    },
+    {
+      "id": "Q0303",
+      "input": "Please use the treatment time calculator tool to determine the total treatment time for this HDR plan. The plan has 15 dwell positions with a total dwell time of 485 seconds. Add the source transit time and applicator loading time.",
+      "expected_keywords": [
+        "treatment",
+        "time",
+        "calculator",
+        "dwell",
+        "transit",
+        "loading",
+        "total"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: treatment time calculator dwell transit loading total"
+    },
+    {
+      "id": "Q0304",
+      "input": "Execute the cumulative dose tracking tool to compute the cumulative dose from all prior radiation treatments for this patient. The patient had prior pelvic EBRT (45Gy) and is now receiving brachytherapy boost. Show cumulative OAR doses.",
+      "expected_keywords": [
+        "cumulative",
+        "dose",
+        "tracking",
+        "EBRT",
+        "brachytherapy",
+        "OAR",
+        "total"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: cumulative dose tracking EBRT brachytherapy OAR total"
+    },
+    {
+      "id": "Q0305",
+      "input": "Please invoke the quality assurance checklist tool to generate a pre-treatment QA checklist for this HDR brachytherapy case. Include source verification, plan integrity check, applicator positioning, and patient identification steps.",
+      "expected_keywords": [
+        "QA",
+        "checklist",
+        "pre-treatment",
+        "HDR",
+        "source",
+        "verification",
+        "plan",
+        "applicator"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: QA checklist pre-treatment HDR source verification plan applicator"
+    },
+    {
+      "id": "Q0306",
+      "input": "Run the needle placement simulation tool to predict the optimal needle entry points and angles for this interstitial brachytherapy case. The target volume is 5cc in the oral tongue. Simulate 8 needle trajectories.",
+      "expected_keywords": [
+        "needle",
+        "placement",
+        "simulation",
+        "entry",
+        "points",
+        "angles",
+        "oral",
+        "tongue"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: needle placement simulation entry points angles oral tongue"
+    },
+    {
+      "id": "Q0307",
+      "input": "Please use the dose volume histogram export tool to save the DVH data as a CSV file. I need the raw DVH data for statistical analysis in an external spreadsheet program. Export dose and volume data for all structures.",
+      "expected_keywords": [
+        "DVH",
+        "export",
+        "CSV",
+        "dose",
+        "volume",
+        "data",
+        "structures",
+        "spreadsheet"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: DVH export CSV dose volume data structures spreadsheet"
+    },
+    {
+      "id": "Q0308",
+      "input": "Execute the plan archive tool to save the current treatment plan with all associated data (CT images, contours, dose distribution, plan parameters) to the patient record. Create a backup copy as well.",
+      "expected_keywords": [
+        "plan",
+        "archive",
+        "save",
+        "backup",
+        "patient",
+        "record",
+        "CT",
+        "contours",
+        "dose"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: plan archive save backup patient record CT contours dose"
+    },
+    {
+      "id": "Q0309",
+      "input": "Please call the automatic isodose normalization tool to normalize the dose distribution so that the prescription isodose covers exactly 95% of the CTV. Adjust the normalization point and display the updated isodose lines.",
+      "expected_keywords": [
+        "isodose",
+        "normalization",
+        "automatic",
+        "CTV",
+        "95%",
+        "coverage",
+        "adjustment"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: isodose normalization automatic CTV 95% coverage adjustment"
+    },
+    {
+      "id": "Q0310",
+      "input": "Run the patient setup verification tool using the CT scan taken at the time of treatment. Compare the applicator position on the treatment CT with the planning CT to assess setup accuracy. Calculate the translational and rotational deviations.",
+      "expected_keywords": [
+        "setup",
+        "verification",
+        "applicator",
+        "position",
+        "comparison",
+        "translational",
+        "rotational"
+      ],
+      "difficulty": "medium",
+      "description": "Tool calling test: setup verification applicator position comparison translational rotational"
+    }
+  ]
+}

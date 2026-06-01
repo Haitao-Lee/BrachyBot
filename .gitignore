@@ -58,6 +58,10 @@ docs/
 brain/knowledge/
 skills/data/
 
+# Benchmark results (runtime generated)
+web/test/benchmarks/results/
+web/test/benchmarks/results_v2/
+
 # OS
 .DS_Store
 Thumbs.db
