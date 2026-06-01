@@ -1859,7 +1859,8 @@ class BrachyAgent:
                         "report_generator", "clinical_kb", "doc_reader", "case_memory",
                         "tool_creator", "env_manager", "shell_executor", "code_executor",
                         "ui_inspector", "filesystem_browser", "safety_validator",
-                        "plan_comparator", "performance_tracker", "dicom_rt_exporter"
+                        "plan_comparator", "performance_tracker", "dicom_rt_exporter",
+                        "web_search"  # 允许联网搜索（不依赖CT）
                     }
                     tools_for_llm = [t for t in tools_for_llm
                                       if t.get("function", {}).get("name", "") in _allowed_without_ct]
