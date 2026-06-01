@@ -258,7 +258,7 @@ GitHub Integration:
     def _search_bing(self, query: str, max_results: int = 5) -> List[Dict]:
         """
         Search using Bing.
-        Uses official API if BING_SEARCH_API_KEY is set, otherwise uses a simple approach.
+        Uses official API if BING_SEARCH_API_KEY is set, otherwise tries cn.bing.com.
         """
         results = []
         api_key = os.environ.get("BING_SEARCH_API_KEY")
@@ -286,8 +286,84 @@ GitHub Integration:
             except Exception as e:
                 logger.warning(f"Bing API error: {e}")
         else:
-            # No API key - return empty to let other methods handle it
-            logger.info("No BING_SEARCH_API_KEY set, skipping Bing search")
+            # Try cn.bing.com (accessible from China)
+            try:
+                search_url = f"https://cn.bing.com/search?q={quote_plus(query)}"
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                }
+                response = requests.get(search_url, headers=headers, timeout=5)
+                if response.status_code == 200:
+                    text = response.text
+                    # Extract results from cn.bing.com
+                    result_pattern = r'<li class="b_algo">(.*?)</li>'
+                    result_blocks = re.findall(result_pattern, text, re.DOTALL)
+
+                    for block in result_blocks[:max_results]:
+                        title_match = re.search(r'<h2><a[^>]*href="([^"]*)"[^>]*>(.*?)</a></h2>', block)
+                        if title_match:
+                            url = title_match.group(1)
+                            title = re.sub(r'<[^>]+>', '', title_match.group(2)).strip()
+                            snippet_match = re.search(r'<p[^>]*>(.*?)</p>', block, re.DOTALL)
+                            snippet = re.sub(r'<[^>]+>', '', snippet_match.group(1)).strip() if snippet_match else ""
+
+                            if title:
+                                results.append({
+                                    "title": title[:200],
+                                    "snippet": snippet[:300] if snippet else "",
+                                    "url": url,
+                                    "source": "Bing CN"
+                                })
+            except Exception as e:
+                logger.warning(f"Bing CN error: {e}")
+
+        return results[:max_results]
+
+    def _search_baidu(self, query: str, max_results: int = 5) -> List[Dict]:
+        """
+        Search using Baidu (百度).
+        Accessible from China without API key.
+        """
+        results = []
+
+        try:
+            search_url = f"https://www.baidu.com/s?wd={quote_plus(query)}"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            response = requests.get(search_url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                text = response.text
+                # Extract results from Baidu
+                # Baidu uses <div class="result"> for each result
+                result_pattern = r'<div class="result[^"]*"[^>]*>(.*?)</div>\s*</div>'
+                result_blocks = re.findall(result_pattern, text, re.DOTALL)
+
+                for block in result_blocks[:max_results]:
+                    # Extract title
+                    title_match = re.search(r'<h3[^>]*><a[^>]*>(.*?)</a></h3>', block, re.DOTALL)
+                    if title_match:
+                        title = re.sub(r'<[^>]+>', '', title_match.group(1)).strip()
+
+                        # Extract URL
+                        url_match = re.search(r'<h3[^>]*><a[^>]*href="([^"]*)"', block)
+                        url = url_match.group(1) if url_match else ""
+
+                        # Extract snippet
+                        snippet_match = re.search(r'<span class="content-right_[^"]*">(.*?)</span>', block, re.DOTALL)
+                        if not snippet_match:
+                            snippet_match = re.search(r'<div class="c-abstract">(.*?)</div>', block, re.DOTALL)
+                        snippet = re.sub(r'<[^>]+>', '', snippet_match.group(1)).strip() if snippet_match else ""
+
+                        if title:
+                            results.append({
+                                "title": title[:200],
+                                "snippet": snippet[:300] if snippet else "",
+                                "url": url,
+                                "source": "Baidu"
+                            })
+        except Exception as e:
+            logger.warning(f"Baidu search error: {e}")
 
         return results[:max_results]
 
@@ -693,7 +769,7 @@ GitHub Integration:
                 )
 
         # Perform search based on type
-        # Priority: PubMed (medical) > GitHub (code) > Bing > DuckDuckGo > Wikipedia
+        # Priority: PubMed (medical) > GitHub (code) > Baidu/Bing CN > DuckDuckGo
         results = []
 
         if search_type == "clinical":
@@ -702,9 +778,11 @@ GitHub Integration:
             results.extend(pubmed_results)
 
         elif search_type == "equipment":
-            # For equipment queries, try Bing first, then DuckDuckGo
+            # For equipment queries, try Baidu, then Bing CN, then DuckDuckGo
             enhanced_query = f"{query} specifications datasheet"
-            results = self._search_bing(enhanced_query, max_results)
+            results = self._search_baidu(enhanced_query, max_results)
+            if not results:
+                results = self._search_bing(enhanced_query, max_results)
             if not results:
                 results = self._search_duckduckgo(enhanced_query, max_results)
 
@@ -721,15 +799,22 @@ GitHub Integration:
             results = self._search_github(query, max_results, search_type="issues")
 
         else:
-            # General search: Try PubMed first (medical context), then Bing, then DuckDuckGo
-            # PubMed is most reliable from this network
+            # General search: PubMed (medical) → Baidu → Bing CN → DuckDuckGo
+            # PubMed for medical content
             pubmed_results = self._search_pubmed(query, max_results=2)
             results.extend(pubmed_results)
 
+            # Baidu for general web (accessible from China)
+            if len(results) < max_results:
+                baidu_results = self._search_baidu(query, max_results=max_results - len(results))
+                results.extend(baidu_results)
+
+            # Bing CN as fallback
             if len(results) < max_results:
                 bing_results = self._search_bing(query, max_results=max_results - len(results))
                 results.extend(bing_results)
 
+            # DuckDuckGo as last resort
             if len(results) < max_results:
                 ddg_results = self._search_duckduckgo(query, max_results=max_results - len(results))
                 results.extend(ddg_results)
