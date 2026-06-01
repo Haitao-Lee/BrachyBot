@@ -1484,6 +1484,11 @@ class BrachyAgent:
         # Remove [Called tool_name] and [Tool result: ...] memory artifacts
         cleaned = re.sub(r'\[Called [^\]]+\]', '', cleaned).strip()
         cleaned = re.sub(r'\[Tool result: [^\]]*\]', '', cleaned).strip()
+        # Remove [call function ...] and [search_type ...] patterns
+        cleaned = re.sub(r'\[call function[^\]]*\]', '', cleaned, flags=re.DOTALL).strip()
+        cleaned = re.sub(r'\[search_type[^\]]*\]', '', cleaned, flags=re.DOTALL).strip()
+        # Remove web_search completed markers
+        cleaned = re.sub(r'web_search completed', '', cleaned).strip()
         # Remove code blocks that are just tool call JSON
         cleaned = re.sub(r'```\s*\n?\{[\'"]tool[\'"].*?\}\s*\n?```', '', cleaned, flags=re.DOTALL).strip()
         # Remove multiple consecutive newlines
