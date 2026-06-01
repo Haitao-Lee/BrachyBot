@@ -769,7 +769,7 @@ GitHub Integration:
                 )
 
         # Perform search based on type
-        # Priority: PubMed (medical) > GitHub (code) > Baidu/Bing CN > DuckDuckGo
+        # Priority: PubMed (medical) > GitHub (code) > Bing CN > Baidu > DuckDuckGo
         results = []
 
         if search_type == "clinical":
@@ -778,11 +778,11 @@ GitHub Integration:
             results.extend(pubmed_results)
 
         elif search_type == "equipment":
-            # For equipment queries, try Baidu, then Bing CN, then DuckDuckGo
+            # For equipment queries, try Bing CN first, then Baidu, then DuckDuckGo
             enhanced_query = f"{query} specifications datasheet"
-            results = self._search_baidu(enhanced_query, max_results)
+            results = self._search_bing(enhanced_query, max_results)
             if not results:
-                results = self._search_bing(enhanced_query, max_results)
+                results = self._search_baidu(enhanced_query, max_results)
             if not results:
                 results = self._search_duckduckgo(enhanced_query, max_results)
 
@@ -799,20 +799,20 @@ GitHub Integration:
             results = self._search_github(query, max_results, search_type="issues")
 
         else:
-            # General search: PubMed (medical) → Baidu → Bing CN → DuckDuckGo
+            # General search: PubMed (medical) → Bing CN → Baidu → DuckDuckGo
             # PubMed for medical content
             pubmed_results = self._search_pubmed(query, max_results=2)
             results.extend(pubmed_results)
 
-            # Baidu for general web (accessible from China)
-            if len(results) < max_results:
-                baidu_results = self._search_baidu(query, max_results=max_results - len(results))
-                results.extend(baidu_results)
-
-            # Bing CN as fallback
+            # Bing CN as primary general search
             if len(results) < max_results:
                 bing_results = self._search_bing(query, max_results=max_results - len(results))
                 results.extend(bing_results)
+
+            # Baidu as fallback
+            if len(results) < max_results:
+                baidu_results = self._search_baidu(query, max_results=max_results - len(results))
+                results.extend(baidu_results)
 
             # DuckDuckGo as last resort
             if len(results) < max_results:
