@@ -962,7 +962,15 @@ GitHub Integration:
             pubmed_results = self._search_pubmed(pubmed_query, max_results=max_results)
             results.extend(pubmed_results)
 
-            # Only try other sources if PubMed returned nothing
+            # Also search GitHub for technical topics (AI, software, tools)
+            # This helps find non-medical items like SAM 3, DeepRare code, etc.
+            tech_keywords = ['ai', 'model', 'tool', 'software', 'framework', 'library', 'github',
+                             'sam', 'segment', 'anything', 'deep', 'learning', 'neural']
+            if any(kw in query.lower() for kw in tech_keywords):
+                github_results = self._search_github(query, max_results=2, search_type="repositories")
+                results.extend(github_results)
+
+            # Only try other sources if PubMed and GitHub returned nothing
             if not results:
                 bing_results = self._search_bing(optimized_query, max_results)
                 results.extend(bing_results)
