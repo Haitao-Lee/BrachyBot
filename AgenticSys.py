@@ -721,6 +721,14 @@ class BrachyAgent:
         except ImportError as e:
             logger.warning(f"WebSearchTool not available: {e}")
 
+        # Web fetch tool for fetching specific URLs
+        try:
+            from tool_factory.web_fetch import WebFetchTool
+            self.registry.register(WebFetchTool())
+            logger.info("WebFetchTool registered for URL fetching")
+        except ImportError as e:
+            logger.warning(f"WebFetchTool not available: {e}")
+
         logger.info(f"Registered {len(self.registry.tool_names)} tools: {self.registry.tool_names}")
     
     def _execute_tool_with_memory(self, tool_name: str, params: Dict, progress_callback=None) -> Any:
@@ -1075,6 +1083,13 @@ class BrachyAgent:
             "  After searching, ALWAYS cite the source URL.\n"
             "  CRITICAL: Your ENTIRE response must be in the SAME language as the user's question.\n"
             "  Even if search results are in English, you MUST translate and respond in the user's language.\n"
+            "\n"
+            "  **USE web_fetch tool when** you have a specific URL to read:\n"
+            "  - After web_search returns a URL you want to read in detail\n"
+            "  - User provides a specific link (PubMed, GitHub, etc.)\n"
+            "  - You need to read the full content of a page\n"
+            "  - Example: Fetch https://pubmed.ncbi.nlm.nih.gov/41708847/ to get full article details\n"
+            "  - Example: Fetch https://github.com/facebookresearch/sam3 to get README\n"
             "\n"
             "  **IMPORTANT: Search Query Rules**\n"
             "  - Use SIMPLE keywords only (1-2 words max)\n"
@@ -1817,6 +1832,13 @@ class BrachyAgent:
             "  CRITICAL: Your ENTIRE response must be in the SAME language as the user's question.\n"
             "  Even if search results are in English, you MUST translate and respond in the user's language.\n"
             "\n"
+            "  **USE web_fetch tool when** you have a specific URL to read:\n"
+            "  - After web_search returns a URL you want to read in detail\n"
+            "  - User provides a specific link (PubMed, GitHub, etc.)\n"
+            "  - You need to read the full content of a page\n"
+            "  - Example: Fetch https://pubmed.ncbi.nlm.nih.gov/41708847/ to get full article details\n"
+            "  - Example: Fetch https://github.com/facebookresearch/sam3 to get README\n"
+            "\n"
             "  **IMPORTANT: Search Query Rules**\n"
             "  - Use SIMPLE keywords only (1-2 words max)\n"
             "  - Do NOT add extra words like 'AI', 'system', 'tool' to search queries\n"
@@ -2042,7 +2064,7 @@ class BrachyAgent:
                         "tool_creator", "env_manager", "shell_executor", "code_executor",
                         "ui_inspector", "filesystem_browser", "safety_validator",
                         "plan_comparator", "performance_tracker", "dicom_rt_exporter",
-                        "web_search"  # Allow web search (no CT dependency)
+                        "web_search", "web_fetch"  # Allow web tools (no CT dependency)
                     }
                     tools_for_llm = [t for t in tools_for_llm
                                       if t.get("function", {}).get("name", "") in _allowed_without_ct]
