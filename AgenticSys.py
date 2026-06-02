@@ -1150,14 +1150,11 @@ class BrachyAgent:
             content = response.content or ""
 
             # DEBUG: Log raw LLM response
-            logger.info(f"[DEBUG] LLM iteration {iteration}: content_len={len(content)}, has_tool_calls={bool(response.tool_calls)}")
-            logger.info(f"[DEBUG] LLM raw content: {content[:300]}")
 
             # Accumulate text from this iteration
             cleaned_content = self._clean_response_text(content)
             if cleaned_content:
                 accumulated_text += (" " if accumulated_text else "") + cleaned_content
-                logger.info(f"[DEBUG] accumulated_text now {len(accumulated_text)} chars")
 
             # Check for tool calls from both native API response and parsed text
             tool_calls = []
@@ -1196,13 +1193,11 @@ class BrachyAgent:
                 # Parse from text format (```tool_call blocks)
                 tool_calls = self._parse_tool_calls(content)
 
-            logger.info(f"[DEBUG] Parsed {len(tool_calls)} tool calls: {[tc.get('tool','') for tc in tool_calls]}")
 
             if not tool_calls:
                 final_response = self._clean_response_text(content)
                 if not final_response:
                     final_response = content
-                logger.info(f"[DEBUG] No tool calls, final_response set: {len(final_response)} chars")
                 break
 
             # Filter out tool calls with empty required params, normalize param names
@@ -1319,27 +1314,21 @@ class BrachyAgent:
                 messages.append({"role": "user", "content": _present_instruction})
 
         # DEBUG: Log before cleaning
-        logger.info(f"[DEBUG] Before clean: final_response_len={len(final_response)}, tools_executed={tools_executed}")
         if final_response:
-            logger.info(f"[DEBUG] Before clean content: {final_response[:200]}")
 
         # Clean response - no summarization
         if final_response:
             raw_final = final_response
             final_response = self._clean_response_text(final_response)
-            logger.info(f"[DEBUG] After clean: {len(final_response)} chars")
             # If cleaning stripped everything, it was pure tool_call content
             if not final_response.strip() and raw_final.strip():
-                logger.info(f"[DEBUG] Cleaning stripped everything, clearing")
                 final_response = ""
 
         # Strip transitional phrases from response
         if final_response and tools_executed:
-            logger.info(f"[DEBUG] Starting transitional stripping on: {final_response[:200]}")
             # Split into sentences, filter out transitional ones, keep substantive ones
             # Sentence terminators: 。！？.!?\n and ：(Chinese colon when used as terminator)
             sentences = re.split(r'(?<=[。！？.!?\n：])\s*', final_response.strip())
-            logger.info(f"[DEBUG] Split into {len(sentences)} sentences: {[s[:50] for s in sentences if s.strip()]}")
             _transitional_keywords = [
                 '我来', '让我', '好的', '我帮你', '为您', '我直接',
                 '搜索', '查询', '抓取', '获取', '访问', '查看', '读取',
@@ -1357,19 +1346,15 @@ class BrachyAgent:
                 # Also treat bracket-only content as transitional
                 if re.match(r'^\[.{2,30}\]$', s):
                     is_transitional = True
-                logger.info(f"[DEBUG] Sentence: '{s[:60]}' → transitional={is_transitional}")
                 if not is_transitional:
                     substantive.append(s)
 
             if substantive:
                 final_response = ' '.join(substantive)
-                logger.info(f"[DEBUG] Kept {len(substantive)} substantive sentences, {len(final_response)} chars")
             else:
-                logger.warning(f"[DEBUG] All {len(sentences)} sentences were transitional, clearing response")
                 final_response = ""
 
         if not final_response:
-            logger.warning(f"[DEBUG] final_response is empty after stripping. tools_executed={tools_executed}")
             if tools_executed:
                 # Extract tool results from steps (most reliable source)
                 tool_results_text = []
@@ -1380,7 +1365,6 @@ class BrachyAgent:
                         if result and len(result) > 5:
                             tool_results_text.append(f"**{tool_name}**: {result}")
 
-                logger.info(f"[DEBUG] Steps fallback: found {len(tool_results_text)} results from {len(steps)} steps")
 
                 # Also extract from messages (Anthropic format)
                 if not tool_results_text:
@@ -1391,11 +1375,9 @@ class BrachyAgent:
                                     content = block.get("content", "")
                                     if content and len(content) > 10:
                                         tool_results_text.append(content[:2000])
-                    logger.info(f"[DEBUG] Messages fallback: found {len(tool_results_text)} results")
 
                 if tool_results_text:
                     final_response = "Based on the search results:\n\n" + "\n\n".join(tool_results_text)
-                    logger.info(f"[DEBUG] Fallback response: {len(final_response)} chars")
                 elif accumulated_text and len(accumulated_text) > 10:
                     final_response = accumulated_text
                     logger.info(f"Using accumulated_text as fallback: {len(final_response)} chars")
