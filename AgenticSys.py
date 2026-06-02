@@ -1317,6 +1317,8 @@ class BrachyAgent:
                 r'^(?:好的[，,]?\s*)?(?:让我.*?[查搜].*?[。\n])',
                 r'^(?:知识库.*?[。]?\s*)(?:让我.*?[查搜].*?[。\n])',
                 r'^让我(?:访问|查看|获取|读取).*?[。\n]',
+                r'^\[获取.*?\]',  # [获取官方页面内容] style brackets
+                r'^\[[^\]]{2,30}\]',  # Any short bracket content like [searching...]
                 # English transitional phrases
                 r'^(?:I.{0,5}(?:search|look|find) for you.*?[.\n]|Let me (?:search|find|look|check).*?[.\n])',
                 r'^(?:Sure[,.]?\s*)?Let me (?:search|find|look|check|query|access|visit|fetch).*?[.\n]',
@@ -1338,33 +1340,39 @@ class BrachyAgent:
 
         if not final_response:
             if tools_executed:
-                # Extract tool results from messages to provide a useful fallback
+                # Extract tool results from messages — comprehensive fallback
                 tool_results_text = []
                 for msg in messages:
+                    # Anthropic-format tool results (list of content blocks)
                     if isinstance(msg.get("content"), list):
                         for block in msg["content"]:
-                            if isinstance(block, dict) and block.get("type") == "tool_result":
-                                content = block.get("content", "")
-                                if content and len(content) > 10:
-                                    tool_results_text.append(content[:2000])
+                            if isinstance(block, dict):
+                                if block.get("type") == "tool_result":
+                                    content = block.get("content", "")
+                                    if content and len(content) > 10:
+                                        tool_results_text.append(content[:2000])
+                                elif block.get("type") == "text":
+                                    text = block.get("text", "")
+                                    if text and len(text) > 20 and not any(p in text for p in ["我来", "让我", "好的"]):
+                                        tool_results_text.append(text[:2000])
+                    # String-format tool results (memory artifacts)
                     elif isinstance(msg.get("content"), str) and msg["role"] == "user":
-                        # Also check string-format tool results (memory artifacts)
-                        if "[Tool result:" in msg["content"]:
+                        c = msg["content"]
+                        if "[Tool result:" in c:
                             import re as _re
-                            result_match = _re.search(r'\[Tool result: (.+?)\]', msg["content"])
-                            if result_match:
-                                tool_results_text.append(result_match.group(1)[:2000])
+                            for m in _re.finditer(r'\[Tool result: (.+?)\]', c):
+                                if len(m.group(1)) > 10:
+                                    tool_results_text.append(m.group(1)[:2000])
+
                 if tool_results_text:
-                    final_response = "Based on search results:\n\n" + "\n\n".join(tool_results_text)
-                    logger.info(f"Tool result fallback: extracted {len(tool_results_text)} results, total {len(final_response)} chars")
+                    final_response = "\n\n".join(tool_results_text)
+                    logger.info(f"Tool result fallback: extracted {len(tool_results_text)} results, {len(final_response)} chars")
+                elif accumulated_text and len(accumulated_text) > 10:
+                    final_response = accumulated_text
+                    logger.info(f"Using accumulated_text as fallback: {len(final_response)} chars")
                 else:
-                    # Last resort: extract from accumulated_text
-                    if accumulated_text and len(accumulated_text) > 10:
-                        final_response = accumulated_text
-                        logger.info(f"Using accumulated_text as fallback: {len(final_response)} chars")
-                    else:
-                        final_response = "Search completed but no detailed results were returned."
-                        logger.warning(f"Tool result fallback: no results found in {len(messages)} messages")
+                    final_response = "I completed the requested searches but could not retrieve detailed content. The sources may require browser access."
+                    logger.warning(f"Tool result fallback: no results found in {len(messages)} messages")
             else:
                 final_response = "No response generated."
 
