@@ -52,8 +52,8 @@ logger = logging.getLogger(__name__)
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-# Search cache TTL (24 hours)
-CACHE_TTL = 86400
+# Search cache TTL (2 hours for freshness, was 24h causing stale weather results)
+CACHE_TTL = 7200
 
 
 class WebSearchTool(BaseTool):

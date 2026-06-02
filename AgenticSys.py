@@ -1308,7 +1308,7 @@ class BrachyAgent:
                         for block in msg["content"]:
                             if isinstance(block, dict) and block.get("type") == "tool_result":
                                 content = block.get("content", "")
-                                if content and len(content) > 20:
+                                if content and len(content) > 10:
                                     tool_results_text.append(content[:2000])
                     elif isinstance(msg.get("content"), str) and msg["role"] == "user":
                         # Also check string-format tool results (memory artifacts)
@@ -1318,13 +1318,18 @@ class BrachyAgent:
                             if result_match:
                                 tool_results_text.append(result_match.group(1)[:2000])
                 if tool_results_text:
-                    final_response = "\n\n".join(tool_results_text)
+                    final_response = "Based on search results:\n\n" + "\n\n".join(tool_results_text)
                     logger.info(f"Tool result fallback: extracted {len(tool_results_text)} results, total {len(final_response)} chars")
                 else:
-                    final_response = "Tools executed. Check the execution trace above for results."
-                    logger.warning(f"Tool result fallback: no results found in {len(messages)} messages")
+                    # Last resort: extract from accumulated_text
+                    if accumulated_text and len(accumulated_text) > 10:
+                        final_response = accumulated_text
+                        logger.info(f"Using accumulated_text as fallback: {len(final_response)} chars")
+                    else:
+                        final_response = "Search completed but no detailed results were returned."
+                        logger.warning(f"Tool result fallback: no results found in {len(messages)} messages")
             else:
-                final_response = "Tools executed. Check the execution trace above for results."
+                final_response = "No response generated."
 
         step_id_ref[0] += 1
         steps.append({
