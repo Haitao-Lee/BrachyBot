@@ -1341,32 +1341,27 @@ class BrachyAgent:
 
         if not final_response:
             if tools_executed:
-                # Extract tool results from messages — comprehensive fallback
+                # Extract tool results from steps (most reliable source)
                 tool_results_text = []
-                for msg in messages:
-                    # Anthropic-format tool results (list of content blocks)
-                    if isinstance(msg.get("content"), list):
-                        for block in msg["content"]:
-                            if isinstance(block, dict):
-                                if block.get("type") == "tool_result":
+                for step in steps:
+                    if step.get("type") == "tool" and step.get("result"):
+                        tool_name = step.get("title", "tool")
+                        result = step.get("result", "")
+                        if result and len(result) > 5:
+                            tool_results_text.append(f"**{tool_name}**: {result}")
+
+                # Also extract from messages (Anthropic format)
+                if not tool_results_text:
+                    for msg in messages:
+                        if isinstance(msg.get("content"), list):
+                            for block in msg["content"]:
+                                if isinstance(block, dict) and block.get("type") == "tool_result":
                                     content = block.get("content", "")
                                     if content and len(content) > 10:
                                         tool_results_text.append(content[:2000])
-                                elif block.get("type") == "text":
-                                    text = block.get("text", "")
-                                    if text and len(text) > 20 and not any(p in text for p in ["我来", "让我", "好的"]):
-                                        tool_results_text.append(text[:2000])
-                    # String-format tool results (memory artifacts)
-                    elif isinstance(msg.get("content"), str) and msg["role"] == "user":
-                        c = msg["content"]
-                        if "[Tool result:" in c:
-                            import re as _re
-                            for m in _re.finditer(r'\[Tool result: (.+?)\]', c):
-                                if len(m.group(1)) > 10:
-                                    tool_results_text.append(m.group(1)[:2000])
 
                 if tool_results_text:
-                    final_response = "\n\n".join(tool_results_text)
+                    final_response = "Based on the search results:\n\n" + "\n\n".join(tool_results_text)
                     logger.info(f"Tool result fallback: extracted {len(tool_results_text)} results, {len(final_response)} chars")
                 elif accumulated_text and len(accumulated_text) > 10:
                     final_response = accumulated_text
