@@ -463,15 +463,25 @@ Task: "Generate prostate plan"
 - **Smart Commands**: "Go to the tumor", "Show me slice 50", "What is the V100?"
 
 ### 🌐 Internet Search Capability (NEW)
-BrachyBot now has intelligent internet search for uncertain knowledge:
+BrachyBot now has intelligent internet search with **adaptive search strategy**:
+
+**Search Strategy (auto-selected based on query type):**
+
+| Query Type | Primary Source | Secondary Source | Example |
+|-----------|---------------|-----------------|---------|
+| Clinical/Medical | PubMed API | Bing CN | "EMBRACE II results", "prostate dose constraints" |
+| Technical/AI | Bing CN + GitHub | PubMed | "DeepRare", "SAM 3", "nnU-Net" |
+| Equipment | Bing CN + Baidu | — | "Varian VariSource", "Elekta applicator" |
+| General | Bing CN | PubMed → Baidu | "brachytherapy history", "Ir-192 suppliers" |
+| Real-time | Bing CN + Baidu | Page fetch | "今天天气", "北京时间", "NBA总决赛" |
 
 **When to Search:**
 - Specific equipment specifications (Varian, Elekta, Nucletron devices)
 - Recent clinical trials or publications (EMBRACE, PORTEC, ASCENDE-RT)
+- AI/ML tools and models (DeepRare, SAM 3, nnU-Net, VoCo)
 - Drug pricing, availability, or manufacturer information
 - Historical details about specific procedures
 - Any fact the system is uncertain about
-- **Real-time information**: weather, time, news, sports scores (auto-detected)
 
 **When NOT to Search:**
 - Basic clinical facts (145 Gy for I-125, 73.83 days for Ir-192 half-life)
@@ -484,34 +494,23 @@ BrachyBot now has intelligent internet search for uncertain knowledge:
 2. **Search the web** if uncertain → cite source if found
 3. **Admit ignorance** if search fails → recommend specific resource
 
-**Real-time Query Detection:**
-When the user asks about weather, time, news, or sports, BrachyBot automatically:
-1. Detects the real-time query pattern (e.g., "今天天气", "北京时间")
-2. Executes Bing CN + Baidu search directly (bypasses PubMed/cache)
-3. Fetches the first result's page content for richer data
-4. Injects results into the LLM context for immediate answering
-
 **Example Responses:**
 ```
-# Equipment query (searches)
+# AI/Technical query (Bing + GitHub)
+"你知道DeepRare吗？"
+→ "DeepRare 是 Nature 2026 发表的罕见病诊断AI系统，采用中央主机+专科Agent架构..."
+
+# Equipment query (Bing)
 "What is the dose rate constant for IsoAid Advantage?"
 → "Based on manufacturer specifications [source], the TG-43 dose rate constant is..."
 
-# Recent trial (searches)
+# Recent trial (PubMed)
 "What were the EMBRACE II results?"
 → "According to published literature [PubMed], the local control rate was..."
-
-# Real-time weather (auto-detected, Bing search)
-"北京今天天气如何？"
-→ "北京今天雷阵雨，气温 21℃。出门记得带伞。"
 
 # Basic knowledge (no search)
 "What is the I-125 prescription dose?"
 → "145 Gy for low-risk prostate cancer monotherapy per AAPM/ABS guidelines."
-
-# Fictional (no search, rejects)
-"What is quantum brachytherapy?"
-→ "This is not a recognized brachytherapy technique."
 ```
 
 ### 🌐 Web Interface
