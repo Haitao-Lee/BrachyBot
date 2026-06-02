@@ -729,6 +729,14 @@ class BrachyAgent:
         except ImportError as e:
             logger.warning(f"WebFetchTool not available: {e}")
 
+        # Unified web access tool (combines search + fetch + evidence chain)
+        try:
+            from tool_factory.web_access import WebAccessTool
+            self.registry.register(WebAccessTool())
+            logger.info("WebAccessTool registered for unified web access")
+        except ImportError as e:
+            logger.warning(f"WebAccessTool not available: {e}")
+
         logger.info(f"Registered {len(self.registry.tool_names)} tools: {self.registry.tool_names}")
     
     def _execute_tool_with_memory(self, tool_name: str, params: Dict, progress_callback=None) -> Any:

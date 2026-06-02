@@ -1520,18 +1520,31 @@ print('EnhancedAgentIntegration: OK')
 
 BrachyBot's architecture is inspired by and builds upon the following open-source projects and research:
 
-- **[DeepRare](https://github.com/MAGIC-AI4Med/DeepRare)** — Nature 2026, rare disease diagnosis agent with traceable reasoning
-- **[MedAgent-Pro](https://github.com/jinlab-imvr/MedAgent-Pro)** — ICLR 2026, evidence-based multi-modal medical diagnosis
+### Agent Architecture
 - **[GenericAgent](https://github.com/lsdefine/GenericAgent)** — Self-evolving agent with layered memory and SOP crystallization
 - **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** — NousResearch's self-improving agent with closed learning loop
 - **[Reflexion](https://arxiv.org/abs/2303.11366)** — Language agents with verbal reinforcement learning
 - **[LATS](https://github.com/lapisrocks/LanguageAgentTreeSearch)** — Language Agent Tree Search (ICML 2024)
 - **[EvoSkills](https://evoskills.net/)** — Self-evolving agent skills via co-evolutionary verification
 - **[SkillOS](https://arxiv.org/abs/2605.06614)** — Learning skill curation for self-evolving agents
+
+### Medical AI
+- **[DeepRare](https://github.com/MAGIC-AI4Med/DeepRare)** — Nature 2026, rare disease diagnosis agent with traceable reasoning
+- **[MedAgent-Pro](https://github.com/jinlab-imvr/MedAgent-Pro)** — ICLR 2026, evidence-based multi-modal medical diagnosis
 - **[VoCo](https://github.com/Luffy03/Large-Scale-Medical)** — Visual Contextual Learning for medical image segmentation
 - **[nnU-Net](https://github.com/MIC-DKFZ/nnUNet)** — Self-adapting framework for medical image segmentation
 - **[TotalSegmentator](https://github.com/wasserth/TotalSegmentator)** — Robust segmentation of 104 anatomical structures
+
+### Web Access & Search
+- **[Agent-Reach](https://github.com/Panniantong/Agent-Reach)** — Multi-platform web access (17 platforms, zero API fees)
+- **[web-access](https://github.com/eze-is/web-access)** — CDP browser automation, site experience accumulation
+- **[bb-browser](https://github.com/epiral/bb-browser)** — Real browser integration with login state preservation
+- **[Higress ai-search](https://github.com/higress-group/higress)** — Intelligent search query optimization and multi-engine support
+
+### Infrastructure
 - **[MCP Protocol](https://modelcontextprotocol.io)** — Model Context Protocol for standardized tool integration
+- **[Jina Reader](https://jina.ai/reader)** — Web page to text conversion service
+- **[PubMed E-utilities](https://www.ncbi.nlm.nih.gov/books/NBK25500/)** — Access to biomedical literature database
 
 We are grateful to all the developers, researchers, and contributors who made these projects available.
 
