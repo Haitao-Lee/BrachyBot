@@ -111,7 +111,7 @@ The tool will:
         return ""
 
     def _execute(self, **kwargs):
-        """Execute web fetch."""
+        """Execute web fetch with multiple strategies."""
         url = kwargs.get("url", "")
         max_length = kwargs.get("max_length", 5000)
 
@@ -141,6 +141,31 @@ The tool will:
 
         logger.info(f"Fetching URL: {url}")
 
+        # Strategy 1: Direct fetch
+        result = self._fetch_direct(url, max_length)
+        if result.success:
+            return result
+
+        # Strategy 2: Try PubMed API for PubMed URLs
+        if 'pubmed.ncbi.nlm.nih.gov' in url:
+            result = self._fetch_pubmed_api(url, max_length)
+            if result.success:
+                return result
+
+        # Strategy 3: Try GitHub API for GitHub URLs
+        if 'github.com' in url:
+            result = self._fetch_github_api(url, max_length)
+            if result.success:
+                return result
+
+        # All strategies failed
+        return ToolResult(
+            success=False,
+            message=f"Failed to fetch URL after trying multiple strategies"
+        )
+
+    def _fetch_direct(self, url: str, max_length: int) -> ToolResult:
+        """Direct HTTP fetch."""
         try:
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -152,52 +177,86 @@ The tool will:
             status_code = response.status_code
 
             if status_code != 200:
-                return ToolResult(
-                    success=False,
-                    message=f"HTTP {status_code}: Failed to fetch URL"
-                )
+                return ToolResult(success=False, message=f"HTTP {status_code}")
 
             content_type = response.headers.get('content-type', '')
 
             # Handle different content types
             if 'application/json' in content_type:
-                # JSON response - return as-is
                 text = response.text[:max_length]
                 title = "JSON Response"
             elif 'text/plain' in content_type or 'text/markdown' in content_type:
-                # Plain text - return as-is
                 text = response.text[:max_length]
                 title = self._extract_title(response.text) or "Text Document"
             else:
-                # HTML - convert to text
                 html = response.text
                 title = self._extract_title(html) or "Web Page"
                 text = self._html_to_text(html)[:max_length]
 
             return ToolResult(
                 success=True,
-                data={
-                    "url": url,
-                    "title": title,
-                    "content": text,
-                    "status_code": status_code
-                },
+                data={"url": url, "title": title, "content": text, "status_code": status_code},
                 message=f"Fetched: {title}"
             )
 
         except requests.Timeout:
-            return ToolResult(
-                success=False,
-                message="Request timed out (10s)"
-            )
-        except requests.RequestException as e:
-            return ToolResult(
-                success=False,
-                message=f"Request failed: {str(e)}"
-            )
+            return ToolResult(success=False, message="Request timed out")
         except Exception as e:
-            logger.error(f"Web fetch error: {e}")
-            return ToolResult(
-                success=False,
-                message=f"Error: {str(e)}"
-            )
+            return ToolResult(success=False, message=str(e))
+
+    def _fetch_pubmed_api(self, url: str, max_length: int) -> ToolResult:
+        """Fetch PubMed article using API."""
+        import re
+        # Extract PMID from URL
+        match = re.search(r'/(\d+)/?$', url)
+        if not match:
+            return ToolResult(success=False, message="Cannot extract PMID from URL")
+
+        pmid = match.group(1)
+        try:
+            # Use PubMed E-utilities API
+            api_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={pmid}&rettype=abstract&retmode=text"
+            response = requests.get(api_url, timeout=10)
+
+            if response.status_code == 200:
+                text = response.text[:max_length]
+                # Extract title
+                title_match = re.search(r'\d+\.\s+(.+?)\.', text)
+                title = title_match.group(1) if title_match else f"PubMed {pmid}"
+
+                return ToolResult(
+                    success=True,
+                    data={"url": url, "title": title, "content": text, "status_code": 200, "source": "PubMed API"},
+                    message=f"Fetched PubMed article: {pmid}"
+                )
+
+            return ToolResult(success=False, message="PubMed API failed")
+        except Exception as e:
+            return ToolResult(success=False, message=str(e))
+
+    def _fetch_github_api(self, url: str, max_length: int) -> ToolResult:
+        """Fetch GitHub content using API."""
+        import re
+        # Extract owner/repo from URL
+        match = re.search(r'github\.com/([^/]+)/([^/]+)', url)
+        if not match:
+            return ToolResult(success=False, message="Cannot parse GitHub URL")
+
+        owner, repo = match.group(1), match.group(2)
+        try:
+            # Get README via API
+            api_url = f"https://api.github.com/repos/{owner}/{repo}/readme"
+            headers = {'Accept': 'application/vnd.github.v3.raw'}
+            response = requests.get(api_url, headers=headers, timeout=10)
+
+            if response.status_code == 200:
+                text = response.text[:max_length]
+                return ToolResult(
+                    success=True,
+                    data={"url": url, "title": f"{owner}/{repo} README", "content": text, "status_code": 200, "source": "GitHub API"},
+                    message=f"Fetched GitHub README: {owner}/{repo}"
+                )
+
+            return ToolResult(success=False, message="GitHub API failed")
+        except Exception as e:
+            return ToolResult(success=False, message=str(e))
