@@ -1310,15 +1310,19 @@ class BrachyAgent:
         # Strip transitional phrases from response (both full and prefix)
         if final_response:
             _transitional_patterns = [
-                r'^(?:我来为你[查搜].*?[。\n]|我来帮你[查搜].*?[。\n])',
+                # Chinese transitional phrases (with optional "好的，" prefix)
+                r'^(?:好的[，,]?\s*)?(?:我来为你[查搜].*?[。\n]|我来帮你[查搜].*?[。\n])',
+                r'^(?:好的[，,]?\s*)?(?:我.{0,5}(?:帮你|为您)[查搜].*?[。\n])',
+                r'^(?:好的[，,]?\s*)?(?:让我用.*?工具.*?[查搜].*?[。\n])',
+                r'^(?:好的[，,]?\s*)?(?:让我.*?[查搜].*?[。\n])',
+                r'^(?:知识库.*?[。]?\s*)(?:让我.*?[查搜].*?[。\n])',
+                # English transitional phrases
                 r'^(?:I.{0,5}(?:search|look|find) for you.*?[.\n]|Let me (?:search|find|look|check).*?[.\n])',
-                r'^(?:我.{0,5}(?:帮你|为您)[查搜].*?[。\n])',
-                r'^(?:让我用.*?工具.*?[查搜].*?[。\n])',
-                r'^(?:让我.*?[查搜].*?[。\n])',
+                r'^(?:Sure[,.]?\s*)?Let me (?:search|find|look|check|query).*?[.\n]',
             ]
             original = final_response
             for _pat in _transitional_patterns:
-                final_response = re.sub(_pat, '', final_response, count=1, flags=re.IGNORECASE).strip()
+                final_response = re.sub(_pat, '', final_response, count=1, flags=re.IGNORECASE | re.DOTALL).strip()
                 if final_response != original:
                     logger.info(f"Stripped transitional prefix")
                     break
