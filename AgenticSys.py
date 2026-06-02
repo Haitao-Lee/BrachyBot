@@ -2265,6 +2265,37 @@ class BrachyAgent:
                                             result_text += f"  Source: {url}\n"
                                 if sources:
                                     result_text += f"\nSources: {', '.join(sources[:3])}"
+                            # Special handling for web_access - include actual results
+                            elif tool_name == "web_access" and hasattr(result, "data") and result.data:
+                                data = result.data
+                                action = params.get("action", "search")
+                                if action == "search":
+                                    answer = data.get("answer", "")
+                                    sources = data.get("sources", [])
+                                    if answer:
+                                        result_text = answer
+                                    if sources:
+                                        result_text += f"\nSources: {', '.join(sources[:3])}"
+                                elif action == "fetch":
+                                    title = data.get("title", "")
+                                    content = data.get("content", "")[:1000]
+                                    source = data.get("source", "")
+                                    result_text = f"Fetched: {title}\n"
+                                    if content:
+                                        result_text += f"Content:\n{content}\n"
+                                    if source:
+                                        result_text += f"Source: {source}"
+                            # Special handling for web_fetch - include actual content
+                            elif tool_name == "web_fetch" and hasattr(result, "data") and result.data:
+                                data = result.data
+                                title = data.get("title", "")
+                                content = data.get("content", "")[:1000]
+                                source = data.get("source", "")
+                                result_text = f"Fetched: {title}\n"
+                                if content:
+                                    result_text += f"Content:\n{content}\n"
+                                if source:
+                                    result_text += f"Source: {source}"
                             elif tool_name == "code_executor" and hasattr(result, "data") and result.data:
                                 stdout = result.data.get("stdout", "").strip()
                                 if stdout:
