@@ -180,7 +180,7 @@ GitHub Integration:
                 "skip_disambig": 1
             }
 
-            response = requests.get(api_url, params=params, timeout=5)  # 5秒超时
+            response = requests.get(api_url, params=params, timeout=5)  # 5s timeout
             if response.status_code == 200:
                 data = response.json()
 
@@ -214,7 +214,7 @@ GitHub Integration:
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                 }
-                response = requests.get(search_url, headers=headers, timeout=8)  # 8秒超时
+                response = requests.get(search_url, headers=headers, timeout=8)  # 8s timeout
                 if response.status_code == 200:
                     # Simple extraction of results
                     text = response.text
@@ -240,7 +240,7 @@ GitHub Integration:
         if not results:
             try:
                 wiki_url = "https://en.wikipedia.org/api/rest_v1/page/summary/" + quote_plus(query)
-                response = requests.get(wiki_url, timeout=3)  # 3秒超时
+                response = requests.get(wiki_url, timeout=3)  # 3s timeout
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("extract"):
@@ -338,7 +338,7 @@ GitHub Integration:
 
     def _search_baidu(self, query: str, max_results: int = 5) -> List[Dict]:
         """
-        Search using Baidu (百度).
+        Search using Baidu.
         Accessible from China without API key.
         """
         results = []
