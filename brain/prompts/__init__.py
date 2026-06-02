@@ -1,15 +1,10 @@
-from .role_prompts import (
-    PLANNER_PROMPT,
-    CLINICAL_DECIDER_PROMPT,
-    QUALITY_DECIDER_PROMPT,
-    SEGMENTATION_PROMPT,
-    EVALUATION_PROMPT,
-)
+"""
+Brain prompts - centralized in config/prompts/.
 
-__all__ = [
-    "PLANNER_PROMPT",
-    "CLINICAL_DECIDER_PROMPT",
-    "QUALITY_DECIDER_PROMPT",
-    "SEGMENTATION_PROMPT",
-    "EVALUATION_PROMPT",
-]
+For the main system prompt, use:
+    from config.prompts import SYSTEM_PROMPT_TEMPLATE
+"""
+
+from config.prompts import SYSTEM_PROMPT_TEMPLATE
+
+__all__ = ["SYSTEM_PROMPT_TEMPLATE"]

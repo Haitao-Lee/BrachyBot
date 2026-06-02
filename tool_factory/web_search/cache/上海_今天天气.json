@@ -1,0 +1,23 @@
+{
+  "query": "上海 今天天气",
+  "timestamp": 1780394984.6591008,
+  "result": {
+    "success": true,
+    "results": [],
+    "answer": "I searched for '上海 今天天气' but couldn't find specific information. This may be a question that requires specialized knowledge or access to specific databases I don't have.",
+    "sources": [],
+    "evidence_chain_id": "20260602_180943_368757",
+    "evidence_summary": {
+      "response_id": "20260602_180943_368757",
+      "query": "上海 今天天气",
+      "created_at": "2026-06-02T18:09:43.368772",
+      "num_sources": 0,
+      "source_types": [],
+      "avg_confidence": 0.0,
+      "verification_status": "unverified",
+      "citations": [],
+      "evidence": []
+    },
+    "citations": []
+  }
+}
