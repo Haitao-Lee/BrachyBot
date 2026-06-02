@@ -1324,8 +1324,8 @@ class BrachyAgent:
             if not final_response.strip() and raw_final.strip():
                 final_response = ""
 
-        # Strip transitional phrases from response
-        if final_response and tools_executed:
+        # Strip transitional phrases from response (always run, not just when tools executed)
+        if final_response:
             # Split into sentences, filter out transitional ones, keep substantive ones
             # Sentence terminators: 。！？.!?\n and ：(Chinese colon when used as terminator)
             sentences = re.split(r'(?<=[。！？.!?\n：])\s*', final_response.strip())
