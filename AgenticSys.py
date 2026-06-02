@@ -881,6 +881,27 @@ class BrachyAgent:
                         p["code"] = p.pop(alias)
                 if not p.get("code", "").strip():
                     continue
+            elif tn == "web_search":
+                # Validate required parameters for web_search
+                if not p.get("query", "").strip():
+                    logger.warning(f"Dropping web_search call with empty query")
+                    continue
+            elif tn == "web_access":
+                # Validate required parameters for web_access
+                if not p.get("action"):
+                    logger.warning(f"Dropping web_access call with no action")
+                    continue
+                if p.get("action") == "search" and not p.get("query", "").strip():
+                    logger.warning(f"Dropping web_access search with empty query")
+                    continue
+                if p.get("action") == "fetch" and not p.get("url", "").strip():
+                    logger.warning(f"Dropping web_access fetch with no URL")
+                    continue
+            elif tn == "web_fetch":
+                # Validate required parameters for web_fetch
+                if not p.get("url", "").strip():
+                    logger.warning(f"Dropping web_fetch call with no URL")
+                    continue
             valid.append(tc)
         return valid
 
