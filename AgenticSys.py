@@ -36,7 +36,7 @@ import SimpleITK as sitk
 
 logger = logging.getLogger(__name__)
 
-from config.prompts import SYSTEM_PROMPT_TEMPLATE
+from config.prompts import SYSTEM_PROMPT_TEMPLATE, get_prompt_modules
 
 
 class PlanningPhase(Enum):
@@ -993,6 +993,10 @@ class BrachyAgent:
             clean_context=self.memory.get_clean_context(),
         )
 
+        # Inject relevant prompt modules based on message content
+        prompt_modules = get_prompt_modules(message)
+        if prompt_modules:
+            system_prompt += "\n\n" + prompt_modules
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -1106,6 +1110,12 @@ class BrachyAgent:
             enhanced_context=enhanced_context,
             clean_context=self.memory.get_clean_context(),
         )
+
+        # Inject relevant prompt modules based on message content
+        prompt_modules = get_prompt_modules(message)
+        if prompt_modules:
+            system_prompt += "\n\n" + prompt_modules
+
         if messages and messages[0].get("role") == "system":
             messages[0]["content"] = system_prompt
         else:
@@ -1533,6 +1543,10 @@ class BrachyAgent:
             clean_context=self.memory.get_clean_context(),
         )
 
+        # Inject relevant prompt modules based on message content
+        prompt_modules = get_prompt_modules(message)
+        if prompt_modules:
+            system_prompt += "\n\n" + prompt_modules
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -1648,6 +1662,12 @@ class BrachyAgent:
             enhanced_context=enhanced_context,
             clean_context=self.memory.get_clean_context(),
         )
+
+        # Inject relevant prompt modules based on message content
+        prompt_modules = get_prompt_modules(message)
+        if prompt_modules:
+            system_prompt += "\n\n" + prompt_modules
+
         if messages and messages[0].get("role") == "system":
             messages[0]["content"] = system_prompt
         else:
