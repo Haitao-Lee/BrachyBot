@@ -290,30 +290,47 @@ GitHub Integration:
             try:
                 search_url = f"https://cn.bing.com/search?q={quote_plus(query)}"
                 headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 }
-                response = requests.get(search_url, headers=headers, timeout=5)
+                response = requests.get(search_url, headers=headers, timeout=10)
                 if response.status_code == 200:
                     text = response.text
                     # Extract results from cn.bing.com
-                    result_pattern = r'<li class="b_algo">(.*?)</li>'
+                    # Note: b_algo li tags have extra attributes like data-id, so use flexible pattern
+                    result_pattern = r'<li\s+class="b_algo"[^>]*>(.*?)</li>'
                     result_blocks = re.findall(result_pattern, text, re.DOTALL)
+                    logger.info(f"Bing CN: found {len(result_blocks)} result blocks")
 
                     for block in result_blocks[:max_results]:
-                        title_match = re.search(r'<h2><a[^>]*href="([^"]*)"[^>]*>(.*?)</a></h2>', block)
-                        if title_match:
-                            url = title_match.group(1)
-                            title = re.sub(r'<[^>]+>', '', title_match.group(2)).strip()
-                            snippet_match = re.search(r'<p[^>]*>(.*?)</p>', block, re.DOTALL)
-                            snippet = re.sub(r'<[^>]+>', '', snippet_match.group(1)).strip() if snippet_match else ""
+                        # Extract URL from <a> tag inside <h2>
+                        url_match = re.search(r'<h2[^>]*>\s*<a[^>]*href="([^"]*)"[^>]*>', block, re.DOTALL)
+                        if not url_match:
+                            url_match = re.search(r'<a[^>]*href="([^"]*)"[^>]*>[^<]*<strong>', block, re.DOTALL)
+                        url = url_match.group(1) if url_match else ""
 
-                            if title:
-                                results.append({
-                                    "title": title[:200],
-                                    "snippet": snippet[:300] if snippet else "",
-                                    "url": url,
-                                    "source": "Bing CN"
-                                })
+                        # Extract title text (strip HTML tags including <strong>)
+                        title_match = re.search(r'<h2[^>]*>(.*?)</h2>', block, re.DOTALL)
+                        if title_match:
+                            title = re.sub(r'<[^>]+>', '', title_match.group(1)).strip()
+                        else:
+                            title = ""
+
+                        # Extract snippet from <p> or <div class="b_caption">
+                        snippet_match = re.search(r'<p[^>]*>(.*?)</p>', block, re.DOTALL)
+                        if not snippet_match:
+                            snippet_match = re.search(r'<div[^>]*class="b_caption"[^>]*>(.*?)</div>', block, re.DOTALL)
+                        snippet = re.sub(r'<[^>]+>', '', snippet_match.group(1)).strip() if snippet_match else ""
+                        # Clean up HTML entities
+                        snippet = snippet.replace('&ensp;', ' ').replace('&#0183;', '·').replace('&nbsp;', ' ')
+
+                        if title and url:
+                            results.append({
+                                "title": title[:200],
+                                "snippet": snippet[:300] if snippet else "",
+                                "url": url,
+                                "source": "Bing CN"
+                            })
+                    logger.info(f"Bing CN: extracted {len(results)} results")
             except Exception as e:
                 logger.warning(f"Bing CN error: {e}")
 
