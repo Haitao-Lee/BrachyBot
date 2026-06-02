@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # Blocked commands for safety
 BLOCKED_COMMANDS = [
     "rm -rf /", "rm -rf /*", "mkfs", "dd if=", ":(){", "fork",
-    "chmod -R 777 /", "wget", "curl", "ssh", "scp", "ftp",
+    "chmod -R 777 /", "ssh", "scp", "ftp",
     "shutdown", "reboot", "halt", "poweroff", "init 0", "init 6",
 ]
 
@@ -32,6 +32,7 @@ ALLOWED_PATTERNS = [
     "pwd", "whoami", "date", "uname",
     "mkdir", "touch", "cp", "mv",
     "git", "svn",
+    "curl", "wget",
 ]
 
 
