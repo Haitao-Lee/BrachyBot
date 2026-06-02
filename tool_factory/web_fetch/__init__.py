@@ -146,8 +146,8 @@ The tool will:
         if result.success:
             return result
 
-        # Strategy 2: Try PubMed API for PubMed URLs
-        if 'pubmed.ncbi.nlm.nih.gov' in url:
+        # Strategy 2: Try PubMed API for PubMed/Nature URLs
+        if 'pubmed.ncbi.nlm.nih.gov' in url or 'nature.com' in url:
             result = self._fetch_pubmed_api(url, max_length)
             if result.success:
                 return result
@@ -205,14 +205,46 @@ The tool will:
             return ToolResult(success=False, message=str(e))
 
     def _fetch_pubmed_api(self, url: str, max_length: int) -> ToolResult:
-        """Fetch PubMed article using API."""
+        """Fetch PubMed article using API. Supports PubMed URLs and Nature URLs with DOI."""
         import re
-        # Extract PMID from URL
-        match = re.search(r'/(\d+)/?$', url)
-        if not match:
-            return ToolResult(success=False, message="Cannot extract PMID from URL")
 
-        pmid = match.group(1)
+        pmid = None
+        doi = None
+
+        # Try to extract PMID from URL
+        match = re.search(r'/(\d+)/?$', url)
+        if match:
+            pmid = match.group(1)
+
+        # If no PMID, try to extract DOI from Nature URL
+        if not pmid and 'nature.com' in url:
+            doi_match = re.search(r'(10\.\d{4,}/[^\s]+)', url)
+            if doi_match:
+                doi = doi_match.group(1)
+            else:
+                # Nature article ID format: s41586-025-10097-9
+                art_match = re.search(r'articles/(s\d+-\d+-\d+-\d+)', url)
+                if art_match:
+                    doi = f"10.1038/{art_match.group(1)}"
+
+        if not pmid and not doi:
+            return ToolResult(success=False, message="Cannot extract PMID or DOI from URL")
+
+        # If we have DOI but no PMID, look up PMID via DOI
+        if doi and not pmid:
+            try:
+                search_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term={doi}&retmode=json"
+                resp = requests.get(search_url, timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    ids = data.get("esearchresult", {}).get("idlist", [])
+                    if ids:
+                        pmid = ids[0]
+            except Exception:
+                pass
+
+        if not pmid:
+            return ToolResult(success=False, message="Could not find PubMed ID for this article")
         try:
             # Use PubMed E-utilities API
             api_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={pmid}&rettype=abstract&retmode=text"
