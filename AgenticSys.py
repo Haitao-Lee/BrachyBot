@@ -1285,6 +1285,20 @@ class BrachyAgent:
             if not final_response.strip() and raw_final.strip():
                 final_response = ""
 
+        # Detect transitional phrases that aren't real responses
+        _transitional_patterns = [
+            r'^我来为你[查搜]',
+            r'^I.{0,5}search for you',
+            r'^Let me (search|find|look|check)',
+            r'^我.{0,5}(帮你|为您)[查搜]',
+        ]
+        if final_response and tools_executed:
+            for _pat in _transitional_patterns:
+                if re.match(_pat, final_response.strip(), re.IGNORECASE):
+                    logger.warning(f"Detected transitional phrase as final response, clearing: {final_response[:50]}")
+                    final_response = ""
+                    break
+
         if not final_response:
             if tools_executed:
                 # Extract tool results from messages to provide a useful fallback
