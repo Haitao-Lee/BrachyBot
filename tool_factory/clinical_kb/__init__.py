@@ -118,13 +118,14 @@ Capabilities:
 - protocol: Get treatment protocol recommendations
 - benchmark: Check plan quality against benchmarks
 - search: Search the knowledge base by keyword
+- guidelines: Search authoritative guidelines (AAPM, ABS, GEC-ESTRO, Chinese) by keyword — returns only matching sections with source citations
 - add: Add new knowledge entry"""
 
     input_schema = {
         "action": {
             "type": "string",
-            "description": "Action: constraints, tolerance, protocol, benchmark, search, add",
-            "enum": ["constraints", "tolerance", "protocol", "benchmark", "search", "add"]
+            "description": "Action: constraints, tolerance, protocol, benchmark, search, guidelines, add",
+            "enum": ["constraints", "tolerance", "protocol", "benchmark", "search", "guidelines", "add"]
         },
         "organ": {"type": "string", "description": "Organ or cancer type name"},
         "keyword": {"type": "string", "description": "Search keyword"},
@@ -301,10 +302,41 @@ Capabilities:
             message=f"Added '{key}' to '{category}'"
         )
 
+    def _search_guidelines(self, keyword: str) -> ToolResult:
+        """Search the guidelines markdown file by keyword, returning only matching sections."""
+        guidelines_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "clinical_kb", "guidelines_brachytherapy.md")
+        if not os.path.exists(guidelines_path):
+            return ToolResult(success=False, message="Guidelines file not found")
+
+        with open(guidelines_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Split into sections by ## § headers (skip preamble before first section)
+        import re
+        parts = re.split(r'\n(?=## §)', content)
+        sections = [p for p in parts if p.strip().startswith('## §')]
+        keyword_lower = keyword.lower()
+
+        matched = []
+        for section in sections:
+            if keyword_lower in section.lower():
+                # Trim to reasonable length
+                trimmed = section[:2000] if len(section) > 2000 else section
+                matched.append(trimmed)
+
+        if not matched:
+            return ToolResult(success=True, message=f"No guideline sections match '{keyword}'", data={"keyword": keyword, "results": []})
+
+        return ToolResult(
+            success=True,
+            data={"keyword": keyword, "results": matched[:3], "total": len(matched)},
+            message=f"Found {len(matched)} guideline section(s) for '{keyword}'"
+        )
+
     def _execute(self, **kwargs) -> ToolResult:
         action = kwargs.get("action", "")
         if not action:
-            return ToolResult(success=False, error="No action", message="Specify: constraints, tolerance, protocol, benchmark, search, add")
+            return ToolResult(success=False, error="No action", message="Specify: constraints, tolerance, protocol, benchmark, search, guidelines, add")
 
         if action == "constraints":
             return self._get_constraints(kwargs.get("organ", ""))
@@ -316,7 +348,9 @@ Capabilities:
             return self._check_benchmark(kwargs.get("data", {}))
         elif action == "search":
             return self._search_kb(kwargs.get("keyword", ""))
+        elif action == "guidelines":
+            return self._search_guidelines(kwargs.get("keyword", ""))
         elif action == "add":
             return self._add_entry(kwargs.get("data", {}))
         else:
-            return ToolResult(success=False, error=f"Unknown action: {action}", message="Valid: constraints, tolerance, protocol, benchmark, search, add")
+            return ToolResult(success=False, error=f"Unknown action: {action}", message="Valid: constraints, tolerance, protocol, benchmark, search, guidelines, add")
