@@ -976,6 +976,27 @@ class BrachyAgent:
             "- Report the error honestly to the user\n"
             "- Do NOT fill in the gap with made-up information\n"
             "- Suggest alternative approaches or tools\n\n"
+            "## 🚫 SEARCH RESULTS USAGE RULES (ZERO TOLERANCE FOR FABRICATION)\n"
+            "When you use web_search or any search tool, you MUST follow these rules ABSOLUTELY:\n\n"
+            "**ONLY use information explicitly stated in search results:**\n"
+            "- If search result says 'Nature' → write 'Nature' (NOT 'Nature Medicine')\n"
+            "- If search result says DOI is 'X' → write 'X' (NOT make up a different DOI)\n"
+            "- If search result says title is 'Y' → write 'Y' (NOT paraphrase or change it)\n"
+            "- If search result doesn't mention something → DO NOT add it\n\n"
+            "**NEVER fabricate details not in search results:**\n"
+            "- ❌ Do NOT invent journal names, DOIs, or publication dates\n"
+            "- ❌ Do NOT make up author names or affiliations\n"
+            "- ❌ Do NOT create plausible-sounding but unverified statistics\n"
+            "- ❌ Do NOT add context from your training data that isn't in the results\n\n"
+            "**When search results are limited:**\n"
+            "- Say 'Based on the search results, I found limited information...'\n"
+            "- ONLY present what the search results actually contain\n"
+            "- If you need more details, say 'The search results don't include [X], would you like me to search more specifically?'\n"
+            "- NEVER fill gaps with fabricated information\n\n"
+            "**Citation verification:**\n"
+            "- Every fact you state must be traceable to a specific search result\n"
+            "- Include the source URL for verification\n"
+            "- If you cannot verify a fact, say 'I cannot verify this from the search results'\n\n"
             "## 🔍 Handling Vague or Ambiguous Requests (CRITICAL)\n"
             "When a user's request is vague, overly broad, or missing essential details, DO NOT guess or jump to a specific technical answer.\n"
             "Instead, you MUST:\n"
@@ -1067,6 +1088,15 @@ class BrachyAgent:
             "\n"
             "  **After successful search**: Present information CONFIDENTLY. Do NOT say 'I'm not sure' or 'I'm uncertain'.\n"
             "  **Only if search fails**: Say 'I searched but could not find reliable information about this.'\n"
+            "\n"
+            "  🚫 **ZERO TOLERANCE FOR FABRICATION** (CRITICAL - MUST FOLLOW):\n"
+            "  When using search results, you MUST:\n"
+            "  - ONLY state facts that are EXPLICITLY in the search results\n"
+            "  - NEVER invent journal names, DOIs, publication dates, or author names\n"
+            "  - NEVER add details from your training data that aren't in the results\n"
+            "  - If search result says 'Nature' → write 'Nature' (NOT 'Nature Medicine')\n"
+            "  - If search result doesn't mention something → DO NOT add it\n"
+            "  - When in doubt, say 'Based on the search results, I found limited information...'\n"
             "\n"
             "## ⚠️ CRITICAL: Evidence Citation Requirements\n"
             "When using ANY information from web search results, you MUST:\n"
@@ -1510,6 +1540,67 @@ class BrachyAgent:
         cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
         return cleaned
 
+    def _verify_response_against_sources(self, response: str, tool_results: List[Dict]) -> Tuple[bool, List[str]]:
+        """
+        Verify that response doesn't contain fabricated information.
+        Returns (is_valid, list_of_issues).
+        """
+        issues = []
+
+        # Extract all search results content
+        search_content = ""
+        for result in tool_results:
+            if result.get("tool") == "web_search":
+                search_content += result.get("result", "") + " "
+
+        if not search_content:
+            return True, []  # No search results to verify against
+
+        # Check for common fabrication patterns
+        # 1. Check DOI patterns - if response contains a DOI, verify it's in search results
+        doi_pattern = r'10\.\d{4,}/[^\s]+'
+        dois_in_response = re.findall(doi_pattern, response)
+        dois_in_search = re.findall(doi_pattern, search_content)
+
+        for doi in dois_in_response:
+            if doi not in dois_in_search:
+                issues.append(f"Fabricated DOI detected: {doi} (not in search results)")
+
+        # 2. Check for journal names not in search results
+        journal_patterns = [
+            r'Nature Medicine',
+            r'New England Journal of Medicine',
+            r'The Lancet',
+            r'JAMA',
+            r'British Medical Journal',
+        ]
+        for journal in journal_patterns:
+            if journal.lower() in response.lower() and journal.lower() not in search_content.lower():
+                issues.append(f"Journal '{journal}' not found in search results")
+
+        # 3. Check for specific numbers that might be fabricated
+        # Look for "PMID: XXXXXXXX" patterns
+        pmid_pattern = r'PMID:\s*(\d+)'
+        pmids_in_response = re.findall(pmid_pattern, response)
+        pmids_in_search = re.findall(pmid_pattern, search_content)
+
+        for pmid in pmids_in_response:
+            if pmid not in pmids_in_search:
+                issues.append(f"Fabricated PMID: {pmid} (not in search results)")
+
+        # 4. Check for year patterns that might be fabricated
+        year_pattern = r'\b(20[12]\d)\b'
+        years_in_response = re.findall(year_pattern, response)
+        years_in_search = re.findall(year_pattern, search_content)
+
+        # Only flag years that are very specific and not in search results
+        for year in years_in_response:
+            if year not in years_in_search and year not in ['2024', '2025', '2026']:
+                # Years like 2024-2026 are reasonable, others might be fabricated
+                pass  # Don't flag years as they're often general knowledge
+
+        return len(issues) == 0, issues
+
     def _run_llm_function_calling_stream(self, message: str, steps: List[Dict], step_id_ref: List[int], yield_event):
         """
         Streaming version of _run_llm_function_calling.
@@ -1626,6 +1717,27 @@ class BrachyAgent:
             "- Report the error honestly to the user\n"
             "- Do NOT fill in the gap with made-up information\n"
             "- Suggest alternative approaches or tools\n\n"
+            "## 🚫 SEARCH RESULTS USAGE RULES (ZERO TOLERANCE FOR FABRICATION)\n"
+            "When you use web_search or any search tool, you MUST follow these rules ABSOLUTELY:\n\n"
+            "**ONLY use information explicitly stated in search results:**\n"
+            "- If search result says 'Nature' → write 'Nature' (NOT 'Nature Medicine')\n"
+            "- If search result says DOI is 'X' → write 'X' (NOT make up a different DOI)\n"
+            "- If search result says title is 'Y' → write 'Y' (NOT paraphrase or change it)\n"
+            "- If search result doesn't mention something → DO NOT add it\n\n"
+            "**NEVER fabricate details not in search results:**\n"
+            "- ❌ Do NOT invent journal names, DOIs, or publication dates\n"
+            "- ❌ Do NOT make up author names or affiliations\n"
+            "- ❌ Do NOT create plausible-sounding but unverified statistics\n"
+            "- ❌ Do NOT add context from your training data that isn't in the results\n\n"
+            "**When search results are limited:**\n"
+            "- Say 'Based on the search results, I found limited information...'\n"
+            "- ONLY present what the search results actually contain\n"
+            "- If you need more details, say 'The search results don't include [X], would you like me to search more specifically?'\n"
+            "- NEVER fill gaps with fabricated information\n\n"
+            "**Citation verification:**\n"
+            "- Every fact you state must be traceable to a specific search result\n"
+            "- Include the source URL for verification\n"
+            "- If you cannot verify a fact, say 'I cannot verify this from the search results'\n\n"
             "## 🔍 Handling Vague or Ambiguous Requests (CRITICAL)\n"
             "When a user's request is vague, overly broad, or missing essential details, DO NOT guess or jump to a specific technical answer.\n"
             "Instead, you MUST:\n"
@@ -1717,6 +1829,15 @@ class BrachyAgent:
             "\n"
             "  **After successful search**: Present information CONFIDENTLY. Do NOT say 'I'm not sure' or 'I'm uncertain'.\n"
             "  **Only if search fails**: Say 'I searched but could not find reliable information about this.'\n"
+            "\n"
+            "  🚫 **ZERO TOLERANCE FOR FABRICATION** (CRITICAL - MUST FOLLOW):\n"
+            "  When using search results, you MUST:\n"
+            "  - ONLY state facts that are EXPLICITLY in the search results\n"
+            "  - NEVER invent journal names, DOIs, publication dates, or author names\n"
+            "  - NEVER add details from your training data that aren't in the results\n"
+            "  - If search result says 'Nature' → write 'Nature' (NOT 'Nature Medicine')\n"
+            "  - If search result doesn't mention something → DO NOT add it\n"
+            "  - When in doubt, say 'Based on the search results, I found limited information...'\n"
             "\n"
             "## ⚠️ CRITICAL: Evidence Citation Requirements\n"
             "When using ANY information from web search results, you MUST:\n"
@@ -2165,6 +2286,15 @@ class BrachyAgent:
             # Fall back to a sensible default
             if not final_response.strip() and raw_final.strip():
                 final_response = ""
+
+            # Verify response against search results to detect fabrication
+            if final_response and tools_executed:
+                is_valid, issues = self._verify_response_against_sources(final_response, steps)
+                if not is_valid:
+                    logger.warning(f"Potential fabrication detected: {issues}")
+                    # Add a warning to the response
+                    warning = "\n\n⚠️ 注意：以上回答中包含的信息可能不完全准确，建议核实来源。"
+                    final_response += warning
             step_id_ref[0] += 1
             response_step = {
                 "id": step_id_ref[0],
