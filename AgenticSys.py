@@ -1126,6 +1126,7 @@ class BrachyAgent:
         final_response = ""
         tools_executed = False
         accumulated_text = ""  # Preserve text across LLM iterations
+        _failed_tools = set()  # Track tools that returned 0/empty results
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         total_latency_ms = 0.0
         llm_calls = 0
@@ -1220,6 +1221,12 @@ class BrachyAgent:
                 params = tc.get("params", {})
                 tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
 
+                # Skip duplicate tool calls that already failed (returned 0/empty)
+                _tool_key = f"{tool_name}:{json.dumps(params, sort_keys=True, default=str)[:100]}"
+                if _tool_key in _failed_tools:
+                    logger.info(f"Skipping duplicate failed tool call: {tool_name}")
+                    continue
+
                 step_id_ref[0] += 1
                 steps.append({
                     "id": step_id_ref[0],
@@ -1269,6 +1276,11 @@ class BrachyAgent:
                 steps[-1]["status"] = step_status
                 steps[-1]["result"] = result_text[:200]
 
+                # Track tools that returned 0 results to prevent retry loops
+                if result_text and ("Found 0" in result_text or "0 match" in result_text or "No results" in result_text):
+                    _failed_tools.add(_tool_key)
+                    logger.info(f"Tool {tool_name} returned 0 results, marking as failed")
+
                 # Append tool call and result to messages in Anthropic-compatible format
                 tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
                 messages.append({
@@ -1295,19 +1307,26 @@ class BrachyAgent:
             if not final_response.strip() and raw_final.strip():
                 final_response = ""
 
-        # Detect transitional phrases that aren't real responses
-        _transitional_patterns = [
-            r'^我来为你[查搜]',
-            r'^I.{0,5}search for you',
-            r'^Let me (search|find|look|check)',
-            r'^我.{0,5}(帮你|为您)[查搜]',
-        ]
-        if final_response and tools_executed:
+        # Strip transitional phrases from response (both full and prefix)
+        if final_response:
+            _transitional_patterns = [
+                r'^(?:我来为你[查搜].*?[。\n]|我来帮你[查搜].*?[。\n])',
+                r'^(?:I.{0,5}(?:search|look|find) for you.*?[.\n]|Let me (?:search|find|look|check).*?[.\n])',
+                r'^(?:我.{0,5}(?:帮你|为您)[查搜].*?[。\n])',
+                r'^(?:让我用.*?工具.*?[查搜].*?[。\n])',
+                r'^(?:让我.*?[查搜].*?[。\n])',
+            ]
+            original = final_response
             for _pat in _transitional_patterns:
-                if re.match(_pat, final_response.strip(), re.IGNORECASE):
-                    logger.warning(f"Detected transitional phrase as final response, clearing: {final_response[:50]}")
-                    final_response = ""
+                final_response = re.sub(_pat, '', final_response, count=1, flags=re.IGNORECASE).strip()
+                if final_response != original:
+                    logger.info(f"Stripped transitional prefix")
                     break
+
+            # If stripping left nothing (entire response was transitional), clear it
+            if not final_response and original:
+                logger.warning(f"Entire response was transitional phrase, clearing")
+                final_response = ""
 
         if not final_response:
             if tools_executed:
@@ -1417,6 +1436,9 @@ class BrachyAgent:
         cleaned = re.sub(r'\[search_type[^\]]*\]', '', cleaned, flags=re.DOTALL).strip()
         # Remove web_search completed markers
         cleaned = re.sub(r'web_search completed', '', cleaned).strip()
+        # Remove <function_calls> blocks (empty or with content)
+        cleaned = re.sub(r'<function_calls>.*?</function_calls>', '', cleaned, flags=re.DOTALL).strip()
+        cleaned = re.sub(r'<function_calls>.*', '', cleaned, flags=re.DOTALL).strip()
         # Remove code blocks that are just tool call JSON
         cleaned = re.sub(r'```\s*\n?\{[\'"]tool[\'"].*?\}\s*\n?```', '', cleaned, flags=re.DOTALL).strip()
         # Remove multiple consecutive newlines
@@ -1677,7 +1699,8 @@ class BrachyAgent:
         iteration = 0
         final_response = ""
         tools_executed = False
-        accumulated_text = ""  # Preserve text across LLM iterations for longer responses
+        accumulated_text = ""  # Preserve text across LLM iterations
+        _failed_tools = set()  # Track tools that returned 0/empty results for longer responses
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         total_latency_ms = 0.0
         llm_calls = 0
