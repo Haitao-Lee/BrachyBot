@@ -35,6 +35,7 @@ from urllib.parse import urlparse, quote_plus
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from tool_factory import BaseTool, ToolResult
+from utils.retry import retry_with_backoff, SEARCH_RETRY_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -95,11 +96,12 @@ class UnifiedWebAccess:
 
     def search_pubmed(self, query: str, max_results: int = 5) -> List[SearchResult]:
         """
-        Search PubMed for medical literature.
+        Search PubMed for medical literature with retry logic.
         Most reliable source for clinical queries.
         """
         results = []
-        try:
+
+        def _do_search():
             # Search for IDs
             search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
             params = {
@@ -112,10 +114,19 @@ class UnifiedWebAccess:
 
             response = self.session.get(search_url, params=params, timeout=5)
             if response.status_code != 200:
-                return results
+                return []
 
             data = response.json()
-            ids = data.get("esearchresult", {}).get("idlist", [])
+            return data.get("esearchresult", {}).get("idlist", [])
+
+        try:
+            ids = retry_with_backoff(_do_search, config=SEARCH_RETRY_CONFIG)
+        except Exception as e:
+            logger.warning(f"PubMed search failed after retries: {e}")
+            return results
+
+        if not ids:
+            return results
 
             if not ids:
                 return results
@@ -179,22 +190,24 @@ class UnifiedWebAccess:
 
     def search_github(self, query: str, max_results: int = 5) -> List[SearchResult]:
         """
-        Search GitHub for repositories and code.
+        Search GitHub for repositories and code with retry logic.
         Best for technical and AI/ML topics.
         """
         results = []
-        try:
+
+        def _do_search():
             url = "https://api.github.com/search/repositories"
             params = {"q": query, "sort": "stars", "order": "desc", "per_page": max_results}
             headers = {"Accept": "application/vnd.github.v3+json"}
 
             response = self.session.get(url, params=params, headers=headers, timeout=5)
             if response.status_code != 200:
-                return results
+                return []
 
             data = response.json()
+            items = []
             for item in data.get("items", [])[:max_results]:
-                results.append(SearchResult(
+                items.append(SearchResult(
                     title=item.get("full_name", ""),
                     snippet=item.get("description", "")[:300],
                     url=item.get("html_url", ""),
@@ -202,9 +215,12 @@ class UnifiedWebAccess:
                     confidence=0.75,
                     metadata={"stars": item.get("stargazers_count", 0)}
                 ))
+            return items
 
+        try:
+            results = retry_with_backoff(_do_search, config=SEARCH_RETRY_CONFIG)
         except Exception as e:
-            logger.warning(f"GitHub search error: {e}")
+            logger.warning(f"GitHub search failed after retries: {e}")
 
         return results
 
