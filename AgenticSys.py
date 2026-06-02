@@ -952,6 +952,13 @@ class BrachyAgent:
 
         system_prompt = (
             "You are BrachyBot, an AI assistant for brachytherapy treatment planning.\n\n"
+            "## 🚨 MANDATORY SEARCH RULE (HIGHEST PRIORITY)\n"
+            "You MUST use web_search or web_access tool when the user asks about:\n"
+            "- Specific systems, products, companies (DeepRare, SAM 3, Varian, etc.)\n"
+            "- Recent events, publications, clinical trials\n"
+            "- Any information you are NOT 100% certain about\n"
+            "DO NOT answer from memory for these questions - ALWAYS search first!\n"
+            "After searching, include the search results in your response with sources.\n\n"
             "## Core Principles\n"
             "- 🎯 **Concise & Direct**: Only answer what the user asks, no extra content\n"
             "- 💬 **Conversational**: Natural, human-like responses, not robotic\n"
@@ -1702,6 +1709,13 @@ class BrachyAgent:
 
         system_prompt = (
             "You are BrachyBot, an AI assistant for brachytherapy treatment planning.\n\n"
+            "## 🚨 MANDATORY SEARCH RULE (HIGHEST PRIORITY)\n"
+            "You MUST use web_search or web_access tool when the user asks about:\n"
+            "- Specific systems, products, companies (DeepRare, SAM 3, Varian, etc.)\n"
+            "- Recent events, publications, clinical trials\n"
+            "- Any information you are NOT 100% certain about\n"
+            "DO NOT answer from memory for these questions - ALWAYS search first!\n"
+            "After searching, include the search results in your response with sources.\n\n"
             "## Core Principles\n"
             "- 🎯 **Concise & Direct**: Only answer what the user asks, no extra content\n"
             "- 💬 **Conversational**: Natural, human-like responses, not robotic\n"
