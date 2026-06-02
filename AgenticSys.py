@@ -2151,16 +2151,6 @@ class BrachyAgent:
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
                 self.memory.add_message("user", f"[Tool result: {result_text[:500]}]")
 
-        # Check if this is a simple greeting or short question (should NOT trigger summarization)
-        # Use .* at end to match variations like "你好啊", "你是谁呢", etc.
-        _simple_patterns = [
-            r'^(你好|hello|hi|hey|嗨|您好|早上好|下午好|晚上好|good\s*(morning|afternoon|evening)).*$',
-            r'^(谢谢|thanks|thank you|再见|bye|goodbye).*$',
-            r'^(你是谁|who are you|what are you|你可以做什么|what can you do|你的名字|你叫什么).*$',
-            r'^(help|帮助|帮我|帮忙).*$',
-        ]
-        _is_simple_greeting = any(re.match(p, message.lower().strip()) for p in _simple_patterns)
-
         # No summarization - use LLM response directly
         if final_response:
             raw_final = final_response
