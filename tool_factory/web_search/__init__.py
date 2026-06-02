@@ -690,30 +690,19 @@ GitHub Integration:
     def _simplify_query(self, query: str) -> str:
         """
         Simplify search query for better results.
-        Remove filler words but keep important medical/technical terms.
+        Only remove obvious noise - let LLM handle complex translation.
         """
-        # Only remove conversational filler words
-        filler_words = [
-            '是什么', '什么是', '你知道', '告诉我', '介绍一下',
-            'what is', 'who is', 'can you', 'tell me', 'explain',
-            '吗', '呢', '啊', '吧',  # Chinese question particles
-            'the', 'a', 'an', 'is', 'are', 'do', 'does',  # English articles/verbs
+        # Remove only the most basic noise
+        noise_patterns = [
+            r'^(你知道|告诉我|介绍一下|什么是|是什么)\s*',
+            r'\s*(吗|呢|啊|吧|呀)\??$',
         ]
 
-        # Remove filler phrases first
         simplified = query
-        for filler in ['是什么', '什么是', '你知道', '告诉我', '介绍一下']:
-            simplified = simplified.replace(filler, '')
+        for pattern in noise_patterns:
+            simplified = re.sub(pattern, '', simplified, flags=re.IGNORECASE)
 
-        # Then split and filter individual words
-        words = simplified.split()
-        main_keywords = []
-        for word in words:
-            if word.lower() not in filler_words:
-                main_keywords.append(word)
-
-        simplified = ' '.join(main_keywords).strip()
-        return simplified if simplified else query
+        return simplified.strip() if simplified.strip() else query
 
     def _optimize_search_query(self, query: str, search_type: str = "general") -> str:
         """
@@ -742,32 +731,21 @@ GitHub Integration:
     def _simplify_for_pubmed(self, query: str) -> str:
         """
         Simplify query specifically for PubMed search.
-        PubMed works best with simple English keyword queries.
+        Keep only the most distinctive terms for better PubMed results.
         """
-        # Remove common filler words
-        filler_words = [
-            'AI', 'agent', 'system', 'model', 'tool', 'platform',
-            'artificial', 'intelligence', 'machine', 'learning',
-            'deep', 'learning', 'neural', 'network',
-            'Meta', 'Google', 'Microsoft', 'OpenAI',
-            'Segment', 'Anything', 'Model',
-            'brachytherapy', 'treatment', 'planning',
-            'medical', 'clinical', 'health',
-            'what', 'is', 'the', 'a', 'an', 'are', 'do', 'does',
-            'can', 'you', 'tell', 'me', 'about',
-        ]
+        # Very basic stop words for PubMed
+        stop_words = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+                      'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+                      'should', 'may', 'might', 'can', 'shall', 'to', 'of', 'in', 'for',
+                      'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during',
+                      'before', 'after', 'above', 'below', 'between', 'out', 'off', 'over',
+                      'under', 'again', 'further', 'then', 'once'}
 
         words = query.split()
-        # Keep only the most distinctive keywords (max 3)
-        main_keywords = []
-        for word in words:
-            if word.lower() not in [f.lower() for f in filler_words]:
-                main_keywords.append(word)
-                if len(main_keywords) >= 3:
-                    break
+        # Keep only non-stop words (max 3)
+        main_keywords = [w for w in words if w.lower() not in stop_words][:3]
 
-        simplified = ' '.join(main_keywords)
-        return simplified if simplified else query
+        return ' '.join(main_keywords) if main_keywords else query
 
     def _contains_chinese(self, text: str) -> bool:
         """Check if text contains Chinese characters."""
