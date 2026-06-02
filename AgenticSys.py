@@ -1301,10 +1301,13 @@ class BrachyAgent:
 
             # After all tools executed, add explicit instruction for LLM to present results
             if tool_calls:
-                messages.append({
-                    "role": "user",
-                    "content": "Based on the tool results above, please present the findings to the user. Do NOT search again or say 'let me fetch more'. Just summarize and present what was found."
-                })
+                _present_instruction = (
+                    "Based on the tool results above, present the findings directly. "
+                    "Do NOT search again. Do NOT say 'let me fetch more'. "
+                    "Summarize and present what was found. "
+                    "Respond in the SAME language as the user's original question."
+                )
+                messages.append({"role": "user", "content": _present_instruction})
 
         # Clean response - no summarization
         if final_response:
@@ -2028,10 +2031,13 @@ class BrachyAgent:
 
             # After all tools executed, add explicit instruction for LLM to present results
             if tool_calls:
-                messages.append({
-                    "role": "user",
-                    "content": "Based on the tool results above, please present the findings to the user. Do NOT search again or say 'let me fetch more'. Just summarize and present what was found."
-                })
+                _present_instruction = (
+                    "Based on the tool results above, present the findings directly. "
+                    "Do NOT search again. Do NOT say 'let me fetch more'. "
+                    "Summarize and present what was found. "
+                    "Respond in the SAME language as the user's original question."
+                )
+                messages.append({"role": "user", "content": _present_instruction})
 
         # No summarization - use LLM response directly
         if final_response:
