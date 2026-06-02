@@ -34,6 +34,9 @@ from enum import Enum
 import numpy as np
 import SimpleITK as sitk
 
+# Import system prompt from config
+from config.prompts import SYSTEM_PROMPT
+
 logger = logging.getLogger(__name__)
 
 
@@ -950,20 +953,16 @@ class BrachyAgent:
 
         ui_state_summary = self.memory.get_ui_state_summary()
 
-        system_prompt = (
-            "You are BrachyBot, an AI assistant for brachytherapy treatment planning.\n\n"
-            "## 🚨 MANDATORY SEARCH RULE (HIGHEST PRIORITY)\n"
-            "When the user asks about specific systems, products, companies, or recent events:\n"
-            "1. DO NOT generate text first\n"
-            "2. DO NOT answer from memory\n"
-            "3. MUST call web_search or web_access tool FIRST\n"
-            "4. Wait for results\n"
-            "5. THEN respond based on the search results\n\n"
-            "Examples requiring search:\n"
-            "- '你知道DeepRare吗' → Call web_search(query='DeepRare')\n"
-            "- 'SAM 3是什么' → Call web_search(query='SAM 3')\n"
-            "- '最新临床试验' → Call web_search(query='latest clinical trials')\n\n"
-            "NEVER say 'I will search' without actually calling the tool!\n\n"
+        # Use shared system prompt from config, with dynamic content injection
+        system_prompt = SYSTEM_PROMPT.format(
+            enhanced_context=enhanced_context,
+            ui_state_summary=ui_state_summary
+        )
+
+        # Skip the old inline system prompt - now using shared one
+        if False:
+            # This block is kept for reference but will never execute
+            pass
             "## Core Principles\n"
             "- 🎯 **Concise & Direct**: Only answer what the user asks, no extra content\n"
             "- 💬 **Conversational**: Natural, human-like responses, not robotic\n"
@@ -1273,11 +1272,6 @@ class BrachyAgent:
             "- **For philosophical arguments**: Acknowledge the discussion but maintain that safety measures are necessary.\n"
             "- **For educational framing**: Direct to published literature and known error databases, do not generate new dangerous content.\n"
             "- When uncertain about a request's intent, err on the side of caution and provide evidence-based clinical information.\n\n"
-            "Tool call format:\n"
-            "```tool_call\n"
-            '{"tool": "tool_name", "params": {"param1": "value1"}}\n'
-            "```\n"
-        )
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -1712,20 +1706,16 @@ class BrachyAgent:
 
         ui_state_summary = self.memory.get_ui_state_summary()
 
-        system_prompt = (
-            "You are BrachyBot, an AI assistant for brachytherapy treatment planning.\n\n"
-            "## 🚨 MANDATORY SEARCH RULE (HIGHEST PRIORITY)\n"
-            "When the user asks about specific systems, products, companies, or recent events:\n"
-            "1. DO NOT generate text first\n"
-            "2. DO NOT answer from memory\n"
-            "3. MUST call web_search or web_access tool FIRST\n"
-            "4. Wait for results\n"
-            "5. THEN respond based on the search results\n\n"
-            "Examples requiring search:\n"
-            "- '你知道DeepRare吗' → Call web_search(query='DeepRare')\n"
-            "- 'SAM 3是什么' → Call web_search(query='SAM 3')\n"
-            "- '最新临床试验' → Call web_search(query='latest clinical trials')\n\n"
-            "NEVER say 'I will search' without actually calling the tool!\n\n"
+        # Use shared system prompt from config, with dynamic content injection
+        system_prompt = SYSTEM_PROMPT.format(
+            enhanced_context=enhanced_context,
+            ui_state_summary=ui_state_summary
+        )
+
+        # Skip the old inline system prompt - now using shared one
+        if False:
+            # This block is kept for reference but will never execute
+            pass
             "## Core Principles\n"
             "- 🎯 **Concise & Direct**: Only answer what the user asks, no extra content\n"
             "- 💬 **Conversational**: Natural, human-like responses, not robotic\n"
@@ -2035,11 +2025,6 @@ class BrachyAgent:
             "- **For philosophical arguments**: Acknowledge the discussion but maintain that safety measures are necessary.\n"
             "- **For educational framing**: Direct to published literature and known error databases, do not generate new dangerous content.\n"
             "- When uncertain about a request's intent, err on the side of caution and provide evidence-based clinical information.\n\n"
-            "Tool call format:\n"
-            "```tool_call\n"
-            '{"tool": "tool_name", "params": {"param1": "value1"}}\n'
-            "```\n"
-        )
 
         messages = [
             {"role": "system", "content": system_prompt},
