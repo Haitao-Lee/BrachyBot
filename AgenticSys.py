@@ -487,6 +487,9 @@ class BrachyAgent:
             self.tool_code_writer = ToolCodeWriter(tool_registry=self.registry)
 
             self._brain_available = len(self.brain_router.providers) > 0
+            self.planner_decider = None
+            self.clinical_decider = None
+            self.quality_decider = None
 
             if self._brain_available:
                 default_llm = self.brain_router.providers.get(self.brain_router.default_provider)
@@ -494,6 +497,9 @@ class BrachyAgent:
                     self.planner_decider = PlannerDecider(default_llm, tool_registry)
                     self.clinical_decider = ClinicalDecider(default_llm)
                     self.quality_decider = QualityDecider(default_llm)
+                else:
+                    logger.warning("No default LLM provider found, deciders not initialized")
+                    self._brain_available = False
 
             logger.info(f"Brain system initialized: provider={self.brain_router.default_provider}, "
                        f"tools={len(tool_registry.list_all())}")
@@ -572,7 +578,7 @@ class BrachyAgent:
         return context
 
     def _llm_plan(self, task: str, context: Dict[str, Any]) -> Optional[Dict]:
-        if not self.brain_available:
+        if not self.brain_available or not self.planner_decider:
             return None
         try:
             rag_context = ""
@@ -1042,13 +1048,51 @@ class BrachyAgent:
                 }
                 steps.append(forced_step)
 
-                result = self._execute_tool_with_memory("web_search", {"query": _forced_search_query, "search_type": "general"})
-                result_text = result.message if result.success else f"Search failed: {result.error}"
-                forced_step["status"] = "done" if result.success else "error"
+                # Direct Bing/Baidu search for real-time info (bypass cache)
+                search_tool = self.registry.get("web_search")
+                bing_results = []
+                if search_tool:
+                    bing_results = search_tool._search_bing(_forced_search_query, max_results=5)
+                    logger.info(f"Forced Bing search returned {len(bing_results)} results")
+                    if not bing_results:
+                        bing_results = search_tool._search_baidu(_forced_search_query, max_results=5)
+                        logger.info(f"Forced Baidu search returned {len(bing_results)} results")
+
+                # Build result text from fresh search results
+                result_text = ""
+                first_url = ""
+                if bing_results:
+                    result_text = "Real-time search results:\n"
+                    for i, r in enumerate(bing_results[:5], 1):
+                        title = r.get("title", "")
+                        snippet = r.get("snippet", "")[:300]
+                        url = r.get("url", "")
+                        result_text += f"{i}. {title}\n   {snippet}\n   URL: {url}\n\n"
+                    first_url = bing_results[0].get("url", "")
+                else:
+                    result_text = "No real-time results found from Bing or Baidu."
+
+                # Fetch actual page content from the first result URL for richer data
+                page_content = ""
+                if first_url:
+                    try:
+                        fetch_tool = self.registry.get("web_fetch")
+                        if fetch_tool:
+                            fetch_result = fetch_tool.execute(url=first_url, extract_text=True, max_length=3000)
+                            if fetch_result.success and fetch_result.data:
+                                page_content = (fetch_result.data.get("content", "") or fetch_result.data.get("text", ""))[:2000]
+                                logger.info(f"Fetched page content from {first_url}: {len(page_content)} chars")
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch page content: {e}")
+
+                # Record step
+                forced_step["status"] = "done"
                 forced_step["result"] = result_text[:200]
 
                 # Inject search results into messages so LLM uses them
-                messages.append({"role": "user", "content": f"[MANDATORY: The following are real-time search results. You MUST use this information to answer the user's question directly. DO NOT search again, DO NOT say you cannot get real-time info. Just answer based on these results.]\n\nSearch results for '{_forced_search_query}':\n{result_text[:2000]}"})
+                if page_content:
+                    result_text += f"\n\n### Detailed page content:\n{page_content}"
+                messages.append({"role": "user", "content": f"[MANDATORY: The following are real-time search results. You MUST use this information to answer the user's question directly. DO NOT search again, DO NOT say you cannot get real-time info. Just answer based on these results.]\n\nSearch results for '{_forced_search_query}':\n{result_text[:3000]}"})
                 # Tell the LLM to answer directly after forced search
                 enhanced_context += f"\n### ⚠️ OVERRIDE: REAL-TIME SEARCH COMPLETED\nSearch for '{_forced_search_query}' has already been executed. The results are in the conversation. You MUST answer the user's question directly using these results. DO NOT call web_search again. DO NOT say you cannot get real-time information."
                 _had_forced_search = True
@@ -1530,17 +1574,37 @@ class BrachyAgent:
                 # Direct Bing search for real-time info (bypass PubMed)
                 search_tool = self.registry.get("web_search")
                 if search_tool:
+                    logger.info(f"Calling _search_bing with query: '{_forced_search_query}'")
                     bing_results = search_tool._search_bing(_forced_search_query, max_results=5)
+                    logger.info(f"Bing returned {len(bing_results)} results")
                     if not bing_results:
+                        logger.info("Bing returned 0, trying Baidu...")
                         bing_results = search_tool._search_baidu(_forced_search_query, max_results=5)
+                        logger.info(f"Baidu returned {len(bing_results)} results")
 
                     if bing_results:
-                        result_text = "Search results:\n"
-                        for r in bing_results[:5]:
+                        result_text = "Real-time search results:\n"
+                        for i, r in enumerate(bing_results[:5], 1):
                             title = r.get("title", "")
                             snippet = r.get("snippet", "")[:300]
                             url = r.get("url", "")
-                            result_text += f"- {title}: {snippet}\n  Source: {url}\n"
+                            result_text += f"{i}. {title}\n   {snippet}\n   URL: {url}\n\n"
+
+                        # Fetch actual page content from the first result for richer data
+                        first_url = bing_results[0].get("url", "")
+                        page_content = ""
+                        if first_url:
+                            try:
+                                fetch_tool = self.registry.get("web_fetch")
+                                if fetch_tool:
+                                    fetch_result = fetch_tool.execute(url=first_url, extract_text=True, max_length=3000)
+                                    if fetch_result.success and fetch_result.data:
+                                        page_content = (fetch_result.data.get("content", "") or fetch_result.data.get("text", ""))[:2000]
+                                        logger.info(f"Fetched page content from {first_url}: {len(page_content)} chars")
+                            except Exception as e:
+                                logger.warning(f"Failed to fetch page content: {e}")
+                        if page_content:
+                            result_text += f"\n### Detailed page content:\n{page_content}"
                     else:
                         result_text = "No real-time results found."
 
@@ -1549,7 +1613,7 @@ class BrachyAgent:
                     yield_event("step", forced_step)
 
                     # Inject search results into messages so LLM uses them
-                    messages.append({"role": "user", "content": f"[MANDATORY: The following are real-time search results from Bing. You MUST use this information to answer the user's question directly. DO NOT search again, DO NOT say you cannot get real-time info. Just answer based on these results.]\n\nSearch results for '{_forced_search_query}':\n{result_text[:2000]}"})
+                    messages.append({"role": "user", "content": f"[MANDATORY: The following are real-time search results from Bing. You MUST use this information to answer the user's question directly. DO NOT search again, DO NOT say you cannot get real-time info. Just answer based on these results.]\n\nSearch results for '{_forced_search_query}':\n{result_text[:3000]}"})
                     # Tell the LLM to answer directly after forced search
                     enhanced_context += f"\n### ⚠️ OVERRIDE: REAL-TIME SEARCH COMPLETED\nSearch for '{_forced_search_query}' has already been executed using Bing. The results are in the conversation. You MUST answer the user's question directly using these results. DO NOT call web_search again. DO NOT say you cannot get real-time information."
                     _had_forced_search = True
