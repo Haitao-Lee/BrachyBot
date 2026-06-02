@@ -743,21 +743,26 @@ GitHub Integration:
         """
         Simplify query specifically for PubMed search.
         PubMed works best with simple keyword queries.
+        Keep only the most distinctive terms.
         """
         # Remove common filler words
         filler_words = [
             'AI', 'agent', 'system', 'model', 'tool', 'platform',
             'artificial', 'intelligence', 'machine', 'learning',
             'deep', 'learning', 'neural', 'network',
+            'Meta', 'Google', 'Microsoft', 'OpenAI',
+            'Segment', 'Anything', 'Model',
+            'brachytherapy', 'treatment', 'planning',
+            'medical', 'clinical', 'health',
         ]
 
         words = query.split()
-        # Keep only the main keywords (max 3)
+        # Keep only the most distinctive keywords (max 2)
         main_keywords = []
         for word in words:
             if word.lower() not in [f.lower() for f in filler_words]:
                 main_keywords.append(word)
-                if len(main_keywords) >= 3:
+                if len(main_keywords) >= 2:
                     break
 
         simplified = ' '.join(main_keywords)
