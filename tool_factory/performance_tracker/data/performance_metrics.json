@@ -1,0 +1,71 @@
+{
+  "sessions": [
+    {
+      "timestamp": 1780325593.016606,
+      "date": "2026-06-01 22:53",
+      "organ": "unknown",
+      "cancer_type": "unknown",
+      "plan_score": "85",
+      "v100": "95",
+      "v200": 0,
+      "seed_count": 0,
+      "tools_used": [],
+      "duration_seconds": 0,
+      "iterations": 0
+    },
+    {
+      "timestamp": 1780325597.345979,
+      "date": "2026-06-01 22:53",
+      "organ": "unknown",
+      "cancer_type": "unknown",
+      "plan_score": "85",
+      "v100": 0,
+      "v200": 0,
+      "seed_count": 0,
+      "tools_used": [],
+      "duration_seconds": 0,
+      "iterations": 0
+    },
+    {
+      "timestamp": 1780325632.4155354,
+      "date": "2026-06-01 22:53",
+      "organ": "unknown",
+      "cancer_type": "unknown",
+      "plan_score": 0,
+      "v100": 0,
+      "v200": 0,
+      "seed_count": 0,
+      "tools_used": [],
+      "duration_seconds": 0,
+      "iterations": 0
+    }
+  ],
+  "plan_scores": [
+    "85",
+    "85",
+    0
+  ],
+  "tool_usage": {},
+  "user_feedback": [
+    {
+      "timestamp": 1780325614.3363092,
+      "date": "2026-06-01 22:53",
+      "session_id": null,
+      "rating": "5",
+      "comment": "这个方案很好，评分5分",
+      "category": "plan_quality"
+    }
+  ],
+  "error_log": [
+    {
+      "timestamp": 1780325667.2907958,
+      "date": "2026-06-01 22:54",
+      "error_type": "dose_engine_timeout",
+      "message": "Dose engine timeout occurred",
+      "tool": "",
+      "context": "",
+      "resolution": ""
+    }
+  ],
+  "evolution_events": []
+}

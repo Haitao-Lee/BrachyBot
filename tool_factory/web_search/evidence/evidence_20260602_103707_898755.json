@@ -1,0 +1,51 @@
+{
+  "response_id": "20260602_103707_898755",
+  "query": "prostate cancer",
+  "created_at": "2026-06-02T10:37:07.898778",
+  "num_sources": 2,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[Complexities of Prostate Cancer.](https://pubmed.ncbi.nlm.nih.gov/36430730/)",
+    "[Treatment of Advanced Prostate Cancer.](https://pubmed.ncbi.nlm.nih.gov/30691365/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "faa56bb14193",
+      "claim": "PubMed ID: 36430730. 2022/11/17 00:00",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/36430730/",
+      "source_type": "PubMed",
+      "source_title": "Complexities of Prostate Cancer.",
+      "accessed_at": "2026-06-02T10:37:09.530011",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 36430730. 2022/11/17 00:00",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "prostate cancer",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "3244dd7c6b5f",
+      "claim": "PubMed ID: 30691365. 2019/01/27 00:00",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/30691365/",
+      "source_type": "PubMed",
+      "source_title": "Treatment of Advanced Prostate Cancer.",
+      "accessed_at": "2026-06-02T10:37:09.530032",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 30691365. 2019/01/27 00:00",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "prostate cancer",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

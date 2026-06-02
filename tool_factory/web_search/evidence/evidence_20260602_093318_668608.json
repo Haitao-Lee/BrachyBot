@@ -1,0 +1,11 @@
+{
+  "response_id": "20260602_093318_668608",
+  "query": "AAPM TG-43U1 dose rate constant Ir-192 HDR source values Flexisource mHDR-v2",
+  "created_at": "2026-06-02T09:33:18.668634",
+  "num_sources": 0,
+  "source_types": [],
+  "avg_confidence": 0.0,
+  "verification_status": "unverified",
+  "citations": [],
+  "evidence": []
+}

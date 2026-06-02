@@ -1,0 +1,69 @@
+{
+  "response_id": "20260602_105310_150006",
+  "query": "EMBRACE",
+  "created_at": "2026-06-02T10:53:10.150026",
+  "num_sources": 3,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[Cognitive behaviour therapy for eating disorders: a \"transdiagnostic\" theory and treatment.](https://pubmed.ncbi.nlm.nih.gov/12711261/)",
+    "[Supporting the Community to Embrace Individuals with Dementia and to Be More Inclusive: Findings of a Conceptual Framework Development Study.](https://pubmed.ncbi.nlm.nih.gov/36011964/)",
+    "[Nursing Informatics Pioneers Embrace Social Media.](https://pubmed.ncbi.nlm.nih.gov/29295380/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "b5256a37ee1a",
+      "claim": "PubMed ID: 12711261. 2003/05/01 00:00",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/12711261/",
+      "source_type": "PubMed",
+      "source_title": "Cognitive behaviour therapy for eating disorders: a \"transdiagnostic\" theory and treatment.",
+      "accessed_at": "2026-06-02T10:53:11.791835",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 12711261. 2003/05/01 00:00",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "EMBRACE",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "321541735a34",
+      "claim": "PubMed ID: 36011964. 2022/08/19 00:00",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/36011964/",
+      "source_type": "PubMed",
+      "source_title": "Supporting the Community to Embrace Individuals with Dementia and to Be More Inclusive: Findings of a Conceptual Framework Development Study.",
+      "accessed_at": "2026-06-02T10:53:11.791860",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 36011964. 2022/08/19 00:00",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "EMBRACE",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "b896e54c3cda",
+      "claim": "PubMed ID: 29295380. 2017/01/01 00:00",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/29295380/",
+      "source_type": "PubMed",
+      "source_title": "Nursing Informatics Pioneers Embrace Social Media.",
+      "accessed_at": "2026-06-02T10:53:11.791871",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 29295380. 2017/01/01 00:00",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "EMBRACE",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

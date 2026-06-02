@@ -1,0 +1,108 @@
+{
+  "query": "brachytherapy dose",
+  "timestamp": 1780372154.701685,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Dose escalation by brachytherapy for gynecological cancers.",
+        "snippet": "PubMed ID: 36055907. 2022/10/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36055907/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Low-dose-rate brachytherapy for prostate cancer: A 15-year experience in Japan.",
+        "snippet": "PubMed ID: 31549770. 2020/01/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31549770/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Modern development of high-dose-rate brachytherapy.",
+        "snippet": "PubMed ID: 32134450. 2020/05/05 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32134450/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 36055907. 2022/10/01 00:00\n2. PubMed ID: 31549770. 2020/01/01 00:00\n3. PubMed ID: 32134450. 2020/05/05 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/36055907/",
+      "https://pubmed.ncbi.nlm.nih.gov/31549770/",
+      "https://pubmed.ncbi.nlm.nih.gov/32134450/"
+    ],
+    "evidence_chain_id": "20260602_114913_173734",
+    "evidence_summary": {
+      "response_id": "20260602_114913_173734",
+      "query": "brachytherapy dose",
+      "created_at": "2026-06-02T11:49:13.173752",
+      "num_sources": 3,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Dose escalation by brachytherapy for gynecological cancers.](https://pubmed.ncbi.nlm.nih.gov/36055907/)",
+        "[Low-dose-rate brachytherapy for prostate cancer: A 15-year experience in Japan.](https://pubmed.ncbi.nlm.nih.gov/31549770/)",
+        "[Modern development of high-dose-rate brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/32134450/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "fe2d68e75afe",
+          "claim": "PubMed ID: 36055907. 2022/10/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36055907/",
+          "source_type": "PubMed",
+          "source_title": "Dose escalation by brachytherapy for gynecological cancers.",
+          "accessed_at": "2026-06-02T11:49:14.701457",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36055907. 2022/10/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy dose",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "38f6ea43e279",
+          "claim": "PubMed ID: 31549770. 2020/01/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31549770/",
+          "source_type": "PubMed",
+          "source_title": "Low-dose-rate brachytherapy for prostate cancer: A 15-year experience in Japan.",
+          "accessed_at": "2026-06-02T11:49:14.701476",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31549770. 2020/01/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy dose",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "d76a7e76184b",
+          "claim": "PubMed ID: 32134450. 2020/05/05 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32134450/",
+          "source_type": "PubMed",
+          "source_title": "Modern development of high-dose-rate brachytherapy.",
+          "accessed_at": "2026-06-02T11:49:14.701482",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32134450. 2020/05/05 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy dose",
+          "search_type": "clinical",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Dose escalation by brachytherapy for gynecological cancers.](https://pubmed.ncbi.nlm.nih.gov/36055907/)",
+      "[Low-dose-rate brachytherapy for prostate cancer: A 15-year experience in Japan.](https://pubmed.ncbi.nlm.nih.gov/31549770/)",
+      "[Modern development of high-dose-rate brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/32134450/)"
+    ]
+  }
+}

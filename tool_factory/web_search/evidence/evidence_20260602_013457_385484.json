@@ -1,0 +1,51 @@
+{
+  "response_id": "20260602_013457_385484",
+  "query": "FDA 510(k) patient-specific 3D printed brachytherapy applicator regulatory pathway biocompatibility",
+  "created_at": "2026-06-02T01:34:57.385505",
+  "num_sources": 2,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[Treatment Planning Strategies for Interstitial Ultrasound Ablation of Prostate Cancer.](https://pubmed.ncbi.nlm.nih.gov/38899026/)",
+    "[Biosensor-embedded wearables for dry eye monitoring and management.](https://pubmed.ncbi.nlm.nih.gov/40884106/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "41a700ba4103",
+      "claim": "PubMed ID: 38899026. 2024/05/08 00:00. PURPOSE: To develop patient-specific 3D models using Finite-Difference \nTime-Domain (FDTD) simulations and pre-treatment planning tools for the \nselective therma",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/38899026/",
+      "source_type": "PubMed",
+      "source_title": "Treatment Planning Strategies for Interstitial Ultrasound Ablation of Prostate Cancer.",
+      "accessed_at": "2026-06-02T01:34:59.029939",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 38899026. 2024/05/08 00:00. PURPOSE: To develop patient-specific 3D models using Finite-Difference \nTime-Domain (FDTD) simulations and pre-treatment planning tools for the \nselective thermal ablation of prostate cancer with interstitial ultrasound. This \ninvolves the integration with a FDA 510(k) cleared catheter-based ultrasound \ninterstitial applicators and delivery system.\nMETHODS: A 3D generalized \"prostate\" model was developed to generate temperature \nand thermal dose profiles fo",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "FDA 510(k) patient-specific 3D printed brachytherapy applicator regulatory pathway biocompatibility",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "567c1200e72e",
+      "claim": "PubMed ID: 40884106. 2025/10/01 00:00. PURPOSE: To develop patient-specific 3D models using Finite-Difference \nTime-Domain (FDTD) simulations and pre-treatment planning tools for the \nselective therma",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/40884106/",
+      "source_type": "PubMed",
+      "source_title": "Biosensor-embedded wearables for dry eye monitoring and management.",
+      "accessed_at": "2026-06-02T01:34:59.030033",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 40884106. 2025/10/01 00:00. PURPOSE: To develop patient-specific 3D models using Finite-Difference \nTime-Domain (FDTD) simulations and pre-treatment planning tools for the \nselective thermal ablation of prostate cancer with interstitial ultrasound. This \ninvolves the integration with a FDA 510(k) cleared catheter-based ultrasound \ninterstitial applicators and delivery system.\nMETHODS: A 3D generalized \"prostate\" model was developed to generate temperature \nand thermal dose profiles fo",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "FDA 510(k) patient-specific 3D printed brachytherapy applicator regulatory pathway biocompatibility",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

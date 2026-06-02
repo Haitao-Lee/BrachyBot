@@ -1,0 +1,33 @@
+{
+  "response_id": "20260602_033420_677835",
+  "query": "Elekta Plato brachytherapy treatment planning system price cost",
+  "created_at": "2026-06-02T03:34:20.677853",
+  "num_sources": 1,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[[Prostate cancer boost using high-dose-rate brachytherapy: impact of the learning curve on the dosimetry].](https://pubmed.ncbi.nlm.nih.gov/25176296/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "ddeb1cc2241e",
+      "claim": "PubMed ID: 25176296. 2014/11/01 00:00. PURPOSE: To analyse the influence of the learning curve on dosimetric data for \nhigh-dose-rate brachytherapy prostate cancer boost.\nPATIENTS AND METHODS: From Fe",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/25176296/",
+      "source_type": "PubMed",
+      "source_title": "[Prostate cancer boost using high-dose-rate brachytherapy: impact of the learning curve on the dosimetry].",
+      "accessed_at": "2026-06-02T03:34:22.080732",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 25176296. 2014/11/01 00:00. PURPOSE: To analyse the influence of the learning curve on dosimetric data for \nhigh-dose-rate brachytherapy prostate cancer boost.\nPATIENTS AND METHODS: From February 2009 to May 2012, after a first course of \nexternal beam radiation therapy (46Gy/23 fractions), 124 patients underwent \nhigh-dose-rate brachytherapy boost using Plato™ (Nucletron, an Elekta company, \nElekta AB, Stockholm, Sweden). The impact of the learning curve on the \ndosimetric quality of",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "Elekta Plato brachytherapy treatment planning system price cost",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "response_id": "20260601_221440_102574",
+  "query": "HDR brachytherapy",
+  "created_at": "2026-06-01T22:14:40.102593",
+  "num_sources": 2,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[HydroDynamic contrast Recanalization (HDR): Description of a new crossing technique for coronary chronic total occlusions.](https://pubmed.ncbi.nlm.nih.gov/39327837/)",
+    "[Methodologies for Improving HDR Efficiency.](https://pubmed.ncbi.nlm.nih.gov/30687381/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "a51fe4d417fd",
+      "claim": "PubMed ID: 39327837. 2024/11/01 00:00. BACKGROUND: Intraplaque delivery of contrast has been utilized during \npercutaneous coronary interventions (PCI) of chronic total occlusions (CTO) to \ndelineate ",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/39327837/",
+      "source_type": "PubMed",
+      "source_title": "HydroDynamic contrast Recanalization (HDR): Description of a new crossing technique for coronary chronic total occlusions.",
+      "accessed_at": "2026-06-01T22:14:41.720368",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 39327837. 2024/11/01 00:00. BACKGROUND: Intraplaque delivery of contrast has been utilized during \npercutaneous coronary interventions (PCI) of chronic total occlusions (CTO) to \ndelineate anatomy and to facilitate wire crossing. Its utility as a tool to \naccomplish primary crossing of CTOs has not been described or validated.\nAIMS: We describe a new technique leveraging the diagnostic and therapeutic \nroles of intraplaque contrast injection to accomplish primary crossing of CTOs: \nHy",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "HDR brachytherapy",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "0b2cd7a46e85",
+      "claim": "PubMed ID: 30687381. 2019/01/07 00:00. BACKGROUND: Intraplaque delivery of contrast has been utilized during \npercutaneous coronary interventions (PCI) of chronic total occlusions (CTO) to \ndelineate ",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/30687381/",
+      "source_type": "PubMed",
+      "source_title": "Methodologies for Improving HDR Efficiency.",
+      "accessed_at": "2026-06-01T22:14:41.720399",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 30687381. 2019/01/07 00:00. BACKGROUND: Intraplaque delivery of contrast has been utilized during \npercutaneous coronary interventions (PCI) of chronic total occlusions (CTO) to \ndelineate anatomy and to facilitate wire crossing. Its utility as a tool to \naccomplish primary crossing of CTOs has not been described or validated.\nAIMS: We describe a new technique leveraging the diagnostic and therapeutic \nroles of intraplaque contrast injection to accomplish primary crossing of CTOs: \nHy",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "HDR brachytherapy",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

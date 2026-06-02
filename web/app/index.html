@@ -5313,9 +5313,12 @@ function renderThinkingChain(steps) {
 function toggleThinkingChain(wrapper, steps) {
     const toggle = wrapper.querySelector('.thinking-toggle');
     const stepsDiv = wrapper.querySelector('.thinking-steps');
+    const timeEl = wrapper.querySelector('.thinking-time');
     const isExpanded = toggle.classList.contains('expanded');
     toggle.classList.toggle('expanded');
     stepsDiv.classList.toggle('expanded');
+    // Show/hide timer based on expand state
+    if (timeEl) timeEl.style.display = isExpanded ? 'none' : '';
     // Expand all step bodies when chain is expanded
     stepsDiv.querySelectorAll('.step-body').forEach(b => {
         b.classList.toggle('expanded', !isExpanded);
@@ -6084,8 +6087,10 @@ function finalizeThinkingChain(chainEl, headerEl, steps) {
     setTimeout(() => {
         const toggle = chainEl.querySelector('.thinking-toggle');
         const stepsDiv = chainEl.querySelector('.thinking-steps');
+        const timeEl = chainEl.querySelector('.thinking-time');
         if (toggle) toggle.classList.remove('expanded');
         if (stepsDiv) stepsDiv.classList.remove('expanded');
+        if (timeEl) timeEl.style.display = 'none';
         // Collapse all step bodies
         if (stepsDiv) {
             stepsDiv.querySelectorAll('.step-body').forEach(b => b.classList.remove('expanded'));

@@ -1,0 +1,33 @@
+{
+  "response_id": "20260602_032603_629656",
+  "query": "median time biochemical failure prostate brachytherapy low intermediate high risk stratified",
+  "created_at": "2026-06-02T03:26:03.629679",
+  "num_sources": 1,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[Single center experience with third-generation cryosurgery for management of organ-confined prostate cancer: critical evaluation of short-term outcomes, complications, and patient quality of life.](https://pubmed.ncbi.nlm.nih.gov/18186694/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "fecfa6be386e",
+      "claim": "PubMed ID: 18186694. 2007/12/01 00:00. PURPOSE: Technical refinements such as improved ultrasonographic \nlocalization and the routine use of urethral warmers and small-gauge needle \ndelivery systems h",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/18186694/",
+      "source_type": "PubMed",
+      "source_title": "Single center experience with third-generation cryosurgery for management of organ-confined prostate cancer: critical evaluation of short-term outcomes, complications, and patient quality of life.",
+      "accessed_at": "2026-06-02T03:26:05.631919",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 18186694. 2007/12/01 00:00. PURPOSE: Technical refinements such as improved ultrasonographic \nlocalization and the routine use of urethral warmers and small-gauge needle \ndelivery systems have renewed interest in cryosurgical treatment as a minimally \ninvasive option for selected patients with localized prostate cancer. Only three \nreports of quality of life (QoL) in prostate cryoablation exist, and none report \non patients treated with third-generation cryoablative technology. We cri",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "median time biochemical failure prostate brachytherapy low intermediate high risk stratified",
+      "search_type": "clinical",
+      "cache_hit": false
+    }
+  ]
+}

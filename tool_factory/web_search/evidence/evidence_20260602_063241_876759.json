@@ -1,0 +1,11 @@
+{
+  "response_id": "20260602_063241_876759",
+  "query": "AAPM TG-137 dosimetric prerequisites photon emitting brachytherapy sources average energy higher 50 keV",
+  "created_at": "2026-06-02T06:32:41.876782",
+  "num_sources": 0,
+  "source_types": [],
+  "avg_confidence": 0.0,
+  "verification_status": "unverified",
+  "citations": [],
+  "evidence": []
+}

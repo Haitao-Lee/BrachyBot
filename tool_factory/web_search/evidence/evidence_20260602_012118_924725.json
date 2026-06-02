@@ -1,0 +1,51 @@
+{
+  "response_id": "20260602_012118_924725",
+  "query": "limitations challenges AI brachytherapy planning validation generalizability",
+  "created_at": "2026-06-02T01:21:18.924746",
+  "num_sources": 2,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[Applicator reconstruction in cervical cancer brachytherapy: A systematic review of current methods, challenges, and AI-driven future directions.](https://pubmed.ncbi.nlm.nih.gov/41344965/)",
+    "[Locally Advanced Cervical Cancer: Multiparametric MRI in Gynecologic Oncology and Precision Medicine.](https://pubmed.ncbi.nlm.nih.gov/41300883/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "1d3724067de3",
+      "claim": "PubMed ID: 41344965. 2026/03/01 00:00. Background: Locally advanced cervical cancer (LACC) represents a significant \nchallenge in oncology, requiring accurate assessment of local extent and \nmetastati",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/41344965/",
+      "source_type": "PubMed",
+      "source_title": "Applicator reconstruction in cervical cancer brachytherapy: A systematic review of current methods, challenges, and AI-driven future directions.",
+      "accessed_at": "2026-06-02T01:21:21.387454",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 41344965. 2026/03/01 00:00. Background: Locally advanced cervical cancer (LACC) represents a significant \nchallenge in oncology, requiring accurate assessment of local extent and \nmetastatic spread. Multiparametric magnetic resonance imaging (mpMRI) has \nassumed a central role in the loco-regional characterization of the tumor due to \nits high soft-tissue resolution and the ability to integrate functional \ninformation. Objectives: In this narrative review, we explore the use of mpMRI ",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "limitations challenges AI brachytherapy planning validation generalizability",
+      "search_type": "clinical",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "394a7a9020b5",
+      "claim": "PubMed ID: 41300883. 2025/11/12 00:00. Background: Locally advanced cervical cancer (LACC) represents a significant \nchallenge in oncology, requiring accurate assessment of local extent and \nmetastati",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/41300883/",
+      "source_type": "PubMed",
+      "source_title": "Locally Advanced Cervical Cancer: Multiparametric MRI in Gynecologic Oncology and Precision Medicine.",
+      "accessed_at": "2026-06-02T01:21:21.387579",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 41300883. 2025/11/12 00:00. Background: Locally advanced cervical cancer (LACC) represents a significant \nchallenge in oncology, requiring accurate assessment of local extent and \nmetastatic spread. Multiparametric magnetic resonance imaging (mpMRI) has \nassumed a central role in the loco-regional characterization of the tumor due to \nits high soft-tissue resolution and the ability to integrate functional \ninformation. Objectives: In this narrative review, we explore the use of mpMRI ",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "limitations challenges AI brachytherapy planning validation generalizability",
+      "search_type": "clinical",
+      "cache_hit": false
+    }
+  ]
+}
