@@ -989,34 +989,53 @@ GitHub Integration:
             results = self._search_github(query, max_results, search_type="issues")
 
         else:
-            # General search: PubMed first (most reliable from this network)
-            # Optimize query for better results (inspired by Higress ai-search)
+            # General search: determine if query is clinical or technical
             optimized_query = self._optimize_search_query(query, search_type)
             logger.info(f"Optimized query: '{query}' -> '{optimized_query}'")
 
-            # For PubMed, use a simpler query (PubMed works best with keywords)
-            pubmed_query = self._simplify_for_pubmed(optimized_query)
-            logger.info(f"PubMed query: '{optimized_query}' -> '{pubmed_query}'")
-
-            pubmed_results = self._search_pubmed(pubmed_query, max_results=max_results)
-            results.extend(pubmed_results)
-
-            # Also search GitHub for technical topics (AI, software, tools)
-            # This helps find non-medical items like SAM 3, DeepRare code, etc.
+            # Detect if query is about clinical/medical topics or technical/AI topics
+            clinical_keywords = ['brachytherapy', 'radiation', 'dose', 'treatment', 'cancer',
+                                 'tumor', 'therapy', 'clinical', 'patient', 'organ', 'prostate',
+                                 'pancreas', 'liver', 'lung', 'cervix', 'implant', 'seed']
             tech_keywords = ['ai', 'model', 'tool', 'software', 'framework', 'library', 'github',
-                             'sam', 'segment', 'anything', 'deep', 'learning', 'neural']
-            if any(kw in query.lower() for kw in tech_keywords):
-                github_results = self._search_github(query, max_results=2, search_type="repositories")
-                results.extend(github_results)
+                             'sam', 'segment', 'anything', 'deep', 'learning', 'neural', 'network',
+                             'algorithm', 'paper', 'code', 'repository', 'api', 'dataset']
+            is_clinical = any(kw in query.lower() for kw in clinical_keywords)
+            is_tech = any(kw in query.lower() for kw in tech_keywords)
 
-            # Only try other sources if PubMed and GitHub returned nothing
-            if not results:
+            if is_clinical and not is_tech:
+                # Clinical query: PubMed first
+                pubmed_query = self._simplify_for_pubmed(optimized_query)
+                logger.info(f"Clinical query, PubMed query: '{pubmed_query}'")
+                pubmed_results = self._search_pubmed(pubmed_query, max_results=max_results)
+                results.extend(pubmed_results)
+                # Also try Bing for broader context
+                if not results:
+                    results = self._search_bing(optimized_query, max_results)
+            elif is_tech:
+                # Technical query: Bing + GitHub first (PubMed usually useless for tech topics)
+                logger.info(f"Technical query, searching Bing + GitHub")
                 bing_results = self._search_bing(optimized_query, max_results)
                 results.extend(bing_results)
-
-            if not results:
-                baidu_results = self._search_baidu(optimized_query, max_results)
-                results.extend(baidu_results)
+                github_results = self._search_github(query, max_results=3, search_type="repositories")
+                results.extend(github_results)
+                # Only try PubMed if nothing found
+                if not results:
+                    pubmed_query = self._simplify_for_pubmed(optimized_query)
+                    pubmed_results = self._search_pubmed(pubmed_query, max_results=2)
+                    results.extend(pubmed_results)
+            else:
+                # Unknown type: try Bing first (most informative snippets), then PubMed
+                logger.info(f"General query, searching Bing first")
+                bing_results = self._search_bing(optimized_query, max_results)
+                results.extend(bing_results)
+                if not results:
+                    pubmed_query = self._simplify_for_pubmed(optimized_query)
+                    pubmed_results = self._search_pubmed(pubmed_query, max_results=max_results)
+                    results.extend(pubmed_results)
+                if not results:
+                    baidu_results = self._search_baidu(optimized_query, max_results)
+                    results.extend(baidu_results)
 
             # Skip DuckDuckGo - it always times out from this network
 
