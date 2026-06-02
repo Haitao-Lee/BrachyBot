@@ -448,7 +448,10 @@ Task: "Generate prostate plan"
 - **Performance Tracker**: System metrics, trends, and improvement suggestions (`performance_tracker`)
 - **🌐 Web Search (NEW)**: Internet search for uncertain knowledge (`web_search`)
   - PubMed API for clinical literature
-  - DuckDuckGo for general/equipment search
+  - Bing CN + Baidu for general/equipment search (China-accessible)
+  - Automatic real-time query detection (weather, time, news, sports)
+  - Direct search bypass for real-time queries (skips PubMed/cache)
+  - Page content fetch from first search result for richer data
   - 24-hour result caching
   - Transparent search behavior (mentions when searching)
   - Graceful fallback when search fails
@@ -468,6 +471,7 @@ BrachyBot now has intelligent internet search for uncertain knowledge:
 - Drug pricing, availability, or manufacturer information
 - Historical details about specific procedures
 - Any fact the system is uncertain about
+- **Real-time information**: weather, time, news, sports scores (auto-detected)
 
 **When NOT to Search:**
 - Basic clinical facts (145 Gy for I-125, 73.83 days for Ir-192 half-life)
@@ -480,6 +484,13 @@ BrachyBot now has intelligent internet search for uncertain knowledge:
 2. **Search the web** if uncertain → cite source if found
 3. **Admit ignorance** if search fails → recommend specific resource
 
+**Real-time Query Detection:**
+When the user asks about weather, time, news, or sports, BrachyBot automatically:
+1. Detects the real-time query pattern (e.g., "今天天气", "北京时间")
+2. Executes Bing CN + Baidu search directly (bypasses PubMed/cache)
+3. Fetches the first result's page content for richer data
+4. Injects results into the LLM context for immediate answering
+
 **Example Responses:**
 ```
 # Equipment query (searches)
@@ -489,6 +500,10 @@ BrachyBot now has intelligent internet search for uncertain knowledge:
 # Recent trial (searches)
 "What were the EMBRACE II results?"
 → "According to published literature [PubMed], the local control rate was..."
+
+# Real-time weather (auto-detected, Bing search)
+"北京今天天气如何？"
+→ "北京今天雷阵雨，气温 21℃。出门记得带伞。"
 
 # Basic knowledge (no search)
 "What is the I-125 prescription dose?"
