@@ -899,7 +899,7 @@ GitHub Integration:
                     result,
                     search_query=query,
                     search_type="local_repo",
-                    claim=result.get("snippet", "")[:200]
+                    claim=(result.get("snippet") or "")[:200]
                 )
 
             formatted["evidence_chain_id"] = evidence_chain.response_id
@@ -929,7 +929,7 @@ GitHub Integration:
                         result,
                         search_query=query,
                         search_type=search_type,
-                        claim=claim or result.get("snippet", "")[:200]
+                        claim=claim or (result.get("snippet") or "")[:200]
                     )
 
                 cached["evidence_chain_id"] = evidence_chain.response_id
@@ -1005,11 +1005,13 @@ GitHub Integration:
 
         # Track evidence for all results
         for result in results:
+            # Safely get snippet, handling None values
+            snippet = result.get("snippet") or ""
             evidence_chain.create_evidence_from_search(
                 result,
                 search_query=query,
                 search_type=search_type,
-                claim=claim or result.get("snippet", "")[:200]
+                claim=claim or snippet[:200]
             )
 
         # Check for cross-references if multiple results
