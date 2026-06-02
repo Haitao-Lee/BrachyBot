@@ -1307,35 +1307,36 @@ class BrachyAgent:
             if not final_response.strip() and raw_final.strip():
                 final_response = ""
 
-        # Strip transitional phrases from response (loop to handle multiple consecutive ones)
-        if final_response:
-            _transitional_patterns = [
-                # Chinese transitional phrases (with optional "好的，" prefix)
-                r'^(?:好的[，,]?\s*)?(?:我来为你[查搜].*?[。\n]|我来帮你[查搜].*?[。\n])',
-                r'^(?:好的[，,]?\s*)?(?:我.{0,5}(?:帮你|为您)[查搜].*?[。\n])',
-                r'^(?:好的[，,]?\s*)?(?:让我用.*?工具.*?[查搜].*?[。\n])',
-                r'^(?:好的[，,]?\s*)?(?:让我.*?[查搜].*?[。\n])',
-                r'^(?:知识库.*?[。]?\s*)(?:让我.*?[查搜].*?[。\n])',
-                r'^让我(?:访问|查看|获取|读取).*?[。\n]',
-                r'^\[获取.*?\]',  # [获取官方页面内容] style brackets
-                r'^\[[^\]]{2,30}\]',  # Any short bracket content like [searching...]
-                # English transitional phrases
-                r'^(?:I.{0,5}(?:search|look|find) for you.*?[.\n]|Let me (?:search|find|look|check).*?[.\n])',
-                r'^(?:Sure[,.]?\s*)?Let me (?:search|find|look|check|query|access|visit|fetch).*?[.\n]',
+        # Strip transitional phrases from response
+        if final_response and tools_executed:
+            # Split into sentences, filter out transitional ones, keep substantive ones
+            # Sentence terminators: 。！？.!?\n and ：(Chinese colon when used as terminator)
+            sentences = re.split(r'(?<=[。！？.!?\n：])\s*', final_response.strip())
+            _transitional_keywords = [
+                '我来', '让我', '好的', '我帮你', '为您', '我直接',
+                '搜索', '查询', '抓取', '获取', '访问', '查看', '读取',
+                '页面内容', '知识库', '没有匹配', '没有找到',
+                'let me', 'i\'ll', 'i will', 'allow me', 'sure',
             ]
-            original = final_response
-            # Loop up to 5 times to strip consecutive transitional phrases
-            for _ in range(5):
-                prev = final_response
-                for _pat in _transitional_patterns:
-                    final_response = re.sub(_pat, '', final_response, count=1, flags=re.IGNORECASE | re.DOTALL).strip()
-                if final_response == prev:
-                    break  # No more patterns matched
-                logger.info("Stripped transitional prefix")
+            substantive = []
+            for s in sentences:
+                s = s.strip()
+                if not s or len(s) < 3:
+                    continue
+                # Check if sentence is transitional (starts with transitional keyword)
+                s_lower = s.lower()
+                is_transitional = any(s_lower.startswith(kw) for kw in _transitional_keywords)
+                # Also treat bracket-only content as transitional
+                if re.match(r'^\[.{2,30}\]$', s):
+                    is_transitional = True
+                if not is_transitional:
+                    substantive.append(s)
 
-            # If stripping left nothing (entire response was transitional), clear it
-            if not final_response and original:
-                logger.warning("Entire response was transitional phrase, clearing")
+            if substantive:
+                final_response = ' '.join(substantive)
+                logger.info(f"Filtered {len(sentences) - len(substantive)} transitional sentences, kept {len(substantive)}")
+            else:
+                logger.warning("All sentences were transitional, clearing response")
                 final_response = ""
 
         if not final_response:
