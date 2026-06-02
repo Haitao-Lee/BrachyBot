@@ -2042,7 +2042,7 @@ class BrachyAgent:
                         "tool_creator", "env_manager", "shell_executor", "code_executor",
                         "ui_inspector", "filesystem_browser", "safety_validator",
                         "plan_comparator", "performance_tracker", "dicom_rt_exporter",
-                        "web_search"  # 允许联网搜索（不依赖CT）
+                        "web_search"  # Allow web search (no CT dependency)
                     }
                     tools_for_llm = [t for t in tools_for_llm
                                       if t.get("function", {}).get("name", "") in _allowed_without_ct]
@@ -2293,7 +2293,7 @@ class BrachyAgent:
                 if not is_valid:
                     logger.warning(f"Potential fabrication detected: {issues}")
                     # Add a warning to the response
-                    warning = "\n\n⚠️ 注意：以上回答中包含的信息可能不完全准确，建议核实来源。"
+                    warning = "\n\n⚠️ Warning: Some information in this response may not be fully accurate. Please verify the sources."
                     final_response += warning
             step_id_ref[0] += 1
             response_step = {
