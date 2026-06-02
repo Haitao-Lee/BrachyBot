@@ -1299,6 +1299,13 @@ class BrachyAgent:
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
                 self.memory.add_message("user", f"[Tool result: {result_text[:500]}]")
 
+            # After all tools executed, add explicit instruction for LLM to present results
+            if tool_calls:
+                messages.append({
+                    "role": "user",
+                    "content": "Based on the tool results above, please present the findings to the user. Do NOT search again or say 'let me fetch more'. Just summarize and present what was found."
+                })
+
         # Clean response - no summarization
         if final_response:
             raw_final = final_response
@@ -2018,6 +2025,13 @@ class BrachyAgent:
                 # Store in conversation memory for context persistence
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
                 self.memory.add_message("user", f"[Tool result: {result_text[:500]}]")
+
+            # After all tools executed, add explicit instruction for LLM to present results
+            if tool_calls:
+                messages.append({
+                    "role": "user",
+                    "content": "Based on the tool results above, please present the findings to the user. Do NOT search again or say 'let me fetch more'. Just summarize and present what was found."
+                })
 
         # No summarization - use LLM response directly
         if final_response:
