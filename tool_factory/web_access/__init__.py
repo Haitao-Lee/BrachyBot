@@ -61,6 +61,7 @@ class SearchResult:
     source: str  # pubmed, github, bing, etc.
     confidence: float = 0.0
     accessed_at: str = ""
+    metadata: Dict = field(default_factory=dict)
 
     def __post_init__(self):
         if not self.accessed_at:
@@ -128,30 +129,27 @@ class UnifiedWebAccess:
         if not ids:
             return results
 
-            if not ids:
-                return results
-
-            # Fetch summaries
-            summary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
-            summary_params = {"db": "pubmed", "id": ",".join(ids), "retmode": "json"}
+        # Fetch summaries
+        summary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+        summary_params = {"db": "pubmed", "id": ",".join(ids), "retmode": "json"}
+        try:
             summary_resp = self.session.get(summary_url, params=summary_params, timeout=5)
-
             if summary_resp.status_code != 200:
                 return results
-
             summaries = summary_resp.json().get("result", {})
+        except Exception as e:
+            logger.warning(f"PubMed summary fetch error: {e}")
+            return results
 
-            # Fetch abstracts
-            abstract_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-            abstract_params = {"db": "pubmed", "id": ",".join(ids), "rettype": "abstract", "retmode": "text"}
+        # Fetch abstracts
+        abstract_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+        abstract_params = {"db": "pubmed", "id": ",".join(ids), "rettype": "abstract", "retmode": "text"}
+        abstracts = {}
+        try:
             abstract_resp = self.session.get(abstract_url, params=abstract_params, timeout=5)
-
-            abstracts = {}
             if abstract_resp.status_code == 200:
-                # Parse abstracts
                 text = abstract_resp.text
                 for pmid in ids:
-                    # Find abstract using patterns
                     for pattern in [r'BACKGROUND:', r'PURPOSE:', r'RESULTS:', r'Here we present', r'This study']:
                         match = re.search(pattern, text, re.IGNORECASE)
                         if match:
@@ -164,27 +162,26 @@ class UnifiedWebAccess:
                             abstract = text[start:end].strip()
                             abstracts[pmid] = abstract[:500]
                             break
-
-            # Build results
-            for pmid in ids:
-                article = summaries.get(pmid, {})
-                if article:
-                    title = article.get("title", "Unknown")
-                    abstract = abstracts.get(pmid, "")
-                    snippet = f"PubMed ID: {pmid}. {article.get('sortpubdate', '')}"
-                    if abstract:
-                        snippet += f". {abstract}"
-
-                    results.append(SearchResult(
-                        title=title,
-                        snippet=snippet[:500],
-                        url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
-                        source="PubMed",
-                        confidence=0.85
-                    ))
-
         except Exception as e:
-            logger.warning(f"PubMed search error: {e}")
+            logger.warning(f"PubMed abstract fetch error: {e}")
+
+        # Build results
+        for pmid in ids:
+            article = summaries.get(pmid, {})
+            if article:
+                title = article.get("title", "Unknown")
+                abstract = abstracts.get(pmid, "")
+                snippet = f"PubMed ID: {pmid}. {article.get('sortpubdate', '')}"
+                if abstract:
+                    snippet += f". {abstract}"
+
+                results.append(SearchResult(
+                    title=title,
+                    snippet=snippet[:500],
+                    url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+                    source="PubMed",
+                    confidence=0.85
+                ))
 
         return results
 
@@ -207,10 +204,11 @@ class UnifiedWebAccess:
             data = response.json()
             items = []
             for item in data.get("items", [])[:max_results]:
+                description = item.get("description") or ""
                 items.append(SearchResult(
-                    title=item.get("full_name", ""),
-                    snippet=item.get("description", "")[:300],
-                    url=item.get("html_url", ""),
+                    title=item.get("full_name") or "",
+                    snippet=description[:300],
+                    url=item.get("html_url") or "",
                     source="GitHub",
                     confidence=0.75,
                     metadata={"stars": item.get("stargazers_count", 0)}
