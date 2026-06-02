@@ -741,9 +741,15 @@ GitHub Integration:
                       'before', 'after', 'above', 'below', 'between', 'out', 'off', 'over',
                       'under', 'again', 'further', 'then', 'once'}
 
+        # Extra words to remove for PubMed (these make queries too specific)
+        extra_noise = {'ai', 'system', 'tool', 'platform', 'model', 'software',
+                       'technology', 'method', 'approach', 'technique',
+                       'medical', 'clinical', 'health', 'healthcare',
+                       'meta', 'google', 'microsoft', 'openai', 'deepmind'}
+
         words = query.split()
-        # Keep only non-stop words (max 3)
-        main_keywords = [w for w in words if w.lower() not in stop_words][:3]
+        # Keep only non-stop, non-noise words (max 2)
+        main_keywords = [w for w in words if w.lower() not in stop_words and w.lower() not in extra_noise][:2]
 
         return ' '.join(main_keywords) if main_keywords else query
 
