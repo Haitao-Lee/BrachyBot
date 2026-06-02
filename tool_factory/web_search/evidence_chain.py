@@ -166,13 +166,16 @@ class EvidenceChain:
             search_type: Type of search performed
             claim: The specific claim/fact being cited
         """
+        # Safely get snippet, handling None values
+        snippet = search_result.get("snippet") or ""
+
         record = EvidenceRecord(
-            claim=claim or search_result.get("snippet", "")[:200],
-            source_url=search_result.get("url", ""),
-            source_type=search_result.get("source", search_type),
-            source_title=search_result.get("title", ""),
-            raw_snippet=search_result.get("snippet", ""),
-            extracted_data=search_result.get("metadata", {}),
+            claim=claim or snippet[:200],
+            source_url=search_result.get("url") or "",
+            source_type=search_result.get("source") or search_type,
+            source_title=search_result.get("title") or "",
+            raw_snippet=snippet,
+            extracted_data=search_result.get("metadata") or {},
             search_query=search_query,
             search_type=search_type,
             confidence=self._calculate_confidence(search_result, search_type)
