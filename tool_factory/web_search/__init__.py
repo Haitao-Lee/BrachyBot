@@ -799,23 +799,45 @@ GitHub Integration:
 
         # Extract key information
         sources = []
-        snippets = []
+        pubmed_results = []
+        github_results = []
+        other_results = []
 
         for r in results:
             if r.get("url"):
                 sources.append(r["url"])
             if r.get("snippet"):
-                snippets.append(r["snippet"])
+                if r.get("source") == "PubMed":
+                    pubmed_results.append(r)
+                elif r.get("source") in ["GitHub", "GitHub Repository"]:
+                    github_results.append(r)
+                else:
+                    other_results.append(r)
 
-        # Create a summary answer
-        if len(snippets) == 1:
-            answer = f"Based on search results: {snippets[0]}"
-        elif len(snippets) > 1:
-            answer = "Based on search results:\n"
-            for i, snippet in enumerate(snippets[:3], 1):
-                answer += f"{i}. {snippet[:200]}\n"
-        else:
-            answer = "Search completed but no clear answer found."
+        # Create a comprehensive answer
+        answer_parts = []
+
+        # Add PubMed results
+        if pubmed_results:
+            answer_parts.append("PubMed results:")
+            for i, r in enumerate(pubmed_results[:3], 1):
+                answer_parts.append(f"{i}. {r['snippet'][:200]}")
+
+        # Add GitHub results (important for technical topics)
+        if github_results:
+            answer_parts.append("\nGitHub repositories:")
+            for r in github_results[:3]:
+                title = r.get("title", "")
+                snippet = r.get("snippet", "")[:100]
+                answer_parts.append(f"- {title}: {snippet}")
+
+        # Add other results
+        if other_results:
+            answer_parts.append("\nOther sources:")
+            for r in other_results[:2]:
+                answer_parts.append(f"- {r['snippet'][:150]}")
+
+        answer = "\n".join(answer_parts) if answer_parts else "Search completed but no clear answer found."
 
         return {
             "success": True,
