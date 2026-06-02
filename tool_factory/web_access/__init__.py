@@ -383,6 +383,9 @@ class UnifiedWebAccess:
         results = []
         evidence = []
 
+        # Add year context for recent information (inspired by OpenCode)
+        query = self._add_year_context(query)
+
         # Optimize query for PubMed
         pubmed_query = self._optimize_for_pubmed(query)
 
@@ -450,6 +453,20 @@ class UnifiedWebAccess:
         filtered = [w for w in words if w.lower() not in noise][:3]
         return ' '.join(filtered) if filtered else query
 
+    def _add_year_context(self, query: str) -> str:
+        """
+        Add current year to query for recent information.
+        Inspired by OpenCode's year awareness feature.
+        """
+        # Check if query seems to ask for recent/current info
+        recent_indicators = ['latest', 'recent', 'current', 'new', '2024', '2025', '2026',
+                           '最新', '最近', '当前', '新']
+        if any(indicator in query.lower() for indicator in recent_indicators):
+            current_year = time.strftime("%Y")
+            if current_year not in query:
+                return f"{query} {current_year}"
+        return query
+
     def _is_medical_query(self, query: str) -> bool:
         """Check if query is medical/clinical."""
         medical_terms = ['dose', 'cancer', 'tumor', 'treatment', 'therapy',
@@ -506,16 +523,29 @@ class UnifiedWebAccess:
         }
 
     def _html_to_text(self, html: str) -> str:
-        """Convert HTML to clean text."""
+        """Convert HTML to clean text with markdown-like formatting."""
         # Remove scripts and styles
         html = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
         html = re.sub(r'<style[^>]*>.*?</style>', '', html, flags=re.DOTALL | re.IGNORECASE)
         html = re.sub(r'<!--.*?-->', '', html, flags=re.DOTALL)
 
-        # Block elements
-        html = re.sub(r'<(br|hr|p|div|h[1-6]|li|tr)[^>]*>', '\n', html, flags=re.IGNORECASE)
+        # Convert headers to markdown-style
+        for i in range(1, 7):
+            html = re.sub(rf'<h{i}[^>]*>(.*?)</h{i}>', rf'\n\n{"#" * i} \1\n', html, flags=re.DOTALL | re.IGNORECASE)
 
-        # Remove tags
+        # Convert lists
+        html = re.sub(r'<li[^>]*>(.*?)</li>', r'\n- \1', html, flags=re.DOTALL | re.IGNORECASE)
+        html = re.sub(r'<ol[^>]*>', '\n', html, flags=re.IGNORECASE)
+        html = re.sub(r'<ul[^>]*>', '\n', html, flags=re.IGNORECASE)
+
+        # Convert links
+        html = re.sub(r'<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>', r'\2 (\1)', html, flags=re.DOTALL | re.IGNORECASE)
+
+        # Convert paragraphs and breaks
+        html = re.sub(r'<p[^>]*>', '\n\n', html, flags=re.IGNORECASE)
+        html = re.sub(r'<br[^>]*>', '\n', html, flags=re.IGNORECASE)
+
+        # Remove remaining tags
         html = re.sub(r'<[^>]+>', '', html)
 
         # Decode entities
