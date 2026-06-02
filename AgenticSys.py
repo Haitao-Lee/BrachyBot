@@ -1307,7 +1307,7 @@ class BrachyAgent:
             if not final_response.strip() and raw_final.strip():
                 final_response = ""
 
-        # Strip transitional phrases from response (both full and prefix)
+        # Strip transitional phrases from response (loop to handle multiple consecutive ones)
         if final_response:
             _transitional_patterns = [
                 # Chinese transitional phrases (with optional "好的，" prefix)
@@ -1316,20 +1316,24 @@ class BrachyAgent:
                 r'^(?:好的[，,]?\s*)?(?:让我用.*?工具.*?[查搜].*?[。\n])',
                 r'^(?:好的[，,]?\s*)?(?:让我.*?[查搜].*?[。\n])',
                 r'^(?:知识库.*?[。]?\s*)(?:让我.*?[查搜].*?[。\n])',
+                r'^让我(?:访问|查看|获取|读取).*?[。\n]',
                 # English transitional phrases
                 r'^(?:I.{0,5}(?:search|look|find) for you.*?[.\n]|Let me (?:search|find|look|check).*?[.\n])',
-                r'^(?:Sure[,.]?\s*)?Let me (?:search|find|look|check|query).*?[.\n]',
+                r'^(?:Sure[,.]?\s*)?Let me (?:search|find|look|check|query|access|visit|fetch).*?[.\n]',
             ]
             original = final_response
-            for _pat in _transitional_patterns:
-                final_response = re.sub(_pat, '', final_response, count=1, flags=re.IGNORECASE | re.DOTALL).strip()
-                if final_response != original:
-                    logger.info(f"Stripped transitional prefix")
-                    break
+            # Loop up to 5 times to strip consecutive transitional phrases
+            for _ in range(5):
+                prev = final_response
+                for _pat in _transitional_patterns:
+                    final_response = re.sub(_pat, '', final_response, count=1, flags=re.IGNORECASE | re.DOTALL).strip()
+                if final_response == prev:
+                    break  # No more patterns matched
+                logger.info("Stripped transitional prefix")
 
             # If stripping left nothing (entire response was transitional), clear it
             if not final_response and original:
-                logger.warning(f"Entire response was transitional phrase, clearing")
+                logger.warning("Entire response was transitional phrase, clearing")
                 final_response = ""
 
         if not final_response:
