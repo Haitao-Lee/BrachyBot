@@ -1015,7 +1015,8 @@ class BrachyAgent:
                     content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
                     if not content or len(content) < 10:
                         continue
-                messages.append({"role": role, "content": content})
+                # Label as historical context to prevent confusion with current task
+                messages.append({"role": role, "content": f"[Historical reference — not current task]\n{content}"})
         else:
             # Fallback: use last 12 messages
             msg_history = self.memory.conversation[-12:]
@@ -1614,7 +1615,8 @@ class BrachyAgent:
                     content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
                     if not content or len(content) < 10:
                         continue
-                messages.append({"role": role, "content": content})
+                # Label as historical context to prevent confusion with current task
+                messages.append({"role": role, "content": f"[Historical reference — not current task]\n{content}"})
         else:
             # Fallback: use last 12 messages
             msg_history = self.memory.conversation[-12:]
