@@ -1,0 +1,69 @@
+{
+  "response_id": "20260602_105308_455327",
+  "query": "brachytherapy",
+  "created_at": "2026-06-02T10:53:08.455344",
+  "num_sources": 3,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[Breast brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/33353845/)",
+    "[Brachytherapy for rectal and anal cancer: Where are we and current perspectives?](https://pubmed.ncbi.nlm.nih.gov/38278689/)",
+    "[American Brachytherapy Society consensus guidelines for adjuvant vaginal cuff brachytherapy after hysterectomy.](https://pubmed.ncbi.nlm.nih.gov/22265439/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "4ebfb166413e",
+      "claim": "PubMed ID: 33353845. 2021/09/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (A",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/33353845/",
+      "source_type": "PubMed",
+      "source_title": "Breast brachytherapy.",
+      "accessed_at": "2026-06-02T10:53:10.149371",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 33353845. 2021/09/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (ABS) guidelines.\nMETHODS AND MATERIALS: A panel of members of the ABS performed a literature \nreview, supplemented their clinical experience, and formulated recommendations \nfor adjuvant vaginal cuff brachytherapy.\nRESULTS: The ABS endorses the National Comprehensive Cancer Network guidelines \nfor in",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "brachytherapy",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "1c2508142dfb",
+      "claim": "PubMed ID: 38278689. 2024/03/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (A",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/38278689/",
+      "source_type": "PubMed",
+      "source_title": "Brachytherapy for rectal and anal cancer: Where are we and current perspectives?",
+      "accessed_at": "2026-06-02T10:53:10.149390",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 38278689. 2024/03/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (ABS) guidelines.\nMETHODS AND MATERIALS: A panel of members of the ABS performed a literature \nreview, supplemented their clinical experience, and formulated recommendations \nfor adjuvant vaginal cuff brachytherapy.\nRESULTS: The ABS endorses the National Comprehensive Cancer Network guidelines \nfor in",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "brachytherapy",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "a164d7164519",
+      "claim": "PubMed ID: 22265439. 2012/01/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (A",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/22265439/",
+      "source_type": "PubMed",
+      "source_title": "American Brachytherapy Society consensus guidelines for adjuvant vaginal cuff brachytherapy after hysterectomy.",
+      "accessed_at": "2026-06-02T10:53:10.149397",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 22265439. 2012/01/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (ABS) guidelines.\nMETHODS AND MATERIALS: A panel of members of the ABS performed a literature \nreview, supplemented their clinical experience, and formulated recommendations \nfor adjuvant vaginal cuff brachytherapy.\nRESULTS: The ABS endorses the National Comprehensive Cancer Network guidelines \nfor in",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "brachytherapy",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

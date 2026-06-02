@@ -1305,10 +1305,18 @@ def create_app(config: Optional[Dict] = None):
     @app.route("/api/reset", methods=["POST"])
     @require_api_key
     def api_reset():
-        """Reset agent state."""
-        nonlocal agent
-        agent = None
-        return jsonify({"success": True, "message": "Agent reset"})
+        """Reset agent state for a session."""
+        nonlocal _sessions, _session_timestamps
+        data = request.get_json() or {}
+        session_id = data.get("session_id", _default_session_id)
+
+        if session_id in _sessions:
+            _sessions.pop(session_id, None)
+            _session_timestamps.pop(session_id, None)
+            logger.info(f"Reset session: {session_id}")
+            return jsonify({"success": True, "message": f"Session {session_id} reset"})
+        else:
+            return jsonify({"success": True, "message": "Session not found"})
 
     @app.errorhandler(404)
     def not_found(e):

@@ -1,0 +1,51 @@
+{
+  "response_id": "20260602_032003_894646",
+  "query": "Nucletron Plato IPSA Inverse Planning Simulated Annealing algorithm prostate brachytherapy",
+  "created_at": "2026-06-02T03:20:03.894665",
+  "num_sources": 2,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[Comparison of inverse planning simulated annealing and geometrical optimization for prostate high-dose-rate brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/15533807/)",
+    "[Commissioning of brachytherapy module of Oncentra MasterPlan treatment planning system.](https://pubmed.ncbi.nlm.nih.gov/28050176/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "a5f7ee6e5183",
+      "claim": "PubMed ID: 15533807. 2004/01/01 00:00. PURPOSE: An inverse planning simulated annealing (IPSA) algorithm for \noptimization of high-dose-rate (HDR) brachytherapy has been previously \ndescribed. In this",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/15533807/",
+      "source_type": "PubMed",
+      "source_title": "Comparison of inverse planning simulated annealing and geometrical optimization for prostate high-dose-rate brachytherapy.",
+      "accessed_at": "2026-06-02T03:20:05.867959",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 15533807. 2004/01/01 00:00. PURPOSE: An inverse planning simulated annealing (IPSA) algorithm for \noptimization of high-dose-rate (HDR) brachytherapy has been previously \ndescribed. In this study, IPSA is compared with geometrical optimization (GO) \nfor prostate brachytherapy.\nMETHODS AND MATERIALS: Using CT data collected from 10 patients, treatment plans \nwere prepared using GO and IPSA. The clinical target volume (CTV) and critical \norgans (CO) including bladder, rectum, and urethr",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "Nucletron Plato IPSA Inverse Planning Simulated Annealing algorithm prostate brachytherapy",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "7ce22bb1d883",
+      "claim": "PubMed ID: 28050176. 2009/12/01 00:00. PURPOSE: An inverse planning simulated annealing (IPSA) algorithm for \noptimization of high-dose-rate (HDR) brachytherapy has been previously \ndescribed. In this",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/28050176/",
+      "source_type": "PubMed",
+      "source_title": "Commissioning of brachytherapy module of Oncentra MasterPlan treatment planning system.",
+      "accessed_at": "2026-06-02T03:20:05.868056",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 28050176. 2009/12/01 00:00. PURPOSE: An inverse planning simulated annealing (IPSA) algorithm for \noptimization of high-dose-rate (HDR) brachytherapy has been previously \ndescribed. In this study, IPSA is compared with geometrical optimization (GO) \nfor prostate brachytherapy.\nMETHODS AND MATERIALS: Using CT data collected from 10 patients, treatment plans \nwere prepared using GO and IPSA. The clinical target volume (CTV) and critical \norgans (CO) including bladder, rectum, and urethr",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "Nucletron Plato IPSA Inverse Planning Simulated Annealing algorithm prostate brachytherapy",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

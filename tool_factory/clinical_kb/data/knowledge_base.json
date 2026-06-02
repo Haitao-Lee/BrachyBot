@@ -182,5 +182,8 @@
       "v100_min": 0.8,
       "v200_max": 0.45
     }
+  },
+  "dose_constraint": {
+    "bladder_d2cc_90gy_eqd2": {}
   }
 }

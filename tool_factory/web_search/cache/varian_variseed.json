@@ -1,0 +1,23 @@
+{
+  "query": "Varian VariSeed",
+  "timestamp": 1780372155.243611,
+  "result": {
+    "success": true,
+    "results": [],
+    "answer": "I searched for 'Varian VariSeed' but couldn't find specific information. This may be a question that requires specialized knowledge or access to specific databases I don't have.",
+    "sources": [],
+    "evidence_chain_id": "20260602_114914_702196",
+    "evidence_summary": {
+      "response_id": "20260602_114914_702196",
+      "query": "Varian VariSeed",
+      "created_at": "2026-06-02T11:49:14.702225",
+      "num_sources": 0,
+      "source_types": [],
+      "avg_confidence": 0.0,
+      "verification_status": "unverified",
+      "citations": [],
+      "evidence": []
+    },
+    "citations": []
+  }
+}

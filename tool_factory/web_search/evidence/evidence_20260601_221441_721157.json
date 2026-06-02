@@ -1,0 +1,51 @@
+{
+  "response_id": "20260601_221441_721157",
+  "query": "Varian VariSeed",
+  "created_at": "2026-06-01T22:14:41.721182",
+  "num_sources": 2,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[High Source Strength of Most Blister Packs Delivered for 125I Seed Brachytherapy: A Case Report.](https://pubmed.ncbi.nlm.nih.gov/41080395/)",
+    "[Displacement of periurethral stranded seeds and its dosimetric consequences in prostate brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/21306959/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "c25373cd9b36",
+      "claim": "PubMed ID: 41080395. 2025/09/10 00:00. Since the beginning of 125I seed brachytherapy, our facility has verified the \nsource strength of all blister packs delivered. We set a reference range based \non",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/41080395/",
+      "source_type": "PubMed",
+      "source_title": "High Source Strength of Most Blister Packs Delivered for 125I Seed Brachytherapy: A Case Report.",
+      "accessed_at": "2026-06-01T22:14:43.652884",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 41080395. 2025/09/10 00:00. Since the beginning of 125I seed brachytherapy, our facility has verified the \nsource strength of all blister packs delivered. We set a reference range based \non measurements taken with a well-type ionization chamber. There are scattered \nreports on verification for the purpose of detecting dead seeds, but to our \nknowledge, there are no reports on the application of source strength \nverification results in actual clinical practice for deviations of a few p",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "Varian VariSeed",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "c280db3d9261",
+      "claim": "PubMed ID: 21306959. 2011/09/01 00:00. Since the beginning of 125I seed brachytherapy, our facility has verified the \nsource strength of all blister packs delivered. We set a reference range based \non",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/21306959/",
+      "source_type": "PubMed",
+      "source_title": "Displacement of periurethral stranded seeds and its dosimetric consequences in prostate brachytherapy.",
+      "accessed_at": "2026-06-01T22:14:43.652908",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 21306959. 2011/09/01 00:00. Since the beginning of 125I seed brachytherapy, our facility has verified the \nsource strength of all blister packs delivered. We set a reference range based \non measurements taken with a well-type ionization chamber. There are scattered \nreports on verification for the purpose of detecting dead seeds, but to our \nknowledge, there are no reports on the application of source strength \nverification results in actual clinical practice for deviations of a few p",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "Varian VariSeed",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

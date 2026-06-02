@@ -1,0 +1,33 @@
+{
+  "response_id": "20260602_012117_050452",
+  "query": "knowledge-based planning dose optimization brachytherapy HDR automated",
+  "created_at": "2026-06-02T01:21:17.050474",
+  "num_sources": 1,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[Integration of single-click, AI-based brachytherapy auto-planning for cervical cancer within a treatment planning system.](https://pubmed.ncbi.nlm.nih.gov/41130872/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "9833ef240efd",
+      "claim": "PubMed ID: 41130872. 2026/01/01 00:00. PURPOSE: Previous work developed an automated cervical brachytherapy treatment \nplanning pipeline consisting of a U-Net dose prediction model and dwell time \nopt",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/41130872/",
+      "source_type": "PubMed",
+      "source_title": "Integration of single-click, AI-based brachytherapy auto-planning for cervical cancer within a treatment planning system.",
+      "accessed_at": "2026-06-02T01:21:18.923274",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 41130872. 2026/01/01 00:00. PURPOSE: Previous work developed an automated cervical brachytherapy treatment \nplanning pipeline consisting of a U-Net dose prediction model and dwell time \noptimizer. While this method can produce clinically acceptable plans, it relies \non time-consuming, manual export and import of DICOM data. This study proposes \nto increase efficiency by combining scripts into an all-in-one tool that can be \nused directly within the BrachyVision treatment planning syst",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "knowledge-based planning dose optimization brachytherapy HDR automated",
+      "search_type": "clinical",
+      "cache_hit": false
+    }
+  ]
+}

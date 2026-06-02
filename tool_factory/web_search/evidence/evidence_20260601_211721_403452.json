@@ -1,0 +1,33 @@
+{
+  "response_id": "20260601_211721_403452",
+  "query": "DeepRare rare disease diagnosis",
+  "created_at": "2026-06-01T21:17:21.403473",
+  "num_sources": 1,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[An agentic system for rare disease diagnosis with traceable reasoning.](https://pubmed.ncbi.nlm.nih.gov/41708847/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "03216d94d322",
+      "claim": "PubMed ID: 41708847. 2026/03/01 00:00",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/41708847/",
+      "source_type": "PubMed",
+      "source_title": "An agentic system for rare disease diagnosis with traceable reasoning.",
+      "accessed_at": "2026-06-01T21:17:55.254715",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 41708847. 2026/03/01 00:00",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "DeepRare rare disease diagnosis",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

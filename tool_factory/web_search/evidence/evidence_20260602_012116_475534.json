@@ -1,0 +1,11 @@
+{
+  "response_id": "20260602_012116_475534",
+  "query": "U-Net automatic segmentation CTV OAR brachytherapy prostate cervix validation",
+  "created_at": "2026-06-02T01:21:16.475556",
+  "num_sources": 0,
+  "source_types": [],
+  "avg_confidence": 0.0,
+  "verification_status": "unverified",
+  "citations": [],
+  "evidence": []
+}

@@ -1,0 +1,84 @@
+{
+  "response_id": "20260602_114915_243832",
+  "query": "brachytherapy planning",
+  "created_at": "2026-06-02T11:49:15.243854",
+  "num_sources": 3,
+  "source_types": [
+    "GitHub"
+  ],
+  "avg_confidence": 0.5499999999999999,
+  "verification_status": "unverified",
+  "citations": [
+    "[esimiele/doseStats](https://github.com/esimiele/doseStats)",
+    "[tajwarabraraleef/3Dpix2pix-for-prostate-brachytherapy](https://github.com/tajwarabraraleef/3Dpix2pix-for-prostate-brachytherapy)",
+    "[roycoding/HDR-2nd-Check](https://github.com/roycoding/HDR-2nd-Check)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "8eeed5a138fd",
+      "claim": "an open-source ESAPI script to increase planning efficiency and safety in HDR GYN brachytherapy",
+      "source_url": "https://github.com/esimiele/doseStats",
+      "source_type": "GitHub",
+      "source_title": "esimiele/doseStats",
+      "accessed_at": "2026-06-02T11:49:16.048274",
+      "published_at": "",
+      "raw_snippet": "an open-source ESAPI script to increase planning efficiency and safety in HDR GYN brachytherapy",
+      "extracted_data": {
+        "stars": 13,
+        "language": "C#",
+        "forks": 1,
+        "updated": "2026-01-23T10:50:44Z"
+      },
+      "confidence": 0.65,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "brachytherapy planning",
+      "search_type": "github_repos",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "590c92a80da3",
+      "claim": "Keras/Tensorflow implementation of 3D pix2pix for automating seed planning for prostate brachytherapy",
+      "source_url": "https://github.com/tajwarabraraleef/3Dpix2pix-for-prostate-brachytherapy",
+      "source_type": "GitHub",
+      "source_title": "tajwarabraraleef/3Dpix2pix-for-prostate-brachytherapy",
+      "accessed_at": "2026-06-02T11:49:16.048292",
+      "published_at": "",
+      "raw_snippet": "Keras/Tensorflow implementation of 3D pix2pix for automating seed planning for prostate brachytherapy",
+      "extracted_data": {
+        "stars": 4,
+        "language": "Python",
+        "forks": 4,
+        "updated": "2024-04-19T18:29:12Z"
+      },
+      "confidence": 0.5,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "brachytherapy planning",
+      "search_type": "github_repos",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "6e5d23152dfa",
+      "claim": "Performs an automated, independent check of high dose rate brachytherapy plans.",
+      "source_url": "https://github.com/roycoding/HDR-2nd-Check",
+      "source_type": "GitHub",
+      "source_title": "roycoding/HDR-2nd-Check",
+      "accessed_at": "2026-06-02T11:49:16.048299",
+      "published_at": "",
+      "raw_snippet": "Performs an automated, independent check of high dose rate brachytherapy plans.",
+      "extracted_data": {
+        "stars": 4,
+        "language": "Python",
+        "forks": 3,
+        "updated": "2023-03-28T15:35:37Z"
+      },
+      "confidence": 0.5,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "brachytherapy planning",
+      "search_type": "github_repos",
+      "cache_hit": false
+    }
+  ]
+}

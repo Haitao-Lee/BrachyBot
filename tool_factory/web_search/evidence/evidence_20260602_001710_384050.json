@@ -1,0 +1,51 @@
+{
+  "response_id": "20260602_001710_384050",
+  "query": "InterSource 125 iodine seed dosimetry parameters AAPM consensus",
+  "created_at": "2026-06-02T00:17:10.384066",
+  "num_sources": 2,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[Monte carlo analysis of low-energy 125I brachytherapy: implications for clinical dosimetry.](https://pubmed.ncbi.nlm.nih.gov/40377661/)",
+    "[Dose to fingertips of staff preparing stranded iodine-125 seeds for permanent prostate implants.](https://pubmed.ncbi.nlm.nih.gov/21112885/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "e589aced1ad0",
+      "claim": "PubMed ID: 40377661. 2025/08/01 00:00. this study is to measure radiation dose to the fingertips of \noccupationally exposed workers handling stranded iodine-125 seeds during \nprostate implants. The do",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/40377661/",
+      "source_type": "PubMed",
+      "source_title": "Monte carlo analysis of low-energy 125I brachytherapy: implications for clinical dosimetry.",
+      "accessed_at": "2026-06-02T00:17:12.160517",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 40377661. 2025/08/01 00:00. this study is to measure radiation dose to the fingertips of \noccupationally exposed workers handling stranded iodine-125 seeds during \nprostate implants. The doses were measured by thermoluminescence dosimetry at \nthe nail of the index finger of both hands in three hospitals in the \nNetherlands. In all hospitals, measurements were carried out during the \npreparation of stranded IBt seeds, type Intersource(®) 1251L. The fingertip \ndoses per procedure (mean ",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "InterSource 125 iodine seed dosimetry parameters AAPM consensus",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "6e4545236694",
+      "claim": "PubMed ID: 21112885. 2011/04/01 00:00. this study is to measure radiation dose to the fingertips of \noccupationally exposed workers handling stranded iodine-125 seeds during \nprostate implants. The do",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/21112885/",
+      "source_type": "PubMed",
+      "source_title": "Dose to fingertips of staff preparing stranded iodine-125 seeds for permanent prostate implants.",
+      "accessed_at": "2026-06-02T00:17:12.160607",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 21112885. 2011/04/01 00:00. this study is to measure radiation dose to the fingertips of \noccupationally exposed workers handling stranded iodine-125 seeds during \nprostate implants. The doses were measured by thermoluminescence dosimetry at \nthe nail of the index finger of both hands in three hospitals in the \nNetherlands. In all hospitals, measurements were carried out during the \npreparation of stranded IBt seeds, type Intersource(®) 1251L. The fingertip \ndoses per procedure (mean ",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "InterSource 125 iodine seed dosimetry parameters AAPM consensus",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

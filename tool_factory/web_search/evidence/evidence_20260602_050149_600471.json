@@ -1,0 +1,33 @@
+{
+  "response_id": "20260602_050149_600471",
+  "query": "brachytherapy recurrent Bartholin gland cancer interstitial template perineal",
+  "created_at": "2026-06-02T05:01:49.600492",
+  "num_sources": 1,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[A device for interstitial therapy of low pelvic tumours--the Hammersmith perineal hedgehog.](https://pubmed.ncbi.nlm.nih.gov/4063713/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "ffab1057ff51",
+      "claim": "PubMed ID: 4063713. 1985/06/01 00:00",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/4063713/",
+      "source_type": "PubMed",
+      "source_title": "A device for interstitial therapy of low pelvic tumours--the Hammersmith perineal hedgehog.",
+      "accessed_at": "2026-06-02T05:01:52.005237",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 4063713. 1985/06/01 00:00",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "brachytherapy recurrent Bartholin gland cancer interstitial template perineal",
+      "search_type": "clinical",
+      "cache_hit": false
+    }
+  ]
+}
