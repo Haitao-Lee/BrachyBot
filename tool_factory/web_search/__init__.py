@@ -742,9 +742,47 @@ GitHub Integration:
     def _simplify_for_pubmed(self, query: str) -> str:
         """
         Simplify query specifically for PubMed search.
-        PubMed works best with simple keyword queries.
-        Keep only the most distinctive terms.
+        PubMed works best with simple English keyword queries.
+        Translate Chinese terms to English if needed.
         """
+        # Chinese to English medical term mapping
+        cn_to_en = {
+            '前列腺癌': 'prostate cancer',
+            '宫颈癌': 'cervical cancer',
+            '乳腺癌': 'breast cancer',
+            '肺癌': 'lung cancer',
+            '肝癌': 'liver cancer',
+            '胃癌': 'gastric cancer',
+            '结直肠癌': 'colorectal cancer',
+            '食管癌': 'esophageal cancer',
+            '胰腺癌': 'pancreatic cancer',
+            '卵巢癌': 'ovarian cancer',
+            '子宫内膜癌': 'endometrial cancer',
+            '头颈癌': 'head neck cancer',
+            '膀胱癌': 'bladder cancer',
+            '肾癌': 'kidney cancer',
+            '甲状腺癌': 'thyroid cancer',
+            '近距离治疗': 'brachytherapy',
+            '近距离放疗': 'brachytherapy',
+            '放射治疗': 'radiation therapy',
+            '外照射': 'external beam radiation',
+            '剂量': 'dose',
+            '靶区': 'target volume',
+            '危及器官': 'organ at risk',
+            '处方剂量': 'prescription dose',
+            '分割': 'fractionation',
+            '高剂量率': 'high dose rate',
+            '低剂量率': 'low dose rate',
+        }
+
+        # Translate Chinese terms to English
+        translated = query
+        for cn, en in cn_to_en.items():
+            if cn in translated:
+                translated = translated.replace(cn, f' {en} ')
+        # Remove extra spaces
+        translated = ' '.join(translated.split())
+
         # Remove common filler words
         filler_words = [
             'AI', 'agent', 'system', 'model', 'tool', 'platform',
@@ -756,7 +794,7 @@ GitHub Integration:
             'medical', 'clinical', 'health',
         ]
 
-        words = query.split()
+        words = translated.split()
         # Keep only the most distinctive keywords (max 2)
         main_keywords = []
         for word in words:
@@ -766,7 +804,7 @@ GitHub Integration:
                     break
 
         simplified = ' '.join(main_keywords)
-        return simplified if simplified else query
+        return simplified if simplified else translated
 
     def _format_results(self, results: List[Dict], query: str) -> Dict:
         """Format search results into a structured response."""
