@@ -1,0 +1,160 @@
+{
+  "query": "2025 NBA Finals teams",
+  "timestamp": 1780389795.5285957,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Standardized Definition of Progression Independent of Relapse Activity (PIRA) in Relapsing-Remitting Multiple Sclerosis.",
+        "snippet": "PubMed ID: 40227706. 2025/06/01 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \ntherapy is unknown.\nPURPOSE: To assess self-perceived recovery rate and the 5-year change in pain \nlevels, disability, and sports participation, and to explore the prognostic \nfactors associated with self-perceived recovery.\nSTUDY DESIGN: Cohort study; Level of evidence, 3.\nMETHODS: Athletes with PT who",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40227706/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Methionine cycle in C. elegans serotonergic neurons regulates diet-dependent behaviour and longevity through neuron-gut signaling.",
+        "snippet": "PubMed ID: 40456752. 2025/06/02 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \ntherapy is unknown.\nPURPOSE: To assess self-perceived recovery rate and the 5-year change in pain \nlevels, disability, and sports participation, and to explore the prognostic \nfactors associated with self-perceived recovery.\nSTUDY DESIGN: Cohort study; Level of evidence, 3.\nMETHODS: Athletes with PT who",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40456752/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Long-term Prognosis of Athletes With Patellar Tendinopathy Receiving Physical Therapy: Patient-Reported Outcomes at 5-Year Follow-up.",
+        "snippet": "PubMed ID: 40356204. 2025/06/01 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \ntherapy is unknown.\nPURPOSE: To assess self-perceived recovery rate and the 5-year change in pain \nlevels, disability, and sports participation, and to explore the prognostic \nfactors associated with self-perceived recovery.\nSTUDY DESIGN: Cohort study; Level of evidence, 3.\nMETHODS: Athletes with PT who",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40356204/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Acute and Long-Term Immune-Treatment Strategies in Anti-LGI1 Antibody-Mediated Encephalitis: A Multicenter Cohort Study.",
+        "snippet": "PubMed ID: 40537079. 2025/07/01 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \ntherapy is unknown.\nPURPOSE: To assess self-perceived recovery rate and the 5-year change in pain \nlevels, disability, and sports participation, and to explore the prognostic \nfactors associated with self-perceived recovery.\nSTUDY DESIGN: Cohort study; Level of evidence, 3.\nMETHODS: Athletes with PT who",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40537079/",
+        "source": "PubMed"
+      },
+      {
+        "title": "External validation of a digital pathology-based multimodal artificial intelligence-derived prognostic model in patients with advanced prostate cancer starting long-term androgen deprivation therapy: a post-hoc ancillary biomarker study of four phase 3 randomised controlled trials of the STAMPEDE platform protocol.",
+        "snippet": "PubMed ID: 40467357. 2025/07/01 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \ntherapy is unknown.\nPURPOSE: To assess self-perceived recovery rate and the 5-year change in pain \nlevels, disability, and sports participation, and to explore the prognostic \nfactors associated with self-perceived recovery.\nSTUDY DESIGN: Cohort study; Level of evidence, 3.\nMETHODS: Athletes with PT who",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40467357/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 40227706. 2025/06/01 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \nther\n2. PubMed ID: 40456752. 2025/06/02 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \nther\n3. PubMed ID: 40356204. 2025/06/01 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \nther",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/40227706/",
+      "https://pubmed.ncbi.nlm.nih.gov/40456752/",
+      "https://pubmed.ncbi.nlm.nih.gov/40356204/",
+      "https://pubmed.ncbi.nlm.nih.gov/40537079/",
+      "https://pubmed.ncbi.nlm.nih.gov/40467357/"
+    ],
+    "evidence_chain_id": "20260602_164313_751277",
+    "evidence_summary": {
+      "response_id": "20260602_164313_751277",
+      "query": "2025 NBA Finals teams",
+      "created_at": "2026-06-02T16:43:13.751305",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Standardized Definition of Progression Independent of Relapse Activity (PIRA) in Relapsing-Remitting Multiple Sclerosis.](https://pubmed.ncbi.nlm.nih.gov/40227706/)",
+        "[Methionine cycle in C. elegans serotonergic neurons regulates diet-dependent behaviour and longevity through neuron-gut signaling.](https://pubmed.ncbi.nlm.nih.gov/40456752/)",
+        "[Long-term Prognosis of Athletes With Patellar Tendinopathy Receiving Physical Therapy: Patient-Reported Outcomes at 5-Year Follow-up.](https://pubmed.ncbi.nlm.nih.gov/40356204/)",
+        "[Acute and Long-Term Immune-Treatment Strategies in Anti-LGI1 Antibody-Mediated Encephalitis: A Multicenter Cohort Study.](https://pubmed.ncbi.nlm.nih.gov/40537079/)",
+        "[External validation of a digital pathology-based multimodal artificial intelligence-derived prognostic model in patients with advanced prostate cancer starting long-term androgen deprivation therapy: a post-hoc ancillary biomarker study of four phase 3 randomised controlled trials of the STAMPEDE platform protocol.](https://pubmed.ncbi.nlm.nih.gov/40467357/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "1b533949e915",
+          "claim": "PubMed ID: 40227706. 2025/06/01 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \nther",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40227706/",
+          "source_type": "PubMed",
+          "source_title": "Standardized Definition of Progression Independent of Relapse Activity (PIRA) in Relapsing-Remitting Multiple Sclerosis.",
+          "accessed_at": "2026-06-02T16:43:15.528171",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40227706. 2025/06/01 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \ntherapy is unknown.\nPURPOSE: To assess self-perceived recovery rate and the 5-year change in pain \nlevels, disability, and sports participation, and to explore the prognostic \nfactors associated with self-perceived recovery.\nSTUDY DESIGN: Cohort study; Level of evidence, 3.\nMETHODS: Athletes with PT who",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "2025 NBA Finals teams",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "0989912f3ab6",
+          "claim": "PubMed ID: 40456752. 2025/06/02 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \nther",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40456752/",
+          "source_type": "PubMed",
+          "source_title": "Methionine cycle in C. elegans serotonergic neurons regulates diet-dependent behaviour and longevity through neuron-gut signaling.",
+          "accessed_at": "2026-06-02T16:43:15.528295",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40456752. 2025/06/02 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \ntherapy is unknown.\nPURPOSE: To assess self-perceived recovery rate and the 5-year change in pain \nlevels, disability, and sports participation, and to explore the prognostic \nfactors associated with self-perceived recovery.\nSTUDY DESIGN: Cohort study; Level of evidence, 3.\nMETHODS: Athletes with PT who",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "2025 NBA Finals teams",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "59c2c0226215",
+          "claim": "PubMed ID: 40356204. 2025/06/01 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \nther",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40356204/",
+          "source_type": "PubMed",
+          "source_title": "Long-term Prognosis of Athletes With Patellar Tendinopathy Receiving Physical Therapy: Patient-Reported Outcomes at 5-Year Follow-up.",
+          "accessed_at": "2026-06-02T16:43:15.528329",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40356204. 2025/06/01 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \ntherapy is unknown.\nPURPOSE: To assess self-perceived recovery rate and the 5-year change in pain \nlevels, disability, and sports participation, and to explore the prognostic \nfactors associated with self-perceived recovery.\nSTUDY DESIGN: Cohort study; Level of evidence, 3.\nMETHODS: Athletes with PT who",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "2025 NBA Finals teams",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "fd88910656b8",
+          "claim": "PubMed ID: 40537079. 2025/07/01 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \nther",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40537079/",
+          "source_type": "PubMed",
+          "source_title": "Acute and Long-Term Immune-Treatment Strategies in Anti-LGI1 Antibody-Mediated Encephalitis: A Multicenter Cohort Study.",
+          "accessed_at": "2026-06-02T16:43:15.528357",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40537079. 2025/07/01 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \ntherapy is unknown.\nPURPOSE: To assess self-perceived recovery rate and the 5-year change in pain \nlevels, disability, and sports participation, and to explore the prognostic \nfactors associated with self-perceived recovery.\nSTUDY DESIGN: Cohort study; Level of evidence, 3.\nMETHODS: Athletes with PT who",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "2025 NBA Finals teams",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3772fca36f1f",
+          "claim": "PubMed ID: 40467357. 2025/07/01 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \nther",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40467357/",
+          "source_type": "PubMed",
+          "source_title": "External validation of a digital pathology-based multimodal artificial intelligence-derived prognostic model in patients with advanced prostate cancer starting long-term androgen deprivation therapy: a post-hoc ancillary biomarker study of four phase 3 randomised controlled trials of the STAMPEDE platform protocol.",
+          "accessed_at": "2026-06-02T16:43:15.528382",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40467357. 2025/07/01 00:00. BACKGROUND: Patellar tendinopathy (PT) is a highly prevalent injury among \njumping athletes. The long-term prognosis of athletes with PT following physical \ntherapy is unknown.\nPURPOSE: To assess self-perceived recovery rate and the 5-year change in pain \nlevels, disability, and sports participation, and to explore the prognostic \nfactors associated with self-perceived recovery.\nSTUDY DESIGN: Cohort study; Level of evidence, 3.\nMETHODS: Athletes with PT who",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "2025 NBA Finals teams",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Standardized Definition of Progression Independent of Relapse Activity (PIRA) in Relapsing-Remitting Multiple Sclerosis.](https://pubmed.ncbi.nlm.nih.gov/40227706/)",
+      "[Methionine cycle in C. elegans serotonergic neurons regulates diet-dependent behaviour and longevity through neuron-gut signaling.](https://pubmed.ncbi.nlm.nih.gov/40456752/)",
+      "[Long-term Prognosis of Athletes With Patellar Tendinopathy Receiving Physical Therapy: Patient-Reported Outcomes at 5-Year Follow-up.](https://pubmed.ncbi.nlm.nih.gov/40356204/)",
+      "[Acute and Long-Term Immune-Treatment Strategies in Anti-LGI1 Antibody-Mediated Encephalitis: A Multicenter Cohort Study.](https://pubmed.ncbi.nlm.nih.gov/40537079/)",
+      "[External validation of a digital pathology-based multimodal artificial intelligence-derived prognostic model in patients with advanced prostate cancer starting long-term androgen deprivation therapy: a post-hoc ancillary biomarker study of four phase 3 randomised controlled trials of the STAMPEDE platform protocol.](https://pubmed.ncbi.nlm.nih.gov/40467357/)"
+    ]
+  }
+}

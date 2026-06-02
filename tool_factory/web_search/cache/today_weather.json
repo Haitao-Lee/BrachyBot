@@ -1,0 +1,160 @@
+{
+  "query": "today weather",
+  "timestamp": 1780391077.843495,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Dispelling myths about sunscreen.",
+        "snippet": "PubMed ID: 32633165. 2022/03/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE, EMBASE, and Cochrane databases were systematically \nsearched from inception to June 28, 2024.\nSTUDY SELECTION: Studies included observational studies (cohort, case-control, \nand cross-sectional) that assessed the association observational studies that \nassessed associations between climate conditi",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32633165/",
+        "source": "PubMed"
+      },
+      {
+        "title": "What's the Weather Like Today? Forecasting a Chance of Shower, Snow, and… Missing Dialysis.",
+        "snippet": "PubMed ID: 39074303. 2023/07/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE, EMBASE, and Cochrane databases were systematically \nsearched from inception to June 28, 2024.\nSTUDY SELECTION: Studies included observational studies (cohort, case-control, \nand cross-sectional) that assessed the association observational studies that \nassessed associations between climate conditi",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39074303/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Climate Conditions, Weather Changes, and Air Pollutants and Atopic Dermatitis: A Meta-Analysis.",
+        "snippet": "PubMed ID: 40560568. 2025/08/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE, EMBASE, and Cochrane databases were systematically \nsearched from inception to June 28, 2024.\nSTUDY SELECTION: Studies included observational studies (cohort, case-control, \nand cross-sectional) that assessed the association observational studies that \nassessed associations between climate conditi",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40560568/",
+        "source": "PubMed"
+      },
+      {
+        "title": "[Ice Swimming].",
+        "snippet": "PubMed ID: 37042409. 2023/04/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE, EMBASE, and Cochrane databases were systematically \nsearched from inception to June 28, 2024.\nSTUDY SELECTION: Studies included observational studies (cohort, case-control, \nand cross-sectional) that assessed the association observational studies that \nassessed associations between climate conditi",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37042409/",
+        "source": "PubMed"
+      },
+      {
+        "title": "The silent UVA.",
+        "snippet": "PubMed ID: 38823108. 2024/08/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE, EMBASE, and Cochrane databases were systematically \nsearched from inception to June 28, 2024.\nSTUDY SELECTION: Studies included observational studies (cohort, case-control, \nand cross-sectional) that assessed the association observational studies that \nassessed associations between climate conditi",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38823108/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 32633165. 2022/03/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE\n2. PubMed ID: 39074303. 2023/07/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE\n3. PubMed ID: 40560568. 2025/08/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/32633165/",
+      "https://pubmed.ncbi.nlm.nih.gov/39074303/",
+      "https://pubmed.ncbi.nlm.nih.gov/40560568/",
+      "https://pubmed.ncbi.nlm.nih.gov/37042409/",
+      "https://pubmed.ncbi.nlm.nih.gov/38823108/"
+    ],
+    "evidence_chain_id": "20260602_170434_968779",
+    "evidence_summary": {
+      "response_id": "20260602_170434_968779",
+      "query": "today weather",
+      "created_at": "2026-06-02T17:04:34.968784",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Dispelling myths about sunscreen.](https://pubmed.ncbi.nlm.nih.gov/32633165/)",
+        "[What's the Weather Like Today? Forecasting a Chance of Shower, Snow, and… Missing Dialysis.](https://pubmed.ncbi.nlm.nih.gov/39074303/)",
+        "[Climate Conditions, Weather Changes, and Air Pollutants and Atopic Dermatitis: A Meta-Analysis.](https://pubmed.ncbi.nlm.nih.gov/40560568/)",
+        "[[Ice Swimming].](https://pubmed.ncbi.nlm.nih.gov/37042409/)",
+        "[The silent UVA.](https://pubmed.ncbi.nlm.nih.gov/38823108/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "a9acdceba8fc",
+          "claim": "PubMed ID: 32633165. 2022/03/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32633165/",
+          "source_type": "PubMed",
+          "source_title": "Dispelling myths about sunscreen.",
+          "accessed_at": "2026-06-02T17:04:37.843035",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32633165. 2022/03/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE, EMBASE, and Cochrane databases were systematically \nsearched from inception to June 28, 2024.\nSTUDY SELECTION: Studies included observational studies (cohort, case-control, \nand cross-sectional) that assessed the association observational studies that \nassessed associations between climate conditi",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "today weather",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "b8ecf1335bbd",
+          "claim": "PubMed ID: 39074303. 2023/07/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39074303/",
+          "source_type": "PubMed",
+          "source_title": "What's the Weather Like Today? Forecasting a Chance of Shower, Snow, and… Missing Dialysis.",
+          "accessed_at": "2026-06-02T17:04:37.843197",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39074303. 2023/07/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE, EMBASE, and Cochrane databases were systematically \nsearched from inception to June 28, 2024.\nSTUDY SELECTION: Studies included observational studies (cohort, case-control, \nand cross-sectional) that assessed the association observational studies that \nassessed associations between climate conditi",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "today weather",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ebae9bb7e782",
+          "claim": "PubMed ID: 40560568. 2025/08/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40560568/",
+          "source_type": "PubMed",
+          "source_title": "Climate Conditions, Weather Changes, and Air Pollutants and Atopic Dermatitis: A Meta-Analysis.",
+          "accessed_at": "2026-06-02T17:04:37.843232",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40560568. 2025/08/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE, EMBASE, and Cochrane databases were systematically \nsearched from inception to June 28, 2024.\nSTUDY SELECTION: Studies included observational studies (cohort, case-control, \nand cross-sectional) that assessed the association observational studies that \nassessed associations between climate conditi",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "today weather",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "525ab9532dc0",
+          "claim": "PubMed ID: 37042409. 2023/04/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37042409/",
+          "source_type": "PubMed",
+          "source_title": "[Ice Swimming].",
+          "accessed_at": "2026-06-02T17:04:37.843260",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37042409. 2023/04/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE, EMBASE, and Cochrane databases were systematically \nsearched from inception to June 28, 2024.\nSTUDY SELECTION: Studies included observational studies (cohort, case-control, \nand cross-sectional) that assessed the association observational studies that \nassessed associations between climate conditi",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "today weather",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f7d1c9c2daae",
+          "claim": "PubMed ID: 38823108. 2024/08/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38823108/",
+          "source_type": "PubMed",
+          "source_title": "The silent UVA.",
+          "accessed_at": "2026-06-02T17:04:37.843286",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38823108. 2024/08/01 00:00. OBJECTIVE: To summarize and assess the certainty of evidence on associations \nbetween environmental factors and atopic dermatitis outcomes.\nDATA SOURCES: MEDLINE, EMBASE, and Cochrane databases were systematically \nsearched from inception to June 28, 2024.\nSTUDY SELECTION: Studies included observational studies (cohort, case-control, \nand cross-sectional) that assessed the association observational studies that \nassessed associations between climate conditi",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "today weather",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Dispelling myths about sunscreen.](https://pubmed.ncbi.nlm.nih.gov/32633165/)",
+      "[What's the Weather Like Today? Forecasting a Chance of Shower, Snow, and… Missing Dialysis.](https://pubmed.ncbi.nlm.nih.gov/39074303/)",
+      "[Climate Conditions, Weather Changes, and Air Pollutants and Atopic Dermatitis: A Meta-Analysis.](https://pubmed.ncbi.nlm.nih.gov/40560568/)",
+      "[[Ice Swimming].](https://pubmed.ncbi.nlm.nih.gov/37042409/)",
+      "[The silent UVA.](https://pubmed.ncbi.nlm.nih.gov/38823108/)"
+    ]
+  }
+}

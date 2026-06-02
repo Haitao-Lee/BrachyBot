@@ -21,19 +21,24 @@ os.makedirs(REPORT_DIR, exist_ok=True)
 
 CATEGORIES = [19, 20, 21, 22, 23, 24, 25, 26, 27]
 
-def send_message(text, session_id, timeout=90):
+def send_message(text, session_id, timeout=300, retries=3):
     payload = {
         "message": text,
         "clear_context": True,
         "session_id": session_id,
         "stream": False
     }
-    try:
-        response = requests.post(f"{BASE_URL}/api/chat", json=payload, timeout=timeout)
-        data = response.json()
-        return data.get('response', '')
-    except Exception as e:
-        return f"Error: {str(e)}"
+    for attempt in range(retries):
+        try:
+            response = requests.post(f"{BASE_URL}/api/chat", json=payload, timeout=timeout)
+            data = response.json()
+            return data.get('response', '')
+        except Exception as e:
+            if attempt < retries - 1:
+                print(f"\n    Retry {attempt+1}/{retries}: {str(e)[:80]}", end="", flush=True)
+                time.sleep(5)
+            else:
+                return f"Error: {str(e)}"
 
 def take_screenshot_batch(results, cat_num):
     """Take screenshots using a single browser instance for all results."""
@@ -48,9 +53,8 @@ def take_screenshot_batch(results, cat_num):
                 if r.get('screenshot'):
                     continue  # Already has screenshot
                 try:
-                    page.goto(BASE_URL, timeout=10000)
-                    page.wait_for_load_state('networkidle', timeout=10000)
-                    time.sleep(1)
+                    page.goto(BASE_URL, timeout=30000, wait_until='domcontentloaded')
+                    time.sleep(3)
                     page.screenshot(path=screenshot_path, full_page=True)
                     r['screenshot'] = screenshot_path
                 except Exception as e:
@@ -130,14 +134,38 @@ def run_category(cat_num, agent_id):
     print(f"{'='*60}")
 
     results = []
+
+    # Load existing results for this category to skip completed cases
+    existing_results = []
+    existing_file = f"/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/agent3_cat{cat_num:02d}.json"
+    if os.path.exists(existing_file):
+        try:
+            with open(existing_file, 'r') as ef:
+                existing_results = json.load(ef)
+            existing_ids = set(r['case_id'] for r in existing_results)
+            print(f"  Resuming: {len(existing_results)} existing results loaded")
+        except:
+            existing_ids = set()
+    else:
+        existing_ids = set()
+
     for i, test_case in enumerate(test_cases):
         case_id = test_case.get('id', f'Q{i+1:04d}')
+
+        # Skip already completed cases
+        if case_id in existing_ids:
+            existing_r = [r for r in existing_results if r['case_id'] == case_id]
+            if existing_r:
+                results.append(existing_r[0])
+                print(f"  [{i+1}/{len(test_cases)}] {case_id}... CACHED ({existing_r[0]['total_score']:.2f})")
+                continue
+
         input_text = test_case.get('input', '')
         print(f"  [{i+1}/{len(test_cases)}] {case_id}...", end=" ", flush=True)
 
         session_id = f"agent{agent_id}_{cat_num:02d}_{case_id}_{int(time.time() * 1000)}"
         start_time = time.time()
-        response = send_message(input_text, session_id, timeout=90)
+        response = send_message(input_text, session_id, timeout=300)
         response_time = time.time() - start_time
 
         total_score, dimension_scores = score_response(response, test_case)
@@ -174,25 +202,31 @@ def run_category(cat_num, agent_id):
             print(f"    -> {root_cause}: {root_cause_detail}")
         sys.stdout.flush()
 
-        # Save intermediate results after every 25 cases
-        if (i + 1) % 25 == 0:
-            save_intermediate(results)
+        # Save intermediate results after every case
+        save_intermediate(results, cat_num)
 
     # Try batch screenshots for this category
     print(f"  Taking screenshots for {len(results)} cases...")
     take_screenshot_batch(results, cat_num)
 
     # Final save for this category
-    save_intermediate(results)
+    save_intermediate(results, cat_num)
 
     passed_count = sum(1 for r in results if r['passed'])
     print(f"\n  Category {cat_num} complete: {passed_count}/{len(results)} passed ({passed_count/len(results)*100:.1f}%)")
     return results
 
-def save_intermediate(results):
+def save_intermediate(results, cat_num=None):
     """Save results to file."""
     try:
-        # Load existing and merge
+        # Save per-category file
+        if cat_num is not None:
+            cat_file = f"/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/agent3_cat{cat_num:02d}.json"
+            cat_results = [r for r in results if r.get('category_num') == cat_num]
+            with open(cat_file, 'w') as f:
+                json.dump(cat_results, f, indent=2, default=str)
+
+        # Load existing and merge for main file
         existing = []
         if os.path.exists(RESULTS_FILE):
             with open(RESULTS_FILE, 'r') as f:
@@ -310,7 +344,7 @@ def main():
         all_results.extend(results)
 
         # Save after each category
-        save_intermediate(all_results)
+        save_intermediate(all_results, cat_num)
 
     # Generate final report
     print(f"\n{'='*60}")

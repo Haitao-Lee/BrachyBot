@@ -1,6 +1,6 @@
 {
   "query": "DeepRare",
-  "timestamp": 1780372148.937727,
+  "timestamp": 1780375696.4719355,
   "result": {
     "success": true,
     "results": [
@@ -41,15 +41,15 @@
       "https://github.com/MAGIC-AI4Med/DeepRare",
       "https://github.com/julianig72/DeepRare"
     ],
-    "evidence_chain_id": "20260602_114906_377074",
+    "evidence_chain_id": "20260602_124813_517837",
     "evidence_summary": {
-      "response_id": "20260602_114906_377074",
+      "response_id": "20260602_124813_517837",
       "query": "DeepRare",
-      "created_at": "2026-06-02T11:49:06.377078",
+      "created_at": "2026-06-02T12:48:13.517847",
       "num_sources": 3,
       "source_types": [
-        "GitHub",
-        "PubMed"
+        "PubMed",
+        "GitHub"
       ],
       "avg_confidence": 0.75,
       "verification_status": "unverified",
@@ -65,7 +65,7 @@
           "source_url": "https://pubmed.ncbi.nlm.nih.gov/41708847/",
           "source_type": "PubMed",
           "source_title": "An agentic system for rare disease diagnosis with traceable reasoning.",
-          "accessed_at": "2026-06-02T11:49:08.937460",
+          "accessed_at": "2026-06-02T12:48:16.471656",
           "published_at": "",
           "raw_snippet": "PubMed ID: 41708847. 2026/03/01 00:00. Rare diseases affect more than 300 million people worldwide, yet timely and \naccurate diagnosis remains an urgent challenge1,. Patients often endure a \nprolonged 'diagnostic odyssey' exceeding 5 years, marked by repeated referrals, \nmisdiagnoses and unnecessary interventions, leading to delayed treatment and \nsubstantial emotional and economic burden. Here we present DeepRare-a \nmulti-agent system for rare disease differential diagnosis decision support \npo",
           "extracted_data": {},
@@ -82,7 +82,7 @@
           "source_url": "https://github.com/MAGIC-AI4Med/DeepRare",
           "source_type": "GitHub",
           "source_title": "MAGIC-AI4Med/DeepRare",
-          "accessed_at": "2026-06-02T11:49:08.937501",
+          "accessed_at": "2026-06-02T12:48:16.471698",
           "published_at": "",
           "raw_snippet": "Code implementation of DeepRare (Nature 2026)",
           "extracted_data": {
@@ -104,7 +104,7 @@
           "source_url": "https://github.com/julianig72/DeepRare",
           "source_type": "GitHub",
           "source_title": "julianig72/DeepRare",
-          "accessed_at": "2026-06-02T11:49:08.937513",
+          "accessed_at": "2026-06-02T12:48:16.471713",
           "published_at": "",
           "raw_snippet": "",
           "extracted_data": {

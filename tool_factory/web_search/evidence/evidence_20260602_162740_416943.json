@@ -1,0 +1,51 @@
+{
+  "response_id": "20260602_162740_416943",
+  "query": "YOLOv26",
+  "created_at": "2026-06-02T16:27:40.416961",
+  "num_sources": 2,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[Proposal for Computationally Efficient Fog Computing System for Coffee Berry Borer Detection via Optimized YOLOv26.](https://pubmed.ncbi.nlm.nih.gov/41977997/)",
+    "[Real-Time Small Retail Product Detection in Low-Light Intelligent Cabinets Under Complex Backgrounds.](https://pubmed.ncbi.nlm.nih.gov/42198072/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "ca0ea42d215d",
+      "claim": "PubMed ID: 41977997. 2026/04/03 00:00. This study \nevaluates optimized object detection architectures designed to improve the \nbalance between detection accuracy and computational efficiency. Three ba",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/41977997/",
+      "source_type": "PubMed",
+      "source_title": "Proposal for Computationally Efficient Fog Computing System for Coffee Berry Borer Detection via Optimized YOLOv26.",
+      "accessed_at": "2026-06-02T16:27:41.877774",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 41977997. 2026/04/03 00:00. This study \nevaluates optimized object detection architectures designed to improve the \nbalance between detection accuracy and computational efficiency. Three baselines \nwere established: YOLOv8n (M0), YOLOv11n (M1), and YOLOv26n (M2). Seven \narchitectural variants (M3-M9) were then developed by integrating FasterNet, \nSimSPPF, and EMA. Experimental results showed that M0 achieved the highest \ndetection accuracy (mAP@0.5 = 0.9534 and 6.09 GFLOPs), whereas m",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "YOLOv26",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "6e9110ecf254",
+      "claim": "PubMed ID: 42198072. 2026/05/21 00:00. This study \nevaluates optimized object detection architectures designed to improve the \nbalance between detection accuracy and computational efficiency. Three ba",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/42198072/",
+      "source_type": "PubMed",
+      "source_title": "Real-Time Small Retail Product Detection in Low-Light Intelligent Cabinets Under Complex Backgrounds.",
+      "accessed_at": "2026-06-02T16:27:41.877880",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 42198072. 2026/05/21 00:00. This study \nevaluates optimized object detection architectures designed to improve the \nbalance between detection accuracy and computational efficiency. Three baselines \nwere established: YOLOv8n (M0), YOLOv11n (M1), and YOLOv26n (M2). Seven \narchitectural variants (M3-M9) were then developed by integrating FasterNet, \nSimSPPF, and EMA. Experimental results showed that M0 achieved the highest \ndetection accuracy (mAP@0.5 = 0.9534 and 6.09 GFLOPs), whereas m",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "YOLOv26",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

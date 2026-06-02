@@ -1,0 +1,80 @@
+{
+  "response_id": "20260602_124813_517837",
+  "query": "DeepRare",
+  "created_at": "2026-06-02T12:48:13.517847",
+  "num_sources": 3,
+  "source_types": [
+    "PubMed",
+    "GitHub"
+  ],
+  "avg_confidence": 0.75,
+  "verification_status": "unverified",
+  "citations": [
+    "[An agentic system for rare disease diagnosis with traceable reasoning.](https://pubmed.ncbi.nlm.nih.gov/41708847/)",
+    "[MAGIC-AI4Med/DeepRare](https://github.com/MAGIC-AI4Med/DeepRare)",
+    "[julianig72/DeepRare](https://github.com/julianig72/DeepRare)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "488c6a4555c3",
+      "claim": "PubMed ID: 41708847. 2026/03/01 00:00. Rare diseases affect more than 300 million people worldwide, yet timely and \naccurate diagnosis remains an urgent challenge1,. Patients often endure a \nprolonged",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/41708847/",
+      "source_type": "PubMed",
+      "source_title": "An agentic system for rare disease diagnosis with traceable reasoning.",
+      "accessed_at": "2026-06-02T12:48:16.471656",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 41708847. 2026/03/01 00:00. Rare diseases affect more than 300 million people worldwide, yet timely and \naccurate diagnosis remains an urgent challenge1,. Patients often endure a \nprolonged 'diagnostic odyssey' exceeding 5 years, marked by repeated referrals, \nmisdiagnoses and unnecessary interventions, leading to delayed treatment and \nsubstantial emotional and economic burden. Here we present DeepRare-a \nmulti-agent system for rare disease differential diagnosis decision support \npo",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "DeepRare",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "c08636e636ad",
+      "claim": "Code implementation of DeepRare (Nature 2026)",
+      "source_url": "https://github.com/MAGIC-AI4Med/DeepRare",
+      "source_type": "GitHub",
+      "source_title": "MAGIC-AI4Med/DeepRare",
+      "accessed_at": "2026-06-02T12:48:16.471698",
+      "published_at": "",
+      "raw_snippet": "Code implementation of DeepRare (Nature 2026)",
+      "extracted_data": {
+        "stars": 242,
+        "language": "Python",
+        "forks": 50,
+        "updated": "2026-06-02T01:13:39Z"
+      },
+      "confidence": 0.75,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "DeepRare",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "76e979ee325b",
+      "claim": "",
+      "source_url": "https://github.com/julianig72/DeepRare",
+      "source_type": "GitHub",
+      "source_title": "julianig72/DeepRare",
+      "accessed_at": "2026-06-02T12:48:16.471713",
+      "published_at": "",
+      "raw_snippet": "",
+      "extracted_data": {
+        "stars": 21,
+        "language": "Python",
+        "forks": 8,
+        "updated": "2026-05-18T04:10:35Z"
+      },
+      "confidence": 0.65,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "DeepRare",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

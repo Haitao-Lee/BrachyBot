@@ -1,21 +1,11 @@
 #!/usr/bin/env python3
-"""
-Standalone Agent 4 Runner - handles slow LLM responses with generous timeouts.
-"""
+"""Run missing benchmark cases for specific categories."""
 import json, os, sys, time, glob, requests
 from datetime import datetime
-from pathlib import Path
 
 BASE_URL = "http://localhost:8080"
 SCREENSHOT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots"
 BENCHMARK_DIR = "/home/lht/snap/brachyplan/BrachyBot/benchmarks"
-REPORT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/reports"
-STATE_FILE = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/scheduler_state.json"
-API_TIMEOUT = 600  # 10 minutes per request
-AGENT_ID = 4
-
-os.makedirs(SCREENSHOT_DIR, exist_ok=True)
-os.makedirs(REPORT_DIR, exist_ok=True)
 
 def check_server():
     try:
@@ -24,75 +14,61 @@ def check_server():
     except:
         return False
 
-def wait_for_server(timeout=120):
+def wait_server(timeout=120):
     start = time.time()
     while time.time() - start < timeout:
         if check_server():
             return True
+        print(".", end="", flush=True)
         time.sleep(5)
     return False
 
-def load_benchmark(cat_num):
-    files = glob.glob(f"{BENCHMARK_DIR}/{cat_num:02d}_*.json")
-    if not files:
-        return None, []
-    with open(files[0], 'r') as f:
-        data = json.load(f)
-    name = os.path.basename(files[0]).replace('.json', '')
-    cases = data.get('cases', data) if isinstance(data, dict) else data
-    return name, cases
-
-def get_completed(cat_num):
-    done = set()
-    for f in glob.glob(f"{SCREENSHOT_DIR}/{cat_num:02d}_*.png"):
-        if os.path.getsize(f) > 1000:
-            cid = os.path.basename(f).replace(f"{cat_num:02d}_", "").replace(".png", "")
-            done.add(cid)
-    return done
-
-def send_message(text, session_id):
+def send_message(text, session_id, timeout=240):
     for attempt in range(3):
         try:
             if not check_server():
-                print("    Server offline, waiting...", flush=True)
-                wait_for_server(60)
+                print("[server down, waiting...]", end=" ", flush=True)
+                if not wait_server(60):
+                    return "Error: server offline"
             r = requests.post(f"{BASE_URL}/api/chat", json={
-                "message": text,
-                "clear_context": True,
-                "session_id": session_id,
-                "stream": False
-            }, timeout=API_TIMEOUT)
-            data = r.json()
-            if "error" in data:
-                return f"Error: {data['error']}"
-            return data.get("response", "")
+                "message": text, "clear_context": True,
+                "session_id": session_id, "stream": False
+            }, timeout=timeout)
+            return r.json().get('response', '')
         except requests.exceptions.Timeout:
-            print(f"    Timeout attempt {attempt+1}/3", flush=True)
-            if attempt < 2:
-                time.sleep(5)
+            print(f"[timeout {attempt+1}]", end=" ", flush=True)
+            time.sleep(5)
         except Exception as e:
-            print(f"    Error attempt {attempt+1}/3: {e}", flush=True)
-            if attempt < 2:
-                time.sleep(5)
-    return "Error: All attempts failed"
+            print(f"[err {attempt+1}: {e}]", end=" ", flush=True)
+            time.sleep(5)
+    return "Error: all retries failed"
 
 def take_screenshot(case_id, cat_num):
-    screenshot_path = f"{SCREENSHOT_DIR}/{cat_num:02d}_{case_id}.png"
-    if os.path.exists(screenshot_path) and os.path.getsize(screenshot_path) > 1000:
-        return screenshot_path
+    path = f"{SCREENSHOT_DIR}/{cat_num:02d}_{case_id}.png"
+    if os.path.exists(path) and os.path.getsize(path) > 1000:
+        return path
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=True, args=['--no-sandbox'])
             page = browser.new_page(viewport={'width': 1920, 'height': 1080})
             page.goto(BASE_URL, timeout=30000, wait_until='domcontentloaded')
             time.sleep(3)
-            page.screenshot(path=screenshot_path, full_page=True)
+            page.screenshot(path=path, full_page=True)
+            page.close()
             browser.close()
-        return screenshot_path
+        return path
     except Exception as e:
-        print(f"    Screenshot failed: {e}", flush=True)
+        print(f"[screenshot error: {e}]", end=" ", flush=True)
         return None
+
+def get_done_ids(cat_num):
+    done = set()
+    for f in glob.glob(f"{SCREENSHOT_DIR}/{cat_num:02d}_*.png"):
+        if os.path.getsize(f) > 1000:
+            bn = os.path.basename(f).replace(f"{cat_num:02d}_", "").replace(".png", "")
+            done.add(bn)
+    return done
 
 def score_response(response, test_case):
     scores = {'keyword': 0.0, 'completeness': 0.0, 'safety': 1.0, 'accuracy': 1.0, 'ux': 1.0}
@@ -144,106 +120,104 @@ def analyze_failure(response, test_case):
             return 'keyword_missing', 'No expected keywords found'
     return 'wrong_answer', 'Response does not meet expectations'
 
-def load_state():
-    if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, 'r') as f:
-            return json.load(f)
-    return {"completed": {}, "failed": {}, "in_progress": {}}
-
-def save_state(state):
-    with open(STATE_FILE, 'w') as f:
-        json.dump(state, f, indent=2)
-
-def run_category(cat_num, state):
-    cat_name, cases = load_benchmark(cat_num)
-    if cat_name is None:
+def run_category(cat_num):
+    files = glob.glob(f"{BENCHMARK_DIR}/{cat_num:02d}_*.json")
+    if not files:
         print(f"No benchmark file for category {cat_num}")
         return []
 
-    completed = get_completed(cat_num)
-    remaining = [tc for tc in cases if tc.get('id', '') not in completed]
+    with open(files[0]) as f:
+        data = json.load(f)
+    cases = data.get('cases', data) if isinstance(data, dict) else data
+    done_ids = get_done_ids(cat_num)
+    remaining = [tc for tc in cases if tc.get('id', '') not in done_ids]
 
-    print(f"\n{'='*60}")
-    print(f"Category {cat_num}: {cat_name}")
-    print(f"Total: {len(cases)} | Completed: {len(completed)} | Remaining: {len(remaining)}")
-    print(f"{'='*60}", flush=True)
-
+    print(f"\nCategory {cat_num}: {len(cases)} total, {len(done_ids)} done, {len(remaining)} remaining")
     if not remaining:
-        print("  All cases already completed!")
+        print("  All complete!")
         return []
 
     results = []
     for i, tc in enumerate(remaining):
-        case_id = tc.get('id', f'Q{i+1:04d}')
-        input_text = tc.get('input', '')
-        print(f"  [{i+1}/{len(remaining)}] {case_id}...", end=" ", flush=True)
+        cid = tc.get('id', f'Q{i+1:04d}')
+        inp = tc.get('input', '')
+        print(f"  [{i+1}/{len(remaining)}] {cid}...", end=" ", flush=True)
 
-        session_id = f"agent{AGENT_ID}_{cat_num:02d}_{case_id}_{int(time.time()*1000)}"
+        if not check_server():
+            print("[waiting for server]", end=" ", flush=True)
+            if not wait_server(120):
+                print("SKIP (server offline)")
+                continue
+
+        sid = f"run2_{cat_num:02d}_{cid}_{int(time.time()*1000)}"
         t0 = time.time()
-        response = send_message(input_text, session_id)
-        response_time = time.time() - t0
+        resp = send_message(inp, sid, timeout=240)
+        dt = time.time() - t0
 
-        screenshot_path = take_screenshot(case_id, cat_num)
-        total_score, dim_scores = score_response(response, tc)
+        # Take screenshot
+        screenshot = take_screenshot(cid, cat_num)
+        print(f"[shot]", end=" ", flush=True) if screenshot else print(f"[no shot]", end=" ", flush=True)
+
+        # Score
+        total_score, dim_scores = score_response(resp, tc)
         pass_threshold = tc.get('pass_threshold', 0.6)
         passed = total_score >= pass_threshold and dim_scores['safety'] > 0
 
         root_cause = root_cause_detail = None
         if not passed:
-            root_cause, root_cause_detail = analyze_failure(response, tc)
+            root_cause, root_cause_detail = analyze_failure(resp, tc)
 
         result = {
-            'case_id': case_id, 'category': cat_name, 'category_num': cat_num,
-            'input': input_text, 'response': response[:1500], 'response_length': len(response),
+            'case_id': cid, 'category_num': cat_num,
+            'input': inp, 'response': resp[:1500], 'response_length': len(resp),
             'total_score': total_score, 'dimension_scores': dim_scores, 'passed': passed,
             'root_cause': root_cause, 'root_cause_detail': root_cause_detail,
-            'response_time': response_time, 'screenshot': screenshot_path,
+            'response_time': dt, 'screenshot': screenshot,
             'timestamp': datetime.now().isoformat()
         }
         results.append(result)
-
         status = "PASS" if passed else "FAIL"
-        print(f"{status} ({total_score:.2f}) [{response_time:.1f}s]", flush=True)
+        print(f"{status} ({total_score:.2f}) [{dt:.1f}s] len={len(resp)}")
         if root_cause:
-            print(f"    -> {root_cause}: {root_cause_detail}", flush=True)
-
-        state["completed"][f"{cat_num}_{case_id}"] = True
-        save_state(state)
+            print(f"    -> {root_cause}: {root_cause_detail}")
+        time.sleep(2)  # Pause between requests
 
     return results
 
-if __name__ == "__main__":
-    categories = [int(x) for x in sys.argv[1:]] if len(sys.argv) > 1 else [23, 22, 19, 7]
+def main():
+    categories = [int(x) for x in sys.argv[1:]] if len(sys.argv) > 1 else [12, 15, 18]
+    agent_id = 2
 
     print("=" * 60)
-    print(f"AGENT {AGENT_ID} STANDALONE RUNNER")
-    print("=" * 60)
+    print(f"MISSING CASES RUNNER - Categories: {categories}")
     print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Categories: {categories}")
-    print(f"API Timeout: {API_TIMEOUT}s per request")
-    print(flush=True)
+    print("=" * 60)
 
     if not check_server():
         print("Server offline, waiting...")
-        if not wait_for_server():
+        if not wait_server(120):
             print("Cannot continue without server")
             sys.exit(1)
 
-    state = load_state()
     all_results = []
-
-    for cat_num in categories:
-        results = run_category(cat_num, state)
+    for cat in categories:
+        results = run_category(cat)
         all_results.extend(results)
         passed = sum(1 for r in results if r['passed'])
-        total = len(results)
-        print(f"\n  Category {cat_num} done: {passed}/{total} passed", flush=True)
+        print(f"  -> Category {cat}: {passed}/{len(results)} passed")
 
-    # Summary
+    # Save results
     total = len(all_results)
     passed = sum(1 for r in all_results if r['passed'])
     print(f"\n{'='*60}")
-    print(f"AGENT {AGENT_ID} COMPLETE")
-    print(f"Total: {total} | Passed: {passed} | Failed: {total - passed}")
-    print(f"Pass Rate: {passed/total*100:.1f}%" if total > 0 else "No tests")
-    print(f"Finished: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"COMPLETE: {passed}/{total} passed ({passed/total*100:.1f}%)" if total else "No tests run")
+
+    # Save results JSON
+    out_file = f"/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/reports/run2_missing_results.json"
+    os.makedirs(os.path.dirname(out_file), exist_ok=True)
+    with open(out_file, 'w') as f:
+        json.dump(all_results, f, indent=2, default=str)
+    print(f"Results saved: {out_file}")
+
+if __name__ == "__main__":
+    main()

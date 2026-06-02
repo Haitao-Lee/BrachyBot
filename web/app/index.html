@@ -488,14 +488,17 @@
         .chat-msg-actions {
             display: none;
             position: absolute;
-            top: -8px;
-            right: -8px;
+            top: 4px;
+            right: 4px;
             background: var(--bg-2);
             border: 1px solid var(--card-border);
             border-radius: 6px;
             padding: 0.15rem;
             gap: 2px;
+            z-index: 10;
+            transition: opacity 0.2s;
         }
+        .chat-msg-wrapper { position: relative; }
         .chat-msg-wrapper:hover .chat-msg-actions { display: flex; }
 
         .chat-msg-action-btn {
@@ -511,21 +514,23 @@
         .chat-msg-action-btn:hover { color: var(--text); background: var(--bg-3); }
 
         .chat-msg.bot-response {
-            background: var(--bg-3);
+            background: var(--bg-2);
             color: var(--text);
             align-self: flex-start;
-            border-radius: 12px;
-            border-bottom-left-radius: 3px;
-            padding: 0.6rem 0.85rem;
-            font-size: 0.82rem;
-            line-height: 1.5;
-            max-width: 85%;
+            border-radius: 6px;
+            padding: 0.75rem;
+            font-size: 0.7rem;
+            line-height: 1.6;
+            width: fit-content;
+            max-width: 100%;
+            height: auto;
             animation: fadeIn 0.2s ease;
             word-break: break-word;
             user-select: text;
             -webkit-user-select: text;
             -moz-user-select: text;
             -ms-user-select: text;
+            position: relative;
         }
 
         .chat-msg.user {
@@ -5099,8 +5104,8 @@ function renderMarkdown(text) {
     // Inline code (`...`)
     html = html.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
     
-    // Tables
-    html = html.replace(/\|(.+)\|\n\|[-| ]+\|\n((?:\|.+\|\n?)+)/g, (match, header, body) => {
+    // Tables — support standard pipe tables with flexible separator
+    html = html.replace(/\|(.+)\|\n\|[-| :]+\|\n((?:\|.+\|\n?)+)/g, (match, header, body) => {
         const headers = header.split('|').filter(h => h.trim()).map(h => `<th>${h.trim()}</th>`).join('');
         const rows = body.trim().split('\n').map(row => {
             const cells = row.split('|').filter(c => c.trim()).map(c => `<td>${c.trim()}</td>`).join('');
@@ -5114,7 +5119,12 @@ function renderMarkdown(text) {
     
     // Italic (*...*)
     html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-    
+
+    // Links [text](url) — must come before other replacements
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--primary);text-decoration:underline;cursor:pointer;">$1</a>');
+    // Also auto-link bare URLs (that aren't already in links)
+    html = html.replace(/(?<!href="|">)(https?:\/\/[^\s<\)"\]]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:var(--primary);text-decoration:underline;cursor:pointer;">$1</a>');
+
     // Headers (### ... , ## ... , # ...)
     html = html.replace(/^### (.+)$/gm, '<h4 class="md-h3">$1</h4>');
     html = html.replace(/^## (.+)$/gm, '<h3 class="md-h2">$1</h3>');
@@ -5204,11 +5214,14 @@ function addChat(type, msg, save = true) {
         copyBtn.innerHTML = '&#128203;';
         copyBtn.title = 'Copy';
         copyBtn.onclick = () => {
+            const textToCopy = msg;
             if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(msg).then(() => {
+                navigator.clipboard.writeText(textToCopy).then(() => {
                     copyBtn.innerHTML = '&#9989;';
                     setTimeout(() => { copyBtn.innerHTML = '&#128203;'; }, 1500);
-                }).catch(() => {});
+                }).catch(() => fallbackCopy(textToCopy));
+            } else {
+                fallbackCopy(textToCopy);
             }
         };
         actions.appendChild(copyBtn);
@@ -5230,6 +5243,23 @@ function addChat(type, msg, save = true) {
 
     if (save) saveSessionMessage(type, msg);
     if (type === 'bot' || type === 'bot-response') captureAnalysis(msg);
+}
+
+function fallbackCopy(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    try {
+        document.execCommand('copy');
+    } catch (e) {
+        console.error('Copy failed:', e);
+    }
+    document.body.removeChild(textarea);
 }
 
 const STEP_ICONS = {

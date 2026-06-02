@@ -1,0 +1,235 @@
+{
+  "query": "SAM 3 segmentation",
+  "timestamp": 1780380326.592622,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "The U6 snRNA m(6)A Methyltransferase METTL16 Regulates SAM Synthetase Intron Retention.",
+        "snippet": "PubMed ID: 28525753. 2017/05/18 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28525753/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Severe acute malnutrition.",
+        "snippet": "PubMed ID: 26963580. 2016/05/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/26963580/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Mechanisms and rationales of SAM homeostasis.",
+        "snippet": "PubMed ID: 39818457. 2025/03/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39818457/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Functional relationship between CABIT, SAM and 14-3-3 binding domains of GAREM1 that play a role in its subcellular localization.",
+        "snippet": "PubMed ID: 26164232. 2015/08/21 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/26164232/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Cryo-EM structure of a 40 kDa SAM-IV riboswitch RNA at 3.7 Å resolution.",
+        "snippet": "PubMed ID: 31796736. 2019/12/03 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31796736/",
+        "source": "PubMed"
+      },
+      {
+        "title": "uni-medical/SAM-Med3D",
+        "snippet": "SAM-Med3D: An Efficient General-purpose Promptable Segmentation Model for 3D Volumetric Medical Image",
+        "url": "https://github.com/uni-medical/SAM-Med3D",
+        "source": "GitHub",
+        "metadata": {
+          "stars": 923,
+          "language": "Python",
+          "forks": 119,
+          "updated": "2026-06-02T05:15:08Z"
+        }
+      },
+      {
+        "title": "PABannier/sam3.cpp",
+        "snippet": "Fast state-of-the-art image and video segmentation in portable C/C++",
+        "url": "https://github.com/PABannier/sam3.cpp",
+        "source": "GitHub",
+        "metadata": {
+          "stars": 316,
+          "language": "C++",
+          "forks": 29,
+          "updated": "2026-06-02T03:52:31Z"
+        }
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 28525753. 2017/05/18 00:00\n2. PubMed ID: 26963580. 2016/05/01 00:00\n3. PubMed ID: 39818457. 2025/03/01 00:00\n\nGitHub repositories:\n- uni-medical/SAM-Med3D: SAM-Med3D: An Efficient General-purpose Promptable Segmentation Model for 3D Volumetric Medical Imag\n- PABannier/sam3.cpp: Fast state-of-the-art image and video segmentation in portable C/C++",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/28525753/",
+      "https://pubmed.ncbi.nlm.nih.gov/26963580/",
+      "https://pubmed.ncbi.nlm.nih.gov/39818457/",
+      "https://pubmed.ncbi.nlm.nih.gov/26164232/",
+      "https://pubmed.ncbi.nlm.nih.gov/31796736/",
+      "https://github.com/uni-medical/SAM-Med3D",
+      "https://github.com/PABannier/sam3.cpp"
+    ],
+    "evidence_chain_id": "20260602_140524_088262",
+    "evidence_summary": {
+      "response_id": "20260602_140524_088262",
+      "query": "SAM 3 segmentation",
+      "created_at": "2026-06-02T14:05:24.088278",
+      "num_sources": 7,
+      "source_types": [
+        "GitHub",
+        "PubMed"
+      ],
+      "avg_confidence": 0.8214285714285714,
+      "verification_status": "unverified",
+      "citations": [
+        "[The U6 snRNA m(6)A Methyltransferase METTL16 Regulates SAM Synthetase Intron Retention.](https://pubmed.ncbi.nlm.nih.gov/28525753/)",
+        "[Severe acute malnutrition.](https://pubmed.ncbi.nlm.nih.gov/26963580/)",
+        "[Mechanisms and rationales of SAM homeostasis.](https://pubmed.ncbi.nlm.nih.gov/39818457/)",
+        "[Functional relationship between CABIT, SAM and 14-3-3 binding domains of GAREM1 that play a role in its subcellular localization.](https://pubmed.ncbi.nlm.nih.gov/26164232/)",
+        "[Cryo-EM structure of a 40 kDa SAM-IV riboswitch RNA at 3.7 Å resolution.](https://pubmed.ncbi.nlm.nih.gov/31796736/)",
+        "[uni-medical/SAM-Med3D](https://github.com/uni-medical/SAM-Med3D)",
+        "[PABannier/sam3.cpp](https://github.com/PABannier/sam3.cpp)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "6eca3808d03c",
+          "claim": "PubMed ID: 28525753. 2017/05/18 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/28525753/",
+          "source_type": "PubMed",
+          "source_title": "The U6 snRNA m(6)A Methyltransferase METTL16 Regulates SAM Synthetase Intron Retention.",
+          "accessed_at": "2026-06-02T14:05:26.592189",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 28525753. 2017/05/18 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "SAM 3 segmentation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "a7d21c6a263b",
+          "claim": "PubMed ID: 26963580. 2016/05/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/26963580/",
+          "source_type": "PubMed",
+          "source_title": "Severe acute malnutrition.",
+          "accessed_at": "2026-06-02T14:05:26.592280",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 26963580. 2016/05/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "SAM 3 segmentation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "79116f17302a",
+          "claim": "PubMed ID: 39818457. 2025/03/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39818457/",
+          "source_type": "PubMed",
+          "source_title": "Mechanisms and rationales of SAM homeostasis.",
+          "accessed_at": "2026-06-02T14:05:26.592312",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39818457. 2025/03/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "SAM 3 segmentation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "66d668480c75",
+          "claim": "PubMed ID: 26164232. 2015/08/21 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/26164232/",
+          "source_type": "PubMed",
+          "source_title": "Functional relationship between CABIT, SAM and 14-3-3 binding domains of GAREM1 that play a role in its subcellular localization.",
+          "accessed_at": "2026-06-02T14:05:26.592335",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 26164232. 2015/08/21 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "SAM 3 segmentation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "9577f5025e5f",
+          "claim": "PubMed ID: 31796736. 2019/12/03 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31796736/",
+          "source_type": "PubMed",
+          "source_title": "Cryo-EM structure of a 40 kDa SAM-IV riboswitch RNA at 3.7 Å resolution.",
+          "accessed_at": "2026-06-02T14:05:26.592356",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31796736. 2019/12/03 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "SAM 3 segmentation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "0aba6c51805e",
+          "claim": "SAM-Med3D: An Efficient General-purpose Promptable Segmentation Model for 3D Volumetric Medical Image",
+          "source_url": "https://github.com/uni-medical/SAM-Med3D",
+          "source_type": "GitHub",
+          "source_title": "uni-medical/SAM-Med3D",
+          "accessed_at": "2026-06-02T14:05:26.592381",
+          "published_at": "",
+          "raw_snippet": "SAM-Med3D: An Efficient General-purpose Promptable Segmentation Model for 3D Volumetric Medical Image",
+          "extracted_data": {
+            "stars": 923,
+            "language": "Python",
+            "forks": 119,
+            "updated": "2026-06-02T05:15:08Z"
+          },
+          "confidence": 0.75,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "SAM 3 segmentation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "b2bd81a5fddc",
+          "claim": "Fast state-of-the-art image and video segmentation in portable C/C++",
+          "source_url": "https://github.com/PABannier/sam3.cpp",
+          "source_type": "GitHub",
+          "source_title": "PABannier/sam3.cpp",
+          "accessed_at": "2026-06-02T14:05:26.592403",
+          "published_at": "",
+          "raw_snippet": "Fast state-of-the-art image and video segmentation in portable C/C++",
+          "extracted_data": {
+            "stars": 316,
+            "language": "C++",
+            "forks": 29,
+            "updated": "2026-06-02T03:52:31Z"
+          },
+          "confidence": 0.75,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "SAM 3 segmentation",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[The U6 snRNA m(6)A Methyltransferase METTL16 Regulates SAM Synthetase Intron Retention.](https://pubmed.ncbi.nlm.nih.gov/28525753/)",
+      "[Severe acute malnutrition.](https://pubmed.ncbi.nlm.nih.gov/26963580/)",
+      "[Mechanisms and rationales of SAM homeostasis.](https://pubmed.ncbi.nlm.nih.gov/39818457/)",
+      "[Functional relationship between CABIT, SAM and 14-3-3 binding domains of GAREM1 that play a role in its subcellular localization.](https://pubmed.ncbi.nlm.nih.gov/26164232/)",
+      "[Cryo-EM structure of a 40 kDa SAM-IV riboswitch RNA at 3.7 Å resolution.](https://pubmed.ncbi.nlm.nih.gov/31796736/)",
+      "[uni-medical/SAM-Med3D](https://github.com/uni-medical/SAM-Med3D)",
+      "[PABannier/sam3.cpp](https://github.com/PABannier/sam3.cpp)"
+    ]
+  }
+}
