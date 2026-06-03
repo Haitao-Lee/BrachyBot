@@ -967,56 +967,67 @@ class BrachyAgent:
 
         return result
 
-    def _align_label_to_ct(self, label_array):
-        """Align label array to CT data by testing all axis flip combinations.
-        Picks the orientation where label voxels overlap most with non-air CT regions.
-        This is pure data-driven — no metadata dependency, works for ANY mismatch."""
+    def _store_label_with_metadata(self, label_array, ct_image_source, label_key: str):
+        """Store label array WITH SimpleITK spatial metadata.
+        At retrieval time, DICOMOrient('LPI') will align it to CT automatically.
+        This solves ALL orientation mismatches (RAS, LPI, any axis order)."""
         import numpy as np
+        try:
+            import SimpleITK as sitk
+        except ImportError:
+            self.memory.store(label_key, label_array)
+            return
 
-        ct_data = self.memory.retrieve("ct_data")
-        if ct_data is None or label_array is None:
-            return label_array
-        if ct_data.shape != label_array.shape:
-            logger.warning(f"Label shape {label_array.shape} != CT shape {ct_data.shape}, skipping alignment")
-            return label_array
+        try:
+            label_sitk = sitk.GetImageFromArray(label_array.astype(np.uint8))
+            label_sitk.CopyInformation(ct_image_source)
+            self.memory.store(label_key, label_sitk)
+            logger.info(f"Stored {label_key} as SimpleITK image with CT metadata")
+        except Exception as e:
+            logger.warning(f"Failed to store {label_key} with metadata: {e}")
+            self.memory.store(label_key, label_array)
 
-        non_air = ct_data > -900
-        best_label = label_array
-        best_score = -1
-        scores = {}
+    def _get_label_array(self, label_key: str):
+        """Retrieve label array, applying DICOMOrient('LPI') if stored as SimpleITK image.
+        This ensures the label orientation always matches the CT orientation."""
+        import numpy as np
+        try:
+            import SimpleITK as sitk
+        except ImportError:
+            return self.memory.retrieve(label_key)
 
-        for z_flip in [False, True]:
-            for y_flip in [False, True]:
-                for x_flip in [False, True]:
-                    candidate = label_array
-                    if z_flip: candidate = candidate[::-1, :, :]
-                    if y_flip: candidate = candidate[:, ::-1, :]
-                    if x_flip: candidate = candidate[:, :, ::-1]
-                    score = int(((candidate > 0) & non_air).sum())
-                    key = f"Z{'↑' if not z_flip else '↓'}Y{'↑' if not y_flip else '↓'}X{'→' if not x_flip else '←'}"
-                    scores[key] = score
-                    if score > best_score:
-                        best_score = score
-                        best_label = candidate
+        stored = self.memory.retrieve(label_key)
+        if stored is None:
+            return None
 
-        # Log all scores for debugging
-        logger.info(f"Label alignment scores: {scores}")
-        logger.info(f"Best: {max(scores, key=scores.get)} (score={best_score})")
+        if isinstance(stored, sitk.Image):
+            try:
+                oriented = sitk.DICOMOrient(stored, 'LPI')
+                return sitk.GetArrayFromImage(oriented)
+            except Exception as e:
+                logger.warning(f"DICOMOrient failed for {label_key}: {e}")
+                return sitk.GetArrayFromImage(stored)
 
-        return best_label
+        # Already a numpy array (from older code or fallback)
+        return stored
 
     def _store_tool_result(self, tool_name: str, result):
         """Store tool result in memory based on tool type."""
         if not result.success:
             return
         meta = result.metadata or {}
+        ct_image = self.memory.retrieve("ct_image")
         if tool_name == "ctv_segmentation" and "ctv_array" in meta:
-            aligned = self._align_label_to_ct(meta["ctv_array"])
-            self.memory.store("ctv_array", aligned)
+            if ct_image is not None:
+                self._store_label_with_metadata(meta["ctv_array"], ct_image, "ctv_array")
+            else:
+                self.memory.store("ctv_array", meta["ctv_array"])
         elif tool_name == "oar_segmentation":
             if "oar_array" in meta:
-                aligned = self._align_label_to_ct(meta["oar_array"])
-                self.memory.store("oar_array", aligned)
+                if ct_image is not None:
+                    self._store_label_with_metadata(meta["oar_array"], ct_image, "oar_array")
+                else:
+                    self.memory.store("oar_array", meta["oar_array"])
             if "organ_names" in meta:
                 self.memory.store("organ_names", meta["organ_names"])
             if "organ_counts" in meta:
