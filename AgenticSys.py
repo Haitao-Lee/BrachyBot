@@ -952,17 +952,7 @@ class BrachyAgent:
         has_analyze = bool(re.search(r'(分析|analyze)', msg, re.IGNORECASE))
         has_dose = bool(re.search(r'(剂量|dose|计算剂量)', msg, re.IGNORECASE))
 
-        # Build tool list for ALL requested actions
-        if has_segment and ct_path:
-            tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": {"image_path": ct_path}})
-            tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": {"image_path": ct_path}})
-            logger.info(f"Direct tool: segmentation")
-
-        if has_dose and ct_path:
-            tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
-            logger.info(f"Direct tool: dose calculation")
-
-        # Analysis: use code_executor with correct CT path from memory
+        # Analysis first (if requested) — "分析然后分割" means analyze before segment
         if has_analyze and ct_path:
             analysis_code = f"""
 import nibabel as nib
@@ -986,6 +976,17 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
 """
             tools.append({"id": "tool_direct_analysis", "tool": "code_executor", "params": {"code": analysis_code, "description": "Analyze CT image"}})
             logger.info(f"Direct tool: analysis with correct path")
+
+        # Segmentation (after analysis)
+        if has_segment and ct_path:
+            tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": {"image_path": ct_path}})
+            tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": {"image_path": ct_path}})
+            logger.info(f"Direct tool: segmentation")
+
+        # Dose calculation
+        if has_dose and ct_path:
+            tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
+            logger.info(f"Direct tool: dose calculation")
 
         return tools if tools else None
 
@@ -1211,12 +1212,27 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
                     tool_step["result"] = str(e)
                     logger.error(f"Direct tool execution failed: {tc['tool']}: {e}")
 
-            # Build summary response from tool results
-            summary_parts = []
+            # Build structured summary grouped by category
+            analysis_results = []
+            segmentation_results = []
+            other_results = []
             for s in steps:
                 if s.get("type") == "tool" and s.get("result"):
-                    summary_parts.append(f"**{s['tool']}**:\n{s['result']}")
-            return "\n\n".join(summary_parts) if summary_parts else "Tools executed."
+                    tool = s.get("tool", "")
+                    if tool == "code_executor":
+                        analysis_results.append(s["result"])
+                    elif "segmentation" in tool:
+                        segmentation_results.append(s["result"])
+                    else:
+                        other_results.append(f"**{tool}**: {s['result']}")
+            parts = []
+            if analysis_results:
+                parts.append("## 分析结果\n" + "\n".join(analysis_results))
+            if segmentation_results:
+                parts.append("## 分割结果\n" + "\n".join(segmentation_results))
+            if other_results:
+                parts.append("\n".join(other_results))
+            return "\n\n".join(parts) if parts else "Tools executed."
 
         # Force web search for real-time queries (weather, time, news, sports, etc.)
         _forced_search_query = self._detect_realtime_query(message)
@@ -2644,12 +2660,29 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
                     yield yield_event("step", step)
                     logger.error(f"Direct tool execution failed: {tc['tool']}: {e}")
 
-            # Build and yield summary response
-            summary_parts = []
+            # Build structured summary grouped by category
+            _lang = "zh" if re.search(r'[一-鿿]', message) else "en"
+            analysis_results = []
+            segmentation_results = []
+            other_results = []
             for s in steps:
                 if s.get("type") == "tool" and s.get("result"):
-                    summary_parts.append(f"**{s.get('tool', 'tool')}**:\n{s['result']}")
-            response = "\n\n".join(summary_parts) if summary_parts else "Tools executed."
+                    tool = s.get("tool", "")
+                    if tool == "code_executor":
+                        analysis_results.append(s["result"])
+                    elif "segmentation" in tool:
+                        segmentation_results.append(s["result"])
+                    else:
+                        other_results.append(f"**{tool}**: {s['result']}")
+            parts = []
+            if _lang == "zh":
+                if analysis_results: parts.append("## 分析结果\n" + "\n".join(analysis_results))
+                if segmentation_results: parts.append("## 分割结果\n" + "\n".join(segmentation_results))
+            else:
+                if analysis_results: parts.append("## Analysis\n" + "\n".join(analysis_results))
+                if segmentation_results: parts.append("## Segmentation\n" + "\n".join(segmentation_results))
+            if other_results: parts.append("\n".join(other_results))
+            response = "\n\n".join(parts) if parts else "Tools executed."
             self.memory.add_message("assistant", response)
             yield yield_event("response", {"response": response})
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
