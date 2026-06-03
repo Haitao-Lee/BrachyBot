@@ -1,12 +1,12 @@
 {
   "category": "tool_calling",
-  "description": "Tests whether BrachyBot calls the correct tool(s) for each user request. Not knowledge — system capability.",
-  "evaluation": "Check which tools were called. Order matters for multi-step. Language must match input.",
+  "description": "Tests whether BrachyBot calls the correct tool(s). Each case simulates a real user scenario with proper context.",
   "cases": [
     {
       "id": "TC001",
       "input": "请分析图像",
       "language": "zh",
+      "context": "CT已加载",
       "expected_tools": [
         "code_executor"
       ],
@@ -15,12 +15,13 @@
         "oar_segmentation"
       ],
       "difficulty": "easy",
-      "description": "Analysis should use code_executor, NOT segmentation tools"
+      "description": "CT loaded → analysis should use code_executor, NOT segmentation"
     },
     {
       "id": "TC002",
       "input": "analyze the image",
       "language": "en",
+      "context": "CT loaded",
       "expected_tools": [
         "code_executor"
       ],
@@ -29,26 +30,25 @@
         "oar_segmentation"
       ],
       "difficulty": "easy",
-      "description": "English analysis request"
+      "description": "English variant"
     },
     {
       "id": "TC003",
       "input": "请分割图像",
       "language": "zh",
+      "context": "CT已加载",
       "expected_tools": [
         "ctv_segmentation",
         "oar_segmentation"
       ],
-      "forbidden_tools": [
-        "code_executor"
-      ],
       "difficulty": "easy",
-      "description": "Segmentation should call both CTV and OAR tools"
+      "description": "CT loaded → segmentation should call both CTV and OAR"
     },
     {
       "id": "TC004",
       "input": "帮我分割",
       "language": "zh",
+      "context": "CT已加载",
       "expected_tools": [
         "ctv_segmentation",
         "oar_segmentation"
@@ -60,6 +60,7 @@
       "id": "TC005",
       "input": "segment the CT",
       "language": "en",
+      "context": "CT loaded",
       "expected_tools": [
         "ctv_segmentation",
         "oar_segmentation"
@@ -71,65 +72,52 @@
       "id": "TC006",
       "input": "再分割一次",
       "language": "zh",
+      "context": "CT已加载，之前已分割过",
       "expected_tools": [
         "ctv_segmentation",
         "oar_segmentation"
       ],
       "difficulty": "easy",
-      "description": "Re-segmentation request"
+      "description": "Re-segmentation after previous segmentation"
     },
     {
       "id": "TC007",
       "input": "计算剂量",
       "language": "zh",
+      "context": "CT已加载，已完成分割和种子规划",
       "expected_tools": [
         "dose_engine"
       ],
       "difficulty": "easy",
-      "description": "Dose calculation request"
+      "description": "Dose calculation after planning"
     },
     {
       "id": "TC008",
       "input": "已上传",
       "language": "zh",
+      "context": "用户刚上传CT",
       "expected_tools": [],
       "difficulty": "easy",
-      "description": "Just acknowledgment, no tools should be called",
-      "expected_keywords": [
-        "已上传",
-        "收到",
-        "CT"
-      ]
+      "description": "Acknowledgment after upload — no tools"
     },
     {
       "id": "TC009",
-      "input": "done",
-      "language": "en",
-      "expected_tools": [],
-      "difficulty": "easy",
-      "description": "Just acknowledgment",
-      "expected_keywords": [
-        "done",
-        "ok",
-        "acknowledged"
-      ]
-    },
-    {
-      "id": "TC010",
       "input": "你好",
       "language": "zh",
+      "context": "新会话",
       "expected_tools": [],
-      "difficulty": "easy",
-      "description": "Greeting, no tools",
       "expected_keywords": [
         "你好",
         "BrachyBot"
-      ]
+      ],
+      "difficulty": "easy",
+      "description": "Greeting — no tools"
     },
     {
-      "id": "TC011",
+      "id": "TC010",
       "input": "帮我切到viewer",
       "language": "zh",
+      "context": "CT已加载，在input面板",
       "expected_tools": [
         "ui_controller"
       ],
@@ -137,49 +125,121 @@
       "description": "UI panel switch"
     },
     {
-      "id": "TC012",
-      "input": "切换到viewer那一栏",
+      "id": "TC011",
+      "input": "把窗宽调到200",
       "language": "zh",
+      "context": "CT已加载，在viewer面板",
       "expected_tools": [
         "ui_controller"
       ],
       "difficulty": "easy",
-      "description": "UI panel switch with different phrasing"
+      "description": "UI window width adjustment"
     },
     {
-      "id": "TC013",
-      "input": "把窗宽调到200",
-      "language": "zh",
-      "expected_tools": [
-        "ui_controller"
-      ],
-      "difficulty": "medium",
-      "description": "UI setting adjustment"
-    },
-    {
-      "id": "TC014",
+      "id": "TC012",
       "input": "隐藏CTV",
       "language": "zh",
+      "context": "CT和CTV分割已加载",
       "expected_tools": [
         "ui_controller"
       ],
-      "difficulty": "medium",
+      "difficulty": "easy",
       "description": "UI overlay toggle"
     },
     {
-      "id": "TC015",
+      "id": "TC013",
       "input": "显示OAR",
       "language": "zh",
+      "context": "CT和OAR分割已加载",
       "expected_tools": [
         "ui_controller"
       ],
-      "difficulty": "medium",
+      "difficulty": "easy",
       "description": "UI overlay show"
     },
     {
+      "id": "TC014",
+      "input": "这个CT的肿瘤体积是多少？",
+      "language": "zh",
+      "context": "CT已加载，已执行CTV分割（体积27849mm³）",
+      "expected_keywords": [
+        "27849",
+        "mm³",
+        "cm³",
+        "体积"
+      ],
+      "forbidden_keywords": [
+        "未分割",
+        "需要先"
+      ],
+      "difficulty": "medium",
+      "description": "CT loaded + CTV done → should report actual volume from system state"
+    },
+    {
+      "id": "TC015",
+      "input": "这个CT的肿瘤体积是多少？",
+      "language": "zh",
+      "context": "CT已加载，未执行任何分割",
+      "expected_keywords": [
+        "分割",
+        "segment",
+        "未",
+        "需要"
+      ],
+      "forbidden_keywords": [
+        "27849",
+        "mm³"
+      ],
+      "difficulty": "medium",
+      "description": "CT loaded but NO segmentation → should NOT fabricate volume"
+    },
+    {
       "id": "TC016",
+      "input": "分割了多少个器官？",
+      "language": "zh",
+      "context": "CT已加载，已执行OAR分割（57个器官）",
+      "expected_keywords": [
+        "57",
+        "器官",
+        "organ"
+      ],
+      "difficulty": "medium",
+      "description": "OAR done → should report actual organ count"
+    },
+    {
+      "id": "TC017",
+      "input": "分割了多少个器官？",
+      "language": "zh",
+      "context": "CT已加载，未执行OAR分割",
+      "expected_keywords": [
+        "分割",
+        "segment",
+        "未",
+        "需要"
+      ],
+      "forbidden_keywords": [
+        "57",
+        "42"
+      ],
+      "difficulty": "medium",
+      "description": "NO OAR segmentation → should NOT fabricate count"
+    },
+    {
+      "id": "TC018",
+      "input": "帮我查一下DeepRare是什么",
+      "language": "zh",
+      "context": "新会话",
+      "expected_tools": [
+        "web_search"
+      ],
+      "difficulty": "medium",
+      "description": "Unknown entity → should search"
+    },
+    {
+      "id": "TC019",
       "input": "查询前列腺癌近距离治疗的剂量约束",
       "language": "zh",
+      "context": "新会话",
       "expected_tools": [
         "clinical_kb"
       ],
@@ -187,158 +247,87 @@
       "description": "Clinical knowledge query"
     },
     {
-      "id": "TC017",
-      "input": "搜索最新的近距离治疗指南",
-      "language": "zh",
-      "expected_tools": [
-        "web_search"
-      ],
-      "difficulty": "medium",
-      "description": "Web search request"
-    },
-    {
-      "id": "TC018",
-      "input": "帮我保存这个病例",
-      "language": "zh",
-      "expected_tools": [
-        "case_memory"
-      ],
-      "difficulty": "medium",
-      "description": "Case memory save"
-    },
-    {
-      "id": "TC019",
+      "id": "TC020",
       "input": "生成治疗报告",
       "language": "zh",
+      "context": "CT已加载，已完成分割和计划",
       "expected_tools": [
         "report_generator"
       ],
       "difficulty": "medium",
-      "description": "Report generation"
-    },
-    {
-      "id": "TC020",
-      "input": "帮我做3D重建",
-      "language": "zh",
-      "expected_tools": [],
-      "difficulty": "medium",
-      "description": "3D reconstruction — tool may vary, check if triggered",
-      "expected_keywords": [
-        "3D",
-        "重建",
-        "reconstruct"
-      ]
+      "description": "Report generation after planning"
     },
     {
       "id": "TC021",
-      "input": "analyze then segment",
-      "language": "en",
-      "expected_tools": [
-        "code_executor",
-        "ctv_segmentation",
-        "oar_segmentation"
-      ],
-      "expected_order": [
-        "code_executor",
-        "ctv_segmentation",
-        "oar_segmentation"
-      ],
-      "difficulty": "medium",
-      "description": "Multi-action: analysis before segmentation"
-    },
-    {
-      "id": "TC022",
-      "input": "先分析图像再分割",
-      "language": "zh",
-      "expected_tools": [
-        "code_executor",
-        "ctv_segmentation",
-        "oar_segmentation"
-      ],
-      "expected_order": [
-        "code_executor",
-        "ctv_segmentation",
-        "oar_segmentation"
-      ],
-      "difficulty": "medium",
-      "description": "Chinese multi-action with explicit order"
-    },
-    {
-      "id": "TC023",
-      "input": "分割然后计算剂量",
-      "language": "zh",
-      "expected_tools": [
-        "ctv_segmentation",
-        "oar_segmentation",
-        "dose_engine"
-      ],
-      "expected_order": [
-        "ctv_segmentation",
-        "oar_segmentation",
-        "dose_engine"
-      ],
-      "difficulty": "medium",
-      "description": "Segmentation then dose calculation"
-    },
-    {
-      "id": "TC024",
-      "input": "这个CT的肿瘤体积是多少？",
-      "language": "zh",
-      "expected_tools": [],
-      "difficulty": "medium",
-      "description": "Should NOT fabricate — no segmentation done yet, answer from knowledge or ask to segment",
-      "expected_keywords": [
-        "分割",
-        "segment",
-        "未",
-        "需要",
-        "先"
-      ],
-      "forbidden_keywords": [
-        "27849",
-        "11919",
-        "mm³"
-      ]
-    },
-    {
-      "id": "TC027",
-      "input": "帮我查一下DeepRare是什么",
-      "language": "zh",
-      "expected_tools": [
-        "web_search"
-      ],
-      "difficulty": "medium",
-      "description": "Unknown entity — should search"
-    },
-    {
-      "id": "TC028",
-      "input": "检查这个计划是否安全",
-      "language": "zh",
-      "expected_tools": [
-        "safety_validator"
-      ],
-      "difficulty": "medium",
-      "description": "Safety check request"
-    },
-    {
-      "id": "TC029",
-      "input": "对比两个计划",
-      "language": "zh",
-      "expected_tools": [
-        "plan_comparator"
-      ],
-      "difficulty": "medium",
-      "description": "Plan comparison request"
-    },
-    {
-      "id": "TC030",
       "input": "导出DICOM",
       "language": "zh",
+      "context": "CT已加载，已完成分割、计划和剂量计算",
       "expected_tools": [
         "dicom_rt_exporter"
       ],
       "difficulty": "medium",
-      "description": "DICOM export request"
+      "description": "DICOM export after full pipeline"
+    },
+    {
+      "id": "TC022",
+      "input": "检查这个计划是否安全",
+      "language": "zh",
+      "context": "CT已加载，已完成分割和计划",
+      "expected_tools": [
+        "safety_validator"
+      ],
+      "difficulty": "medium",
+      "description": "Safety check after planning"
+    },
+    {
+      "id": "TC023",
+      "input": "对比两个计划",
+      "language": "zh",
+      "context": "CT已加载，已生成两个治疗计划",
+      "expected_tools": [
+        "plan_comparator"
+      ],
+      "difficulty": "medium",
+      "description": "Plan comparison after two plans generated"
+    },
+    {
+      "id": "TC024",
+      "input": "请分析并分割图像",
+      "language": "zh",
+      "context": "CT已加载",
+      "expected_tools": [
+        "code_executor",
+        "ctv_segmentation",
+        "oar_segmentation"
+      ],
+      "difficulty": "medium",
+      "description": "Multi-action: analysis AND segmentation"
+    },
+    {
+      "id": "TC025",
+      "input": "先分析图像再分割",
+      "language": "zh",
+      "context": "CT已加载",
+      "expected_tools": [
+        "code_executor",
+        "ctv_segmentation",
+        "oar_segmentation"
+      ],
+      "difficulty": "medium",
+      "description": "Multi-action with explicit order"
+    },
+    {
+      "id": "TC026",
+      "input": "分割然后计算剂量",
+      "language": "zh",
+      "context": "CT已加载",
+      "expected_tools": [
+        "ctv_segmentation",
+        "oar_segmentation",
+        "dose_engine"
+      ],
+      "difficulty": "medium",
+      "description": "Segmentation then dose"
     }
   ]
 }

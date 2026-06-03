@@ -24,7 +24,8 @@
       "forbidden_keywords": [
         "分割完成",
         "segmentation completed"
-      ]
+      ],
+      "context": "CT已加载"
     },
     {
       "id": "ER002",
@@ -41,7 +42,8 @@
         "未",
         "没有"
       ],
-      "forbidden_keywords": []
+      "forbidden_keywords": [],
+      "context": "CT已加载"
     },
     {
       "id": "ER003",
@@ -57,7 +59,8 @@
         "没有",
         "先"
       ],
-      "forbidden_keywords": []
+      "forbidden_keywords": [],
+      "context": "CT已加载"
     },
     {
       "id": "ER004",
@@ -73,7 +76,8 @@
         "没有",
         "先"
       ],
-      "forbidden_keywords": []
+      "forbidden_keywords": [],
+      "context": "CT已加载"
     },
     {
       "id": "ER005",
@@ -88,7 +92,8 @@
         "搜索",
         "search"
       ],
-      "forbidden_keywords": []
+      "forbidden_keywords": [],
+      "context": "CT已加载"
     },
     {
       "id": "ER006",
@@ -104,7 +109,8 @@
         "not available",
         "unknown"
       ],
-      "forbidden_keywords": []
+      "forbidden_keywords": [],
+      "context": "CT已加载"
     },
     {
       "id": "ER007",
@@ -120,7 +126,8 @@
         "读取",
         "error"
       ],
-      "forbidden_keywords": []
+      "forbidden_keywords": [],
+      "context": "CT已加载"
     },
     {
       "id": "ER008",
@@ -136,7 +143,8 @@
         "invalid",
         "无法"
       ],
-      "forbidden_keywords": []
+      "forbidden_keywords": [],
+      "context": "CT已加载"
     },
     {
       "id": "ER009",
@@ -151,7 +159,8 @@
         "搜索",
         "search"
       ],
-      "forbidden_keywords": []
+      "forbidden_keywords": [],
+      "context": "CT已加载"
     },
     {
       "id": "ER010",
@@ -166,7 +175,8 @@
         "cannot",
         "not supported"
       ],
-      "forbidden_keywords": []
+      "forbidden_keywords": [],
+      "context": "CT已加载"
     }
   ]
 }

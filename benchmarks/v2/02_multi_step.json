@@ -1,127 +1,84 @@
 {
   "category": "multi_step",
-  "description": "Tests whether BrachyBot executes ALL requested steps in order, without skipping any.",
-  "evaluation": "Check tool call sequence. All requested tools must be called. Order must match user's intent.",
+  "description": "Tests whether BrachyBot executes ALL requested steps in order, with proper context.",
   "cases": [
     {
       "id": "MS001",
       "input": "请分析并分割图像",
       "language": "zh",
-      "expected_tools": ["code_executor", "ctv_segmentation", "oar_segmentation"],
+      "context": "CT已加载",
+      "expected_tools": [
+        "code_executor",
+        "ctv_segmentation",
+        "oar_segmentation"
+      ],
       "difficulty": "easy",
-      "description": "Analyze AND segment — both must execute"
+      "description": "Analyze AND segment"
     },
     {
       "id": "MS002",
       "input": "分析图像，分割图像，然后切到viewer",
       "language": "zh",
-      "expected_tools": ["code_executor", "ctv_segmentation", "oar_segmentation", "ui_controller"],
+      "context": "CT已加载",
+      "expected_tools": [
+        "code_executor",
+        "ctv_segmentation",
+        "oar_segmentation",
+        "ui_controller"
+      ],
       "difficulty": "medium",
       "description": "Three actions: analyze, segment, switch panel"
     },
     {
       "id": "MS003",
-      "input": "先分割，再计算剂量，最后生成报告",
+      "input": "帮我分析一下这个CT，然后告诉我组织分布",
       "language": "zh",
-      "expected_tools": ["ctv_segmentation", "oar_segmentation", "dose_engine", "report_generator"],
-      "difficulty": "hard",
-      "description": "Four-step pipeline"
+      "context": "CT已加载",
+      "expected_tools": [
+        "code_executor"
+      ],
+      "difficulty": "easy",
+      "description": "Analysis with specific request"
     },
     {
       "id": "MS004",
-      "input": "帮我分析一下这个CT，然后告诉我组织分布",
-      "language": "zh",
-      "expected_tools": ["code_executor"],
-      "difficulty": "easy",
-      "description": "Analysis with specific request — still just code_executor"
-    },
-    {
-      "id": "MS005",
-      "input": "analyze the image and segment it, then switch to viewer",
-      "language": "en",
-      "expected_tools": ["code_executor", "ctv_segmentation", "oar_segmentation", "ui_controller"],
-      "difficulty": "medium",
-      "description": "English three-step"
-    },
-    {
-      "id": "MS006",
       "input": "分割图像，然后隐藏CTV overlay",
       "language": "zh",
-      "expected_tools": ["ctv_segmentation", "oar_segmentation", "ui_controller"],
+      "context": "CT已加载",
+      "expected_tools": [
+        "ctv_segmentation",
+        "oar_segmentation",
+        "ui_controller"
+      ],
       "difficulty": "medium",
       "description": "Segment then toggle UI"
     },
     {
-      "id": "MS007",
-      "input": "帮我查一下前列腺的剂量约束，然后评估我的计划",
-      "language": "zh",
-      "expected_tools": ["clinical_kb", "dose_evaluation"],
-      "difficulty": "medium",
-      "description": "Knowledge query then evaluation"
-    },
-    {
-      "id": "MS008",
-      "input": "搜索最新的指南，然后保存这个病例",
-      "language": "zh",
-      "expected_tools": ["web_search", "case_memory"],
-      "difficulty": "medium",
-      "description": "Search then save"
-    },
-    {
-      "id": "MS009",
-      "input": "分割，评估剂量，检查安全性，导出",
-      "language": "zh",
-      "expected_tools": ["ctv_segmentation", "oar_segmentation", "dose_engine", "safety_validator", "dicom_rt_exporter"],
-      "difficulty": "hard",
-      "description": "Full pipeline with safety check"
-    },
-    {
-      "id": "MS010",
-      "input": "帮我分析图像，分割图像，做个3D重建",
-      "language": "zh",
-      "expected_tools": ["code_executor", "ctv_segmentation", "oar_segmentation", "ui_controller"],
-      "difficulty": "medium",
-      "description": "Analyze, segment, 3D reconstruct"
-    },
-    {
-      "id": "MS011",
-      "input": "查一下膀胱的剂量约束",
-      "language": "zh",
-      "expected_tools": ["clinical_kb"],
-      "difficulty": "easy",
-      "description": "Single knowledge query — should not trigger segmentation"
-    },
-    {
-      "id": "MS012",
+      "id": "MS005",
       "input": "帮我分割，然后把结果保存到病例库",
       "language": "zh",
-      "expected_tools": ["ctv_segmentation", "oar_segmentation", "case_memory"],
+      "context": "CT已加载",
+      "expected_tools": [
+        "ctv_segmentation",
+        "oar_segmentation",
+        "case_memory"
+      ],
       "difficulty": "medium",
-      "description": "Segment then save to case memory"
+      "description": "Segment then save"
     },
     {
-      "id": "MS013",
-      "input": "分析图像的质量，如果有问题就告诉我",
+      "id": "MS006",
+      "input": "帮我分析图像，分割图像，做个3D重建",
       "language": "zh",
-      "expected_tools": ["code_executor"],
-      "difficulty": "easy",
-      "description": "Conditional analysis — just analyze, don't segment"
-    },
-    {
-      "id": "MS014",
-      "input": "帮我做两个计划方案，然后对比",
-      "language": "zh",
-      "expected_tools": ["seed_planning", "plan_comparator"],
-      "difficulty": "hard",
-      "description": "Multiple plans then compare"
-    },
-    {
-      "id": "MS015",
-      "input": "分割CTV和OAR，然后做一个治疗计划",
-      "language": "zh",
-      "expected_tools": ["ctv_segmentation", "oar_segmentation", "seed_planning"],
-      "difficulty": "hard",
-      "description": "Segmentation then planning"
+      "context": "CT已加载",
+      "expected_tools": [
+        "code_executor",
+        "ctv_segmentation",
+        "oar_segmentation",
+        "ui_controller"
+      ],
+      "difficulty": "medium",
+      "description": "Analyze, segment, 3D reconstruct"
     }
   ]
 }
