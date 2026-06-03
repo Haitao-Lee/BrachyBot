@@ -146,6 +146,7 @@ class AgentMemory:
         self.current_phase: PlanningPhase = PlanningPhase.IDLE
         self.deviation_threshold_mm: float = 2.0
         self._ui_state: Dict = {}
+        self.user_lang: str = "en"  # Detected once per message, used everywhere
 
         # Smart context manager for intelligent context selection
         try:
@@ -899,40 +900,22 @@ class BrachyAgent:
 
     @staticmethod
     def _format_tool_result(tool_name: str, result, lang: str = "en") -> str:
-        """Format tool result for display (not raw numpy arrays)."""
+        """Format tool result for display.
+        Uses result.message for content, wraps with language-appropriate context.
+        Special-cases only tools that return raw data needing extraction."""
         if not result.success:
             return f"Error: {result.error}" if lang == "en" else f"错误: {result.error}"
-        meta = result.metadata or {}
-        if tool_name == "ctv_segmentation":
-            vol = meta.get("ctv_volume_mm3", 0)
-            vox = meta.get("ctv_voxel_count", 0)
-            if lang == "zh":
-                return f"CTV分割完成。体积: {vol:.1f} mm³ ({vol/1000:.1f} cm³)，{vox:,} 个体素。"
-            return f"CTV segmentation completed. Volume: {vol:.1f} mm³ ({vol/1000:.1f} cm³), {vox:,} voxels."
-        elif tool_name == "oar_segmentation":
-            organ_names = meta.get("organ_names", {})
-            organ_counts = meta.get("organ_counts", {})
-            count = len(organ_names) if organ_names else len(organ_counts)
-            if lang == "zh":
-                return f"OAR分割完成。共分割 {count} 个器官。"
-            return f"OAR segmentation completed. {count} organs segmented."
-        elif tool_name == "code_executor":
-            output = ""
-            if isinstance(result.data, dict):
-                stdout = result.data.get("stdout", "").strip()
-                output = stdout if stdout else str(result.data)
-            else:
-                output = str(result.data) if result.data else ""
-            # Format output nicely
+
+        # code_executor returns dict with stdout/stderr — extract stdout
+        if tool_name == "code_executor" and isinstance(result.data, dict):
+            stdout = result.data.get("stdout", "").strip()
+            output = stdout if stdout else str(result.data)
             lines = [l.strip() for l in output.split('\n') if l.strip()]
-            formatted = '\n'.join(lines)
-            if lang == "zh":
-                return f"图像分析完成：\n{formatted}"
-            return f"Image analysis completed:\n{formatted}"
-        elif tool_name == "dose_engine":
-            return f"{'剂量计算完成' if lang == 'zh' else 'Dose calculation completed'}. {str(result.data)[:200]}"
-        else:
-            return f"{tool_name} completed. {str(result.data)[:200]}" if result.data else f"{tool_name} completed."
+            header = "图像分析完成：" if lang == "zh" else "Image analysis completed:"
+            return f"{header}\n" + "\n".join(lines)
+
+        # All other tools: use result.message directly
+        return result.message or f"{tool_name} completed."
 
     def _detect_tool_request(self, message: str) -> Optional[List[Dict]]:
         """Detect if the message explicitly requests specific tools.
@@ -947,7 +930,6 @@ class BrachyAgent:
             ct_path = ui.get("ct_path", "")
 
         tools = []
-        _lang = "zh" if re.search(r'[一-鿿]', message) else "en"
 
         # Detect actions and their positions in the message to preserve user's order
         action_positions = []
@@ -1194,7 +1176,7 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
         # Bypasses LLM to prevent unnecessary questions or wrong skill chains
         _direct_tool_calls = self._detect_tool_request(message)
         if _direct_tool_calls:
-            _lang = "zh" if re.search(r'[一-鿿]', message) else "en"
+            _lang = self.memory.user_lang
             logger.info(f"Direct tool execution: {len(_direct_tool_calls)} tools detected, lang={_lang}")
             for tc in _direct_tool_calls:
                 step_id_ref[0] += 1
@@ -1230,6 +1212,7 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
                     logger.error(f"Direct tool execution failed: {tc['tool']}: {e}")
 
             # Build structured summary grouped by category
+            _lang = self.memory.user_lang
             analysis_results = []
             segmentation_results = []
             other_results = []
@@ -1243,10 +1226,12 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
                     else:
                         other_results.append(f"**{tool}**: {s['result']}")
             parts = []
+            h_analysis = "## 分析结果" if _lang == "zh" else "## Analysis"
+            h_segment = "## 分割结果" if _lang == "zh" else "## Segmentation"
             if analysis_results:
-                parts.append("## 分析结果\n" + "\n".join(analysis_results))
+                parts.append(f"{h_analysis}\n" + "\n".join(analysis_results))
             if segmentation_results:
-                parts.append("## 分割结果\n" + "\n".join(segmentation_results))
+                parts.append(f"{h_segment}\n" + "\n".join(segmentation_results))
             if other_results:
                 parts.append("\n".join(other_results))
             return "\n\n".join(parts) if parts else "Tools executed."
@@ -2532,6 +2517,7 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
 
     def chat(self, message: str) -> str:
         self.memory.add_message("user", message)
+        self.memory.user_lang = "zh" if re.search(r'[一-鿿]', message) else "en"
 
         if self.enhanced:
             self.enhanced.pre_task_hook(message)
@@ -2558,6 +2544,7 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
 
     def chat_with_trace(self, message: str) -> Dict[str, Any]:
         self.memory.add_message("user", message)
+        self.memory.user_lang = "zh" if re.search(r'[一-鿿]', message) else "en"
         steps = []
         step_id = [0]
 
@@ -2620,6 +2607,7 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
     def chat_with_stream(self, message: str):
         """Streaming version of chat_with_trace. Yields SSE events."""
         self.memory.add_message("user", message)
+        self.memory.user_lang = "zh" if re.search(r'[一-鿿]', message) else "en"
         steps = []
         step_id = [0]
         response = ""  # Initialize response variable
@@ -2652,7 +2640,7 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
         # Bypasses LLM to prevent unnecessary questions or wrong skill chains
         _direct_tool_calls = self._detect_tool_request(message)
         if _direct_tool_calls:
-            _lang = "zh" if re.search(r'[一-鿿]', message) else "en"
+            _lang = self.memory.user_lang
             logger.info(f"Direct tool execution (stream): {len(_direct_tool_calls)} tools detected, lang={_lang}")
             for tc in _direct_tool_calls:
                 step = add_step("tool", f"Direct: {tc['tool']}", json.dumps(tc['params'], default=str)[:200], status="pending", tool=tc['tool'], params=tc['params'])
@@ -2678,6 +2666,7 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
                     logger.error(f"Direct tool execution failed: {tc['tool']}: {e}")
 
             # Build structured summary grouped by category
+            _lang = self.memory.user_lang
             analysis_results = []
             segmentation_results = []
             other_results = []
@@ -2691,12 +2680,10 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
                     else:
                         other_results.append(f"**{tool}**: {s['result']}")
             parts = []
-            if _lang == "zh":
-                if analysis_results: parts.append("## 分析结果\n" + "\n".join(analysis_results))
-                if segmentation_results: parts.append("## 分割结果\n" + "\n".join(segmentation_results))
-            else:
-                if analysis_results: parts.append("## Analysis\n" + "\n".join(analysis_results))
-                if segmentation_results: parts.append("## Segmentation\n" + "\n".join(segmentation_results))
+            h_analysis = "## 分析结果" if _lang == "zh" else "## Analysis"
+            h_segment = "## 分割结果" if _lang == "zh" else "## Segmentation"
+            if analysis_results: parts.append(f"{h_analysis}\n" + "\n".join(analysis_results))
+            if segmentation_results: parts.append(f"{h_segment}\n" + "\n".join(segmentation_results))
             if other_results: parts.append("\n".join(other_results))
             response = "\n\n".join(parts) if parts else "Tools executed."
             self.memory.add_message("assistant", response)
