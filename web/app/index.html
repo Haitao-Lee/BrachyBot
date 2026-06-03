@@ -802,6 +802,9 @@
             transition: background 0.15s; flex-shrink: 0;
         }
         .chat-send:hover { background: var(--primary-dark); }
+        .chat-send.streaming { background: #ef4444; animation: pulse-stop 1.5s ease-in-out infinite; }
+        .chat-send.streaming:hover { background: #dc2626; }
+        @keyframes pulse-stop { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
 
         .chat-hint { font-size: 0.65rem; color: var(--text-dim); margin-top: 0.4rem; padding-left: 0.25rem; }
 
@@ -1522,7 +1525,7 @@
 
             <div class="chat-input-row">
                 <input type="text" id="chatInput" placeholder="Describe your case or type / for commands..." onkeydown="handleChatKeypress(event)" oninput="handleChatInput(this)">
-                <button class="chat-send" onclick="sendChat()">&#10148;</button>
+                <button class="chat-send" id="chatSendBtn" onclick="sendChat()">&#10148;</button>
             </div>
             <div class="chat-hint">Press Enter to send &middot; Type / for commands &middot; Ctrl+L to clear</div>
         </div>
@@ -1888,6 +1891,7 @@
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerRotate()">&#8634; Rotate</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerUndo()">&#8617; Undo</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerRedo()">&#8618; Redo</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="fitView()">&#8981; Fit</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="resetViewer()">&#8635; Reset</button>
                 <div class="ctrl-sep" style="height:16px;"></div>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="reconstruct3D()">&#9638; 3D</button>
@@ -2265,6 +2269,10 @@ const state = {
 /******** API ********/
 const API = '/api';
 
+// Abort controller for stopping streaming responses
+let chatAbortController = null;
+let isStreaming = false;
+
 async function api(endpoint, body) {
     const res = await fetch(API + endpoint, {
         method: 'POST',
@@ -2396,6 +2404,23 @@ async function loadCTToViewers(ctPath) {
             }, 100);
 
             addChat('system', `CT loaded: ${data.shape.join(' × ')} voxels, ${data.hu_range[0].toFixed(0)} to ${data.hu_range[1].toFixed(0)} HU`);
+
+            // Update Image Analysis panel with CT info (clears old segmentation data)
+            imageAnalysisData.ct = null; // Will be computed from volume data
+            imageAnalysisData.ctv = null;
+            imageAnalysisData.oar = null;
+            // Stats will be computed when volume data loads (in loadVolumeData)
+            setTimeout(() => {
+                imageAnalysisData.ct = computeCTStats() || {
+                    shape: data.shape,
+                    spacing: data.spacing,
+                    huRange: data.hu_range,
+                    meanHU: 0,
+                    scanRange: data.shape.map((s, i) => (s * data.spacing[i] / 10).toFixed(1)),
+                    tissueDist: null,
+                };
+                updateImageAnalysis();
+            }, 600);
         }
     } catch (e) {
         overlay.classList.remove('active');
@@ -2425,13 +2450,18 @@ async function init() {
             const statusData = await statusResp.json();
             // Check if CT is actually loaded in the agent's memory
             if (statusData.ct_loaded) {
-                const organResp = await fetch(API + '/viewer/organs');
-                if (organResp.ok) {
-                    const organData = await organResp.json();
-                    if (organData.success && organData.organs && Object.keys(organData.organs).length > 0) {
-                        updateOrganList(organData.organs);
-                        dataTreeState.oar.loaded = true;
-                        renderDataTree();
+                // Try to load label volumes for client-side overlay rendering
+                await loadLabelVolumes();
+                if (!ctvLabelData && !oarLabelData) {
+                    // Fallback: fetch organ data the old way
+                    const organResp = await fetch(API + '/viewer/organs');
+                    if (organResp.ok) {
+                        const organData = await organResp.json();
+                        if (organData.success && organData.organs && Object.keys(organData.organs).length > 0) {
+                            updateOrganList(organData.organs);
+                            dataTreeState.oar.loaded = true;
+                            renderDataTree();
+                        }
                     }
                 }
             }
@@ -2608,6 +2638,12 @@ let volumeData = null;
 let volumeShape = null;
 let volumeSpacing = null;
 
+// Label volumes for client-side overlay rendering (3D Slicer style)
+let ctvLabelData = null;   // Uint8Array, shape (Z, Y, X)
+let oarLabelData = null;   // Uint8Array, shape (Z, Y, X)
+let labelColorLUT = {};    // {label_id: [R, G, B]}
+let organMetaFromServer = {};  // {label_id: {name, color, voxels}}
+
 async function loadVolumeData() {
     const res = await fetch(API + '/viewer/volume');
     if (!res.ok) throw new Error('Failed to load volume');
@@ -2627,9 +2663,230 @@ async function loadVolumeData() {
     console.log(`Volume loaded: ${shapeZ}x${shapeY}x${shapeX}, ${volumeData.length} voxels`);
 }
 
+async function loadLabelVolumes() {
+    try {
+        const res = await fetch(API + '/viewer/label_volume');
+        if (!res.ok) { console.log('No label volumes available'); return; }
+
+        const shapeZ = parseInt(res.headers.get('X-Shape-Z'));
+        const shapeY = parseInt(res.headers.get('X-Shape-Y'));
+        const shapeX = parseInt(res.headers.get('X-Shape-X'));
+        const hasCTV = res.headers.get('X-Has-CTV') === 'true';
+        const hasOAR = res.headers.get('X-Has-OAR') === 'true';
+        const ctvSize = parseInt(res.headers.get('X-CTV-Size') || '0');
+        const oarSize = parseInt(res.headers.get('X-OAR-Size') || '0');
+
+        labelColorLUT = JSON.parse(res.headers.get('X-Color-LUT') || '{}');
+        organMetaFromServer = JSON.parse(res.headers.get('X-Organ-Meta') || '{}');
+
+        const buffer = await res.arrayBuffer();
+        const allBytes = new Uint8Array(buffer);
+        const sliceSize = shapeY * shapeX;
+
+        ctvLabelData = null;
+        oarLabelData = null;
+
+        if (hasCTV && ctvSize > 0) {
+            ctvLabelData = new Uint8Array(allBytes.buffer, 0, ctvSize / 1);
+            // Verify size matches expected
+            const expected = shapeZ * sliceSize;
+            if (ctvLabelData.length !== expected) {
+                console.warn(`CTV label size mismatch: ${ctvLabelData.length} vs expected ${expected}`);
+            }
+        }
+
+        if (hasOAR && oarSize > 0) {
+            const oarStart = ctvSize;
+            oarLabelData = new Uint8Array(allBytes.buffer, oarStart, oarSize / 1);
+            const expected = shapeZ * sliceSize;
+            if (oarLabelData.length !== expected) {
+                console.warn(`OAR label size mismatch: ${oarLabelData.length} vs expected ${expected}`);
+            }
+        }
+
+        console.log(`Label volumes loaded: CTV=${hasCTV}, OAR=${hasOAR}, ${Object.keys(labelColorLUT).length} labels`);
+
+        // Update data tree with organ metadata
+        if (Object.keys(organMetaFromServer).length > 0) {
+            // Convert to {label_id: {name, voxel_count, color}} format for updateOrganList
+            const organData = {};
+            for (const [id, meta] of Object.entries(organMetaFromServer)) {
+                organData[id] = {
+                    name: meta.name,
+                    voxel_count: meta.voxels,
+                    color: `rgb(${meta.color.join(',')})`,
+                };
+            }
+            updateOrganList(organData);
+            renderDataTree();
+        }
+    } catch (e) {
+        console.error('Failed to load label volumes:', e);
+    }
+}
+
 // Pre-allocate pixel buffer for reuse
 let _pixelBuffer = null;
 let _imageDataBuffer = null;
+
+function renderOverlayFromVolume(axis, sliceIndex) {
+    if (!volumeShape) return;
+
+    const overlayCanvas = document.getElementById('labelOverlay_' + capitalize(axis));
+    if (!overlayCanvas) return;
+
+    const displayMode = state.viewerSettings.displayMode || 'ct';
+    const showCTV = state.viewerSettings.showCTV;
+    const showOAR = state.viewerSettings.showOAR;
+    const ctCanvas = document.getElementById('sliceCanvas' + capitalize(axis));
+
+    // Handle display mode
+    if (displayMode === 'label') {
+        if (ctCanvas) ctCanvas.style.opacity = '0';
+        overlayCanvas.style.opacity = '1';
+        overlayCanvas.style.display = 'block';
+    } else if (displayMode === 'overlay') {
+        if (ctCanvas) ctCanvas.style.opacity = '1';
+        overlayCanvas.style.opacity = '1';
+        overlayCanvas.style.display = 'block';
+    } else {
+        if (ctCanvas) ctCanvas.style.opacity = '1';
+        overlayCanvas.style.display = 'none';
+        return;
+    }
+
+    const ctvVisible = dataTreeState.ctv.visible && showCTV;
+    const oarVisible = dataTreeState.oar.visible && showOAR;
+
+    if (!oarVisible && !ctvVisible && displayMode !== 'label') {
+        overlayCanvas.style.display = 'none';
+        if (displayMode === 'label' && ctCanvas) ctCanvas.style.opacity = '1';
+        return;
+    }
+
+    if (!ctvLabelData && !oarLabelData) {
+        // Fallback to server-based overlay (debounced to avoid spam)
+        // Clear overlay first to prevent stale mask from previous slice
+        const ctx = overlayCanvas.getContext('2d');
+        ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        if (!renderOverlayFromVolume._timers) renderOverlayFromVolume._timers = {};
+        if (renderOverlayFromVolume._timers[axis]) clearTimeout(renderOverlayFromVolume._timers[axis]);
+        renderOverlayFromVolume._timers[axis] = setTimeout(() => loadOverlay(axis, sliceIndex), 50);
+        return;
+    }
+
+    const [Z, Y, X] = volumeShape;
+    const spacing = volumeSpacing || [0.68, 0.68, 5.0];
+    const spacingX = spacing[0] || 0.68;
+    const spacingY = spacing[1] || 0.68;
+    const spacingZ = spacing[2] || 5.0;
+
+    let width, height;
+    let resampleRatio = 1;
+
+    if (axis === 'axial') {
+        width = X;
+        height = Y;
+    } else if (axis === 'sagittal') {
+        width = Y;
+        height = Math.round(Z * spacingZ / spacingY);
+        resampleRatio = spacingZ / spacingY;
+    } else {
+        width = X;
+        height = Math.round(Z * spacingZ / spacingX);
+        resampleRatio = spacingZ / spacingX;
+    }
+
+    // Size overlay canvas to match CT canvas pixel dimensions
+    // IMPORTANT: setting canvas.width/height clears the canvas, so only do it when needed
+    const sizeChanged = overlayCanvas.width !== width || overlayCanvas.height !== height;
+    if (sizeChanged) {
+        overlayCanvas.width = width;
+        overlayCanvas.height = height;
+    }
+
+    const ctx = overlayCanvas.getContext('2d');
+    // Always clear before drawing to prevent stale mask from previous slice
+    ctx.clearRect(0, 0, width, height);
+    const imageData = ctx.createImageData(width, height);
+    const data = imageData.data;
+    const sliceSize = Y * X;
+
+    // Get organ opacities from data tree
+    const organOpacities = {};
+    dataTreeState.organs.forEach(o => { organOpacities[o.labelId] = o.opacity; });
+
+    for (let py = 0; py < height; py++) {
+        for (let px = 0; px < width; px++) {
+            // Map display coords to volume coords
+            let volZ, volY, volX;
+            if (axis === 'axial') {
+                volZ = sliceIndex;
+                volY = py;
+                volX = px;
+            } else if (axis === 'sagittal') {
+                volZ = Math.min(Math.floor(py / resampleRatio), Z - 1);
+                volY = px;
+                volX = sliceIndex;
+            } else {
+                volZ = Math.min(Math.floor(py / resampleRatio), Z - 1);
+                volY = sliceIndex;
+                volX = px;
+            }
+
+            const flatIdx = volZ * sliceSize + volY * X + volX;
+            const outIdx = (py * width + px) * 4;
+
+            let r = 0, g = 0, b = 0, a = 0;
+
+            // OAR takes priority (drawn on top)
+            if (oarVisible && oarLabelData && oarLabelData.length > flatIdx) {
+                const oarVal = oarLabelData[flatIdx];
+                if (oarVal > 0) {
+                    const visible = !dataTreeState.organs.length ||
+                                    dataTreeState.organs.some(o => o.labelId === oarVal && o.visible);
+                    if (visible) {
+                        const color = labelColorLUT[oarVal] || [200, 200, 200];
+                        const opacity = organOpacities[oarVal] !== undefined ? organOpacities[oarVal] : 0.5;
+                        r = color[0];
+                        g = color[1];
+                        b = color[2];
+                        a = Math.round(opacity * 255);
+                    }
+                }
+            }
+
+            // CTV drawn underneath (only if no OAR at this pixel)
+            if (ctvVisible && a === 0 && ctvLabelData && ctvLabelData.length > flatIdx) {
+                const ctvVal = ctvLabelData[flatIdx];
+                if (ctvVal > 0) {
+                    const color = labelColorLUT[1] || [255, 0, 0];
+                    const opacity = dataTreeState.ctv.opacity || 0.7;
+                    r = color[0];
+                    g = color[1];
+                    b = color[2];
+                    a = Math.round(opacity * 255);
+                }
+            }
+
+            data[outIdx] = r;
+            data[outIdx + 1] = g;
+            data[outIdx + 2] = b;
+            data[outIdx + 3] = a;
+        }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+
+    // Match overlay display to CT canvas
+    if (ctCanvas) {
+        overlayCanvas.style.width = ctCanvas.style.width;
+        overlayCanvas.style.height = ctCanvas.style.height;
+        overlayCanvas.style.position = 'absolute';
+        overlayCanvas.style.left = ctCanvas.style.left;
+        overlayCanvas.style.top = ctCanvas.style.top;
+    }
+}
 
 function renderSliceFromVolume(axis, sliceIndex) {
     if (!volumeData || !volumeShape) return;
@@ -2722,15 +2979,85 @@ function renderSliceFromVolume(axis, sliceIndex) {
     }
     const imageData = _imageDataBuffer;
 
-    // Fill RGBA in one pass (grayscale)
+    // Fill RGBA in one pass (grayscale), compositing overlay inline
     const data = imageData.data;
-    for (let i = 0; i < pixelCount; i++) {
-        const idx = i * 4;
-        const val = pixels[i];
-        data[idx] = val;
-        data[idx + 1] = val;
-        data[idx + 2] = val;
-        data[idx + 3] = 255;
+    const displayMode = state.viewerSettings.displayMode || 'ct';
+    const isLabelOnly = displayMode === 'label';
+    const showOverlay = (ctvLabelData || oarLabelData) &&
+                        (displayMode === 'overlay' || isLabelOnly) &&
+                        ((dataTreeState.ctv.visible && state.viewerSettings.showCTV) ||
+                         (dataTreeState.oar.visible && state.viewerSettings.showOAR));
+    const labelSliceSize = Y * X;
+    const organOpacities = showOverlay ? (() => { const m = {}; dataTreeState.organs.forEach(o => { m[o.labelId] = o.opacity; }); return m; })() : {};
+
+    for (let py = 0; py < height; py++) {
+        for (let px = 0; px < width; px++) {
+            // Map display coords to volume coords for label lookup
+            // Must match CT rendering: ct_arr[Z, Y, X] = ct_arr[zOffset + y * X + x]
+            let volZ, volY2, volX2;
+            if (axis === 'axial') { volZ = sliceIndex; volY2 = py; volX2 = px; }
+            else if (axis === 'sagittal') {
+                // CT: zOffset = srcZ * Y * X + sliceIndex; val = data[zOffset + y * X]
+                // → ct_arr[srcZ, y, sliceIndex] where srcZ from py, y from px
+                volZ = Math.min(Math.floor(py / resampleRatio), Z - 1);
+                volY2 = px; volX2 = sliceIndex;
+            } else {
+                // CT: zOffset = srcZ * Y * X + sliceIndex * X; val = data[zOffset + x]
+                // → ct_arr[srcZ, sliceIndex, x] where srcZ from py, x from px
+                volZ = Math.min(Math.floor(py / resampleRatio), Z - 1);
+                volY2 = sliceIndex; volX2 = px;
+            }
+            const flatIdx = volZ * labelSliceSize + volY2 * X + volX2;
+
+            let r, g, b, a = 255;
+            const ctVal = pixels[py * width + px];
+            r = ctVal; g = ctVal; b = ctVal;
+
+            if (showOverlay && flatIdx >= 0) {
+                let oR = 0, oG = 0, oB = 0, oA = 0;
+
+                // OAR overlay
+                if (dataTreeState.oar.visible && state.viewerSettings.showOAR && oarLabelData && oarLabelData.length > flatIdx) {
+                    const oarVal = oarLabelData[flatIdx];
+                    if (oarVal > 0) {
+                        const visible = !dataTreeState.organs.length ||
+                                        dataTreeState.organs.some(o => o.labelId === oarVal && o.visible);
+                        if (visible) {
+                            const color = labelColorLUT[oarVal] || [200, 200, 200];
+                            const opacity = organOpacities[oarVal] !== undefined ? organOpacities[oarVal] : 0.5;
+                            oR = color[0]; oG = color[1]; oB = color[2]; oA = Math.round(opacity * 255);
+                        }
+                    }
+                }
+
+                // CTV overlay (only if no OAR at this pixel)
+                if (oA === 0 && dataTreeState.ctv.visible && state.viewerSettings.showCTV && ctvLabelData && ctvLabelData.length > flatIdx) {
+                    const ctvVal = ctvLabelData[flatIdx];
+                    if (ctvVal > 0) {
+                        const color = labelColorLUT[1] || [255, 0, 0];
+                        const opacity = dataTreeState.ctv.opacity || 0.7;
+                        oR = color[0]; oG = color[1]; oB = color[2]; oA = Math.round(opacity * 255);
+                    }
+                }
+
+                // Alpha-blend overlay onto CT (or onto black in label-only mode)
+                if (oA > 0) {
+                    const alpha = oA / 255;
+                    const bg = isLabelOnly ? 0 : ctVal;
+                    r = Math.round(bg * (1 - alpha) + oR * alpha);
+                    g = Math.round(bg * (1 - alpha) + oG * alpha);
+                    b = Math.round(bg * (1 - alpha) + oB * alpha);
+                } else if (isLabelOnly) {
+                    r = 0; g = 0; b = 0;
+                }
+            }
+
+            const outIdx = (py * width + px) * 4;
+            data[outIdx] = r;
+            data[outIdx + 1] = g;
+            data[outIdx + 2] = b;
+            data[outIdx + 3] = a;
+        }
     }
     ctx.putImageData(imageData, 0, 0);
 
@@ -2744,8 +3071,17 @@ function renderSliceFromVolume(axis, sliceIndex) {
     canvas.style.width = displayW + 'px';
     canvas.style.height = displayH + 'px';
     canvas.style.position = 'absolute';
-    canvas.style.left = ((containerW - displayW) / 2) + 'px';
-    canvas.style.top = ((containerH - displayH) / 2) + 'px';
+    // Only set base position once per container size change (not every slice)
+    // to avoid overriding pan transform from applyViewerTransform
+    const baseLeft = ((containerW - displayW) / 2) + 'px';
+    const baseTop = ((containerH - displayH) / 2) + 'px';
+    if (!canvas._posSet || canvas._posContainerW !== containerW || canvas._posContainerH !== containerH) {
+        canvas.style.left = baseLeft;
+        canvas.style.top = baseTop;
+        canvas._posSet = true;
+        canvas._posContainerW = containerW;
+        canvas._posContainerH = containerH;
+    }
     canvas.style.display = 'block';
 
     const placeholder = container.querySelector('.viewer-no-data');
@@ -2765,37 +3101,29 @@ function renderSliceFromVolume(axis, sliceIndex) {
         crossCanvas.style.width = displayW + 'px';
         crossCanvas.style.height = displayH + 'px';
         crossCanvas.style.position = 'absolute';
-        crossCanvas.style.left = ((containerW - displayW) / 2) + 'px';
-        crossCanvas.style.top = ((containerH - displayH) / 2) + 'px';
+        if (!crossCanvas._posSet || crossCanvas._posContainerW !== containerW || crossCanvas._posContainerH !== containerH) {
+            crossCanvas.style.left = baseLeft;
+            crossCanvas.style.top = baseTop;
+            crossCanvas._posSet = true;
+            crossCanvas._posContainerW = containerW;
+            crossCanvas._posContainerH = containerH;
+        }
     }
 
     syncAnnotationCanvasSize(axis);
     redrawAllAnnotations();
 
-    // Position overlay canvas to match CT canvas (same as crosshair/annotation)
+    // Overlay is composited inline into CT pixels — hide the separate overlay canvas
     const overlayCanvas = document.getElementById('labelOverlay_' + capitalize(axis));
     if (overlayCanvas) {
-        // Only resize if dimensions changed to prevent canvas clear (flickering)
-        if (overlayCanvas.width !== displayW || overlayCanvas.height !== displayH) {
-            overlayCanvas.width = displayW;
-            overlayCanvas.height = displayH;
-        }
-        overlayCanvas.style.width = displayW + 'px';
-        overlayCanvas.style.height = displayH + 'px';
-        overlayCanvas.style.position = 'absolute';
-        overlayCanvas.style.left = ((containerW - displayW) / 2) + 'px';
-        overlayCanvas.style.top = ((containerH - displayH) / 2) + 'px';
-        overlayCanvas.style.right = 'auto';
-        overlayCanvas.style.bottom = 'auto';
+        overlayCanvas.style.display = 'none';
     }
-
-    // Load overlay (debounced per-axis to prevent flicker on rapid slice changes)
-    if (!renderSliceFromVolume._overlayTimers) renderSliceFromVolume._overlayTimers = {};
-    if (renderSliceFromVolume._overlayTimers[axis]) clearTimeout(renderSliceFromVolume._overlayTimers[axis]);
-    renderSliceFromVolume._overlayTimers[axis] = setTimeout(() => loadOverlay(axis, sliceIndex), 50);
 }
 
 async function loadOverlay(axis, sliceIndex) {
+    // Skip server-based overlay when label volumes are loaded (inline compositing handles it)
+    if (ctvLabelData || oarLabelData) return;
+
     const overlayCanvas = document.getElementById('labelOverlay_' + capitalize(axis));
     if (!overlayCanvas) return;
 
@@ -2834,6 +3162,7 @@ async function loadOverlay(axis, sliceIndex) {
         // Set overlay canvas to CT canvas pixel dimensions (not display size)
         const ctW = ctCanvas ? ctCanvas.width : 512;
         const ctH = ctCanvas ? ctCanvas.height : 512;
+        // Only resize if pixel dimensions actually changed to prevent flicker
         if (overlayCanvas.width !== ctW || overlayCanvas.height !== ctH) {
             overlayCanvas.width = ctW;
             overlayCanvas.height = ctH;
@@ -3168,9 +3497,11 @@ function setDisplayMode() {
 
 // Reload only overlays (for visibility/opacity changes) without re-rendering CT
 function reloadOverlays() {
-    ['axial', 'sagittal', 'coronal'].forEach(axis => {
-        loadOverlay(axis, state.slices[axis]);
-    });
+    // Overlay is composited inline into CT canvas via renderSliceFromVolume
+    // Just re-render all slices to pick up overlay changes
+    if (state.ctLoaded) {
+        loadAllSlices();
+    }
 }
 
 /******** DATA TREE ********/
@@ -3192,7 +3523,7 @@ const ORGAN_COLORS = [
 ];
 
 function updateOrganList(organData) {
-    // organData: {label_id: {name, voxel_count}}
+    // organData: {label_id: {name, voxel_count, color?}}
     if (!organData) return;
     dataTreeState.organs = [];
     let i = 0;
@@ -3201,7 +3532,7 @@ function updateOrganList(organData) {
             id: `organ_${labelId}`,
             labelId: parseInt(labelId),
             label: info.name || `Organ ${labelId}`,
-            color: ORGAN_COLORS[i % ORGAN_COLORS.length],
+            color: info.color || ORGAN_COLORS[i % ORGAN_COLORS.length],
             visible: true,
             opacity: 0.5,
             voxelCount: info.voxel_count || 0,
@@ -3601,6 +3932,29 @@ function setViewerTool(tool) {
     });
 }
 
+function fitView() {
+    // Lightweight reset: only center and fit, preserve window/level and other settings
+    state.viewerSettings.zoom = 1.0;
+    state.viewerSettings.panX = 0;
+    state.viewerSettings.panY = 0;
+    state.viewerSettings.flipH = false;
+    state.viewerSettings.flipV = false;
+    state.viewerSettings.rotation = 0;
+    document.getElementById('viewerZoom').value = 100;
+    document.getElementById('zoomLabel').textContent = '100%';
+    // Reset base position so next renderSliceFromVolume re-centers
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const canvas = getSliceCanvas(axis);
+        if (canvas) { canvas._posSet = false; }
+        const crossCanvas = document.getElementById('crosshairCanvas' + capitalize(axis));
+        if (crossCanvas) { crossCanvas._posSet = false; }
+        const overlayCanvas = document.getElementById('labelOverlay_' + capitalize(axis));
+        if (overlayCanvas) { overlayCanvas._posSet = false; }
+    });
+    applyViewerTransform();
+    if (state.ctLoaded) loadAllSlices();
+}
+
 function resetViewer() {
     state.viewerSettings = {
         window: 400, level: 40, threshold: null,
@@ -3624,7 +3978,12 @@ function resetViewer() {
         if (canvas) {
             canvas.style.transform = 'scale(1)';
             canvas.style.transformOrigin = 'center center';
+            canvas._posSet = false;
         }
+        const crossCanvas = document.getElementById('crosshairCanvas' + capitalize(axis));
+        if (crossCanvas) crossCanvas._posSet = false;
+        const overlayCanvas = document.getElementById('labelOverlay_' + capitalize(axis));
+        if (overlayCanvas) overlayCanvas._posSet = false;
         const annCanvas = document.getElementById('annotationCanvas' + capitalize(axis));
         if (annCanvas) {
             const ctx = annCanvas.getContext('2d');
@@ -3662,8 +4021,13 @@ function renderSliceToCanvas(axis, sliceData) {
             canvas.style.width = displayW + 'px';
             canvas.style.height = displayH + 'px';
             canvas.style.position = 'absolute';
-            canvas.style.left = ((containerW - displayW) / 2) + 'px';
-            canvas.style.top = ((containerH - displayH) / 2) + 'px';
+            if (!canvas._posSet || canvas._posContainerW !== containerW || canvas._posContainerH !== containerH) {
+                canvas.style.left = ((containerW - displayW) / 2) + 'px';
+                canvas.style.top = ((containerH - displayH) / 2) + 'px';
+                canvas._posSet = true;
+                canvas._posContainerW = containerW;
+                canvas._posContainerH = containerH;
+            }
             canvas.style.margin = '0';
 
             // Set actual canvas resolution
@@ -3685,8 +4049,13 @@ function renderSliceToCanvas(axis, sliceData) {
                 crossCanvas.style.width = displayW + 'px';
                 crossCanvas.style.height = displayH + 'px';
                 crossCanvas.style.position = 'absolute';
-                crossCanvas.style.left = ((containerW - displayW) / 2) + 'px';
-                crossCanvas.style.top = ((containerH - displayH) / 2) + 'px';
+                if (!crossCanvas._posSet || crossCanvas._posContainerW !== containerW || crossCanvas._posContainerH !== containerH) {
+                    crossCanvas.style.left = ((containerW - displayW) / 2) + 'px';
+                    crossCanvas.style.top = ((containerH - displayH) / 2) + 'px';
+                    crossCanvas._posSet = true;
+                    crossCanvas._posContainerW = containerW;
+                    crossCanvas._posContainerH = containerH;
+                }
             }
             
             // Update annotation canvas size
@@ -4007,13 +4376,13 @@ function drawLinkedCrosshairs(volX, volY, volZ, sourceAxis) {
             cx = (volX / state.ctShape[2]) * w;
             cy = (volY / state.ctShape[1]) * h;
         } else if (axis === 'sagittal') {
-            const totalResampledZ = state.ctShape[0] * spacing[2] / spacing[1];
+            // Canvas: width=Y, height=resampled_Z. Map volZ (original) to resampled position
             cx = (volY / state.ctShape[1]) * w;
-            cy = (volZ / totalResampledZ) * h;
+            cy = (volZ / state.ctShape[0]) * h;
         } else {
-            const totalResampledZ = state.ctShape[0] * spacing[2] / spacing[0];
+            // Canvas: width=X, height=resampled_Z. Map volZ (original) to resampled position
             cx = (volX / state.ctShape[2]) * w;
-            cy = (volZ / totalResampledZ) * h;
+            cy = (volZ / state.ctShape[0]) * h;
         }
 
         // Draw crosshair lines
@@ -4053,19 +4422,25 @@ function syncAnnotationCanvasSize(axis) {
     const sliceCanvas = getSliceCanvas(axis);
     const annCanvas = getAnnotationCanvas(axis);
     if (!sliceCanvas || !annCanvas) return;
-    
+
     const displayW = sliceCanvas._displayW || sliceCanvas.offsetWidth;
     const displayH = sliceCanvas._displayH || sliceCanvas.offsetHeight;
     const offsetX = sliceCanvas._offsetX || 0;
     const offsetY = sliceCanvas._offsetY || 0;
-    
+
     annCanvas.width = displayW;
     annCanvas.height = displayH;
     annCanvas.style.width = displayW + 'px';
     annCanvas.style.height = displayH + 'px';
     annCanvas.style.position = 'absolute';
-    annCanvas.style.left = offsetX + 'px';
-    annCanvas.style.top = offsetY + 'px';
+    // Only reposition if container size changed
+    if (!annCanvas._posSet || annCanvas._posOffsetX !== offsetX || annCanvas._posOffsetY !== offsetY) {
+        annCanvas.style.left = offsetX + 'px';
+        annCanvas.style.top = offsetY + 'px';
+        annCanvas._posSet = true;
+        annCanvas._posOffsetX = offsetX;
+        annCanvas._posOffsetY = offsetY;
+    }
     annCanvas.style.display = 'block';
     annCanvas.style.pointerEvents = 'none';
 }
@@ -5242,7 +5617,6 @@ function addChat(type, msg, save = true) {
     container.scrollTop = container.scrollHeight;
 
     if (save) saveSessionMessage(type, msg);
-    if (type === 'bot' || type === 'bot-response') captureAnalysis(msg);
 }
 
 function fallbackCopy(text) {
@@ -5663,6 +6037,27 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
+function setStreamingState(streaming) {
+    isStreaming = streaming;
+    const btn = document.getElementById('chatSendBtn');
+    if (!btn) return;
+    if (streaming) {
+        btn.innerHTML = '&#9632;';  // Stop square
+        btn.classList.add('streaming');
+        btn.onclick = stopChat;
+    } else {
+        btn.innerHTML = '&#10148;';  // Send arrow
+        btn.classList.remove('streaming');
+        btn.onclick = sendChat;
+    }
+}
+
+function stopChat() {
+    if (chatAbortController) {
+        chatAbortController.abort();
+    }
+}
+
 async function sendChat() {
     console.log('[sendChat] Called');
     const input = document.getElementById('chatInput');
@@ -5717,10 +6112,15 @@ async function sendChat() {
         const clearContext = window._clearContext || false;
         if (clearContext) window._clearContext = false; // Reset after use
 
+        // Setup abort controller for stop button
+        chatAbortController = new AbortController();
+        setStreamingState(true);
+
         const res = await fetch(API + '/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: msg, ui_state: uiState, stream: true, clear_context: clearContext }),
+            signal: chatAbortController.signal,
         });
 
         if (!res.ok) {
@@ -5904,16 +6304,30 @@ async function sendChat() {
                 state.viewerSettings.displayMode = 'overlay';
                 const modeSelect = document.getElementById('displayMode');
                 if (modeSelect) modeSelect.value = 'overlay';
+                // Load full label volumes into memory for instant overlay rendering
+                await loadLabelVolumes();
                 // Refresh data tree and viewers
                 renderDataTree();
                 if (state.ctLoaded) {
-                    setTimeout(() => loadAllSlices(), 500);
+                    setTimeout(() => loadAllSlices(), 200);
                 }
+                // Auto-switch to Viewers tab to show segmentation results
+                const viewerTab = document.querySelectorAll('.panel-tab')[3];
+                if (viewerTab) switchPanel('viewers', viewerTab);
             }
         }
 
         // Sync viewer state after LLM response (in case LLM changed viewer settings via API)
         setTimeout(() => syncViewerState(), 300);
+
+        // Capture analysis results ONLY when analysis/segmentation tools were actually executed
+        if (steps && steps.length > 0) {
+            const analysisToolNames = ['ctv_segmentation', 'oar_segmentation', 'ui_inspector', 'dose_engine', 'dose_evaluation', 'seed_planning'];
+            const hasAnalysisTool = steps.some(s => s.type === 'tool' && s.status === 'done' && analysisToolNames.some(t => (s.tool || '').toLowerCase().includes(t)));
+            if (hasAnalysisTool) {
+                captureAnalysis(finalResponse || responseText || '', steps);
+            }
+        }
 
         if (llmMeta && (llmMeta.usage || llmMeta.latency_ms || llmMeta.llm_calls)) {
             llmMeta._responseText = finalResponse || responseText || '';
@@ -5926,10 +6340,20 @@ async function sendChat() {
 
     } catch (e) {
         removeThinkingIndicator(thinkingEl);
-        addChat('error', 'Request failed: ' + e.message);
+        if (e.name === 'AbortError') {
+            // User stopped the response — clean up incomplete content
+            addChat('system', '⏹ Response stopped.');
+            // Clean up incomplete conversation via API
+            fetch(API + '/chat/abort', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
+        } else {
+            addChat('error', 'Request failed: ' + e.message);
+        }
         // Hide progress container on error
         const progressContainerError = document.getElementById('toolProgressContainer');
         if (progressContainerError) progressContainerError.style.display = 'none';
+    } finally {
+        setStreamingState(false);
+        chatAbortController = null;
     }
 }
 
@@ -5971,23 +6395,171 @@ function finalizeStreamingResponse(el, text) {
     // Render markdown for bot responses
     el.innerHTML = renderMarkdown(text);
     saveSessionMessage('bot-response', text);
-    // Capture analysis results for Analysis tab
-    captureAnalysis(text);
 }
 
-function captureAnalysis(text) {
-    // Only capture analysis/segmentation results, not general chat
-    if (!text || text.length < 30) return;
-    const analysisKeywords = ['CT', 'HU', '图像', '分析', '分割', 'segmentation', '器官', '肿瘤', '靶区', '体积', '体素', 'spacing', '维度'];
-    const isAnalysis = analysisKeywords.some(kw => text.includes(kw));
-    if (!isAnalysis) return;
+// Image Analysis panel — shows only image-related data from the system state
+const imageAnalysisData = {
+    ct: null,       // {shape, spacing, huRange, meanHU, scanRange, tissueDist}
+    ctv: null,      // {volume, voxelCount, tumorType}
+    oar: null,      // {organCount, organList}
+};
+
+function computeCTStats() {
+    if (!volumeData || !volumeShape || !volumeSpacing) return null;
+    const [Z, Y, X] = volumeShape;
+    const total = volumeData.length;
+    let sum = 0, minVal = 32767, maxVal = -32768;
+    let air = 0, fat = 0, soft = 0, muscle = 0, bone = 0;
+    for (let i = 0; i < total; i++) {
+        const v = volumeData[i];
+        sum += v;
+        if (v < minVal) minVal = v;
+        if (v > maxVal) maxVal = v;
+        if (v < -900) air++;
+        else if (v < -30) fat++;
+        else if (v < 100) soft++;
+        else if (v < 400) muscle++;
+        else bone++;
+    }
+    return {
+        shape: [Z, Y, X],
+        spacing: [volumeSpacing[0], volumeSpacing[1], volumeSpacing[2]],
+        huRange: [minVal, maxVal],
+        meanHU: sum / total,
+        scanRange: [
+            (X * volumeSpacing[0]).toFixed(1),
+            (Y * volumeSpacing[1]).toFixed(1),
+            (Z * volumeSpacing[2]).toFixed(1),
+        ],
+        tissueDist: {
+            air: (air / total * 100).toFixed(1),
+            fat: (fat / total * 100).toFixed(1),
+            soft: (soft / total * 100).toFixed(1),
+            muscle: (muscle / total * 100).toFixed(1),
+            bone: (bone / total * 100).toFixed(1),
+        },
+    };
+}
+
+function updateImageAnalysis() {
     const section = document.getElementById('analysisSection');
     const content = document.getElementById('analysisContent');
     const timeEl = document.getElementById('analysisTime');
     if (!section || !content) return;
+
+    // Auto-compute CT stats from volume data if not set
+    if (!imageAnalysisData.ct && volumeData && volumeShape) {
+        imageAnalysisData.ct = computeCTStats();
+    }
+
+    if (!imageAnalysisData.ct) {
+        section.style.display = 'none';
+        return;
+    }
+
     section.style.display = '';
-    content.innerHTML = renderMarkdown(text);
+    let html = '';
+    const ct = imageAnalysisData.ct;
+    const td = ct.tissueDist;
+
+    // CT Image Info
+    html += `<div style="margin-bottom:0.7rem;">
+        <div style="font-weight:600;margin-bottom:0.3rem;">📷 CT Image</div>
+        <table style="font-size:0.65rem;width:100%;border-collapse:collapse;">
+            <tr><td style="color:var(--text-dim);padding:2px 4px;white-space:nowrap;">Dimensions</td><td>${ct.shape.join(' × ')} voxels</td></tr>
+            <tr><td style="color:var(--text-dim);padding:2px 4px;">Spacing</td><td>${ct.spacing.map(v => v.toFixed(2)).join(' × ')} mm</td></tr>
+            <tr><td style="color:var(--text-dim);padding:2px 4px;">Scan Range</td><td>${ct.scanRange.join(' × ')} cm</td></tr>
+            <tr><td style="color:var(--text-dim);padding:2px 4px;">HU Range</td><td>${ct.huRange[0]} ~ ${ct.huRange[1]}</td></tr>
+            <tr><td style="color:var(--text-dim);padding:2px 4px;">Mean HU</td><td>${ct.meanHU.toFixed(1)}</td></tr>
+        </table>
+    </div>`;
+
+    // Tissue Distribution
+    if (td) {
+        html += `<div style="margin-bottom:0.7rem;">
+            <div style="font-weight:600;margin-bottom:0.3rem;">📊 Tissue Distribution</div>
+            <table style="font-size:0.65rem;width:100%;border-collapse:collapse;">
+                <tr><td style="color:var(--text-dim);padding:2px 4px;">Air / Gas</td><td style="padding:2px 4px;"><span style="color:#60a5fa;">${td.air}%</span> <span style="color:var(--text-dim);font-size:0.55rem;">(HU &lt; -900)</span></td></tr>
+                <tr><td style="color:var(--text-dim);padding:2px 4px;">Fat</td><td style="padding:2px 4px;"><span style="color:#fbbf24;">${td.fat}%</span> <span style="color:var(--text-dim);font-size:0.55rem;">(-900 ~ -30)</span></td></tr>
+                <tr><td style="color:var(--text-dim);padding:2px 4px;">Soft Tissue</td><td style="padding:2px 4px;"><span style="color:#34d399;">${td.soft}%</span> <span style="color:var(--text-dim);font-size:0.55rem;">(-30 ~ 100)</span></td></tr>
+                <tr><td style="color:var(--text-dim);padding:2px 4px;">Muscle / Organ</td><td style="padding:2px 4px;"><span style="color:#f472b6;">${td.muscle}%</span> <span style="color:var(--text-dim);font-size:0.55rem;">(100 ~ 400)</span></td></tr>
+                <tr><td style="color:var(--text-dim);padding:2px 4px;">Bone</td><td style="padding:2px 4px;"><span style="color:#a78bfa;">${td.bone}%</span> <span style="color:var(--text-dim);font-size:0.55rem;">(&gt; 400)</span></td></tr>
+            </table>
+        </div>`;
+    }
+
+    // CTV Segmentation
+    if (imageAnalysisData.ctv) {
+        const ctv = imageAnalysisData.ctv;
+        html += `<div style="margin-bottom:0.7rem;">
+            <div style="font-weight:600;margin-bottom:0.3rem;">🎯 CTV Segmentation</div>
+            <table style="font-size:0.65rem;width:100%;border-collapse:collapse;">
+                <tr><td style="color:var(--text-dim);padding:2px 4px;">Volume</td><td>${(ctv.volume / 1000).toFixed(1)} cm³ (${ctv.volume.toFixed(0)} mm³)</td></tr>
+                <tr><td style="color:var(--text-dim);padding:2px 4px;">Voxels</td><td>${ctv.voxelCount.toLocaleString()}</td></tr>
+                ${ctv.tumorType ? `<tr><td style="color:var(--text-dim);padding:2px 4px;">Type</td><td>${ctv.tumorType}</td></tr>` : ''}
+            </table>
+        </div>`;
+    }
+
+    // OAR Segmentation
+    if (imageAnalysisData.oar) {
+        const oar = imageAnalysisData.oar;
+        html += `<div style="margin-bottom:0.7rem;">
+            <div style="font-weight:600;margin-bottom:0.3rem;">🫁 OAR Segmentation</div>
+            <div style="font-size:0.65rem;margin-bottom:0.2rem;">${oar.organCount} organs segmented</div>`;
+        if (oar.organList && oar.organList.length > 0) {
+            html += `<div style="font-size:0.6rem;max-height:120px;overflow-y:auto;background:var(--bg-2);border-radius:4px;padding:0.3rem;">`;
+            oar.organList.forEach(o => {
+                const colorDot = `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${o.color};margin-right:3px;vertical-align:middle;"></span>`;
+                html += `<div style="padding:1px 0;">${colorDot}${o.name} <span style="color:var(--text-dim);font-size:0.55rem;">(${o.voxels.toLocaleString()} vox)</span></div>`;
+            });
+            html += `</div>`;
+        }
+        html += `</div>`;
+    }
+
+    content.innerHTML = html || '<div style="color:var(--text-dim);font-size:0.65rem;">No image data available</div>';
     timeEl.textContent = new Date().toLocaleTimeString();
+}
+
+function captureAnalysis(text, steps) {
+    // Extract image analysis data from tool results
+    if (steps && steps.length > 0) {
+        for (const step of steps) {
+            if (step.type !== 'tool' || step.status !== 'done' || !step.tool) continue;
+            const toolName = step.tool.toLowerCase();
+            const result = step.result || '';
+
+            if (toolName.includes('ctv_segmentation')) {
+                const volMatch = result.match(/([\d.]+)\s*mm/);
+                const voxMatch = result.match(/voxel.*?(\d[\d,]*)/i);
+                const vol = volMatch ? parseFloat(volMatch[1]) : 0;
+                const voxels = voxMatch ? parseInt(voxMatch[1].replace(/,/g, '')) : 0;
+                const typeMatch = result.match(/tumor[_\s]*type[:\s]*(\w+)/i);
+                imageAnalysisData.ctv = { volume: vol, voxelCount: voxels, tumorType: typeMatch ? typeMatch[1] : null };
+            } else if (toolName.includes('oar_segmentation')) {
+                const organMatch = result.match(/(\d+)\s*organ/);
+                // Build organ list from organMetaFromServer
+                const organList = Object.entries(organMetaFromServer).map(([id, meta]) => ({
+                    name: meta.name || `Organ_${id}`,
+                    color: `rgb(${meta.color.join(',')})`,
+                    voxels: meta.voxels || 0,
+                })).sort((a, b) => b.voxels - a.voxels);
+                imageAnalysisData.oar = {
+                    organCount: organMatch ? parseInt(organMatch[1]) : organList.length,
+                    organList: organList,
+                };
+            }
+        }
+        updateImageAnalysis();
+    }
+}
+
+function resetImageAnalysis() {
+    imageAnalysisData.ct = null;
+    imageAnalysisData.ctv = null;
+    imageAnalysisData.oar = null;
+    updateImageAnalysis();
 }
 
 function createLiveThinkingChain() {

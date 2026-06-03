@@ -498,6 +498,82 @@ def create_app(config: Optional[Dict] = None):
             logger.error(f"Volume export failed: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/viewer/label_volume", methods=["GET"])
+    def api_viewer_label_volume():
+        """Return full CTV/OAR label volumes as binary uint8 for client-side rendering."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        ct_data = agent.memory.retrieve("ct_data")
+        if ct_data is None:
+            return jsonify({"error": "No CT image loaded"}), 400
+
+        try:
+            import numpy as np
+            import json as _json
+
+            ctv_array = agent.memory.retrieve("ctv_array")
+            oar_array = agent.memory.retrieve("oar_array")
+
+            shape = ct_data.shape  # (Z, Y, X)
+
+            # Build color LUT for all labels
+            color_lut = {}
+            if ctv_array is not None:
+                color_lut[1] = list(_label_color(1))  # CTV uses label 1
+            if oar_array is not None:
+                for lid in np.unique(oar_array):
+                    if lid > 0:
+                        color_lut[int(lid)] = list(_label_color(int(lid)))
+
+            # Build binary payload: ctv bytes + oar bytes
+            payload = bytearray()
+            ctv_offset = 0
+            oar_offset = 0
+
+            if ctv_array is not None:
+                ctv_u8 = ctv_array.astype(np.uint8)
+                payload.extend(ctv_u8.tobytes())
+                ctv_offset = len(payload)
+
+            if oar_array is not None:
+                oar_u8 = oar_array.astype(np.uint8)
+                payload.extend(oar_u8.tobytes())
+                oar_offset = len(payload)
+
+            response = Response(bytes(payload), mimetype='application/octet-stream')
+            response.headers['X-Shape-Z'] = str(shape[0])
+            response.headers['X-Shape-Y'] = str(shape[1])
+            response.headers['X-Shape-X'] = str(shape[2])
+            response.headers['X-Color-LUT'] = _json.dumps(color_lut)
+            response.headers['X-Has-CTV'] = 'true' if ctv_array is not None else 'false'
+            response.headers['X-Has-OAR'] = 'true' if oar_array is not None else 'false'
+            response.headers['X-CTV-Size'] = str(ctv_offset)
+            response.headers['X-OAR-Size'] = str(len(payload) - ctv_offset) if oar_array is not None else '0'
+
+            # Also return organ metadata for data tree
+            organ_names = agent.memory.retrieve("organ_names", {})
+            organ_counts = agent.memory.retrieve("organ_counts", {})
+            organ_meta = {}
+            if oar_array is not None:
+                for lid in np.unique(oar_array):
+                    lid_int = int(lid)
+                    if lid_int > 0:
+                        organ_meta[lid_int] = {
+                            "name": organ_names.get(lid_int, f"Organ_{lid_int}"),
+                            "color": color_lut.get(lid_int, [200, 200, 200]),
+                            "voxels": int(organ_counts.get(lid_int, np.sum(oar_array == lid))),
+                        }
+            response.headers['X-Organ-Meta'] = _json.dumps(organ_meta)
+
+            return response
+        except Exception as e:
+            logger.error(f"Label volume export failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/viewer/overlay", methods=["POST"])
     def api_viewer_overlay():
         """Get segmentation overlay for a specific slice."""
@@ -1005,6 +1081,27 @@ def create_app(config: Optional[Dict] = None):
             return jsonify(result)
         except Exception as e:
             logger.error(f"Intraoperative replanning failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/chat/abort", methods=["POST"])
+    def api_chat_abort():
+        """Clean up incomplete conversation after user aborts streaming."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+        try:
+            # Remove the last incomplete conversation turn
+            conv = agent.memory.conversation
+            if len(conv) >= 2:
+                # Remove last assistant message if incomplete
+                if conv[-1].get("role") == "assistant":
+                    conv.pop()
+                # Remove last user message (the one that triggered the aborted response)
+                if conv and conv[-1].get("role") == "user":
+                    conv.pop()
+            return jsonify({"success": True})
+        except Exception as e:
+            logger.error(f"Chat abort cleanup failed: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/chat", methods=["POST"])

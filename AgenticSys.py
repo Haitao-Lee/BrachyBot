@@ -184,7 +184,24 @@ class AgentMemory:
     
     def get_ui_state(self) -> Dict:
         return dict(self._ui_state)
-    
+
+    @staticmethod
+    def is_ct_loaded(ui_state: Optional[Dict]) -> bool:
+        """Check if CT is loaded. Handles both flat and nested (viewer.ct_loaded) formats."""
+        if not ui_state:
+            return False
+        # Check top-level ct_loaded
+        if ui_state.get("ct_loaded", False):
+            return True
+        # Check nested viewer.ct_loaded (sent by frontend collectUIState())
+        viewer = ui_state.get("viewer", {})
+        if isinstance(viewer, dict) and viewer.get("ct_loaded", False):
+            return True
+        # Fallback: if ct_path is set, CT is effectively loaded
+        if ui_state.get("ct_path", "").strip():
+            return True
+        return False
+
     def get_ui_state_summary(self) -> str:
         """Generate a human-readable summary of current UI state for the LLM."""
         parts = []
@@ -863,6 +880,82 @@ class BrachyAgent:
 
         return result
 
+    def _store_tool_result(self, tool_name: str, result):
+        """Store tool result in memory based on tool type."""
+        if not result.success:
+            return
+        meta = result.metadata or {}
+        if tool_name == "ctv_segmentation" and "ctv_array" in meta:
+            self.memory.store("ctv_array", meta["ctv_array"])
+        elif tool_name == "oar_segmentation":
+            if "oar_array" in meta:
+                self.memory.store("oar_array", meta["oar_array"])
+            if "organ_names" in meta:
+                self.memory.store("organ_names", meta["organ_names"])
+            if "organ_counts" in meta:
+                self.memory.store("organ_counts", meta["organ_counts"])
+        elif tool_name == "dose_engine" and result.data is not None:
+            self.memory.store("dose_distribution", result.data)
+
+    @staticmethod
+    def _format_tool_result(tool_name: str, result, lang: str = "en") -> str:
+        """Format tool result for display (not raw numpy arrays)."""
+        if not result.success:
+            return f"Error: {result.error}" if lang == "en" else f"错误: {result.error}"
+        meta = result.metadata or {}
+        if tool_name == "ctv_segmentation":
+            vol = meta.get("ctv_volume_mm3", 0)
+            vox = meta.get("ctv_voxel_count", 0)
+            if lang == "zh":
+                return f"CTV分割完成。体积: {vol:.1f} mm³ ({vol/1000:.1f} cm³)，{vox:,} 个体素。"
+            return f"CTV segmentation completed. Volume: {vol:.1f} mm³ ({vol/1000:.1f} cm³), {vox:,} voxels."
+        elif tool_name == "oar_segmentation":
+            organ_names = meta.get("organ_names", {})
+            organ_counts = meta.get("organ_counts", {})
+            count = len(organ_names) if organ_names else len(organ_counts)
+            if lang == "zh":
+                return f"OAR分割完成。共分割 {count} 个器官。"
+            return f"OAR segmentation completed. {count} organs segmented."
+        elif tool_name == "dose_engine":
+            return f"{'剂量计算完成' if lang == 'zh' else 'Dose calculation completed'}. {str(result.data)[:200]}"
+        else:
+            return f"{tool_name} completed. {str(result.data)[:200]}" if result.data else f"{tool_name} completed."
+
+    def _detect_tool_request(self, message: str) -> Optional[List[Dict]]:
+        """Detect if the message explicitly requests specific tools.
+        Returns a list of tool calls to execute directly, or None.
+        This bypasses the LLM for clear tool requests, preventing the LLM
+        from asking unnecessary questions or following wrong skill chains.
+        Supports multi-action requests like "analyze and segment"."""
+        msg = message.strip().lower()
+        ct_path = self.memory.retrieve("ct_path") or ""
+        if not ct_path:
+            ui = self.memory.get_ui_state()
+            ct_path = ui.get("ct_path", "")
+
+        tools = []
+
+        has_segment = bool(re.search(r'(分割|segment|再分)', msg, re.IGNORECASE))
+        has_analyze = bool(re.search(r'(分析|analyze)', msg, re.IGNORECASE))
+        has_dose = bool(re.search(r'(剂量|dose|计算剂量)', msg, re.IGNORECASE))
+
+        # Build tool list for ALL requested actions
+        if has_segment and ct_path:
+            tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": {"image_path": ct_path}})
+            tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": {"image_path": ct_path}})
+            logger.info(f"Direct tool: segmentation")
+
+        if has_dose and ct_path:
+            tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
+            logger.info(f"Direct tool: dose calculation")
+
+        # "analyze" alone → let LLM handle with code_executor (needs code generation)
+        # "analyze" + "segment" → only do segmentation (analysis is redundant after segmentation)
+        if has_analyze and not has_segment and not has_dose:
+            return None  # Let LLM handle pure analysis
+
+        return tools if tools else None
+
     def _detect_realtime_query(self, message: str) -> Optional[str]:
         """Detect if the message requires a real-time web search.
         Returns a search query string if detected, None otherwise.
@@ -954,7 +1047,7 @@ class BrachyAgent:
 
         enhanced_context = ""
         ui_state_for_override = self.memory.get_ui_state()
-        _no_files_loaded = not (ui_state_for_override or {}).get("ct_loaded", False)
+        _no_files_loaded = not AgentMemory.is_ct_loaded(ui_state_for_override)
         if _no_files_loaded:
             enhanced_context += "\n### ⚠️ OVERRIDE: NO FILES LOADED - LIMITED TOOLS\n"
             enhanced_context += "No CT files are loaded. You MUST answer directly from medical knowledge.\n"
@@ -972,10 +1065,21 @@ class BrachyAgent:
                     sop = pre_ctx["matched_sop"]
                     enhanced_context += f"\n### Matched SOP: {sop['name']} (success: {sop['success_rate']:.0%})\n"
                     enhanced_context += f"Recommended chain: {' -> '.join(sop['steps'])}\n"
+                    enhanced_context += "NOTE: Only follow when user's message requests this action.\n"
                 if pre_ctx.get("crystallized_skill") and not _no_files_loaded:
                     sk = pre_ctx["crystallized_skill"]
-                    enhanced_context += f"\n### Crystallized Skill: {sk['name']} (success: {sk['success_rate']:.0%})\n"
-                    enhanced_context += f"Tool chain: {' -> '.join(sk['tool_chain'])}\n"
+                    # Skip skill if user's request clearly targets a different tool
+                    _msg_lower = message.lower()
+                    _chain_str = ' '.join(sk['tool_chain']).lower()
+                    _skip = False
+                    if ('分割' in _msg_lower or 'segment' in _msg_lower or '再分' in _msg_lower) and 'segmentation' not in _chain_str:
+                        _skip = True
+                    if ('剂量' in _msg_lower or 'dose' in _msg_lower) and 'dose' not in _chain_str:
+                        _skip = True
+                    if not _skip:
+                        enhanced_context += f"\n### Crystallized Skill: {sk['name']} (success: {sk['success_rate']:.0%})\n"
+                        enhanced_context += f"Tool chain: {' -> '.join(sk['tool_chain'])}\n"
+                        enhanced_context += "NOTE: Only use when user's message requests this action.\n"
                 if pre_ctx.get("user_preferences"):
                     prefs = pre_ctx["user_preferences"]
                     if prefs:
@@ -1034,6 +1138,52 @@ class BrachyAgent:
         # This ensures the LLM always has the current query to respond to
         if not messages or messages[-1].get("content") != message:
             messages.append({"role": "user", "content": message})
+
+        # Direct tool execution for explicit tool requests (segmentation, dose, etc.)
+        # Bypasses LLM to prevent unnecessary questions or wrong skill chains
+        _direct_tool_calls = self._detect_tool_request(message)
+        if _direct_tool_calls:
+            _lang = "zh" if re.search(r'[一-鿿]', message) else "en"
+            logger.info(f"Direct tool execution: {len(_direct_tool_calls)} tools detected, lang={_lang}")
+            for tc in _direct_tool_calls:
+                step_id_ref[0] += 1
+                tool_step = {
+                    "id": step_id_ref[0],
+                    "type": "tool",
+                    "title": f"Direct: {tc['tool']}",
+                    "content": json.dumps(tc['params'], default=str)[:200],
+                    "status": "pending",
+                    "tool": tc['tool'],
+                    "params": tc['params'],
+                }
+                steps.append(tool_step)
+                try:
+                    tool_obj = self.registry.get(tc['tool'])
+                    if tool_obj:
+                        result = tool_obj.execute(**tc['params'])
+                        tool_step["status"] = "done"
+                        try:
+                            formatted = self._format_tool_result(tc['tool'], result, lang=_lang)
+                            tool_step["result"] = formatted
+                            logger.info(f"Direct tool result formatted: {formatted[:100]}")
+                        except Exception as fmt_err:
+                            logger.error(f"Format error: {fmt_err}")
+                            tool_step["result"] = result.message if hasattr(result, 'message') and result.message else str(result)[:200]
+                        tool_step["metadata"] = result.metadata if result.success else {}
+                        # Store results in memory
+                        if result.success:
+                            self._store_tool_result(tc['tool'], result)
+                except Exception as e:
+                    tool_step["status"] = "error"
+                    tool_step["result"] = str(e)
+                    logger.error(f"Direct tool execution failed: {tc['tool']}: {e}")
+
+            # Build summary response from tool results
+            summary_parts = []
+            for s in steps:
+                if s.get("type") == "tool" and s.get("result"):
+                    summary_parts.append(f"**{s['tool']}**: {s['result'][:200]}")
+            return "\n\n".join(summary_parts) if summary_parts else "Tools executed."
 
         # Force web search for real-time queries (weather, time, news, sports, etc.)
         _forced_search_query = self._detect_realtime_query(message)
@@ -1314,9 +1464,6 @@ class BrachyAgent:
                 )
                 messages.append({"role": "user", "content": _present_instruction})
 
-        # DEBUG: Log before cleaning
-        if final_response:
-
         # Clean response - no summarization
         if final_response:
             raw_final = final_response
@@ -1554,7 +1701,7 @@ class BrachyAgent:
 
         enhanced_context = ""
         ui_state_for_override = self.memory.get_ui_state()
-        _no_files_loaded = not (ui_state_for_override or {}).get("ct_loaded", False)
+        _no_files_loaded = not AgentMemory.is_ct_loaded(ui_state_for_override)
         if _no_files_loaded:
             enhanced_context += "\n### ⚠️ OVERRIDE: NO FILES LOADED - LIMITED TOOLS\n"
             enhanced_context += "No CT files are loaded. You MUST answer directly from medical knowledge.\n"
@@ -1572,10 +1719,21 @@ class BrachyAgent:
                     sop = pre_ctx["matched_sop"]
                     enhanced_context += f"\n### Matched SOP: {sop['name']} (success: {sop['success_rate']:.0%})\n"
                     enhanced_context += f"Recommended chain: {' -> '.join(sop['steps'])}\n"
+                    enhanced_context += "NOTE: Only follow when user's message requests this action.\n"
                 if pre_ctx.get("crystallized_skill") and not _no_files_loaded:
                     sk = pre_ctx["crystallized_skill"]
-                    enhanced_context += f"\n### Crystallized Skill: {sk['name']} (success: {sk['success_rate']:.0%})\n"
-                    enhanced_context += f"Tool chain: {' -> '.join(sk['tool_chain'])}\n"
+                    # Skip skill if user's request clearly targets a different tool
+                    _msg_lower = message.lower()
+                    _chain_str = ' '.join(sk['tool_chain']).lower()
+                    _skip = False
+                    if ('分割' in _msg_lower or 'segment' in _msg_lower or '再分' in _msg_lower) and 'segmentation' not in _chain_str:
+                        _skip = True
+                    if ('剂量' in _msg_lower or 'dose' in _msg_lower) and 'dose' not in _chain_str:
+                        _skip = True
+                    if not _skip:
+                        enhanced_context += f"\n### Crystallized Skill: {sk['name']} (success: {sk['success_rate']:.0%})\n"
+                        enhanced_context += f"Tool chain: {' -> '.join(sk['tool_chain'])}\n"
+                        enhanced_context += "NOTE: Only use when user's message requests this action.\n"
                 if pre_ctx.get("user_preferences"):
                     prefs = pre_ctx["user_preferences"]
                     if prefs:
@@ -1762,7 +1920,7 @@ class BrachyAgent:
                 # If no CT files are loaded, limit to non-CT-dependent tools
                 # (utility tools like tool_creator, env_manager, shell_executor still work without CT)
                 ui_state = self.memory.get_ui_state()
-                ct_loaded = ui_state.get("ct_loaded", False) if ui_state else False
+                ct_loaded = AgentMemory.is_ct_loaded(ui_state)
                 if not ct_loaded and tools_for_llm is not None:
                     _allowed_without_ct = {
                         "report_generator", "clinical_kb", "doc_reader", "case_memory",
@@ -2423,6 +2581,46 @@ class BrachyAgent:
         # User step
         add_step("user", "User Input", message)
         yield yield_event("step", steps[-1])
+
+        # Direct tool execution for explicit tool requests (segmentation, dose, etc.)
+        # Bypasses LLM to prevent unnecessary questions or wrong skill chains
+        _direct_tool_calls = self._detect_tool_request(message)
+        if _direct_tool_calls:
+            _lang = "zh" if re.search(r'[一-鿿]', message) else "en"
+            logger.info(f"Direct tool execution (stream): {len(_direct_tool_calls)} tools detected, lang={_lang}")
+            for tc in _direct_tool_calls:
+                step = add_step("tool", f"Direct: {tc['tool']}", json.dumps(tc['params'], default=str)[:200], status="pending", tool=tc['tool'], params=tc['params'])
+                yield yield_event("step", step)
+                try:
+                    tool_obj = self.registry.get(tc['tool'])
+                    if tool_obj:
+                        result = tool_obj.execute(**tc['params'])
+                        step["status"] = "done"
+                        try:
+                            step["result"] = self._format_tool_result(tc['tool'], result, lang=_lang)
+                        except Exception as fmt_err:
+                            logger.error(f"Format error: {fmt_err}")
+                            step["result"] = result.message if hasattr(result, 'message') and result.message else str(result)[:200]
+                        step["metadata"] = result.metadata if result.success else {}
+                        yield yield_event("step", step)
+                        if result.success:
+                            self._store_tool_result(tc['tool'], result)
+                except Exception as e:
+                    step["status"] = "error"
+                    step["result"] = str(e)
+                    yield yield_event("step", step)
+                    logger.error(f"Direct tool execution failed: {tc['tool']}: {e}")
+
+            # Build and yield summary response
+            summary_parts = []
+            for s in steps:
+                if s.get("type") == "tool" and s.get("result"):
+                    summary_parts.append(f"**{s.get('tool', 'tool')}**: {s['result'][:300]}")
+            response = "\n\n".join(summary_parts) if summary_parts else "Tools executed."
+            self.memory.add_message("assistant", response)
+            yield yield_event("response", {"response": response})
+            yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
+            return
 
         # Enhanced context
         if self.enhanced:
