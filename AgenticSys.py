@@ -1042,18 +1042,63 @@ class BrachyAgent:
 
     @staticmethod
     def _format_tool_result(tool_name: str, result, lang: str = "en") -> str:
-        """Format tool result for display.
-        Uses result.message for content, wraps with language-appropriate context.
-        Special-cases only tools that return raw data needing extraction."""
+        """Format tool result for display with structured markdown output."""
         if not result.success:
             return f"Error: {result.error}" if lang == "en" else f"错误: {result.error}"
 
-        # code_executor returns dict with stdout/stderr — extract stdout
+        # code_executor: parse JSON output and format as table
         if tool_name == "code_executor" and isinstance(result.data, dict):
             stdout = result.data.get("stdout", "").strip()
-            output = stdout if stdout else str(result.data)
-            lines = [l.strip() for l in output.split('\n') if l.strip()]
-            return "\n".join(lines)
+            if not stdout:
+                return str(result.data)[:500]
+            # Try to parse as JSON for structured output
+            try:
+                import json as _json
+                d = _json.loads(stdout)
+                if isinstance(d, dict) and "dimensions" in d:
+                    # CT analysis result — format as table
+                    dims = d["dimensions"]
+                    vs = d["voxel_size"]
+                    sr = d["scan_range_cm"]
+                    hu = d["hu_range"]
+                    lines = [
+                        f"| Parameter | Value |",
+                        f"|-----------|-------|",
+                        f"| Dimensions | {dims[0]} × {dims[1]} × {dims[2]} voxels |",
+                        f"| Voxel size | {vs[0]} × {vs[1]} × {vs[2]} mm |",
+                        f"| Scan range | {sr[0]} × {sr[1]} × {sr[2]} cm |",
+                        f"| HU range | {hu[0]} ~ {hu[1]} |",
+                        f"| Mean HU | {d.get('mean_hu', 'N/A')} |",
+                    ]
+                    tissues = d.get("tissues", [])
+                    if tissues:
+                        lines.append("")
+                        lines.append("| Tissue | HU Range | Share |")
+                        lines.append("|--------|----------|-------|")
+                        for t in tissues:
+                            lines.append(f"| {t['name']} | {t['range']} | {t['pct']}% |")
+                    return "\n".join(lines)
+            except (ValueError, KeyError, TypeError):
+                pass
+            # Fallback: plain text
+            return "\n".join(l.strip() for l in stdout.split('\n') if l.strip())
+
+        # Segmentation tools: format as compact table
+        if tool_name == "ctv_segmentation" and result.message:
+            meta = result.metadata or {}
+            vol = meta.get("ctv_volume_mm3", 0)
+            vox = meta.get("ctv_voxel_count", 0)
+            return (
+                f"| Metric | Value |\n|--------|-------|\n"
+                f"| Volume | {vol:.1f} mm³ ({vol/1000:.1f} cm³) |\n"
+                f"| Voxels | {vox:,} |"
+            )
+
+        if tool_name == "oar_segmentation" and result.message:
+            meta = result.metadata or {}
+            organ_names = meta.get("organ_names", {})
+            count = len(organ_names) if organ_names else 0
+            return f"| Metric | Value |\n|--------|-------|\n| Organs segmented | {count} |"
 
         # All other tools: use result.message directly
         return result.message or f"{tool_name} completed."
@@ -1062,22 +1107,28 @@ class BrachyAgent:
     _ANALYSIS_CODE_TEMPLATE = """
 import nibabel as nib
 import numpy as np
+import json
 
 ct = nib.load('{ct_path}')
 data = ct.get_fdata()
 spacing = ct.header.get_zooms()
 
-print(f"Dimensions: {{data.shape[0]}} x {{data.shape[1]}} x {{data.shape[2]}}")
-print(f"Voxel size: {{spacing[0]:.2f}} x {{spacing[1]:.2f}} x {{spacing[2]:.2f}} mm")
-print(f"Scan range: {{data.shape[0]*spacing[0]/10:.1f}} x {{data.shape[1]*spacing[1]/10:.1f}} x {{data.shape[2]*spacing[2]/10:.1f}} cm")
-print(f"HU range: {{data.min():.0f}} ~ {{data.max():.0f}}")
-print(f"Mean HU: {{data.mean():.1f}}")
-print()
-print("Tissue distribution:")
+# Compute tissue distribution
 total = data.size
+tissues = []
 for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -30, 200), ("Muscle/organ", 200, 400), ("Bone", 400, 9999)]:
     pct = np.sum((data >= lo) & (data < hi)) / total * 100
-    print(f"  {{name}}: {{pct:.1f}}%")
+    tissues.append({{"name": name, "range": f"{{lo}}~{{hi}} HU" if lo > -9009 else f"< {{hi}} HU", "pct": round(pct, 1)}})
+
+result = {{
+    "dimensions": list(data.shape),
+    "voxel_size": [round(float(s), 2) for s in spacing],
+    "scan_range_cm": [round(data.shape[i]*float(spacing[i])/10, 1) for i in range(3)],
+    "hu_range": [int(data.min()), int(data.max())],
+    "mean_hu": round(float(data.mean()), 1),
+    "tissues": tissues,
+}}
+print(json.dumps(result))
 """
 
     def _detect_tool_request(self, message: str) -> Optional[List[Dict]]:
