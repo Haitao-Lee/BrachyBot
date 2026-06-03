@@ -6575,6 +6575,13 @@ async function sendChat() {
                                         }
                                     }, 1500);
                                 }
+                                // Execute UI actions from ui_controller tool
+                                if (data.tool === 'ui_controller' && data.status === 'done' && data.metadata) {
+                                    const actions = data.metadata.actions;
+                                    if (actions && actions.length > 0) {
+                                        executeUIActions(actions);
+                                    }
+                                }
                             }
 
                             scrollToBottom();
@@ -7537,6 +7544,196 @@ try {
 }
 
 console.log('[BOOT] All initialization complete');
+
+// ============================================================
+// UI ACTION EXECUTOR — Executes structured actions from ui_controller tool
+// ============================================================
+// This is the frontend half of the UI control system.
+// The backend ui_controller tool validates actions, this function executes them.
+//
+// To add a new control:
+// 1. Add entry to CONTROL_REGISTRY in tool_factory/ui_controller/__init__.py
+// 2. Add handler below in executeUIAction()
+// Done. The LLM will automatically discover the new control.
+
+function executeUIAction(target, command, value) {
+    console.log('[UI Action]', target, command, value);
+
+    // Panel switching
+    if (target === 'panel') {
+        const tabMap = { input: 0, metrics: 1, seeds: 2, viewers: 3 };
+        const idx = tabMap[value];
+        if (idx !== undefined) {
+            const tab = document.querySelectorAll('.panel-tab')[idx];
+            if (tab) switchPanel(value, tab);
+        }
+        return true;
+    }
+
+    // Viewer settings
+    if (target === 'viewer.window') {
+        const el = document.getElementById('viewerWindow');
+        if (el) {
+            if (command === 'set') el.value = value;
+            else if (command === 'increase') el.value = parseInt(el.value) + (value || 50);
+            else if (command === 'decrease') el.value = parseInt(el.value) - (value || 50);
+            applyViewerSettings();
+        }
+        return true;
+    }
+    if (target === 'viewer.level') {
+        const el = document.getElementById('viewerLevel');
+        if (el) {
+            if (command === 'set') el.value = value;
+            else if (command === 'increase') el.value = parseInt(el.value) + (value || 20);
+            else if (command === 'decrease') el.value = parseInt(el.value) - (value || 20);
+            applyViewerSettings();
+        }
+        return true;
+    }
+    if (target === 'viewer.zoom') {
+        const el = document.getElementById('viewerZoom');
+        if (el) {
+            if (command === 'fit') { fitView(); return true; }
+            if (command === 'set') el.value = value;
+            else if (command === 'increase') el.value = Math.min(300, parseInt(el.value) + (value || 20));
+            else if (command === 'decrease') el.value = Math.max(50, parseInt(el.value) - (value || 20));
+            applyZoom(el.value);
+        }
+        return true;
+    }
+    if (target === 'viewer.threshold') {
+        const el = document.getElementById('viewerThreshold');
+        if (el) { el.value = value; applyViewerSettings(); }
+        return true;
+    }
+
+    // Overlay controls
+    if (target === 'overlay.ctv') {
+        const el = document.getElementById('overlayCTV');
+        if (el) {
+            if (command === 'show') el.checked = true;
+            else if (command === 'hide') el.checked = false;
+            else if (command === 'toggle') el.checked = !el.checked;
+            state.viewerSettings.showCTV = el.checked;
+            dataTreeState.ctv.visible = el.checked;
+            renderDataTree();
+            if (state.ctLoaded) loadAllSlices();
+        }
+        return true;
+    }
+    if (target === 'overlay.oar') {
+        const el = document.getElementById('overlayOAR');
+        if (el) {
+            if (command === 'show') el.checked = true;
+            else if (command === 'hide') el.checked = false;
+            else if (command === 'toggle') el.checked = !el.checked;
+            state.viewerSettings.showOAR = el.checked;
+            dataTreeState.oar.visible = el.checked;
+            renderDataTree();
+            if (state.ctLoaded) loadAllSlices();
+        }
+        return true;
+    }
+    if (target === 'overlay.ctv.opacity') {
+        dataTreeState.ctv.opacity = (value || 70) / 100;
+        if (state.ctLoaded) loadAllSlices();
+        return true;
+    }
+    if (target === 'overlay.oar.opacity') {
+        dataTreeState.oar.opacity = (value || 50) / 100;
+        if (state.ctLoaded) loadAllSlices();
+        return true;
+    }
+    if (target === 'overlay.display_mode') {
+        const el = document.getElementById('displayMode');
+        if (el) { el.value = value; setDisplayMode(); }
+        return true;
+    }
+
+    // Slice navigation
+    if (target.startsWith('slice.')) {
+        const axis = target.split('.')[1];
+        const slider = document.getElementById('slider' + capitalize(axis));
+        if (slider) {
+            const max = parseInt(slider.max);
+            if (command === 'set') slider.value = Math.max(0, Math.min(max, value));
+            else if (command === 'next') slider.value = Math.min(max, parseInt(slider.value) + 1);
+            else if (command === 'prev') slider.value = Math.max(0, parseInt(slider.value) - 1);
+            else if (command === 'first') slider.value = 0;
+            else if (command === 'last') slider.value = max;
+            updateSlice(axis, slider.value);
+        }
+        return true;
+    }
+
+    // Layout
+    if (target === 'layout') {
+        setViewerLayout(value);
+        return true;
+    }
+
+    // Window presets
+    if (target === 'preset') {
+        applyWindowPresetByName(value);
+        return true;
+    }
+
+    // Data tree
+    if (target === 'data_tree') {
+        const groupEl = document.querySelector(`[data-group="${value}"]`);
+        if (groupEl) {
+            const header = groupEl.querySelector('.tree-group-header');
+            if (header) {
+                const isCollapsed = header.querySelector('.arrow.collapsed');
+                if (command === 'expand' && isCollapsed) toggleTreeGroup(header);
+                else if (command === 'collapse' && !isCollapsed) toggleTreeGroup(header);
+                else if (command === 'expand' || command === 'collapse') toggleTreeGroup(header);
+            }
+        }
+        return true;
+    }
+
+    // Annotation tools
+    if (target === 'tool') {
+        setViewerTool(value);
+        return true;
+    }
+
+    // 3D reconstruction
+    if (target === '3d.reconstruct') {
+        reconstructOrgan3D(value);
+        return true;
+    }
+
+    console.warn('[UI Action] Unknown target:', target);
+    return false;
+}
+
+// Execute a batch of actions (called from ui_controller tool result)
+function executeUIActions(actions) {
+    if (!Array.isArray(actions)) return;
+    for (const action of actions) {
+        const { target, command, value } = action;
+        executeUIAction(target, command, value);
+    }
+}
+
+// Intercept tool results to execute UI actions automatically
+// This hooks into the streaming response handler
+(function() {
+    const origHandleStep = window._handleToolStep;
+    window._handleToolStep = function(step) {
+        if (step && step.tool === 'ui_controller' && step.status === 'done' && step.metadata) {
+            const actions = step.metadata.actions;
+            if (actions && actions.length > 0) {
+                console.log('[UI Controller] Executing', actions.length, 'actions');
+                executeUIActions(actions);
+            }
+        }
+        if (origHandleStep) origHandleStep(step);
+    };
+})();
 
 // Debug: Add click listener to track clicks
 document.addEventListener('click', function(e) {
