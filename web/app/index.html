@@ -810,7 +810,7 @@
 
         /* ============ RIGHT PANEL ============ */
         .right-panel {
-            width: 500px; min-width: 200px;
+            width: 560px; min-width: 240px;
             background: var(--bg-2);
             border-left: 1px solid var(--card-border);
             display: flex; flex-direction: column;
@@ -1019,7 +1019,7 @@
 
         /* ============ DATA TREE ============ */
         .data-tree-container {
-            width: 200px; min-width: 120px; max-width: 400px;
+            width: 220px; min-width: 150px; max-width: 500px;
             border-right: 1px solid var(--card-border);
             background: var(--bg-2);
             overflow-y: auto; overflow-x: hidden;
@@ -2845,21 +2845,15 @@ function renderOverlayFromVolume(axis, sliceIndex) {
 
     for (let py = 0; py < height; py++) {
         for (let px = 0; px < width; px++) {
-            // Map display coords to volume coords
-            // Axial: Y-flip; Sagittal/Coronal: same as CT rendering
+            // Map display coords to volume coords (label pre-aligned to CT)
             let volZ, volY, volX;
-            if (axis === 'axial') {
-                volZ = sliceIndex;
-                volY = (Y - 1) - py;
-                volX = px;
-            } else if (axis === 'sagittal') {
+            if (axis === 'axial') { volZ = sliceIndex; volY = py; volX = px; }
+            else if (axis === 'sagittal') {
                 volZ = Math.min(Math.floor(py / resampleRatio), Z - 1);
-                volY = px;
-                volX = sliceIndex;
+                volY = px; volX = sliceIndex;
             } else {
                 volZ = Math.min(Math.floor(py / resampleRatio), Z - 1);
-                volY = sliceIndex;
-                volX = px;
+                volY = sliceIndex; volX = px;
             }
 
             const flatIdx = volZ * sliceSize + volY * X + volX;
@@ -3021,14 +3015,10 @@ function renderSliceFromVolume(axis, sliceIndex) {
     for (let py = 0; py < height; py++) {
         for (let px = 0; px < width; px++) {
             // Map display coords to volume coords for label lookup
-            // Axial: Y-flip (label Y inverted vs CT display)
-            // Sagittal/Coronal: same as CT rendering (confirmed correct)
+            // Label is pre-aligned to CT on server side — same mapping as CT rendering
             let volZ, volY2, volX2;
-            if (axis === 'axial') {
-                volZ = sliceIndex;
-                volY2 = (Y - 1) - py;
-                volX2 = px;
-            } else if (axis === 'sagittal') {
+            if (axis === 'axial') { volZ = sliceIndex; volY2 = py; volX2 = px; }
+            else if (axis === 'sagittal') {
                 volZ = Math.min(Math.floor(py / resampleRatio), Z - 1);
                 volY2 = px; volX2 = sliceIndex;
             } else {

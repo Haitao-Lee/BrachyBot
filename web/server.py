@@ -518,6 +518,17 @@ def create_app(config: Optional[Dict] = None):
 
             shape = ct_data.shape  # (Z, Y, X)
 
+            # Diagnostic: check label orientation vs CT
+            if oar_array is not None:
+                logger.info(f"Label volume diagnostic: CT shape={ct_data.shape}, OAR shape={oar_array.shape}")
+                # Check if label Y-axis is inverted vs CT by comparing edge voxels
+                ct_y0_mean = float(ct_data[:, 0, :].mean())
+                ct_ymean = float(ct_data[:, -1, :].mean())
+                oar_y0_count = int((oar_array[:, 0, :] > 0).sum())
+                oar_ymean_count = int((oar_array[:, -1, :] > 0).sum())
+                logger.info(f"  CT Y=0 mean HU: {ct_y0_mean:.0f}, Y=max mean HU: {ct_ymean:.0f}")
+                logger.info(f"  OAR Y=0 non-zero: {oar_y0_count}, Y=max non-zero: {oar_ymean_count}")
+
             # Build color LUT for all labels
             color_lut = {}
             if ctv_array is not None:

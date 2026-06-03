@@ -961,16 +961,57 @@ class BrachyAgent:
 
         return result
 
+    def _align_label_to_ct(self, label_array) -> 'np.ndarray':
+        """Ensure label array orientation matches CT data orientation.
+        The segmentation model may output labels in a different orientation
+        than the CT (due to MONAI RAS transforms). We detect and correct
+        by checking if flipping axes improves alignment."""
+        import numpy as np
+        ct_data = self.memory.retrieve("ct_data")
+        if ct_data is None or label_array is None:
+            return label_array
+        if ct_data.shape != label_array.shape:
+            logger.warning(f"Label shape {label_array.shape} != CT shape {ct_data.shape}, skipping alignment")
+            return label_array
+
+        # Check if label data needs axis flips to match CT
+        # Compare label edge activity with CT edge structure
+        # If label has content where CT has air (and vice versa), axes may be wrong
+        best_label = label_array
+        best_score = -1
+
+        for z_flip in [False, True]:
+            for y_flip in [False, True]:
+                candidate = label_array.copy()
+                if z_flip: candidate = candidate[::-1, :, :]
+                if y_flip: candidate = candidate[:, ::-1, :]
+                # Score: overlap of label with non-air CT regions
+                non_air = ct_data > -900
+                label_active = candidate > 0
+                score = (label_active & non_air).sum()
+                if score > best_score:
+                    best_score = score
+                    best_label = candidate
+
+        flipped_y = not np.array_equal(best_label, label_array) and np.array_equal(best_label[:, ::-1, :], label_array)
+        flipped_z = not np.array_equal(best_label, label_array) and np.array_equal(best_label[::-1, :, :], label_array)
+        if flipped_y or flipped_z:
+            logger.info(f"Label aligned: Y-flip={flipped_y}, Z-flip={flipped_z}")
+
+        return best_label
+
     def _store_tool_result(self, tool_name: str, result):
         """Store tool result in memory based on tool type."""
         if not result.success:
             return
         meta = result.metadata or {}
         if tool_name == "ctv_segmentation" and "ctv_array" in meta:
-            self.memory.store("ctv_array", meta["ctv_array"])
+            aligned = self._align_label_to_ct(meta["ctv_array"])
+            self.memory.store("ctv_array", aligned)
         elif tool_name == "oar_segmentation":
             if "oar_array" in meta:
-                self.memory.store("oar_array", meta["oar_array"])
+                aligned = self._align_label_to_ct(meta["oar_array"])
+                self.memory.store("oar_array", aligned)
             if "organ_names" in meta:
                 self.memory.store("organ_names", meta["organ_names"])
             if "organ_counts" in meta:
@@ -1094,7 +1135,7 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
         return self._build_direct_response(steps, _lang)
 
     def _build_direct_response(self, steps: List, lang: str) -> str:
-        """Build structured response grouped by category, with quality indicators."""
+        """Build structured response grouped by category, with task checklist."""
         analysis = []
         segmentation = []
         other = []
@@ -1117,15 +1158,22 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
             else:
                 other.append(result)
 
-        h_a = "## 分析结果" if lang == "zh" else "## Analysis"
-        h_s = "## 分割结果" if lang == "zh" else "## Segmentation"
         parts = []
-        if analysis: parts.append(f"{h_a}\n" + "\n".join(analysis))
-        if segmentation: parts.append(f"{h_s}\n" + "\n".join(segmentation))
-        if other: parts.append("\n\n".join(other))
-        if errors:
-            h_e = "## ⚠️ 问题" if lang == "zh" else "## ⚠️ Issues"
-            parts.append(f"{h_e}\n" + "\n".join(errors))
+        if lang == "zh":
+            if analysis: parts.append(f"## ① 分析结果\n" + "\n".join(analysis))
+            if segmentation: parts.append(f"## ② 分割结果\n" + "\n".join(segmentation))
+            if other: parts.append("\n\n".join(other))
+            if errors: parts.append(f"## ⚠️ 问题\n" + "\n".join(errors))
+            # Auto-acknowledge viewer switch if segmentation was done
+            if segmentation and not errors:
+                parts.append("分割结果已自动显示在 Viewer 面板中。")
+        else:
+            if analysis: parts.append(f"## ① Analysis\n" + "\n".join(analysis))
+            if segmentation: parts.append(f"## ② Segmentation\n" + "\n".join(segmentation))
+            if other: parts.append("\n\n".join(other))
+            if errors: parts.append(f"## ⚠️ Issues\n" + "\n".join(errors))
+            if segmentation and not errors:
+                parts.append("Segmentation results are displayed in the Viewer panel.")
         return "\n\n".join(parts) or "Tools executed."
 
     def _detect_realtime_query(self, message: str) -> Optional[str]:
