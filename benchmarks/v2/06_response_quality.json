@@ -7,8 +7,15 @@
       "id": "RQ001",
       "input": "请分析图像",
       "language": "zh",
-      "expected_keywords": ["分析结果"],
-      "forbidden_keywords": ["让我来", "我来帮你", "好的"],
+      "expected_keywords": [
+        "🔍",
+        "分析"
+      ],
+      "forbidden_keywords": [
+        "让我来",
+        "我来帮你",
+        "好的"
+      ],
       "difficulty": "easy",
       "description": "Analysis should have section header, no transitional phrases"
     },
@@ -16,7 +23,10 @@
       "id": "RQ002",
       "input": "分析并分割图像",
       "language": "zh",
-      "expected_keywords": ["分析结果", "分割结果"],
+      "expected_keywords": [
+        "🔍",
+        "🎯"
+      ],
       "difficulty": "easy",
       "description": "Multi-step should have numbered sections"
     },
@@ -24,7 +34,11 @@
       "id": "RQ003",
       "input": "请分割图像",
       "language": "zh",
-      "expected_keywords": ["分割结果", "Viewer"],
+      "expected_keywords": [
+        "🎯",
+        "分割",
+        "Viewer"
+      ],
       "difficulty": "easy",
       "description": "Segmentation should mention viewer display"
     },
@@ -32,7 +46,10 @@
       "id": "RQ004",
       "input": "查询前列腺的剂量约束",
       "language": "zh",
-      "expected_keywords": ["前列腺", "剂量"],
+      "expected_keywords": [
+        "前列腺",
+        "剂量"
+      ],
       "difficulty": "medium",
       "description": "Clinical query should have structured answer"
     },
@@ -40,7 +57,11 @@
       "id": "RQ005",
       "input": "分析并分割图像",
       "language": "zh",
-      "forbidden_keywords": ["让我来分析", "我来执行", "好的，我来"],
+      "forbidden_keywords": [
+        "让我来分析",
+        "我来执行",
+        "好的，我来"
+      ],
       "difficulty": "easy",
       "description": "No transitional phrases in multi-step response"
     },
@@ -48,7 +69,11 @@
       "id": "RQ006",
       "input": "分析图像",
       "language": "zh",
-      "forbidden_keywords": ["```json", "```python", "stdout"],
+      "forbidden_keywords": [
+        "```json",
+        "```python",
+        "stdout"
+      ],
       "difficulty": "medium",
       "description": "No raw code/JSON dumps in response"
     },
@@ -56,7 +81,11 @@
       "id": "RQ007",
       "input": "你好",
       "language": "zh",
-      "forbidden_keywords": ["Great question", "Let me know", "I'd be happy"],
+      "forbidden_keywords": [
+        "Great question",
+        "Let me know",
+        "I'd be happy"
+      ],
       "difficulty": "easy",
       "description": "No filler phrases in greeting"
     },
@@ -64,8 +93,14 @@
       "id": "RQ008",
       "input": "analyze the image",
       "language": "en",
-      "expected_keywords": ["Analysis"],
-      "forbidden_keywords": ["let me", "I'll", "I will"],
+      "expected_keywords": [
+        "Analysis"
+      ],
+      "forbidden_keywords": [
+        "let me",
+        "I'll",
+        "I will"
+      ],
       "difficulty": "easy",
       "description": "English analysis — no transitional phrases"
     },
@@ -73,7 +108,10 @@
       "id": "RQ009",
       "input": "分析图像",
       "language": "zh",
-      "expected_keywords": ["HU", "组织"],
+      "expected_keywords": [
+        "HU",
+        "组织"
+      ],
       "difficulty": "easy",
       "description": "Analysis should include key metrics"
     },
@@ -81,7 +119,11 @@
       "id": "RQ010",
       "input": "分割图像",
       "language": "zh",
-      "expected_keywords": ["器官", "分割"],
+      "expected_keywords": [
+        "器官",
+        "分割",
+        "🎯"
+      ],
       "difficulty": "easy",
       "description": "Segmentation should mention organ count"
     }
