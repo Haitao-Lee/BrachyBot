@@ -1101,18 +1101,19 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
                     enhanced_context += "NOTE: Only follow when user's message requests this action.\n"
                 if pre_ctx.get("crystallized_skill") and not _no_files_loaded:
                     sk = pre_ctx["crystallized_skill"]
-                    # Skip skill if user's request clearly targets a different tool
-                    _msg_lower = message.lower()
-                    _chain_str = ' '.join(sk['tool_chain']).lower()
-                    _skip = False
-                    if ('分割' in _msg_lower or 'segment' in _msg_lower or '再分' in _msg_lower) and 'segmentation' not in _chain_str:
-                        _skip = True
-                    if ('剂量' in _msg_lower or 'dose' in _msg_lower) and 'dose' not in _chain_str:
-                        _skip = True
-                    if not _skip:
-                        enhanced_context += f"\n### Crystallized Skill: {sk['name']} (success: {sk['success_rate']:.0%})\n"
-                        enhanced_context += f"Tool chain: {' -> '.join(sk['tool_chain'])}\n"
-                        enhanced_context += "NOTE: Only use when user's message requests this action.\n"
+                    # Skip skill if it doesn't match what the user actually wants
+                    _direct = self._detect_tool_request(message)
+                    if _direct:
+                        _wanted = {tc["tool"] for tc in _direct}
+                        _skill = set(sk['tool_chain'])
+                        if not _wanted.intersection(_skill):
+                            logger.info(f"Skip skill '{sk['name']}' — user wants {_wanted}, skill has {_skill}")
+                        else:
+                            enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
+                            enhanced_context += f"Chain: {' -> '.join(sk['tool_chain'])}\n"
+                    else:
+                        enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
+                        enhanced_context += f"Chain: {' -> '.join(sk['tool_chain'])}\n"
                 if pre_ctx.get("user_preferences"):
                     prefs = pre_ctx["user_preferences"]
                     if prefs:
@@ -1773,18 +1774,19 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
                     enhanced_context += "NOTE: Only follow when user's message requests this action.\n"
                 if pre_ctx.get("crystallized_skill") and not _no_files_loaded:
                     sk = pre_ctx["crystallized_skill"]
-                    # Skip skill if user's request clearly targets a different tool
-                    _msg_lower = message.lower()
-                    _chain_str = ' '.join(sk['tool_chain']).lower()
-                    _skip = False
-                    if ('分割' in _msg_lower or 'segment' in _msg_lower or '再分' in _msg_lower) and 'segmentation' not in _chain_str:
-                        _skip = True
-                    if ('剂量' in _msg_lower or 'dose' in _msg_lower) and 'dose' not in _chain_str:
-                        _skip = True
-                    if not _skip:
-                        enhanced_context += f"\n### Crystallized Skill: {sk['name']} (success: {sk['success_rate']:.0%})\n"
-                        enhanced_context += f"Tool chain: {' -> '.join(sk['tool_chain'])}\n"
-                        enhanced_context += "NOTE: Only use when user's message requests this action.\n"
+                    # Skip skill if it doesn't match what the user actually wants
+                    _direct = self._detect_tool_request(message)
+                    if _direct:
+                        _wanted = {tc["tool"] for tc in _direct}
+                        _skill = set(sk['tool_chain'])
+                        if not _wanted.intersection(_skill):
+                            logger.info(f"Skip skill '{sk['name']}' — user wants {_wanted}, skill has {_skill}")
+                        else:
+                            enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
+                            enhanced_context += f"Chain: {' -> '.join(sk['tool_chain'])}\n"
+                    else:
+                        enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
+                        enhanced_context += f"Chain: {' -> '.join(sk['tool_chain'])}\n"
                 if pre_ctx.get("user_preferences"):
                     prefs = pre_ctx["user_preferences"]
                     if prefs:
