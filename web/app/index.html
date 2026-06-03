@@ -4047,6 +4047,9 @@ function toggleDataVisibility(id) {
         const organ = dataTreeState.organs.find(o => o.id === id);
         if (organ) {
             organ.visible = !organ.visible;
+            // Also toggle 3D mesh visibility
+            const mesh = scene3D.meshes[id];
+            if (mesh) mesh.visible = organ.visible;
             renderDataTree();
             if (state.ctLoaded) reloadOverlays();
         }
@@ -4055,6 +4058,11 @@ function toggleDataVisibility(id) {
 
     if (!dataTreeState[id]) return;
     dataTreeState[id].visible = !dataTreeState[id].visible;
+    // Toggle 3D mesh for CTV
+    if (id === 'ctv') {
+        const mesh = scene3D.meshes['ctv'];
+        if (mesh) mesh.visible = dataTreeState[id].visible;
+    }
 
     // Sync with existing overlay system
     if (id === 'ctv') {
@@ -4074,18 +4082,27 @@ function toggleDataVisibility(id) {
 }
 
 function setDataOpacity(id, value) {
+    const opacity = parseInt(value) / 100;
     // Handle individual organ opacity
     if (id.startsWith('organ_')) {
         const organ = dataTreeState.organs.find(o => o.id === id);
         if (organ) {
-            organ.opacity = parseInt(value) / 100;
+            organ.opacity = opacity;
+            // Also update 3D mesh opacity
+            const mesh = scene3D.meshes[id];
+            if (mesh && mesh.material) mesh.material.opacity = opacity;
             if (state.ctLoaded) reloadOverlays();
         }
         return;
     }
 
     if (!dataTreeState[id]) return;
-    dataTreeState[id].opacity = parseInt(value) / 100;
+    dataTreeState[id].opacity = opacity;
+    // Update CTV 3D mesh
+    if (id === 'ctv') {
+        const mesh = scene3D.meshes['ctv'];
+        if (mesh && mesh.material) mesh.material.opacity = opacity;
+    }
 
     if (state.ctLoaded) reloadOverlays();
 }
@@ -4777,16 +4794,8 @@ function addMeshToScene(meshData) {
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     geometry.computeVertexNormals();
 
-    // Center and scale to fit view
-    geometry.computeBoundingBox();
-    const bbox = geometry.boundingBox;
-    const center = new THREE.Vector3();
-    bbox.getCenter(center);
-    const size = new THREE.Vector3();
-    bbox.getSize(size);
-    const maxDim = Math.max(size.x, size.y, size.z) || 1;
-    const scale = 200 / maxDim;
-
+    // Use physical coordinates directly (mm) — no scaling
+    // marching_cubes already returns vertices in mm with correct spacing
     const mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({
         color: meshData.color || 0x0ea5e9,
         transparent: true,
@@ -4794,8 +4803,6 @@ function addMeshToScene(meshData) {
         side: THREE.DoubleSide,
         shininess: 30,
     }));
-    mesh.scale.set(scale, scale, scale);
-    mesh.position.sub(center.multiplyScalar(scale));
 
     scene3D.scene.add(mesh);
     scene3D.meshes[id] = mesh;
@@ -4809,15 +4816,24 @@ function fitCameraToScene() {
     const box = new THREE.Box3();
     Object.values(scene3D.meshes).forEach(m => { if (m) box.expandByObject(m); });
     if (scene3D.skinMesh) box.expandByObject(scene3D.skinMesh);
-    if (box.isEmpty()) return;
+    if (box.isEmpty()) {
+        // Default view for empty scene
+        scene3D.camera.position.set(200, 150, 200);
+        scene3D.controls.target.set(0, 0, 0);
+        scene3D.controls.update();
+        return;
+    }
     const center = new THREE.Vector3();
     box.getCenter(center);
     const size = new THREE.Vector3();
     box.getSize(size);
     const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    const dist = maxDim * 1.5;
     scene3D.controls.target.copy(center);
-    scene3D.camera.position.set(center.x + maxDim * 0.8, center.y + maxDim * 0.5, center.z + maxDim * 0.8);
-    scene3D.camera.lookAt(center);
+    scene3D.camera.position.set(center.x + dist * 0.6, center.y + dist * 0.4, center.z + dist * 0.6);
+    scene3D.camera.near = dist * 0.01;
+    scene3D.camera.far = dist * 10;
+    scene3D.camera.updateProjectionMatrix();
     scene3D.controls.update();
 }
 
@@ -4864,17 +4880,9 @@ async function toggle3DSkin(on) {
             geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(data.vertices.flat()), 3));
             geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(data.faces.flat()), 1));
             geometry.computeVertexNormals();
-            geometry.computeBoundingBox();
-            const bbox = geometry.boundingBox;
-            const center = new THREE.Vector3(); bbox.getCenter(center);
-            const size = new THREE.Vector3(); bbox.getSize(size);
-            const maxDim = Math.max(size.x, size.y, size.z) || 1;
-            const scale = 200 / maxDim;
             const mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({
                 color: 0xcccccc, transparent: true, opacity: 0.15, side: THREE.DoubleSide,
             }));
-            mesh.scale.set(scale, scale, scale);
-            mesh.position.sub(center.multiplyScalar(scale));
             scene3D.scene.add(mesh);
             scene3D.skinMesh = mesh;
             fitCameraToScene();
