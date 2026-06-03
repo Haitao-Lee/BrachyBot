@@ -969,8 +969,13 @@ class BrachyAgent:
 
     def _align_label_to_ct(self, label_array):
         """Align label array to CT coordinate system using SimpleITK resampling.
-        This handles ANY orientation mismatch (RAS vs LPI, MONAI transforms, etc.)
-        by using the CT's spatial metadata as the reference frame."""
+        Handles ANY orientation mismatch (RAS vs LPI, MONAI transforms, etc.)
+
+        Key insight: the label data is in RAS order (from MONAI transforms),
+        but the CT is in LPI order (from DICOMOrient). We must NOT copy the
+        CT's direction onto the label — that would make the resampler think
+        they're already aligned. Instead, we set the label's direction to RAS
+        so the resampler correctly maps RAS → LPI."""
         import numpy as np
         try:
             import SimpleITK as sitk
@@ -985,38 +990,32 @@ class BrachyAgent:
 
         try:
             # Create SimpleITK image from label array
-            # Use CT's metadata as reference (direction, origin, spacing)
             label_sitk = sitk.GetImageFromArray(label_array.astype(np.uint8))
-            label_sitk.CopyInformation(ct_image)
 
-            # If shapes match, check if resampling is needed
-            if label_array.shape == ct_data.shape:
-                # Compare physical space — if identical, no resampling needed
-                if (label_sitk.GetDirection() == ct_image.GetDirection() and
-                    label_sitk.GetOrigin() == ct_image.GetOrigin() and
-                    label_sitk.GetSpacing() == ct_image.GetSpacing()):
-                    return label_array
+            # Set label metadata to RAS orientation (what MONAI outputs)
+            # Do NOT copy CT's direction — that would hide the orientation mismatch
+            label_sitk.SetOrigin((0.0, 0.0, 0.0))
+            label_sitk.SetDirection((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0))  # RAS
+            label_sitk.SetSpacing(ct_image.GetSpacing())  # Same spacing as CT
 
-            # Resample label to CT's physical space using nearest neighbor
+            # Resample label from RAS space to CT's LPI space
             resampler = sitk.ResampleImageFilter()
-            resampler.SetReferenceImage(ct_image)
+            resampler.SetReferenceImage(ct_image)  # Target: CT's LPI coordinate system
             resampler.SetInterpolator(sitk.sitkNearestNeighbor)
             resampler.SetDefaultPixelValue(0)
             aligned = resampler.Execute(label_sitk)
             aligned_array = sitk.GetArrayFromImage(aligned)
 
-            # Verify alignment improved
+            # Verify alignment: label should overlap with non-air CT regions
             non_air = ct_data > -900
-            label_active_orig = label_array > 0
-            label_active_aligned = aligned_array > 0
-            score_orig = (label_active_orig & non_air).sum()
-            score_aligned = (label_active_aligned & non_air).sum()
+            score_orig = ((label_array > 0) & non_air).sum()
+            score_aligned = ((aligned_array > 0) & non_air).sum()
 
             if score_aligned >= score_orig:
-                logger.info(f"Label aligned via SimpleITK resampling: {label_array.shape} → {aligned_array.shape}")
+                logger.info(f"Label aligned RAS→LPI: overlap {score_orig} → {score_aligned}")
                 return aligned_array
             else:
-                logger.warning(f"Resampling decreased alignment quality ({score_aligned} < {score_orig}), keeping original")
+                logger.warning(f"Alignment decreased overlap ({score_aligned} < {score_orig}), keeping original")
                 return label_array
 
         except Exception as e:
