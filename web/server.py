@@ -945,6 +945,60 @@ def create_app(config: Optional[Dict] = None):
             logger.error(f"3D mask reconstruction failed: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/viewer/3d_skin", methods=["POST"])
+    def api_viewer_3d_skin():
+        """Generate CT skin mesh using isosurface (marching cubes at skin threshold)."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        threshold = data.get("threshold", -300)  # Default: skin surface at -300 HU
+
+        ct_data = agent.memory.retrieve("ct_data")
+        if ct_data is None:
+            return jsonify({"error": "No CT loaded"}), 400
+
+        try:
+            import numpy as np
+            from skimage import measure
+
+            spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
+            spacing = tuple(float(s) for s in spacing[:3])
+
+            # Subsample for faster mesh generation if volume is large
+            if ct_data.shape[0] > 64:
+                step = max(1, ct_data.shape[0] // 64)
+                ct_sub = ct_data[::step, ::step, ::step]
+                sub_spacing = (spacing[0] * step, spacing[1] * step, spacing[2] * step)
+            else:
+                ct_sub = ct_data
+                sub_spacing = spacing
+
+            data_min, data_max = float(ct_sub.min()), float(ct_sub.max())
+            level = float(threshold)
+            if level <= data_min or level >= data_max:
+                level = (data_min + data_max) / 2.0
+
+            vertices, faces, _, _ = measure.marching_cubes(ct_sub, level=level, spacing=sub_spacing, allow_degenerate=False)
+
+            # Decimate if too many faces
+            if len(faces) > 100000:
+                stride = max(1, len(faces) // 100000)
+                faces = faces[::stride]
+
+            return jsonify({
+                "success": True,
+                "vertices": vertices.tolist(),
+                "faces": faces.tolist(),
+                "vertex_count": len(vertices),
+                "face_count": len(faces),
+                "threshold": threshold,
+            })
+        except Exception as e:
+            logger.error(f"CT skin reconstruction failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/config", methods=["POST"])
     def api_config():
         """Update agent configuration (hyperparameters)."""
