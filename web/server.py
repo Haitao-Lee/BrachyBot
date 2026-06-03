@@ -341,6 +341,7 @@ def create_app(config: Optional[Dict] = None):
 
             # Store in agent memory
             agent.memory.store("ct_image", ct_oriented)
+            agent.memory.store("ct_image_raw", ct_sitk)  # Pre-orientation, for label alignment
             agent.memory.store("ct_data", ct_data)
             agent.memory.store("ct_spacing", spacing)
             agent.memory.store("ct_shape", list(shape))

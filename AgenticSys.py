@@ -968,10 +968,13 @@ class BrachyAgent:
         return result
 
     def _store_label_with_metadata(self, label_array, ct_image_source, label_key: str):
-        """Store label array WITH SimpleITK spatial metadata.
-        At retrieval time, DICOMOrient('LPI') will align it to CT automatically.
-        This solves ALL orientation mismatches (RAS, LPI, any axis order)."""
-        import numpy as np
+        """Store label array WITH spatial metadata from the ORIGINAL (pre-oriented) CT.
+        At retrieval time, DICOMOrient('LPI') transforms both CT and label identically,
+        guaranteeing alignment regardless of the original orientation.
+
+        IMPORTANT: Use ct_image_raw (before DICOMOrient), NOT ct_image (after).
+        If we use the oriented CT's metadata, DICOMOrient thinks the label is
+        already in LPI and skips the transform — causing misalignment."""
         try:
             import SimpleITK as sitk
         except ImportError:
@@ -979,10 +982,12 @@ class BrachyAgent:
             return
 
         try:
+            # Use the RAW CT image (before DICOMOrient) for metadata
+            ct_raw = self.memory.retrieve("ct_image_raw") or ct_image_source
             label_sitk = sitk.GetImageFromArray(label_array.astype(np.uint8))
-            label_sitk.CopyInformation(ct_image_source)
+            label_sitk.CopyInformation(ct_raw)
             self.memory.store(label_key, label_sitk)
-            logger.info(f"Stored {label_key} as SimpleITK image with CT metadata")
+            logger.info(f"Stored {label_key} with raw CT metadata (direction={label_sitk.GetDirection()})")
         except Exception as e:
             logger.warning(f"Failed to store {label_key} with metadata: {e}")
             self.memory.store(label_key, label_array)
