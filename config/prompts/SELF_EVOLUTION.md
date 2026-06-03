@@ -1,8 +1,8 @@
 # BrachyBot Self-Evolution System Specification
 
-**Version:** 3.0  
-**Last Updated:** 2026-06-02  
-**Based on:** Live benchmark testing with 1803 test cases across 36 categories
+**Version:** 4.0
+**Last Updated:** 2026-06-04
+**Based on:** v2 benchmark testing with 60 test cases across 8 categories
 
 ---
 
@@ -14,23 +14,41 @@ Build an industrial-grade automated QA + multi-round benchmark testing + multi-a
 
 ---
 
-## 2. Benchmark Schema
+## 2. Benchmark Schema (v2)
 
-### 2.1 Standard Test Case
+### 2.1 Standard Test Case (v2)
 
 ```json
 {
-  "id": "Q0001",
-  "input": "User question (natural style, 3-8 sentences)",
+  "id": "TC001",
+  "input": "User question (natural style)",
+  "setup": "Upload CT: ui_state.ct_path='/path/to/CT.nii'",
   "expected_keywords": ["keyword1", "keyword2"],
-  "forbidden_keywords": ["tool_name", "let me search"],
-  "hallucination_keywords": ["I don't know", "I'm not sure"],
+  "forbidden_keywords": ["forbidden_word1"],
   "pass_threshold": 0.6,
   "difficulty": "easy|medium|hard",
-  "user_type": "beginner|experienced|chinese",
   "_comment": "Test purpose explanation"
 }
 ```
+
+### 2.2 v2 Categories (8 categories, 60 cases)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 1 | tool_calling | 15 | Correct tool selection |
+| 2 | multi_step | 5 | All steps in order |
+| 3 | hallucination | 11 | No fabrication |
+| 4 | language | 6 | Language consistency |
+| 5 | context | 7 | Multi-turn context |
+| 6 | response_quality | 5 | Structured output |
+| 7 | safety | 5 | Refuse unsafe requests |
+| 8 | error_recovery | 6 | Graceful error handling |
+
+### 2.3 Key Test Material
+
+- **CT File:** `/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii`
+- **Patient:** 胰腺癌 (pancreatic cancer)
+- **Specs:** 48 × 512 × 512 voxels, 0.68 × 0.68 × 5.0 mm spacing
 
 ### 2.2 Weighted Keywords
 
@@ -179,7 +197,7 @@ docs/benchmark_result/screenshots/
 
 ---
 
-## 7. Report Format
+## 7. Report Format (v2)
 
 ### 7.1 Executive Summary
 
@@ -188,7 +206,7 @@ docs/benchmark_result/screenshots/
 
 | Metric | Value |
 |--------|-------|
-| Total Tests | 1803 |
+| Total Tests | 60 |
 | Passed | XXX |
 | Failed | XXX |
 | Pass Rate | XX% |
@@ -249,48 +267,20 @@ docs/benchmark_result/screenshots/
 
 ---
 
-## 8. Category System
+## 8. Category System (v2)
 
-### 8.1 Categories (36 total, 1803 test cases)
+### 8.1 Categories (8 total, 60 test cases)
 
-| Category | Cases | Description |
-|----------|-------|-------------|
-| 01_greeting | 25 | Basic conversation, greetings |
-| 02_ct_analysis | 88 | CT image analysis |
-| 03_ctv_segmentation | 25 | CTV segmentation |
-| 04_oar_segmentation | 25 | OAR segmentation |
-| 05_treatment_planning | 123 | Treatment planning |
-| 06_dose_evaluation | 158 | Dose evaluation |
-| 07_ui_interaction | 30 | UI interaction |
-| 08_tool_calling | 30 | Tool calling |
-| 09_edge_case | 60 | Edge cases |
-| 10_adversarial | 141 | Adversarial attacks |
-| 11_hallucination | 50 | Hallucination detection |
-| 12_medical_reasoning | 210 | Medical reasoning |
-| 13_multilingual | 30 | Multilingual support |
-| 14_stress | 28 | Stress tests |
-| 15_recovery | 53 | Error recovery |
-| 16_clarification | 3 | Clarification requests |
-| 17_safety | 30 | Safety checks |
-| 18_image_input | 65 | Image input |
-| 19_workflow | 194 | Clinical workflows |
-| 20_memory | 25 | Memory system |
-| 21_precision | 97 | Precision tests |
-| 22_compliance | 102 | Compliance tests |
-| 23_medium_complexity | 199 | Medium complexity |
-| 24_case_memory | 10 | Case memory tool |
-| 25_clinical_kb | 15 | Clinical knowledge base |
-| 26_plan_comparator | 10 | Plan comparison |
-| 27_safety_validator | 10 | Safety validation |
-| 28_report_generator | 10 | Report generation |
-| 29_performance_tracker | 10 | Performance tracking |
-| 30_multi_turn | 10 | Multi-turn conversations |
-| 31_clinical_workflow | 10 | End-to-end workflows |
-| 32_tool_integration | 15 | Tool integration |
-| 33_weighted_keywords | 3 | Weighted keyword tests |
-| 34_multi_turn | 7 | Multi-turn conversation tests |
-| 35_regression | 10 | Regression tests |
-| 36_web_search | 15 | Web search |
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 1 | tool_calling | 15 | Correct tool selection |
+| 2 | multi_step | 5 | All steps in order |
+| 3 | hallucination | 11 | No fabrication |
+| 4 | language | 6 | Language consistency |
+| 5 | context | 7 | Multi-turn context |
+| 6 | response_quality | 5 | Structured output |
+| 7 | safety | 5 | Refuse unsafe requests |
+| 8 | error_recovery | 6 | Graceful error handling |
 
 ---
 
@@ -388,61 +378,66 @@ docs/benchmark_result/
 
 ---
 
-## 13. Test Execution Guide
+## 13. Test Execution Guide (v2)
 
 ### 13.1 Quick Start
 
 ```bash
-# Run single category test
+# Run single category test (v2 categories: 1-8)
 python3 aligned_benchmark.py <agent_id> <category_number>
 
 # Run multiple categories
-python3 aligned_benchmark.py <agent_id> 1 2 3 4 5 6 8 17
+python3 aligned_benchmark.py <agent_id> 1 2 3 4 5 6 7 8
 
-# Run all missing categories
-python3 aligned_benchmark.py <agent_id> 16 28 29 30 31 32 33 34 35 36
+# Run all categories
+python3 aligned_benchmark.py <agent_id> 1 2 3 4 5 6 7 8
 ```
 
-### 13.2 Multi-Turn Conversation Testing
+### 13.2 v2 Categories
 
-**Category 34 (multi_turn) requires special handling:**
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 1 | tool_calling | 15 | Correct tool selection |
+| 2 | multi_step | 5 | All steps in order |
+| 3 | hallucination | 11 | No fabrication |
+| 4 | language | 6 | Language consistency |
+| 5 | context | 7 | Multi-turn context |
+| 6 | response_quality | 5 | Structured output |
+| 7 | safety | 5 | Refuse unsafe requests |
+| 8 | error_recovery | 6 | Graceful error handling |
 
-```json
-{
-  "type": "multi_turn",
-  "turns": [
-    {"input": "Turn 1 input", "expected_keywords": ["keyword1"]},
-    {"input": "Turn 2 input", "expected_keywords": ["keyword2"]}
-  ]
-}
-```
+### 13.3 Setup Field (v2)
 
-**Screenshot naming for multi-turn:**
-```
-{category_num:02d}_{case_id}_turn{turn_num}.png
-```
+v2 tests require setup before running. The `setup` field describes required state:
 
-Example:
-- `34_MT001_turn1.png` - First turn
-- `34_MT001_turn2.png` - Second turn
+| Setup | Action |
+|-------|--------|
+| `Upload CT` | Upload CT file to BrachyBot |
+| `Upload CT + run segmentation` | Upload CT + run CTV and OAR segmentation |
+| `Upload CT + segmentation + plan` | Upload CT + segmentation + generate plan |
+| `Upload CT + segmentation + plan + dose evaluation` | Full pipeline |
+| `No CT needed` | Direct question, no setup |
 
-### 13.3 Screenshot-Response Alignment
+**CT File:** `/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii`
+
+### 13.4 Screenshot-Response Alignment
 
 **CRITICAL: Screenshots MUST match recorded responses**
 
 1. Open browser and navigate to BrachyBot
-2. Type the input
-3. Wait for response to complete
-4. Take screenshot (captures EXACT response)
-5. Extract response text FROM THE UI
-6. Score the extracted response
+2. Setup required state (upload CT, run segmentation, etc.)
+3. Type the input
+4. Wait for response to complete
+5. Take screenshot (captures EXACT response)
+6. Extract response text FROM THE UI
+7. Score the extracted response
 
 **Never:**
 - Take screenshot before response is complete
 - Use API response instead of UI response
 - Skip screenshots for any test case
 
-### 13.4 Language Consistency
+### 13.5 Language Consistency
 
 **Requirements:**
 - Chinese input → Chinese response
@@ -460,7 +455,7 @@ def detect_language(text):
         return 'en'
 ```
 
-### 13.5 Auto-Monitoring
+### 13.6 Auto-Monitoring
 
 **Features:**
 - Monitors agent progress every 5 minutes
@@ -473,7 +468,7 @@ def detect_language(text):
 nohup python3 auto_monitor.py > auto_monitor.log 2>&1 &
 ```
 
-### 13.6 Report Generation
+### 13.7 Report Generation
 
 **Final report generation:**
 ```bash
@@ -487,7 +482,7 @@ python3 generate_final_report.py
 - Category breakdown
 - Data sources
 
-### 13.7 Troubleshooting
+### 13.8 Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
@@ -496,24 +491,40 @@ python3 generate_final_report.py
 | Language mismatch | Check input language |
 | Server offline | Run `wait_for_server()` |
 | Agent stuck | Check auto_monitor logs |
+| Setup incomplete | Wait longer for CT/segmentation |
 
-### 13.8 File Locations
+### 13.9 File Locations
 
 ```
 benchmarks/
-├── aligned_benchmark.py           # Main test script
+├── v1/                            # v1 benchmark (36 categories, READ-ONLY)
+├── v2/                            # v2 benchmark (8 categories, current)
+│   ├── README.md                  # v2 documentation
+│   ├── 01_tool_calling.json
+│   ├── 02_multi_step.json
+│   ├── 03_hallucination.json
+│   ├── 04_language.json
+│   ├── 05_context.json
+│   ├── 06_response_quality.json
+│   ├── 07_safety.json
+│   └── 08_error_recovery.json
+├── aligned_benchmark.py           # Main test script (v2)
 ├── auto_monitor.py                # Auto-monitoring
-├── generate_final_report.py       # Report generation
-└── *.json                         # Test cases
+└── generate_final_report.py       # Report generation (v2)
 
 docs/benchmark_result/
-├── screenshots/                   # All screenshots
-├── reports/                       # All reports
-└── auto_monitor.log              # Monitor logs
+├── screenshots_v2/                # v2 screenshots
+├── reports_v2/                    # v2 reports
+│   ├── agent1_*.md
+│   ├── agent2_*.md
+│   ├── agent3_*.md
+│   ├── agent4_*.md
+│   └── final_report.md
+└── auto_monitor.log               # Monitor logs
 ```
 
 ---
 
-**Document Version:** 3.1  
-**Last Updated:** 2026-06-04  
+**Document Version:** 4.0
+**Last Updated:** 2026-06-04
 **Maintainer:** BrachyBot QA System

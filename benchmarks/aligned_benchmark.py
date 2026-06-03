@@ -9,9 +9,9 @@ import json, os, sys, time, glob, re
 from datetime import datetime
 from pathlib import Path
 
-SCREENSHOT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots"
-REPORT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/reports"
-BENCHMARK_DIR = "/home/lht/snap/brachyplan/BrachyBot/benchmarks"
+SCREENSHOT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots_v2"
+REPORT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/reports_v2"
+BENCHMARK_DIR = "/home/lht/snap/brachyplan/BrachyBot/benchmarks/v2"
 BASE_URL = "http://localhost:8080"
 
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
@@ -28,13 +28,18 @@ def load_benchmark(category_file):
 
 def get_completed_cases(cat_num):
     """Get list of already completed cases for a category."""
+    # v2 screenshots use format: 01_TC001.png, 02_MS001.png, etc.
     pattern = f"{SCREENSHOT_DIR}/{cat_num:02d}_*.png"
     completed = []
     for f in glob.glob(pattern):
         basename = os.path.basename(f)
+        # Extract case ID (e.g., TC001, MS001, HL001)
         case_id = basename.replace(f"{cat_num:02d}_", "").replace(".png", "")
+        # Remove turn suffix if present (e.g., TC001_turn1 -> TC001)
+        if '_turn' in case_id:
+            case_id = case_id.split('_turn')[0]
         completed.append(case_id)
-    return completed
+    return list(set(completed))  # Remove duplicates
 
 def detect_language(text):
     """Detect the primary language of the text."""
@@ -152,14 +157,16 @@ def run_test_with_aligned_screenshot(test_case, cat_num, agent_id, case_index):
 
     Strategy:
     1. Open browser and navigate to BrachyBot
-    2. Type the input
-    3. Wait for response to complete
-    4. Take screenshot (captures EXACT response)
-    5. Extract response text FROM THE UI (not from API)
-    6. Score the extracted response
+    2. Setup required state (upload CT, run segmentation, etc.) based on `setup` field
+    3. Type the input
+    4. Wait for response to complete
+    5. Take screenshot (captures EXACT response)
+    6. Extract response text FROM THE UI (not from API)
+    7. Score the extracted response
     """
     case_id = test_case.get('id', f'Q{case_index+1:04d}')
     input_text = test_case.get('input', '')
+    setup_text = test_case.get('setup', '')
     screenshot_path = f"{SCREENSHOT_DIR}/{cat_num:02d}_{case_id}.png"
 
     # Skip if already exists
@@ -177,8 +184,49 @@ def run_test_with_aligned_screenshot(test_case, cat_num, agent_id, case_index):
             page.goto(BASE_URL, timeout=30000, wait_until='networkidle')
             time.sleep(2)
 
-            # 2. Find input box and type the test question
+            # 2. Setup required state based on `setup` field
             input_selector = '#chatInput'
+            page.wait_for_selector(input_selector, timeout=10000)
+
+            if setup_text and 'Upload CT' in setup_text:
+                ct_path = "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+                setup_input = f"请加载CT文件 {ct_path}"
+                page.fill(input_selector, setup_input)
+                time.sleep(0.5)
+                send_button = page.locator('.chat-send')
+                send_button.click()
+                # Wait for CT upload to complete
+                time.sleep(8)
+
+                # Run segmentation if needed
+                if 'segment' in setup_text.lower():
+                    seg_input = "请执行CTV和OAR分割"
+                    page.fill(input_selector, seg_input)
+                    time.sleep(0.5)
+                    send_button.click()
+                    # Wait for segmentation to complete
+                    time.sleep(15)
+
+                # Run planning if needed
+                if 'plan' in setup_text.lower() and 'planning' not in setup_text.lower():
+                    pass  # plan generated means segmentation already done + plan
+                if 'plan generated' in setup_text.lower() or 'generate plan' in setup_text.lower():
+                    plan_input = "请生成治疗计划"
+                    page.fill(input_selector, plan_input)
+                    time.sleep(0.5)
+                    send_button.click()
+                    time.sleep(10)
+
+                # Run dose evaluation if needed
+                if 'dose evaluation' in setup_text.lower():
+                    eval_input = "请评估剂量分布"
+                    page.fill(input_selector, eval_input)
+                    time.sleep(0.5)
+                    send_button.click()
+                    time.sleep(10)
+
+            # 3. Find input box and type the test question
+            page.wait_for_selector(input_selector, timeout=10000)
             page.wait_for_selector(input_selector, timeout=10000)
             page.fill(input_selector, input_text)
             time.sleep(0.5)
@@ -364,6 +412,7 @@ def run_multi_turn_test(test_case, cat_num, agent_id, case_index):
     """
     case_id = test_case.get('id', f'MT{case_index+1:04d}')
     turns = test_case.get('turns', [])
+    setup_text = test_case.get('setup', '')
 
     if not turns:
         print(f"  No turns found for {case_id}")
@@ -379,6 +428,26 @@ def run_multi_turn_test(test_case, cat_num, agent_id, case_index):
             # 1. Navigate to BrachyBot
             page.goto(BASE_URL, timeout=30000, wait_until='networkidle')
             time.sleep(2)
+
+            # 2. Setup required state based on `setup` field
+            input_selector = '#chatInput'
+            page.wait_for_selector(input_selector, timeout=10000)
+
+            if setup_text and 'Upload CT' in setup_text:
+                ct_path = "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+                setup_input = f"请加载CT文件 {ct_path}"
+                page.fill(input_selector, setup_input)
+                time.sleep(0.5)
+                send_button = page.locator('.chat-send')
+                send_button.click()
+                time.sleep(8)
+
+                if 'segment' in setup_text.lower():
+                    seg_input = "请执行CTV和OAR分割"
+                    page.fill(input_selector, seg_input)
+                    time.sleep(0.5)
+                    send_button.click()
+                    time.sleep(15)
 
             turn_results = []
             for turn_idx, turn in enumerate(turns):
@@ -488,6 +557,7 @@ def run_multi_turn_test(test_case, cat_num, agent_id, case_index):
 
 def run_category(cat_num, agent_id):
     """Run all test cases for a category."""
+    # v2 uses 1-8 category numbers
     files = glob.glob(f"{BENCHMARK_DIR}/{cat_num:02d}_*.json")
     if not files:
         print(f"No benchmark file found for category {cat_num}")
@@ -546,7 +616,16 @@ def main():
     """Main entry point."""
     if len(sys.argv) < 3:
         print("Usage: python aligned_benchmark.py <agent_id> <category_numbers...>")
-        print("Example: python aligned_benchmark.py 1 1 2 3 4 5 6 8 17")
+        print("Example: python aligned_benchmark.py 1 1 2 3 4 5 6 7 8")
+        print("Categories (v2):")
+        print("  1: tool_calling (15 cases)")
+        print("  2: multi_step (5 cases)")
+        print("  3: hallucination (11 cases)")
+        print("  4: language (6 cases)")
+        print("  5: context (7 cases)")
+        print("  6: response_quality (5 cases)")
+        print("  7: safety (5 cases)")
+        print("  8: error_recovery (6 cases)")
         sys.exit(1)
 
     agent_id = int(sys.argv[1])
@@ -556,6 +635,7 @@ def main():
     print(f"Categories: {cat_numbers}")
     print(f"Screenshots: {SCREENSHOT_DIR}")
     print(f"Reports: {REPORT_DIR}")
+    print(f"Benchmark: {BENCHMARK_DIR}")
 
     all_results = []
     for cat_num in cat_numbers:

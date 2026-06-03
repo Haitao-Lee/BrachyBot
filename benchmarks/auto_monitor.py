@@ -9,17 +9,17 @@ import os, sys, time, subprocess, signal, json, glob, re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-SCREENSHOT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots"
-REPORT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/reports"
-BENCHMARK_DIR = "/home/lht/snap/brachyplan/BrachyBot/benchmarks"
-LOG_FILE = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/auto_monitor.log"
+SCREENSHOT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots_v2"
+REPORT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/reports_v2"
+BENCHMARK_DIR = "/home/lht/snap/brachyplan/BrachyBot/benchmarks/v2"
+LOG_FILE = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/auto_monitor_v2.log"
 
-# Agent configuration
+# Agent configuration (v2: 8 categories)
 AGENTS = {
-    1: [1, 2, 3, 4, 5, 6, 8, 17],
-    2: [10, 11, 12, 13, 14],
-    3: [19, 20, 21, 22, 23, 24, 25, 26, 27],
-    4: [7, 9, 15, 18]
+    1: [1, 2, 3],
+    2: [4, 5],
+    3: [6, 7],
+    4: [8]
 }
 
 def log_message(message, level="INFO"):

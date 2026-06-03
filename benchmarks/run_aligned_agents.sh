@@ -1,11 +1,11 @@
 #!/bin/bash
-# Run 4 aligned benchmark agents in parallel
+# Run 4 aligned benchmark agents in parallel (v2)
 # Each agent handles different categories
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="/home/lht/snap/brachyplan/BrachyBot"
-SCREENSHOT_DIR="$BASE_DIR/docs/benchmark_result/screenshots"
-REPORT_DIR="$BASE_DIR/docs/benchmark_result/reports"
+SCREENSHOT_DIR="$BASE_DIR/docs/benchmark_result/screenshots_v2"
+REPORT_DIR="$BASE_DIR/docs/benchmark_result/reports_v2"
 
 # Create directories
 mkdir -p "$SCREENSHOT_DIR"
@@ -27,20 +27,20 @@ run_agent() {
     python3 aligned_benchmark.py $agent_id "${categories[@]}"
 }
 
-# Agent 1: Categories 1-8, 17 (Basic + Safety)
-run_agent 1 1 2 3 4 5 6 8 17 &
+# Agent 1: Categories 1-3 (tool_calling, multi_step, hallucination)
+run_agent 1 1 2 3 &
 AGENT1_PID=$!
 
-# Agent 2: Categories 10-14 (Advanced + Adversarial)
-run_agent 2 10 11 12 13 14 &
+# Agent 2: Categories 4-5 (language, context)
+run_agent 2 4 5 &
 AGENT2_PID=$!
 
-# Agent 3: Categories 19-27 (Workflow + Compliance)
-run_agent 3 19 20 21 22 23 24 25 26 27 &
+# Agent 3: Categories 6-7 (response_quality, safety)
+run_agent 3 6 7 &
 AGENT3_PID=$!
 
-# Agent 4: Categories 7, 9, 15, 18 (UI + Edge Cases)
-run_agent 4 7 9 15 18 &
+# Agent 4: Category 8 (error_recovery)
+run_agent 4 8 &
 AGENT4_PID=$!
 
 echo "All agents started!"

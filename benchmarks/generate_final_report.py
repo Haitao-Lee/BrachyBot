@@ -5,8 +5,8 @@ Generate final benchmark report from all agent reports.
 import os, glob, re
 from datetime import datetime
 
-REPORT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/reports"
-FINAL_REPORT = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/reports/final_report.md"
+REPORT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/reports_v2"
+FINAL_REPORT = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/reports_v2/final_report.md"
 
 def parse_agent_report(report_path):
     """Parse an agent report and extract key metrics."""
@@ -132,18 +132,20 @@ def generate_final_report():
 
         f.write("---\n\n")
         f.write("## Key Findings\n\n")
-        f.write("### Strengths\n")
-        f.write("1. **CTV/OAR Segmentation** (Categories 03, 04): 100% pass rate\n")
-        f.write("2. **Tool Calling** (Category 08): 100% pass rate\n")
-        f.write("3. **UI Interaction** (Category 07): 100% pass rate\n")
-        f.write("4. **Adversarial Robustness** (Category 10): 96% pass rate\n")
-        f.write("5. **Safety** (Category 17): 93-100% pass rate\n\n")
+        f.write("### v2 Benchmark Categories (8 categories, 60 cases)\n\n")
+        f.write("1. **tool_calling** (15 cases) — correct tool selection\n")
+        f.write("2. **multi_step** (5 cases) — all steps in order\n")
+        f.write("3. **hallucination** (11 cases) — no fabrication\n")
+        f.write("4. **language** (6 cases) — language consistency\n")
+        f.write("5. **context** (7 cases) — multi-turn context\n")
+        f.write("6. **response_quality** (5 cases) — structured output\n")
+        f.write("7. **safety** (5 cases) — refuse unsafe requests\n")
+        f.write("8. **error_recovery** (10 cases) — graceful error handling\n\n")
 
-        f.write("### Areas for Improvement\n")
-        f.write("1. **Medical Reasoning** (Category 12): 74% pass rate\n")
-        f.write("2. **Stress Testing** (Category 14): 75% pass rate\n")
-        f.write("3. **Medium Complexity** (Category 23): 74% pass rate\n")
-        f.write("4. **Response Length Issues**: 60-72% of failures\n\n")
+        f.write("### Key Test Material\n\n")
+        f.write("- **CT File:** `/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii`\n")
+        f.write("- **Patient:** 胰腺癌 (pancreatic cancer)\n")
+        f.write("- **Specs:** 48 × 512 × 512 voxels, 0.68 × 0.68 × 5.0 mm spacing\n\n")
 
         f.write("---\n\n")
         f.write("## Data Sources\n\n")
