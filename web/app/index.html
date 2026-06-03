@@ -2845,18 +2845,18 @@ function renderOverlayFromVolume(axis, sliceIndex) {
 
     for (let py = 0; py < height; py++) {
         for (let px = 0; px < width; px++) {
-            // Map display coords to volume coords
+            // Map display coords to volume coords (Y-flip for all views)
             let volZ, volY, volX;
             if (axis === 'axial') {
                 volZ = sliceIndex;
-                volY = py;
+                volY = (Y - 1) - py;
                 volX = px;
             } else if (axis === 'sagittal') {
-                volZ = Math.min(Math.floor(py / resampleRatio), Z - 1);
+                volZ = Z - 1 - Math.min(Math.floor(py / resampleRatio), Z - 1);
                 volY = px;
                 volX = sliceIndex;
             } else {
-                volZ = Math.min(Math.floor(py / resampleRatio), Z - 1);
+                volZ = Z - 1 - Math.min(Math.floor(py / resampleRatio), Z - 1);
                 volY = sliceIndex;
                 volX = px;
             }
@@ -3020,15 +3020,17 @@ function renderSliceFromVolume(axis, sliceIndex) {
     for (let py = 0; py < height; py++) {
         for (let px = 0; px < width; px++) {
             // Map display coords to volume coords for label lookup
-            // Sagittal/Coronal: same mapping as CT rendering (confirmed correct)
-            // Axial: Y-flip needed because label volume Y-axis is inverted vs CT display
+            // Label volume Y-axis is inverted relative to CT display — apply Y-flip for all views
             let volZ, volY2, volX2;
-            if (axis === 'axial') { volZ = sliceIndex; volY2 = (Y - 1) - py; volX2 = px; }
-            else if (axis === 'sagittal') {
-                volZ = Math.min(Math.floor(py / resampleRatio), Z - 1);
+            if (axis === 'axial') {
+                volZ = sliceIndex;
+                volY2 = (Y - 1) - py;
+                volX2 = px;
+            } else if (axis === 'sagittal') {
+                volZ = Z - 1 - Math.min(Math.floor(py / resampleRatio), Z - 1);
                 volY2 = px; volX2 = sliceIndex;
             } else {
-                volZ = Math.min(Math.floor(py / resampleRatio), Z - 1);
+                volZ = Z - 1 - Math.min(Math.floor(py / resampleRatio), Z - 1);
                 volY2 = sliceIndex; volX2 = px;
             }
             const flatIdx = volZ * labelSliceSize + volY2 * X + volX2;
