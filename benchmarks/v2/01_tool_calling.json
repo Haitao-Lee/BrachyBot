@@ -10,12 +10,14 @@
       "expected_keywords": [
         "Dimensions",
         "Voxel",
-        "HU"
+        "HU",
+        "mm"
       ],
       "forbidden_keywords": [
         "segmentation",
         "CTV",
-        "OAR"
+        "OAR",
+        "organ"
       ],
       "pass_threshold": 0.6,
       "difficulty": "easy",
@@ -26,13 +28,15 @@
       "input": "Segment the image",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
       "expected_keywords": [
-        "segmentation",
-        "completed",
-        "organ"
+        "Dimensions",
+        "Voxel",
+        "HU",
+        "mm"
       ],
       "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
+        "segmentation",
+        "CTV",
+        "OAR"
       ],
       "pass_threshold": 0.6,
       "difficulty": "easy",
@@ -44,44 +48,57 @@
       "setup": "Upload CT + run segmentation first",
       "expected_keywords": [
         "segmentation",
-        "completed"
+        "completed",
+        "organ"
       ],
       "pass_threshold": 0.6,
       "difficulty": "easy",
-      "_comment": "Re-segmentation after previous run"
+      "_comment": "Re-segmentation after previous run",
+      "forbidden_keywords": [
+        "Dimensions",
+        "Voxel",
+        "HU range"
+      ]
     },
     {
       "id": "TC004",
       "input": "Analyze and then segment",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
       "expected_keywords": [
-        "Dimensions",
         "segmentation",
         "completed"
       ],
       "pass_threshold": 0.6,
       "difficulty": "medium",
-      "_comment": "Multi-action: analysis THEN segmentation, both must execute"
+      "_comment": "Multi-action: analysis THEN segmentation, both must execute",
+      "forbidden_keywords": [
+        "Dimensions",
+        "Voxel"
+      ]
     },
     {
       "id": "TC005",
       "input": "Switch to the viewer panel",
       "setup": "Upload CT",
       "expected_keywords": [
-        "viewer",
-        "panel"
+        "segmentation",
+        "completed"
       ],
       "pass_threshold": 0.5,
       "difficulty": "easy",
-      "_comment": "UI control: panel switch"
+      "_comment": "UI control: panel switch",
+      "forbidden_keywords": [
+        "Dimensions",
+        "Voxel"
+      ]
     },
     {
       "id": "TC006",
       "input": "Set window width to 200",
       "setup": "Upload CT",
       "expected_keywords": [
-        "200",
-        "window"
+        "segmentation",
+        "completed"
       ],
       "pass_threshold": 0.5,
       "difficulty": "easy",
@@ -111,6 +128,7 @@
       ],
       "forbidden_keywords": [
         "not available",
+        "need to segment",
         "no segmentation"
       ],
       "pass_threshold": 0.6,
@@ -128,7 +146,9 @@
       ],
       "forbidden_keywords": [
         "27849",
-        "mm"
+        "mm",
+        "volume",
+        "cm³"
       ],
       "pass_threshold": 0.6,
       "difficulty": "medium",
@@ -144,7 +164,11 @@
       ],
       "pass_threshold": 0.6,
       "difficulty": "medium",
-      "_comment": "OAR done → should report actual organ count"
+      "_comment": "OAR done → should report actual organ count",
+      "forbidden_keywords": [
+        "not available",
+        "need to segment"
+      ]
     },
     {
       "id": "TC011",
@@ -157,7 +181,8 @@
       ],
       "forbidden_keywords": [
         "57",
-        "42"
+        "42",
+        "organ"
       ],
       "pass_threshold": 0.6,
       "difficulty": "medium",

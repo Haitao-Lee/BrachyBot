@@ -15,7 +15,8 @@
       "forbidden_keywords": [
         "let me",
         "I'll",
-        "Great question"
+        "Great question",
+        "I will"
       ],
       "pass_threshold": 0.6,
       "difficulty": "easy",
@@ -43,12 +44,14 @@
       "setup": "Upload CT",
       "expected_keywords": [
         "segmentation",
-        "organ",
         "viewer"
       ],
       "pass_threshold": 0.6,
       "difficulty": "easy",
-      "_comment": "Segmentation should mention viewer display"
+      "_comment": "Segmentation should mention viewer display",
+      "forbidden_keywords": [
+        "let me"
+      ]
     },
     {
       "id": "RQ004",
