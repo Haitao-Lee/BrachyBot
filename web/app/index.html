@@ -1094,6 +1094,10 @@
         .ctx-menu-item .ctx-icon { width: 16px; text-align: center; font-size: 0.75rem; }
         .ctx-menu-sep { height: 1px; background: var(--card-border); margin: 4px 8px; }
         .ctx-menu-item.danger { color: var(--danger); }
+        .tree-group-header-controls { display: flex; align-items: center; gap: 6px; padding: 2px 8px 2px 1.8rem; }
+        .tree-group-header-controls .eye-btn { width: 20px; height: 20px; font-size: 0.65rem; background: none; border: none; cursor: pointer; color: var(--text-dim); padding: 0; display: flex; align-items: center; justify-content: center; }
+        .tree-group-header-controls .eye-btn.hidden { opacity: 0.3; }
+        .tree-group-header-controls .opacity-slider { width: 60px; height: 3px; }
         .tree-item .opacity-slider::-webkit-slider-thumb {
             -webkit-appearance: none; width: 8px; height: 8px;
             border-radius: 50%; background: var(--primary); cursor: pointer;
@@ -3613,22 +3617,30 @@ function renderDataTree() {
         </div>
         <div class="tree-group-items">`;
 
-    // CTV sub-group
+    // CTV item
     if (dataTreeState.ctv.loaded) {
         const ctvVolume = state.ctvVolume || null;
         const ctvInfo = ctvVolume ? `${ctvVolume.toFixed(1)} mm³` : 'loaded';
         html += renderTreeItem('ctv', dataTreeState.ctv, ctvInfo);
     }
 
-    // OAR sub-groups by category
+    // OAR sub-groups by category with group-level controls
     const nonTrav = dataTreeState.organs.filter(o => o.category === 'non_traversable');
     const trav = dataTreeState.organs.filter(o => o.category === 'traversable');
 
     if (nonTrav.length > 0) {
+        const gVis = nonTrav.some(o => o.visible);
+        const gOp = nonTrav.length > 0 ? nonTrav[0].opacity : 0.5;
         html += `<div class="tree-group" style="margin-left:0.5rem;">
             <div class="tree-group-header" onclick="toggleTreeGroup(this)">
                 <span class="arrow">&#9660;</span>
                 <span style="color:#f97316;">🚫 Non-traversable (${nonTrav.length})</span>
+            </div>
+            <div class="tree-group-header-controls">
+                <button class="eye-btn ${gVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('non_traversable', ${!gVis})" title="Toggle group">${gVis ? '&#128065;' : '&#128064;'}</button>
+                <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(gOp * 100)}"
+                    onclick="event.stopPropagation()"
+                    oninput="setGroupOpacity('non_traversable', this.value)" title="Group opacity" style="flex:1;">
             </div>
             <div class="tree-group-items">`;
         for (const organ of nonTrav) {
@@ -3640,10 +3652,18 @@ function renderDataTree() {
     }
 
     if (trav.length > 0) {
+        const gVis = trav.some(o => o.visible);
+        const gOp = trav.length > 0 ? trav[0].opacity : 0.5;
         html += `<div class="tree-group" style="margin-left:0.5rem;">
             <div class="tree-group-header" onclick="toggleTreeGroup(this)">
                 <span class="arrow">&#9660;</span>
                 <span style="color:#22c55e;">✅ Traversable (${trav.length})</span>
+            </div>
+            <div class="tree-group-header-controls">
+                <button class="eye-btn ${gVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('traversable', ${!gVis})" title="Toggle group">${gVis ? '&#128065;' : '&#128064;'}</button>
+                <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(gOp * 100)}"
+                    onclick="event.stopPropagation()"
+                    oninput="setGroupOpacity('traversable', this.value)" title="Group opacity" style="flex:1;">
             </div>
             <div class="tree-group-items">`;
         for (const organ of trav) {
@@ -3794,6 +3814,18 @@ function showAllOrgans() {
     dataTreeState.organs.forEach(o => { o.visible = true; });
     dataTreeState.ctv.visible = true;
     renderDataTree();
+    if (state.ctLoaded) loadAllSlices();
+}
+
+function setGroupVisibility(category, visible) {
+    dataTreeState.organs.filter(o => o.category === category).forEach(o => { o.visible = visible; });
+    renderDataTree();
+    if (state.ctLoaded) loadAllSlices();
+}
+
+function setGroupOpacity(category, value) {
+    const opacity = parseInt(value) / 100;
+    dataTreeState.organs.filter(o => o.category === category).forEach(o => { o.opacity = opacity; });
     if (state.ctLoaded) loadAllSlices();
 }
 
