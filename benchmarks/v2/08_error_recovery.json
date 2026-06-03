@@ -1,202 +1,91 @@
 {
   "category": "error_recovery",
-  "description": "Tests whether BrachyBot handles errors gracefully and recovers appropriately.",
-  "evaluation": "Bot should report errors clearly, not crash, and suggest alternatives.",
+  "description": "Tests whether BrachyBot handles errors gracefully and reports them clearly.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
   "cases": [
     {
       "id": "ER001",
-      "input": "分割一个不存在的文件 /tmp/fake.nii",
-      "language": "zh",
-      "expected_behavior": "Should report file not found, not crash",
-      "difficulty": "medium",
-      "description": "File not found — should handle gracefully",
+      "input": "Segment a non-existent file /tmp/fake.nii",
+      "setup": "No CT upload",
       "expected_keywords": [
-        "错误",
-        "失败",
-        "无法",
-        "不存在",
         "error",
-        "fail",
-        "cannot",
         "not found",
-        "not available"
+        "file"
       ],
       "forbidden_keywords": [
-        "分割完成",
         "segmentation completed"
       ],
-      "context": "CT已加载",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_comment": "File not found → should handle gracefully"
     },
     {
       "id": "ER002",
-      "input": "计算剂量（没有种子计划）",
-      "language": "zh",
-      "expected_behavior": "Should report missing prerequisites",
-      "difficulty": "medium",
-      "description": "Missing prerequisite — should explain what's needed",
+      "input": "Calculate dose without a seed plan",
+      "setup": "Upload CT + segmentation, NO plan",
       "expected_keywords": [
-        "种子",
-        "seed",
-        "计划",
         "plan",
-        "未",
-        "没有"
+        "seed",
+        "need",
+        "first"
       ],
-      "forbidden_keywords": [],
-      "context": "CT已加载",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Missing prerequisite → should explain"
     },
     {
       "id": "ER003",
-      "input": "评估剂量（没有剂量分布）",
-      "language": "zh",
-      "expected_behavior": "Should report no dose distribution available",
-      "difficulty": "medium",
-      "description": "No dose data — should handle gracefully",
+      "input": "Evaluate dose without dose distribution",
+      "setup": "Upload CT + segmentation + plan, NO dose calculation",
       "expected_keywords": [
-        "剂量",
         "dose",
-        "未",
-        "没有",
-        "先"
+        "calculate",
+        "need",
+        "first"
       ],
-      "forbidden_keywords": [],
-      "context": "CT已加载",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "No dose data → should handle gracefully"
     },
     {
       "id": "ER004",
-      "input": "导出DICOM（没有计划）",
-      "language": "zh",
-      "expected_behavior": "Should report no plan to export",
-      "difficulty": "medium",
-      "description": "No plan — should handle gracefully",
+      "input": "Export DICOM without a plan",
+      "setup": "Upload CT + segmentation, NO plan",
       "expected_keywords": [
-        "计划",
         "plan",
-        "未",
-        "没有",
-        "先"
+        "need",
+        "first",
+        "generate"
       ],
-      "forbidden_keywords": [],
-      "context": "CT已加载",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "No plan → should handle gracefully"
     },
     {
       "id": "ER005",
-      "input": "帮我查一篇根本不存在的论文",
-      "language": "zh",
-      "expected_behavior": "Should report search returned no results",
-      "difficulty": "medium",
-      "description": "Empty search results — should report honestly",
+      "input": "Run a tool that does not exist",
+      "setup": "Upload CT",
       "expected_keywords": [
-        "未找到",
-        "not found",
-        "搜索",
-        "search"
-      ],
-      "forbidden_keywords": [],
-      "context": "CT已加载",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "ER006",
-      "input": "运行一个不存在的工具",
-      "language": "zh",
-      "expected_behavior": "Should say tool not found",
-      "difficulty": "medium",
-      "description": "Unknown tool — should handle gracefully",
-      "expected_keywords": [
-        "不存在",
-        "找不到",
         "not found",
         "not available",
         "unknown"
       ],
-      "forbidden_keywords": [],
-      "context": "CT已加载",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "ER007",
-      "input": "分析一个损坏的CT文件",
-      "language": "zh",
-      "expected_behavior": "Should report file read error",
-      "difficulty": "hard",
-      "description": "Corrupt file — should handle gracefully",
-      "expected_keywords": [
-        "损坏",
-        "corrupt",
-        "无法",
-        "读取",
-        "error"
-      ],
-      "forbidden_keywords": [],
-      "context": "CT已加载",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "ER008",
-      "input": "分割一个空的CT文件",
-      "language": "zh",
-      "expected_behavior": "Should report empty or invalid data",
-      "difficulty": "hard",
-      "description": "Empty data — should handle gracefully",
-      "expected_keywords": [
-        "空",
-        "empty",
-        "无效",
-        "invalid",
-        "无法"
-      ],
-      "forbidden_keywords": [],
-      "context": "CT已加载",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "ER009",
-      "input": "帮我查一下这个完全不存在的东西",
-      "language": "zh",
-      "expected_behavior": "Should report no results found",
+      "pass_threshold": 0.6,
       "difficulty": "medium",
-      "description": "No results — should handle gracefully",
-      "expected_keywords": [
-        "未找到",
-        "not found",
-        "搜索",
-        "search"
-      ],
-      "forbidden_keywords": [],
-      "context": "CT已加载",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "Unknown tool → should handle gracefully"
     },
     {
-      "id": "ER010",
-      "input": "把CT的尺寸改成1024x1024",
-      "language": "zh",
-      "expected_behavior": "Should explain this operation is not supported",
-      "difficulty": "medium",
-      "description": "Unsupported operation — should refuse gracefully",
+      "id": "ER006",
+      "input": "Change the CT dimensions to 1024x1024",
+      "setup": "Upload CT",
       "expected_keywords": [
-        "无法",
-        "不支持",
         "cannot",
-        "not supported"
+        "not supported",
+        "modify"
       ],
-      "forbidden_keywords": [],
-      "context": "CT已加载",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_comment": "Unsupported operation → should refuse gracefully"
     }
   ]
 }

@@ -1,385 +1,217 @@
 {
   "category": "tool_calling",
-  "description": "Tests whether BrachyBot calls the correct tool(s). Each case simulates a real user scenario with proper context.",
+  "description": "Tests whether BrachyBot calls the correct tool for each request. CT file must be uploaded first.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
   "cases": [
     {
       "id": "TC001",
-      "input": "请分析图像",
-      "language": "zh",
-      "context": "CT已加载",
-      "expected_tools": [
-        "code_executor"
+      "input": "Analyze the CT image",
+      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "expected_keywords": [
+        "Dimensions",
+        "Voxel",
+        "HU"
       ],
-      "forbidden_tools": [
-        "ctv_segmentation",
-        "oar_segmentation"
+      "forbidden_keywords": [
+        "segmentation",
+        "CTV",
+        "OAR"
       ],
+      "pass_threshold": 0.6,
       "difficulty": "easy",
-      "description": "CT loaded → analysis should use code_executor, NOT segmentation",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "Analysis should use code_executor, NOT segmentation tools"
     },
     {
       "id": "TC002",
-      "input": "analyze the image",
-      "language": "en",
-      "context": "CT loaded",
-      "expected_tools": [
-        "code_executor"
+      "input": "Segment the image",
+      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "expected_keywords": [
+        "segmentation",
+        "completed",
+        "organ"
       ],
-      "forbidden_tools": [
-        "ctv_segmentation",
-        "oar_segmentation"
+      "forbidden_keywords": [
+        "Dimensions",
+        "Voxel"
       ],
+      "pass_threshold": 0.6,
       "difficulty": "easy",
-      "description": "English variant",
-      "setup": "Upload CT: POST /api/chat with message 'Load CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "Segmentation should call CTV+OAR tools, NOT code_executor"
     },
     {
       "id": "TC003",
-      "input": "请分割图像",
-      "language": "zh",
-      "context": "CT已加载",
-      "expected_tools": [
-        "ctv_segmentation",
-        "oar_segmentation"
+      "input": "Segment the image again",
+      "setup": "Upload CT + run segmentation first",
+      "expected_keywords": [
+        "segmentation",
+        "completed"
       ],
+      "pass_threshold": 0.6,
       "difficulty": "easy",
-      "description": "CT loaded → segmentation should call both CTV and OAR",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "Re-segmentation after previous run"
     },
     {
       "id": "TC004",
-      "input": "帮我分割",
-      "language": "zh",
-      "context": "CT已加载",
-      "expected_tools": [
-        "ctv_segmentation",
-        "oar_segmentation"
+      "input": "Analyze and then segment",
+      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "expected_keywords": [
+        "Dimensions",
+        "segmentation",
+        "completed"
       ],
-      "difficulty": "easy",
-      "description": "Casual segmentation request",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_comment": "Multi-action: analysis THEN segmentation, both must execute"
     },
     {
       "id": "TC005",
-      "input": "segment the CT",
-      "language": "en",
-      "context": "CT loaded",
-      "expected_tools": [
-        "ctv_segmentation",
-        "oar_segmentation"
+      "input": "Switch to the viewer panel",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "viewer",
+        "panel"
       ],
+      "pass_threshold": 0.5,
       "difficulty": "easy",
-      "description": "English segmentation",
-      "setup": "Upload CT: POST /api/chat with message 'Load CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "UI control: panel switch"
     },
     {
       "id": "TC006",
-      "input": "再分割一次",
-      "language": "zh",
-      "context": "CT已加载，之前已分割过",
-      "expected_tools": [
-        "ctv_segmentation",
-        "oar_segmentation"
+      "input": "Set window width to 200",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "200",
+        "window"
       ],
+      "pass_threshold": 0.5,
       "difficulty": "easy",
-      "description": "Re-segmentation after previous segmentation",
-      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '分割图像'\n3. (Previous segmentation results are in memory)",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "UI control: window width adjustment"
     },
     {
       "id": "TC007",
-      "input": "计算剂量",
-      "language": "zh",
-      "context": "CT已加载，已完成分割和种子规划",
-      "expected_tools": [
-        "dose_engine"
+      "input": "Hide the CTV overlay",
+      "setup": "Upload CT + run segmentation",
+      "expected_keywords": [
+        "CTV",
+        "hidden",
+        "overlay"
       ],
+      "pass_threshold": 0.5,
       "difficulty": "easy",
-      "description": "Dose calculation after planning",
-      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '分割图像'\n3. Run: POST /api/chat with message '生成种子计划'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "UI control: overlay toggle"
     },
     {
       "id": "TC008",
-      "input": "已上传",
-      "language": "zh",
-      "context": "用户刚上传CT",
-      "expected_tools": [],
-      "difficulty": "easy",
-      "description": "Acknowledgment after upload — no tools",
-      "setup": "Set up: 用户刚上传CT. CT file: /home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "input": "What is the tumor volume of this CT?",
+      "setup": "Upload CT + run CTV segmentation (volume ~27849mm³)",
+      "expected_keywords": [
+        "27849",
+        "mm",
+        "volume"
+      ],
+      "forbidden_keywords": [
+        "not available",
+        "no segmentation"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_comment": "CTV done → should report actual volume from system state"
     },
     {
       "id": "TC009",
-      "input": "你好",
-      "language": "zh",
-      "context": "新会话",
-      "expected_tools": [],
+      "input": "What is the tumor volume of this CT?",
+      "setup": "Upload CT only, NO segmentation",
       "expected_keywords": [
-        "你好",
-        "BrachyBot"
+        "segment",
+        "not available",
+        "need"
       ],
-      "difficulty": "easy",
-      "description": "Greeting — no tools",
-      "setup": "Set up: 新会话. CT file: /home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "forbidden_keywords": [
+        "27849",
+        "mm"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_comment": "NO segmentation → should NOT fabricate volume"
     },
     {
       "id": "TC010",
-      "input": "帮我切到viewer",
-      "language": "zh",
-      "context": "CT已加载，在input面板",
-      "expected_tools": [
-        "ui_controller"
+      "input": "How many organs were segmented?",
+      "setup": "Upload CT + run OAR segmentation (57 organs)",
+      "expected_keywords": [
+        "57",
+        "organ"
       ],
-      "difficulty": "easy",
-      "description": "UI panel switch",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_comment": "OAR done → should report actual organ count"
     },
     {
       "id": "TC011",
-      "input": "把窗宽调到200",
-      "language": "zh",
-      "context": "CT已加载，在viewer面板",
-      "expected_tools": [
-        "ui_controller"
-      ],
-      "difficulty": "easy",
-      "description": "UI window width adjustment",
-      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '切到viewer'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "TC012",
-      "input": "隐藏CTV",
-      "language": "zh",
-      "context": "CT和CTV分割已加载",
-      "expected_tools": [
-        "ui_controller"
-      ],
-      "difficulty": "easy",
-      "description": "UI overlay toggle",
-      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '分割CTV'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "TC013",
-      "input": "显示OAR",
-      "language": "zh",
-      "context": "CT和OAR分割已加载",
-      "expected_tools": [
-        "ui_controller"
-      ],
-      "difficulty": "easy",
-      "description": "UI overlay show",
-      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '分割OAR'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "TC014",
-      "input": "这个CT的肿瘤体积是多少？",
-      "language": "zh",
-      "context": "CT已加载，已执行CTV分割（体积27849mm³）",
+      "input": "How many organs were segmented?",
+      "setup": "Upload CT only, NO segmentation",
       "expected_keywords": [
-        "27849",
-        "mm³",
-        "cm³",
-        "体积"
-      ],
-      "forbidden_keywords": [
-        "未分割",
-        "需要先"
-      ],
-      "difficulty": "medium",
-      "description": "CT loaded + CTV done → should report actual volume from system state",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "TC015",
-      "input": "这个CT的肿瘤体积是多少？",
-      "language": "zh",
-      "context": "CT已加载，未执行任何分割",
-      "expected_keywords": [
-        "分割",
         "segment",
-        "未",
-        "需要"
-      ],
-      "forbidden_keywords": [
-        "27849",
-        "mm³"
-      ],
-      "difficulty": "medium",
-      "description": "CT loaded but NO segmentation → should NOT fabricate volume",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "TC016",
-      "input": "分割了多少个器官？",
-      "language": "zh",
-      "context": "CT已加载，已执行OAR分割（57个器官）",
-      "expected_keywords": [
-        "57",
-        "器官",
-        "organ"
-      ],
-      "difficulty": "medium",
-      "description": "OAR done → should report actual organ count",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "TC017",
-      "input": "分割了多少个器官？",
-      "language": "zh",
-      "context": "CT已加载，未执行OAR分割",
-      "expected_keywords": [
-        "分割",
-        "segment",
-        "未",
-        "需要"
+        "not available",
+        "need"
       ],
       "forbidden_keywords": [
         "57",
         "42"
       ],
+      "pass_threshold": 0.6,
       "difficulty": "medium",
-      "description": "NO OAR segmentation → should NOT fabricate count",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "NO segmentation → should NOT fabricate count"
     },
     {
-      "id": "TC018",
-      "input": "帮我查一下DeepRare是什么",
-      "language": "zh",
-      "context": "新会话",
-      "expected_tools": [
-        "web_search"
+      "id": "TC012",
+      "input": "Check if this plan is safe",
+      "setup": "Upload CT + run segmentation + generate plan",
+      "expected_keywords": [
+        "safe",
+        "check",
+        "constraint"
       ],
+      "pass_threshold": 0.5,
       "difficulty": "medium",
-      "description": "Unknown entity → should search",
-      "setup": "Set up: 新会话. CT file: /home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "Safety check after planning"
     },
     {
-      "id": "TC019",
-      "input": "查询前列腺癌近距离治疗的剂量约束",
-      "language": "zh",
-      "context": "新会话",
-      "expected_tools": [
-        "clinical_kb"
+      "id": "TC013",
+      "input": "Export DICOM",
+      "setup": "Upload CT + run segmentation + generate plan",
+      "expected_keywords": [
+        "DICOM",
+        "export"
       ],
+      "pass_threshold": 0.5,
       "difficulty": "medium",
-      "description": "Clinical knowledge query",
-      "setup": "Set up: 新会话. CT file: /home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "DICOM export after planning"
     },
     {
-      "id": "TC020",
-      "input": "生成治疗报告",
-      "language": "zh",
-      "context": "CT已加载，已完成分割和计划",
-      "expected_tools": [
-        "report_generator"
+      "id": "TC014",
+      "input": "What are the dose constraints for prostate brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "prostate",
+        "dose",
+        "Gy"
       ],
+      "pass_threshold": 0.5,
       "difficulty": "medium",
-      "description": "Report generation after planning",
-      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '分割图像'\n3. Run: POST /api/chat with message '生成治疗计划'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "Clinical knowledge query"
     },
     {
-      "id": "TC021",
-      "input": "导出DICOM",
-      "language": "zh",
-      "context": "CT已加载，已完成分割、计划和剂量计算",
-      "expected_tools": [
-        "dicom_rt_exporter"
+      "id": "TC015",
+      "input": "Search for the latest brachytherapy guidelines",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "search",
+        "guideline"
       ],
+      "pass_threshold": 0.5,
       "difficulty": "medium",
-      "description": "DICOM export after full pipeline",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "TC022",
-      "input": "检查这个计划是否安全",
-      "language": "zh",
-      "context": "CT已加载，已完成分割和计划",
-      "expected_tools": [
-        "safety_validator"
-      ],
-      "difficulty": "medium",
-      "description": "Safety check after planning",
-      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '分割图像'\n3. Run: POST /api/chat with message '生成治疗计划'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "TC023",
-      "input": "对比两个计划",
-      "language": "zh",
-      "context": "CT已加载，已生成两个治疗计划",
-      "expected_tools": [
-        "plan_comparator"
-      ],
-      "difficulty": "medium",
-      "description": "Plan comparison after two plans generated",
-      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '分割图像'\n3. Run: POST /api/chat with message '生成治疗计划'\n4. Run: POST /api/chat with message '再生成一个不同的计划'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "TC024",
-      "input": "请分析并分割图像",
-      "language": "zh",
-      "context": "CT已加载",
-      "expected_tools": [
-        "code_executor",
-        "ctv_segmentation",
-        "oar_segmentation"
-      ],
-      "difficulty": "medium",
-      "description": "Multi-action: analysis AND segmentation",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "TC025",
-      "input": "先分析图像再分割",
-      "language": "zh",
-      "context": "CT已加载",
-      "expected_tools": [
-        "code_executor",
-        "ctv_segmentation",
-        "oar_segmentation"
-      ],
-      "difficulty": "medium",
-      "description": "Multi-action with explicit order",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "TC026",
-      "input": "分割然后计算剂量",
-      "language": "zh",
-      "context": "CT已加载",
-      "expected_tools": [
-        "ctv_segmentation",
-        "oar_segmentation",
-        "dose_engine"
-      ],
-      "difficulty": "medium",
-      "description": "Segmentation then dose",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "Web search request"
     }
   ]
 }

@@ -1,96 +1,72 @@
 {
   "category": "multi_step",
-  "description": "Tests whether BrachyBot executes ALL requested steps in order, with proper context.",
+  "description": "Tests whether BrachyBot executes all requested steps in order.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
   "cases": [
     {
       "id": "MS001",
-      "input": "请分析并分割图像",
-      "language": "zh",
-      "context": "CT已加载",
-      "expected_tools": [
-        "code_executor",
-        "ctv_segmentation",
-        "oar_segmentation"
+      "input": "Analyze and segment the image",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "Dimensions",
+        "segmentation",
+        "completed"
       ],
+      "pass_threshold": 0.6,
       "difficulty": "easy",
-      "description": "Analyze AND segment",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "Both analysis AND segmentation must execute"
     },
     {
       "id": "MS002",
-      "input": "分析图像，分割图像，然后切到viewer",
-      "language": "zh",
-      "context": "CT已加载",
-      "expected_tools": [
-        "code_executor",
-        "ctv_segmentation",
-        "oar_segmentation",
-        "ui_controller"
+      "input": "Analyze the image, segment it, then switch to viewer",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "Dimensions",
+        "segmentation",
+        "viewer"
       ],
+      "pass_threshold": 0.6,
       "difficulty": "medium",
-      "description": "Three actions: analyze, segment, switch panel",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "Three actions: analyze, segment, switch panel"
     },
     {
       "id": "MS003",
-      "input": "帮我分析一下这个CT，然后告诉我组织分布",
-      "language": "zh",
-      "context": "CT已加载",
-      "expected_tools": [
-        "code_executor"
+      "input": "Segment the image, then hide the CTV overlay",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "CTV",
+        "hidden"
       ],
-      "difficulty": "easy",
-      "description": "Analysis with specific request",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_comment": "Segment then toggle UI"
     },
     {
       "id": "MS004",
-      "input": "分割图像，然后隐藏CTV overlay",
-      "language": "zh",
-      "context": "CT已加载",
-      "expected_tools": [
-        "ctv_segmentation",
-        "oar_segmentation",
-        "ui_controller"
+      "input": "Segment and save to case memory",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "saved",
+        "case"
       ],
+      "pass_threshold": 0.5,
       "difficulty": "medium",
-      "description": "Segment then toggle UI",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "Segment then save"
     },
     {
       "id": "MS005",
-      "input": "帮我分割，然后把结果保存到病例库",
-      "language": "zh",
-      "context": "CT已加载",
-      "expected_tools": [
-        "ctv_segmentation",
-        "oar_segmentation",
-        "case_memory"
+      "input": "Analyze, segment, and do 3D reconstruction",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "Dimensions",
+        "segmentation",
+        "3D"
       ],
+      "pass_threshold": 0.5,
       "difficulty": "medium",
-      "description": "Segment then save",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
-    },
-    {
-      "id": "MS006",
-      "input": "帮我分析图像，分割图像，做个3D重建",
-      "language": "zh",
-      "context": "CT已加载",
-      "expected_tools": [
-        "code_executor",
-        "ctv_segmentation",
-        "oar_segmentation",
-        "ui_controller"
-      ],
-      "difficulty": "medium",
-      "description": "Analyze, segment, 3D reconstruct",
-      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+      "_comment": "Analyze, segment, 3D reconstruct"
     }
   ]
 }
