@@ -1,0 +1,183 @@
+{
+  "category": "knowledge_tools",
+  "description": "Tests clinical knowledge base, case memory, plan comparison, safety validation.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "KT001",
+      "input": "What are the dose constraints for prostate brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "prostate",
+        "dose",
+        "constraint",
+        "Gy"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "KT002",
+      "input": "What is the prescription dose for I-125?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "145",
+        "Gy",
+        "I-125"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "KT003",
+      "input": "What are the OAR constraints for cervical brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "cervical",
+        "OAR",
+        "constraint"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "KT004",
+      "input": "Save this case",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "saved",
+        "case"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "KT005",
+      "input": "Search for similar cases",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "search",
+        "case"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "KT006",
+      "input": "Compare these two plans",
+      "setup": "Upload CT + two plans",
+      "expected_keywords": [
+        "compare",
+        "plan",
+        "better"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "KT007",
+      "input": "Run safety validation",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "safety",
+        "validation",
+        "check"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "KT008",
+      "input": "Is this plan safe?",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "safe",
+        "check",
+        "constraint"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "KT009",
+      "input": "What is the ABS guideline for prostate brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "ABS",
+        "guideline",
+        "prostate"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "KT010",
+      "input": "What is the GEC-ESTRO recommendation?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "GEC-ESTRO",
+        "recommendation"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "KT011",
+      "input": "Show performance metrics",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "performance",
+        "metric"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "KT012",
+      "input": "What tools are available?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "tool",
+        "available",
+        "segmentation"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "KT013",
+      "input": "What is the current system status?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "status",
+        "session"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "KT014",
+      "input": "Save this plan as a case for future reference",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "saved",
+        "case",
+        "plan"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "KT015",
+      "input": "Run a safety check on this plan before export",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "safety",
+        "check",
+        "export"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    }
+  ]
+}

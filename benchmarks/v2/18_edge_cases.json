@@ -1,0 +1,179 @@
+{
+  "category": "edge_cases",
+  "description": "Tests unusual inputs and boundary conditions.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "EC001",
+      "input": "segment",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "completed"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "EC002",
+      "input": "seg",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "completed"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "EC003",
+      "input": "analyse",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "Dimensions",
+        "HU"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "EC004",
+      "input": "s e g m e n t",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation"
+      ],
+      "pass_threshold": 0.4,
+      "difficulty": "medium"
+    },
+    {
+      "id": "EC005",
+      "input": "SEGMENT THE IMAGE",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "completed"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "EC006",
+      "input": "分割一下",
+      "language": "zh",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "分割",
+        "完成"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "EC007",
+      "input": "帮帮忙分析一下图像吧",
+      "language": "zh",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "分析",
+        "维度"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "EC008",
+      "input": "请帮我做一下分割",
+      "language": "zh",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "分割",
+        "完成"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "EC009",
+      "input": "I need you to analyze this CT",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "Dimensions",
+        "HU",
+        "analysis"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "EC010",
+      "input": "Can you segment the organs for me?",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "organ",
+        "completed"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "EC011",
+      "input": "analyze the image and then segment it",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "analysis",
+        "segmentation"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "EC012",
+      "input": "分割图像然后再分析一下",
+      "language": "zh",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "分割",
+        "分析"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "EC013",
+      "input": "请同时分析和分割图像",
+      "language": "zh",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "分析",
+        "分割"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "EC014",
+      "input": "analyze, segment, and plan all at once",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "analysis",
+        "segmentation",
+        "plan"
+      ],
+      "pass_threshold": 0.4,
+      "difficulty": "hard"
+    },
+    {
+      "id": "EC015",
+      "input": "do everything",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "analysis"
+      ],
+      "pass_threshold": 0.4,
+      "difficulty": "hard"
+    }
+  ]
+}

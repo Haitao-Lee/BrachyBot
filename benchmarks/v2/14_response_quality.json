@@ -1,0 +1,155 @@
+{
+  "category": "response_quality",
+  "description": "Tests response formatting and quality.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "RQ001",
+      "input": "Analyze the image",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "Dimensions",
+        "Voxel",
+        "HU"
+      ],
+      "forbidden_keywords": [
+        "let me",
+        "I'll",
+        "Great question"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "RQ002",
+      "input": "Analyze and segment",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "Dimensions",
+        "segmentation"
+      ],
+      "forbidden_keywords": [
+        "let me analyze",
+        "let me segment"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "RQ003",
+      "input": "Segment the image",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "organ",
+        "viewer"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "RQ004",
+      "input": "Hello",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "BrachyBot"
+      ],
+      "forbidden_keywords": [
+        "Great question",
+        "Let me know",
+        "I'd be happy"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "RQ005",
+      "input": "Analyze the image",
+      "setup": "Upload CT",
+      "forbidden_keywords": [
+        "```json",
+        "```python",
+        "stdout"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "RQ006",
+      "input": "What is the HU range?",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "HU",
+        "-1000",
+        "1498"
+      ],
+      "forbidden_keywords": [
+        "let me check",
+        "I think"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "RQ007",
+      "input": "How many organs?",
+      "setup": "Upload CT + OAR segmentation",
+      "expected_keywords": [
+        "57",
+        "organ"
+      ],
+      "forbidden_keywords": [
+        "let me see",
+        "I believe"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "RQ008",
+      "input": "Segment CTV and OAR",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "CTV",
+        "OAR",
+        "completed"
+      ],
+      "forbidden_keywords": [
+        "I will now",
+        "let me"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "RQ009",
+      "input": "Switch to viewer",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "viewer"
+      ],
+      "forbidden_keywords": [
+        "I will switch",
+        "let me switch"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "RQ010",
+      "input": "What tools do you have?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "segmentation",
+        "dose",
+        "plan"
+      ],
+      "forbidden_keywords": [
+        "I have the following",
+        "let me list"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    }
+  ]
+}

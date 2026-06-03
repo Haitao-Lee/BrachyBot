@@ -1,0 +1,196 @@
+{
+  "category": "ct_analysis",
+  "description": "Tests CT image analysis capabilities via code_executor and UI state.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "CA001",
+      "input": "Analyze this CT image",
+      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "expected_keywords": [
+        "Dimensions",
+        "Voxel",
+        "HU"
+      ],
+      "forbidden_keywords": [
+        "segmentation"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA002",
+      "input": "What are the image dimensions?",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "512",
+        "512",
+        "48"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA003",
+      "input": "What is the HU range?",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "-1000",
+        "1498",
+        "HU"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA004",
+      "input": "What is the voxel spacing?",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "0.68",
+        "5.0",
+        "mm"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA005",
+      "input": "What is the scan range in cm?",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "35",
+        "24",
+        "cm"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA006",
+      "input": "Show the tissue distribution",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "air",
+        "fat",
+        "soft tissue",
+        "bone"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA007",
+      "input": "What is the mean HU value?",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "-545",
+        "HU",
+        "mean"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA008",
+      "input": "Is this a head or abdomen CT?",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "abdomen",
+        "pelvis",
+        "pancreas"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "CA009",
+      "input": "Analyze the image quality",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "quality",
+        "slice",
+        "thickness"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "CA010",
+      "input": "What organs are visible?",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "organ",
+        "liver",
+        "pancreas"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "CA011",
+      "input": "Analyze this CT and tell me the tissue distribution",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "Dimensions",
+        "air",
+        "fat",
+        "soft tissue"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA012",
+      "input": "What is the physical size of this CT?",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "35",
+        "24",
+        "cm",
+        "mm"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA013",
+      "input": "How many slices does this CT have?",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "48",
+        "slice"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA014",
+      "input": "What is the bone percentage?",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "bone",
+        "0.3",
+        "%"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA015",
+      "input": "Analyze the CT without any tools",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "512",
+        "48",
+        "HU"
+      ],
+      "forbidden_keywords": [
+        "code_executor",
+        "tool"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    }
+  ]
+}

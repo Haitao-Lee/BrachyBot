@@ -1,0 +1,188 @@
+{
+  "category": "clinical_scenarios",
+  "description": "Tests real clinical use cases for brachytherapy planning.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "CL001",
+      "input": "I have a prostate cancer patient, help me plan LDR brachytherapy",
+      "setup": "Upload CT (prostate)",
+      "expected_keywords": [
+        "prostate",
+        "LDR",
+        "plan"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "CL002",
+      "input": "This is a cervical cancer case, help me with HDR brachytherapy",
+      "setup": "Upload CT (cervical)",
+      "expected_keywords": [
+        "cervical",
+        "HDR",
+        "plan"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "CL003",
+      "input": "Help me evaluate this post-implant dosimetry",
+      "setup": "Upload CT + seeds",
+      "expected_keywords": [
+        "post-implant",
+        "dosimetry",
+        "evaluation"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "CL004",
+      "input": "Check if this plan meets ABS guidelines",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "ABS",
+        "guideline",
+        "check"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "CL005",
+      "input": "What is the recommended D90 for prostate brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "D90",
+        "prostate",
+        "Gy"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "CL006",
+      "input": "Help me with a breast APBI case",
+      "setup": "Upload CT (breast)",
+      "expected_keywords": [
+        "breast",
+        "APBI",
+        "plan"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "CL007",
+      "input": "This patient has a rectal cancer, need interstitial brachytherapy",
+      "setup": "Upload CT (rectal)",
+      "expected_keywords": [
+        "rectal",
+        "interstitial",
+        "brachytherapy"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "CL008",
+      "input": "Evaluate the dose to femoral heads",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "femoral",
+        "head",
+        "dose"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "CL009",
+      "input": "What is the bladder D2cc constraint for prostate brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "bladder",
+        "D2cc",
+        "constraint",
+        "Gy"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "CL010",
+      "input": "Help me with a vaginal cuff brachytherapy case",
+      "setup": "Upload CT (vaginal)",
+      "expected_keywords": [
+        "vaginal",
+        "cuff",
+        "brachytherapy"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "CL011",
+      "input": "Check if the rectal dose is within limits",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "rectum",
+        "dose",
+        "constraint"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "CL012",
+      "input": "What is the prescription dose for Pd-103 prostate brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "Pd-103",
+        "prescription",
+        "Gy"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "CL013",
+      "input": "Help me with a lung endobronchial brachytherapy case",
+      "setup": "Upload CT (lung)",
+      "expected_keywords": [
+        "lung",
+        "endobronchial",
+        "brachytherapy"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "CL014",
+      "input": "Evaluate the plan quality for this HDR case",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "HDR",
+        "evaluation",
+        "quality"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "CL015",
+      "input": "Generate a comprehensive treatment report",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "report",
+        "comprehensive",
+        "treatment"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    }
+  ]
+}

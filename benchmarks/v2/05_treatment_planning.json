@@ -1,0 +1,101 @@
+{
+  "category": "treatment_planning",
+  "description": "Tests treatment planning tools.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "TP001",
+      "input": "Generate a treatment plan",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "plan",
+        "seed",
+        "generated"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium"
+    },
+    {
+      "id": "TP002",
+      "input": "Plan the seed placement",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "seed",
+        "plan",
+        "placement"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium"
+    },
+    {
+      "id": "TP003",
+      "input": "Run the planning pipeline",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "trajectory",
+        "seed",
+        "plan"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "TP004",
+      "input": "Plan seeds for prostate cancer",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "seed",
+        "plan",
+        "prostate"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "TP005",
+      "input": "How many seeds were planned?",
+      "setup": "Upload CT + segmentation + seed planning",
+      "expected_keywords": [
+        "seed",
+        "planned"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "TP006",
+      "input": "Optimize the seed placement",
+      "setup": "Upload CT + segmentation + seed planning",
+      "expected_keywords": [
+        "optimize",
+        "seed",
+        "placement"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "TP007",
+      "input": "Plan without segmentation",
+      "setup": "Upload CT only",
+      "expected_keywords": [
+        "segment",
+        "need",
+        "first"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "TP008",
+      "input": "Generate two different plans",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "plan",
+        "generated"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    }
+  ]
+}

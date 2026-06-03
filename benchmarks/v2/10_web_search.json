@@ -1,0 +1,122 @@
+{
+  "category": "web_search",
+  "description": "Tests web search and page fetch capabilities.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "WS001",
+      "input": "Search for DeepRare",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "DeepRare",
+        "search"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "WS002",
+      "input": "Search for the latest brachytherapy guidelines",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "search",
+        "guideline",
+        "brachytherapy"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "WS003",
+      "input": "What is SAM 3?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "SAM",
+        "search",
+        "segment"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "WS004",
+      "input": "Search for I-125 seed specifications",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "I-125",
+        "seed",
+        "search"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "WS005",
+      "input": "What is the current time?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "time",
+        "current"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "WS006",
+      "input": "Search for DINO V3",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "DINO",
+        "search"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "WS007",
+      "input": "Search for YOLO V26",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "YOLO",
+        "search"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "WS008",
+      "input": "What is the weather today?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "weather",
+        "temperature"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "WS009",
+      "input": "Search for NBA finals 2026",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "NBA",
+        "finals",
+        "2026"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "WS010",
+      "input": "Search for brachytherapy AI research papers",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "brachytherapy",
+        "AI",
+        "search"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    }
+  ]
+}

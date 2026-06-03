@@ -1,0 +1,236 @@
+{
+  "category": "language",
+  "description": "Tests language consistency across all tools.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "LN001",
+      "input": "请分析图像",
+      "language": "zh",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "维度",
+        "体素",
+        "HU"
+      ],
+      "forbidden_keywords": [
+        "Dimensions",
+        "Voxel"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "LN002",
+      "input": "Analyze the image",
+      "language": "en",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "Dimensions",
+        "Voxel",
+        "HU"
+      ],
+      "forbidden_keywords": [
+        "维度",
+        "体素"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "LN003",
+      "input": "请分割图像",
+      "language": "zh",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "分割",
+        "完成"
+      ],
+      "forbidden_keywords": [
+        "segmentation completed"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "LN004",
+      "input": "Segment the image",
+      "language": "en",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "completed"
+      ],
+      "forbidden_keywords": [
+        "分割完成"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "LN005",
+      "input": "分析并分割图像",
+      "language": "zh",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "分析",
+        "分割"
+      ],
+      "forbidden_keywords": [
+        "Analysis",
+        "Segmentation"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium"
+    },
+    {
+      "id": "LN006",
+      "input": "Analyze and segment",
+      "language": "en",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "Analysis",
+        "Segmentation"
+      ],
+      "forbidden_keywords": [
+        "分析",
+        "分割"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium"
+    },
+    {
+      "id": "LN007",
+      "input": "你好",
+      "language": "zh",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "你好",
+        "BrachyBot"
+      ],
+      "forbidden_keywords": [
+        "Hello"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "LN008",
+      "input": "Hello",
+      "language": "en",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "Hello",
+        "BrachyBot"
+      ],
+      "forbidden_keywords": [
+        "你好"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "LN009",
+      "input": "帮我查一下前列腺的剂量约束",
+      "language": "zh",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "前列腺",
+        "剂量"
+      ],
+      "forbidden_keywords": [
+        "prostate",
+        "dose"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "LN010",
+      "input": "What are the dose constraints for prostate?",
+      "language": "en",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "prostate",
+        "dose",
+        "Gy"
+      ],
+      "forbidden_keywords": [
+        "前列腺"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "LN011",
+      "input": "帮我切换到viewer",
+      "language": "zh",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "viewer",
+        "切换"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "LN012",
+      "input": "Switch to viewer",
+      "language": "en",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "viewer",
+        "switch"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "LN013",
+      "input": "计算剂量",
+      "language": "zh",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "剂量",
+        "计算"
+      ],
+      "forbidden_keywords": [
+        "dose",
+        "calculated"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "LN014",
+      "input": "Calculate the dose",
+      "language": "en",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "dose",
+        "calculated"
+      ],
+      "forbidden_keywords": [
+        "剂量"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "LN015",
+      "input": "生成报告",
+      "language": "zh",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "报告",
+        "生成"
+      ],
+      "forbidden_keywords": [
+        "report",
+        "generated"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    }
+  ]
+}

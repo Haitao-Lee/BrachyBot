@@ -1,0 +1,201 @@
+{
+  "category": "regression",
+  "description": "Tests specific bugs that were fixed. Prevents regression.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "RG001",
+      "input": "Analyze and segment",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "analysis",
+        "segmentation"
+      ],
+      "forbidden_keywords": [
+        "let me"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Fixed: transitional phrases like 'let me analyze'"
+    },
+    {
+      "id": "RG002",
+      "input": "Segment the image",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "completed"
+      ],
+      "forbidden_keywords": [
+        "No CT files loaded"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Fixed: _no_files_loaded flag incorrectly true"
+    },
+    {
+      "id": "RG003",
+      "input": "Analyze the image",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "Dimensions",
+        "512"
+      ],
+      "forbidden_keywords": [
+        "lnap",
+        "error"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Fixed: LLM hallucinating wrong file path"
+    },
+    {
+      "id": "RG004",
+      "input": "Switch to viewer",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "viewer"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Fixed: KeyError 'target' from unescaped braces in prompt"
+    },
+    {
+      "id": "RG005",
+      "input": "Segment and check 3D",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "3D"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Fixed: 3D reconstruction HTTP 500 error"
+    },
+    {
+      "id": "RG006",
+      "input": "Analyze image in Chinese",
+      "language": "zh",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "维度",
+        "体素"
+      ],
+      "forbidden_keywords": [
+        "Dimensions",
+        "Voxel"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Fixed: language consistency"
+    },
+    {
+      "id": "RG007",
+      "input": "Segment then check volume",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "volume"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Fixed: mask overlay display"
+    },
+    {
+      "id": "RG008",
+      "input": "Analyze and segment together",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "analysis",
+        "segmentation"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Fixed: multi-action execution"
+    },
+    {
+      "id": "RG009",
+      "input": "Segment with auto-detect",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "completed"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Fixed: auto tumor type detection"
+    },
+    {
+      "id": "RG010",
+      "input": "Check data tree organ controls",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "organ",
+        "control"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Fixed: organ control mapping"
+    },
+    {
+      "id": "RG011",
+      "input": "Resize viewer panels",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "viewer",
+        "resize"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Fixed: synchronized viewer resize"
+    },
+    {
+      "id": "RG012",
+      "input": "Segment and check mask direction",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "mask"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Fixed: mask Y-axis flip"
+    },
+    {
+      "id": "RG013",
+      "input": "Load CT and check overlay",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "overlay",
+        "viewer"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Fixed: overlay flickering"
+    },
+    {
+      "id": "RG014",
+      "input": "Analyze then segment in order",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "analysis",
+        "segmentation"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Fixed: tool execution order"
+    },
+    {
+      "id": "RG015",
+      "input": "Check stop button functionality",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "stop",
+        "abort"
+      ],
+      "pass_threshold": 0.4,
+      "difficulty": "medium",
+      "_comment": "New: stop button for streaming responses"
+    }
+  ]
+}

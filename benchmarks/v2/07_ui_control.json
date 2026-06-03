@@ -1,0 +1,237 @@
+{
+  "category": "ui_control",
+  "description": "Tests UI controller for viewer interaction.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "UC001",
+      "input": "Switch to the viewer panel",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "viewer",
+        "panel"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC002",
+      "input": "Switch to the input panel",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "input",
+        "panel"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC003",
+      "input": "Switch to the metrics panel",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "metrics",
+        "panel"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC004",
+      "input": "Set window width to 200",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "200",
+        "window"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC005",
+      "input": "Set window level to 40",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "40",
+        "level"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC006",
+      "input": "Increase the zoom",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "zoom"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC007",
+      "input": "Reset the view",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "reset",
+        "view"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC008",
+      "input": "Show CTV overlay",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "CTV",
+        "overlay",
+        "show"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC009",
+      "input": "Hide OAR overlay",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "OAR",
+        "overlay",
+        "hide"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC010",
+      "input": "Toggle CTV visibility",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "CTV",
+        "toggle"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC011",
+      "input": "Go to next axial slice",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "axial",
+        "slice",
+        "next"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC012",
+      "input": "Go to previous sagittal slice",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "sagittal",
+        "slice",
+        "previous"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC013",
+      "input": "Set display mode to overlay",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "overlay",
+        "display",
+        "mode"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC014",
+      "input": "Set display mode to label only",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "label",
+        "display",
+        "mode"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC015",
+      "input": "Set layout to grid",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "grid",
+        "layout"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC016",
+      "input": "Apply lung window preset",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "lung",
+        "preset",
+        "window"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC017",
+      "input": "Apply bone window preset",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "bone",
+        "preset",
+        "window"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "UC018",
+      "input": "Reconstruct 3D for CTV",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "3D",
+        "CTV",
+        "reconstruct"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "UC019",
+      "input": "Reconstruct 3D for all organs",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "3D",
+        "organ",
+        "reconstruct"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "UC020",
+      "input": "Show CT skin in 3D",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "skin",
+        "3D",
+        "threshold"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    }
+  ]
+}

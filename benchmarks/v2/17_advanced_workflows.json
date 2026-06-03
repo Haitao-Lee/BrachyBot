@@ -1,0 +1,192 @@
+{
+  "category": "advanced_workflows",
+  "description": "Tests complex multi-tool workflows and edge cases.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "AW001",
+      "input": "Segment, plan seeds, calculate dose, evaluate, and generate report",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "plan",
+        "dose",
+        "evaluation",
+        "report"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "AW002",
+      "input": "Analyze the image, segment, and export DICOM",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "Dimensions",
+        "segmentation",
+        "DICOM"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "AW003",
+      "input": "Segment, run safety check, and save to case memory",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "safety",
+        "saved"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "AW004",
+      "input": "Search for guidelines, then apply to this plan",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "guideline",
+        "apply",
+        "plan"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "AW005",
+      "input": "Compare two plans and recommend the better one",
+      "setup": "Upload CT + two plans",
+      "expected_keywords": [
+        "compare",
+        "recommend",
+        "better"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "AW006",
+      "input": "Analyze, segment, plan, dose, evaluate, safety check, and export",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "analysis",
+        "segmentation",
+        "plan",
+        "dose",
+        "evaluation",
+        "safety",
+        "export"
+      ],
+      "pass_threshold": 0.4,
+      "difficulty": "hard"
+    },
+    {
+      "id": "AW007",
+      "input": "Segment CTV only, then plan seeds",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "CTV",
+        "segmentation",
+        "plan"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "AW008",
+      "input": "Segment OAR only, then check safety",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "OAR",
+        "segmentation",
+        "safety"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "AW009",
+      "input": "Analyze image quality, then segment if quality is good",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "quality",
+        "analysis"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "AW010",
+      "input": "Plan seeds, calculate dose, then compare with another plan",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "plan",
+        "dose",
+        "compare"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "AW011",
+      "input": "Segment and show in 3D viewer",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "3D",
+        "viewer"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "AW012",
+      "input": "Analyze, segment, and switch to viewer with overlay",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "analysis",
+        "segmentation",
+        "viewer",
+        "overlay"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "AW013",
+      "input": "Run the complete treatment planning workflow",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "plan",
+        "dose"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "AW014",
+      "input": "Segment, evaluate dose constraints, and report violations",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "dose",
+        "constraint"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard"
+    },
+    {
+      "id": "AW015",
+      "input": "Analyze image, check if segmentation is needed, and proceed",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "analysis",
+        "segmentation"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    }
+  ]
+}

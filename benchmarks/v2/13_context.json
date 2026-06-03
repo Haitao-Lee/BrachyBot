@@ -1,0 +1,239 @@
+{
+  "category": "context",
+  "description": "Tests context management across conversation turns.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "CT001",
+      "type": "multi_turn",
+      "description": "Segmentation context",
+      "turns": [
+        {
+          "input": "Segment the image",
+          "setup": "Upload CT",
+          "expected_keywords": [
+            "segmentation",
+            "completed"
+          ]
+        },
+        {
+          "input": "How many organs?",
+          "expected_keywords": [
+            "organ"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CT002",
+      "type": "multi_turn",
+      "description": "Analysis context",
+      "turns": [
+        {
+          "input": "Analyze the image",
+          "setup": "Upload CT",
+          "expected_keywords": [
+            "Dimensions"
+          ]
+        },
+        {
+          "input": "What is the HU range?",
+          "expected_keywords": [
+            "HU"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CT003",
+      "type": "multi_turn",
+      "description": "UI context",
+      "turns": [
+        {
+          "input": "Set window width to 400",
+          "setup": "Upload CT",
+          "expected_keywords": [
+            "400"
+          ]
+        },
+        {
+          "input": "Make it lower",
+          "expected_keywords": [
+            "window"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CT004",
+      "type": "multi_turn",
+      "description": "Multi-step context",
+      "turns": [
+        {
+          "input": "Analyze and segment",
+          "setup": "Upload CT",
+          "expected_keywords": [
+            "segmentation"
+          ]
+        },
+        {
+          "input": "What is the CTV volume?",
+          "expected_keywords": [
+            "CTV",
+            "volume",
+            "mm"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CT005",
+      "type": "multi_turn",
+      "description": "User correction",
+      "turns": [
+        {
+          "input": "Segment the image",
+          "setup": "Upload CT",
+          "expected_keywords": [
+            "segmentation"
+          ]
+        },
+        {
+          "input": "No, I only want OAR segmentation",
+          "expected_keywords": [
+            "OAR",
+            "organ"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CT006",
+      "type": "multi_turn",
+      "description": "Sequential workflow",
+      "turns": [
+        {
+          "input": "Analyze the image",
+          "setup": "Upload CT",
+          "expected_keywords": [
+            "Dimensions"
+          ]
+        },
+        {
+          "input": "Now segment",
+          "expected_keywords": [
+            "segmentation"
+          ]
+        },
+        {
+          "input": "Switch to viewer",
+          "expected_keywords": [
+            "viewer"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CT007",
+      "type": "multi_turn",
+      "description": "Feedback loop",
+      "turns": [
+        {
+          "input": "Segment the image",
+          "setup": "Upload CT",
+          "expected_keywords": [
+            "segmentation"
+          ]
+        },
+        {
+          "input": "Looks good, now do 3D reconstruction",
+          "expected_keywords": [
+            "3D"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CT008",
+      "type": "multi_turn",
+      "description": "Window adjustment chain",
+      "turns": [
+        {
+          "input": "Set window to 400",
+          "setup": "Upload CT",
+          "expected_keywords": [
+            "400"
+          ]
+        },
+        {
+          "input": "Now set level to 40",
+          "expected_keywords": [
+            "40",
+            "level"
+          ]
+        },
+        {
+          "input": "Apply bone preset",
+          "expected_keywords": [
+            "bone",
+            "preset"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CT009",
+      "type": "multi_turn",
+      "description": "Full pipeline context",
+      "turns": [
+        {
+          "input": "Segment the image",
+          "setup": "Upload CT",
+          "expected_keywords": [
+            "segmentation"
+          ]
+        },
+        {
+          "input": "Generate a treatment plan",
+          "expected_keywords": [
+            "plan"
+          ]
+        },
+        {
+          "input": "Calculate the dose",
+          "expected_keywords": [
+            "dose"
+          ]
+        },
+        {
+          "input": "Evaluate the plan",
+          "expected_keywords": [
+            "evaluation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CT010",
+      "type": "multi_turn",
+      "description": "Language consistency across turns",
+      "turns": [
+        {
+          "input": "分析图像",
+          "language": "zh",
+          "setup": "Upload CT",
+          "expected_keywords": [
+            "分析"
+          ]
+        },
+        {
+          "input": "再帮我分割一下",
+          "language": "zh",
+          "expected_keywords": [
+            "分割"
+          ]
+        }
+      ]
+    }
+  ]
+}

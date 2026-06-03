@@ -1,0 +1,122 @@
+{
+  "category": "ctv_segmentation",
+  "description": "Tests CTV tumor segmentation tool.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "CS001",
+      "input": "Segment the CTV",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "CTV",
+        "segmentation",
+        "completed",
+        "volume"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CS002",
+      "input": "Run CTV segmentation",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "CTV",
+        "completed"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CS003",
+      "input": "Segment the tumor",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "segmentation",
+        "completed"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CS004",
+      "input": "What is the CTV volume?",
+      "setup": "Upload CT + run CTV segmentation",
+      "expected_keywords": [
+        "27849",
+        "mm",
+        "volume"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CS005",
+      "input": "How many voxels in the CTV?",
+      "setup": "Upload CT + run CTV segmentation",
+      "expected_keywords": [
+        "11919",
+        "voxel"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CS006",
+      "input": "Segment CTV for pancreatic cancer",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "CTV",
+        "pancreatic",
+        "completed"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "CS007",
+      "input": "Re-segment the CTV",
+      "setup": "Upload CT + run CTV segmentation",
+      "expected_keywords": [
+        "CTV",
+        "completed"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CS008",
+      "input": "Is the CTV visible in the viewer?",
+      "setup": "Upload CT + run CTV segmentation",
+      "expected_keywords": [
+        "CTV",
+        "viewer",
+        "overlay"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "CS009",
+      "input": "Segment CTV with auto-detect",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "CTV",
+        "completed"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "CS010",
+      "input": "What type of tumor was detected?",
+      "setup": "Upload CT + run CTV segmentation",
+      "expected_keywords": [
+        "pancreatic",
+        "tumor"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    }
+  ]
+}

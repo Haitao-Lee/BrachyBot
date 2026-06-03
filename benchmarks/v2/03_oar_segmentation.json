@@ -1,0 +1,124 @@
+{
+  "category": "oar_segmentation",
+  "description": "Tests OAR organ segmentation tool.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "OS001",
+      "input": "Segment the OAR",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "OAR",
+        "segmentation",
+        "completed",
+        "organ"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "OS002",
+      "input": "Run OAR segmentation",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "OAR",
+        "completed"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "OS003",
+      "input": "Segment the organs at risk",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "organ",
+        "segmentation",
+        "completed"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "OS004",
+      "input": "How many organs were segmented?",
+      "setup": "Upload CT + run OAR segmentation",
+      "expected_keywords": [
+        "57",
+        "organ"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "OS005",
+      "input": "List the segmented organs",
+      "setup": "Upload CT + run OAR segmentation",
+      "expected_keywords": [
+        "liver",
+        "kidney",
+        "organ"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "OS006",
+      "input": "Re-segment the OAR",
+      "setup": "Upload CT + run OAR segmentation",
+      "expected_keywords": [
+        "OAR",
+        "completed"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "OS007",
+      "input": "Is the OAR overlay visible?",
+      "setup": "Upload CT + run OAR segmentation",
+      "expected_keywords": [
+        "OAR",
+        "overlay",
+        "visible"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy"
+    },
+    {
+      "id": "OS008",
+      "input": "Segment both CTV and OAR",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "CTV",
+        "OAR",
+        "completed"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy"
+    },
+    {
+      "id": "OS009",
+      "input": "What is the liver volume?",
+      "setup": "Upload CT + run OAR segmentation",
+      "expected_keywords": [
+        "liver",
+        "volume",
+        "mm"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "OS010",
+      "input": "Which organs are non-traversable?",
+      "setup": "Upload CT + run OAR segmentation",
+      "expected_keywords": [
+        "bone",
+        "non-traversable"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    }
+  ]
+}

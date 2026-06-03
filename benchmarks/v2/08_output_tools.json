@@ -1,0 +1,97 @@
+{
+  "category": "output_tools",
+  "description": "Tests report generation and DICOM export.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "OT001",
+      "input": "Generate a clinical report",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "report",
+        "generated",
+        "clinical"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium"
+    },
+    {
+      "id": "OT002",
+      "input": "Generate a summary report",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "summary",
+        "report"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "OT003",
+      "input": "Generate a DVH report",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "DVH",
+        "report"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "OT004",
+      "input": "Export as JSON",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "JSON",
+        "export"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "OT005",
+      "input": "Export DICOM RT",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "DICOM",
+        "export"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium"
+    },
+    {
+      "id": "OT006",
+      "input": "Export DICOM without plan",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "plan",
+        "need",
+        "first"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "OT007",
+      "input": "Generate report without dose",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "report",
+        "generated"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "OT008",
+      "input": "Export as Markdown",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "Markdown",
+        "export"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    }
+  ]
+}
