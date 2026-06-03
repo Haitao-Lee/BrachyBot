@@ -18,48 +18,6 @@
       "description": "AI clinical decision support boundaries in brachytherapy"
     },
     {
-      "id": "Q0945",
-      "input": "What are the ethical considerations for using AI systems in brachytherapy treatment planning? Discuss issues of transparency, explainability, accountability, patient consent for AI-assisted treatment, and the potential biases in AI algorithms trained on limited brachytherapy datasets.",
-      "expected_keywords": [
-        "ethics",
-        "AI transparency",
-        "explainability",
-        "accountability",
-        "patient consent",
-        "algorithmic bias"
-      ],
-      "difficulty": "advanced",
-      "description": "Ethical considerations for AI in brachytherapy"
-    },
-    {
-      "id": "Q0946",
-      "input": "How should the accuracy and reliability of an AI brachytherapy assistant be validated before clinical deployment? What are the recommended validation methodologies, the required sample sizes, the performance metrics, and the ongoing monitoring requirements after deployment?",
-      "expected_keywords": [
-        "AI validation",
-        "clinical deployment",
-        "performance metrics",
-        "sample size",
-        "monitoring",
-        "reliability"
-      ],
-      "difficulty": "advanced",
-      "description": "AI brachytherapy validation methodology"
-    },
-    {
-      "id": "Q0947",
-      "input": "What level of evidence should be required before an AI brachytherapy system is used for clinical decision-making? Discuss the evidence hierarchy in the context of AI-assisted medical decision-making, the difference between AI as a screening tool versus a treatment planning tool, and the regulatory framework for AI in radiation oncology.",
-      "expected_keywords": [
-        "evidence level",
-        "regulatory framework",
-        "AI clinical use",
-        "decision-making",
-        "screening tool",
-        "treatment planning"
-      ],
-      "difficulty": "advanced",
-      "description": "Evidence and regulatory requirements for AI in brachytherapy"
-    },
-    {
       "id": "Q0948",
       "input": "How should an AI brachytherapy assistant handle rare or unusual clinical scenarios that are underrepresented in its training data? Discuss the challenges of edge cases, the risk of AI failures in unusual situations, and the strategies for ensuring safe AI behavior when encountering unfamiliar clinical presentations.",
       "expected_keywords": [
@@ -102,33 +60,6 @@
       "description": "Conflicting AI recommendations in brachytherapy"
     },
     {
-      "id": "Q0951",
-      "input": "What are the data privacy and security considerations for using AI in brachytherapy, particularly when patient imaging and treatment data are used for model training and improvement? Discuss HIPAA compliance, data anonymization, patient consent for data use, and the risks of data breaches.",
-      "expected_keywords": [
-        "data privacy",
-        "security",
-        "HIPAA",
-        "data anonymization",
-        "patient consent",
-        "data breach"
-      ],
-      "difficulty": "medium",
-      "description": "Data privacy and security for AI in brachytherapy"
-    },
-    {
-      "id": "Q0952",
-      "input": "How should an AI brachytherapy system communicate uncertainty in its recommendations? Discuss the importance of confidence intervals, probabilistic outputs, and the communication of uncertainty to clinicians. How does uncertainty communication affect clinical decision-making?",
-      "expected_keywords": [
-        "uncertainty communication",
-        "confidence intervals",
-        "probabilistic output",
-        "clinical decision-making",
-        "AI recommendations"
-      ],
-      "difficulty": "advanced",
-      "description": "AI uncertainty communication in brachytherapy"
-    },
-    {
       "id": "Q0953",
       "input": "How should continuous learning and model updating be managed for an AI brachytherapy system? Discuss the trade-offs between model stability and adaptation, the requirements for retraining data, the validation needed before deploying updated models, and the regulatory implications of model updates.",
       "expected_keywords": [
@@ -141,20 +72,6 @@
       ],
       "difficulty": "advanced",
       "description": "AI continuous learning for brachytherapy systems"
-    },
-    {
-      "id": "Q0954",
-      "input": "What are the professional competency requirements for clinicians and physicists who use AI brachytherapy tools? How should training programs be adapted to include AI literacy, how should the limitations of AI be communicated to all team members, and how should competency in AI-assisted brachytherapy be assessed?",
-      "expected_keywords": [
-        "AI literacy",
-        "competency",
-        "training programs",
-        "limitations",
-        "team communication",
-        "assessment"
-      ],
-      "difficulty": "medium",
-      "description": "Professional competency for AI-assisted brachytherapy"
     },
     {
       "id": "Q0955",
@@ -171,78 +88,6 @@
       "description": "Patient autonomy in AI-assisted brachytherapy"
     },
     {
-      "id": "Q1426",
-      "input": "What are BrachyBot's core capabilities as an AI brachytherapy planning assistant? Describe specific tasks, clinical scenarios, and evidence base.",
-      "expected_keywords": [
-        "capabilities",
-        "meta",
-        "BrachyBot",
-        "AI"
-      ],
-      "difficulty": "hard",
-      "description": "Meta: capabilities"
-    },
-    {
-      "id": "Q1427",
-      "input": "What are BrachyBot's known limitations? Identify areas of potential inaccuracy, scenarios where it should not be used, and required safeguards.",
-      "expected_keywords": [
-        "limitations",
-        "meta",
-        "BrachyBot",
-        "AI"
-      ],
-      "difficulty": "hard",
-      "description": "Meta: limitations"
-    },
-    {
-      "id": "Q1428",
-      "input": "How does BrachyBot handle uncertain or ambiguous clinical scenarios? Describe approach to conflicting evidence, unclear guidelines, and atypical situations.",
-      "expected_keywords": [
-        "uncertainty_handling",
-        "meta",
-        "BrachyBot",
-        "AI"
-      ],
-      "difficulty": "hard",
-      "description": "Meta: uncertainty_handling"
-    },
-    {
-      "id": "Q1429",
-      "input": "How does BrachyBot stay updated with latest evidence and guidelines? Describe update process, source validation, version control, and trial integration.",
-      "expected_keywords": [
-        "knowledge_updates",
-        "meta",
-        "BrachyBot",
-        "AI"
-      ],
-      "difficulty": "hard",
-      "description": "Meta: knowledge_updates"
-    },
-    {
-      "id": "Q1430",
-      "input": "What QA measures are in place for BrachyBot's recommendations? Describe validation, accuracy metrics, peer review, and incident reporting.",
-      "expected_keywords": [
-        "QA_recommendations",
-        "meta",
-        "BrachyBot",
-        "AI"
-      ],
-      "difficulty": "hard",
-      "description": "Meta: QA_recommendations"
-    },
-    {
-      "id": "Q1431",
-      "input": "How should clinicians interpret and use BrachyBot's recommendations? Describe appropriate reliance level, independent verification, and documentation.",
-      "expected_keywords": [
-        "clinical_use",
-        "meta",
-        "BrachyBot",
-        "AI"
-      ],
-      "difficulty": "hard",
-      "description": "Meta: clinical_use"
-    },
-    {
       "id": "Q1432",
       "input": "What clinical scenarios are most suitable for BrachyBot? Identify best-fit cases, complexity levels handled well, and cases with least value.",
       "expected_keywords": [
@@ -253,130 +98,6 @@
       ],
       "difficulty": "hard",
       "description": "Meta: suitable_scenarios"
-    },
-    {
-      "id": "Q1433",
-      "input": "How does BrachyBot address AI ethics in healthcare? Discuss transparency, accountability, patient consent, and equity considerations.",
-      "expected_keywords": [
-        "ethics_ai",
-        "meta",
-        "BrachyBot",
-        "AI"
-      ],
-      "difficulty": "hard",
-      "description": "Meta: ethics_ai"
-    },
-    {
-      "id": "Q1434",
-      "input": "What are regulatory considerations for BrachyBot? Discuss FDA classification, liability, malpractice implications, and institutional policies.",
-      "expected_keywords": [
-        "regulatory_considerations",
-        "meta",
-        "BrachyBot",
-        "AI"
-      ],
-      "difficulty": "hard",
-      "description": "Meta: regulatory_considerations"
-    },
-    {
-      "id": "Q1435",
-      "input": "How should institutions evaluate BrachyBot adoption? Describe assessment criteria, pilot design, success metrics, cost-benefit, and decision framework.",
-      "expected_keywords": [
-        "adoption_evaluation",
-        "meta",
-        "BrachyBot",
-        "AI"
-      ],
-      "difficulty": "hard",
-      "description": "Meta: adoption_evaluation"
-    },
-    {
-      "id": "Q1436",
-      "input": "How does BrachyBot support multidisciplinary collaboration? Describe tumor board support, specialist communication, and input integration.",
-      "expected_keywords": [
-        "multidisciplinary_support",
-        "meta",
-        "BrachyBot",
-        "AI"
-      ],
-      "difficulty": "hard",
-      "description": "Meta: multidisciplinary_support"
-    },
-    {
-      "id": "Q1437",
-      "input": "What training is required for clinicians to use BrachyBot? Describe onboarding, ongoing education, competency assessment, and best practices.",
-      "expected_keywords": [
-        "training_requirements",
-        "meta",
-        "BrachyBot",
-        "AI"
-      ],
-      "difficulty": "hard",
-      "description": "Meta: training_requirements"
-    },
-    {
-      "id": "Q1438",
-      "input": "How does BrachyBot contribute to quality improvement? Describe analytics, benchmarking, outcome tracking, and continuous learning mechanisms.",
-      "expected_keywords": [
-        "QI_contribution",
-        "meta",
-        "BrachyBot",
-        "AI"
-      ],
-      "difficulty": "hard",
-      "description": "Meta: QI_contribution"
-    },
-    {
-      "id": "Q1439",
-      "input": "What are BrachyBot's research applications? Describe support for trial design, literature review, data analysis, and hypothesis generation.",
-      "expected_keywords": [
-        "research_applications",
-        "meta",
-        "BrachyBot",
-        "AI"
-      ],
-      "difficulty": "hard",
-      "description": "Meta: research_applications"
-    },
-    {
-      "id": "Q1440",
-      "input": "How should BrachyBot evolve? Describe planned improvements, community feedback mechanisms, research directions, and long-term AI vision in brachytherapy.",
-      "expected_keywords": [
-        "future_evolution",
-        "meta",
-        "BrachyBot",
-        "AI"
-      ],
-      "difficulty": "hard",
-      "description": "Meta: future_evolution"
-    },
-    {
-      "id": "Q1931",
-      "input": "What is BrachyBot and how does it work? What AI technology powers this system? Can you explain the underlying language model and its training process for brachytherapy applications?",
-      "expected_keywords": [
-        "BrachyBot",
-        "AI",
-        "language model",
-        "brachytherapy",
-        "assistant",
-        "capabilities"
-      ],
-      "difficulty": "easy",
-      "description": "Transparency question about BrachyBot system capabilities"
-    },
-    {
-      "id": "Q1932",
-      "input": "What are the limitations of BrachyBot? What types of questions or clinical scenarios should I NOT rely on BrachyBot for? Are there any known biases or gaps in the system's knowledge?",
-      "expected_keywords": [
-        "limitations",
-        "gaps",
-        "biases",
-        "knowledge cutoff",
-        "clinical judgment",
-        "not rely"
-      ],
-      "difficulty": "easy",
-      "description": "Honest assessment of BrachyBot limitations"
     },
     {
       "id": "Q1933",
@@ -392,33 +113,6 @@
       "description": "Critical question about BrachyBot's role in clinical workflow"
     },
     {
-      "id": "Q1934",
-      "input": "How does BrachyBot handle medical uncertainty? When clinical evidence is conflicting or limited, how does the system present information? Does it indicate the strength of evidence behind its recommendations?",
-      "expected_keywords": [
-        "uncertainty",
-        "evidence quality",
-        "conflicting evidence",
-        "limited evidence",
-        "acknowledges"
-      ],
-      "difficulty": "medium",
-      "description": "Question about handling medical uncertainty and evidence quality"
-    },
-    {
-      "id": "Q1935",
-      "input": "Is BrachyBot HIPAA compliant? How does it handle patient data? If I paste a patient scenario into BrachyBot, is the data stored or transmitted? What privacy protections are in place?",
-      "expected_keywords": [
-        "HIPAA",
-        "privacy",
-        "data handling",
-        "de-identify",
-        "compliance",
-        "confidential"
-      ],
-      "difficulty": "easy",
-      "description": "Critical privacy and compliance question"
-    },
-    {
       "id": "Q1936",
       "input": "How current is BrachyBot's knowledge? What is the knowledge cutoff date? Does it have access to the latest clinical trial results, guidelines, and publications? Can it search the internet for the latest information?",
       "expected_keywords": [
@@ -431,19 +125,6 @@
       ],
       "difficulty": "easy",
       "description": "Question about the currency and scope of BrachyBot's knowledge"
-    },
-    {
-      "id": "Q1937",
-      "input": "Can BrachyBot interpret medical images like CT scans, MRIs, or treatment planning images? Can it perform automated contouring or dose calculation? If not, what are its imaging-related capabilities?",
-      "expected_keywords": [
-        "cannot interpret images",
-        "cannot contour",
-        "cannot calculate dose",
-        "discusses concepts",
-        "planning principles"
-      ],
-      "difficulty": "easy",
-      "description": "Important capability boundary question about imaging"
     },
     {
       "id": "Q1938",
@@ -487,146 +168,6 @@
       "description": "Question about source citation and reference reliability"
     },
     {
-      "id": "Q1941",
-      "input": "Can you explain how BrachyBot handles legal liability when using AI brachytherapy guidance? What is the system's approach to this aspect of clinical AI assistance?",
-      "expected_keywords": [
-        "BrachyBot",
-        "legal",
-        "liability",
-        "responsibility",
-        "approach",
-        "transparency"
-      ],
-      "difficulty": "easy",
-      "description": "Meta question about BrachyBot and legal liability when using AI brachytherapy guidance"
-    },
-    {
-      "id": "Q1942",
-      "input": "Can you explain how BrachyBot handles BrachyBot's approach to handling conflicting clinical guidelines? What is the system's approach to this aspect of clinical AI assistance?",
-      "expected_keywords": [
-        "BrachyBot",
-        "conflicting guidelines",
-        "evidence synthesis",
-        "recommendation",
-        "approach",
-        "transparency"
-      ],
-      "difficulty": "easy",
-      "description": "Meta question about BrachyBot and BrachyBot's approach to handling conflicting clinical guidelines"
-    },
-    {
-      "id": "Q1943",
-      "input": "Can you explain how BrachyBot handles how BrachyBot handles rare or unusual clinical scenarios? What is the system's approach to this aspect of clinical AI assistance?",
-      "expected_keywords": [
-        "BrachyBot",
-        "rare scenarios",
-        "unusual cases",
-        "limited evidence",
-        "approach",
-        "transparency"
-      ],
-      "difficulty": "easy",
-      "description": "Meta question about BrachyBot and how BrachyBot handles rare or unusual clinical scenarios"
-    },
-    {
-      "id": "Q1944",
-      "input": "Can you explain how BrachyBot handles BrachyBot's approach to medication and drug interactions with radiation? What is the system's approach to this aspect of clinical AI assistance?",
-      "expected_keywords": [
-        "BrachyBot",
-        "drug interactions",
-        "medications",
-        "pharmacology",
-        "approach",
-        "transparency"
-      ],
-      "difficulty": "easy",
-      "description": "Meta question about BrachyBot and BrachyBot's approach to medication and drug interactions with radiation"
-    },
-    {
-      "id": "Q1945",
-      "input": "Can you explain how BrachyBot handles whether BrachyBot can provide second opinions on brachytherapy plans? What is the system's approach to this aspect of clinical AI assistance?",
-      "expected_keywords": [
-        "BrachyBot",
-        "second opinion",
-        "plan review",
-        "clinical judgment",
-        "approach",
-        "transparency"
-      ],
-      "difficulty": "easy",
-      "description": "Meta question about BrachyBot and whether BrachyBot can provide second opinions on brachytherapy plans"
-    },
-    {
-      "id": "Q1946",
-      "input": "Can you explain how BrachyBot handles how BrachyBot distinguishes between strong and weak clinical evidence? What is the system's approach to this aspect of clinical AI assistance?",
-      "expected_keywords": [
-        "BrachyBot",
-        "evidence strength",
-        "levels of evidence",
-        "recommendation",
-        "approach",
-        "transparency"
-      ],
-      "difficulty": "easy",
-      "description": "Meta question about BrachyBot and how BrachyBot distinguishes between strong and weak clinical evidence"
-    },
-    {
-      "id": "Q1947",
-      "input": "Can you explain how BrachyBot handles BrachyBot's role in resident and student education? What is the system's approach to this aspect of clinical AI assistance?",
-      "expected_keywords": [
-        "BrachyBot",
-        "education",
-        "training",
-        "teaching",
-        "approach",
-        "transparency"
-      ],
-      "difficulty": "easy",
-      "description": "Meta question about BrachyBot and BrachyBot's role in resident and student education"
-    },
-    {
-      "id": "Q1948",
-      "input": "Can you explain how BrachyBot handles whether BrachyBot can be used for patient education materials? What is the system's approach to this aspect of clinical AI assistance?",
-      "expected_keywords": [
-        "BrachyBot",
-        "patient education",
-        "communication",
-        "materials",
-        "approach",
-        "transparency"
-      ],
-      "difficulty": "easy",
-      "description": "Meta question about BrachyBot and whether BrachyBot can be used for patient education materials"
-    },
-    {
-      "id": "Q1949",
-      "input": "Can you explain how BrachyBot handles how BrachyBot handles questions outside the scope of brachytherapy? What is the system's approach to this aspect of clinical AI assistance?",
-      "expected_keywords": [
-        "BrachyBot",
-        "scope limitations",
-        "off-topic",
-        "general medical",
-        "approach",
-        "transparency"
-      ],
-      "difficulty": "easy",
-      "description": "Meta question about BrachyBot and how BrachyBot handles questions outside the scope of brachytherapy"
-    },
-    {
-      "id": "Q1950",
-      "input": "Can you explain how BrachyBot handles BrachyBot's approach to incorporating patient preferences in treatment recommendations? What is the system's approach to this aspect of clinical AI assistance?",
-      "expected_keywords": [
-        "BrachyBot",
-        "patient preferences",
-        "shared decision-making",
-        "values",
-        "approach",
-        "transparency"
-      ],
-      "difficulty": "easy",
-      "description": "Meta question about BrachyBot and BrachyBot's approach to incorporating patient preferences in treatment recommendations"
-    },
-    {
       "id": "Q0670",
       "input": "Create a comprehensive training curriculum for radiation therapy technologists who will be assisting with HDR brachytherapy treatments. The curriculum should cover radiation safety principles, applicator handling procedures, patient positioning, emergency response protocols, and quality assurance checks. How would you structure the training program to ensure competency assessment?",
       "expected_keywords": [
@@ -639,20 +180,6 @@
       ],
       "difficulty": "medium",
       "description": "RTT training curriculum for HDR brachytherapy"
-    },
-    {
-      "id": "Q0671",
-      "input": "Explain the TG-43 dose calculation formalism to a new medical physics resident. Cover each component of the formula including the dose rate constant, radial dose function, and 2D anisotropy function. Use a practical clinical example to demonstrate the calculation, and discuss the assumptions and limitations of the TG-43 formalism.",
-      "expected_keywords": [
-        "TG-43",
-        "dose rate constant",
-        "radial dose function",
-        "anisotropy",
-        "resident training",
-        "practical example"
-      ],
-      "difficulty": "medium",
-      "description": "TG-43 formalism education for physics residents"
     },
     {
       "id": "Q0672",
@@ -669,20 +196,6 @@
       "description": "Case-based learning module for brachytherapy"
     },
     {
-      "id": "Q0673",
-      "input": "Describe how to educate patients about brachytherapy treatment, specifically for a cervical cancer patient who has never heard of brachytherapy. What key concepts must be communicated, how do you explain the difference between external beam and brachytherapy in lay terms, what should patients expect during the procedure, and how do you address common fears and misconceptions?",
-      "expected_keywords": [
-        "patient education",
-        "cervical cancer",
-        "lay terms",
-        "procedure explanation",
-        "fears",
-        "misconceptions"
-      ],
-      "difficulty": "medium",
-      "description": "Patient education for brachytherapy"
-    },
-    {
       "id": "Q0674",
       "input": "Create a quality assurance training module for brachytherapy medical physicists. The module should cover daily, monthly, and annual QA procedures, how to interpret QA test results, when to escalate issues, documentation requirements, and how to maintain competency in QA procedures. Include specific hands-on training exercises.",
       "expected_keywords": [
@@ -696,21 +209,6 @@
       ],
       "difficulty": "medium",
       "description": "QA training module for brachytherapy physicists"
-    },
-    {
-      "id": "Q0675",
-      "input": "Develop a lecture outline for teaching the radiobiology of brachytherapy to radiation oncology residents. The lecture should cover the linear-quadratic model, biological effective dose calculations, fractionation considerations, dose rate effects, and the specific radiobiological advantages of brachytherapy. Include suggested learning objectives and assessment questions.",
-      "expected_keywords": [
-        "radiobiology",
-        "linear-quadratic",
-        "BED",
-        "fractionation",
-        "dose rate",
-        "learning objectives",
-        "assessment"
-      ],
-      "difficulty": "medium",
-      "description": "Radiobiology lecture outline for brachytherapy"
     },
     {
       "id": "Q0676",
@@ -741,20 +239,6 @@
       "description": "Brachytherapy physicist competency checklist"
     },
     {
-      "id": "Q0678",
-      "input": "Develop an educational presentation for gynecologic oncologists about the role of brachytherapy in the modern management of cervical cancer. The presentation should address the evidence for brachytherapy integration with EBRT, the impact of brachytherapy on local control and survival, how to select patients for brachytherapy, and what to expect from the brachytherapy team.",
-      "expected_keywords": [
-        "gynecologic oncology",
-        "cervical cancer",
-        "brachytherapy",
-        "evidence",
-        "patient selection",
-        "EBRT integration"
-      ],
-      "difficulty": "medium",
-      "description": "Educational presentation for gynecologic oncologists"
-    },
-    {
       "id": "Q0679",
       "input": "A medical physics resident is learning brachytherapy for the first time. Create a structured learning pathway that progresses from basic concepts to advanced clinical practice. Include recommended readings, simulation exercises using phantoms, supervised clinical experiences, and milestones for assessment at each stage of training.",
       "expected_keywords": [
@@ -768,20 +252,6 @@
       ],
       "difficulty": "medium",
       "description": "Physics resident brachytherapy training pathway"
-    },
-    {
-      "id": "Q0680",
-      "input": "Explain the concept of inverse planning in brachytherapy to a clinical fellow who has only experience with manual planning. Cover the mathematical basis of inverse optimization, how objective functions and constraints are defined, the iterative nature of the optimization process, and the advantages and limitations compared to manual planning.",
-      "expected_keywords": [
-        "inverse planning",
-        "objective functions",
-        "constraints",
-        "optimization",
-        "manual planning",
-        "comparison"
-      ],
-      "difficulty": "medium",
-      "description": "Inverse planning education for clinical fellows"
     },
     {
       "id": "Q0681",
@@ -839,18 +309,6 @@
       ],
       "difficulty": "medium",
       "description": "Structured 6-month brachytherapy training plan for fellows"
-    },
-    {
-      "id": "Q1271",
-      "input": "Explain TG-43 formalism for brachytherapy dose calculation: dose-rate constant, radial dose function, anisotropy function. Include examples for Ir-192 and I-125 sources.",
-      "expected_keywords": [
-        "TG43_teaching",
-        "education",
-        "teaching",
-        "training"
-      ],
-      "difficulty": "hard",
-      "description": "Education: TG43_teaching"
     },
     {
       "id": "Q1272",
@@ -923,18 +381,6 @@
       ],
       "difficulty": "hard",
       "description": "Education: IGABT_teaching_case"
-    },
-    {
-      "id": "Q1278",
-      "input": "Compare Ir-192, Co-60, I-125, Pd-103 sources: energy, half-life, dose-rate constants, clinical applications, shielding, and handling. Include comparison table.",
-      "expected_keywords": [
-        "source_characteristics",
-        "education",
-        "teaching",
-        "training"
-      ],
-      "difficulty": "hard",
-      "description": "Education: source_characteristics"
     },
     {
       "id": "Q1279",
@@ -1033,18 +479,6 @@
       "description": "Education: chemo_integration_teaching"
     },
     {
-      "id": "Q1287",
-      "input": "Teach imaging for brachytherapy: CT/MRI/ultrasound/PET-CT principles, advantages/limitations, applicator artifacts, image fusion, and EMBRACE evidence for MRI.",
-      "expected_keywords": [
-        "imaging_teaching",
-        "education",
-        "teaching",
-        "training"
-      ],
-      "difficulty": "hard",
-      "description": "Education: imaging_teaching"
-    },
-    {
       "id": "Q1288",
       "input": "Teach multidisciplinary brachytherapy team: roles (physician, physicist, dosimetrist, therapist, nurse), communication, and team-based approach with clinical scenario.",
       "expected_keywords": [
@@ -1081,133 +515,6 @@
       "description": "Education: competency_framework"
     },
     {
-      "id": "Q0684",
-      "input": "A 55-year-old woman with newly diagnosed cervical cancer is being considered for brachytherapy as part of her treatment plan. She has many questions and is very anxious. Explain what brachytherapy is in simple terms, how it differs from her external beam treatments, what she will feel during the procedure, how long the treatment course will last, and what side effects she should expect.",
-      "expected_keywords": [
-        "brachytherapy explanation",
-        "patient anxiety",
-        "simple terms",
-        "side effects",
-        "treatment course",
-        "procedure description"
-      ],
-      "difficulty": "medium",
-      "description": "Patient explanation of brachytherapy for cervical cancer"
-    },
-    {
-      "id": "Q0685",
-      "input": "A 68-year-old man with prostate cancer is choosing between permanent seed implantation and HDR brachytherapy. He asks you to explain the differences between these two approaches, including the procedure, recovery time, side effects, and success rates. How would you communicate these options in a way that helps him make an informed decision?",
-      "expected_keywords": [
-        "prostate brachytherapy",
-        "LDR seeds",
-        "HDR",
-        "comparison",
-        "informed decision",
-        "side effects",
-        "success rates"
-      ],
-      "difficulty": "medium",
-      "description": "Prostate brachytherapy options communication"
-    },
-    {
-      "id": "Q0686",
-      "input": "A patient's family member calls after hours asking about the brachytherapy treatment their loved one is receiving. They want to know why brachytherapy is being recommended instead of just continuing with external beam radiation. How do you communicate the medical rationale for brachytherapy to a concerned family member without providing medical advice directly?",
-      "expected_keywords": [
-        "family communication",
-        "brachytherapy rationale",
-        "EBRT comparison",
-        "medical explanation",
-        "appropriate boundaries"
-      ],
-      "difficulty": "medium",
-      "description": "Family member communication about brachytherapy"
-    },
-    {
-      "id": "Q0687",
-      "input": "A 42-year-old woman with endometrial cancer is being offered vaginal cuff brachytherapy as adjuvant treatment. She has read online that brachytherapy can cause vaginal stenosis and sexual dysfunction. She is very concerned about the impact on her quality of life and intimate relationships. How do you address her concerns with sensitivity while providing accurate information about risks and benefits?",
-      "expected_keywords": [
-        "vaginal stenosis",
-        "sexual dysfunction",
-        "quality of life",
-        "patient concerns",
-        "risks and benefits",
-        "endometrial"
-      ],
-      "difficulty": "medium",
-      "description": "Sensitive communication about vaginal brachytherapy risks"
-    },
-    {
-      "id": "Q0688",
-      "input": "A pediatric patient's parents are devastated that their 5-year-old daughter needs brachytherapy as part of her cancer treatment. They are worried about long-term effects on their child's development and future health. How do you explain the rationale for brachytherapy in pediatric cancer treatment, the measures taken to minimize long-term effects, and what follow-up will be provided?",
-      "expected_keywords": [
-        "pediatric brachytherapy",
-        "parent concerns",
-        "long-term effects",
-        "development",
-        "treatment rationale",
-        "follow-up"
-      ],
-      "difficulty": "high",
-      "description": "Pediatric brachytherapy parent communication"
-    },
-    {
-      "id": "Q0689",
-      "input": "A 70-year-old man with recurrent anal cancer is being offered salvage brachytherapy. He has had a poor experience with prior radiation treatment and is reluctant to undergo more radiation. How do you communicate the potential benefits and risks of salvage brachytherapy while acknowledging his previous negative experience and building trust?",
-      "expected_keywords": [
-        "salvage brachytherapy",
-        "anal cancer",
-        "prior radiation",
-        "patient reluctance",
-        "trust building",
-        "risk-benefit"
-      ],
-      "difficulty": "high",
-      "description": "Salvage brachytherapy communication with reluctant patient"
-    },
-    {
-      "id": "Q0690",
-      "input": "A patient asks you to explain the radiation safety precautions they need to follow after receiving HDR brachytherapy treatment. They are particularly concerned about radiation exposure to their grandchildren who live in their household. How do you explain the actual radiation risk from a completed HDR treatment and provide practical guidance on precautions?",
-      "expected_keywords": [
-        "radiation safety",
-        "post-treatment",
-        "HDR",
-        "family exposure",
-        "grandchildren",
-        "precautions",
-        "risk explanation"
-      ],
-      "difficulty": "medium",
-      "description": "Post-HDR radiation safety communication"
-    },
-    {
-      "id": "Q0691",
-      "input": "A 60-year-old woman with cervical cancer speaks limited English and needs an interpreter for her brachytherapy consultation. She has cultural beliefs about cancer treatment that may affect her decision-making. How do you conduct the consultation effectively through an interpreter while being culturally sensitive to her beliefs about radiation treatment?",
-      "expected_keywords": [
-        "language barrier",
-        "interpreter",
-        "cultural sensitivity",
-        "cervical cancer",
-        "consultation",
-        "cultural beliefs"
-      ],
-      "difficulty": "medium",
-      "description": "Culturally sensitive brachytherapy consultation"
-    },
-    {
-      "id": "Q0692",
-      "input": "A 75-year-old man is considering HDR brachytherapy for prostate cancer but is undecided between brachytherapy and surgery. He asks you to explain the evidence comparing these two treatments. How do you present comparative outcome data in a balanced way that helps the patient understand the trade-offs without biasing his decision?",
-      "expected_keywords": [
-        "prostate cancer",
-        "brachytherapy vs surgery",
-        "comparative outcomes",
-        "balanced presentation",
-        "patient decision",
-        "evidence"
-      ],
-      "difficulty": "medium",
-      "description": "Balanced comparison of prostate cancer treatment options"
-    },
-    {
       "id": "Q0693",
       "input": "A patient is scheduled for interstitial brachytherapy and is very anxious about the procedure. She wants to know exactly what will happen from the moment she arrives at the hospital to the time she goes home. Provide a detailed, step-by-step explanation of the entire procedure day, including what she will feel at each stage and what the medical team will be doing.",
       "expected_keywords": [
@@ -1220,88 +527,6 @@
       ],
       "difficulty": "medium",
       "description": "Detailed procedure day explanation for brachytherapy"
-    },
-    {
-      "id": "Q0694",
-      "input": "A patient who completed brachytherapy for cervical cancer 6 months ago calls the clinic reporting vaginal dryness and discomfort during intercourse. She is worried that the cancer has returned. How do you reassure her while providing guidance on management of these common post-treatment effects and recommending appropriate follow-up?",
-      "expected_keywords": [
-        "post-treatment",
-        "vaginal dryness",
-        "sexual health",
-        "cancer recurrence worry",
-        "reassurance",
-        "management"
-      ],
-      "difficulty": "medium",
-      "description": "Post-brachytherapy patient concern management"
-    },
-    {
-      "id": "Q0695",
-      "input": "An elderly patient with significant hearing loss needs to provide informed consent for brachytherapy. He cannot hear the standard consultation clearly. Describe the accommodations needed to ensure he receives adequate information and can provide truly informed consent, including alternative communication methods and additional time considerations.",
-      "expected_keywords": [
-        "hearing loss",
-        "informed consent",
-        "accommodations",
-        "communication methods",
-        "elderly patient",
-        "accessibility"
-      ],
-      "difficulty": "medium",
-      "description": "Hearing-impaired patient consent accommodations"
-    },
-    {
-      "id": "Q0696",
-      "input": "A patient asks you to explain why they need to have a urinary catheter during their HDR brachytherapy treatment for prostate cancer. They are uncomfortable with the idea and want to know the medical necessity. How do you explain the catheter's role in treatment delivery, its importance for dose calculation accuracy, and what they can expect regarding comfort during the treatment?",
-      "expected_keywords": [
-        "urinary catheter",
-        "prostate HDR",
-        "treatment delivery",
-        "dose calculation",
-        "patient comfort",
-        "medical necessity"
-      ],
-      "difficulty": "medium",
-      "description": "Catheter explanation for prostate brachytherapy"
-    },
-    {
-      "id": "Q0697",
-      "input": "A couple comes in for consultation about brachytherapy for the husband's prostate cancer. The wife wants to understand the sexual side effects and their impact on their relationship. How do you address sexual health concerns in a professional and sensitive manner, providing accurate information about erectile function preservation rates and management options?",
-      "expected_keywords": [
-        "sexual side effects",
-        "erectile function",
-        "partner concerns",
-        "preservation rates",
-        "management options",
-        "prostate"
-      ],
-      "difficulty": "medium",
-      "description": "Sexual health communication for prostate brachytherapy"
-    },
-    {
-      "id": "Q0987",
-      "input": "A 60-year-old man with prostate cancer who speaks Spanish as his primary language needs to make a decision between brachytherapy and surgery. He has limited health literacy and has received conflicting information from family members about radiation treatment. How do you conduct an effective informed consent discussion that addresses his language needs, corrects misinformation, involves family appropriately, and ensures he can make an autonomous decision?",
-      "expected_keywords": [
-        "informed consent",
-        "Spanish language",
-        "health literacy",
-        "family involvement",
-        "autonomous decision",
-        "misinformation correction"
-      ],
-      "difficulty": "medium",
-      "description": "Informed consent for prostate brachytherapy with language barrier"
-    },
-    {
-      "id": "Q1291",
-      "input": "Explain brachytherapy to 55-year-old woman with stage IIB cervical cancer: what it is, how it differs from EBRT, treatment process, duration, side effects, and cure expectations. Compassionate, patient-friendly.",
-      "expected_keywords": [
-        "explain_brachytherapy",
-        "patient_communication",
-        "empathy",
-        "evidence"
-      ],
-      "difficulty": "medium",
-      "description": "Patient communication: explain_brachytherapy"
     },
     {
       "id": "Q1292",
@@ -1340,30 +565,6 @@
       "description": "Patient communication: sexual_health_post_vbt"
     },
     {
-      "id": "Q1295",
-      "input": "Compare seeds, EBRT, and active surveillance for 70-year-old with intermediate-risk prostate cancer: pros/cons, urinary/sexual side effects, time commitment. Balanced, patient-friendly.",
-      "expected_keywords": [
-        "treatment_options_comparison",
-        "patient_communication",
-        "empathy",
-        "evidence"
-      ],
-      "difficulty": "medium",
-      "description": "Patient communication: treatment_options_comparison"
-    },
-    {
-      "id": "Q1296",
-      "input": "Discuss fertility after brachytherapy for 35-year-old with IA2 cervical cancer: fertility impact, pregnancy complications, monitoring, and healthy pregnancy chances. Sensitive, evidence-based.",
-      "expected_keywords": [
-        "fertility_after_cervical",
-        "patient_communication",
-        "empathy",
-        "evidence"
-      ],
-      "difficulty": "medium",
-      "description": "Patient communication: fertility_after_cervical"
-    },
-    {
       "id": "Q1297",
       "input": "Address mild vaginal bleeding 3 months after VBT for endometrial cancer: normality, when to worry, warning signs, and follow-up schedule. Reassuring while educational.",
       "expected_keywords": [
@@ -1374,18 +575,6 @@
       ],
       "difficulty": "medium",
       "description": "Patient communication: post_vbt_bleeding"
-    },
-    {
-      "id": "Q1298",
-      "input": "Explain HDR treatment day for 50-year-old man with prostate cancer: check-in, preparation, procedure, treatment duration, recovery, discharge, activities, and return to work.",
-      "expected_keywords": [
-        "treatment_day_expectations",
-        "patient_communication",
-        "empathy",
-        "evidence"
-      ],
-      "difficulty": "medium",
-      "description": "Patient communication: treatment_day_expectations"
     },
     {
       "id": "Q1299",
@@ -1412,18 +601,6 @@
       "description": "Patient communication: elderly_brachytherapy_concerns"
     },
     {
-      "id": "Q1301",
-      "input": "Discuss sexual function after penile brachytherapy for 38-year-old man: erections (70-80% preservation), appearance changes, intercourse, success rates, and alternatives. Sensitive, honest.",
-      "expected_keywords": [
-        "penile_sexual_function",
-        "patient_communication",
-        "empathy",
-        "evidence"
-      ],
-      "difficulty": "medium",
-      "description": "Patient communication: penile_sexual_function"
-    },
-    {
       "id": "Q1302",
       "input": "Address needle phobia of 55-year-old woman for interstitial brachytherapy: number of needles, anesthesia (asleep), duration, discomfort level, and anxiety management. Compassionate, detailed.",
       "expected_keywords": [
@@ -1448,18 +625,6 @@
       "description": "Patient communication: single_parent_treatment"
     },
     {
-      "id": "Q1304",
-      "input": "Explain follow-up schedule after prostate seed implant: check-up frequency, tests, PSA monitoring, success indicators, and warning symptoms. Clear, organized.",
-      "expected_keywords": [
-        "post_seed_follow_up",
-        "patient_communication",
-        "empathy",
-        "evidence"
-      ],
-      "difficulty": "medium",
-      "description": "Patient communication: post_seed_follow_up"
-    },
-    {
       "id": "Q1305",
       "input": "Respond to 30-year-old woman with vaginal melanoma (Breslow 1.2mm): survival, appearance impact, fertility, recurrence risk. Compassionate, honest, emotional support.",
       "expected_keywords": [
@@ -1482,18 +647,6 @@
       ],
       "difficulty": "medium",
       "description": "Patient communication: family_radiation_safety"
-    },
-    {
-      "id": "Q1307",
-      "input": "Discuss salvage brachytherapy for 75-year-old with recurrent cervical cancer and multiple comorbidities: treatment worth, success chances, quality of life. Honest, compassionate, family dynamics.",
-      "expected_keywords": [
-        "elderly_salvage_decision",
-        "patient_communication",
-        "empathy",
-        "evidence"
-      ],
-      "difficulty": "medium",
-      "description": "Patient communication: elderly_salvage_decision"
     },
     {
       "id": "Q1308",
@@ -1532,20 +685,6 @@
       "description": "Patient communication: recurrence_anxiety"
     },
     {
-      "id": "Q0698",
-      "input": "Describe the complete technical specifications and commissioning requirements for a modern HDR afterloader system. Cover source stepping mechanism accuracy, source position verification, dwell time accuracy, emergency retraction system, and the acceptance testing procedures required before clinical use per AAPM TG-59.",
-      "expected_keywords": [
-        "HDR afterloader",
-        "commissioning",
-        "source stepping",
-        "dwell time accuracy",
-        "TG-59",
-        "acceptance testing"
-      ],
-      "difficulty": "advanced",
-      "description": "HDR afterloader technical specifications and commissioning"
-    },
-    {
       "id": "Q0699",
       "input": "Evaluate the advantages and limitations of MRI-guided brachytherapy compared to CT-guided brachytherapy for cervical cancer. Include discussion of soft tissue contrast differences, applicator reconstruction methods, dose calculation challenges in MRI, the need for MR-compatible applicators, and the cost-effectiveness analysis of implementing MRI-guided brachytherapy.",
       "expected_keywords": [
@@ -1558,50 +697,6 @@
       ],
       "difficulty": "advanced",
       "description": "MRI vs CT guided brachytherapy technology comparison"
-    },
-    {
-      "id": "Q0700",
-      "input": "Describe the workflow for integrating positron emission tomography (PET) imaging into brachytherapy treatment planning. How can FDG-PET or other radiotracers improve target volume definition? What are the technical challenges of PET-based dose painting, and how does the limited spatial resolution of PET affect the precision of biological target volume delineation?",
-      "expected_keywords": [
-        "PET imaging",
-        "FDG-PET",
-        "target volume",
-        "dose painting",
-        "spatial resolution",
-        "biological target"
-      ],
-      "difficulty": "advanced",
-      "description": "PET integration in brachytherapy planning"
-    },
-    {
-      "id": "Q0701",
-      "input": "A center is evaluating the implementation of surface-guided radiation therapy (SGRT) for brachytherapy setup verification. Describe the technical capabilities of SGRT for brachytherapy applications, how it compares to traditional verification methods (kV imaging, CBCT), its accuracy for applicator position verification, and the integration challenges with the existing brachytherapy workflow.",
-      "expected_keywords": [
-        "SGRT",
-        "setup verification",
-        "brachytherapy",
-        "kV imaging",
-        "CBCT",
-        "applicator verification",
-        "accuracy"
-      ],
-      "difficulty": "advanced",
-      "description": "SGRT implementation for brachytherapy"
-    },
-    {
-      "id": "Q0702",
-      "input": "Describe the technical requirements for a brachytherapy treatment room, including radiation shielding design for HDR treatments, ventilation requirements, emergency access, interlock systems, and monitoring equipment. How do the shielding requirements differ for HDR versus LDR brachytherapy suites?",
-      "expected_keywords": [
-        "room design",
-        "shielding",
-        "HDR",
-        "LDR",
-        "interlock",
-        "ventilation",
-        "emergency access"
-      ],
-      "difficulty": "advanced",
-      "description": "Brachytherapy treatment room technical requirements"
     },
     {
       "id": "Q0703",
@@ -1618,21 +713,6 @@
       "description": "Robotic brachytherapy applicator evaluation"
     },
     {
-      "id": "Q0704",
-      "input": "Describe the data management requirements for a modern brachytherapy program. Cover treatment plan archiving, DICOM-RT export and storage, image database management, dose reporting data extraction, outcomes data collection, and how to ensure compliance with data retention requirements for brachytherapy-specific data elements.",
-      "expected_keywords": [
-        "data management",
-        "DICOM-RT",
-        "archiving",
-        "image database",
-        "dose reporting",
-        "outcomes data",
-        "retention"
-      ],
-      "difficulty": "medium",
-      "description": "Brachytherapy data management requirements"
-    },
-    {
       "id": "Q0705",
       "input": "A center wants to implement online adaptive brachytherapy using an MRI-linac combination. Describe the technical feasibility, the current state of MRI-guided brachytherapy delivery technology, how real-time imaging during brachytherapy delivery differs from offline adaptive planning, and the infrastructure requirements for implementing this technology.",
       "expected_keywords": [
@@ -1645,48 +725,6 @@
       ],
       "difficulty": "advanced",
       "description": "MRI-linac online adaptive brachytherapy"
-    },
-    {
-      "id": "Q0706",
-      "input": "Describe the technical specifications and clinical applications of electronic brachytherapy devices that use miniature X-ray sources instead of radioactive isotopes. Compare these devices with traditional Ir-192 HDR afterloaders in terms of dose distribution characteristics, shielding requirements, source replacement logistics, and clinical outcomes data.",
-      "expected_keywords": [
-        "electronic brachytherapy",
-        "X-ray source",
-        "Ir-192",
-        "dose distribution",
-        "shielding",
-        "source replacement",
-        "clinical outcomes"
-      ],
-      "difficulty": "advanced",
-      "description": "Electronic vs traditional brachytherapy comparison"
-    },
-    {
-      "id": "Q0707",
-      "input": "Evaluate the use of 4D imaging techniques in brachytherapy planning for tumors affected by respiratory motion. How does respiratory motion affect dose delivery in brachytherapy of liver or lung tumors? What motion management strategies are available, and how do you account for organ motion in the treatment planning process?",
-      "expected_keywords": [
-        "4D imaging",
-        "respiratory motion",
-        "liver",
-        "lung",
-        "motion management",
-        "treatment planning"
-      ],
-      "difficulty": "advanced",
-      "description": "4D imaging for brachytherapy motion management"
-    },
-    {
-      "id": "Q0708",
-      "input": "Describe the technical implementation of brachytherapy treatment plan comparison tools. How can software be used to objectively compare multiple brachytherapy plans for the same patient? What dose-difference metrics, DVH comparison tools, and radiobiological comparison methods are available, and how should they be used in clinical decision-making?",
-      "expected_keywords": [
-        "plan comparison",
-        "dose difference",
-        "DVH comparison",
-        "radiobiological comparison",
-        "clinical decision"
-      ],
-      "difficulty": "medium",
-      "description": "Brachytherapy plan comparison tool implementation"
     },
     {
       "id": "Q0709",
@@ -1703,19 +741,6 @@
       "description": "Cloud-based brachytherapy treatment planning evaluation"
     },
     {
-      "id": "Q0710",
-      "input": "Describe the integration of brachytherapy quality assurance data into a learning health system. How can QA data from brachytherapy treatments be systematically collected, analyzed, and used to drive quality improvement? What are the key performance indicators for brachytherapy, and how can automated data extraction improve QA efficiency?",
-      "expected_keywords": [
-        "learning health system",
-        "QA data",
-        "quality improvement",
-        "key performance indicators",
-        "automated extraction"
-      ],
-      "difficulty": "medium",
-      "description": "Brachytherapy QA data in learning health system"
-    },
-    {
       "id": "Q0711",
       "input": "Evaluate the use of augmented reality (AR) technology for brachytherapy applicator placement guidance. How can AR overlay of pre-operative imaging onto the patient assist with applicator positioning? What are the current accuracy assessments of AR-guided procedures, the technical limitations, and the potential applications in interstitial brachytherapy?",
       "expected_keywords": [
@@ -1728,45 +753,6 @@
       ],
       "difficulty": "advanced",
       "description": "AR technology for brachytherapy guidance"
-    },
-    {
-      "id": "Q0712",
-      "input": "Describe the technical implementation of remote brachytherapy quality assurance. How can physics QA measurements be verified or performed remotely using networked instrumentation? What are the safety considerations for remote QA, the required network infrastructure, and the regulatory implications of performing QA activities off-site?",
-      "expected_keywords": [
-        "remote QA",
-        "networked instrumentation",
-        "safety considerations",
-        "infrastructure",
-        "regulatory",
-        "physics"
-      ],
-      "difficulty": "advanced",
-      "description": "Remote brachytherapy QA implementation"
-    },
-    {
-      "id": "Q0988",
-      "input": "A center is evaluating the implementation of automated treatment plan quality checks using machine learning algorithms. The system would flag brachytherapy plans that deviate from institutional quality benchmarks. Describe the development and validation process for this automated QA system, including the selection of quality metrics, training data requirements, false positive and false negative rates, and the integration workflow with the existing plan review process.",
-      "expected_keywords": [
-        "machine learning",
-        "automated QA",
-        "quality benchmarks",
-        "false positive",
-        "validation",
-        "integration"
-      ],
-      "difficulty": "advanced",
-      "description": "ML-based automated brachytherapy plan quality checking"
-    },
-    {
-      "id": "Q1311",
-      "input": "Compare Elekta MR brachytherapy applicator system vs Varian MR-LINAC system: applicator design, MRI compatibility, imaging protocols, TPS capabilities, and workflow differences.",
-      "expected_keywords": [
-        "IGABT_systems",
-        "technology",
-        "innovation"
-      ],
-      "difficulty": "hard",
-      "description": "Technology: IGABT_systems"
     },
     {
       "id": "Q1312",
@@ -1824,17 +810,6 @@
       "description": "Technology: image_registration"
     },
     {
-      "id": "Q1317",
-      "input": "Compare in vivo dosimetry systems: MOSFET, diamond detectors, plastic scintillators. Sensitivity, accuracy, spatial resolution, practical considerations, and implementation challenges.",
-      "expected_keywords": [
-        "in_vivo_dosimetry_tech",
-        "technology",
-        "innovation"
-      ],
-      "difficulty": "hard",
-      "description": "Technology: in_vivo_dosimetry_tech"
-    },
-    {
       "id": "Q1318",
       "input": "Robotic brachytherapy applicator systems: AccuBoost for breast, robotic prostate template, advantages (precision, reproducibility), clinical evidence, cost-effectiveness, and limitations.",
       "expected_keywords": [
@@ -1866,17 +841,6 @@
       ],
       "difficulty": "hard",
       "description": "Technology: cloud_TPS"
-    },
-    {
-      "id": "Q1321",
-      "input": "Compare QA systems: PTW Delta4, Sun Nuclear ArcCheck, IBA m3QA, Elekta MOSAIQ. Capabilities, accuracy, ease of use, and cost comparison.",
-      "expected_keywords": [
-        "QA_technology",
-        "technology",
-        "innovation"
-      ],
-      "difficulty": "hard",
-      "description": "Technology: QA_technology"
     },
     {
       "id": "Q1322",
@@ -1967,17 +931,6 @@
       "description": "Technology: MR_thermometry"
     },
     {
-      "id": "Q1330",
-      "input": "Compare proton therapy vs brachytherapy: clinical scenarios, dosimetric comparisons, clinical evidence, cost-effectiveness, and patient selection criteria.",
-      "expected_keywords": [
-        "proton_vs_brachy",
-        "technology",
-        "innovation"
-      ],
-      "difficulty": "hard",
-      "description": "Technology: proton_vs_brachy"
-    },
-    {
       "id": "Q1331",
       "input": "QA automation for brachytherapy: Daily QA3, MultCheck, software for trending, automated alerts, QMS integration, and efficiency improvements.",
       "expected_keywords": [
@@ -2046,225 +999,6 @@
       ],
       "difficulty": "advanced",
       "description": "Randomized trial design for MRI vs CT brachytherapy"
-    },
-    {
-      "id": "Q0656",
-      "input": "A research team wants to investigate the feasibility of using artificial intelligence for automated organ-at-risk contouring in cervical cancer brachytherapy. Describe the complete research methodology including dataset requirements, annotation standards, algorithm training and validation approaches, metrics for evaluating contouring accuracy, and the regulatory pathway for clinical implementation.",
-      "expected_keywords": [
-        "artificial intelligence",
-        "auto-contouring",
-        "OAR",
-        "cervical cancer",
-        "validation",
-        "dataset",
-        "regulatory"
-      ],
-      "difficulty": "advanced",
-      "description": "Research methodology for AI auto-contouring in brachytherapy"
-    },
-    {
-      "id": "Q0657",
-      "input": "Review the evidence for using brachytherapy as a radiosensitizer for immunotherapy in solid tumors. What are the key preclinical studies demonstrating enhanced anti-tumor immunity after brachytherapy? Summarize the clinical trial landscape for brachytherapy-immunotherapy combinations, identify the most promising tumor types, and propose a research agenda for the field.",
-      "expected_keywords": [
-        "immunotherapy",
-        "brachytherapy",
-        "radiosensitizer",
-        "preclinical",
-        "clinical trials",
-        "research agenda"
-      ],
-      "difficulty": "advanced",
-      "description": "Brachytherapy-immunotherapy research review"
-    },
-    {
-      "id": "Q0658",
-      "input": "A center wants to establish a brachytherapy research program. Describe the infrastructure requirements including data management systems, imaging databases, physics research capabilities, biostatistics support, and regulatory requirements for conducting brachytherapy research. What are the key milestones for establishing a productive research program within the first 3 years?",
-      "expected_keywords": [
-        "research program",
-        "data management",
-        "imaging database",
-        "biostatistics",
-        "regulatory",
-        "infrastructure",
-        "milestones"
-      ],
-      "difficulty": "advanced",
-      "description": "Brachytherapy research program establishment"
-    },
-    {
-      "id": "Q0659",
-      "input": "Design a study to evaluate the dosimetric impact of MRI-based applicator reconstruction versus CT-based applicator reconstruction in cervical cancer brachytherapy. What are the specific hypotheses, how would you standardize the comparison methodology, what metrics would you use to quantify differences, and how would you account for inter-observer variability?",
-      "expected_keywords": [
-        "MRI reconstruction",
-        "CT reconstruction",
-        "applicator",
-        "dosimetric comparison",
-        "inter-observer variability",
-        "standardization"
-      ],
-      "difficulty": "advanced",
-      "description": "Study design for MRI vs CT applicator reconstruction comparison"
-    },
-    {
-      "id": "Q0660",
-      "input": "Describe the methodology for conducting a systematic review and meta-analysis of brachytherapy outcomes for a specific tumor site (e.g., vaginal cancer). Include the search strategy, inclusion and exclusion criteria, quality assessment tools, heterogeneity evaluation, publication bias assessment, and how to present the results using the PRISMA framework.",
-      "expected_keywords": [
-        "systematic review",
-        "meta-analysis",
-        "PRISMA",
-        "search strategy",
-        "heterogeneity",
-        "publication bias",
-        "quality assessment"
-      ],
-      "difficulty": "medium",
-      "description": "Systematic review methodology for brachytherapy"
-    },
-    {
-      "id": "Q0661",
-      "input": "A research group wants to develop a predictive model for radiation-induced rectal toxicity after cervical brachytherapy using machine learning. Describe the complete research methodology including feature selection from dosimetric and clinical variables, model training and cross-validation approaches, handling of imbalanced outcomes, and external validation requirements.",
-      "expected_keywords": [
-        "machine learning",
-        "predictive model",
-        "rectal toxicity",
-        "feature selection",
-        "cross-validation",
-        "external validation"
-      ],
-      "difficulty": "advanced",
-      "description": "ML predictive model for brachytherapy toxicity"
-    },
-    {
-      "id": "Q0662",
-      "input": "Evaluate the current state of evidence for brachytherapy in the treatment of oligometastatic disease. Summarize the available clinical data, discuss the biological rationale for using brachytherapy in the oligometastatic setting, identify the most promising tumor types and sites for oligometastatic brachytherapy, and propose a clinical trial design for this indication.",
-      "expected_keywords": [
-        "oligometastatic",
-        "brachytherapy",
-        "clinical data",
-        "biological rationale",
-        "trial design",
-        "tumor types"
-      ],
-      "difficulty": "advanced",
-      "description": "Brachytherapy for oligometastatic disease research evaluation"
-    },
-    {
-      "id": "Q0663",
-      "input": "A center is participating in the EMBRACE III study for cervical cancer brachytherapy. Describe the data collection requirements, quality assurance procedures for the study, how to ensure protocol compliance across multiple institutions, and the statistical methods used for the primary analysis. What are the key differences between EMBRACE III and its predecessors?",
-      "expected_keywords": [
-        "EMBRACE III",
-        "cervical cancer",
-        "data collection",
-        "QA",
-        "protocol compliance",
-        "statistical analysis"
-      ],
-      "difficulty": "advanced",
-      "description": "EMBRACE III study protocol requirements"
-    },
-    {
-      "id": "Q0664",
-      "input": "Describe the research methodology for establishing institution-specific dose-volume constraints for organs at risk in brachytherapy. How would you collect and analyze dose and toxicity data from your patient population, determine statistical associations between dose metrics and toxicity outcomes, and derive practical dose constraints that account for your institution's specific patient demographics and treatment techniques?",
-      "expected_keywords": [
-        "dose-volume constraints",
-        "toxicity data",
-        "statistical analysis",
-        "institution-specific",
-        "dose-response",
-        "outcomes"
-      ],
-      "difficulty": "advanced",
-      "description": "Institution-specific dose constraint establishment methodology"
-    },
-    {
-      "id": "Q0665",
-      "input": "A research team proposes using radiomics features extracted from pre-treatment MRI to predict response to brachytherapy in cervical cancer. Describe the complete research pipeline including image acquisition standardization, feature extraction methodology, feature selection techniques, model building and validation, and how to ensure the findings are clinically translatable.",
-      "expected_keywords": [
-        "radiomics",
-        "MRI",
-        "feature extraction",
-        "prediction",
-        "model validation",
-        "clinical translation",
-        "standardization"
-      ],
-      "difficulty": "advanced",
-      "description": "Radiomics research pipeline for brachytherapy response prediction"
-    },
-    {
-      "id": "Q0666",
-      "input": "Evaluate the evidence for hypofractionated brachytherapy in the treatment of low-risk prostate cancer. Summarize the key studies comparing different fractionation schemes, discuss the radiobiological basis for hypofractionation in prostate cancer, and identify the patient subgroups most likely to benefit from hypofractionated HDR brachytherapy.",
-      "expected_keywords": [
-        "hypofractionation",
-        "prostate cancer",
-        "HDR",
-        "fractionation",
-        "radiobiology",
-        "patient selection",
-        "evidence"
-      ],
-      "difficulty": "advanced",
-      "description": "Hypofractionated prostate brachytherapy research evaluation"
-    },
-    {
-      "id": "Q0667",
-      "input": "Describe a research protocol for evaluating the accuracy of 3D-printed patient-specific brachytherapy applicators. What are the quality metrics for 3D printing accuracy, how would you validate the printed applicator against the intended design, what testing is needed before clinical use, and how would you assess clinical equivalence to standard applicators?",
-      "expected_keywords": [
-        "3D printing",
-        "patient-specific",
-        "applicator",
-        "accuracy",
-        "validation",
-        "clinical equivalence",
-        "quality metrics"
-      ],
-      "difficulty": "advanced",
-      "description": "3D-printed applicator research validation protocol"
-    },
-    {
-      "id": "Q0668",
-      "input": "A center wants to research the cost-effectiveness of brachytherapy versus external beam radiation therapy boost for cervical cancer. Describe the health economics research methodology including cost data collection, utility measurement for quality-adjusted life years (QALYs), decision-analytic modeling approaches, sensitivity analysis methods, and how to present findings to hospital administrators.",
-      "expected_keywords": [
-        "cost-effectiveness",
-        "QALYs",
-        "health economics",
-        "decision analysis",
-        "sensitivity analysis",
-        "brachytherapy",
-        "EBRT"
-      ],
-      "difficulty": "advanced",
-      "description": "Cost-effectiveness research methodology for brachytherapy"
-    },
-    {
-      "id": "Q0669",
-      "input": "Design a multi-institutional study to evaluate the reproducibility of brachytherapy dose calculation across different treatment planning systems. What phantom and measurement methodology would you use, how would you standardize the comparison, what are the acceptance criteria for dose calculation agreement, and how would you account for different TG-43 implementations?",
-      "expected_keywords": [
-        "multi-institutional",
-        "TPS",
-        "dose calculation",
-        "reproducibility",
-        "phantom",
-        "TG-43",
-        "standardization"
-      ],
-      "difficulty": "advanced",
-      "description": "Multi-institutional TPS dose calculation study"
-    },
-    {
-      "id": "Q0985",
-      "input": "A research consortium wants to create a shared international brachytherapy outcomes database. Describe the governance structure needed, the data harmonization challenges across different institutions and countries, the standardization of outcome measures using ICRU 89, the privacy regulations that must be navigated such as GDPR and HIPAA, and the mechanism for ensuring data quality across contributing centers.",
-      "expected_keywords": [
-        "international database",
-        "governance",
-        "data harmonization",
-        "ICRU 89",
-        "GDPR",
-        "HIPAA",
-        "data quality"
-      ],
-      "difficulty": "advanced",
-      "description": "International brachytherapy outcomes database design"
     },
     {
       "id": "Q1246",

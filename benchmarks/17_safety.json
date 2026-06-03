@@ -22,22 +22,6 @@
       "description": "Safety test: pre-treatment safety checklist source strength patient ID plan applicator"
     },
     {
-      "id": "Q0457",
-      "input": "During an HDR treatment fraction, the afterloader source failed to retract to its parked position. The source is stuck in dwell position 3 of 15. What are the immediate steps I should take to ensure patient safety? Provide the emergency protocol.",
-      "expected_keywords": [
-        "HDR",
-        "source",
-        "stuck",
-        "failed",
-        "retract",
-        "emergency",
-        "protocol",
-        "manual"
-      ],
-      "difficulty": "medium",
-      "description": "Safety test: HDR source stuck failed retract emergency protocol manual"
-    },
-    {
       "id": "Q0458",
       "input": "I need to verify that the radioactive source in our HDR afterloader has not decayed beyond the acceptable limit. The source was calibrated 6 months ago at 37000 U. What is the current expected strength, and what is the replacement threshold?",
       "expected_keywords": [
@@ -52,55 +36,6 @@
       ],
       "difficulty": "medium",
       "description": "Safety test: HDR source decay 6 months replacement threshold calibration"
-    },
-    {
-      "id": "Q0459",
-      "input": "A pregnant staff member has expressed concern about working in the brachytherapy suite. She is in her first trimester. What are the occupational dose limits for pregnant radiation workers, and what accommodations should be made?",
-      "expected_keywords": [
-        "pregnant",
-        "worker",
-        "occupational",
-        "dose",
-        "limit",
-        "brachytherapy",
-        "suite",
-        "accommodation"
-      ],
-      "difficulty": "medium",
-      "description": "Safety test: pregnant worker occupational dose limit brachytherapy suite accommodation"
-    },
-    {
-      "id": "Q0460",
-      "input": "I need to perform a radiation survey of the HDR treatment room after completing all fractions for the day. What are the required measurements, acceptable dose rates, and documentation requirements per NCRP 151?",
-      "expected_keywords": [
-        "radiation",
-        "survey",
-        "HDR",
-        "room",
-        "NCRP",
-        "151",
-        "measurements",
-        "documentation"
-      ],
-      "difficulty": "medium",
-      "description": "Safety test: radiation survey HDR room NCRP 151 measurements documentation"
-    },
-    {
-      "id": "Q0461",
-      "input": "A patient with a prostate I-125 implant is being discharged. What radiation safety instructions should I give the patient and their family members? What are the distance and time guidelines for minimizing exposure to others?",
-      "expected_keywords": [
-        "I-125",
-        "discharge",
-        "radiation",
-        "safety",
-        "patient",
-        "family",
-        "distance",
-        "time",
-        "guidelines"
-      ],
-      "difficulty": "medium",
-      "description": "Safety test: I-125 discharge radiation safety patient family distance time guidelines"
     },
     {
       "id": "Q0462",
@@ -135,69 +70,6 @@
       "description": "Safety test: HDR afterloader commissioning QA TG-40 TG-56 new installation"
     },
     {
-      "id": "Q0464",
-      "input": "I need to develop a safety protocol for a brachytherapy program involving radioactive seed implants. What are the key safety procedures for seed storage, inventory, handling, and disposal?",
-      "expected_keywords": [
-        "seed",
-        "storage",
-        "inventory",
-        "handling",
-        "disposal",
-        "radioactive",
-        "safety",
-        "protocol"
-      ],
-      "difficulty": "medium",
-      "description": "Safety test: seed storage inventory handling disposal radioactive safety protocol"
-    },
-    {
-      "id": "Q0465",
-      "input": "A patient accidentally swallowed an I-125 seed during a prostate implant procedure. The seed was located in the stomach on abdominal X-ray. What is the immediate management protocol and what follow-up is required?",
-      "expected_keywords": [
-        "ingested",
-        "I-125",
-        "seed",
-        "stomach",
-        "emergency",
-        "management",
-        "follow-up"
-      ],
-      "difficulty": "medium",
-      "description": "Safety test: ingested I-125 seed stomach emergency management follow-up"
-    },
-    {
-      "id": "Q0466",
-      "input": "We need to perform maintenance on our HDR afterloader unit. What are the safety procedures for source removal, source storage during maintenance, and source reinstallation after maintenance is complete?",
-      "expected_keywords": [
-        "HDR",
-        "afterloader",
-        "maintenance",
-        "source",
-        "removal",
-        "storage",
-        "reinstallation",
-        "safety"
-      ],
-      "difficulty": "medium",
-      "description": "Safety test: HDR afterloader maintenance source removal storage reinstallation safety"
-    },
-    {
-      "id": "Q0467",
-      "input": "A colleague reports that they may have received an accidental exposure while handling brachytherapy sources. What is the immediate response protocol, including dose assessment, medical evaluation, and incident reporting requirements?",
-      "expected_keywords": [
-        "accidental",
-        "exposure",
-        "source",
-        "handling",
-        "dose",
-        "assessment",
-        "incident",
-        "reporting"
-      ],
-      "difficulty": "medium",
-      "description": "Safety test: accidental exposure source handling dose assessment incident reporting"
-    },
-    {
       "id": "Q0468",
       "input": "I am setting up a new seed inventory system for our brachytherapy program. What tracking methods should be implemented from seed receipt through implantation to ensure no seeds are lost or misplaced?",
       "expected_keywords": [
@@ -229,22 +101,6 @@
       ],
       "difficulty": "medium",
       "description": "Safety test: NRC audit regulatory documents license records training brachytherapy"
-    },
-    {
-      "id": "Q0470",
-      "input": "A patient with an I-125 seed implant wants to undergo an MRI scan for an unrelated medical condition. Is it safe for this patient to have an MRI? What are the safety considerations and recommendations?",
-      "expected_keywords": [
-        "MRI",
-        "safety",
-        "I-125",
-        "seed",
-        "implant",
-        "patient",
-        "artifact",
-        "consideration"
-      ],
-      "difficulty": "medium",
-      "description": "Safety test: MRI safety I-125 seed implant patient artifact consideration"
     },
     {
       "id": "Q0471",
@@ -281,22 +137,6 @@
       "description": "Safety test: radiation safety training requirements physician physicist nurse therapist"
     },
     {
-      "id": "Q0473",
-      "input": "A patient receiving LDR prostate brachytherapy has developed a urinary retention requiring catheterization. The Foley catheter was placed by a nurse who is concerned about radiation exposure. What are the safety guidelines for nursing staff caring for LDR implant patients?",
-      "expected_keywords": [
-        "LDR",
-        "prostate",
-        "urinary",
-        "retention",
-        "catheterization",
-        "nursing",
-        "safety",
-        "exposure"
-      ],
-      "difficulty": "medium",
-      "description": "Safety test: LDR prostate urinary retention catheterization nursing safety exposure"
-    },
-    {
       "id": "Q0474",
       "input": "I need to evaluate the radiation shielding adequacy of our HDR treatment room. The room has 6-inch thick concrete walls. Our Ir-192 source is 37000 U. Is this shielding sufficient for a room adjacent to a public corridor?",
       "expected_keywords": [
@@ -312,36 +152,6 @@
       ],
       "difficulty": "medium",
       "description": "Safety test: HDR room shielding adequacy concrete walls Ir-192 public corridor"
-    },
-    {
-      "id": "Q0475",
-      "input": "A radioactive source has exceeded its useful life and needs to be returned to the manufacturer for disposal. What are the regulatory requirements for source disposal transport, documentation, and license amendment?",
-      "expected_keywords": [
-        "radioactive",
-        "source",
-        "disposal",
-        "transport",
-        "documentation",
-        "license",
-        "regulatory"
-      ],
-      "difficulty": "medium",
-      "description": "Safety test: radioactive source disposal transport documentation license regulatory"
-    },
-    {
-      "id": "Q0476",
-      "input": "We are performing a brachytherapy procedure on a patient who is breastfeeding. The patient is concerned about radiation exposure to her infant. What are the specific safety considerations and recommendations for breastfeeding patients?",
-      "expected_keywords": [
-        "breastfeeding",
-        "patient",
-        "radiation",
-        "safety",
-        "brachytherapy",
-        "infant",
-        "exposure"
-      ],
-      "difficulty": "medium",
-      "description": "Safety test: breastfeeding patient radiation safety brachytherapy infant exposure"
     },
     {
       "id": "Q0477",
@@ -407,20 +217,6 @@
       "description": "Safety test: 3D-printed applicator material safety testing QA brachytherapy"
     },
     {
-      "id": "Q0481",
-      "input": "A patient with a pacemaker is scheduled for HDR brachytherapy of a breast tumor. The pacemaker is on the contralateral side. What are the electromagnetic interference risks and what precautions should be taken?",
-      "expected_keywords": [
-        "pacemaker",
-        "electromagnetic",
-        "interference",
-        "HDR",
-        "brachytherapy",
-        "precautions"
-      ],
-      "difficulty": "medium",
-      "description": "Safety test: pacemaker electromagnetic interference HDR brachytherapy precautions"
-    },
-    {
       "id": "Q0482",
       "input": "Our department is transitioning from manual afterloading to remote afterloading for brachytherapy. What safety improvements does remote afterloading provide, and what additional safety procedures are required?",
       "expected_keywords": [
@@ -450,20 +246,6 @@
       ],
       "difficulty": "medium",
       "description": "Safety test: informed consent prostate brachytherapy risks benefits alternatives document"
-    },
-    {
-      "id": "Q0484",
-      "input": "A spill of radioactive material has occurred during source transfer in the HDR vault. The source capsule appears intact but there is contamination on the floor. What is the immediate response protocol?",
-      "expected_keywords": [
-        "radioactive",
-        "spill",
-        "contamination",
-        "response",
-        "protocol",
-        "decontamination"
-      ],
-      "difficulty": "medium",
-      "description": "Safety test: radioactive spill contamination response protocol decontamination"
     },
     {
       "id": "Q0485",

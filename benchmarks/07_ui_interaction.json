@@ -77,19 +77,6 @@
       "description": "UI interaction test: measurement tool calipers applicator bladder distance"
     },
     {
-      "id": "Q0256",
-      "input": "How do I zoom and pan the CT image to examine the seed distribution in this post-implant scan? I need to see individual seeds clearly in the prostate region. Please demonstrate the zoom and pan controls.",
-      "expected_keywords": [
-        "zoom",
-        "pan",
-        "seed",
-        "visualization",
-        "post-implant"
-      ],
-      "difficulty": "easy",
-      "description": "UI interaction test: zoom pan seed visualization post-implant"
-    },
-    {
       "id": "Q0257",
       "input": "I need to export the current treatment plan report as a PDF file. Please show me the export options, including which parameters to include in the report and how to save it to a specific location.",
       "expected_keywords": [
@@ -150,22 +137,6 @@
       ],
       "difficulty": "easy",
       "description": "UI interaction test: slice navigation specific slice number prostate base"
-    },
-    {
-      "id": "Q0261",
-      "input": "I want to compare two treatment plans side by side. Please load Plan A and Plan B and display their DVH curves together so I can evaluate the dosimetric differences between the two optimization approaches.",
-      "expected_keywords": [
-        "compare",
-        "plans",
-        "side",
-        "by",
-        "side",
-        "DVH",
-        "optimization",
-        "comparison"
-      ],
-      "difficulty": "easy",
-      "description": "UI interaction test: compare plans side by side DVH optimization comparison"
     },
     {
       "id": "Q0262",

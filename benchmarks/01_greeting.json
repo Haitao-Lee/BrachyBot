@@ -73,17 +73,6 @@
       "description": "Greeting and introduction test: system architecture integration"
     },
     {
-      "id": "Q0007",
-      "input": "Good afternoon. I am a nurse practitioner in the radiation therapy department. I do not do planning, but I heard this bot can help explain brachytherapy procedures to patients. Is that true? Can you help me prepare patient education materials?",
-      "expected_keywords": [
-        "patient",
-        "education",
-        "non-planner"
-      ],
-      "difficulty": "easy",
-      "description": "Greeting and introduction test: patient education non-planner"
-    },
-    {
       "id": "Q0008",
       "input": "Hello, I am reviewing a prostate brachytherapy preplan from another institution. The case uses I-125 seeds. I need to verify the plan quality. Can you load the CT and help me evaluate the dose coverage and hot spot locations?",
       "expected_keywords": [

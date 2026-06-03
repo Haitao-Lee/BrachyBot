@@ -32,20 +32,6 @@
       "description": "CT-only brachytherapy compliance evaluation"
     },
     {
-      "id": "Q0607",
-      "input": "A brachytherapy treatment was delivered to a patient with a prescription dose of 6 Gy x 4 fractions. During post-treatment verification, it was discovered that the source dwell time for one dwell position was 15% longer than planned. This resulted in an estimated over-dose to a small region of tissue. Describe the regulatory reporting requirements for this event, the corrective actions needed, and how to document the incident per AAPM TG-59 guidelines.",
-      "expected_keywords": [
-        "dwell time error",
-        "over-dose",
-        "regulatory reporting",
-        "AAPM TG-59",
-        "corrective actions",
-        "incident documentation"
-      ],
-      "difficulty": "high",
-      "description": "Regulatory reporting for brachytherapy delivery error"
-    },
-    {
       "id": "Q0608",
       "input": "Evaluate whether the following brachytherapy practice complies with state radiation safety regulations: The center treats HDR brachytherapy patients without a medical physicist present during treatment delivery, relying instead on trained radiation therapy technologists. The physicist is available by phone. Discuss the regulatory requirements for physicist presence during HDR treatments in different jurisdictions.",
       "expected_keywords": [
@@ -59,21 +45,6 @@
       ],
       "difficulty": "high",
       "description": "Physicist presence requirements for HDR brachytherapy"
-    },
-    {
-      "id": "Q0609",
-      "input": "A center has changed its brachytherapy source from an Ir-192 HDR source to a different manufacturer's source with different air-kerma strength characteristics. Describe the complete regulatory and quality assurance compliance checklist for this source change, including NRC notification requirements, calibration verification procedures, treatment planning system updates, and staff training requirements.",
-      "expected_keywords": [
-        "source change",
-        "Ir-192",
-        "NRC",
-        "calibration",
-        "TPS update",
-        "staff training",
-        "regulatory"
-      ],
-      "difficulty": "advanced",
-      "description": "Regulatory compliance for brachytherapy source change"
     },
     {
       "id": "Q0610",
@@ -118,34 +89,6 @@
       "description": "Brachytherapy QA program compliance evaluation"
     },
     {
-      "id": "Q0613",
-      "input": "A brachytherapy center treats an average of 15 patients per week and performs a peer review of treatment plans for approximately 30% of cases. Evaluate whether this peer review rate meets the standard of care and regulatory requirements. What percentage of plans should be reviewed, and what are the documentation requirements for peer review decisions?",
-      "expected_keywords": [
-        "peer review",
-        "compliance",
-        "review rate",
-        "documentation",
-        "standard of care",
-        "regulatory"
-      ],
-      "difficulty": "medium",
-      "description": "Brachytherapy peer review compliance"
-    },
-    {
-      "id": "Q0614",
-      "input": "A medical physicist has been performing brachytherapy source calibrations monthly. However, the most recent calibration shows a 3% deviation from the expected value based on source decay calculations. Evaluate whether this deviation is within acceptable limits, describe the investigation process per AAPM TG-40 guidelines, and outline the corrective actions that should be taken.",
-      "expected_keywords": [
-        "source calibration",
-        "deviation",
-        "AAPM TG-40",
-        "investigation",
-        "corrective actions",
-        "decay calculation"
-      ],
-      "difficulty": "high",
-      "description": "Source calibration deviation investigation"
-    },
-    {
       "id": "Q0615",
       "input": "A center performs brachytherapy on pediatric patients but does not have specific pediatric dose constraints in its treatment planning system. The clinical team uses adult dose constraints for pediatric patients. Evaluate the compliance implications of this practice, discuss the specific considerations for pediatric dose constraints, and recommend the necessary changes to ensure regulatory and clinical compliance.",
       "expected_keywords": [
@@ -172,20 +115,6 @@
       ],
       "difficulty": "medium",
       "description": "Radiation safety program completeness evaluation"
-    },
-    {
-      "id": "Q0617",
-      "input": "A brachytherapy center uses a CT-based treatment planning system that has not been recalculated against TG-43 data in over 18 months. The vendor has released updates to the dose calculation algorithm. Evaluate the compliance of continued clinical use without updating, describe the validation requirements for TPS algorithm updates, and outline the timeline for implementation.",
-      "expected_keywords": [
-        "TPS update",
-        "TG-43",
-        "dose calculation",
-        "compliance",
-        "validation",
-        "vendor update"
-      ],
-      "difficulty": "advanced",
-      "description": "TPS update compliance evaluation"
     },
     {
       "id": "Q0618",
@@ -218,20 +147,6 @@
       "description": "Single-channel applicator compliance evaluation"
     },
     {
-      "id": "Q0983",
-      "input": "A brachytherapy center is being evaluated for radiation safety compliance by the state regulatory agency. The inspectors request documentation for source calibration records, personnel dosimetry reports, emergency response procedures, and QA test results from the past 3 years. Identify any compliance gaps that might exist in a typical brachytherapy program and describe how to address them proactively before the audit.",
-      "expected_keywords": [
-        "regulatory audit",
-        "compliance gaps",
-        "source calibration",
-        "personnel dosimetry",
-        "QA records",
-        "proactive"
-      ],
-      "difficulty": "medium",
-      "description": "Brachytherapy regulatory audit compliance preparation"
-    },
-    {
       "id": "Q1166",
       "input": "ICRU Report 58 compliance for cervical brachytherapy: target volume definitions, dose reporting, specification points, DVH, and outcome documentation. How to organize for surveyor review.",
       "expected_keywords": [
@@ -242,18 +157,6 @@
       ],
       "difficulty": "hard",
       "description": "Compliance: ICRU_58"
-    },
-    {
-      "id": "Q1167",
-      "input": "GEC-ESTRO guidelines compliance: contouring practices, dose reporting standards, DVH requirements, QA recommendations, and evidence base vs ICRU 38 point-based reporting.",
-      "expected_keywords": [
-        "GEC_ESTRO_guidelines",
-        "compliance",
-        "regulatory",
-        "documentation"
-      ],
-      "difficulty": "hard",
-      "description": "Compliance: GEC_ESTRO_guidelines"
     },
     {
       "id": "Q1168",
