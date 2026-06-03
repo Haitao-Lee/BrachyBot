@@ -917,41 +917,8 @@ class BrachyAgent:
         # All other tools: use result.message directly
         return result.message or f"{tool_name} completed."
 
-    def _detect_tool_request(self, message: str) -> Optional[List[Dict]]:
-        """Detect if the message explicitly requests specific tools.
-        Returns a list of tool calls to execute directly, or None.
-        This bypasses the LLM for clear tool requests, preventing the LLM
-        from asking unnecessary questions or following wrong skill chains.
-        Supports multi-action requests like "analyze and segment"."""
-        msg = message.strip().lower()
-        ct_path = self.memory.retrieve("ct_path") or ""
-        if not ct_path:
-            ui = self.memory.get_ui_state()
-            ct_path = ui.get("ct_path", "")
-
-        tools = []
-
-        # Detect actions and their positions in the message to preserve user's order
-        action_positions = []
-        for match in re.finditer(r'(分析|analyze)', msg, re.IGNORECASE):
-            action_positions.append((match.start(), 'analyze'))
-        for match in re.finditer(r'(分割|segment|再分)', msg, re.IGNORECASE):
-            action_positions.append((match.start(), 'segment'))
-        for match in re.finditer(r'(剂量|dose|计算剂量)', msg, re.IGNORECASE):
-            action_positions.append((match.start(), 'dose'))
-
-        # Deduplicate (keep first occurrence of each action type)
-        seen = set()
-        ordered_actions = []
-        for pos, action in sorted(action_positions):
-            if action not in seen:
-                seen.add(action)
-                ordered_actions.append(action)
-
-        # Build tools in user-specified order
-        for action in ordered_actions:
-            if action == 'analyze' and ct_path:
-                analysis_code = f"""
+    # --- Analysis code template (used by direct execution) ---
+    _ANALYSIS_CODE_TEMPLATE = """
 import nibabel as nib
 import numpy as np
 
@@ -971,23 +938,106 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
     pct = np.sum((data >= lo) & (data < hi)) / total * 100
     print(f"  {{name}}: {{pct:.1f}}%")
 """
-                tools.append({"id": "tool_direct_analysis", "tool": "code_executor", "params": {"code": analysis_code, "description": "Analyze CT image"}})
-                logger.info(f"Direct tool: analysis")
 
+    def _detect_tool_request(self, message: str) -> Optional[List[Dict]]:
+        """Detect explicit tool requests. Returns tool calls in user-specified order, or None.
+        Bypasses LLM to prevent unnecessary questions or wrong skill chains."""
+        msg = message.strip().lower()
+        ct_path = self.memory.retrieve("ct_path") or ""
+        if not ct_path:
+            ct_path = (self.memory.get_ui_state() or {}).get("ct_path", "")
+
+        # Find action keywords and their positions to preserve user's intended order
+        ACTION_PATTERNS = [
+            (r'(分析|analyze)', 'analyze'),
+            (r'(分割|segment|再分)', 'segment'),
+            (r'(剂量|dose|计算剂量)', 'dose'),
+        ]
+        action_positions = []
+        for pattern, action in ACTION_PATTERNS:
+            for match in re.finditer(pattern, msg, re.IGNORECASE):
+                action_positions.append((match.start(), action))
+
+        # Deduplicate, keeping first occurrence of each action
+        seen = set()
+        ordered_actions = []
+        for pos, action in sorted(action_positions):
+            if action not in seen:
+                seen.add(action)
+                ordered_actions.append(action)
+
+        if not ordered_actions:
+            return None
+
+        # Map actions to tool calls
+        tools = []
+        for action in ordered_actions:
+            if action == 'analyze' and ct_path:
+                code = self._ANALYSIS_CODE_TEMPLATE.format(ct_path=ct_path)
+                tools.append({"id": "tool_direct_analysis", "tool": "code_executor",
+                              "params": {"code": code, "description": "Analyze CT image"}})
             elif action == 'segment' and ct_path:
                 tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": {"image_path": ct_path}})
                 tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": {"image_path": ct_path}})
-                logger.info(f"Direct tool: segmentation")
-
             elif action == 'dose' and ct_path:
                 tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
-                logger.info(f"Direct tool: dose")
 
-        # If only analyze (no segment/dose), let LLM handle it (needs code generation context)
-        if ordered_actions == ['analyze'] and not tools:
+        # Pure analysis without other actions → let LLM handle (contextual)
+        if ordered_actions == ['analyze']:
             return None
 
-        return tools if tools else None
+        return tools or None
+
+    def _execute_direct_tools(self, tools: List[Dict], steps: List, step_id_ref: List[int]) -> str:
+        """Execute tools directly and return formatted response. Shared by streaming and non-streaming paths."""
+        _lang = self.memory.user_lang
+        for tc in tools:
+            step_id_ref[0] += 1
+            tool_step = {
+                "id": step_id_ref[0], "type": "tool", "title": f"Direct: {tc['tool']}",
+                "content": json.dumps(tc['params'], default=str)[:200],
+                "status": "pending", "tool": tc['tool'], "params": tc['params'],
+            }
+            steps.append(tool_step)
+            try:
+                tool_obj = self.registry.get(tc['tool'])
+                if tool_obj:
+                    result = tool_obj.execute(**tc['params'])
+                    tool_step["status"] = "done"
+                    tool_step["result"] = self._format_tool_result(tc['tool'], result, lang=_lang)
+                    tool_step["metadata"] = result.metadata if result.success else {}
+                    if result.success:
+                        self._store_tool_result(tc['tool'], result)
+            except Exception as e:
+                tool_step["status"] = "error"
+                tool_step["result"] = str(e)
+                logger.error(f"Direct tool failed: {tc['tool']}: {e}")
+
+        return self._build_direct_response(steps, _lang)
+
+    def _build_direct_response(self, steps: List, lang: str) -> str:
+        """Build structured response grouped by category."""
+        analysis = []
+        segmentation = []
+        other = []
+        for s in steps:
+            if s.get("type") != "tool" or not s.get("result"):
+                continue
+            tool = s.get("tool", "")
+            if tool == "code_executor":
+                analysis.append(s["result"])
+            elif "segmentation" in tool:
+                segmentation.append(s["result"])
+            else:
+                other.append(s["result"])
+
+        h_a = "## 分析结果" if lang == "zh" else "## Analysis"
+        h_s = "## 分割结果" if lang == "zh" else "## Segmentation"
+        parts = []
+        if analysis: parts.append(f"{h_a}\n" + "\n".join(analysis))
+        if segmentation: parts.append(f"{h_s}\n" + "\n".join(segmentation))
+        if other: parts.append("\n\n".join(other))
+        return "\n\n".join(parts) or "Tools executed."
 
     def _detect_realtime_query(self, message: str) -> Optional[str]:
         """Detect if the message requires a real-time web search.
@@ -1173,69 +1223,11 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
         if not messages or messages[-1].get("content") != message:
             messages.append({"role": "user", "content": message})
 
-        # Direct tool execution for explicit tool requests (segmentation, dose, etc.)
-        # Bypasses LLM to prevent unnecessary questions or wrong skill chains
+        # Direct tool execution for explicit tool requests
         _direct_tool_calls = self._detect_tool_request(message)
         if _direct_tool_calls:
-            _lang = self.memory.user_lang
-            logger.info(f"Direct tool execution: {len(_direct_tool_calls)} tools detected, lang={_lang}")
-            for tc in _direct_tool_calls:
-                step_id_ref[0] += 1
-                tool_step = {
-                    "id": step_id_ref[0],
-                    "type": "tool",
-                    "title": f"Direct: {tc['tool']}",
-                    "content": json.dumps(tc['params'], default=str)[:200],
-                    "status": "pending",
-                    "tool": tc['tool'],
-                    "params": tc['params'],
-                }
-                steps.append(tool_step)
-                try:
-                    tool_obj = self.registry.get(tc['tool'])
-                    if tool_obj:
-                        result = tool_obj.execute(**tc['params'])
-                        tool_step["status"] = "done"
-                        try:
-                            formatted = self._format_tool_result(tc['tool'], result, lang=_lang)
-                            tool_step["result"] = formatted
-                            logger.info(f"Direct tool result formatted: {formatted[:100]}")
-                        except Exception as fmt_err:
-                            logger.error(f"Format error: {fmt_err}")
-                            tool_step["result"] = result.message if hasattr(result, 'message') and result.message else str(result)[:200]
-                        tool_step["metadata"] = result.metadata if result.success else {}
-                        # Store results in memory
-                        if result.success:
-                            self._store_tool_result(tc['tool'], result)
-                except Exception as e:
-                    tool_step["status"] = "error"
-                    tool_step["result"] = str(e)
-                    logger.error(f"Direct tool execution failed: {tc['tool']}: {e}")
-
-            # Build structured summary grouped by category
-            _lang = self.memory.user_lang
-            analysis_results = []
-            segmentation_results = []
-            other_results = []
-            for s in steps:
-                if s.get("type") == "tool" and s.get("result"):
-                    tool = s.get("tool", "")
-                    if tool == "code_executor":
-                        analysis_results.append(s["result"])
-                    elif "segmentation" in tool:
-                        segmentation_results.append(s["result"])
-                    else:
-                        other_results.append(f"**{tool}**: {s['result']}")
-            parts = []
-            h_analysis = "## 分析结果" if _lang == "zh" else "## Analysis"
-            h_segment = "## 分割结果" if _lang == "zh" else "## Segmentation"
-            if analysis_results:
-                parts.append(f"{h_analysis}\n" + "\n".join(analysis_results))
-            if segmentation_results:
-                parts.append(f"{h_segment}\n" + "\n".join(segmentation_results))
-            if other_results:
-                parts.append("\n".join(other_results))
-            return "\n\n".join(parts) if parts else "Tools executed."
+            logger.info(f"Direct tool execution: {len(_direct_tool_calls)} tools")
+            return self._execute_direct_tools(_direct_tool_calls, steps, step_id_ref)
 
         # Force web search for real-time queries (weather, time, news, sports, etc.)
         _forced_search_query = self._detect_realtime_query(message)
@@ -2638,25 +2630,21 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
         add_step("user", "User Input", message)
         yield yield_event("step", steps[-1])
 
-        # Direct tool execution for explicit tool requests (segmentation, dose, etc.)
-        # Bypasses LLM to prevent unnecessary questions or wrong skill chains
+        # Direct tool execution for explicit tool requests
         _direct_tool_calls = self._detect_tool_request(message)
         if _direct_tool_calls:
             _lang = self.memory.user_lang
-            logger.info(f"Direct tool execution (stream): {len(_direct_tool_calls)} tools detected, lang={_lang}")
+            logger.info(f"Direct tool execution (stream): {len(_direct_tool_calls)} tools")
             for tc in _direct_tool_calls:
-                step = add_step("tool", f"Direct: {tc['tool']}", json.dumps(tc['params'], default=str)[:200], status="pending", tool=tc['tool'], params=tc['params'])
+                step = add_step("tool", f"Direct: {tc['tool']}", json.dumps(tc['params'], default=str)[:200],
+                                status="pending", tool=tc['tool'], params=tc['params'])
                 yield yield_event("step", step)
                 try:
                     tool_obj = self.registry.get(tc['tool'])
                     if tool_obj:
                         result = tool_obj.execute(**tc['params'])
                         step["status"] = "done"
-                        try:
-                            step["result"] = self._format_tool_result(tc['tool'], result, lang=_lang)
-                        except Exception as fmt_err:
-                            logger.error(f"Format error: {fmt_err}")
-                            step["result"] = result.message if hasattr(result, 'message') and result.message else str(result)[:200]
+                        step["result"] = self._format_tool_result(tc['tool'], result, lang=_lang)
                         step["metadata"] = result.metadata if result.success else {}
                         yield yield_event("step", step)
                         if result.success:
@@ -2665,29 +2653,9 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
                     step["status"] = "error"
                     step["result"] = str(e)
                     yield yield_event("step", step)
-                    logger.error(f"Direct tool execution failed: {tc['tool']}: {e}")
+                    logger.error(f"Direct tool failed: {tc['tool']}: {e}")
 
-            # Build structured summary grouped by category
-            _lang = self.memory.user_lang
-            analysis_results = []
-            segmentation_results = []
-            other_results = []
-            for s in steps:
-                if s.get("type") == "tool" and s.get("result"):
-                    tool = s.get("tool", "")
-                    if tool == "code_executor":
-                        analysis_results.append(s["result"])
-                    elif "segmentation" in tool:
-                        segmentation_results.append(s["result"])
-                    else:
-                        other_results.append(f"**{tool}**: {s['result']}")
-            parts = []
-            h_analysis = "## 分析结果" if _lang == "zh" else "## Analysis"
-            h_segment = "## 分割结果" if _lang == "zh" else "## Segmentation"
-            if analysis_results: parts.append(f"{h_analysis}\n" + "\n".join(analysis_results))
-            if segmentation_results: parts.append(f"{h_segment}\n" + "\n".join(segmentation_results))
-            if other_results: parts.append("\n".join(other_results))
-            response = "\n\n".join(parts) if parts else "Tools executed."
+            response = self._build_direct_response(steps, _lang)
             self.memory.add_message("assistant", response)
             yield yield_event("response", {"response": response})
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
