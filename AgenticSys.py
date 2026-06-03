@@ -1261,6 +1261,13 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
                         p["code"] = p.pop(alias)
                 if not p.get("code", "").strip():
                     continue
+            elif tn == "ui_controller":
+                # Normalize: LLM may pass target/command at top level instead of inside actions
+                if "target" in p and "actions" not in p:
+                    p["actions"] = [{"target": p.pop("target"), "command": p.pop("command", "set"), "value": p.pop("value", None)}]
+                if not p.get("actions"):
+                    logger.warning(f"Dropping ui_controller call with no actions")
+                    continue
             elif tn == "web_search":
                 # Validate required parameters for web_search
                 if not p.get("query", "").strip():
