@@ -1,0 +1,23 @@
+{
+  "query": "Memorial Sloan Kettering stage IIIB cervical cancer brachytherapy 5-year survival 2023",
+  "timestamp": 1780419896.0076265,
+  "result": {
+    "success": true,
+    "results": [],
+    "answer": "I searched for 'Memorial Sloan Kettering stage IIIB cervical cancer brachytherapy 5-year survival 2023' but couldn't find specific information. This may be a question that requires specialized knowledge or access to specific databases I don't have.",
+    "sources": [],
+    "evidence_chain_id": "20260603_010455_478745",
+    "evidence_summary": {
+      "response_id": "20260603_010455_478745",
+      "query": "Memorial Sloan Kettering stage IIIB cervical cancer brachytherapy 5-year survival 2023",
+      "created_at": "2026-06-03T01:04:55.478768",
+      "num_sources": 0,
+      "source_types": [],
+      "avg_confidence": 0.0,
+      "verification_status": "unverified",
+      "citations": [],
+      "evidence": []
+    },
+    "citations": []
+  }
+}

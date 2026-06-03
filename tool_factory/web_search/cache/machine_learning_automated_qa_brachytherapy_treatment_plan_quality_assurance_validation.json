@@ -1,0 +1,160 @@
+{
+  "query": "machine learning automated QA brachytherapy treatment plan quality assurance validation",
+  "timestamp": 1780474262.1612918,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "machine是什么意思_machine的翻译_音标_读音_用法_例句 ...",
+        "snippet": "爱词霸权威在线词典,为您提供machine的中文意思,machine的用法讲解,machine的读音,machine的同义词,machine的反义词,machine的例句等英语服务。",
+        "url": "https://www.iciba.com/word?w=machine",
+        "source": "Bing CN"
+      },
+      {
+        "title": "machine - 搜索 词典",
+        "snippet": "必应词典为您提供machine的释义，美 [məˈʃin]，英 [məˈʃiːn]，n. 机器；机械装置；（不提全称时的简略说法）机器；（组织的）核心机构； v. （用机器）制造； 网络释义： 设备；机器设备；机械设备；",
+        "url": "https://global.bing.com/dict/search?q=machine&amp;FORM=BDVSP6&amp;cc=cn",
+        "source": "Bing CN"
+      },
+      {
+        "title": "machine（英文单词）_百度百科",
+        "snippet": "该词在跨领域应用中形成丰富的语义网络。 技术领域涉及机器学习（Machine Learning）、图灵机（Turing machine）等计算机术语，工业场景涵盖机床、机械保养（MACHINE MAINTENANCE）等 …",
+        "url": "https://baike.baidu.com/item/machine/5646067",
+        "source": "Bing CN"
+      },
+      {
+        "title": "Machines | An Open Access Journal from MDPI",
+        "snippet": "The International Federation for the Promotion of Mechanism and Machine Science (IFToMM) is affiliated with Machines and its members receive a discount on the article processing charges. Open …",
+        "url": "https://www.mdpi.com/journal/machines",
+        "source": "Bing CN"
+      },
+      {
+        "title": "machine， equipment， machinery都可以表示“机器”，有何 ...",
+        "snippet": "2025年4月4日 · “Machine”、“Equipment”和“machinery”这三个词都与“机器”相关，但它们在英文中所表达的意思和使用场景存在细微差别。深入理解这些差别，对于准确使用这些词汇、提升英语表达的精准 …",
+        "url": "https://dl.eduease.com/zixun_info-id-145844.htm",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 爱词霸权威在线词典,为您提供machine的中文意思,machine的用法讲解,machine的读音,machine的同义词,machine的反义词,machine的例句等英语服务。\n- 必应词典为您提供machine的释义，美 [məˈʃin]，英 [məˈʃiːn]，n. 机器；机械装置；（不提全称时的简略说法）机器；（组织的）核心机构； v. （用机器）制造； 网络释义： 设备；机器设备；机械设备；",
+    "sources": [
+      "https://www.iciba.com/word?w=machine",
+      "https://global.bing.com/dict/search?q=machine&amp;FORM=BDVSP6&amp;cc=cn",
+      "https://baike.baidu.com/item/machine/5646067",
+      "https://www.mdpi.com/journal/machines",
+      "https://dl.eduease.com/zixun_info-id-145844.htm"
+    ],
+    "evidence_chain_id": "20260603_161101_168363",
+    "evidence_summary": {
+      "response_id": "20260603_161101_168363",
+      "query": "machine learning automated QA brachytherapy treatment plan quality assurance validation",
+      "created_at": "2026-06-03T16:11:01.168382",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[machine是什么意思_machine的翻译_音标_读音_用法_例句 ...](https://www.iciba.com/word?w=machine)",
+        "[machine - 搜索 词典](https://global.bing.com/dict/search?q=machine&amp;FORM=BDVSP6&amp;cc=cn)",
+        "[machine（英文单词）_百度百科](https://baike.baidu.com/item/machine/5646067)",
+        "[Machines | An Open Access Journal from MDPI](https://www.mdpi.com/journal/machines)",
+        "[machine， equipment， machinery都可以表示“机器”，有何 ...](https://dl.eduease.com/zixun_info-id-145844.htm)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "4c36bbf26ae3",
+          "claim": "爱词霸权威在线词典,为您提供machine的中文意思,machine的用法讲解,machine的读音,machine的同义词,machine的反义词,machine的例句等英语服务。",
+          "source_url": "https://www.iciba.com/word?w=machine",
+          "source_type": "Bing CN",
+          "source_title": "machine是什么意思_machine的翻译_音标_读音_用法_例句 ...",
+          "accessed_at": "2026-06-03T16:11:02.160900",
+          "published_at": "",
+          "raw_snippet": "爱词霸权威在线词典,为您提供machine的中文意思,machine的用法讲解,machine的读音,machine的同义词,machine的反义词,machine的例句等英语服务。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "machine learning automated QA brachytherapy treatment plan quality assurance validation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "5f87a4dde150",
+          "claim": "必应词典为您提供machine的释义，美 [məˈʃin]，英 [məˈʃiːn]，n. 机器；机械装置；（不提全称时的简略说法）机器；（组织的）核心机构； v. （用机器）制造； 网络释义： 设备；机器设备；机械设备；",
+          "source_url": "https://global.bing.com/dict/search?q=machine&amp;FORM=BDVSP6&amp;cc=cn",
+          "source_type": "Bing CN",
+          "source_title": "machine - 搜索 词典",
+          "accessed_at": "2026-06-03T16:11:02.160998",
+          "published_at": "",
+          "raw_snippet": "必应词典为您提供machine的释义，美 [məˈʃin]，英 [məˈʃiːn]，n. 机器；机械装置；（不提全称时的简略说法）机器；（组织的）核心机构； v. （用机器）制造； 网络释义： 设备；机器设备；机械设备；",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "machine learning automated QA brachytherapy treatment plan quality assurance validation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "0bafd243bd54",
+          "claim": "该词在跨领域应用中形成丰富的语义网络。 技术领域涉及机器学习（Machine Learning）、图灵机（Turing machine）等计算机术语，工业场景涵盖机床、机械保养（MACHINE MAINTENANCE）等 …",
+          "source_url": "https://baike.baidu.com/item/machine/5646067",
+          "source_type": "Bing CN",
+          "source_title": "machine（英文单词）_百度百科",
+          "accessed_at": "2026-06-03T16:11:02.161032",
+          "published_at": "",
+          "raw_snippet": "该词在跨领域应用中形成丰富的语义网络。 技术领域涉及机器学习（Machine Learning）、图灵机（Turing machine）等计算机术语，工业场景涵盖机床、机械保养（MACHINE MAINTENANCE）等 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "machine learning automated QA brachytherapy treatment plan quality assurance validation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "5e634860a679",
+          "claim": "The International Federation for the Promotion of Mechanism and Machine Science (IFToMM) is affiliated with Machines and its members receive a discount on the article processing charges. Open …",
+          "source_url": "https://www.mdpi.com/journal/machines",
+          "source_type": "Bing CN",
+          "source_title": "Machines | An Open Access Journal from MDPI",
+          "accessed_at": "2026-06-03T16:11:02.161061",
+          "published_at": "",
+          "raw_snippet": "The International Federation for the Promotion of Mechanism and Machine Science (IFToMM) is affiliated with Machines and its members receive a discount on the article processing charges. Open …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "machine learning automated QA brachytherapy treatment plan quality assurance validation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2fb23dcc819e",
+          "claim": "2025年4月4日 · “Machine”、“Equipment”和“machinery”这三个词都与“机器”相关，但它们在英文中所表达的意思和使用场景存在细微差别。深入理解这些差别，对于准确使用这些词汇、提升英语表达的精准 …",
+          "source_url": "https://dl.eduease.com/zixun_info-id-145844.htm",
+          "source_type": "Bing CN",
+          "source_title": "machine， equipment， machinery都可以表示“机器”，有何 ...",
+          "accessed_at": "2026-06-03T16:11:02.161086",
+          "published_at": "",
+          "raw_snippet": "2025年4月4日 · “Machine”、“Equipment”和“machinery”这三个词都与“机器”相关，但它们在英文中所表达的意思和使用场景存在细微差别。深入理解这些差别，对于准确使用这些词汇、提升英语表达的精准 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "machine learning automated QA brachytherapy treatment plan quality assurance validation",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[machine是什么意思_machine的翻译_音标_读音_用法_例句 ...](https://www.iciba.com/word?w=machine)",
+      "[machine - 搜索 词典](https://global.bing.com/dict/search?q=machine&amp;FORM=BDVSP6&amp;cc=cn)",
+      "[machine（英文单词）_百度百科](https://baike.baidu.com/item/machine/5646067)",
+      "[Machines | An Open Access Journal from MDPI](https://www.mdpi.com/journal/machines)",
+      "[machine， equipment， machinery都可以表示“机器”，有何 ...](https://dl.eduease.com/zixun_info-id-145844.htm)"
+    ]
+  }
+}

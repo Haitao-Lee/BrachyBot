@@ -1,0 +1,160 @@
+{
+  "query": "Varian VariSeed license price",
+  "timestamp": 1780491664.0249286,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Varian - Home | Siemens Healthineers | Cancer Care",
+        "snippet": "13 小时之前 · Varian hosts several webinar series, covering topics ranging from thought leadership/emerging ideas in oncology to the safe and effective use of Varian technology.",
+        "url": "https://cancercare.siemens-healthineers.com/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "主页 | Siemens Healthineers | Cancer Care",
+        "snippet": "2 天之前 · Webinar: Theranostics without barriers: streamlined workflows with ARIA CORE Whether you're in oncology, nuclear medicine, radiology, or pharmacy, this session will show you how ARIA …",
+        "url": "https://cancercare.siemens-healthineers.com/zh-hans",
+        "source": "Bing CN"
+      },
+      {
+        "title": "瓦里安（一家美国的高科技公司）_百度百科",
+        "snippet": "2024年5月8日 · 瓦里安（Varian）是一家美国高科技公司，总部位于 加利福尼亚州 帕洛阿尔托市，成立于1948年，主营业务涵盖科学仪器、医疗设备及真空产品的研发生产。其核心产品包括放射治疗系统 …",
+        "url": "https://baike.baidu.com/item/%E7%93%A6%E9%87%8C%E5%AE%89/9515258",
+        "source": "Bing CN"
+      },
+      {
+        "title": "Varian, a Siemens Healthineers Company",
+        "snippet": "Over the last 20 years, Varian has invested more than $2B in R&amp;, accruing four R&amp; 100 awards for system or software enhancements that improved how cancer is treated with radiation. While we’re …",
+        "url": "https://go.varian.com/Global-Subscribe.html",
+        "source": "Bing CN"
+      },
+      {
+        "title": "瓦里安医疗系统 - 百度百科",
+        "snippet": "瓦里安医疗系统（Varian Medical Systems）是美国一家医疗设备企业，成立于1948年，由斯坦福大学关联科学家创立，总部位于加利福尼亚州帕洛阿托，是第一家入驻美国加州硅谷的高科技公司。",
+        "url": "https://baike.baidu.com/item/%E7%93%A6%E9%87%8C%E5%AE%89%E5%8C%BB%E7%96%97%E7%B3%BB%E7%BB%9F/14903297",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 13 小时之前 · Varian hosts several webinar series, covering topics ranging from thought leadership/emerging ideas in oncology to the safe and effective us\n- 2 天之前 · Webinar: Theranostics without barriers: streamlined workflows with ARIA CORE Whether you're in oncology, nuclear medicine, radiology, or pharm",
+    "sources": [
+      "https://cancercare.siemens-healthineers.com/",
+      "https://cancercare.siemens-healthineers.com/zh-hans",
+      "https://baike.baidu.com/item/%E7%93%A6%E9%87%8C%E5%AE%89/9515258",
+      "https://go.varian.com/Global-Subscribe.html",
+      "https://baike.baidu.com/item/%E7%93%A6%E9%87%8C%E5%AE%89%E5%8C%BB%E7%96%97%E7%B3%BB%E7%BB%9F/14903297"
+    ],
+    "evidence_chain_id": "20260603_210103_739837",
+    "evidence_summary": {
+      "response_id": "20260603_210103_739837",
+      "query": "Varian VariSeed license price",
+      "created_at": "2026-06-03T21:01:03.739846",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[Varian - Home | Siemens Healthineers | Cancer Care](https://cancercare.siemens-healthineers.com/)",
+        "[主页 | Siemens Healthineers | Cancer Care](https://cancercare.siemens-healthineers.com/zh-hans)",
+        "[瓦里安（一家美国的高科技公司）_百度百科](https://baike.baidu.com/item/%E7%93%A6%E9%87%8C%E5%AE%89/9515258)",
+        "[Varian, a Siemens Healthineers Company](https://go.varian.com/Global-Subscribe.html)",
+        "[瓦里安医疗系统 - 百度百科](https://baike.baidu.com/item/%E7%93%A6%E9%87%8C%E5%AE%89%E5%8C%BB%E7%96%97%E7%B3%BB%E7%BB%9F/14903297)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "a535e9e0bbbe",
+          "claim": "13 小时之前 · Varian hosts several webinar series, covering topics ranging from thought leadership/emerging ideas in oncology to the safe and effective use of Varian technology.",
+          "source_url": "https://cancercare.siemens-healthineers.com/",
+          "source_type": "Bing CN",
+          "source_title": "Varian - Home | Siemens Healthineers | Cancer Care",
+          "accessed_at": "2026-06-03T21:01:04.021195",
+          "published_at": "",
+          "raw_snippet": "13 小时之前 · Varian hosts several webinar series, covering topics ranging from thought leadership/emerging ideas in oncology to the safe and effective use of Varian technology.",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Varian VariSeed license price",
+          "search_type": "equipment",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "47d9b52d7023",
+          "claim": "2 天之前 · Webinar: Theranostics without barriers: streamlined workflows with ARIA CORE Whether you're in oncology, nuclear medicine, radiology, or pharmacy, this session will show you how ARIA …",
+          "source_url": "https://cancercare.siemens-healthineers.com/zh-hans",
+          "source_type": "Bing CN",
+          "source_title": "主页 | Siemens Healthineers | Cancer Care",
+          "accessed_at": "2026-06-03T21:01:04.021258",
+          "published_at": "",
+          "raw_snippet": "2 天之前 · Webinar: Theranostics without barriers: streamlined workflows with ARIA CORE Whether you're in oncology, nuclear medicine, radiology, or pharmacy, this session will show you how ARIA …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Varian VariSeed license price",
+          "search_type": "equipment",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "387d64a81942",
+          "claim": "2024年5月8日 · 瓦里安（Varian）是一家美国高科技公司，总部位于 加利福尼亚州 帕洛阿尔托市，成立于1948年，主营业务涵盖科学仪器、医疗设备及真空产品的研发生产。其核心产品包括放射治疗系统 …",
+          "source_url": "https://baike.baidu.com/item/%E7%93%A6%E9%87%8C%E5%AE%89/9515258",
+          "source_type": "Bing CN",
+          "source_title": "瓦里安（一家美国的高科技公司）_百度百科",
+          "accessed_at": "2026-06-03T21:01:04.021294",
+          "published_at": "",
+          "raw_snippet": "2024年5月8日 · 瓦里安（Varian）是一家美国高科技公司，总部位于 加利福尼亚州 帕洛阿尔托市，成立于1948年，主营业务涵盖科学仪器、医疗设备及真空产品的研发生产。其核心产品包括放射治疗系统 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Varian VariSeed license price",
+          "search_type": "equipment",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "590693408521",
+          "claim": "Over the last 20 years, Varian has invested more than $2B in R&amp;, accruing four R&amp; 100 awards for system or software enhancements that improved how cancer is treated with radiation. While we’re",
+          "source_url": "https://go.varian.com/Global-Subscribe.html",
+          "source_type": "Bing CN",
+          "source_title": "Varian, a Siemens Healthineers Company",
+          "accessed_at": "2026-06-03T21:01:04.021325",
+          "published_at": "",
+          "raw_snippet": "Over the last 20 years, Varian has invested more than $2B in R&amp;, accruing four R&amp; 100 awards for system or software enhancements that improved how cancer is treated with radiation. While we’re …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Varian VariSeed license price",
+          "search_type": "equipment",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "283cd1fb9490",
+          "claim": "瓦里安医疗系统（Varian Medical Systems）是美国一家医疗设备企业，成立于1948年，由斯坦福大学关联科学家创立，总部位于加利福尼亚州帕洛阿托，是第一家入驻美国加州硅谷的高科技公司。",
+          "source_url": "https://baike.baidu.com/item/%E7%93%A6%E9%87%8C%E5%AE%89%E5%8C%BB%E7%96%97%E7%B3%BB%E7%BB%9F/14903297",
+          "source_type": "Bing CN",
+          "source_title": "瓦里安医疗系统 - 百度百科",
+          "accessed_at": "2026-06-03T21:01:04.021354",
+          "published_at": "",
+          "raw_snippet": "瓦里安医疗系统（Varian Medical Systems）是美国一家医疗设备企业，成立于1948年，由斯坦福大学关联科学家创立，总部位于加利福尼亚州帕洛阿托，是第一家入驻美国加州硅谷的高科技公司。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Varian VariSeed license price",
+          "search_type": "equipment",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Varian - Home | Siemens Healthineers | Cancer Care](https://cancercare.siemens-healthineers.com/)",
+      "[主页 | Siemens Healthineers | Cancer Care](https://cancercare.siemens-healthineers.com/zh-hans)",
+      "[瓦里安（一家美国的高科技公司）_百度百科](https://baike.baidu.com/item/%E7%93%A6%E9%87%8C%E5%AE%89/9515258)",
+      "[Varian, a Siemens Healthineers Company](https://go.varian.com/Global-Subscribe.html)",
+      "[瓦里安医疗系统 - 百度百科](https://baike.baidu.com/item/%E7%93%A6%E9%87%8C%E5%AE%89%E5%8C%BB%E7%96%97%E7%B3%BB%E7%BB%9F/14903297)"
+    ]
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "query": "dual-energy CT brachytherapy planning applicator delineation",
+  "timestamp": 1780410995.9015505,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Spectral CT imaging: Technical principles of dual-energy CT and multi-energy photon-counting CT.",
+        "snippet": "PubMed ID: 36414506. 2023/04/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36414506/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Dual-energy CT: minimal essentials for radiologists.",
+        "snippet": "PubMed ID: 34981319. 2022/06/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34981319/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Dual-Energy CT for Pediatric Thoracic Imaging: A Review.",
+        "snippet": "PubMed ID: 37195790. 2023/10/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37195790/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Dual-energy CT evaluation of gastrointestinal bleeding.",
+        "snippet": "PubMed ID: 31728614. 2020/01/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31728614/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Dual-Energy CT Principles and Applications.",
+        "snippet": "PubMed ID: 32606242. 2020/07/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32606242/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 36414506. 2023/04/01 00:00\n2. PubMed ID: 34981319. 2022/06/01 00:00\n3. PubMed ID: 37195790. 2023/10/01 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/36414506/",
+      "https://pubmed.ncbi.nlm.nih.gov/34981319/",
+      "https://pubmed.ncbi.nlm.nih.gov/37195790/",
+      "https://pubmed.ncbi.nlm.nih.gov/31728614/",
+      "https://pubmed.ncbi.nlm.nih.gov/32606242/"
+    ],
+    "evidence_chain_id": "20260602_223633_861383",
+    "evidence_summary": {
+      "response_id": "20260602_223633_861383",
+      "query": "dual-energy CT brachytherapy planning applicator delineation",
+      "created_at": "2026-06-02T22:36:33.861407",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Spectral CT imaging: Technical principles of dual-energy CT and multi-energy photon-counting CT.](https://pubmed.ncbi.nlm.nih.gov/36414506/)",
+        "[Dual-energy CT: minimal essentials for radiologists.](https://pubmed.ncbi.nlm.nih.gov/34981319/)",
+        "[Dual-Energy CT for Pediatric Thoracic Imaging: A Review.](https://pubmed.ncbi.nlm.nih.gov/37195790/)",
+        "[Dual-energy CT evaluation of gastrointestinal bleeding.](https://pubmed.ncbi.nlm.nih.gov/31728614/)",
+        "[Dual-Energy CT Principles and Applications.](https://pubmed.ncbi.nlm.nih.gov/32606242/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "88b405c97093",
+          "claim": "PubMed ID: 36414506. 2023/04/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36414506/",
+          "source_type": "PubMed",
+          "source_title": "Spectral CT imaging: Technical principles of dual-energy CT and multi-energy photon-counting CT.",
+          "accessed_at": "2026-06-02T22:36:35.901127",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36414506. 2023/04/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "dual-energy CT brachytherapy planning applicator delineation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "9e8ce4841b75",
+          "claim": "PubMed ID: 34981319. 2022/06/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34981319/",
+          "source_type": "PubMed",
+          "source_title": "Dual-energy CT: minimal essentials for radiologists.",
+          "accessed_at": "2026-06-02T22:36:35.901239",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34981319. 2022/06/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "dual-energy CT brachytherapy planning applicator delineation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2817545a0e17",
+          "claim": "PubMed ID: 37195790. 2023/10/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37195790/",
+          "source_type": "PubMed",
+          "source_title": "Dual-Energy CT for Pediatric Thoracic Imaging: A Review.",
+          "accessed_at": "2026-06-02T22:36:35.901271",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37195790. 2023/10/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "dual-energy CT brachytherapy planning applicator delineation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f6301a6f62ad",
+          "claim": "PubMed ID: 31728614. 2020/01/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31728614/",
+          "source_type": "PubMed",
+          "source_title": "Dual-energy CT evaluation of gastrointestinal bleeding.",
+          "accessed_at": "2026-06-02T22:36:35.901296",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31728614. 2020/01/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "dual-energy CT brachytherapy planning applicator delineation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "58065ff995af",
+          "claim": "PubMed ID: 32606242. 2020/07/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32606242/",
+          "source_type": "PubMed",
+          "source_title": "Dual-Energy CT Principles and Applications.",
+          "accessed_at": "2026-06-02T22:36:35.901320",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32606242. 2020/07/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "dual-energy CT brachytherapy planning applicator delineation",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Spectral CT imaging: Technical principles of dual-energy CT and multi-energy photon-counting CT.](https://pubmed.ncbi.nlm.nih.gov/36414506/)",
+      "[Dual-energy CT: minimal essentials for radiologists.](https://pubmed.ncbi.nlm.nih.gov/34981319/)",
+      "[Dual-Energy CT for Pediatric Thoracic Imaging: A Review.](https://pubmed.ncbi.nlm.nih.gov/37195790/)",
+      "[Dual-energy CT evaluation of gastrointestinal bleeding.](https://pubmed.ncbi.nlm.nih.gov/31728614/)",
+      "[Dual-Energy CT Principles and Applications.](https://pubmed.ncbi.nlm.nih.gov/32606242/)"
+    ]
+  }
+}

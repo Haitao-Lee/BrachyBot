@@ -1,0 +1,160 @@
+{
+  "query": "IMRT QA 3D dosimetry comparison Delta4 ArcCheck",
+  "timestamp": 1780421813.8008614,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "IMRT_百度百科",
+        "snippet": "IMRT是一种先进的高精度放射线疗法，它利用计算机控制的X光加速器去向恶性肿瘤或肿瘤内的特定区域发射精确的辐射剂量。 IMRT可根据肿瘤的3D形状通过调节（或控制）辐射的强度使辐射剂量更加准 …",
+        "url": "https://baike.baidu.com/item/IMRT/2265711",
+        "source": "Bing CN"
+      },
+      {
+        "title": "调强放射治疗（IMRT） － 丁香园",
+        "snippet": "2021年7月29日 · 调强放射治疗 (intensity modulated radiotherapy, IMRT) 是近二十年来发展起来的一种先进的三维立体照射技术，它借助限束设备对射束强度进行调节, 使高剂量区的剂量在三维分布上与 …",
+        "url": "https://y.dxy.cn/hospital/12654/gzthzlyy/article/794034/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "癌症放疗的多面手：IMRT、VMAT、IGRT与质子重离子的 ...",
+        "snippet": "2024年10月28日 · 对于前列腺癌患者，IMRT通过精确的剂量分布，能够显著提高病灶剂量，有效控制肿瘤生长，同时保护周围的膀胱和直肠，减少排尿和排便方面的副作用。 近年来，IMRT在治疗复发性 …",
+        "url": "https://www.toutiao.com/article/7430626197521891880/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "放疗技术：IMRT与VMAT有什么不同？_治疗_肿瘤_剂量",
+        "snippet": "2024年1月8日 · 治疗方式：IMRT主要是通过调节照射野内的剂量强度来治疗肿瘤，而VMAT则是通过旋转照射方向的方式进行治疗。 IMRT通过调节照射野内的剂量强度来提高肿瘤的局部控制率和减少正 …",
+        "url": "https://www.sohu.com/a/750659921_121118851",
+        "source": "Bing CN"
+      },
+      {
+        "title": "一文看懂放疗领域的五大技术！ - 知乎",
+        "snippet": "2020年8月5日 · 器械之家 在放疗的技术应用方面，最常见的就是三维适形（3DCRT）技术、调强放射治疗（IMRT）技术、容积旋转调强技术（VMAT）、立体定向放射治疗（SBRT）、以及螺旋断层放射 …",
+        "url": "https://zhuanlan.zhihu.com/p/166489205",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- IMRT是一种先进的高精度放射线疗法，它利用计算机控制的X光加速器去向恶性肿瘤或肿瘤内的特定区域发射精确的辐射剂量。 IMRT可根据肿瘤的3D形状通过调节（或控制）辐射的强度使辐射剂量更加准 …\n- 2021年7月29日 · 调强放射治疗 (intensity modulated radiotherapy, IMRT) 是近二十年来发展起来的一种先进的三维立体照射技术，它借助限束设备对射束强度进行调节, 使高剂量区的剂量在三维分布上与 …",
+    "sources": [
+      "https://baike.baidu.com/item/IMRT/2265711",
+      "https://y.dxy.cn/hospital/12654/gzthzlyy/article/794034/",
+      "https://www.toutiao.com/article/7430626197521891880/",
+      "https://www.sohu.com/a/750659921_121118851",
+      "https://zhuanlan.zhihu.com/p/166489205"
+    ],
+    "evidence_chain_id": "20260603_013653_554086",
+    "evidence_summary": {
+      "response_id": "20260603_013653_554086",
+      "query": "IMRT QA 3D dosimetry comparison Delta4 ArcCheck",
+      "created_at": "2026-06-03T01:36:53.554102",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[IMRT_百度百科](https://baike.baidu.com/item/IMRT/2265711)",
+        "[调强放射治疗（IMRT） － 丁香园](https://y.dxy.cn/hospital/12654/gzthzlyy/article/794034/)",
+        "[癌症放疗的多面手：IMRT、VMAT、IGRT与质子重离子的 ...](https://www.toutiao.com/article/7430626197521891880/)",
+        "[放疗技术：IMRT与VMAT有什么不同？_治疗_肿瘤_剂量](https://www.sohu.com/a/750659921_121118851)",
+        "[一文看懂放疗领域的五大技术！ - 知乎](https://zhuanlan.zhihu.com/p/166489205)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "0869244f2f02",
+          "claim": "IMRT是一种先进的高精度放射线疗法，它利用计算机控制的X光加速器去向恶性肿瘤或肿瘤内的特定区域发射精确的辐射剂量。 IMRT可根据肿瘤的3D形状通过调节（或控制）辐射的强度使辐射剂量更加准 …",
+          "source_url": "https://baike.baidu.com/item/IMRT/2265711",
+          "source_type": "Bing CN",
+          "source_title": "IMRT_百度百科",
+          "accessed_at": "2026-06-03T01:36:53.800533",
+          "published_at": "",
+          "raw_snippet": "IMRT是一种先进的高精度放射线疗法，它利用计算机控制的X光加速器去向恶性肿瘤或肿瘤内的特定区域发射精确的辐射剂量。 IMRT可根据肿瘤的3D形状通过调节（或控制）辐射的强度使辐射剂量更加准 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IMRT QA 3D dosimetry comparison Delta4 ArcCheck",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ea91d70dff36",
+          "claim": "2021年7月29日 · 调强放射治疗 (intensity modulated radiotherapy, IMRT) 是近二十年来发展起来的一种先进的三维立体照射技术，它借助限束设备对射束强度进行调节, 使高剂量区的剂量在三维分布上与 …",
+          "source_url": "https://y.dxy.cn/hospital/12654/gzthzlyy/article/794034/",
+          "source_type": "Bing CN",
+          "source_title": "调强放射治疗（IMRT） － 丁香园",
+          "accessed_at": "2026-06-03T01:36:53.800590",
+          "published_at": "",
+          "raw_snippet": "2021年7月29日 · 调强放射治疗 (intensity modulated radiotherapy, IMRT) 是近二十年来发展起来的一种先进的三维立体照射技术，它借助限束设备对射束强度进行调节, 使高剂量区的剂量在三维分布上与 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IMRT QA 3D dosimetry comparison Delta4 ArcCheck",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "87572e923146",
+          "claim": "2024年10月28日 · 对于前列腺癌患者，IMRT通过精确的剂量分布，能够显著提高病灶剂量，有效控制肿瘤生长，同时保护周围的膀胱和直肠，减少排尿和排便方面的副作用。 近年来，IMRT在治疗复发性 …",
+          "source_url": "https://www.toutiao.com/article/7430626197521891880/",
+          "source_type": "Bing CN",
+          "source_title": "癌症放疗的多面手：IMRT、VMAT、IGRT与质子重离子的 ...",
+          "accessed_at": "2026-06-03T01:36:53.800622",
+          "published_at": "",
+          "raw_snippet": "2024年10月28日 · 对于前列腺癌患者，IMRT通过精确的剂量分布，能够显著提高病灶剂量，有效控制肿瘤生长，同时保护周围的膀胱和直肠，减少排尿和排便方面的副作用。 近年来，IMRT在治疗复发性 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IMRT QA 3D dosimetry comparison Delta4 ArcCheck",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "be2c9b3bf212",
+          "claim": "2024年1月8日 · 治疗方式：IMRT主要是通过调节照射野内的剂量强度来治疗肿瘤，而VMAT则是通过旋转照射方向的方式进行治疗。 IMRT通过调节照射野内的剂量强度来提高肿瘤的局部控制率和减少正 …",
+          "source_url": "https://www.sohu.com/a/750659921_121118851",
+          "source_type": "Bing CN",
+          "source_title": "放疗技术：IMRT与VMAT有什么不同？_治疗_肿瘤_剂量",
+          "accessed_at": "2026-06-03T01:36:53.800649",
+          "published_at": "",
+          "raw_snippet": "2024年1月8日 · 治疗方式：IMRT主要是通过调节照射野内的剂量强度来治疗肿瘤，而VMAT则是通过旋转照射方向的方式进行治疗。 IMRT通过调节照射野内的剂量强度来提高肿瘤的局部控制率和减少正 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IMRT QA 3D dosimetry comparison Delta4 ArcCheck",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "47a9bbda2aac",
+          "claim": "2020年8月5日 · 器械之家 在放疗的技术应用方面，最常见的就是三维适形（3DCRT）技术、调强放射治疗（IMRT）技术、容积旋转调强技术（VMAT）、立体定向放射治疗（SBRT）、以及螺旋断层放射 …",
+          "source_url": "https://zhuanlan.zhihu.com/p/166489205",
+          "source_type": "Bing CN",
+          "source_title": "一文看懂放疗领域的五大技术！ - 知乎",
+          "accessed_at": "2026-06-03T01:36:53.800675",
+          "published_at": "",
+          "raw_snippet": "2020年8月5日 · 器械之家 在放疗的技术应用方面，最常见的就是三维适形（3DCRT）技术、调强放射治疗（IMRT）技术、容积旋转调强技术（VMAT）、立体定向放射治疗（SBRT）、以及螺旋断层放射 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IMRT QA 3D dosimetry comparison Delta4 ArcCheck",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[IMRT_百度百科](https://baike.baidu.com/item/IMRT/2265711)",
+      "[调强放射治疗（IMRT） － 丁香园](https://y.dxy.cn/hospital/12654/gzthzlyy/article/794034/)",
+      "[癌症放疗的多面手：IMRT、VMAT、IGRT与质子重离子的 ...](https://www.toutiao.com/article/7430626197521891880/)",
+      "[放疗技术：IMRT与VMAT有什么不同？_治疗_肿瘤_剂量](https://www.sohu.com/a/750659921_121118851)",
+      "[一文看懂放疗领域的五大技术！ - 知乎](https://zhuanlan.zhihu.com/p/166489205)"
+    ]
+  }
+}

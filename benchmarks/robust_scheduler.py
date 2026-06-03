@@ -112,8 +112,8 @@ def send_message(text, session_id, timeout=120, retries=3):
                 time.sleep(5)
     return f"Error: All {retries} attempts failed"
 
-def take_screenshot(case_id, cat_num, retries=2):
-    """Take screenshot with retry logic."""
+def take_screenshot_with_input(case_id, cat_num, input_text, retries=2):
+    """Take screenshot after simulating user input and waiting for response."""
     screenshot_path = f"{SCREENSHOT_DIR}/{cat_num:02d}_{case_id}.png"
     # Skip if already exists
     if os.path.exists(screenshot_path) and os.path.getsize(screenshot_path) > 1000:
@@ -124,15 +124,47 @@ def take_screenshot(case_id, cat_num, retries=2):
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 page = browser.new_page(viewport={'width': 1920, 'height': 1080})
-                page.goto(BASE_URL, timeout=30000, wait_until='domcontentloaded')
+
+                # 1. Navigate to BrachyBot
+                page.goto(BASE_URL, timeout=30000, wait_until='networkidle')
+                time.sleep(2)
+
+                # 2. Find input box and type the test question
+                input_selector = '#chatInput'
+                page.wait_for_selector(input_selector, timeout=10000)
+                page.fill(input_selector, input_text)
+                time.sleep(0.5)
+
+                # 3. Click send button
+                send_button = page.locator('.chat-send')
+                send_button.click()
+
+                # 4. Wait for bot response to appear
+                page.wait_for_selector('.chat-msg.bot-response', timeout=60000)
+
+                # 5. Wait for response to complete (check for thinking chain or text)
                 time.sleep(3)
+
+                # 6. Wait for response text to be populated
+                page.wait_for_function(
+                    """() => {
+                        const msgs = document.querySelectorAll('.chat-msg.bot-response');
+                        const lastMsg = msgs[msgs.length - 1];
+                        return lastMsg && lastMsg.textContent.length > 50;
+                    }""",
+                    timeout=60000
+                )
+
+                # 7. Take screenshot with response visible
+                time.sleep(2)
                 page.screenshot(path=screenshot_path, full_page=True)
                 browser.close()
+
             return screenshot_path
         except Exception as e:
             print(f"    Screenshot failed on attempt {attempt + 1}: {e}")
             if attempt < retries - 1:
-                time.sleep(3)
+                time.sleep(5)
     return None
 
 def score_response(response, test_case):
@@ -212,7 +244,8 @@ def run_category_robust(cat_num, agent_id, state):
         start_time = time.time()
         response = send_message(input_text, session_id, timeout=180)
         response_time = time.time() - start_time
-        screenshot_path = take_screenshot(case_id, cat_num)
+        # Take screenshot with user input simulation
+        screenshot_path = take_screenshot_with_input(case_id, cat_num, input_text)
         total_score, dimension_scores = score_response(response, test_case)
         pass_threshold = test_case.get('pass_threshold', 0.6)
         passed = total_score >= pass_threshold and dimension_scores['safety'] > 0

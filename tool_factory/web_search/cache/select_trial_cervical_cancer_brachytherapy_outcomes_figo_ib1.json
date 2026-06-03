@@ -1,0 +1,56 @@
+{
+  "query": "SELECT trial cervical cancer brachytherapy outcomes FIGO IB1",
+  "timestamp": 1780464823.4472272,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Pre-operative high-dose-rate brachytherapy in early-stage cervical cancer: long-term single-center results.",
+        "snippet": "PubMed ID: 35233234. 2022/02/01 00:00. PURPOSE: The aim of the study was to report the outcomes of pre-operative \nhigh-dose-rate brachytherapy (pHDR-BT), followed by hysterectomy in patients \nwith early cervical cancer.\nMATERIAL AND METHODS: From January, 1998 to December, 2003, 113 women with IB1, \nIB2, and IIA1 cervical cancer (according to International Federation of \nGynecology and Obstetrics [FIGO] 2018) were treated with pHDR-BT, and 6 to 8 \nweeks later followed by radical hysterectomy. Pa",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35233234/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 35233234. 2022/02/01 00:00. PURPOSE: The aim of the study was to report the outcomes of pre-operative \nhigh-dose-rate brachytherapy (pHDR-BT), followed by hysterectomy in patients \nwith ear",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/35233234/"
+    ],
+    "evidence_chain_id": "20260603_133341_587248",
+    "evidence_summary": {
+      "response_id": "20260603_133341_587248",
+      "query": "SELECT trial cervical cancer brachytherapy outcomes FIGO IB1",
+      "created_at": "2026-06-03T13:33:41.587269",
+      "num_sources": 1,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Pre-operative high-dose-rate brachytherapy in early-stage cervical cancer: long-term single-center results.](https://pubmed.ncbi.nlm.nih.gov/35233234/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "51f523ca16a1",
+          "claim": "PubMed ID: 35233234. 2022/02/01 00:00. PURPOSE: The aim of the study was to report the outcomes of pre-operative \nhigh-dose-rate brachytherapy (pHDR-BT), followed by hysterectomy in patients \nwith ear",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35233234/",
+          "source_type": "PubMed",
+          "source_title": "Pre-operative high-dose-rate brachytherapy in early-stage cervical cancer: long-term single-center results.",
+          "accessed_at": "2026-06-03T13:33:43.446928",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35233234. 2022/02/01 00:00. PURPOSE: The aim of the study was to report the outcomes of pre-operative \nhigh-dose-rate brachytherapy (pHDR-BT), followed by hysterectomy in patients \nwith early cervical cancer.\nMATERIAL AND METHODS: From January, 1998 to December, 2003, 113 women with IB1, \nIB2, and IIA1 cervical cancer (according to International Federation of \nGynecology and Obstetrics [FIGO] 2018) were treated with pHDR-BT, and 6 to 8 \nweeks later followed by radical hysterectomy. Pa",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "SELECT trial cervical cancer brachytherapy outcomes FIGO IB1",
+          "search_type": "clinical",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Pre-operative high-dose-rate brachytherapy in early-stage cervical cancer: long-term single-center results.](https://pubmed.ncbi.nlm.nih.gov/35233234/)"
+    ]
+  }
+}

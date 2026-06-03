@@ -1,0 +1,160 @@
+{
+  "query": "worldwide brachytherapy procedures 2024 statistics number",
+  "timestamp": 1780419926.3679569,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Gynecologic Malignancies.",
+        "snippet": "PubMed ID: 31739953. 2020/02/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31739953/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Brachytherapy: The urologist opinion.",
+        "snippet": "PubMed ID: 38362868. 2024/02/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38362868/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Brachytherapy, Skin Cancer.",
+        "snippet": "PubMed ID: 41802034. 2026/02/26 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/41802034/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Brachytherapy of Intracranial Gliomas.",
+        "snippet": "PubMed ID: 29393178. 2018/01/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29393178/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Roadmap: medical physics technologies in brachytherapy.",
+        "snippet": "PubMed ID: 40480262. 2025/07/16 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40480262/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 31739953. 2020/02/01 00:00\n2. PubMed ID: 38362868. 2024/02/01 00:00\n3. PubMed ID: 41802034. 2026/02/26 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/31739953/",
+      "https://pubmed.ncbi.nlm.nih.gov/38362868/",
+      "https://pubmed.ncbi.nlm.nih.gov/41802034/",
+      "https://pubmed.ncbi.nlm.nih.gov/29393178/",
+      "https://pubmed.ncbi.nlm.nih.gov/40480262/"
+    ],
+    "evidence_chain_id": "20260603_010524_349376",
+    "evidence_summary": {
+      "response_id": "20260603_010524_349376",
+      "query": "worldwide brachytherapy procedures 2024 statistics number",
+      "created_at": "2026-06-03T01:05:24.349401",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Gynecologic Malignancies.](https://pubmed.ncbi.nlm.nih.gov/31739953/)",
+        "[Brachytherapy: The urologist opinion.](https://pubmed.ncbi.nlm.nih.gov/38362868/)",
+        "[Brachytherapy, Skin Cancer.](https://pubmed.ncbi.nlm.nih.gov/41802034/)",
+        "[Brachytherapy of Intracranial Gliomas.](https://pubmed.ncbi.nlm.nih.gov/29393178/)",
+        "[Roadmap: medical physics technologies in brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/40480262/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "92c0e422fa1b",
+          "claim": "PubMed ID: 31739953. 2020/02/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31739953/",
+          "source_type": "PubMed",
+          "source_title": "Gynecologic Malignancies.",
+          "accessed_at": "2026-06-03T01:05:26.367552",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31739953. 2020/02/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "worldwide brachytherapy procedures 2024 statistics number",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "145c7be27dbb",
+          "claim": "PubMed ID: 38362868. 2024/02/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38362868/",
+          "source_type": "PubMed",
+          "source_title": "Brachytherapy: The urologist opinion.",
+          "accessed_at": "2026-06-03T01:05:26.367655",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38362868. 2024/02/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "worldwide brachytherapy procedures 2024 statistics number",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "a3419d159489",
+          "claim": "PubMed ID: 41802034. 2026/02/26 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/41802034/",
+          "source_type": "PubMed",
+          "source_title": "Brachytherapy, Skin Cancer.",
+          "accessed_at": "2026-06-03T01:05:26.367687",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 41802034. 2026/02/26 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "worldwide brachytherapy procedures 2024 statistics number",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "b166693dd31f",
+          "claim": "PubMed ID: 29393178. 2018/01/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/29393178/",
+          "source_type": "PubMed",
+          "source_title": "Brachytherapy of Intracranial Gliomas.",
+          "accessed_at": "2026-06-03T01:05:26.367712",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 29393178. 2018/01/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "worldwide brachytherapy procedures 2024 statistics number",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "1e74b30da58b",
+          "claim": "PubMed ID: 40480262. 2025/07/16 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40480262/",
+          "source_type": "PubMed",
+          "source_title": "Roadmap: medical physics technologies in brachytherapy.",
+          "accessed_at": "2026-06-03T01:05:26.367736",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40480262. 2025/07/16 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "worldwide brachytherapy procedures 2024 statistics number",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Gynecologic Malignancies.](https://pubmed.ncbi.nlm.nih.gov/31739953/)",
+      "[Brachytherapy: The urologist opinion.](https://pubmed.ncbi.nlm.nih.gov/38362868/)",
+      "[Brachytherapy, Skin Cancer.](https://pubmed.ncbi.nlm.nih.gov/41802034/)",
+      "[Brachytherapy of Intracranial Gliomas.](https://pubmed.ncbi.nlm.nih.gov/29393178/)",
+      "[Roadmap: medical physics technologies in brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/40480262/)"
+    ]
+  }
+}

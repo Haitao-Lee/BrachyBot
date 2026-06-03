@@ -1,0 +1,160 @@
+{
+  "query": "DeepRare Nature journal deep learning rare disease",
+  "timestamp": 1780489045.310796,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "DeepRare",
+        "snippet": "6 天之前 · ~1h 单次推理耗时 95.4% 致病评级一致率 进入 VCF 诊断 PRODUCT DEMO &#183; 产品演示 观看 DeepRare 的一次完整诊断流程 从主诉录入到循证报告 01",
+        "url": "https://deeprare.cn/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "An agentic system for rare disease diagnosis with traceable …",
+        "snippet": "2026年2月18日 · DeepRare—a multi-agent system for rare disease differential diagnosis decision support powered by large language models, integrating specialized tools and up-to-date knowledge …",
+        "url": "https://www.nature.com/articles/s41586-025-10097-9",
+        "source": "Bing CN"
+      },
+      {
+        "title": "DeepRare：具有可追溯推理能力的罕见病诊断Agentic系统 - 知乎",
+        "snippet": "2025年6月30日 · DeepRare的诊断流程：信息收集与自我反思 DeepRare的诊断过程被精心设计为两个主要阶段，以确保诊断的全面性和准确性。 DeepRare 系统概述 （1）信息收集阶段： 当接收到患者数 …",
+        "url": "https://zhuanlan.zhihu.com/p/1923138193580069474",
+        "source": "Bing CN"
+      },
+      {
+        "title": "全球首个智能体式罕见病循证推理诊断系统DeepRare正式 ...",
+        "snippet": "2026年2月28日 · 余永国以“在‘盲区’中找寻光亮—DeepRare临床实战”为主旨，分享DeepRare确诊跨学科疑难病例的实战案例，发布全国多中心临床验证计划，样本量超两万例，将DeepRare嵌入临床流 …",
+        "url": "https://news.sjtu.edu.cn/jdyw/20260305/220083.html",
+        "source": "Bing CN"
+      },
+      {
+        "title": "DeepRare/README.md at main &#183; MAGIC-AI4Med/DeepRare &#183; …",
+        "snippet": "Here, we introduce DeepRare, the first rare disease diagnosis agentic system powered by a large language model (LLM), capable of processing heterogeneous clinical inputs.",
+        "url": "https://github.com/MAGIC-AI4Med/DeepRare/blob/main/README.md",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 6 天之前 · ~1h 单次推理耗时 95.4% 致病评级一致率 进入 VCF 诊断 PRODUCT DEMO &#183; 产品演示 观看 DeepRare 的一次完整诊断流程 从主诉录入到循证报告 01\n- 2026年2月18日 · DeepRare—a multi-agent system for rare disease differential diagnosis decision support powered by large language models, integrating spec",
+    "sources": [
+      "https://deeprare.cn/",
+      "https://www.nature.com/articles/s41586-025-10097-9",
+      "https://zhuanlan.zhihu.com/p/1923138193580069474",
+      "https://news.sjtu.edu.cn/jdyw/20260305/220083.html",
+      "https://github.com/MAGIC-AI4Med/DeepRare/blob/main/README.md"
+    ],
+    "evidence_chain_id": "20260603_201724_433784",
+    "evidence_summary": {
+      "response_id": "20260603_201724_433784",
+      "query": "DeepRare Nature journal deep learning rare disease",
+      "created_at": "2026-06-03T20:17:24.433793",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[DeepRare](https://deeprare.cn/)",
+        "[An agentic system for rare disease diagnosis with traceable …](https://www.nature.com/articles/s41586-025-10097-9)",
+        "[DeepRare：具有可追溯推理能力的罕见病诊断Agentic系统 - 知乎](https://zhuanlan.zhihu.com/p/1923138193580069474)",
+        "[全球首个智能体式罕见病循证推理诊断系统DeepRare正式 ...](https://news.sjtu.edu.cn/jdyw/20260305/220083.html)",
+        "[DeepRare/README.md at main &#183; MAGIC-AI4Med/DeepRare &#183; …](https://github.com/MAGIC-AI4Med/DeepRare/blob/main/README.md)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "f4e7b4a95f8e",
+          "claim": "6 天之前 · ~1h 单次推理耗时 95.4% 致病评级一致率 进入 VCF 诊断 PRODUCT DEMO &#183; 产品演示 观看 DeepRare 的一次完整诊断流程 从主诉录入到循证报告 01",
+          "source_url": "https://deeprare.cn/",
+          "source_type": "Bing CN",
+          "source_title": "DeepRare",
+          "accessed_at": "2026-06-03T20:17:25.310350",
+          "published_at": "",
+          "raw_snippet": "6 天之前 · ~1h 单次推理耗时 95.4% 致病评级一致率 进入 VCF 诊断 PRODUCT DEMO &#183; 产品演示 观看 DeepRare 的一次完整诊断流程 从主诉录入到循证报告 01",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DeepRare Nature journal deep learning rare disease",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f48b34426a45",
+          "claim": "2026年2月18日 · DeepRare—a multi-agent system for rare disease differential diagnosis decision support powered by large language models, integrating specialized tools and up-to-date knowledge …",
+          "source_url": "https://www.nature.com/articles/s41586-025-10097-9",
+          "source_type": "Bing CN",
+          "source_title": "An agentic system for rare disease diagnosis with traceable …",
+          "accessed_at": "2026-06-03T20:17:25.310484",
+          "published_at": "",
+          "raw_snippet": "2026年2月18日 · DeepRare—a multi-agent system for rare disease differential diagnosis decision support powered by large language models, integrating specialized tools and up-to-date knowledge …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DeepRare Nature journal deep learning rare disease",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "723ac1bc518d",
+          "claim": "2025年6月30日 · DeepRare的诊断流程：信息收集与自我反思 DeepRare的诊断过程被精心设计为两个主要阶段，以确保诊断的全面性和准确性。 DeepRare 系统概述 （1）信息收集阶段： 当接收到患者数 …",
+          "source_url": "https://zhuanlan.zhihu.com/p/1923138193580069474",
+          "source_type": "Bing CN",
+          "source_title": "DeepRare：具有可追溯推理能力的罕见病诊断Agentic系统 - 知乎",
+          "accessed_at": "2026-06-03T20:17:25.310525",
+          "published_at": "",
+          "raw_snippet": "2025年6月30日 · DeepRare的诊断流程：信息收集与自我反思 DeepRare的诊断过程被精心设计为两个主要阶段，以确保诊断的全面性和准确性。 DeepRare 系统概述 （1）信息收集阶段： 当接收到患者数 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DeepRare Nature journal deep learning rare disease",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "93d1c0d969b1",
+          "claim": "2026年2月28日 · 余永国以“在‘盲区’中找寻光亮—DeepRare临床实战”为主旨，分享DeepRare确诊跨学科疑难病例的实战案例，发布全国多中心临床验证计划，样本量超两万例，将DeepRare嵌入临床流 …",
+          "source_url": "https://news.sjtu.edu.cn/jdyw/20260305/220083.html",
+          "source_type": "Bing CN",
+          "source_title": "全球首个智能体式罕见病循证推理诊断系统DeepRare正式 ...",
+          "accessed_at": "2026-06-03T20:17:25.310554",
+          "published_at": "",
+          "raw_snippet": "2026年2月28日 · 余永国以“在‘盲区’中找寻光亮—DeepRare临床实战”为主旨，分享DeepRare确诊跨学科疑难病例的实战案例，发布全国多中心临床验证计划，样本量超两万例，将DeepRare嵌入临床流 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DeepRare Nature journal deep learning rare disease",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "286c00d4cfe5",
+          "claim": "Here, we introduce DeepRare, the first rare disease diagnosis agentic system powered by a large language model (LLM), capable of processing heterogeneous clinical inputs.",
+          "source_url": "https://github.com/MAGIC-AI4Med/DeepRare/blob/main/README.md",
+          "source_type": "Bing CN",
+          "source_title": "DeepRare/README.md at main &#183; MAGIC-AI4Med/DeepRare &#183; …",
+          "accessed_at": "2026-06-03T20:17:25.310581",
+          "published_at": "",
+          "raw_snippet": "Here, we introduce DeepRare, the first rare disease diagnosis agentic system powered by a large language model (LLM), capable of processing heterogeneous clinical inputs.",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DeepRare Nature journal deep learning rare disease",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[DeepRare](https://deeprare.cn/)",
+      "[An agentic system for rare disease diagnosis with traceable …](https://www.nature.com/articles/s41586-025-10097-9)",
+      "[DeepRare：具有可追溯推理能力的罕见病诊断Agentic系统 - 知乎](https://zhuanlan.zhihu.com/p/1923138193580069474)",
+      "[全球首个智能体式罕见病循证推理诊断系统DeepRare正式 ...](https://news.sjtu.edu.cn/jdyw/20260305/220083.html)",
+      "[DeepRare/README.md at main &#183; MAGIC-AI4Med/DeepRare &#183; …](https://github.com/MAGIC-AI4Med/DeepRare/blob/main/README.md)"
+    ]
+  }
+}

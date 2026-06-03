@@ -1,0 +1,82 @@
+{
+  "query": "MRI-guided brachytherapy cervical cancer local control rates EMBRACE",
+  "timestamp": 1780475031.709184,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Bowel morbidity following radiochemotherapy and image-guided adaptive brachytherapy for cervical cancer: Physician- and patient reported outcome from the EMBRACE study.",
+        "snippet": "PubMed ID: 29880222. 2018/06/01 00:00. PURPOSE: This study describes late bowel morbidity prospectively \nassessed in the multi-institutional EMBRACE study on MRI-guided adaptive \nbrachytherapy in locally advanced cervical cancer (LACC).\nMATERIALS/METHODS: A total of 1176 patients were analyzed. Physician reported \nmorbidity (CTCAE v.3.0) and patient reported outcome (PRO) (EORTC QLQ C30/CX24) \nwere assessed at baseline and at regular follow-up.\nRESULTS: At 3/5 years the actuarial incidence of bo",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29880222/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Long-term Clinical Outcomes of a Resource-conserving Accelerated Magnetic Resonance Imaging-guided Brachytherapy Schedule for Cervix Cancer.",
+        "snippet": "PubMed ID: 41722360. 2026/04/01 00:00. PURPOSE: This study describes late bowel morbidity prospectively \nassessed in the multi-institutional EMBRACE study on MRI-guided adaptive \nbrachytherapy in locally advanced cervical cancer (LACC).\nMATERIALS/METHODS: A total of 1176 patients were analyzed. Physician reported \nmorbidity (CTCAE v.3.0) and patient reported outcome (PRO) (EORTC QLQ C30/CX24) \nwere assessed at baseline and at regular follow-up.\nRESULTS: At 3/5 years the actuarial incidence of bo",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/41722360/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 29880222. 2018/06/01 00:00. PURPOSE: This study describes late bowel morbidity prospectively \nassessed in the multi-institutional EMBRACE study on MRI-guided adaptive \nbrachytherapy in loca\n2. PubMed ID: 41722360. 2026/04/01 00:00. PURPOSE: This study describes late bowel morbidity prospectively \nassessed in the multi-institutional EMBRACE study on MRI-guided adaptive \nbrachytherapy in loca",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/29880222/",
+      "https://pubmed.ncbi.nlm.nih.gov/41722360/"
+    ],
+    "evidence_chain_id": "20260603_162350_257908",
+    "evidence_summary": {
+      "response_id": "20260603_162350_257908",
+      "query": "MRI-guided brachytherapy cervical cancer local control rates EMBRACE",
+      "created_at": "2026-06-03T16:23:50.257939",
+      "num_sources": 2,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Bowel morbidity following radiochemotherapy and image-guided adaptive brachytherapy for cervical cancer: Physician- and patient reported outcome from the EMBRACE study.](https://pubmed.ncbi.nlm.nih.gov/29880222/)",
+        "[Long-term Clinical Outcomes of a Resource-conserving Accelerated Magnetic Resonance Imaging-guided Brachytherapy Schedule for Cervix Cancer.](https://pubmed.ncbi.nlm.nih.gov/41722360/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "528205b8b4e1",
+          "claim": "PubMed ID: 29880222. 2018/06/01 00:00. PURPOSE: This study describes late bowel morbidity prospectively \nassessed in the multi-institutional EMBRACE study on MRI-guided adaptive \nbrachytherapy in loca",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/29880222/",
+          "source_type": "PubMed",
+          "source_title": "Bowel morbidity following radiochemotherapy and image-guided adaptive brachytherapy for cervical cancer: Physician- and patient reported outcome from the EMBRACE study.",
+          "accessed_at": "2026-06-03T16:23:51.708869",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 29880222. 2018/06/01 00:00. PURPOSE: This study describes late bowel morbidity prospectively \nassessed in the multi-institutional EMBRACE study on MRI-guided adaptive \nbrachytherapy in locally advanced cervical cancer (LACC).\nMATERIALS/METHODS: A total of 1176 patients were analyzed. Physician reported \nmorbidity (CTCAE v.3.0) and patient reported outcome (PRO) (EORTC QLQ C30/CX24) \nwere assessed at baseline and at regular follow-up.\nRESULTS: At 3/5 years the actuarial incidence of bo",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided brachytherapy cervical cancer local control rates EMBRACE",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f3497e7914cb",
+          "claim": "PubMed ID: 41722360. 2026/04/01 00:00. PURPOSE: This study describes late bowel morbidity prospectively \nassessed in the multi-institutional EMBRACE study on MRI-guided adaptive \nbrachytherapy in loca",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/41722360/",
+          "source_type": "PubMed",
+          "source_title": "Long-term Clinical Outcomes of a Resource-conserving Accelerated Magnetic Resonance Imaging-guided Brachytherapy Schedule for Cervix Cancer.",
+          "accessed_at": "2026-06-03T16:23:51.708971",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 41722360. 2026/04/01 00:00. PURPOSE: This study describes late bowel morbidity prospectively \nassessed in the multi-institutional EMBRACE study on MRI-guided adaptive \nbrachytherapy in locally advanced cervical cancer (LACC).\nMATERIALS/METHODS: A total of 1176 patients were analyzed. Physician reported \nmorbidity (CTCAE v.3.0) and patient reported outcome (PRO) (EORTC QLQ C30/CX24) \nwere assessed at baseline and at regular follow-up.\nRESULTS: At 3/5 years the actuarial incidence of bo",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided brachytherapy cervical cancer local control rates EMBRACE",
+          "search_type": "clinical",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Bowel morbidity following radiochemotherapy and image-guided adaptive brachytherapy for cervical cancer: Physician- and patient reported outcome from the EMBRACE study.](https://pubmed.ncbi.nlm.nih.gov/29880222/)",
+      "[Long-term Clinical Outcomes of a Resource-conserving Accelerated Magnetic Resonance Imaging-guided Brachytherapy Schedule for Cervix Cancer.](https://pubmed.ncbi.nlm.nih.gov/41722360/)"
+    ]
+  }
+}

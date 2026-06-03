@@ -1,0 +1,160 @@
+{
+  "query": "AAPM TG-182 model-based dose calculation brachytherapy recommendations",
+  "timestamp": 1780468474.3480585,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Model-Based Dose Calculation Algorithms for Brachytherapy Dosimetry.",
+        "snippet": "PubMed ID: 31727303. 2020/01/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmodel-based dose calculation algorithm (MBDCA) following TG-186 recommendations \nand TG-43 dosimetry protocol for breast, head-and-neck, and lung patient \ncohorts, with various treatment concepts and prescriptions.\nMATERIAL AND METHODS: In this study, 59 interstitial 192Ir HDR brachytherapy \ncases trea",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31727303/",
+        "source": "PubMed"
+      },
+      {
+        "title": "AAPM WGDCAB Report 372: A joint AAPM, ESTRO, ABG, and ABS report on commissioning of model-based dose calculation algorithms in brachytherapy.",
+        "snippet": "PubMed ID: 37427750. 2023/08/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmodel-based dose calculation algorithm (MBDCA) following TG-186 recommendations \nand TG-43 dosimetry protocol for breast, head-and-neck, and lung patient \ncohorts, with various treatment concepts and prescriptions.\nMATERIAL AND METHODS: In this study, 59 interstitial 192Ir HDR brachytherapy \ncases trea",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37427750/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Dosimetric comparison of Acuros(TM) BV and AAPM TG-43 formalism for interstitial iridium-192 high-dose-rate brachytherapy.",
+        "snippet": "PubMed ID: 39629089. 2024/06/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmodel-based dose calculation algorithm (MBDCA) following TG-186 recommendations \nand TG-43 dosimetry protocol for breast, head-and-neck, and lung patient \ncohorts, with various treatment concepts and prescriptions.\nMATERIAL AND METHODS: In this study, 59 interstitial 192Ir HDR brachytherapy \ncases trea",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39629089/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Generation and comparison of 3D dosimetric reference datasets for COMS eye plaque brachytherapy using model-based dose calculations.",
+        "snippet": "PubMed ID: 37665982. 2024/01/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmodel-based dose calculation algorithm (MBDCA) following TG-186 recommendations \nand TG-43 dosimetry protocol for breast, head-and-neck, and lung patient \ncohorts, with various treatment concepts and prescriptions.\nMATERIAL AND METHODS: In this study, 59 interstitial 192Ir HDR brachytherapy \ncases trea",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37665982/",
+        "source": "PubMed"
+      },
+      {
+        "title": "A generic high-dose rate (192)Ir brachytherapy source for evaluation of model-based dose calculations beyond the TG-43 formalism.",
+        "snippet": "PubMed ID: 26127057. 2015/06/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmodel-based dose calculation algorithm (MBDCA) following TG-186 recommendations \nand TG-43 dosimetry protocol for breast, head-and-neck, and lung patient \ncohorts, with various treatment concepts and prescriptions.\nMATERIAL AND METHODS: In this study, 59 interstitial 192Ir HDR brachytherapy \ncases trea",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/26127057/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 31727303. 2020/01/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmod\n2. PubMed ID: 37427750. 2023/08/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmod\n3. PubMed ID: 39629089. 2024/06/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmod",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/31727303/",
+      "https://pubmed.ncbi.nlm.nih.gov/37427750/",
+      "https://pubmed.ncbi.nlm.nih.gov/39629089/",
+      "https://pubmed.ncbi.nlm.nih.gov/37665982/",
+      "https://pubmed.ncbi.nlm.nih.gov/26127057/"
+    ],
+    "evidence_chain_id": "20260603_143432_107373",
+    "evidence_summary": {
+      "response_id": "20260603_143432_107373",
+      "query": "AAPM TG-182 model-based dose calculation brachytherapy recommendations",
+      "created_at": "2026-06-03T14:34:32.107404",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Model-Based Dose Calculation Algorithms for Brachytherapy Dosimetry.](https://pubmed.ncbi.nlm.nih.gov/31727303/)",
+        "[AAPM WGDCAB Report 372: A joint AAPM, ESTRO, ABG, and ABS report on commissioning of model-based dose calculation algorithms in brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/37427750/)",
+        "[Dosimetric comparison of Acuros(TM) BV and AAPM TG-43 formalism for interstitial iridium-192 high-dose-rate brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/39629089/)",
+        "[Generation and comparison of 3D dosimetric reference datasets for COMS eye plaque brachytherapy using model-based dose calculations.](https://pubmed.ncbi.nlm.nih.gov/37665982/)",
+        "[A generic high-dose rate (192)Ir brachytherapy source for evaluation of model-based dose calculations beyond the TG-43 formalism.](https://pubmed.ncbi.nlm.nih.gov/26127057/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "50eabdce768d",
+          "claim": "PubMed ID: 31727303. 2020/01/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmod",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31727303/",
+          "source_type": "PubMed",
+          "source_title": "Model-Based Dose Calculation Algorithms for Brachytherapy Dosimetry.",
+          "accessed_at": "2026-06-03T14:34:34.339093",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31727303. 2020/01/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmodel-based dose calculation algorithm (MBDCA) following TG-186 recommendations \nand TG-43 dosimetry protocol for breast, head-and-neck, and lung patient \ncohorts, with various treatment concepts and prescriptions.\nMATERIAL AND METHODS: In this study, 59 interstitial 192Ir HDR brachytherapy \ncases trea",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-182 model-based dose calculation brachytherapy recommendations",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2981fb80e653",
+          "claim": "PubMed ID: 37427750. 2023/08/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmod",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37427750/",
+          "source_type": "PubMed",
+          "source_title": "AAPM WGDCAB Report 372: A joint AAPM, ESTRO, ABG, and ABS report on commissioning of model-based dose calculation algorithms in brachytherapy.",
+          "accessed_at": "2026-06-03T14:34:34.339187",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37427750. 2023/08/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmodel-based dose calculation algorithm (MBDCA) following TG-186 recommendations \nand TG-43 dosimetry protocol for breast, head-and-neck, and lung patient \ncohorts, with various treatment concepts and prescriptions.\nMATERIAL AND METHODS: In this study, 59 interstitial 192Ir HDR brachytherapy \ncases trea",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-182 model-based dose calculation brachytherapy recommendations",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e6028c6fb0c5",
+          "claim": "PubMed ID: 39629089. 2024/06/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmod",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39629089/",
+          "source_type": "PubMed",
+          "source_title": "Dosimetric comparison of Acuros(TM) BV and AAPM TG-43 formalism for interstitial iridium-192 high-dose-rate brachytherapy.",
+          "accessed_at": "2026-06-03T14:34:34.339219",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39629089. 2024/06/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmodel-based dose calculation algorithm (MBDCA) following TG-186 recommendations \nand TG-43 dosimetry protocol for breast, head-and-neck, and lung patient \ncohorts, with various treatment concepts and prescriptions.\nMATERIAL AND METHODS: In this study, 59 interstitial 192Ir HDR brachytherapy \ncases trea",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-182 model-based dose calculation brachytherapy recommendations",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3a4a9e94915d",
+          "claim": "PubMed ID: 37665982. 2024/01/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmod",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37665982/",
+          "source_type": "PubMed",
+          "source_title": "Generation and comparison of 3D dosimetric reference datasets for COMS eye plaque brachytherapy using model-based dose calculations.",
+          "accessed_at": "2026-06-03T14:34:34.339245",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37665982. 2024/01/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmodel-based dose calculation algorithm (MBDCA) following TG-186 recommendations \nand TG-43 dosimetry protocol for breast, head-and-neck, and lung patient \ncohorts, with various treatment concepts and prescriptions.\nMATERIAL AND METHODS: In this study, 59 interstitial 192Ir HDR brachytherapy \ncases trea",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-182 model-based dose calculation brachytherapy recommendations",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "d71bdcf1de6e",
+          "claim": "PubMed ID: 26127057. 2015/06/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmod",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/26127057/",
+          "source_type": "PubMed",
+          "source_title": "A generic high-dose rate (192)Ir brachytherapy source for evaluation of model-based dose calculations beyond the TG-43 formalism.",
+          "accessed_at": "2026-06-03T14:34:34.339269",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 26127057. 2015/06/01 00:00. PURPOSE: The aim of this study was a retrospective dosimetric comparison of \niridium-192 (192Ir) high-dose-rate (HDR) interstitial brachytherapy plans using \nmodel-based dose calculation algorithm (MBDCA) following TG-186 recommendations \nand TG-43 dosimetry protocol for breast, head-and-neck, and lung patient \ncohorts, with various treatment concepts and prescriptions.\nMATERIAL AND METHODS: In this study, 59 interstitial 192Ir HDR brachytherapy \ncases trea",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-182 model-based dose calculation brachytherapy recommendations",
+          "search_type": "clinical",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Model-Based Dose Calculation Algorithms for Brachytherapy Dosimetry.](https://pubmed.ncbi.nlm.nih.gov/31727303/)",
+      "[AAPM WGDCAB Report 372: A joint AAPM, ESTRO, ABG, and ABS report on commissioning of model-based dose calculation algorithms in brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/37427750/)",
+      "[Dosimetric comparison of Acuros(TM) BV and AAPM TG-43 formalism for interstitial iridium-192 high-dose-rate brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/39629089/)",
+      "[Generation and comparison of 3D dosimetric reference datasets for COMS eye plaque brachytherapy using model-based dose calculations.](https://pubmed.ncbi.nlm.nih.gov/37665982/)",
+      "[A generic high-dose rate (192)Ir brachytherapy source for evaluation of model-based dose calculations beyond the TG-43 formalism.](https://pubmed.ncbi.nlm.nih.gov/26127057/)"
+    ]
+  }
+}

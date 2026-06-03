@@ -1,0 +1,160 @@
+{
+  "query": "neuromodulation device radiotherapy safety guidelines",
+  "timestamp": 1780431331.7091658,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Nanotechnology in neuromodulation.",
+        "snippet": "PubMed ID: 23206682. 2012/01/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/23206682/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Evolution of neuromodulation.",
+        "snippet": "PubMed ID: 16006778. 2005/01/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/16006778/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Optogenetic neuromodulation.",
+        "snippet": "PubMed ID: 19404144. 2009/05/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/19404144/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Acute urinary retention.",
+        "snippet": "PubMed ID: 10671867. 2000/01/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/10671867/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Neuromodulation: selected approaches and challenges.",
+        "snippet": "PubMed ID: 23190025. 2013/02/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/23190025/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 23206682. 2012/01/01 00:00\n2. PubMed ID: 16006778. 2005/01/01 00:00\n3. PubMed ID: 19404144. 2009/05/01 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/23206682/",
+      "https://pubmed.ncbi.nlm.nih.gov/16006778/",
+      "https://pubmed.ncbi.nlm.nih.gov/19404144/",
+      "https://pubmed.ncbi.nlm.nih.gov/10671867/",
+      "https://pubmed.ncbi.nlm.nih.gov/23190025/"
+    ],
+    "evidence_chain_id": "20260603_041529_489955",
+    "evidence_summary": {
+      "response_id": "20260603_041529_489955",
+      "query": "neuromodulation device radiotherapy safety guidelines",
+      "created_at": "2026-06-03T04:15:29.489972",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Nanotechnology in neuromodulation.](https://pubmed.ncbi.nlm.nih.gov/23206682/)",
+        "[Evolution of neuromodulation.](https://pubmed.ncbi.nlm.nih.gov/16006778/)",
+        "[Optogenetic neuromodulation.](https://pubmed.ncbi.nlm.nih.gov/19404144/)",
+        "[Acute urinary retention.](https://pubmed.ncbi.nlm.nih.gov/10671867/)",
+        "[Neuromodulation: selected approaches and challenges.](https://pubmed.ncbi.nlm.nih.gov/23190025/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "b0df19b45e0d",
+          "claim": "PubMed ID: 23206682. 2012/01/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/23206682/",
+          "source_type": "PubMed",
+          "source_title": "Nanotechnology in neuromodulation.",
+          "accessed_at": "2026-06-03T04:15:31.708761",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 23206682. 2012/01/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "neuromodulation device radiotherapy safety guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "df222616e35d",
+          "claim": "PubMed ID: 16006778. 2005/01/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/16006778/",
+          "source_type": "PubMed",
+          "source_title": "Evolution of neuromodulation.",
+          "accessed_at": "2026-06-03T04:15:31.708857",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 16006778. 2005/01/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "neuromodulation device radiotherapy safety guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "14c7c72e3466",
+          "claim": "PubMed ID: 19404144. 2009/05/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/19404144/",
+          "source_type": "PubMed",
+          "source_title": "Optogenetic neuromodulation.",
+          "accessed_at": "2026-06-03T04:15:31.708890",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 19404144. 2009/05/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "neuromodulation device radiotherapy safety guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3bb0f6f0a9b7",
+          "claim": "PubMed ID: 10671867. 2000/01/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/10671867/",
+          "source_type": "PubMed",
+          "source_title": "Acute urinary retention.",
+          "accessed_at": "2026-06-03T04:15:31.708916",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 10671867. 2000/01/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "neuromodulation device radiotherapy safety guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f887708f57cc",
+          "claim": "PubMed ID: 23190025. 2013/02/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/23190025/",
+          "source_type": "PubMed",
+          "source_title": "Neuromodulation: selected approaches and challenges.",
+          "accessed_at": "2026-06-03T04:15:31.708939",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 23190025. 2013/02/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "neuromodulation device radiotherapy safety guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Nanotechnology in neuromodulation.](https://pubmed.ncbi.nlm.nih.gov/23206682/)",
+      "[Evolution of neuromodulation.](https://pubmed.ncbi.nlm.nih.gov/16006778/)",
+      "[Optogenetic neuromodulation.](https://pubmed.ncbi.nlm.nih.gov/19404144/)",
+      "[Acute urinary retention.](https://pubmed.ncbi.nlm.nih.gov/10671867/)",
+      "[Neuromodulation: selected approaches and challenges.](https://pubmed.ncbi.nlm.nih.gov/23190025/)"
+    ]
+  }
+}

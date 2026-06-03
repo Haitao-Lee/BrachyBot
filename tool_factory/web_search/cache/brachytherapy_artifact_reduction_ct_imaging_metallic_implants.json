@@ -1,0 +1,160 @@
+{
+  "query": "brachytherapy artifact reduction CT imaging metallic implants",
+  "timestamp": 1780414775.2119765,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "[Usefulness of Metal Artifact-reduced Reconstruction for Image-guided Brachytherapy for Cervical Cancer].",
+        "snippet": "PubMed ID: 35046224. 2022/01/01 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nreducing metal artifacts in cervical cancer patients undergoing intracavitary \nbrachytherapy.\nMATERIALS AND METHODS: Fifty cervical cancer patients scheduled for \nintracavitary brachytherapy underwent spectral computed tomography (CT) images. \nVMI + MAR/no-MAR were reconstructed at energies ranging fro",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35046224/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Metal artifact reduction in cervix brachytherapy with titanium applicators using dual-energy CT through virtual monoenergetic images and an iterative algorithm: A phantom study.",
+        "snippet": "PubMed ID: 35933273. 2022/11/01 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nreducing metal artifacts in cervical cancer patients undergoing intracavitary \nbrachytherapy.\nMATERIALS AND METHODS: Fifty cervical cancer patients scheduled for \nintracavitary brachytherapy underwent spectral computed tomography (CT) images. \nVMI + MAR/no-MAR were reconstructed at energies ranging fro",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35933273/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Metal artifact reduction in MRI-based cervical cancer intracavitary brachytherapy.",
+        "snippet": "PubMed ID: 28306556. 2017/04/21 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nreducing metal artifacts in cervical cancer patients undergoing intracavitary \nbrachytherapy.\nMATERIALS AND METHODS: Fifty cervical cancer patients scheduled for \nintracavitary brachytherapy underwent spectral computed tomography (CT) images. \nVMI + MAR/no-MAR were reconstructed at energies ranging fro",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28306556/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Metal artifact reduction in spectral computed tomography for intracavity brachytherapy in cervical cancer patients: a prospective study.",
+        "snippet": "PubMed ID: 41327225. 2025/12/01 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nreducing metal artifacts in cervical cancer patients undergoing intracavitary \nbrachytherapy.\nMATERIALS AND METHODS: Fifty cervical cancer patients scheduled for \nintracavitary brachytherapy underwent spectral computed tomography (CT) images. \nVMI + MAR/no-MAR were reconstructed at energies ranging fro",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/41327225/",
+        "source": "PubMed"
+      },
+      {
+        "title": "MRI artifact simulation for clinically relevant MRI sequences for guidance of prostate HDR brachytherapy.",
+        "snippet": "PubMed ID: 30947159. 2019/04/26 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nreducing metal artifacts in cervical cancer patients undergoing intracavitary \nbrachytherapy.\nMATERIALS AND METHODS: Fifty cervical cancer patients scheduled for \nintracavitary brachytherapy underwent spectral computed tomography (CT) images. \nVMI + MAR/no-MAR were reconstructed at energies ranging fro",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30947159/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 35046224. 2022/01/01 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nred\n2. PubMed ID: 35933273. 2022/11/01 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nred\n3. PubMed ID: 28306556. 2017/04/21 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nred",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/35046224/",
+      "https://pubmed.ncbi.nlm.nih.gov/35933273/",
+      "https://pubmed.ncbi.nlm.nih.gov/28306556/",
+      "https://pubmed.ncbi.nlm.nih.gov/41327225/",
+      "https://pubmed.ncbi.nlm.nih.gov/30947159/"
+    ],
+    "evidence_chain_id": "20260602_233933_587778",
+    "evidence_summary": {
+      "response_id": "20260602_233933_587778",
+      "query": "brachytherapy artifact reduction CT imaging metallic implants",
+      "created_at": "2026-06-02T23:39:33.587795",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[[Usefulness of Metal Artifact-reduced Reconstruction for Image-guided Brachytherapy for Cervical Cancer].](https://pubmed.ncbi.nlm.nih.gov/35046224/)",
+        "[Metal artifact reduction in cervix brachytherapy with titanium applicators using dual-energy CT through virtual monoenergetic images and an iterative algorithm: A phantom study.](https://pubmed.ncbi.nlm.nih.gov/35933273/)",
+        "[Metal artifact reduction in MRI-based cervical cancer intracavitary brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/28306556/)",
+        "[Metal artifact reduction in spectral computed tomography for intracavity brachytherapy in cervical cancer patients: a prospective study.](https://pubmed.ncbi.nlm.nih.gov/41327225/)",
+        "[MRI artifact simulation for clinically relevant MRI sequences for guidance of prostate HDR brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/30947159/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "446e6beeb845",
+          "claim": "PubMed ID: 35046224. 2022/01/01 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nred",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35046224/",
+          "source_type": "PubMed",
+          "source_title": "[Usefulness of Metal Artifact-reduced Reconstruction for Image-guided Brachytherapy for Cervical Cancer].",
+          "accessed_at": "2026-06-02T23:39:35.211509",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35046224. 2022/01/01 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nreducing metal artifacts in cervical cancer patients undergoing intracavitary \nbrachytherapy.\nMATERIALS AND METHODS: Fifty cervical cancer patients scheduled for \nintracavitary brachytherapy underwent spectral computed tomography (CT) images. \nVMI + MAR/no-MAR were reconstructed at energies ranging fro",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy artifact reduction CT imaging metallic implants",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "a714c617e619",
+          "claim": "PubMed ID: 35933273. 2022/11/01 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nred",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35933273/",
+          "source_type": "PubMed",
+          "source_title": "Metal artifact reduction in cervix brachytherapy with titanium applicators using dual-energy CT through virtual monoenergetic images and an iterative algorithm: A phantom study.",
+          "accessed_at": "2026-06-02T23:39:35.211623",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35933273. 2022/11/01 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nreducing metal artifacts in cervical cancer patients undergoing intracavitary \nbrachytherapy.\nMATERIALS AND METHODS: Fifty cervical cancer patients scheduled for \nintracavitary brachytherapy underwent spectral computed tomography (CT) images. \nVMI + MAR/no-MAR were reconstructed at energies ranging fro",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy artifact reduction CT imaging metallic implants",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "1d4837f23f58",
+          "claim": "PubMed ID: 28306556. 2017/04/21 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nred",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/28306556/",
+          "source_type": "PubMed",
+          "source_title": "Metal artifact reduction in MRI-based cervical cancer intracavitary brachytherapy.",
+          "accessed_at": "2026-06-02T23:39:35.211664",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 28306556. 2017/04/21 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nreducing metal artifacts in cervical cancer patients undergoing intracavitary \nbrachytherapy.\nMATERIALS AND METHODS: Fifty cervical cancer patients scheduled for \nintracavitary brachytherapy underwent spectral computed tomography (CT) images. \nVMI + MAR/no-MAR were reconstructed at energies ranging fro",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy artifact reduction CT imaging metallic implants",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8b021e9fcf68",
+          "claim": "PubMed ID: 41327225. 2025/12/01 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nred",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/41327225/",
+          "source_type": "PubMed",
+          "source_title": "Metal artifact reduction in spectral computed tomography for intracavity brachytherapy in cervical cancer patients: a prospective study.",
+          "accessed_at": "2026-06-02T23:39:35.211695",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 41327225. 2025/12/01 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nreducing metal artifacts in cervical cancer patients undergoing intracavitary \nbrachytherapy.\nMATERIALS AND METHODS: Fifty cervical cancer patients scheduled for \nintracavitary brachytherapy underwent spectral computed tomography (CT) images. \nVMI + MAR/no-MAR were reconstructed at energies ranging fro",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy artifact reduction CT imaging metallic implants",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f5b7910df145",
+          "claim": "PubMed ID: 30947159. 2019/04/26 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nred",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/30947159/",
+          "source_type": "PubMed",
+          "source_title": "MRI artifact simulation for clinically relevant MRI sequences for guidance of prostate HDR brachytherapy.",
+          "accessed_at": "2026-06-02T23:39:35.211724",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 30947159. 2019/04/26 00:00. BACKGROUND: This study aims to evaluate the effectiveness of combining virtual \nmonochromatic images (VMI) with metal artifact reduction (MAR) algorithms in \nreducing metal artifacts in cervical cancer patients undergoing intracavitary \nbrachytherapy.\nMATERIALS AND METHODS: Fifty cervical cancer patients scheduled for \nintracavitary brachytherapy underwent spectral computed tomography (CT) images. \nVMI + MAR/no-MAR were reconstructed at energies ranging fro",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy artifact reduction CT imaging metallic implants",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[[Usefulness of Metal Artifact-reduced Reconstruction for Image-guided Brachytherapy for Cervical Cancer].](https://pubmed.ncbi.nlm.nih.gov/35046224/)",
+      "[Metal artifact reduction in cervix brachytherapy with titanium applicators using dual-energy CT through virtual monoenergetic images and an iterative algorithm: A phantom study.](https://pubmed.ncbi.nlm.nih.gov/35933273/)",
+      "[Metal artifact reduction in MRI-based cervical cancer intracavitary brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/28306556/)",
+      "[Metal artifact reduction in spectral computed tomography for intracavity brachytherapy in cervical cancer patients: a prospective study.](https://pubmed.ncbi.nlm.nih.gov/41327225/)",
+      "[MRI artifact simulation for clinically relevant MRI sequences for guidance of prostate HDR brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/30947159/)"
+    ]
+  }
+}

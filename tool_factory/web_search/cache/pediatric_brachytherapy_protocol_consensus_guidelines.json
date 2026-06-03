@@ -1,0 +1,160 @@
+{
+  "query": "pediatric brachytherapy protocol consensus guidelines",
+  "timestamp": 1780414894.694658,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "[Brachytherapy role in pediatric rhabdomyosarcomas].",
+        "snippet": "PubMed ID: 23683937. 2013/04/01 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteletherapy in young children can result in significant long-term toxicity \n(especially retardation of growth of bones and organs). The use of brachytherapy \nis an attractive alternative because brachytherapy irradiates small volumes and \ncan thus potentially minimize complications.\nMETHODS AND MATERIALS:",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/23683937/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Modern treatment of retinoblastoma: A 2020 review.",
+        "snippet": "PubMed ID: 33120616. 2020/11/01 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteletherapy in young children can result in significant long-term toxicity \n(especially retardation of growth of bones and organs). The use of brachytherapy \nis an attractive alternative because brachytherapy irradiates small volumes and \ncan thus potentially minimize complications.\nMETHODS AND MATERIALS:",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33120616/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Brachytherapy for pediatric tumors.",
+        "snippet": "PubMed ID: 15062135. 2003/01/01 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteletherapy in young children can result in significant long-term toxicity \n(especially retardation of growth of bones and organs). The use of brachytherapy \nis an attractive alternative because brachytherapy irradiates small volumes and \ncan thus potentially minimize complications.\nMETHODS AND MATERIALS:",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/15062135/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Pediatric extremity rhabdomyosarcoma treated with re-brachytherapy in recurrent setting.",
+        "snippet": "PubMed ID: 35900564. 2022/04/01 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteletherapy in young children can result in significant long-term toxicity \n(especially retardation of growth of bones and organs). The use of brachytherapy \nis an attractive alternative because brachytherapy irradiates small volumes and \ncan thus potentially minimize complications.\nMETHODS AND MATERIALS:",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35900564/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Insulinoma.",
+        "snippet": "PubMed ID: 25905215. 2023/04/04 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteletherapy in young children can result in significant long-term toxicity \n(especially retardation of growth of bones and organs). The use of brachytherapy \nis an attractive alternative because brachytherapy irradiates small volumes and \ncan thus potentially minimize complications.\nMETHODS AND MATERIALS:",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/25905215/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 23683937. 2013/04/01 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteleth\n2. PubMed ID: 33120616. 2020/11/01 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteleth\n3. PubMed ID: 15062135. 2003/01/01 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteleth",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/23683937/",
+      "https://pubmed.ncbi.nlm.nih.gov/33120616/",
+      "https://pubmed.ncbi.nlm.nih.gov/15062135/",
+      "https://pubmed.ncbi.nlm.nih.gov/35900564/",
+      "https://pubmed.ncbi.nlm.nih.gov/25905215/"
+    ],
+    "evidence_chain_id": "20260602_234133_057464",
+    "evidence_summary": {
+      "response_id": "20260602_234133_057464",
+      "query": "pediatric brachytherapy protocol consensus guidelines",
+      "created_at": "2026-06-02T23:41:33.057482",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[[Brachytherapy role in pediatric rhabdomyosarcomas].](https://pubmed.ncbi.nlm.nih.gov/23683937/)",
+        "[Modern treatment of retinoblastoma: A 2020 review.](https://pubmed.ncbi.nlm.nih.gov/33120616/)",
+        "[Brachytherapy for pediatric tumors.](https://pubmed.ncbi.nlm.nih.gov/15062135/)",
+        "[Pediatric extremity rhabdomyosarcoma treated with re-brachytherapy in recurrent setting.](https://pubmed.ncbi.nlm.nih.gov/35900564/)",
+        "[Insulinoma.](https://pubmed.ncbi.nlm.nih.gov/25905215/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "e443cb1019a0",
+          "claim": "PubMed ID: 23683937. 2013/04/01 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteleth",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/23683937/",
+          "source_type": "PubMed",
+          "source_title": "[Brachytherapy role in pediatric rhabdomyosarcomas].",
+          "accessed_at": "2026-06-02T23:41:34.694267",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 23683937. 2013/04/01 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteletherapy in young children can result in significant long-term toxicity \n(especially retardation of growth of bones and organs). The use of brachytherapy \nis an attractive alternative because brachytherapy irradiates small volumes and \ncan thus potentially minimize complications.\nMETHODS AND MATERIALS:",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric brachytherapy protocol consensus guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "1538ca74dc27",
+          "claim": "PubMed ID: 33120616. 2020/11/01 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteleth",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33120616/",
+          "source_type": "PubMed",
+          "source_title": "Modern treatment of retinoblastoma: A 2020 review.",
+          "accessed_at": "2026-06-02T23:41:34.694370",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33120616. 2020/11/01 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteletherapy in young children can result in significant long-term toxicity \n(especially retardation of growth of bones and organs). The use of brachytherapy \nis an attractive alternative because brachytherapy irradiates small volumes and \ncan thus potentially minimize complications.\nMETHODS AND MATERIALS:",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric brachytherapy protocol consensus guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "a0e469805475",
+          "claim": "PubMed ID: 15062135. 2003/01/01 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteleth",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/15062135/",
+          "source_type": "PubMed",
+          "source_title": "Brachytherapy for pediatric tumors.",
+          "accessed_at": "2026-06-02T23:41:34.694400",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 15062135. 2003/01/01 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteletherapy in young children can result in significant long-term toxicity \n(especially retardation of growth of bones and organs). The use of brachytherapy \nis an attractive alternative because brachytherapy irradiates small volumes and \ncan thus potentially minimize complications.\nMETHODS AND MATERIALS:",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric brachytherapy protocol consensus guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "529faa65e603",
+          "claim": "PubMed ID: 35900564. 2022/04/01 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteleth",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35900564/",
+          "source_type": "PubMed",
+          "source_title": "Pediatric extremity rhabdomyosarcoma treated with re-brachytherapy in recurrent setting.",
+          "accessed_at": "2026-06-02T23:41:34.694432",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35900564. 2022/04/01 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteletherapy in young children can result in significant long-term toxicity \n(especially retardation of growth of bones and organs). The use of brachytherapy \nis an attractive alternative because brachytherapy irradiates small volumes and \ncan thus potentially minimize complications.\nMETHODS AND MATERIALS:",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric brachytherapy protocol consensus guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "7a3312d960b3",
+          "claim": "PubMed ID: 25905215. 2023/04/04 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteleth",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/25905215/",
+          "source_type": "PubMed",
+          "source_title": "Insulinoma.",
+          "accessed_at": "2026-06-02T23:41:34.694458",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 25905215. 2023/04/04 00:00. PURPOSE: Pediatric tumors are generally managed with a multi-modality treatment \nprogram that includes surgery, chemotherapy, and teletherapy. The use of \nteletherapy in young children can result in significant long-term toxicity \n(especially retardation of growth of bones and organs). The use of brachytherapy \nis an attractive alternative because brachytherapy irradiates small volumes and \ncan thus potentially minimize complications.\nMETHODS AND MATERIALS:",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric brachytherapy protocol consensus guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[[Brachytherapy role in pediatric rhabdomyosarcomas].](https://pubmed.ncbi.nlm.nih.gov/23683937/)",
+      "[Modern treatment of retinoblastoma: A 2020 review.](https://pubmed.ncbi.nlm.nih.gov/33120616/)",
+      "[Brachytherapy for pediatric tumors.](https://pubmed.ncbi.nlm.nih.gov/15062135/)",
+      "[Pediatric extremity rhabdomyosarcoma treated with re-brachytherapy in recurrent setting.](https://pubmed.ncbi.nlm.nih.gov/35900564/)",
+      "[Insulinoma.](https://pubmed.ncbi.nlm.nih.gov/25905215/)"
+    ]
+  }
+}

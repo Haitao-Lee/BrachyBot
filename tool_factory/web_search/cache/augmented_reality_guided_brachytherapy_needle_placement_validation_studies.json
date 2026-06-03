@@ -1,0 +1,160 @@
+{
+  "query": "augmented reality guided brachytherapy needle placement validation studies",
+  "timestamp": 1780421901.232591,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Augmented Reality in Neurosurgery.",
+        "snippet": "PubMed ID: 39523276. 2024/01/01 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere is little information about its applicability to training and care \ndelivery in the context of emergency medicine.\nOBJECTIVE: The objective of this article is to review current literature related \nto augmented reality applicable to emergency medicine and its training.\nMETHODS: Through a scoping revie",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39523276/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Augmented Reality in Surgical Oncology. A Literature Review.",
+        "snippet": "PubMed ID: 36318681. 2022/10/01 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere is little information about its applicability to training and care \ndelivery in the context of emergency medicine.\nOBJECTIVE: The objective of this article is to review current literature related \nto augmented reality applicable to emergency medicine and its training.\nMETHODS: Through a scoping revie",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36318681/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Augmented Reality in Emergency Medicine: A Scoping Review.",
+        "snippet": "PubMed ID: 30994463. 2019/04/17 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere is little information about its applicability to training and care \ndelivery in the context of emergency medicine.\nOBJECTIVE: The objective of this article is to review current literature related \nto augmented reality applicable to emergency medicine and its training.\nMETHODS: Through a scoping revie",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30994463/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Augmented Reality in Hallux Valgus Surgery.",
+        "snippet": "PubMed ID: 40348466. 2025/06/01 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere is little information about its applicability to training and care \ndelivery in the context of emergency medicine.\nOBJECTIVE: The objective of this article is to review current literature related \nto augmented reality applicable to emergency medicine and its training.\nMETHODS: Through a scoping revie",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40348466/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Virtual and augmented reality in biomedical engineering.",
+        "snippet": "PubMed ID: 37525193. 2023/07/31 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere is little information about its applicability to training and care \ndelivery in the context of emergency medicine.\nOBJECTIVE: The objective of this article is to review current literature related \nto augmented reality applicable to emergency medicine and its training.\nMETHODS: Through a scoping revie",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37525193/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 39523276. 2024/01/01 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere i\n2. PubMed ID: 36318681. 2022/10/01 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere i\n3. PubMed ID: 30994463. 2019/04/17 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere i",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/39523276/",
+      "https://pubmed.ncbi.nlm.nih.gov/36318681/",
+      "https://pubmed.ncbi.nlm.nih.gov/30994463/",
+      "https://pubmed.ncbi.nlm.nih.gov/40348466/",
+      "https://pubmed.ncbi.nlm.nih.gov/37525193/"
+    ],
+    "evidence_chain_id": "20260603_013819_468434",
+    "evidence_summary": {
+      "response_id": "20260603_013819_468434",
+      "query": "augmented reality guided brachytherapy needle placement validation studies",
+      "created_at": "2026-06-03T01:38:19.468451",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Augmented Reality in Neurosurgery.](https://pubmed.ncbi.nlm.nih.gov/39523276/)",
+        "[Augmented Reality in Surgical Oncology. A Literature Review.](https://pubmed.ncbi.nlm.nih.gov/36318681/)",
+        "[Augmented Reality in Emergency Medicine: A Scoping Review.](https://pubmed.ncbi.nlm.nih.gov/30994463/)",
+        "[Augmented Reality in Hallux Valgus Surgery.](https://pubmed.ncbi.nlm.nih.gov/40348466/)",
+        "[Virtual and augmented reality in biomedical engineering.](https://pubmed.ncbi.nlm.nih.gov/37525193/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "b9fa15c03756",
+          "claim": "PubMed ID: 39523276. 2024/01/01 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere i",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39523276/",
+          "source_type": "PubMed",
+          "source_title": "Augmented Reality in Neurosurgery.",
+          "accessed_at": "2026-06-03T01:38:21.232067",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39523276. 2024/01/01 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere is little information about its applicability to training and care \ndelivery in the context of emergency medicine.\nOBJECTIVE: The objective of this article is to review current literature related \nto augmented reality applicable to emergency medicine and its training.\nMETHODS: Through a scoping revie",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "augmented reality guided brachytherapy needle placement validation studies",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "616566ae3fa0",
+          "claim": "PubMed ID: 36318681. 2022/10/01 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere i",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36318681/",
+          "source_type": "PubMed",
+          "source_title": "Augmented Reality in Surgical Oncology. A Literature Review.",
+          "accessed_at": "2026-06-03T01:38:21.232184",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36318681. 2022/10/01 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere is little information about its applicability to training and care \ndelivery in the context of emergency medicine.\nOBJECTIVE: The objective of this article is to review current literature related \nto augmented reality applicable to emergency medicine and its training.\nMETHODS: Through a scoping revie",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "augmented reality guided brachytherapy needle placement validation studies",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "49aa8afbedba",
+          "claim": "PubMed ID: 30994463. 2019/04/17 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere i",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/30994463/",
+          "source_type": "PubMed",
+          "source_title": "Augmented Reality in Emergency Medicine: A Scoping Review.",
+          "accessed_at": "2026-06-03T01:38:21.232233",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 30994463. 2019/04/17 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere is little information about its applicability to training and care \ndelivery in the context of emergency medicine.\nOBJECTIVE: The objective of this article is to review current literature related \nto augmented reality applicable to emergency medicine and its training.\nMETHODS: Through a scoping revie",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "augmented reality guided brachytherapy needle placement validation studies",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "953845e08ffd",
+          "claim": "PubMed ID: 40348466. 2025/06/01 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere i",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40348466/",
+          "source_type": "PubMed",
+          "source_title": "Augmented Reality in Hallux Valgus Surgery.",
+          "accessed_at": "2026-06-03T01:38:21.232274",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40348466. 2025/06/01 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere is little information about its applicability to training and care \ndelivery in the context of emergency medicine.\nOBJECTIVE: The objective of this article is to review current literature related \nto augmented reality applicable to emergency medicine and its training.\nMETHODS: Through a scoping revie",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "augmented reality guided brachytherapy needle placement validation studies",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "b5698c81bb36",
+          "claim": "PubMed ID: 37525193. 2023/07/31 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere i",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37525193/",
+          "source_type": "PubMed",
+          "source_title": "Virtual and augmented reality in biomedical engineering.",
+          "accessed_at": "2026-06-03T01:38:21.232312",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37525193. 2023/07/31 00:00. BACKGROUND: Augmented reality is increasingly being investigated for its \napplications to medical specialties as well as in medical training. Currently, \nthere is little information about its applicability to training and care \ndelivery in the context of emergency medicine.\nOBJECTIVE: The objective of this article is to review current literature related \nto augmented reality applicable to emergency medicine and its training.\nMETHODS: Through a scoping revie",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "augmented reality guided brachytherapy needle placement validation studies",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Augmented Reality in Neurosurgery.](https://pubmed.ncbi.nlm.nih.gov/39523276/)",
+      "[Augmented Reality in Surgical Oncology. A Literature Review.](https://pubmed.ncbi.nlm.nih.gov/36318681/)",
+      "[Augmented Reality in Emergency Medicine: A Scoping Review.](https://pubmed.ncbi.nlm.nih.gov/30994463/)",
+      "[Augmented Reality in Hallux Valgus Surgery.](https://pubmed.ncbi.nlm.nih.gov/40348466/)",
+      "[Virtual and augmented reality in biomedical engineering.](https://pubmed.ncbi.nlm.nih.gov/37525193/)"
+    ]
+  }
+}

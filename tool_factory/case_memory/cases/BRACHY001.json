@@ -1,0 +1,20 @@
+{
+  "case_id": "BRACHY001",
+  "cancer_type": "Prostate Cancer",
+  "modality": "LDR Brachytherapy",
+  "prescription_dose": "145 Gy",
+  "plan_score": 85,
+  "v100": 0.95,
+  "v150": 0.52,
+  "v200": 0.12,
+  "d90": 0.98,
+  "source_type": "I-125",
+  "treatment_type": "Monotherapy",
+  "oar_doses": {
+    "rectum": "Within constraints",
+    "bladder": "Within constraints"
+  },
+  "plan_status": "Completed",
+  "case_type": "Prostate",
+  "saved_at": 1780415430.3577673
+}

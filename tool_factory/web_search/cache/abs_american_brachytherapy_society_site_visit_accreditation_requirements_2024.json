@@ -1,0 +1,160 @@
+{
+  "query": "ABS American Brachytherapy Society site visit accreditation requirements 2024",
+  "timestamp": 1780417810.0590212,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Consensus on diagnosis and management of Cushing's disease: a guideline update.",
+        "snippet": "PubMed ID: 34687601. 2021/12/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmanagement of STS and can be utilized as monotherapy or as a boost to external \nbeam radiation. We present updated guidelines from the American Brachytherapy \nSociety regarding the utilization of brachytherapy in the management of STS.\nMETHODS AND MATERIALS: Members of the American Brachytherapy Society",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34687601/",
+        "source": "PubMed"
+      },
+      {
+        "title": "American Brachytherapy Society (ABS) consensus statement for soft-tissue sarcoma brachytherapy.",
+        "snippet": "PubMed ID: 34303600. 2021/11/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmanagement of STS and can be utilized as monotherapy or as a boost to external \nbeam radiation. We present updated guidelines from the American Brachytherapy \nSociety regarding the utilization of brachytherapy in the management of STS.\nMETHODS AND MATERIALS: Members of the American Brachytherapy Society",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34303600/",
+        "source": "PubMed"
+      },
+      {
+        "title": "American Brachytherapy Society (ABS) rectoprostatic gel spacer consensus statement.",
+        "snippet": "PubMed ID: 40976759. 2025/11/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmanagement of STS and can be utilized as monotherapy or as a boost to external \nbeam radiation. We present updated guidelines from the American Brachytherapy \nSociety regarding the utilization of brachytherapy in the management of STS.\nMETHODS AND MATERIALS: Members of the American Brachytherapy Society",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40976759/",
+        "source": "PubMed"
+      },
+      {
+        "title": "The American Brachytherapy Society (ABS) consensus guidance for hybrid intracavitary interstitial brachytherapy for locally advanced cervical cancer.",
+        "snippet": "PubMed ID: 40447530. 2025/07/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmanagement of STS and can be utilized as monotherapy or as a boost to external \nbeam radiation. We present updated guidelines from the American Brachytherapy \nSociety regarding the utilization of brachytherapy in the management of STS.\nMETHODS AND MATERIALS: Members of the American Brachytherapy Society",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40447530/",
+        "source": "PubMed"
+      },
+      {
+        "title": "American Brachytherapy Society consensus guidelines for adjuvant vaginal cuff brachytherapy after hysterectomy.",
+        "snippet": "PubMed ID: 22265439. 2012/01/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmanagement of STS and can be utilized as monotherapy or as a boost to external \nbeam radiation. We present updated guidelines from the American Brachytherapy \nSociety regarding the utilization of brachytherapy in the management of STS.\nMETHODS AND MATERIALS: Members of the American Brachytherapy Society",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/22265439/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 34687601. 2021/12/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmana\n2. PubMed ID: 34303600. 2021/11/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmana\n3. PubMed ID: 40976759. 2025/11/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmana",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/34687601/",
+      "https://pubmed.ncbi.nlm.nih.gov/34303600/",
+      "https://pubmed.ncbi.nlm.nih.gov/40976759/",
+      "https://pubmed.ncbi.nlm.nih.gov/40447530/",
+      "https://pubmed.ncbi.nlm.nih.gov/22265439/"
+    ],
+    "evidence_chain_id": "20260603_003008_391232",
+    "evidence_summary": {
+      "response_id": "20260603_003008_391232",
+      "query": "ABS American Brachytherapy Society site visit accreditation requirements 2024",
+      "created_at": "2026-06-03T00:30:08.391257",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Consensus on diagnosis and management of Cushing's disease: a guideline update.](https://pubmed.ncbi.nlm.nih.gov/34687601/)",
+        "[American Brachytherapy Society (ABS) consensus statement for soft-tissue sarcoma brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/34303600/)",
+        "[American Brachytherapy Society (ABS) rectoprostatic gel spacer consensus statement.](https://pubmed.ncbi.nlm.nih.gov/40976759/)",
+        "[The American Brachytherapy Society (ABS) consensus guidance for hybrid intracavitary interstitial brachytherapy for locally advanced cervical cancer.](https://pubmed.ncbi.nlm.nih.gov/40447530/)",
+        "[American Brachytherapy Society consensus guidelines for adjuvant vaginal cuff brachytherapy after hysterectomy.](https://pubmed.ncbi.nlm.nih.gov/22265439/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ca3f9a3ae96b",
+          "claim": "PubMed ID: 34687601. 2021/12/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmana",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34687601/",
+          "source_type": "PubMed",
+          "source_title": "Consensus on diagnosis and management of Cushing's disease: a guideline update.",
+          "accessed_at": "2026-06-03T00:30:10.058582",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34687601. 2021/12/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmanagement of STS and can be utilized as monotherapy or as a boost to external \nbeam radiation. We present updated guidelines from the American Brachytherapy \nSociety regarding the utilization of brachytherapy in the management of STS.\nMETHODS AND MATERIALS: Members of the American Brachytherapy Society",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "ABS American Brachytherapy Society site visit accreditation requirements 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "acd784bfceef",
+          "claim": "PubMed ID: 34303600. 2021/11/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmana",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34303600/",
+          "source_type": "PubMed",
+          "source_title": "American Brachytherapy Society (ABS) consensus statement for soft-tissue sarcoma brachytherapy.",
+          "accessed_at": "2026-06-03T00:30:10.058709",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34303600. 2021/11/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmanagement of STS and can be utilized as monotherapy or as a boost to external \nbeam radiation. We present updated guidelines from the American Brachytherapy \nSociety regarding the utilization of brachytherapy in the management of STS.\nMETHODS AND MATERIALS: Members of the American Brachytherapy Society",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "ABS American Brachytherapy Society site visit accreditation requirements 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f5d129309a1b",
+          "claim": "PubMed ID: 40976759. 2025/11/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmana",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40976759/",
+          "source_type": "PubMed",
+          "source_title": "American Brachytherapy Society (ABS) rectoprostatic gel spacer consensus statement.",
+          "accessed_at": "2026-06-03T00:30:10.058740",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40976759. 2025/11/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmanagement of STS and can be utilized as monotherapy or as a boost to external \nbeam radiation. We present updated guidelines from the American Brachytherapy \nSociety regarding the utilization of brachytherapy in the management of STS.\nMETHODS AND MATERIALS: Members of the American Brachytherapy Society",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "ABS American Brachytherapy Society site visit accreditation requirements 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "a3675090165d",
+          "claim": "PubMed ID: 40447530. 2025/07/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmana",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40447530/",
+          "source_type": "PubMed",
+          "source_title": "The American Brachytherapy Society (ABS) consensus guidance for hybrid intracavitary interstitial brachytherapy for locally advanced cervical cancer.",
+          "accessed_at": "2026-06-03T00:30:10.058764",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40447530. 2025/07/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmanagement of STS and can be utilized as monotherapy or as a boost to external \nbeam radiation. We present updated guidelines from the American Brachytherapy \nSociety regarding the utilization of brachytherapy in the management of STS.\nMETHODS AND MATERIALS: Members of the American Brachytherapy Society",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "ABS American Brachytherapy Society site visit accreditation requirements 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "55518659ebbc",
+          "claim": "PubMed ID: 22265439. 2012/01/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmana",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/22265439/",
+          "source_type": "PubMed",
+          "source_title": "American Brachytherapy Society consensus guidelines for adjuvant vaginal cuff brachytherapy after hysterectomy.",
+          "accessed_at": "2026-06-03T00:30:10.058798",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 22265439. 2012/01/01 00:00. PURPOSE: Growing data supports the role of radiation therapy in the treatment of \nsoft tissue sarcoma (STS). Brachytherapy has been used for decades in the \nmanagement of STS and can be utilized as monotherapy or as a boost to external \nbeam radiation. We present updated guidelines from the American Brachytherapy \nSociety regarding the utilization of brachytherapy in the management of STS.\nMETHODS AND MATERIALS: Members of the American Brachytherapy Society",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "ABS American Brachytherapy Society site visit accreditation requirements 2024",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Consensus on diagnosis and management of Cushing's disease: a guideline update.](https://pubmed.ncbi.nlm.nih.gov/34687601/)",
+      "[American Brachytherapy Society (ABS) consensus statement for soft-tissue sarcoma brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/34303600/)",
+      "[American Brachytherapy Society (ABS) rectoprostatic gel spacer consensus statement.](https://pubmed.ncbi.nlm.nih.gov/40976759/)",
+      "[The American Brachytherapy Society (ABS) consensus guidance for hybrid intracavitary interstitial brachytherapy for locally advanced cervical cancer.](https://pubmed.ncbi.nlm.nih.gov/40447530/)",
+      "[American Brachytherapy Society consensus guidelines for adjuvant vaginal cuff brachytherapy after hysterectomy.](https://pubmed.ncbi.nlm.nih.gov/22265439/)"
+    ]
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "response_id": "20260603_020453_792012",
+  "query": "EMBRACE study quality assurance procedures multi-institutional brachytherapy",
+  "created_at": "2026-06-03T02:04:53.792031",
+  "num_sources": 1,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[The BRCA2 c.68-7T > A variant is not pathogenic: A model for clinical calibration of spliceogenicity.](https://pubmed.ncbi.nlm.nih.gov/29460995/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "f0eb0095f9a5",
+      "claim": "PubMed ID: 29460995. 2018/05/01 00:00",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/29460995/",
+      "source_type": "PubMed",
+      "source_title": "The BRCA2 c.68-7T > A variant is not pathogenic: A model for clinical calibration of spliceogenicity.",
+      "accessed_at": "2026-06-03T02:04:55.414721",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 29460995. 2018/05/01 00:00",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "EMBRACE study quality assurance procedures multi-institutional brachytherapy",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

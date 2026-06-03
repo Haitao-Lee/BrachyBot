@@ -1,0 +1,160 @@
+{
+  "query": "t-distribution critical values 95% confidence interval df 19",
+  "timestamp": 1780414243.7071958,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "t（拉丁字母）_百度百科",
+        "snippet": "t是拉丁字母中的第20个字母，其英式和美式发音均为/tiː/，符号表示氚 (tritium)。 作为缩写时，T可代表metric ton、tesla、temperature等不同领域术语，在人工智能中代表“Text”，在金融中是交易代码。",
+        "url": "https://baike.baidu.com/item/t/1085067",
+        "source": "Bing CN"
+      },
+      {
+        "title": "TikTok - Windows官方下载 | 微软应用商店 | Microsoft Store",
+        "snippet": "TikTok is THE destination for mobile videos. On TikTok, short-form videos are exciting, spontaneous, and genuine. Whether you’re a sports fanatic, a pet enthusiast, or just looking for a laugh, there’s …",
+        "url": "https://apps.microsoft.com/detail/9nh2gph4jzs4?hl=zh-CN&amp;gl=US",
+        "source": "Bing CN"
+      },
+      {
+        "title": "探讨字母“t”的多重含义及其在生活中的重要性_时间_语言_交流",
+        "snippet": "2025年2月1日 · 你可能在社交媒体上看到过“t”这个字母，尤其是在年轻人之间的交流中，它常常被用作一种缩写或者代号。在TikTok等短视频平台上，用户们用“t”来表达某种情绪或者态度，这种新型的语言 …",
+        "url": "https://www.sohu.com/a/854863738_120991886",
+        "source": "Bing CN"
+      },
+      {
+        "title": "T是什么意思_T的翻译_音标_读音_用法_例句_爱词霸在线词典",
+        "snippet": "His well-defined muscles became visible beneath the snug T-shirt as his shoulders tensed. 他的肩膀紧绷时，合身的T恤下显露出轮廓分明的肌肉。 金山词霸",
+        "url": "https://www.iciba.com/word?w=T",
+        "source": "Bing CN"
+      },
+      {
+        "title": "T（汉字）_百度百科",
+        "snippet": "这个高地在志愿军作战地图上的标准称谓是205高地，因为其形象“T”字，所以“联合国军”又称其为T字山。 它位于城山、芝山 防御阵地 的前沿，其 南段 又与“联合国军”的阵地相接，故有一定的 战术价值。",
+        "url": "https://baike.baidu.com/item/%EF%BC%B4/50361442",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- t是拉丁字母中的第20个字母，其英式和美式发音均为/tiː/，符号表示氚 (tritium)。 作为缩写时，T可代表metric ton、tesla、temperature等不同领域术语，在人工智能中代表“Text”，在金融中是交易代码。\n- TikTok is THE destination for mobile videos. On TikTok, short-form videos are exciting, spontaneous, and genuine. Whether you’re a sports fanatic, a p",
+    "sources": [
+      "https://baike.baidu.com/item/t/1085067",
+      "https://apps.microsoft.com/detail/9nh2gph4jzs4?hl=zh-CN&amp;gl=US",
+      "https://www.sohu.com/a/854863738_120991886",
+      "https://www.iciba.com/word?w=T",
+      "https://baike.baidu.com/item/%EF%BC%B4/50361442"
+    ],
+    "evidence_chain_id": "20260602_233043_449374",
+    "evidence_summary": {
+      "response_id": "20260602_233043_449374",
+      "query": "t-distribution critical values 95% confidence interval df 19",
+      "created_at": "2026-06-02T23:30:43.449396",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[t（拉丁字母）_百度百科](https://baike.baidu.com/item/t/1085067)",
+        "[TikTok - Windows官方下载 | 微软应用商店 | Microsoft Store](https://apps.microsoft.com/detail/9nh2gph4jzs4?hl=zh-CN&amp;gl=US)",
+        "[探讨字母“t”的多重含义及其在生活中的重要性_时间_语言_交流](https://www.sohu.com/a/854863738_120991886)",
+        "[T是什么意思_T的翻译_音标_读音_用法_例句_爱词霸在线词典](https://www.iciba.com/word?w=T)",
+        "[T（汉字）_百度百科](https://baike.baidu.com/item/%EF%BC%B4/50361442)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "60e68100f886",
+          "claim": "t是拉丁字母中的第20个字母，其英式和美式发音均为/tiː/，符号表示氚 (tritium)。 作为缩写时，T可代表metric ton、tesla、temperature等不同领域术语，在人工智能中代表“Text”，在金融中是交易代码。",
+          "source_url": "https://baike.baidu.com/item/t/1085067",
+          "source_type": "Bing CN",
+          "source_title": "t（拉丁字母）_百度百科",
+          "accessed_at": "2026-06-02T23:30:43.706864",
+          "published_at": "",
+          "raw_snippet": "t是拉丁字母中的第20个字母，其英式和美式发音均为/tiː/，符号表示氚 (tritium)。 作为缩写时，T可代表metric ton、tesla、temperature等不同领域术语，在人工智能中代表“Text”，在金融中是交易代码。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "t-distribution critical values 95% confidence interval df 19",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "36ecb67028aa",
+          "claim": "TikTok is THE destination for mobile videos. On TikTok, short-form videos are exciting, spontaneous, and genuine. Whether you’re a sports fanatic, a pet enthusiast, or just looking for a laugh, there’",
+          "source_url": "https://apps.microsoft.com/detail/9nh2gph4jzs4?hl=zh-CN&amp;gl=US",
+          "source_type": "Bing CN",
+          "source_title": "TikTok - Windows官方下载 | 微软应用商店 | Microsoft Store",
+          "accessed_at": "2026-06-02T23:30:43.706921",
+          "published_at": "",
+          "raw_snippet": "TikTok is THE destination for mobile videos. On TikTok, short-form videos are exciting, spontaneous, and genuine. Whether you’re a sports fanatic, a pet enthusiast, or just looking for a laugh, there’s …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "t-distribution critical values 95% confidence interval df 19",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "6870818fa6b5",
+          "claim": "2025年2月1日 · 你可能在社交媒体上看到过“t”这个字母，尤其是在年轻人之间的交流中，它常常被用作一种缩写或者代号。在TikTok等短视频平台上，用户们用“t”来表达某种情绪或者态度，这种新型的语言 …",
+          "source_url": "https://www.sohu.com/a/854863738_120991886",
+          "source_type": "Bing CN",
+          "source_title": "探讨字母“t”的多重含义及其在生活中的重要性_时间_语言_交流",
+          "accessed_at": "2026-06-02T23:30:43.706952",
+          "published_at": "",
+          "raw_snippet": "2025年2月1日 · 你可能在社交媒体上看到过“t”这个字母，尤其是在年轻人之间的交流中，它常常被用作一种缩写或者代号。在TikTok等短视频平台上，用户们用“t”来表达某种情绪或者态度，这种新型的语言 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "t-distribution critical values 95% confidence interval df 19",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "36e29f39cfb0",
+          "claim": "His well-defined muscles became visible beneath the snug T-shirt as his shoulders tensed. 他的肩膀紧绷时，合身的T恤下显露出轮廓分明的肌肉。 金山词霸",
+          "source_url": "https://www.iciba.com/word?w=T",
+          "source_type": "Bing CN",
+          "source_title": "T是什么意思_T的翻译_音标_读音_用法_例句_爱词霸在线词典",
+          "accessed_at": "2026-06-02T23:30:43.706977",
+          "published_at": "",
+          "raw_snippet": "His well-defined muscles became visible beneath the snug T-shirt as his shoulders tensed. 他的肩膀紧绷时，合身的T恤下显露出轮廓分明的肌肉。 金山词霸",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "t-distribution critical values 95% confidence interval df 19",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8a2829a0df91",
+          "claim": "这个高地在志愿军作战地图上的标准称谓是205高地，因为其形象“T”字，所以“联合国军”又称其为T字山。 它位于城山、芝山 防御阵地 的前沿，其 南段 又与“联合国军”的阵地相接，故有一定的 战术价值。",
+          "source_url": "https://baike.baidu.com/item/%EF%BC%B4/50361442",
+          "source_type": "Bing CN",
+          "source_title": "T（汉字）_百度百科",
+          "accessed_at": "2026-06-02T23:30:43.706999",
+          "published_at": "",
+          "raw_snippet": "这个高地在志愿军作战地图上的标准称谓是205高地，因为其形象“T”字，所以“联合国军”又称其为T字山。 它位于城山、芝山 防御阵地 的前沿，其 南段 又与“联合国军”的阵地相接，故有一定的 战术价值。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "t-distribution critical values 95% confidence interval df 19",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[t（拉丁字母）_百度百科](https://baike.baidu.com/item/t/1085067)",
+      "[TikTok - Windows官方下载 | 微软应用商店 | Microsoft Store](https://apps.microsoft.com/detail/9nh2gph4jzs4?hl=zh-CN&amp;gl=US)",
+      "[探讨字母“t”的多重含义及其在生活中的重要性_时间_语言_交流](https://www.sohu.com/a/854863738_120991886)",
+      "[T是什么意思_T的翻译_音标_读音_用法_例句_爱词霸在线词典](https://www.iciba.com/word?w=T)",
+      "[T（汉字）_百度百科](https://baike.baidu.com/item/%EF%BC%B4/50361442)"
+    ]
+  }
+}

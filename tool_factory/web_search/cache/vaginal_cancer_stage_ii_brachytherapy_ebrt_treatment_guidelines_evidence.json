@@ -1,0 +1,82 @@
+{
+  "query": "vaginal cancer stage II brachytherapy EBRT treatment guidelines evidence",
+  "timestamp": 1780467984.5099974,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Postoperative irradiation in endometrial cancer: still a matter of controversy.",
+        "snippet": "PubMed ID: 11237775. 2001/02/01 00:00. BACKGROUND: There are various society-specific guidelines addressing adjuvant \nbrachytherapy (BT) after surgery for endometrial cancer (EC). However, these \nrecommendations are not uniform. Against this background, clinicians need to \nmake decisions despite gaps between best scientific evidence and clinical \npractice. We explored factors influencing decision-making for adjuvant BT in \nclinical routine among experienced European radiation oncologists in the ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/11237775/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Role of Brachytherapy in the Postoperative Management of Endometrial Cancer: Decision-Making Analysis among Experienced European Radiation Oncologists.",
+        "snippet": "PubMed ID: 35205653. 2022/02/11 00:00. BACKGROUND: There are various society-specific guidelines addressing adjuvant \nbrachytherapy (BT) after surgery for endometrial cancer (EC). However, these \nrecommendations are not uniform. Against this background, clinicians need to \nmake decisions despite gaps between best scientific evidence and clinical \npractice. We explored factors influencing decision-making for adjuvant BT in \nclinical routine among experienced European radiation oncologists in the ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35205653/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 11237775. 2001/02/01 00:00. BACKGROUND: There are various society-specific guidelines addressing adjuvant \nbrachytherapy (BT) after surgery for endometrial cancer (EC). However, these \nreco\n2. PubMed ID: 35205653. 2022/02/11 00:00. BACKGROUND: There are various society-specific guidelines addressing adjuvant \nbrachytherapy (BT) after surgery for endometrial cancer (EC). However, these \nreco",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/11237775/",
+      "https://pubmed.ncbi.nlm.nih.gov/35205653/"
+    ],
+    "evidence_chain_id": "20260603_142622_542458",
+    "evidence_summary": {
+      "response_id": "20260603_142622_542458",
+      "query": "vaginal cancer stage II brachytherapy EBRT treatment guidelines evidence",
+      "created_at": "2026-06-03T14:26:22.542468",
+      "num_sources": 2,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Postoperative irradiation in endometrial cancer: still a matter of controversy.](https://pubmed.ncbi.nlm.nih.gov/11237775/)",
+        "[Role of Brachytherapy in the Postoperative Management of Endometrial Cancer: Decision-Making Analysis among Experienced European Radiation Oncologists.](https://pubmed.ncbi.nlm.nih.gov/35205653/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "e26469543dd3",
+          "claim": "PubMed ID: 11237775. 2001/02/01 00:00. BACKGROUND: There are various society-specific guidelines addressing adjuvant \nbrachytherapy (BT) after surgery for endometrial cancer (EC). However, these \nreco",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/11237775/",
+          "source_type": "PubMed",
+          "source_title": "Postoperative irradiation in endometrial cancer: still a matter of controversy.",
+          "accessed_at": "2026-06-03T14:26:24.506322",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 11237775. 2001/02/01 00:00. BACKGROUND: There are various society-specific guidelines addressing adjuvant \nbrachytherapy (BT) after surgery for endometrial cancer (EC). However, these \nrecommendations are not uniform. Against this background, clinicians need to \nmake decisions despite gaps between best scientific evidence and clinical \npractice. We explored factors influencing decision-making for adjuvant BT in \nclinical routine among experienced European radiation oncologists in the ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "vaginal cancer stage II brachytherapy EBRT treatment guidelines evidence",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "1071d6882942",
+          "claim": "PubMed ID: 35205653. 2022/02/11 00:00. BACKGROUND: There are various society-specific guidelines addressing adjuvant \nbrachytherapy (BT) after surgery for endometrial cancer (EC). However, these \nreco",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35205653/",
+          "source_type": "PubMed",
+          "source_title": "Role of Brachytherapy in the Postoperative Management of Endometrial Cancer: Decision-Making Analysis among Experienced European Radiation Oncologists.",
+          "accessed_at": "2026-06-03T14:26:24.506416",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35205653. 2022/02/11 00:00. BACKGROUND: There are various society-specific guidelines addressing adjuvant \nbrachytherapy (BT) after surgery for endometrial cancer (EC). However, these \nrecommendations are not uniform. Against this background, clinicians need to \nmake decisions despite gaps between best scientific evidence and clinical \npractice. We explored factors influencing decision-making for adjuvant BT in \nclinical routine among experienced European radiation oncologists in the ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "vaginal cancer stage II brachytherapy EBRT treatment guidelines evidence",
+          "search_type": "clinical",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Postoperative irradiation in endometrial cancer: still a matter of controversy.](https://pubmed.ncbi.nlm.nih.gov/11237775/)",
+      "[Role of Brachytherapy in the Postoperative Management of Endometrial Cancer: Decision-Making Analysis among Experienced European Radiation Oncologists.](https://pubmed.ncbi.nlm.nih.gov/35205653/)"
+    ]
+  }
+}

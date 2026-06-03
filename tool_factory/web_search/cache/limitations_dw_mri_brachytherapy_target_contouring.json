@@ -1,0 +1,160 @@
+{
+  "query": "limitations DW-MRI brachytherapy target contouring",
+  "timestamp": 1780414579.2177534,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Performance of Non-EPI DW MRI for Pediatric Cholesteatoma Follow-Up.",
+        "snippet": "PubMed ID: 37313857. 2024/01/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetect residual cholesteatoma in children.\nSTUDY DESIGN: Retrospective study.\nSETTING: Tertiary comprehensive hospital.\nMETHODS: Children operated on for a first-stage cholesteatoma procedure from \n2010 to 2019 were included. MRIs were performed with non-EPI DW sequences. \nInitial reports were collected,",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37313857/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Comparison of PET and DW/PW-MRI in acute ischemic stroke.",
+        "snippet": "PubMed ID: 18854664. 2008/09/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetect residual cholesteatoma in children.\nSTUDY DESIGN: Retrospective study.\nSETTING: Tertiary comprehensive hospital.\nMETHODS: Children operated on for a first-stage cholesteatoma procedure from \n2010 to 2019 were included. MRIs were performed with non-EPI DW sequences. \nInitial reports were collected,",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/18854664/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Does diffusion-weighted MRI (DW-MRI) change treatment strategy in pediatric cholesteatoma?",
+        "snippet": "PubMed ID: 23130592. 2013/05/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetect residual cholesteatoma in children.\nSTUDY DESIGN: Retrospective study.\nSETTING: Tertiary comprehensive hospital.\nMETHODS: Children operated on for a first-stage cholesteatoma procedure from \n2010 to 2019 were included. MRIs were performed with non-EPI DW sequences. \nInitial reports were collected,",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/23130592/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Diffusion-weighted MRI for Unenhanced Breast Cancer Screening.",
+        "snippet": "PubMed ID: 31592734. 2019/12/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetect residual cholesteatoma in children.\nSTUDY DESIGN: Retrospective study.\nSETTING: Tertiary comprehensive hospital.\nMETHODS: Children operated on for a first-stage cholesteatoma procedure from \n2010 to 2019 were included. MRIs were performed with non-EPI DW sequences. \nInitial reports were collected,",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31592734/",
+        "source": "PubMed"
+      },
+      {
+        "title": "DCE MRI of prostate cancer.",
+        "snippet": "PubMed ID: 27193787. 2016/05/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetect residual cholesteatoma in children.\nSTUDY DESIGN: Retrospective study.\nSETTING: Tertiary comprehensive hospital.\nMETHODS: Children operated on for a first-stage cholesteatoma procedure from \n2010 to 2019 were included. MRIs were performed with non-EPI DW sequences. \nInitial reports were collected,",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/27193787/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 37313857. 2024/01/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetec\n2. PubMed ID: 18854664. 2008/09/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetec\n3. PubMed ID: 23130592. 2013/05/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetec",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/37313857/",
+      "https://pubmed.ncbi.nlm.nih.gov/18854664/",
+      "https://pubmed.ncbi.nlm.nih.gov/23130592/",
+      "https://pubmed.ncbi.nlm.nih.gov/31592734/",
+      "https://pubmed.ncbi.nlm.nih.gov/27193787/"
+    ],
+    "evidence_chain_id": "20260602_233616_862810",
+    "evidence_summary": {
+      "response_id": "20260602_233616_862810",
+      "query": "limitations DW-MRI brachytherapy target contouring",
+      "created_at": "2026-06-02T23:36:16.862828",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Performance of Non-EPI DW MRI for Pediatric Cholesteatoma Follow-Up.](https://pubmed.ncbi.nlm.nih.gov/37313857/)",
+        "[Comparison of PET and DW/PW-MRI in acute ischemic stroke.](https://pubmed.ncbi.nlm.nih.gov/18854664/)",
+        "[Does diffusion-weighted MRI (DW-MRI) change treatment strategy in pediatric cholesteatoma?](https://pubmed.ncbi.nlm.nih.gov/23130592/)",
+        "[Diffusion-weighted MRI for Unenhanced Breast Cancer Screening.](https://pubmed.ncbi.nlm.nih.gov/31592734/)",
+        "[DCE MRI of prostate cancer.](https://pubmed.ncbi.nlm.nih.gov/27193787/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "859fd41ccc56",
+          "claim": "PubMed ID: 37313857. 2024/01/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetec",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37313857/",
+          "source_type": "PubMed",
+          "source_title": "Performance of Non-EPI DW MRI for Pediatric Cholesteatoma Follow-Up.",
+          "accessed_at": "2026-06-02T23:36:19.217334",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37313857. 2024/01/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetect residual cholesteatoma in children.\nSTUDY DESIGN: Retrospective study.\nSETTING: Tertiary comprehensive hospital.\nMETHODS: Children operated on for a first-stage cholesteatoma procedure from \n2010 to 2019 were included. MRIs were performed with non-EPI DW sequences. \nInitial reports were collected,",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "limitations DW-MRI brachytherapy target contouring",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e58f0c92ebe3",
+          "claim": "PubMed ID: 18854664. 2008/09/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetec",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/18854664/",
+          "source_type": "PubMed",
+          "source_title": "Comparison of PET and DW/PW-MRI in acute ischemic stroke.",
+          "accessed_at": "2026-06-02T23:36:19.217442",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 18854664. 2008/09/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetect residual cholesteatoma in children.\nSTUDY DESIGN: Retrospective study.\nSETTING: Tertiary comprehensive hospital.\nMETHODS: Children operated on for a first-stage cholesteatoma procedure from \n2010 to 2019 were included. MRIs were performed with non-EPI DW sequences. \nInitial reports were collected,",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "limitations DW-MRI brachytherapy target contouring",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "7e34d0f0d4c8",
+          "claim": "PubMed ID: 23130592. 2013/05/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetec",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/23130592/",
+          "source_type": "PubMed",
+          "source_title": "Does diffusion-weighted MRI (DW-MRI) change treatment strategy in pediatric cholesteatoma?",
+          "accessed_at": "2026-06-02T23:36:19.217488",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 23130592. 2013/05/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetect residual cholesteatoma in children.\nSTUDY DESIGN: Retrospective study.\nSETTING: Tertiary comprehensive hospital.\nMETHODS: Children operated on for a first-stage cholesteatoma procedure from \n2010 to 2019 were included. MRIs were performed with non-EPI DW sequences. \nInitial reports were collected,",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "limitations DW-MRI brachytherapy target contouring",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ac72caeee071",
+          "claim": "PubMed ID: 31592734. 2019/12/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetec",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31592734/",
+          "source_type": "PubMed",
+          "source_title": "Diffusion-weighted MRI for Unenhanced Breast Cancer Screening.",
+          "accessed_at": "2026-06-02T23:36:19.217516",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31592734. 2019/12/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetect residual cholesteatoma in children.\nSTUDY DESIGN: Retrospective study.\nSETTING: Tertiary comprehensive hospital.\nMETHODS: Children operated on for a first-stage cholesteatoma procedure from \n2010 to 2019 were included. MRIs were performed with non-EPI DW sequences. \nInitial reports were collected,",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "limitations DW-MRI brachytherapy target contouring",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "fa28816bf3c1",
+          "claim": "PubMed ID: 27193787. 2016/05/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetec",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/27193787/",
+          "source_type": "PubMed",
+          "source_title": "DCE MRI of prostate cancer.",
+          "accessed_at": "2026-06-02T23:36:19.217540",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 27193787. 2016/05/01 00:00. OBJECTIVE: To evaluate the accuracy, sensitivity, and specificity of nonecho \nplanar (non-EPI) diffusion-weighted (DW) magnetic resonance imaging (MRI) to \ndetect residual cholesteatoma in children.\nSTUDY DESIGN: Retrospective study.\nSETTING: Tertiary comprehensive hospital.\nMETHODS: Children operated on for a first-stage cholesteatoma procedure from \n2010 to 2019 were included. MRIs were performed with non-EPI DW sequences. \nInitial reports were collected,",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "limitations DW-MRI brachytherapy target contouring",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Performance of Non-EPI DW MRI for Pediatric Cholesteatoma Follow-Up.](https://pubmed.ncbi.nlm.nih.gov/37313857/)",
+      "[Comparison of PET and DW/PW-MRI in acute ischemic stroke.](https://pubmed.ncbi.nlm.nih.gov/18854664/)",
+      "[Does diffusion-weighted MRI (DW-MRI) change treatment strategy in pediatric cholesteatoma?](https://pubmed.ncbi.nlm.nih.gov/23130592/)",
+      "[Diffusion-weighted MRI for Unenhanced Breast Cancer Screening.](https://pubmed.ncbi.nlm.nih.gov/31592734/)",
+      "[DCE MRI of prostate cancer.](https://pubmed.ncbi.nlm.nih.gov/27193787/)"
+    ]
+  }
+}

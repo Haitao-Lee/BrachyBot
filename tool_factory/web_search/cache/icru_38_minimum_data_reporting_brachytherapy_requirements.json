@@ -1,0 +1,160 @@
+{
+  "query": "ICRU 38 minimum data reporting brachytherapy requirements",
+  "timestamp": 1780419811.063289,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Survey of the use of the ICRU 38 in recording and reporting cervical cancer brachytherapy.",
+        "snippet": "PubMed ID: 11165676. 2001/01/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas performed on the occasion of a workshop, 'ICRU 38: The Basis for a \nRevision', which took place at the Annual GEC ESTRO meeting in Naples in 1998.\nMATERIALS AND METHODS: The answers (n=85) to a specific questionnaire which had \nbeen sent to all ESTRO members (n=1600), were evaluated. In parallel, a",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/11165676/",
+        "source": "PubMed"
+      },
+      {
+        "title": "The ICRU 38, a need for a new edition.",
+        "snippet": "PubMed ID: 9155085. 1997/03/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas performed on the occasion of a workshop, 'ICRU 38: The Basis for a \nRevision', which took place at the Annual GEC ESTRO meeting in Naples in 1998.\nMATERIALS AND METHODS: The answers (n=85) to a specific questionnaire which had \nbeen sent to all ESTRO members (n=1600), were evaluated. In parallel, a ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/9155085/",
+        "source": "PubMed"
+      },
+      {
+        "title": "ICRU report 38: has the radiation oncology community accepted it? International Commission on Radiation Units & Measurements.",
+        "snippet": "PubMed ID: 12555883. 2002/10/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas performed on the occasion of a workshop, 'ICRU 38: The Basis for a \nRevision', which took place at the Annual GEC ESTRO meeting in Naples in 1998.\nMATERIALS AND METHODS: The answers (n=85) to a specific questionnaire which had \nbeen sent to all ESTRO members (n=1600), were evaluated. In parallel, a",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/12555883/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Dosimetric evaluation of rectum and bladder using image-based CT planning and orthogonal radiographs with ICRU 38 recommendations in intracavitary brachytherapy.",
+        "snippet": "PubMed ID: 20041045. 2008/01/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas performed on the occasion of a workshop, 'ICRU 38: The Basis for a \nRevision', which took place at the Annual GEC ESTRO meeting in Naples in 1998.\nMATERIALS AND METHODS: The answers (n=85) to a specific questionnaire which had \nbeen sent to all ESTRO members (n=1600), were evaluated. In parallel, a",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/20041045/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Cervical tumor control evaluated with ICRU 38 reference volumes and integrated reference air kerma.",
+        "snippet": "PubMed ID: 11165677. 2001/01/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas performed on the occasion of a workshop, 'ICRU 38: The Basis for a \nRevision', which took place at the Annual GEC ESTRO meeting in Naples in 1998.\nMATERIALS AND METHODS: The answers (n=85) to a specific questionnaire which had \nbeen sent to all ESTRO members (n=1600), were evaluated. In parallel, a",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/11165677/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 11165676. 2001/01/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas\n2. PubMed ID: 9155085. 1997/03/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas \n3. PubMed ID: 12555883. 2002/10/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/11165676/",
+      "https://pubmed.ncbi.nlm.nih.gov/9155085/",
+      "https://pubmed.ncbi.nlm.nih.gov/12555883/",
+      "https://pubmed.ncbi.nlm.nih.gov/20041045/",
+      "https://pubmed.ncbi.nlm.nih.gov/11165677/"
+    ],
+    "evidence_chain_id": "20260603_010328_833818",
+    "evidence_summary": {
+      "response_id": "20260603_010328_833818",
+      "query": "ICRU 38 minimum data reporting brachytherapy requirements",
+      "created_at": "2026-06-03T01:03:28.833844",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Survey of the use of the ICRU 38 in recording and reporting cervical cancer brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/11165676/)",
+        "[The ICRU 38, a need for a new edition.](https://pubmed.ncbi.nlm.nih.gov/9155085/)",
+        "[ICRU report 38: has the radiation oncology community accepted it? International Commission on Radiation Units & Measurements.](https://pubmed.ncbi.nlm.nih.gov/12555883/)",
+        "[Dosimetric evaluation of rectum and bladder using image-based CT planning and orthogonal radiographs with ICRU 38 recommendations in intracavitary brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/20041045/)",
+        "[Cervical tumor control evaluated with ICRU 38 reference volumes and integrated reference air kerma.](https://pubmed.ncbi.nlm.nih.gov/11165677/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "5d41efc83faf",
+          "claim": "PubMed ID: 11165676. 2001/01/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/11165676/",
+          "source_type": "PubMed",
+          "source_title": "Survey of the use of the ICRU 38 in recording and reporting cervical cancer brachytherapy.",
+          "accessed_at": "2026-06-03T01:03:31.062791",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 11165676. 2001/01/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas performed on the occasion of a workshop, 'ICRU 38: The Basis for a \nRevision', which took place at the Annual GEC ESTRO meeting in Naples in 1998.\nMATERIALS AND METHODS: The answers (n=85) to a specific questionnaire which had \nbeen sent to all ESTRO members (n=1600), were evaluated. In parallel, a",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "ICRU 38 minimum data reporting brachytherapy requirements",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3a95f10309af",
+          "claim": "PubMed ID: 9155085. 1997/03/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas ",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/9155085/",
+          "source_type": "PubMed",
+          "source_title": "The ICRU 38, a need for a new edition.",
+          "accessed_at": "2026-06-03T01:03:31.062902",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 9155085. 1997/03/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas performed on the occasion of a workshop, 'ICRU 38: The Basis for a \nRevision', which took place at the Annual GEC ESTRO meeting in Naples in 1998.\nMATERIALS AND METHODS: The answers (n=85) to a specific questionnaire which had \nbeen sent to all ESTRO members (n=1600), were evaluated. In parallel, a ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "ICRU 38 minimum data reporting brachytherapy requirements",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "051da53264de",
+          "claim": "PubMed ID: 12555883. 2002/10/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/12555883/",
+          "source_type": "PubMed",
+          "source_title": "ICRU report 38: has the radiation oncology community accepted it? International Commission on Radiation Units & Measurements.",
+          "accessed_at": "2026-06-03T01:03:31.062948",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 12555883. 2002/10/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas performed on the occasion of a workshop, 'ICRU 38: The Basis for a \nRevision', which took place at the Annual GEC ESTRO meeting in Naples in 1998.\nMATERIALS AND METHODS: The answers (n=85) to a specific questionnaire which had \nbeen sent to all ESTRO members (n=1600), were evaluated. In parallel, a",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "ICRU 38 minimum data reporting brachytherapy requirements",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "38aa1045855c",
+          "claim": "PubMed ID: 20041045. 2008/01/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/20041045/",
+          "source_type": "PubMed",
+          "source_title": "Dosimetric evaluation of rectum and bladder using image-based CT planning and orthogonal radiographs with ICRU 38 recommendations in intracavitary brachytherapy.",
+          "accessed_at": "2026-06-03T01:03:31.062989",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 20041045. 2008/01/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas performed on the occasion of a workshop, 'ICRU 38: The Basis for a \nRevision', which took place at the Annual GEC ESTRO meeting in Naples in 1998.\nMATERIALS AND METHODS: The answers (n=85) to a specific questionnaire which had \nbeen sent to all ESTRO members (n=1600), were evaluated. In parallel, a",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "ICRU 38 minimum data reporting brachytherapy requirements",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "d915bbc89dd6",
+          "claim": "PubMed ID: 11165677. 2001/01/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/11165677/",
+          "source_type": "PubMed",
+          "source_title": "Cervical tumor control evaluated with ICRU 38 reference volumes and integrated reference air kerma.",
+          "accessed_at": "2026-06-03T01:03:31.063027",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 11165677. 2001/01/01 00:00. BACKGROUND: A survey on the practice of reporting intracavitary cervix cancer \nbrachytherapy (LDR and HDR) in clinical practice (CP) and in literature (LIT) \nwas performed on the occasion of a workshop, 'ICRU 38: The Basis for a \nRevision', which took place at the Annual GEC ESTRO meeting in Naples in 1998.\nMATERIALS AND METHODS: The answers (n=85) to a specific questionnaire which had \nbeen sent to all ESTRO members (n=1600), were evaluated. In parallel, a",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "ICRU 38 minimum data reporting brachytherapy requirements",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Survey of the use of the ICRU 38 in recording and reporting cervical cancer brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/11165676/)",
+      "[The ICRU 38, a need for a new edition.](https://pubmed.ncbi.nlm.nih.gov/9155085/)",
+      "[ICRU report 38: has the radiation oncology community accepted it? International Commission on Radiation Units & Measurements.](https://pubmed.ncbi.nlm.nih.gov/12555883/)",
+      "[Dosimetric evaluation of rectum and bladder using image-based CT planning and orthogonal radiographs with ICRU 38 recommendations in intracavitary brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/20041045/)",
+      "[Cervical tumor control evaluated with ICRU 38 reference volumes and integrated reference air kerma.](https://pubmed.ncbi.nlm.nih.gov/11165677/)"
+    ]
+  }
+}

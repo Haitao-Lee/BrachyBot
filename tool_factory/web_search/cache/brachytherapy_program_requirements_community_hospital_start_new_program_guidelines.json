@@ -1,0 +1,56 @@
+{
+  "query": "brachytherapy program requirements community hospital start new program guidelines",
+  "timestamp": 1780458395.0656013,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "AAPM medical physics practice guideline 13.a: HDR brachytherapy, part B.",
+        "snippet": "PubMed ID: 40583042. 2025/07/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40583042/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 40583042. 2025/07/01 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/40583042/"
+    ],
+    "evidence_chain_id": "20260603_114633_488557",
+    "evidence_summary": {
+      "response_id": "20260603_114633_488557",
+      "query": "brachytherapy program requirements community hospital start new program guidelines",
+      "created_at": "2026-06-03T11:46:33.488583",
+      "num_sources": 1,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[AAPM medical physics practice guideline 13.a: HDR brachytherapy, part B.](https://pubmed.ncbi.nlm.nih.gov/40583042/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "dabc84851b4a",
+          "claim": "PubMed ID: 40583042. 2025/07/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40583042/",
+          "source_type": "PubMed",
+          "source_title": "AAPM medical physics practice guideline 13.a: HDR brachytherapy, part B.",
+          "accessed_at": "2026-06-03T11:46:35.065370",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40583042. 2025/07/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy program requirements community hospital start new program guidelines",
+          "search_type": "clinical",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[AAPM medical physics practice guideline 13.a: HDR brachytherapy, part B.](https://pubmed.ncbi.nlm.nih.gov/40583042/)"
+    ]
+  }
+}

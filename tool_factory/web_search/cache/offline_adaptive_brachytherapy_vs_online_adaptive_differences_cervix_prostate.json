@@ -1,0 +1,160 @@
+{
+  "query": "offline adaptive brachytherapy vs online adaptive differences cervix prostate",
+  "timestamp": 1780410300.9901328,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Adaptive proton therapy.",
+        "snippet": "PubMed ID: 34710858. 2021/11/15 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS), and bounded dose-volume histogram (bDVH%) \nmetrics. Three offline strategies were developed: (1) preemptive adaptation for \nminor changes, (2) partial re-simulation for moderate changes, and (3) full \nre-simulation for major anatomical or metabolic alterations. Two clinical cases \ndemonstrating str",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34710858/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Hundreds Guide Millions: Adaptive Offline Reinforcement Learning With Expert Guidance.",
+        "snippet": "PubMed ID: 37934636. 2024/11/01 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS), and bounded dose-volume histogram (bDVH%) \nmetrics. Three offline strategies were developed: (1) preemptive adaptation for \nminor changes, (2) partial re-simulation for moderate changes, and (3) full \nre-simulation for major anatomical or metabolic alterations. Two clinical cases \ndemonstrating str",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37934636/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Adaptive pessimism via target Q-value for offline reinforcement learning.",
+        "snippet": "PubMed ID: 39180907. 2024/12/01 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS), and bounded dose-volume histogram (bDVH%) \nmetrics. Three offline strategies were developed: (1) preemptive adaptation for \nminor changes, (2) partial re-simulation for moderate changes, and (3) full \nre-simulation for major anatomical or metabolic alterations. Two clinical cases \ndemonstrating str",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39180907/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Strategies for Offline Adaptive Biology-Guided Radiotherapy (BgRT) on a PET-Linac Platform.",
+        "snippet": "PubMed ID: 40805169. 2025/07/25 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS), and bounded dose-volume histogram (bDVH%) \nmetrics. Three offline strategies were developed: (1) preemptive adaptation for \nminor changes, (2) partial re-simulation for moderate changes, and (3) full \nre-simulation for major anatomical or metabolic alterations. Two clinical cases \ndemonstrating str",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40805169/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Practical Clinical Workflows for Online and Offline Adaptive Radiation Therapy.",
+        "snippet": "PubMed ID: 31027639. 2019/07/01 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS), and bounded dose-volume histogram (bDVH%) \nmetrics. Three offline strategies were developed: (1) preemptive adaptation for \nminor changes, (2) partial re-simulation for moderate changes, and (3) full \nre-simulation for major anatomical or metabolic alterations. Two clinical cases \ndemonstrating str",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31027639/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 34710858. 2021/11/15 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS),\n2. PubMed ID: 37934636. 2024/11/01 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS),\n3. PubMed ID: 39180907. 2024/12/01 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS),",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/34710858/",
+      "https://pubmed.ncbi.nlm.nih.gov/37934636/",
+      "https://pubmed.ncbi.nlm.nih.gov/39180907/",
+      "https://pubmed.ncbi.nlm.nih.gov/40805169/",
+      "https://pubmed.ncbi.nlm.nih.gov/31027639/"
+    ],
+    "evidence_chain_id": "20260602_222459_052844",
+    "evidence_summary": {
+      "response_id": "20260602_222459_052844",
+      "query": "offline adaptive brachytherapy vs online adaptive differences cervix prostate",
+      "created_at": "2026-06-02T22:24:59.052873",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Adaptive proton therapy.](https://pubmed.ncbi.nlm.nih.gov/34710858/)",
+        "[Hundreds Guide Millions: Adaptive Offline Reinforcement Learning With Expert Guidance.](https://pubmed.ncbi.nlm.nih.gov/37934636/)",
+        "[Adaptive pessimism via target Q-value for offline reinforcement learning.](https://pubmed.ncbi.nlm.nih.gov/39180907/)",
+        "[Strategies for Offline Adaptive Biology-Guided Radiotherapy (BgRT) on a PET-Linac Platform.](https://pubmed.ncbi.nlm.nih.gov/40805169/)",
+        "[Practical Clinical Workflows for Online and Offline Adaptive Radiation Therapy.](https://pubmed.ncbi.nlm.nih.gov/31027639/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "3fd3b759e1d0",
+          "claim": "PubMed ID: 34710858. 2021/11/15 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS),",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34710858/",
+          "source_type": "PubMed",
+          "source_title": "Adaptive proton therapy.",
+          "accessed_at": "2026-06-02T22:25:00.989810",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34710858. 2021/11/15 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS), and bounded dose-volume histogram (bDVH%) \nmetrics. Three offline strategies were developed: (1) preemptive adaptation for \nminor changes, (2) partial re-simulation for moderate changes, and (3) full \nre-simulation for major anatomical or metabolic alterations. Two clinical cases \ndemonstrating str",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "offline adaptive brachytherapy vs online adaptive differences cervix prostate",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3783912de49f",
+          "claim": "PubMed ID: 37934636. 2024/11/01 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS),",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37934636/",
+          "source_type": "PubMed",
+          "source_title": "Hundreds Guide Millions: Adaptive Offline Reinforcement Learning With Expert Guidance.",
+          "accessed_at": "2026-06-02T22:25:00.989903",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37934636. 2024/11/01 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS), and bounded dose-volume histogram (bDVH%) \nmetrics. Three offline strategies were developed: (1) preemptive adaptation for \nminor changes, (2) partial re-simulation for moderate changes, and (3) full \nre-simulation for major anatomical or metabolic alterations. Two clinical cases \ndemonstrating str",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "offline adaptive brachytherapy vs online adaptive differences cervix prostate",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "88b031e136b8",
+          "claim": "PubMed ID: 39180907. 2024/12/01 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS),",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39180907/",
+          "source_type": "PubMed",
+          "source_title": "Adaptive pessimism via target Q-value for offline reinforcement learning.",
+          "accessed_at": "2026-06-02T22:25:00.989931",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39180907. 2024/12/01 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS), and bounded dose-volume histogram (bDVH%) \nmetrics. Three offline strategies were developed: (1) preemptive adaptation for \nminor changes, (2) partial re-simulation for moderate changes, and (3) full \nre-simulation for major anatomical or metabolic alterations. Two clinical cases \ndemonstrating str",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "offline adaptive brachytherapy vs online adaptive differences cervix prostate",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "023bac12f057",
+          "claim": "PubMed ID: 40805169. 2025/07/25 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS),",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40805169/",
+          "source_type": "PubMed",
+          "source_title": "Strategies for Offline Adaptive Biology-Guided Radiotherapy (BgRT) on a PET-Linac Platform.",
+          "accessed_at": "2026-06-02T22:25:00.989954",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40805169. 2025/07/25 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS), and bounded dose-volume histogram (bDVH%) \nmetrics. Three offline strategies were developed: (1) preemptive adaptation for \nminor changes, (2) partial re-simulation for moderate changes, and (3) full \nre-simulation for major anatomical or metabolic alterations. Two clinical cases \ndemonstrating str",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "offline adaptive brachytherapy vs online adaptive differences cervix prostate",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "cafcc7c363ff",
+          "claim": "PubMed ID: 31027639. 2019/07/01 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS),",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31027639/",
+          "source_type": "PubMed",
+          "source_title": "Practical Clinical Workflows for Online and Offline Adaptive Radiation Therapy.",
+          "accessed_at": "2026-06-02T22:25:00.989976",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31027639. 2019/07/01 00:00. Methods: We propose a decision tree offline adaptation \nframework based on real-time assessments of Activity Concentration (AC), \nNormalized Target Signal (NTS), and bounded dose-volume histogram (bDVH%) \nmetrics. Three offline strategies were developed: (1) preemptive adaptation for \nminor changes, (2) partial re-simulation for moderate changes, and (3) full \nre-simulation for major anatomical or metabolic alterations. Two clinical cases \ndemonstrating str",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "offline adaptive brachytherapy vs online adaptive differences cervix prostate",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Adaptive proton therapy.](https://pubmed.ncbi.nlm.nih.gov/34710858/)",
+      "[Hundreds Guide Millions: Adaptive Offline Reinforcement Learning With Expert Guidance.](https://pubmed.ncbi.nlm.nih.gov/37934636/)",
+      "[Adaptive pessimism via target Q-value for offline reinforcement learning.](https://pubmed.ncbi.nlm.nih.gov/39180907/)",
+      "[Strategies for Offline Adaptive Biology-Guided Radiotherapy (BgRT) on a PET-Linac Platform.](https://pubmed.ncbi.nlm.nih.gov/40805169/)",
+      "[Practical Clinical Workflows for Online and Offline Adaptive Radiation Therapy.](https://pubmed.ncbi.nlm.nih.gov/31027639/)"
+    ]
+  }
+}

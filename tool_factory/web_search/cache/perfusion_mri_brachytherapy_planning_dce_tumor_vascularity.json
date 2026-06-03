@@ -1,0 +1,160 @@
+{
+  "query": "perfusion MRI brachytherapy planning DCE tumor vascularity",
+  "timestamp": 1780410166.506253,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Renal perfusion imaging by MRI.",
+        "snippet": "PubMed ID: 31452303. 2020/08/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work in the body?\" \nThe article begins with an introduction to ASL principles, followed by different \nlabeling strategies, such as pulsed, continuous, pseudo-continuous, and \nvelocity-selective approaches, and their role in perfusion quantification. We \nproceed to address the technical challenges associat",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31452303/",
+        "source": "PubMed"
+      },
+      {
+        "title": "MRI assessment of cerebral perfusion in clinical trials.",
+        "snippet": "PubMed ID: 36690177. 2023/04/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work in the body?\" \nThe article begins with an introduction to ASL principles, followed by different \nlabeling strategies, such as pulsed, continuous, pseudo-continuous, and \nvelocity-selective approaches, and their role in perfusion quantification. We \nproceed to address the technical challenges associat",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36690177/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Relationship between MRI perfusion and clinical severity in multiple sclerosis.",
+        "snippet": "PubMed ID: 31638086. 2020/04/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work in the body?\" \nThe article begins with an introduction to ASL principles, followed by different \nlabeling strategies, such as pulsed, continuous, pseudo-continuous, and \nvelocity-selective approaches, and their role in perfusion quantification. We \nproceed to address the technical challenges associat",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31638086/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Quantitative non-contrast perfusion MRI in the body using arterial spin labeling.",
+        "snippet": "PubMed ID: 39105949. 2024/08/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work in the body?\" \nThe article begins with an introduction to ASL principles, followed by different \nlabeling strategies, such as pulsed, continuous, pseudo-continuous, and \nvelocity-selective approaches, and their role in perfusion quantification. We \nproceed to address the technical challenges associat",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39105949/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Perfusion MRI in treatment evaluation of glioblastomas: Clinical relevance of current and future techniques.",
+        "snippet": "PubMed ID: 30561164. 2019/01/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work in the body?\" \nThe article begins with an introduction to ASL principles, followed by different \nlabeling strategies, such as pulsed, continuous, pseudo-continuous, and \nvelocity-selective approaches, and their role in perfusion quantification. We \nproceed to address the technical challenges associat",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30561164/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 31452303. 2020/08/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work i\n2. PubMed ID: 36690177. 2023/04/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work i\n3. PubMed ID: 31638086. 2020/04/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work i",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/31452303/",
+      "https://pubmed.ncbi.nlm.nih.gov/36690177/",
+      "https://pubmed.ncbi.nlm.nih.gov/31638086/",
+      "https://pubmed.ncbi.nlm.nih.gov/39105949/",
+      "https://pubmed.ncbi.nlm.nih.gov/30561164/"
+    ],
+    "evidence_chain_id": "20260602_222244_417451",
+    "evidence_summary": {
+      "response_id": "20260602_222244_417451",
+      "query": "perfusion MRI brachytherapy planning DCE tumor vascularity",
+      "created_at": "2026-06-02T22:22:44.417472",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Renal perfusion imaging by MRI.](https://pubmed.ncbi.nlm.nih.gov/31452303/)",
+        "[MRI assessment of cerebral perfusion in clinical trials.](https://pubmed.ncbi.nlm.nih.gov/36690177/)",
+        "[Relationship between MRI perfusion and clinical severity in multiple sclerosis.](https://pubmed.ncbi.nlm.nih.gov/31638086/)",
+        "[Quantitative non-contrast perfusion MRI in the body using arterial spin labeling.](https://pubmed.ncbi.nlm.nih.gov/39105949/)",
+        "[Perfusion MRI in treatment evaluation of glioblastomas: Clinical relevance of current and future techniques.](https://pubmed.ncbi.nlm.nih.gov/30561164/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "f0f446bff0c5",
+          "claim": "PubMed ID: 31452303. 2020/08/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work i",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31452303/",
+          "source_type": "PubMed",
+          "source_title": "Renal perfusion imaging by MRI.",
+          "accessed_at": "2026-06-02T22:22:46.505871",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31452303. 2020/08/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work in the body?\" \nThe article begins with an introduction to ASL principles, followed by different \nlabeling strategies, such as pulsed, continuous, pseudo-continuous, and \nvelocity-selective approaches, and their role in perfusion quantification. We \nproceed to address the technical challenges associat",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "perfusion MRI brachytherapy planning DCE tumor vascularity",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "dc57ea6cb9fe",
+          "claim": "PubMed ID: 36690177. 2023/04/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work i",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36690177/",
+          "source_type": "PubMed",
+          "source_title": "MRI assessment of cerebral perfusion in clinical trials.",
+          "accessed_at": "2026-06-02T22:22:46.505972",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36690177. 2023/04/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work in the body?\" \nThe article begins with an introduction to ASL principles, followed by different \nlabeling strategies, such as pulsed, continuous, pseudo-continuous, and \nvelocity-selective approaches, and their role in perfusion quantification. We \nproceed to address the technical challenges associat",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "perfusion MRI brachytherapy planning DCE tumor vascularity",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "dc519e12a1c1",
+          "claim": "PubMed ID: 31638086. 2020/04/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work i",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31638086/",
+          "source_type": "PubMed",
+          "source_title": "Relationship between MRI perfusion and clinical severity in multiple sclerosis.",
+          "accessed_at": "2026-06-02T22:22:46.506008",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31638086. 2020/04/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work in the body?\" \nThe article begins with an introduction to ASL principles, followed by different \nlabeling strategies, such as pulsed, continuous, pseudo-continuous, and \nvelocity-selective approaches, and their role in perfusion quantification. We \nproceed to address the technical challenges associat",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "perfusion MRI brachytherapy planning DCE tumor vascularity",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f2cf3a6e0d62",
+          "claim": "PubMed ID: 39105949. 2024/08/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work i",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39105949/",
+          "source_type": "PubMed",
+          "source_title": "Quantitative non-contrast perfusion MRI in the body using arterial spin labeling.",
+          "accessed_at": "2026-06-02T22:22:46.506036",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39105949. 2024/08/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work in the body?\" \nThe article begins with an introduction to ASL principles, followed by different \nlabeling strategies, such as pulsed, continuous, pseudo-continuous, and \nvelocity-selective approaches, and their role in perfusion quantification. We \nproceed to address the technical challenges associat",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "perfusion MRI brachytherapy planning DCE tumor vascularity",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "27617333d8ba",
+          "claim": "PubMed ID: 30561164. 2019/01/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work i",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/30561164/",
+          "source_type": "PubMed",
+          "source_title": "Perfusion MRI in treatment evaluation of glioblastomas: Clinical relevance of current and future techniques.",
+          "accessed_at": "2026-06-02T22:22:46.506060",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 30561164. 2019/01/01 00:00. we present a \nsynopsis of ASL for quantitative non-contrast perfusion MRI, as a contribution \nto the special issue titled \"Quantitative MRI-how to make it work in the body?\" \nThe article begins with an introduction to ASL principles, followed by different \nlabeling strategies, such as pulsed, continuous, pseudo-continuous, and \nvelocity-selective approaches, and their role in perfusion quantification. We \nproceed to address the technical challenges associat",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "perfusion MRI brachytherapy planning DCE tumor vascularity",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Renal perfusion imaging by MRI.](https://pubmed.ncbi.nlm.nih.gov/31452303/)",
+      "[MRI assessment of cerebral perfusion in clinical trials.](https://pubmed.ncbi.nlm.nih.gov/36690177/)",
+      "[Relationship between MRI perfusion and clinical severity in multiple sclerosis.](https://pubmed.ncbi.nlm.nih.gov/31638086/)",
+      "[Quantitative non-contrast perfusion MRI in the body using arterial spin labeling.](https://pubmed.ncbi.nlm.nih.gov/39105949/)",
+      "[Perfusion MRI in treatment evaluation of glioblastomas: Clinical relevance of current and future techniques.](https://pubmed.ncbi.nlm.nih.gov/30561164/)"
+    ]
+  }
+}

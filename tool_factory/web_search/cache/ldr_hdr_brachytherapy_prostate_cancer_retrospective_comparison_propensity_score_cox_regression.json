@@ -1,0 +1,160 @@
+{
+  "query": "LDR HDR brachytherapy prostate cancer retrospective comparison propensity score Cox regression",
+  "timestamp": 1780423644.8499417,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "A Systematic Review and Meta-analysis of Local Salvage Therapies After Radiotherapy for Prostate Cancer (MASTER).",
+        "snippet": "PubMed ID: 33309278. 2021/09/01 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, stereotactic body radiotherapy (SBRT), low-dose-rate (LDR) \nbrachytherapy, and high-dose-rate (HDR) brachytherapy.\nEVIDENCE ACQUISITION: We performed a systematic review of PubMed, EMBASE, and \nMEDLINE. Two- and 5-yr recurrence-free survival (RFS) rates and crude incidences \nof severe GU and GI toxici",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33309278/",
+        "source": "PubMed"
+      },
+      {
+        "title": "HDR versus LDR gynecological brachytherapy revisited.",
+        "snippet": "PubMed ID: 8248552. 1993/08/01 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, stereotactic body radiotherapy (SBRT), low-dose-rate (LDR) \nbrachytherapy, and high-dose-rate (HDR) brachytherapy.\nEVIDENCE ACQUISITION: We performed a systematic review of PubMed, EMBASE, and \nMEDLINE. Two- and 5-yr recurrence-free survival (RFS) rates and crude incidences \nof severe GU and GI toxicit",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/8248552/",
+        "source": "PubMed"
+      },
+      {
+        "title": "GEC-ESTRO ACROP prostate brachytherapy guidelines.",
+        "snippet": "PubMed ID: 34999134. 2022/02/01 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, stereotactic body radiotherapy (SBRT), low-dose-rate (LDR) \nbrachytherapy, and high-dose-rate (HDR) brachytherapy.\nEVIDENCE ACQUISITION: We performed a systematic review of PubMed, EMBASE, and \nMEDLINE. Two- and 5-yr recurrence-free survival (RFS) rates and crude incidences \nof severe GU and GI toxici",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34999134/",
+        "source": "PubMed"
+      },
+      {
+        "title": "HDR-GAN: HDR Image Reconstruction From Multi-Exposed LDR Images With Large Motions.",
+        "snippet": "PubMed ID: 33764875. 2021/01/01 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, stereotactic body radiotherapy (SBRT), low-dose-rate (LDR) \nbrachytherapy, and high-dose-rate (HDR) brachytherapy.\nEVIDENCE ACQUISITION: We performed a systematic review of PubMed, EMBASE, and \nMEDLINE. Two- and 5-yr recurrence-free survival (RFS) rates and crude incidences \nof severe GU and GI toxici",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33764875/",
+        "source": "PubMed"
+      },
+      {
+        "title": "A Brief Review of Low-Dose Rate (LDR) and High-Dose Rate (HDR) Brachytherapy Boost for High-Risk Prostate.",
+        "snippet": "PubMed ID: 31921640. 2019/12/10 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, stereotactic body radiotherapy (SBRT), low-dose-rate (LDR) \nbrachytherapy, and high-dose-rate (HDR) brachytherapy.\nEVIDENCE ACQUISITION: We performed a systematic review of PubMed, EMBASE, and \nMEDLINE. Two- and 5-yr recurrence-free survival (RFS) rates and crude incidences \nof severe GU and GI toxici",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31921640/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 33309278. 2021/09/01 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, st\n2. PubMed ID: 8248552. 1993/08/01 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, ste\n3. PubMed ID: 34999134. 2022/02/01 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, st",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/33309278/",
+      "https://pubmed.ncbi.nlm.nih.gov/8248552/",
+      "https://pubmed.ncbi.nlm.nih.gov/34999134/",
+      "https://pubmed.ncbi.nlm.nih.gov/33764875/",
+      "https://pubmed.ncbi.nlm.nih.gov/31921640/"
+    ],
+    "evidence_chain_id": "20260603_020722_775860",
+    "evidence_summary": {
+      "response_id": "20260603_020722_775860",
+      "query": "LDR HDR brachytherapy prostate cancer retrospective comparison propensity score Cox regression",
+      "created_at": "2026-06-03T02:07:22.775883",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[A Systematic Review and Meta-analysis of Local Salvage Therapies After Radiotherapy for Prostate Cancer (MASTER).](https://pubmed.ncbi.nlm.nih.gov/33309278/)",
+        "[HDR versus LDR gynecological brachytherapy revisited.](https://pubmed.ncbi.nlm.nih.gov/8248552/)",
+        "[GEC-ESTRO ACROP prostate brachytherapy guidelines.](https://pubmed.ncbi.nlm.nih.gov/34999134/)",
+        "[HDR-GAN: HDR Image Reconstruction From Multi-Exposed LDR Images With Large Motions.](https://pubmed.ncbi.nlm.nih.gov/33764875/)",
+        "[A Brief Review of Low-Dose Rate (LDR) and High-Dose Rate (HDR) Brachytherapy Boost for High-Risk Prostate.](https://pubmed.ncbi.nlm.nih.gov/31921640/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "52fb6b7927e5",
+          "claim": "PubMed ID: 33309278. 2021/09/01 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, st",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33309278/",
+          "source_type": "PubMed",
+          "source_title": "A Systematic Review and Meta-analysis of Local Salvage Therapies After Radiotherapy for Prostate Cancer (MASTER).",
+          "accessed_at": "2026-06-03T02:07:24.849473",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33309278. 2021/09/01 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, stereotactic body radiotherapy (SBRT), low-dose-rate (LDR) \nbrachytherapy, and high-dose-rate (HDR) brachytherapy.\nEVIDENCE ACQUISITION: We performed a systematic review of PubMed, EMBASE, and \nMEDLINE. Two- and 5-yr recurrence-free survival (RFS) rates and crude incidences \nof severe GU and GI toxici",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "LDR HDR brachytherapy prostate cancer retrospective comparison propensity score Cox regression",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3e6785edc40e",
+          "claim": "PubMed ID: 8248552. 1993/08/01 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, ste",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/8248552/",
+          "source_type": "PubMed",
+          "source_title": "HDR versus LDR gynecological brachytherapy revisited.",
+          "accessed_at": "2026-06-03T02:07:24.849576",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 8248552. 1993/08/01 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, stereotactic body radiotherapy (SBRT), low-dose-rate (LDR) \nbrachytherapy, and high-dose-rate (HDR) brachytherapy.\nEVIDENCE ACQUISITION: We performed a systematic review of PubMed, EMBASE, and \nMEDLINE. Two- and 5-yr recurrence-free survival (RFS) rates and crude incidences \nof severe GU and GI toxicit",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "LDR HDR brachytherapy prostate cancer retrospective comparison propensity score Cox regression",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "12893e89436c",
+          "claim": "PubMed ID: 34999134. 2022/02/01 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, st",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34999134/",
+          "source_type": "PubMed",
+          "source_title": "GEC-ESTRO ACROP prostate brachytherapy guidelines.",
+          "accessed_at": "2026-06-03T02:07:24.849607",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34999134. 2022/02/01 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, stereotactic body radiotherapy (SBRT), low-dose-rate (LDR) \nbrachytherapy, and high-dose-rate (HDR) brachytherapy.\nEVIDENCE ACQUISITION: We performed a systematic review of PubMed, EMBASE, and \nMEDLINE. Two- and 5-yr recurrence-free survival (RFS) rates and crude incidences \nof severe GU and GI toxici",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "LDR HDR brachytherapy prostate cancer retrospective comparison propensity score Cox regression",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "00dd3f687d4b",
+          "claim": "PubMed ID: 33764875. 2021/01/01 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, st",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33764875/",
+          "source_type": "PubMed",
+          "source_title": "HDR-GAN: HDR Image Reconstruction From Multi-Exposed LDR Images With Large Motions.",
+          "accessed_at": "2026-06-03T02:07:24.849631",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33764875. 2021/01/01 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, stereotactic body radiotherapy (SBRT), low-dose-rate (LDR) \nbrachytherapy, and high-dose-rate (HDR) brachytherapy.\nEVIDENCE ACQUISITION: We performed a systematic review of PubMed, EMBASE, and \nMEDLINE. Two- and 5-yr recurrence-free survival (RFS) rates and crude incidences \nof severe GU and GI toxici",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "LDR HDR brachytherapy prostate cancer retrospective comparison propensity score Cox regression",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "53d67f836149",
+          "claim": "PubMed ID: 31921640. 2019/12/10 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, st",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31921640/",
+          "source_type": "PubMed",
+          "source_title": "A Brief Review of Low-Dose Rate (LDR) and High-Dose Rate (HDR) Brachytherapy Boost for High-Risk Prostate.",
+          "accessed_at": "2026-06-03T02:07:24.849654",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31921640. 2019/12/10 00:00. OBJECTIVE: To quantitatively compare the efficacy and toxicity of salvage \nradical prostatectomy (RP), high-intensity focused ultrasound (HIFU), \ncryotherapy, stereotactic body radiotherapy (SBRT), low-dose-rate (LDR) \nbrachytherapy, and high-dose-rate (HDR) brachytherapy.\nEVIDENCE ACQUISITION: We performed a systematic review of PubMed, EMBASE, and \nMEDLINE. Two- and 5-yr recurrence-free survival (RFS) rates and crude incidences \nof severe GU and GI toxici",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "LDR HDR brachytherapy prostate cancer retrospective comparison propensity score Cox regression",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[A Systematic Review and Meta-analysis of Local Salvage Therapies After Radiotherapy for Prostate Cancer (MASTER).](https://pubmed.ncbi.nlm.nih.gov/33309278/)",
+      "[HDR versus LDR gynecological brachytherapy revisited.](https://pubmed.ncbi.nlm.nih.gov/8248552/)",
+      "[GEC-ESTRO ACROP prostate brachytherapy guidelines.](https://pubmed.ncbi.nlm.nih.gov/34999134/)",
+      "[HDR-GAN: HDR Image Reconstruction From Multi-Exposed LDR Images With Large Motions.](https://pubmed.ncbi.nlm.nih.gov/33764875/)",
+      "[A Brief Review of Low-Dose Rate (LDR) and High-Dose Rate (HDR) Brachytherapy Boost for High-Risk Prostate.](https://pubmed.ncbi.nlm.nih.gov/31921640/)"
+    ]
+  }
+}

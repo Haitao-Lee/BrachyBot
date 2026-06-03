@@ -1,0 +1,160 @@
+{
+  "query": "cloud TPS radiation oncology regulatory FDA cleared",
+  "timestamp": 1780421771.640407,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Desargues cloud TPS: a cloud-based automatic radiation treatment planning system for IMRT.",
+        "snippet": "PubMed ID: 41530840. 2026/01/13 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors in various anatomical sites under general clinical scenarios.\nRESULTS: All the plans from both groups satisfy the PTV prescription dose \ncoverage requirement of at least 95% of the PTV volume. The mean HI of plan A \ngroup and plan B group is 0.084 and 0.081, respectively, with no statistically \nsig",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/41530840/",
+        "source": "PubMed"
+      },
+      {
+        "title": "A cloud-based consultation and collaboration system for radiotherapy: Remote decision support services for community radiotherapy centers.",
+        "snippet": "PubMed ID: 36516515. 2023/02/01 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors in various anatomical sites under general clinical scenarios.\nRESULTS: All the plans from both groups satisfy the PTV prescription dose \ncoverage requirement of at least 95% of the PTV volume. The mean HI of plan A \ngroup and plan B group is 0.084 and 0.081, respectively, with no statistically \nsig",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36516515/",
+        "source": "PubMed"
+      },
+      {
+        "title": "End-to-End Impact of a Cloud-Based Surgical Planning System on Efficiency in Cataract Surgery: A Time-and-Motion Study.",
+        "snippet": "PubMed ID: 37425026. 2023/07/03 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors in various anatomical sites under general clinical scenarios.\nRESULTS: All the plans from both groups satisfy the PTV prescription dose \ncoverage requirement of at least 95% of the PTV volume. The mean HI of plan A \ngroup and plan B group is 0.084 and 0.081, respectively, with no statistically \nsig",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37425026/",
+        "source": "PubMed"
+      },
+      {
+        "title": "A privacy-preserving cloud storage framework with hybrid encryption, homomorphic keyword search, and blockchain-based integrity verification.",
+        "snippet": "PubMed ID: 41992049. 2026/04/16 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors in various anatomical sites under general clinical scenarios.\nRESULTS: All the plans from both groups satisfy the PTV prescription dose \ncoverage requirement of at least 95% of the PTV volume. The mean HI of plan A \ngroup and plan B group is 0.084 and 0.081, respectively, with no statistically \nsig",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/41992049/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Clinical effectiveness of a cloud-based dual-layer prescription review system: provincial integration across internet and outpatient care.",
+        "snippet": "PubMed ID: 40907417. 2026/01/01 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors in various anatomical sites under general clinical scenarios.\nRESULTS: All the plans from both groups satisfy the PTV prescription dose \ncoverage requirement of at least 95% of the PTV volume. The mean HI of plan A \ngroup and plan B group is 0.084 and 0.081, respectively, with no statistically \nsig",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40907417/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 41530840. 2026/01/13 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors\n2. PubMed ID: 36516515. 2023/02/01 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors\n3. PubMed ID: 37425026. 2023/07/03 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/41530840/",
+      "https://pubmed.ncbi.nlm.nih.gov/36516515/",
+      "https://pubmed.ncbi.nlm.nih.gov/37425026/",
+      "https://pubmed.ncbi.nlm.nih.gov/41992049/",
+      "https://pubmed.ncbi.nlm.nih.gov/40907417/"
+    ],
+    "evidence_chain_id": "20260603_013610_056284",
+    "evidence_summary": {
+      "response_id": "20260603_013610_056284",
+      "query": "cloud TPS radiation oncology regulatory FDA cleared",
+      "created_at": "2026-06-03T01:36:10.056307",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Desargues cloud TPS: a cloud-based automatic radiation treatment planning system for IMRT.](https://pubmed.ncbi.nlm.nih.gov/41530840/)",
+        "[A cloud-based consultation and collaboration system for radiotherapy: Remote decision support services for community radiotherapy centers.](https://pubmed.ncbi.nlm.nih.gov/36516515/)",
+        "[End-to-End Impact of a Cloud-Based Surgical Planning System on Efficiency in Cataract Surgery: A Time-and-Motion Study.](https://pubmed.ncbi.nlm.nih.gov/37425026/)",
+        "[A privacy-preserving cloud storage framework with hybrid encryption, homomorphic keyword search, and blockchain-based integrity verification.](https://pubmed.ncbi.nlm.nih.gov/41992049/)",
+        "[Clinical effectiveness of a cloud-based dual-layer prescription review system: provincial integration across internet and outpatient care.](https://pubmed.ncbi.nlm.nih.gov/40907417/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "97bb22450e31",
+          "claim": "PubMed ID: 41530840. 2026/01/13 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/41530840/",
+          "source_type": "PubMed",
+          "source_title": "Desargues cloud TPS: a cloud-based automatic radiation treatment planning system for IMRT.",
+          "accessed_at": "2026-06-03T01:36:11.639857",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 41530840. 2026/01/13 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors in various anatomical sites under general clinical scenarios.\nRESULTS: All the plans from both groups satisfy the PTV prescription dose \ncoverage requirement of at least 95% of the PTV volume. The mean HI of plan A \ngroup and plan B group is 0.084 and 0.081, respectively, with no statistically \nsig",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "cloud TPS radiation oncology regulatory FDA cleared",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "dc7c03201523",
+          "claim": "PubMed ID: 36516515. 2023/02/01 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36516515/",
+          "source_type": "PubMed",
+          "source_title": "A cloud-based consultation and collaboration system for radiotherapy: Remote decision support services for community radiotherapy centers.",
+          "accessed_at": "2026-06-03T01:36:11.639980",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36516515. 2023/02/01 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors in various anatomical sites under general clinical scenarios.\nRESULTS: All the plans from both groups satisfy the PTV prescription dose \ncoverage requirement of at least 95% of the PTV volume. The mean HI of plan A \ngroup and plan B group is 0.084 and 0.081, respectively, with no statistically \nsig",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "cloud TPS radiation oncology regulatory FDA cleared",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f6bbe0651e14",
+          "claim": "PubMed ID: 37425026. 2023/07/03 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37425026/",
+          "source_type": "PubMed",
+          "source_title": "End-to-End Impact of a Cloud-Based Surgical Planning System on Efficiency in Cataract Surgery: A Time-and-Motion Study.",
+          "accessed_at": "2026-06-03T01:36:11.640035",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37425026. 2023/07/03 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors in various anatomical sites under general clinical scenarios.\nRESULTS: All the plans from both groups satisfy the PTV prescription dose \ncoverage requirement of at least 95% of the PTV volume. The mean HI of plan A \ngroup and plan B group is 0.084 and 0.081, respectively, with no statistically \nsig",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "cloud TPS radiation oncology regulatory FDA cleared",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "7d846a9af7ff",
+          "claim": "PubMed ID: 41992049. 2026/04/16 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/41992049/",
+          "source_type": "PubMed",
+          "source_title": "A privacy-preserving cloud storage framework with hybrid encryption, homomorphic keyword search, and blockchain-based integrity verification.",
+          "accessed_at": "2026-06-03T01:36:11.640085",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 41992049. 2026/04/16 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors in various anatomical sites under general clinical scenarios.\nRESULTS: All the plans from both groups satisfy the PTV prescription dose \ncoverage requirement of at least 95% of the PTV volume. The mean HI of plan A \ngroup and plan B group is 0.084 and 0.081, respectively, with no statistically \nsig",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "cloud TPS radiation oncology regulatory FDA cleared",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "1b888e505820",
+          "claim": "PubMed ID: 40907417. 2026/01/01 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40907417/",
+          "source_type": "PubMed",
+          "source_title": "Clinical effectiveness of a cloud-based dual-layer prescription review system: provincial integration across internet and outpatient care.",
+          "accessed_at": "2026-06-03T01:36:11.640133",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40907417. 2026/01/01 00:00. PURPOSE: To develop a cloud-based automated treatment planning system for \nintensity-modulated radiation therapy and evaluate its efficacy and safety for \ntumors in various anatomical sites under general clinical scenarios.\nRESULTS: All the plans from both groups satisfy the PTV prescription dose \ncoverage requirement of at least 95% of the PTV volume. The mean HI of plan A \ngroup and plan B group is 0.084 and 0.081, respectively, with no statistically \nsig",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "cloud TPS radiation oncology regulatory FDA cleared",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Desargues cloud TPS: a cloud-based automatic radiation treatment planning system for IMRT.](https://pubmed.ncbi.nlm.nih.gov/41530840/)",
+      "[A cloud-based consultation and collaboration system for radiotherapy: Remote decision support services for community radiotherapy centers.](https://pubmed.ncbi.nlm.nih.gov/36516515/)",
+      "[End-to-End Impact of a Cloud-Based Surgical Planning System on Efficiency in Cataract Surgery: A Time-and-Motion Study.](https://pubmed.ncbi.nlm.nih.gov/37425026/)",
+      "[A privacy-preserving cloud storage framework with hybrid encryption, homomorphic keyword search, and blockchain-based integrity verification.](https://pubmed.ncbi.nlm.nih.gov/41992049/)",
+      "[Clinical effectiveness of a cloud-based dual-layer prescription review system: provincial integration across internet and outpatient care.](https://pubmed.ncbi.nlm.nih.gov/40907417/)"
+    ]
+  }
+}

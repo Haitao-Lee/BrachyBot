@@ -1,0 +1,160 @@
+{
+  "query": "TG-43 vs Monte Carlo brachytherapy dose calculation 2024 clinical practice",
+  "timestamp": 1780412514.1210089,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Dosimetric Impact of Air Gaps in High-Dose-Rate Contact Interventional Radiotherapy (Modern Brachytherapy) for Non-Melanoma Skin Cancer of the Ear.",
+        "snippet": "PubMed ID: 41227187. 2025/11/03 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in combination with a statin across three \nstudies of patients with mixed dyslipidemia.\nMETHODS: As prospectively planned, data were pooled from three randomized, \ndouble-blind, phase 3 studies of patients with low-density lipoprotein \ncholesterol (LDL-C) ≥130mg/dL, triglycerides (TG) ≥150mg/dL, and h",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/41227187/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Comparison of dose calculation approaches and clinical dose-response in image-guided head&neck brachytherapy of the oral cavity.",
+        "snippet": "PubMed ID: 40567277. 2025/05/08 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in combination with a statin across three \nstudies of patients with mixed dyslipidemia.\nMETHODS: As prospectively planned, data were pooled from three randomized, \ndouble-blind, phase 3 studies of patients with low-density lipoprotein \ncholesterol (LDL-C) ≥130mg/dL, triglycerides (TG) ≥150mg/dL, and h",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40567277/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Efficacy and safety of fenofibric acid in combination with a statin in patients with mixed dyslipidemia: Pooled analysis of three phase 3, 12-week randomized, controlled studies.",
+        "snippet": "PubMed ID: 21291802. 2009/04/01 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in combination with a statin across three \nstudies of patients with mixed dyslipidemia.\nMETHODS: As prospectively planned, data were pooled from three randomized, \ndouble-blind, phase 3 studies of patients with low-density lipoprotein \ncholesterol (LDL-C) ≥130mg/dL, triglycerides (TG) ≥150mg/dL, and h",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/21291802/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Head and neck (192)Ir HDR-brachytherapy dosimetry using a grid-based Boltzmann solver.",
+        "snippet": "PubMed ID: 24474973. 2013/12/01 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in combination with a statin across three \nstudies of patients with mixed dyslipidemia.\nMETHODS: As prospectively planned, data were pooled from three randomized, \ndouble-blind, phase 3 studies of patients with low-density lipoprotein \ncholesterol (LDL-C) ≥130mg/dL, triglycerides (TG) ≥150mg/dL, and h",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/24474973/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Different response of senescent female Sprague-Dawley rats to gemfibrozil and rosiglitazone administration.",
+        "snippet": "PubMed ID: 15998575. 2005/07/01 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in combination with a statin across three \nstudies of patients with mixed dyslipidemia.\nMETHODS: As prospectively planned, data were pooled from three randomized, \ndouble-blind, phase 3 studies of patients with low-density lipoprotein \ncholesterol (LDL-C) ≥130mg/dL, triglycerides (TG) ≥150mg/dL, and h",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/15998575/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 41227187. 2025/11/03 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in\n2. PubMed ID: 40567277. 2025/05/08 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in\n3. PubMed ID: 21291802. 2009/04/01 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/41227187/",
+      "https://pubmed.ncbi.nlm.nih.gov/40567277/",
+      "https://pubmed.ncbi.nlm.nih.gov/21291802/",
+      "https://pubmed.ncbi.nlm.nih.gov/24474973/",
+      "https://pubmed.ncbi.nlm.nih.gov/15998575/"
+    ],
+    "evidence_chain_id": "20260602_230152_214195",
+    "evidence_summary": {
+      "response_id": "20260602_230152_214195",
+      "query": "TG-43 vs Monte Carlo brachytherapy dose calculation 2024 clinical practice",
+      "created_at": "2026-06-02T23:01:52.214224",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Dosimetric Impact of Air Gaps in High-Dose-Rate Contact Interventional Radiotherapy (Modern Brachytherapy) for Non-Melanoma Skin Cancer of the Ear.](https://pubmed.ncbi.nlm.nih.gov/41227187/)",
+        "[Comparison of dose calculation approaches and clinical dose-response in image-guided head&neck brachytherapy of the oral cavity.](https://pubmed.ncbi.nlm.nih.gov/40567277/)",
+        "[Efficacy and safety of fenofibric acid in combination with a statin in patients with mixed dyslipidemia: Pooled analysis of three phase 3, 12-week randomized, controlled studies.](https://pubmed.ncbi.nlm.nih.gov/21291802/)",
+        "[Head and neck (192)Ir HDR-brachytherapy dosimetry using a grid-based Boltzmann solver.](https://pubmed.ncbi.nlm.nih.gov/24474973/)",
+        "[Different response of senescent female Sprague-Dawley rats to gemfibrozil and rosiglitazone administration.](https://pubmed.ncbi.nlm.nih.gov/15998575/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ba71f30e2641",
+          "claim": "PubMed ID: 41227187. 2025/11/03 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/41227187/",
+          "source_type": "PubMed",
+          "source_title": "Dosimetric Impact of Air Gaps in High-Dose-Rate Contact Interventional Radiotherapy (Modern Brachytherapy) for Non-Melanoma Skin Cancer of the Ear.",
+          "accessed_at": "2026-06-02T23:01:54.120616",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 41227187. 2025/11/03 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in combination with a statin across three \nstudies of patients with mixed dyslipidemia.\nMETHODS: As prospectively planned, data were pooled from three randomized, \ndouble-blind, phase 3 studies of patients with low-density lipoprotein \ncholesterol (LDL-C) ≥130mg/dL, triglycerides (TG) ≥150mg/dL, and h",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "TG-43 vs Monte Carlo brachytherapy dose calculation 2024 clinical practice",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ed136d4f1beb",
+          "claim": "PubMed ID: 40567277. 2025/05/08 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40567277/",
+          "source_type": "PubMed",
+          "source_title": "Comparison of dose calculation approaches and clinical dose-response in image-guided head&neck brachytherapy of the oral cavity.",
+          "accessed_at": "2026-06-02T23:01:54.120721",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40567277. 2025/05/08 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in combination with a statin across three \nstudies of patients with mixed dyslipidemia.\nMETHODS: As prospectively planned, data were pooled from three randomized, \ndouble-blind, phase 3 studies of patients with low-density lipoprotein \ncholesterol (LDL-C) ≥130mg/dL, triglycerides (TG) ≥150mg/dL, and h",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "TG-43 vs Monte Carlo brachytherapy dose calculation 2024 clinical practice",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3ce58d4fade7",
+          "claim": "PubMed ID: 21291802. 2009/04/01 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/21291802/",
+          "source_type": "PubMed",
+          "source_title": "Efficacy and safety of fenofibric acid in combination with a statin in patients with mixed dyslipidemia: Pooled analysis of three phase 3, 12-week randomized, controlled studies.",
+          "accessed_at": "2026-06-02T23:01:54.120752",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 21291802. 2009/04/01 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in combination with a statin across three \nstudies of patients with mixed dyslipidemia.\nMETHODS: As prospectively planned, data were pooled from three randomized, \ndouble-blind, phase 3 studies of patients with low-density lipoprotein \ncholesterol (LDL-C) ≥130mg/dL, triglycerides (TG) ≥150mg/dL, and h",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "TG-43 vs Monte Carlo brachytherapy dose calculation 2024 clinical practice",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "b51caade24c5",
+          "claim": "PubMed ID: 24474973. 2013/12/01 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/24474973/",
+          "source_type": "PubMed",
+          "source_title": "Head and neck (192)Ir HDR-brachytherapy dosimetry using a grid-based Boltzmann solver.",
+          "accessed_at": "2026-06-02T23:01:54.120777",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 24474973. 2013/12/01 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in combination with a statin across three \nstudies of patients with mixed dyslipidemia.\nMETHODS: As prospectively planned, data were pooled from three randomized, \ndouble-blind, phase 3 studies of patients with low-density lipoprotein \ncholesterol (LDL-C) ≥130mg/dL, triglycerides (TG) ≥150mg/dL, and h",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "TG-43 vs Monte Carlo brachytherapy dose calculation 2024 clinical practice",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c08b1ed91ac2",
+          "claim": "PubMed ID: 15998575. 2005/07/01 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/15998575/",
+          "source_type": "PubMed",
+          "source_title": "Different response of senescent female Sprague-Dawley rats to gemfibrozil and rosiglitazone administration.",
+          "accessed_at": "2026-06-02T23:01:54.120800",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 15998575. 2005/07/01 00:00. BACKGROUND: Patients with mixed dyslipidemia often require combination therapy \nto manage multiple lipid abnormalities.\nOBJECTIVE: To evaluate fenofibric acid in combination with a statin across three \nstudies of patients with mixed dyslipidemia.\nMETHODS: As prospectively planned, data were pooled from three randomized, \ndouble-blind, phase 3 studies of patients with low-density lipoprotein \ncholesterol (LDL-C) ≥130mg/dL, triglycerides (TG) ≥150mg/dL, and h",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "TG-43 vs Monte Carlo brachytherapy dose calculation 2024 clinical practice",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Dosimetric Impact of Air Gaps in High-Dose-Rate Contact Interventional Radiotherapy (Modern Brachytherapy) for Non-Melanoma Skin Cancer of the Ear.](https://pubmed.ncbi.nlm.nih.gov/41227187/)",
+      "[Comparison of dose calculation approaches and clinical dose-response in image-guided head&neck brachytherapy of the oral cavity.](https://pubmed.ncbi.nlm.nih.gov/40567277/)",
+      "[Efficacy and safety of fenofibric acid in combination with a statin in patients with mixed dyslipidemia: Pooled analysis of three phase 3, 12-week randomized, controlled studies.](https://pubmed.ncbi.nlm.nih.gov/21291802/)",
+      "[Head and neck (192)Ir HDR-brachytherapy dosimetry using a grid-based Boltzmann solver.](https://pubmed.ncbi.nlm.nih.gov/24474973/)",
+      "[Different response of senescent female Sprague-Dawley rats to gemfibrozil and rosiglitazone administration.](https://pubmed.ncbi.nlm.nih.gov/15998575/)"
+    ]
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "query": "Varian Gammamed HDR afterloader dwell positions channels specifications",
+  "timestamp": 1780462890.3887455,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "深圳市光明区教育局政府信息公开平台",
+        "snippet": "按照严格依法、真实有效、及时便民的原则，采取科学的编制方式，集中发布深圳市光明区教育局政府信息。",
+        "url": "https://www.szgm.gov.cn/gmwtjy/gkmlpt/index",
+        "source": "Bing CN"
+      },
+      {
+        "title": "教育服务 - 光明区政府在线",
+        "snippet": "教育服务-深圳市光明区政府在线",
+        "url": "https://www.szgm.gov.cn/szgm/132104/jyfw/index.html",
+        "source": "Bing CN"
+      },
+      {
+        "title": "义务教育学校申请流程 - 光明区政府在线",
+        "snippet": "深圳市光明区人民政府办公室主办 网站备案号：粤ICP备2024337736号-1 网站标识码：4403900004 粤公网安备：44030002005185号 投诉电话：0755-12345 投诉地址：深圳市光明区光明街道碧眼路1号 …",
+        "url": "https://www.szgm.gov.cn/132100/135232/xwsq/index.html",
+        "source": "Bing CN"
+      },
+      {
+        "title": "光明区教育局关于征求《光明区2026年义务教育阶段新增 ...",
+        "snippet": "2026年5月26日 · 为进一步做好义务教育学校招生工作，结合光明区实际，光明区教育局制定了《光明区2026年义务教育阶段新增公办学校学区划分方案（征求意见稿）》，现公开征求意见。 一、征求意 …",
+        "url": "https://www.szgm.gov.cn/132100/135232/xwsq/151654/content/post_12806410.html",
+        "source": "Bing CN"
+      },
+      {
+        "title": "深圳市光明区教育局2026年4月深圳定点面向应届毕业生公开 ...",
+        "snippet": "2026年3月28日 · 附件：1.深圳市光明区教育局2026年4月深圳定点面向应届毕业生公开招聘教师岗位表 2.深圳市光明区教育局2026年4月深圳定点面向应届毕业生公开招聘教师未取得教师资格证的报考人 …",
+        "url": "https://www.szgm.gov.cn/xxgk/xqgwhxxgkml/rsxx/zkzp/content/post_12707082.html",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 按照严格依法、真实有效、及时便民的原则，采取科学的编制方式，集中发布深圳市光明区教育局政府信息。\n- 教育服务-深圳市光明区政府在线",
+    "sources": [
+      "https://www.szgm.gov.cn/gmwtjy/gkmlpt/index",
+      "https://www.szgm.gov.cn/szgm/132104/jyfw/index.html",
+      "https://www.szgm.gov.cn/132100/135232/xwsq/index.html",
+      "https://www.szgm.gov.cn/132100/135232/xwsq/151654/content/post_12806410.html",
+      "https://www.szgm.gov.cn/xxgk/xqgwhxxgkml/rsxx/zkzp/content/post_12707082.html"
+    ],
+    "evidence_chain_id": "20260603_130129_999734",
+    "evidence_summary": {
+      "response_id": "20260603_130129_999734",
+      "query": "Varian Gammamed HDR afterloader dwell positions channels specifications",
+      "created_at": "2026-06-03T13:01:29.999759",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[深圳市光明区教育局政府信息公开平台](https://www.szgm.gov.cn/gmwtjy/gkmlpt/index)",
+        "[教育服务 - 光明区政府在线](https://www.szgm.gov.cn/szgm/132104/jyfw/index.html)",
+        "[义务教育学校申请流程 - 光明区政府在线](https://www.szgm.gov.cn/132100/135232/xwsq/index.html)",
+        "[光明区教育局关于征求《光明区2026年义务教育阶段新增 ...](https://www.szgm.gov.cn/132100/135232/xwsq/151654/content/post_12806410.html)",
+        "[深圳市光明区教育局2026年4月深圳定点面向应届毕业生公开 ...](https://www.szgm.gov.cn/xxgk/xqgwhxxgkml/rsxx/zkzp/content/post_12707082.html)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "8282281d4879",
+          "claim": "按照严格依法、真实有效、及时便民的原则，采取科学的编制方式，集中发布深圳市光明区教育局政府信息。",
+          "source_url": "https://www.szgm.gov.cn/gmwtjy/gkmlpt/index",
+          "source_type": "Bing CN",
+          "source_title": "深圳市光明区教育局政府信息公开平台",
+          "accessed_at": "2026-06-03T13:01:30.388286",
+          "published_at": "",
+          "raw_snippet": "按照严格依法、真实有效、及时便民的原则，采取科学的编制方式，集中发布深圳市光明区教育局政府信息。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Varian Gammamed HDR afterloader dwell positions channels specifications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "0882b61242f8",
+          "claim": "教育服务-深圳市光明区政府在线",
+          "source_url": "https://www.szgm.gov.cn/szgm/132104/jyfw/index.html",
+          "source_type": "Bing CN",
+          "source_title": "教育服务 - 光明区政府在线",
+          "accessed_at": "2026-06-03T13:01:30.388359",
+          "published_at": "",
+          "raw_snippet": "教育服务-深圳市光明区政府在线",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Varian Gammamed HDR afterloader dwell positions channels specifications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "537292b7dcf5",
+          "claim": "深圳市光明区人民政府办公室主办 网站备案号：粤ICP备2024337736号-1 网站标识码：4403900004 粤公网安备：44030002005185号 投诉电话：0755-12345 投诉地址：深圳市光明区光明街道碧眼路1号 …",
+          "source_url": "https://www.szgm.gov.cn/132100/135232/xwsq/index.html",
+          "source_type": "Bing CN",
+          "source_title": "义务教育学校申请流程 - 光明区政府在线",
+          "accessed_at": "2026-06-03T13:01:30.388396",
+          "published_at": "",
+          "raw_snippet": "深圳市光明区人民政府办公室主办 网站备案号：粤ICP备2024337736号-1 网站标识码：4403900004 粤公网安备：44030002005185号 投诉电话：0755-12345 投诉地址：深圳市光明区光明街道碧眼路1号 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Varian Gammamed HDR afterloader dwell positions channels specifications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "710e44539c52",
+          "claim": "2026年5月26日 · 为进一步做好义务教育学校招生工作，结合光明区实际，光明区教育局制定了《光明区2026年义务教育阶段新增公办学校学区划分方案（征求意见稿）》，现公开征求意见。 一、征求意 …",
+          "source_url": "https://www.szgm.gov.cn/132100/135232/xwsq/151654/content/post_12806410.html",
+          "source_type": "Bing CN",
+          "source_title": "光明区教育局关于征求《光明区2026年义务教育阶段新增 ...",
+          "accessed_at": "2026-06-03T13:01:30.388434",
+          "published_at": "",
+          "raw_snippet": "2026年5月26日 · 为进一步做好义务教育学校招生工作，结合光明区实际，光明区教育局制定了《光明区2026年义务教育阶段新增公办学校学区划分方案（征求意见稿）》，现公开征求意见。 一、征求意 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Varian Gammamed HDR afterloader dwell positions channels specifications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "b7d2d719f54b",
+          "claim": "2026年3月28日 · 附件：1.深圳市光明区教育局2026年4月深圳定点面向应届毕业生公开招聘教师岗位表 2.深圳市光明区教育局2026年4月深圳定点面向应届毕业生公开招聘教师未取得教师资格证的报考人 …",
+          "source_url": "https://www.szgm.gov.cn/xxgk/xqgwhxxgkml/rsxx/zkzp/content/post_12707082.html",
+          "source_type": "Bing CN",
+          "source_title": "深圳市光明区教育局2026年4月深圳定点面向应届毕业生公开 ...",
+          "accessed_at": "2026-06-03T13:01:30.388466",
+          "published_at": "",
+          "raw_snippet": "2026年3月28日 · 附件：1.深圳市光明区教育局2026年4月深圳定点面向应届毕业生公开招聘教师岗位表 2.深圳市光明区教育局2026年4月深圳定点面向应届毕业生公开招聘教师未取得教师资格证的报考人 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Varian Gammamed HDR afterloader dwell positions channels specifications",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[深圳市光明区教育局政府信息公开平台](https://www.szgm.gov.cn/gmwtjy/gkmlpt/index)",
+      "[教育服务 - 光明区政府在线](https://www.szgm.gov.cn/szgm/132104/jyfw/index.html)",
+      "[义务教育学校申请流程 - 光明区政府在线](https://www.szgm.gov.cn/132100/135232/xwsq/index.html)",
+      "[光明区教育局关于征求《光明区2026年义务教育阶段新增 ...](https://www.szgm.gov.cn/132100/135232/xwsq/151654/content/post_12806410.html)",
+      "[深圳市光明区教育局2026年4月深圳定点面向应届毕业生公开 ...](https://www.szgm.gov.cn/xxgk/xqgwhxxgkml/rsxx/zkzp/content/post_12707082.html)"
+    ]
+  }
+}

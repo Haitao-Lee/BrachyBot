@@ -1,0 +1,51 @@
+{
+  "response_id": "20260602_235508_285280",
+  "query": "PORTEC-4 trial results 2024 2025 endometrial brachytherapy",
+  "created_at": "2026-06-02T23:55:08.285301",
+  "num_sources": 2,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[Molecular profile-based adjuvant treatment for women with high-intermediate risk endometrial cancer (PORTEC-4a): results of a randomised, open-label, phase 3, multicentre, non-inferiority trial.](https://pubmed.ncbi.nlm.nih.gov/41449145/)",
+    "[Endometrial Cancer: Transitioning from Histology to Genomics.](https://pubmed.ncbi.nlm.nih.gov/35200562/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "26533e279e73",
+      "claim": "PubMed ID: 41449145. 2026/01/01 00:00. BACKGROUND: PORTEC-4a investigated molecular risk profile-based individualised \nadjuvant treatment for women with high-intermediate risk endometrial cancer, \naim",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/41449145/",
+      "source_type": "PubMed",
+      "source_title": "Molecular profile-based adjuvant treatment for women with high-intermediate risk endometrial cancer (PORTEC-4a): results of a randomised, open-label, phase 3, multicentre, non-inferiority trial.",
+      "accessed_at": "2026-06-02T23:55:10.172987",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 41449145. 2026/01/01 00:00. BACKGROUND: PORTEC-4a investigated molecular risk profile-based individualised \nadjuvant treatment for women with high-intermediate risk endometrial cancer, \naiming to reduce both overtreatment and undertreatment while optimising \nlocoregional control.\nMETHODS: PORTEC-4a was a randomised, open-label, phase 3, multicentre, \nnon-inferiority trial, conducted across eight European countries. Women (aged \n≥18 years and with a WHO performance score of ) with earl",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "PORTEC-4 trial results 2024 2025 endometrial brachytherapy",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "94eda021c095",
+      "claim": "PubMed ID: 35200562. 2022/01/31 00:00. BACKGROUND: PORTEC-4a investigated molecular risk profile-based individualised \nadjuvant treatment for women with high-intermediate risk endometrial cancer, \naim",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/35200562/",
+      "source_type": "PubMed",
+      "source_title": "Endometrial Cancer: Transitioning from Histology to Genomics.",
+      "accessed_at": "2026-06-02T23:55:10.173087",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 35200562. 2022/01/31 00:00. BACKGROUND: PORTEC-4a investigated molecular risk profile-based individualised \nadjuvant treatment for women with high-intermediate risk endometrial cancer, \naiming to reduce both overtreatment and undertreatment while optimising \nlocoregional control.\nMETHODS: PORTEC-4a was a randomised, open-label, phase 3, multicentre, \nnon-inferiority trial, conducted across eight European countries. Women (aged \n≥18 years and with a WHO performance score of ) with earl",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "PORTEC-4 trial results 2024 2025 endometrial brachytherapy",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

@@ -1,0 +1,160 @@
+{
+  "query": "DW-MRI diffusion weighted MRI cervical cancer brachytherapy target delineation",
+  "timestamp": 1780414573.2760189,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Self-supervised denoising diffusion probabilistic models for abdominal DW-MRI.",
+        "snippet": "PubMed ID: 40312927. 2025/09/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincrease apparent diffusion coefficient (ADC) map accuracy and lesion \nconspicuity at high b-values. We aim to reduce the effect of blurring due to \nmotion that obscures small lesions when averaging multiple repetition images at \neach b-value, which is the current clinical standard.\nMETHODS: We propose a",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40312927/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Self Supervised Denoising Diffusion Probabilistic Models for Abdominal DW-MRI.",
+        "snippet": "PubMed ID: 38736559. 2023/10/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincrease apparent diffusion coefficient (ADC) map accuracy and lesion \nconspicuity at high b-values. We aim to reduce the effect of blurring due to \nmotion that obscures small lesions when averaging multiple repetition images at \neach b-value, which is the current clinical standard.\nMETHODS: We propose a",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38736559/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Can diffusion-weighted magnetic resonance imaging (DW-MRI) alone be used as a reliable sequence for the preoperative detection and characterisation of hepatic metastases? A meta-analysis.",
+        "snippet": "PubMed ID: 23000072. 2013/02/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincrease apparent diffusion coefficient (ADC) map accuracy and lesion \nconspicuity at high b-values. We aim to reduce the effect of blurring due to \nmotion that obscures small lesions when averaging multiple repetition images at \neach b-value, which is the current clinical standard.\nMETHODS: We propose a",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/23000072/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Does diffusion-weighted MRI (DW-MRI) change treatment strategy in pediatric cholesteatoma?",
+        "snippet": "PubMed ID: 23130592. 2013/05/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincrease apparent diffusion coefficient (ADC) map accuracy and lesion \nconspicuity at high b-values. We aim to reduce the effect of blurring due to \nmotion that obscures small lesions when averaging multiple repetition images at \neach b-value, which is the current clinical standard.\nMETHODS: We propose a",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/23130592/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Diffusion-weighted (DW) MRI in lung cancers: ADC test-retest repeatability.",
+        "snippet": "PubMed ID: 28396997. 2017/11/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincrease apparent diffusion coefficient (ADC) map accuracy and lesion \nconspicuity at high b-values. We aim to reduce the effect of blurring due to \nmotion that obscures small lesions when averaging multiple repetition images at \neach b-value, which is the current clinical standard.\nMETHODS: We propose a",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28396997/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 40312927. 2025/09/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincre\n2. PubMed ID: 38736559. 2023/10/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincre\n3. PubMed ID: 23000072. 2013/02/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincre",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/40312927/",
+      "https://pubmed.ncbi.nlm.nih.gov/38736559/",
+      "https://pubmed.ncbi.nlm.nih.gov/23000072/",
+      "https://pubmed.ncbi.nlm.nih.gov/23130592/",
+      "https://pubmed.ncbi.nlm.nih.gov/28396997/"
+    ],
+    "evidence_chain_id": "20260602_233611_134503",
+    "evidence_summary": {
+      "response_id": "20260602_233611_134503",
+      "query": "DW-MRI diffusion weighted MRI cervical cancer brachytherapy target delineation",
+      "created_at": "2026-06-02T23:36:11.134526",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Self-supervised denoising diffusion probabilistic models for abdominal DW-MRI.](https://pubmed.ncbi.nlm.nih.gov/40312927/)",
+        "[Self Supervised Denoising Diffusion Probabilistic Models for Abdominal DW-MRI.](https://pubmed.ncbi.nlm.nih.gov/38736559/)",
+        "[Can diffusion-weighted magnetic resonance imaging (DW-MRI) alone be used as a reliable sequence for the preoperative detection and characterisation of hepatic metastases? A meta-analysis.](https://pubmed.ncbi.nlm.nih.gov/23000072/)",
+        "[Does diffusion-weighted MRI (DW-MRI) change treatment strategy in pediatric cholesteatoma?](https://pubmed.ncbi.nlm.nih.gov/23130592/)",
+        "[Diffusion-weighted (DW) MRI in lung cancers: ADC test-retest repeatability.](https://pubmed.ncbi.nlm.nih.gov/28396997/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "7dfa01806f9b",
+          "claim": "PubMed ID: 40312927. 2025/09/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincre",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40312927/",
+          "source_type": "PubMed",
+          "source_title": "Self-supervised denoising diffusion probabilistic models for abdominal DW-MRI.",
+          "accessed_at": "2026-06-02T23:36:13.275508",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40312927. 2025/09/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincrease apparent diffusion coefficient (ADC) map accuracy and lesion \nconspicuity at high b-values. We aim to reduce the effect of blurring due to \nmotion that obscures small lesions when averaging multiple repetition images at \neach b-value, which is the current clinical standard.\nMETHODS: We propose a",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DW-MRI diffusion weighted MRI cervical cancer brachytherapy target delineation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "0e9f5552a7d0",
+          "claim": "PubMed ID: 38736559. 2023/10/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincre",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38736559/",
+          "source_type": "PubMed",
+          "source_title": "Self Supervised Denoising Diffusion Probabilistic Models for Abdominal DW-MRI.",
+          "accessed_at": "2026-06-02T23:36:13.275655",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38736559. 2023/10/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincrease apparent diffusion coefficient (ADC) map accuracy and lesion \nconspicuity at high b-values. We aim to reduce the effect of blurring due to \nmotion that obscures small lesions when averaging multiple repetition images at \neach b-value, which is the current clinical standard.\nMETHODS: We propose a",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DW-MRI diffusion weighted MRI cervical cancer brachytherapy target delineation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c18da0467262",
+          "claim": "PubMed ID: 23000072. 2013/02/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincre",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/23000072/",
+          "source_type": "PubMed",
+          "source_title": "Can diffusion-weighted magnetic resonance imaging (DW-MRI) alone be used as a reliable sequence for the preoperative detection and characterisation of hepatic metastases? A meta-analysis.",
+          "accessed_at": "2026-06-02T23:36:13.275689",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 23000072. 2013/02/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincrease apparent diffusion coefficient (ADC) map accuracy and lesion \nconspicuity at high b-values. We aim to reduce the effect of blurring due to \nmotion that obscures small lesions when averaging multiple repetition images at \neach b-value, which is the current clinical standard.\nMETHODS: We propose a",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DW-MRI diffusion weighted MRI cervical cancer brachytherapy target delineation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "20761410d379",
+          "claim": "PubMed ID: 23130592. 2013/05/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincre",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/23130592/",
+          "source_type": "PubMed",
+          "source_title": "Does diffusion-weighted MRI (DW-MRI) change treatment strategy in pediatric cholesteatoma?",
+          "accessed_at": "2026-06-02T23:36:13.275717",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 23130592. 2013/05/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincrease apparent diffusion coefficient (ADC) map accuracy and lesion \nconspicuity at high b-values. We aim to reduce the effect of blurring due to \nmotion that obscures small lesions when averaging multiple repetition images at \neach b-value, which is the current clinical standard.\nMETHODS: We propose a",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DW-MRI diffusion weighted MRI cervical cancer brachytherapy target delineation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e11316f191ac",
+          "claim": "PubMed ID: 28396997. 2017/11/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincre",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/28396997/",
+          "source_type": "PubMed",
+          "source_title": "Diffusion-weighted (DW) MRI in lung cancers: ADC test-retest repeatability.",
+          "accessed_at": "2026-06-02T23:36:13.275742",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 28396997. 2017/11/01 00:00. PURPOSE: To improve the quality of abdominal diffusion-weighted MR images \n(DW-MRI) when acquired using single-repetition (NEX = 1) protocols, and thereby \nincrease apparent diffusion coefficient (ADC) map accuracy and lesion \nconspicuity at high b-values. We aim to reduce the effect of blurring due to \nmotion that obscures small lesions when averaging multiple repetition images at \neach b-value, which is the current clinical standard.\nMETHODS: We propose a",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DW-MRI diffusion weighted MRI cervical cancer brachytherapy target delineation",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Self-supervised denoising diffusion probabilistic models for abdominal DW-MRI.](https://pubmed.ncbi.nlm.nih.gov/40312927/)",
+      "[Self Supervised Denoising Diffusion Probabilistic Models for Abdominal DW-MRI.](https://pubmed.ncbi.nlm.nih.gov/38736559/)",
+      "[Can diffusion-weighted magnetic resonance imaging (DW-MRI) alone be used as a reliable sequence for the preoperative detection and characterisation of hepatic metastases? A meta-analysis.](https://pubmed.ncbi.nlm.nih.gov/23000072/)",
+      "[Does diffusion-weighted MRI (DW-MRI) change treatment strategy in pediatric cholesteatoma?](https://pubmed.ncbi.nlm.nih.gov/23130592/)",
+      "[Diffusion-weighted (DW) MRI in lung cancers: ADC test-retest repeatability.](https://pubmed.ncbi.nlm.nih.gov/28396997/)"
+    ]
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "query": "salvage brachytherapy base tongue recurrence functional outcomes",
+  "timestamp": 1780415545.127656,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Salvage brachytherapy for local recurrence of cancer after definitive irradiation: a GEC-ESTRO narrative review.",
+        "snippet": "PubMed ID: 40472997. 2025/08/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATERIALS: We searched the PubMed, Embase, and Cochrane libraries \nfrom its inception to June 2023, for eligible studies in which patients \nunderwent brachytherapy for rGBM. Outcomes of interest were mOS, mPFS, OS, PFS, \nand adverse events (AEs). For individual clinical survival outcomes and common \nAEs,",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40472997/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Salvage brachytherapy for recurrent prostate cancer after radiotherapy: An expert-endorsed review by uroGEC.",
+        "snippet": "PubMed ID: 40639765. 2025/09/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATERIALS: We searched the PubMed, Embase, and Cochrane libraries \nfrom its inception to June 2023, for eligible studies in which patients \nunderwent brachytherapy for rGBM. Outcomes of interest were mOS, mPFS, OS, PFS, \nand adverse events (AEs). For individual clinical survival outcomes and common \nAEs,",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40639765/",
+        "source": "PubMed"
+      },
+      {
+        "title": "A Systematic Review and Meta-analysis of Local Salvage Therapies After Radiotherapy for Prostate Cancer (MASTER).",
+        "snippet": "PubMed ID: 33309278. 2021/09/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATERIALS: We searched the PubMed, Embase, and Cochrane libraries \nfrom its inception to June 2023, for eligible studies in which patients \nunderwent brachytherapy for rGBM. Outcomes of interest were mOS, mPFS, OS, PFS, \nand adverse events (AEs). For individual clinical survival outcomes and common \nAEs,",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33309278/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Brachytherapy is an effective and safe salvage option for re-irradiation in recurrent glioblastoma (rGBM): A systematic review.",
+        "snippet": "PubMed ID: 37972737. 2024/01/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATERIALS: We searched the PubMed, Embase, and Cochrane libraries \nfrom its inception to June 2023, for eligible studies in which patients \nunderwent brachytherapy for rGBM. Outcomes of interest were mOS, mPFS, OS, PFS, \nand adverse events (AEs). For individual clinical survival outcomes and common \nAEs,",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37972737/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Focal versus whole gland salvage brachytherapy for recurrent prostate cancer in the prostate specific membrane antigen PET era: a narrative review.",
+        "snippet": "PubMed ID: 37417290. 2023/06/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATERIALS: We searched the PubMed, Embase, and Cochrane libraries \nfrom its inception to June 2023, for eligible studies in which patients \nunderwent brachytherapy for rGBM. Outcomes of interest were mOS, mPFS, OS, PFS, \nand adverse events (AEs). For individual clinical survival outcomes and common \nAEs,",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37417290/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 40472997. 2025/08/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATER\n2. PubMed ID: 40639765. 2025/09/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATER\n3. PubMed ID: 33309278. 2021/09/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATER",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/40472997/",
+      "https://pubmed.ncbi.nlm.nih.gov/40639765/",
+      "https://pubmed.ncbi.nlm.nih.gov/33309278/",
+      "https://pubmed.ncbi.nlm.nih.gov/37972737/",
+      "https://pubmed.ncbi.nlm.nih.gov/37417290/"
+    ],
+    "evidence_chain_id": "20260602_235222_952637",
+    "evidence_summary": {
+      "response_id": "20260602_235222_952637",
+      "query": "salvage brachytherapy base tongue recurrence functional outcomes",
+      "created_at": "2026-06-02T23:52:22.952664",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Salvage brachytherapy for local recurrence of cancer after definitive irradiation: a GEC-ESTRO narrative review.](https://pubmed.ncbi.nlm.nih.gov/40472997/)",
+        "[Salvage brachytherapy for recurrent prostate cancer after radiotherapy: An expert-endorsed review by uroGEC.](https://pubmed.ncbi.nlm.nih.gov/40639765/)",
+        "[A Systematic Review and Meta-analysis of Local Salvage Therapies After Radiotherapy for Prostate Cancer (MASTER).](https://pubmed.ncbi.nlm.nih.gov/33309278/)",
+        "[Brachytherapy is an effective and safe salvage option for re-irradiation in recurrent glioblastoma (rGBM): A systematic review.](https://pubmed.ncbi.nlm.nih.gov/37972737/)",
+        "[Focal versus whole gland salvage brachytherapy for recurrent prostate cancer in the prostate specific membrane antigen PET era: a narrative review.](https://pubmed.ncbi.nlm.nih.gov/37417290/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "797b7d6ddd4d",
+          "claim": "PubMed ID: 40472997. 2025/08/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATER",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40472997/",
+          "source_type": "PubMed",
+          "source_title": "Salvage brachytherapy for local recurrence of cancer after definitive irradiation: a GEC-ESTRO narrative review.",
+          "accessed_at": "2026-06-02T23:52:25.127256",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40472997. 2025/08/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATERIALS: We searched the PubMed, Embase, and Cochrane libraries \nfrom its inception to June 2023, for eligible studies in which patients \nunderwent brachytherapy for rGBM. Outcomes of interest were mOS, mPFS, OS, PFS, \nand adverse events (AEs). For individual clinical survival outcomes and common \nAEs,",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "salvage brachytherapy base tongue recurrence functional outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "cc4bb62125d4",
+          "claim": "PubMed ID: 40639765. 2025/09/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATER",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40639765/",
+          "source_type": "PubMed",
+          "source_title": "Salvage brachytherapy for recurrent prostate cancer after radiotherapy: An expert-endorsed review by uroGEC.",
+          "accessed_at": "2026-06-02T23:52:25.127355",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40639765. 2025/09/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATERIALS: We searched the PubMed, Embase, and Cochrane libraries \nfrom its inception to June 2023, for eligible studies in which patients \nunderwent brachytherapy for rGBM. Outcomes of interest were mOS, mPFS, OS, PFS, \nand adverse events (AEs). For individual clinical survival outcomes and common \nAEs,",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "salvage brachytherapy base tongue recurrence functional outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "afd79c152963",
+          "claim": "PubMed ID: 33309278. 2021/09/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATER",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33309278/",
+          "source_type": "PubMed",
+          "source_title": "A Systematic Review and Meta-analysis of Local Salvage Therapies After Radiotherapy for Prostate Cancer (MASTER).",
+          "accessed_at": "2026-06-02T23:52:25.127387",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33309278. 2021/09/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATERIALS: We searched the PubMed, Embase, and Cochrane libraries \nfrom its inception to June 2023, for eligible studies in which patients \nunderwent brachytherapy for rGBM. Outcomes of interest were mOS, mPFS, OS, PFS, \nand adverse events (AEs). For individual clinical survival outcomes and common \nAEs,",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "salvage brachytherapy base tongue recurrence functional outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "584bfe6ee930",
+          "claim": "PubMed ID: 37972737. 2024/01/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATER",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37972737/",
+          "source_type": "PubMed",
+          "source_title": "Brachytherapy is an effective and safe salvage option for re-irradiation in recurrent glioblastoma (rGBM): A systematic review.",
+          "accessed_at": "2026-06-02T23:52:25.127413",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37972737. 2024/01/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATERIALS: We searched the PubMed, Embase, and Cochrane libraries \nfrom its inception to June 2023, for eligible studies in which patients \nunderwent brachytherapy for rGBM. Outcomes of interest were mOS, mPFS, OS, PFS, \nand adverse events (AEs). For individual clinical survival outcomes and common \nAEs,",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "salvage brachytherapy base tongue recurrence functional outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "53429175b159",
+          "claim": "PubMed ID: 37417290. 2023/06/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATER",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37417290/",
+          "source_type": "PubMed",
+          "source_title": "Focal versus whole gland salvage brachytherapy for recurrent prostate cancer in the prostate specific membrane antigen PET era: a narrative review.",
+          "accessed_at": "2026-06-02T23:52:25.127457",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37417290. 2023/06/01 00:00. PURPOSE: To evaluate the clinical efficacy and toxicity of brachytherapy as a \nsalvage therapy for patients with recurrent glioblastoma (rGBM).\nMETHODS AND MATERIALS: We searched the PubMed, Embase, and Cochrane libraries \nfrom its inception to June 2023, for eligible studies in which patients \nunderwent brachytherapy for rGBM. Outcomes of interest were mOS, mPFS, OS, PFS, \nand adverse events (AEs). For individual clinical survival outcomes and common \nAEs,",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "salvage brachytherapy base tongue recurrence functional outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Salvage brachytherapy for local recurrence of cancer after definitive irradiation: a GEC-ESTRO narrative review.](https://pubmed.ncbi.nlm.nih.gov/40472997/)",
+      "[Salvage brachytherapy for recurrent prostate cancer after radiotherapy: An expert-endorsed review by uroGEC.](https://pubmed.ncbi.nlm.nih.gov/40639765/)",
+      "[A Systematic Review and Meta-analysis of Local Salvage Therapies After Radiotherapy for Prostate Cancer (MASTER).](https://pubmed.ncbi.nlm.nih.gov/33309278/)",
+      "[Brachytherapy is an effective and safe salvage option for re-irradiation in recurrent glioblastoma (rGBM): A systematic review.](https://pubmed.ncbi.nlm.nih.gov/37972737/)",
+      "[Focal versus whole gland salvage brachytherapy for recurrent prostate cancer in the prostate specific membrane antigen PET era: a narrative review.](https://pubmed.ncbi.nlm.nih.gov/37417290/)"
+    ]
+  }
+}

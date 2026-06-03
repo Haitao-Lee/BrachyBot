@@ -1,0 +1,160 @@
+{
+  "query": "MRI quality assurance brachytherapy radiation oncology QA tests geometric accuracy",
+  "timestamp": 1780411261.3758712,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Prostate MRI and image Quality: It is time to take stock.",
+        "snippet": "PubMed ID: 36870241. 2023/04/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-MRI image quality, consequences of poor image quality, and finally \nsuggestions for improvements.\n\nCopyright",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36870241/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Strategies for improving image quality in prostate MRI.",
+        "snippet": "PubMed ID: 38940911. 2024/12/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-MRI image quality, consequences of poor image quality, and finally \nsuggestions for improvements.\n\nCopyright",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38940911/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Prostate MRI and image quality: The urologist's perspective.",
+        "snippet": "PubMed ID: 38101197. 2024/01/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-MRI image quality, consequences of poor image quality, and finally \nsuggestions for improvements.\n\nCopyright",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38101197/",
+        "source": "PubMed"
+      },
+      {
+        "title": "High-quality breast MRI.",
+        "snippet": "PubMed ID: 24792656. 2014/05/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-MRI image quality, consequences of poor image quality, and finally \nsuggestions for improvements.\n\nCopyright",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/24792656/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Improving image quality in prostate MRI: the time is now.",
+        "snippet": "PubMed ID: 37994968. 2024/05/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-MRI image quality, consequences of poor image quality, and finally \nsuggestions for improvements.\n\nCopyright",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37994968/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 36870241. 2023/04/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-\n2. PubMed ID: 38940911. 2024/12/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-\n3. PubMed ID: 38101197. 2024/01/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/36870241/",
+      "https://pubmed.ncbi.nlm.nih.gov/38940911/",
+      "https://pubmed.ncbi.nlm.nih.gov/38101197/",
+      "https://pubmed.ncbi.nlm.nih.gov/24792656/",
+      "https://pubmed.ncbi.nlm.nih.gov/37994968/"
+    ],
+    "evidence_chain_id": "20260602_224059_430951",
+    "evidence_summary": {
+      "response_id": "20260602_224059_430951",
+      "query": "MRI quality assurance brachytherapy radiation oncology QA tests geometric accuracy",
+      "created_at": "2026-06-02T22:40:59.431001",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Prostate MRI and image Quality: It is time to take stock.](https://pubmed.ncbi.nlm.nih.gov/36870241/)",
+        "[Strategies for improving image quality in prostate MRI.](https://pubmed.ncbi.nlm.nih.gov/38940911/)",
+        "[Prostate MRI and image quality: The urologist's perspective.](https://pubmed.ncbi.nlm.nih.gov/38101197/)",
+        "[High-quality breast MRI.](https://pubmed.ncbi.nlm.nih.gov/24792656/)",
+        "[Improving image quality in prostate MRI: the time is now.](https://pubmed.ncbi.nlm.nih.gov/37994968/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ce34e1cebb4c",
+          "claim": "PubMed ID: 36870241. 2023/04/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36870241/",
+          "source_type": "PubMed",
+          "source_title": "Prostate MRI and image Quality: It is time to take stock.",
+          "accessed_at": "2026-06-02T22:41:01.375421",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36870241. 2023/04/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-MRI image quality, consequences of poor image quality, and finally \nsuggestions for improvements.\n\nCopyright",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI quality assurance brachytherapy radiation oncology QA tests geometric accuracy",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "b94cf94b2b29",
+          "claim": "PubMed ID: 38940911. 2024/12/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38940911/",
+          "source_type": "PubMed",
+          "source_title": "Strategies for improving image quality in prostate MRI.",
+          "accessed_at": "2026-06-02T22:41:01.375536",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38940911. 2024/12/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-MRI image quality, consequences of poor image quality, and finally \nsuggestions for improvements.\n\nCopyright",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI quality assurance brachytherapy radiation oncology QA tests geometric accuracy",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ff3c13be0937",
+          "claim": "PubMed ID: 38101197. 2024/01/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38101197/",
+          "source_type": "PubMed",
+          "source_title": "Prostate MRI and image quality: The urologist's perspective.",
+          "accessed_at": "2026-06-02T22:41:01.375567",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38101197. 2024/01/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-MRI image quality, consequences of poor image quality, and finally \nsuggestions for improvements.\n\nCopyright",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI quality assurance brachytherapy radiation oncology QA tests geometric accuracy",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "809accbb7792",
+          "claim": "PubMed ID: 24792656. 2014/05/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/24792656/",
+          "source_type": "PubMed",
+          "source_title": "High-quality breast MRI.",
+          "accessed_at": "2026-06-02T22:41:01.375593",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 24792656. 2014/05/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-MRI image quality, consequences of poor image quality, and finally \nsuggestions for improvements.\n\nCopyright",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI quality assurance brachytherapy radiation oncology QA tests geometric accuracy",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "01a9bba5b00e",
+          "claim": "PubMed ID: 37994968. 2024/05/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37994968/",
+          "source_type": "PubMed",
+          "source_title": "Improving image quality in prostate MRI: the time is now.",
+          "accessed_at": "2026-06-02T22:41:01.375629",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37994968. 2024/05/01 00:00. We present our viewpoint as urologists on how image quality impacts the \nmanagement of men diagnosed with PCa andattempt to identify the factors that \nimpact mp-MRI image quality, consequences of poor image quality, and finally \nsuggestions for improvements.\n\nCopyright",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI quality assurance brachytherapy radiation oncology QA tests geometric accuracy",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Prostate MRI and image Quality: It is time to take stock.](https://pubmed.ncbi.nlm.nih.gov/36870241/)",
+      "[Strategies for improving image quality in prostate MRI.](https://pubmed.ncbi.nlm.nih.gov/38940911/)",
+      "[Prostate MRI and image quality: The urologist's perspective.](https://pubmed.ncbi.nlm.nih.gov/38101197/)",
+      "[High-quality breast MRI.](https://pubmed.ncbi.nlm.nih.gov/24792656/)",
+      "[Improving image quality in prostate MRI: the time is now.](https://pubmed.ncbi.nlm.nih.gov/37994968/)"
+    ]
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "query": "ABS ESTRO cervical cancer IA2 adenocarcinoma adjuvant therapy observation guidelines",
+  "timestamp": 1780416070.3781111,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "ABS塑料_百度百科",
+        "snippet": "因此ABS塑料是一种原料易得、综合性能良好、价格便宜、用途广泛的“坚韧、质硬、刚性”材料。 ABS塑料在机械、电气、纺织、汽车、飞机、轮船等制造工业及化工中获得了广泛的应用。",
+        "url": "https://baike.baidu.com/item/ABS%E5%A1%91%E6%96%99/2220019",
+        "source": "Bing CN"
+      },
+      {
+        "title": "ABS融资模式_百度百科",
+        "snippet": "1998年4月13日 · ABS融资模式（Asset Backed Securitization）是以项目资产未来收益为支撑，通过发行证券化债券进行融资的国际项目融资方式。 其核心是通过特殊目的机构（SPV）将资产收益权转化 …",
+        "url": "https://baike.baidu.com/item/ABS%E8%9E%8D%E8%B5%84%E6%A8%A1%E5%BC%8F/3147924",
+        "source": "Bing CN"
+      },
+      {
+        "title": "汽车ABS代表什么意思？有什么作用？ - 知乎",
+        "snippet": "2022年9月19日 · 随着技术的发展，中国绝大部分轿车已经将ABS作为标准配置，已经普及了，现在没有ABS的车少之又少， 想必大家都知道或者听过ABS，但是有很多新手朋友并不一定知道ABS到底是 …",
+        "url": "https://zhuanlan.zhihu.com/p/259856050",
+        "source": "Bing CN"
+      },
+      {
+        "title": "ABS塑料：性能与用途完整指南",
+        "snippet": "2026年4月17日 · ABS塑料是应用最广泛的工程热塑性塑料之一。了解它的特性、优点、缺点、应用以及ABS零件的制造工艺。",
+        "url": "https://www.madearia.com/zh-CN/blog/abs-plastic/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "American Bureau of Shipping (ABS) - Eagle.org",
+        "snippet": "16 小时之前 · ABS is a global leader in providing classification, certification and verification services for marine and offshore assets.",
+        "url": "https://ww2.eagle.org/en.html",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 因此ABS塑料是一种原料易得、综合性能良好、价格便宜、用途广泛的“坚韧、质硬、刚性”材料。 ABS塑料在机械、电气、纺织、汽车、飞机、轮船等制造工业及化工中获得了广泛的应用。\n- 1998年4月13日 · ABS融资模式（Asset Backed Securitization）是以项目资产未来收益为支撑，通过发行证券化债券进行融资的国际项目融资方式。 其核心是通过特殊目的机构（SPV）将资产收益权转化 …",
+    "sources": [
+      "https://baike.baidu.com/item/ABS%E5%A1%91%E6%96%99/2220019",
+      "https://baike.baidu.com/item/ABS%E8%9E%8D%E8%B5%84%E6%A8%A1%E5%BC%8F/3147924",
+      "https://zhuanlan.zhihu.com/p/259856050",
+      "https://www.madearia.com/zh-CN/blog/abs-plastic/",
+      "https://ww2.eagle.org/en.html"
+    ],
+    "evidence_chain_id": "20260603_000109_268732",
+    "evidence_summary": {
+      "response_id": "20260603_000109_268732",
+      "query": "ABS ESTRO cervical cancer IA2 adenocarcinoma adjuvant therapy observation guidelines",
+      "created_at": "2026-06-03T00:01:09.268749",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[ABS塑料_百度百科](https://baike.baidu.com/item/ABS%E5%A1%91%E6%96%99/2220019)",
+        "[ABS融资模式_百度百科](https://baike.baidu.com/item/ABS%E8%9E%8D%E8%B5%84%E6%A8%A1%E5%BC%8F/3147924)",
+        "[汽车ABS代表什么意思？有什么作用？ - 知乎](https://zhuanlan.zhihu.com/p/259856050)",
+        "[ABS塑料：性能与用途完整指南](https://www.madearia.com/zh-CN/blog/abs-plastic/)",
+        "[American Bureau of Shipping (ABS) - Eagle.org](https://ww2.eagle.org/en.html)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "30c1c6cab1f9",
+          "claim": "因此ABS塑料是一种原料易得、综合性能良好、价格便宜、用途广泛的“坚韧、质硬、刚性”材料。 ABS塑料在机械、电气、纺织、汽车、飞机、轮船等制造工业及化工中获得了广泛的应用。",
+          "source_url": "https://baike.baidu.com/item/ABS%E5%A1%91%E6%96%99/2220019",
+          "source_type": "Bing CN",
+          "source_title": "ABS塑料_百度百科",
+          "accessed_at": "2026-06-03T00:01:10.377792",
+          "published_at": "",
+          "raw_snippet": "因此ABS塑料是一种原料易得、综合性能良好、价格便宜、用途广泛的“坚韧、质硬、刚性”材料。 ABS塑料在机械、电气、纺织、汽车、飞机、轮船等制造工业及化工中获得了广泛的应用。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "ABS ESTRO cervical cancer IA2 adenocarcinoma adjuvant therapy observation guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "eb4f6014fd4b",
+          "claim": "1998年4月13日 · ABS融资模式（Asset Backed Securitization）是以项目资产未来收益为支撑，通过发行证券化债券进行融资的国际项目融资方式。 其核心是通过特殊目的机构（SPV）将资产收益权转化 …",
+          "source_url": "https://baike.baidu.com/item/ABS%E8%9E%8D%E8%B5%84%E6%A8%A1%E5%BC%8F/3147924",
+          "source_type": "Bing CN",
+          "source_title": "ABS融资模式_百度百科",
+          "accessed_at": "2026-06-03T00:01:10.377850",
+          "published_at": "",
+          "raw_snippet": "1998年4月13日 · ABS融资模式（Asset Backed Securitization）是以项目资产未来收益为支撑，通过发行证券化债券进行融资的国际项目融资方式。 其核心是通过特殊目的机构（SPV）将资产收益权转化 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "ABS ESTRO cervical cancer IA2 adenocarcinoma adjuvant therapy observation guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8da9d670d64a",
+          "claim": "2022年9月19日 · 随着技术的发展，中国绝大部分轿车已经将ABS作为标准配置，已经普及了，现在没有ABS的车少之又少， 想必大家都知道或者听过ABS，但是有很多新手朋友并不一定知道ABS到底是 …",
+          "source_url": "https://zhuanlan.zhihu.com/p/259856050",
+          "source_type": "Bing CN",
+          "source_title": "汽车ABS代表什么意思？有什么作用？ - 知乎",
+          "accessed_at": "2026-06-03T00:01:10.377882",
+          "published_at": "",
+          "raw_snippet": "2022年9月19日 · 随着技术的发展，中国绝大部分轿车已经将ABS作为标准配置，已经普及了，现在没有ABS的车少之又少， 想必大家都知道或者听过ABS，但是有很多新手朋友并不一定知道ABS到底是 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "ABS ESTRO cervical cancer IA2 adenocarcinoma adjuvant therapy observation guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "aa89d5da9881",
+          "claim": "2026年4月17日 · ABS塑料是应用最广泛的工程热塑性塑料之一。了解它的特性、优点、缺点、应用以及ABS零件的制造工艺。",
+          "source_url": "https://www.madearia.com/zh-CN/blog/abs-plastic/",
+          "source_type": "Bing CN",
+          "source_title": "ABS塑料：性能与用途完整指南",
+          "accessed_at": "2026-06-03T00:01:10.377908",
+          "published_at": "",
+          "raw_snippet": "2026年4月17日 · ABS塑料是应用最广泛的工程热塑性塑料之一。了解它的特性、优点、缺点、应用以及ABS零件的制造工艺。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "ABS ESTRO cervical cancer IA2 adenocarcinoma adjuvant therapy observation guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f8d5f3f35b45",
+          "claim": "16 小时之前 · ABS is a global leader in providing classification, certification and verification services for marine and offshore assets.",
+          "source_url": "https://ww2.eagle.org/en.html",
+          "source_type": "Bing CN",
+          "source_title": "American Bureau of Shipping (ABS) - Eagle.org",
+          "accessed_at": "2026-06-03T00:01:10.377932",
+          "published_at": "",
+          "raw_snippet": "16 小时之前 · ABS is a global leader in providing classification, certification and verification services for marine and offshore assets.",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "ABS ESTRO cervical cancer IA2 adenocarcinoma adjuvant therapy observation guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[ABS塑料_百度百科](https://baike.baidu.com/item/ABS%E5%A1%91%E6%96%99/2220019)",
+      "[ABS融资模式_百度百科](https://baike.baidu.com/item/ABS%E8%9E%8D%E8%B5%84%E6%A8%A1%E5%BC%8F/3147924)",
+      "[汽车ABS代表什么意思？有什么作用？ - 知乎](https://zhuanlan.zhihu.com/p/259856050)",
+      "[ABS塑料：性能与用途完整指南](https://www.madearia.com/zh-CN/blog/abs-plastic/)",
+      "[American Bureau of Shipping (ABS) - Eagle.org](https://ww2.eagle.org/en.html)"
+    ]
+  }
+}

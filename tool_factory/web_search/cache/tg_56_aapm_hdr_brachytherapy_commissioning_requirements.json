@@ -1,0 +1,160 @@
+{
+  "query": "TG-56 AAPM HDR brachytherapy commissioning requirements",
+  "timestamp": 1780434793.9393156,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Limitations of the TG-43 formalism for skin high-dose-rate brachytherapy dose calculations.",
+        "snippet": "PubMed ID: 24506594. 2014/02/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsingle model SourceTech Medical (STM)1251 (125)I seed.\nMETHODS: A well-type ionization chamber with a single-seed holder was used to \nmeasure the source strength of 2412 (125)I seeds before implant in 34 patients. \nThe air-kerma strength was 0.450 U for all cases. The mean source strength for \neach pa",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/24506594/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Accuracy of applicator tip reconstruction in MRI-guided interstitial 192Ir-high-dose-rate brachytherapy of liver tumors.",
+        "snippet": "PubMed ID: 25779722. 2015/04/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsingle model SourceTech Medical (STM)1251 (125)I seed.\nMETHODS: A well-type ionization chamber with a single-seed holder was used to \nmeasure the source strength of 2412 (125)I seeds before implant in 34 patients. \nThe air-kerma strength was 0.450 U for all cases. The mean source strength for \neach pa",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/25779722/",
+        "source": "PubMed"
+      },
+      {
+        "title": "EGSnrc-based Monte Carlo dosimetry of CSA1 and CSA2 137Cs brachytherapy source models.",
+        "snippet": "PubMed ID: 19810459. 2009/09/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsingle model SourceTech Medical (STM)1251 (125)I seed.\nMETHODS: A well-type ionization chamber with a single-seed holder was used to \nmeasure the source strength of 2412 (125)I seeds before implant in 34 patients. \nThe air-kerma strength was 0.450 U for all cases. The mean source strength for \neach pa",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/19810459/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Verification of air-kerma strength of 125I seed for permanent prostate implants in Japan.",
+        "snippet": "PubMed ID: 19967489. 2009/12/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsingle model SourceTech Medical (STM)1251 (125)I seed.\nMETHODS: A well-type ionization chamber with a single-seed holder was used to \nmeasure the source strength of 2412 (125)I seeds before implant in 34 patients. \nThe air-kerma strength was 0.450 U for all cases. The mean source strength for \neach pa",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/19967489/",
+        "source": "PubMed"
+      },
+      {
+        "title": "A revised dosimetric characterization of the model S700 electronic brachytherapy source containing an anode-centering plastic insert and other components not included in the 2006 model.",
+        "snippet": "PubMed ID: 26127029. 2015/06/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsingle model SourceTech Medical (STM)1251 (125)I seed.\nMETHODS: A well-type ionization chamber with a single-seed holder was used to \nmeasure the source strength of 2412 (125)I seeds before implant in 34 patients. \nThe air-kerma strength was 0.450 U for all cases. The mean source strength for \neach pa",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/26127029/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 24506594. 2014/02/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsi\n2. PubMed ID: 25779722. 2015/04/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsi\n3. PubMed ID: 19810459. 2009/09/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsi",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/24506594/",
+      "https://pubmed.ncbi.nlm.nih.gov/25779722/",
+      "https://pubmed.ncbi.nlm.nih.gov/19810459/",
+      "https://pubmed.ncbi.nlm.nih.gov/19967489/",
+      "https://pubmed.ncbi.nlm.nih.gov/26127029/"
+    ],
+    "evidence_chain_id": "20260603_051311_585536",
+    "evidence_summary": {
+      "response_id": "20260603_051311_585536",
+      "query": "TG-56 AAPM HDR brachytherapy commissioning requirements",
+      "created_at": "2026-06-03T05:13:11.585560",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Limitations of the TG-43 formalism for skin high-dose-rate brachytherapy dose calculations.](https://pubmed.ncbi.nlm.nih.gov/24506594/)",
+        "[Accuracy of applicator tip reconstruction in MRI-guided interstitial 192Ir-high-dose-rate brachytherapy of liver tumors.](https://pubmed.ncbi.nlm.nih.gov/25779722/)",
+        "[EGSnrc-based Monte Carlo dosimetry of CSA1 and CSA2 137Cs brachytherapy source models.](https://pubmed.ncbi.nlm.nih.gov/19810459/)",
+        "[Verification of air-kerma strength of 125I seed for permanent prostate implants in Japan.](https://pubmed.ncbi.nlm.nih.gov/19967489/)",
+        "[A revised dosimetric characterization of the model S700 electronic brachytherapy source containing an anode-centering plastic insert and other components not included in the 2006 model.](https://pubmed.ncbi.nlm.nih.gov/26127029/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ff95c62ebc20",
+          "claim": "PubMed ID: 24506594. 2014/02/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsi",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/24506594/",
+          "source_type": "PubMed",
+          "source_title": "Limitations of the TG-43 formalism for skin high-dose-rate brachytherapy dose calculations.",
+          "accessed_at": "2026-06-03T05:13:13.938872",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 24506594. 2014/02/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsingle model SourceTech Medical (STM)1251 (125)I seed.\nMETHODS: A well-type ionization chamber with a single-seed holder was used to \nmeasure the source strength of 2412 (125)I seeds before implant in 34 patients. \nThe air-kerma strength was 0.450 U for all cases. The mean source strength for \neach pa",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "TG-56 AAPM HDR brachytherapy commissioning requirements",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "097e49cec49d",
+          "claim": "PubMed ID: 25779722. 2015/04/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsi",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/25779722/",
+          "source_type": "PubMed",
+          "source_title": "Accuracy of applicator tip reconstruction in MRI-guided interstitial 192Ir-high-dose-rate brachytherapy of liver tumors.",
+          "accessed_at": "2026-06-03T05:13:13.938980",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 25779722. 2015/04/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsingle model SourceTech Medical (STM)1251 (125)I seed.\nMETHODS: A well-type ionization chamber with a single-seed holder was used to \nmeasure the source strength of 2412 (125)I seeds before implant in 34 patients. \nThe air-kerma strength was 0.450 U for all cases. The mean source strength for \neach pa",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "TG-56 AAPM HDR brachytherapy commissioning requirements",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "913b124b55c2",
+          "claim": "PubMed ID: 19810459. 2009/09/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsi",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/19810459/",
+          "source_type": "PubMed",
+          "source_title": "EGSnrc-based Monte Carlo dosimetry of CSA1 and CSA2 137Cs brachytherapy source models.",
+          "accessed_at": "2026-06-03T05:13:13.939015",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 19810459. 2009/09/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsingle model SourceTech Medical (STM)1251 (125)I seed.\nMETHODS: A well-type ionization chamber with a single-seed holder was used to \nmeasure the source strength of 2412 (125)I seeds before implant in 34 patients. \nThe air-kerma strength was 0.450 U for all cases. The mean source strength for \neach pa",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "TG-56 AAPM HDR brachytherapy commissioning requirements",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "10f54abee5bc",
+          "claim": "PubMed ID: 19967489. 2009/12/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsi",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/19967489/",
+          "source_type": "PubMed",
+          "source_title": "Verification of air-kerma strength of 125I seed for permanent prostate implants in Japan.",
+          "accessed_at": "2026-06-03T05:13:13.939044",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 19967489. 2009/12/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsingle model SourceTech Medical (STM)1251 (125)I seed.\nMETHODS: A well-type ionization chamber with a single-seed holder was used to \nmeasure the source strength of 2412 (125)I seeds before implant in 34 patients. \nThe air-kerma strength was 0.450 U for all cases. The mean source strength for \neach pa",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "TG-56 AAPM HDR brachytherapy commissioning requirements",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2808299aaf3b",
+          "claim": "PubMed ID: 26127029. 2015/06/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsi",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/26127029/",
+          "source_type": "PubMed",
+          "source_title": "A revised dosimetric characterization of the model S700 electronic brachytherapy source containing an anode-centering plastic insert and other components not included in the 2006 model.",
+          "accessed_at": "2026-06-03T05:13:13.939071",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 26127029. 2015/06/01 00:00. BACKGROUND: To assure the physical quality of brachytherapy, we investigated the \ndifference between measured and manufacturer's stated source strengths in a \nsingle model SourceTech Medical (STM)1251 (125)I seed.\nMETHODS: A well-type ionization chamber with a single-seed holder was used to \nmeasure the source strength of 2412 (125)I seeds before implant in 34 patients. \nThe air-kerma strength was 0.450 U for all cases. The mean source strength for \neach pa",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "TG-56 AAPM HDR brachytherapy commissioning requirements",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Limitations of the TG-43 formalism for skin high-dose-rate brachytherapy dose calculations.](https://pubmed.ncbi.nlm.nih.gov/24506594/)",
+      "[Accuracy of applicator tip reconstruction in MRI-guided interstitial 192Ir-high-dose-rate brachytherapy of liver tumors.](https://pubmed.ncbi.nlm.nih.gov/25779722/)",
+      "[EGSnrc-based Monte Carlo dosimetry of CSA1 and CSA2 137Cs brachytherapy source models.](https://pubmed.ncbi.nlm.nih.gov/19810459/)",
+      "[Verification of air-kerma strength of 125I seed for permanent prostate implants in Japan.](https://pubmed.ncbi.nlm.nih.gov/19967489/)",
+      "[A revised dosimetric characterization of the model S700 electronic brachytherapy source containing an anode-centering plastic insert and other components not included in the 2006 model.](https://pubmed.ncbi.nlm.nih.gov/26127029/)"
+    ]
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "query": "EMBRACE II study local control rate cervical cancer MRI-guided brachytherapy percentage",
+  "timestamp": 1780418574.6732411,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "The EMBRACE II study: The outcome and prospect of two decades of evolution within the GEC-ESTRO GYN working group and the EMBRACE studies.",
+        "snippet": "PubMed ID: 29594251. 2018/01/11 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe EMBRACE-II study protocol (IntErnational study on MRI-guided BRAchytherapy \nin locally advanced CErvical cancer) is considered state-of-the-art for the \ntreatment of locally advanced cervical cancer. The aim of the present study was \nto evaluate the possibilities for realizing the planning aims and t",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29594251/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Oxidative stress: a concept in redox biology and medicine.",
+        "snippet": "PubMed ID: 25588755. 2015/01/01 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe EMBRACE-II study protocol (IntErnational study on MRI-guided BRAchytherapy \nin locally advanced CErvical cancer) is considered state-of-the-art for the \ntreatment of locally advanced cervical cancer. The aim of the present study was \nto evaluate the possibilities for realizing the planning aims and t",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/25588755/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Physical traits of cancer.",
+        "snippet": "PubMed ID: 33122355. 2020/10/30 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe EMBRACE-II study protocol (IntErnational study on MRI-guided BRAchytherapy \nin locally advanced CErvical cancer) is considered state-of-the-art for the \ntreatment of locally advanced cervical cancer. The aim of the present study was \nto evaluate the possibilities for realizing the planning aims and t",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33122355/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Eugenics and Involuntary Sterilization: 1907-2015.",
+        "snippet": "PubMed ID: 26322647. 2015/01/01 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe EMBRACE-II study protocol (IntErnational study on MRI-guided BRAchytherapy \nin locally advanced CErvical cancer) is considered state-of-the-art for the \ntreatment of locally advanced cervical cancer. The aim of the present study was \nto evaluate the possibilities for realizing the planning aims and t",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/26322647/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Impact of Patient Selection on Real-World Outcomes by Using the EMBRACE-II Treatment Protocol in Locally Advanced Cervical Cancer.",
+        "snippet": "PubMed ID: 40460895. 2025/11/01 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe EMBRACE-II study protocol (IntErnational study on MRI-guided BRAchytherapy \nin locally advanced CErvical cancer) is considered state-of-the-art for the \ntreatment of locally advanced cervical cancer. The aim of the present study was \nto evaluate the possibilities for realizing the planning aims and t",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40460895/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 29594251. 2018/01/11 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe E\n2. PubMed ID: 25588755. 2015/01/01 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe E\n3. PubMed ID: 33122355. 2020/10/30 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe E",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/29594251/",
+      "https://pubmed.ncbi.nlm.nih.gov/25588755/",
+      "https://pubmed.ncbi.nlm.nih.gov/33122355/",
+      "https://pubmed.ncbi.nlm.nih.gov/26322647/",
+      "https://pubmed.ncbi.nlm.nih.gov/40460895/"
+    ],
+    "evidence_chain_id": "20260603_004252_142237",
+    "evidence_summary": {
+      "response_id": "20260603_004252_142237",
+      "query": "EMBRACE II study local control rate cervical cancer MRI-guided brachytherapy percentage",
+      "created_at": "2026-06-03T00:42:52.142260",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[The EMBRACE II study: The outcome and prospect of two decades of evolution within the GEC-ESTRO GYN working group and the EMBRACE studies.](https://pubmed.ncbi.nlm.nih.gov/29594251/)",
+        "[Oxidative stress: a concept in redox biology and medicine.](https://pubmed.ncbi.nlm.nih.gov/25588755/)",
+        "[Physical traits of cancer.](https://pubmed.ncbi.nlm.nih.gov/33122355/)",
+        "[Eugenics and Involuntary Sterilization: 1907-2015.](https://pubmed.ncbi.nlm.nih.gov/26322647/)",
+        "[Impact of Patient Selection on Real-World Outcomes by Using the EMBRACE-II Treatment Protocol in Locally Advanced Cervical Cancer.](https://pubmed.ncbi.nlm.nih.gov/40460895/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "9b3ff6d72979",
+          "claim": "PubMed ID: 29594251. 2018/01/11 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe E",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/29594251/",
+          "source_type": "PubMed",
+          "source_title": "The EMBRACE II study: The outcome and prospect of two decades of evolution within the GEC-ESTRO GYN working group and the EMBRACE studies.",
+          "accessed_at": "2026-06-03T00:42:54.672826",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 29594251. 2018/01/11 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe EMBRACE-II study protocol (IntErnational study on MRI-guided BRAchytherapy \nin locally advanced CErvical cancer) is considered state-of-the-art for the \ntreatment of locally advanced cervical cancer. The aim of the present study was \nto evaluate the possibilities for realizing the planning aims and t",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "EMBRACE II study local control rate cervical cancer MRI-guided brachytherapy percentage",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "de92878933ee",
+          "claim": "PubMed ID: 25588755. 2015/01/01 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe E",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/25588755/",
+          "source_type": "PubMed",
+          "source_title": "Oxidative stress: a concept in redox biology and medicine.",
+          "accessed_at": "2026-06-03T00:42:54.672961",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 25588755. 2015/01/01 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe EMBRACE-II study protocol (IntErnational study on MRI-guided BRAchytherapy \nin locally advanced CErvical cancer) is considered state-of-the-art for the \ntreatment of locally advanced cervical cancer. The aim of the present study was \nto evaluate the possibilities for realizing the planning aims and t",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "EMBRACE II study local control rate cervical cancer MRI-guided brachytherapy percentage",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "62bdd986b917",
+          "claim": "PubMed ID: 33122355. 2020/10/30 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe E",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33122355/",
+          "source_type": "PubMed",
+          "source_title": "Physical traits of cancer.",
+          "accessed_at": "2026-06-03T00:42:54.672992",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33122355. 2020/10/30 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe EMBRACE-II study protocol (IntErnational study on MRI-guided BRAchytherapy \nin locally advanced CErvical cancer) is considered state-of-the-art for the \ntreatment of locally advanced cervical cancer. The aim of the present study was \nto evaluate the possibilities for realizing the planning aims and t",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "EMBRACE II study local control rate cervical cancer MRI-guided brachytherapy percentage",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e061dc77ff74",
+          "claim": "PubMed ID: 26322647. 2015/01/01 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe E",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/26322647/",
+          "source_type": "PubMed",
+          "source_title": "Eugenics and Involuntary Sterilization: 1907-2015.",
+          "accessed_at": "2026-06-03T00:42:54.673016",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 26322647. 2015/01/01 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe EMBRACE-II study protocol (IntErnational study on MRI-guided BRAchytherapy \nin locally advanced CErvical cancer) is considered state-of-the-art for the \ntreatment of locally advanced cervical cancer. The aim of the present study was \nto evaluate the possibilities for realizing the planning aims and t",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "EMBRACE II study local control rate cervical cancer MRI-guided brachytherapy percentage",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "64243319ff51",
+          "claim": "PubMed ID: 40460895. 2025/11/01 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe E",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40460895/",
+          "source_type": "PubMed",
+          "source_title": "Impact of Patient Selection on Real-World Outcomes by Using the EMBRACE-II Treatment Protocol in Locally Advanced Cervical Cancer.",
+          "accessed_at": "2026-06-03T00:42:54.673038",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40460895. 2025/11/01 00:00. PURPOSE: External beam radiation therapy (EBRT), concomitant cisplatin, and \nmagnetic resonance image guided adaptive brachytherapy performed according to \nthe EMBRACE-II study protocol (IntErnational study on MRI-guided BRAchytherapy \nin locally advanced CErvical cancer) is considered state-of-the-art for the \ntreatment of locally advanced cervical cancer. The aim of the present study was \nto evaluate the possibilities for realizing the planning aims and t",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "EMBRACE II study local control rate cervical cancer MRI-guided brachytherapy percentage",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[The EMBRACE II study: The outcome and prospect of two decades of evolution within the GEC-ESTRO GYN working group and the EMBRACE studies.](https://pubmed.ncbi.nlm.nih.gov/29594251/)",
+      "[Oxidative stress: a concept in redox biology and medicine.](https://pubmed.ncbi.nlm.nih.gov/25588755/)",
+      "[Physical traits of cancer.](https://pubmed.ncbi.nlm.nih.gov/33122355/)",
+      "[Eugenics and Involuntary Sterilization: 1907-2015.](https://pubmed.ncbi.nlm.nih.gov/26322647/)",
+      "[Impact of Patient Selection on Real-World Outcomes by Using the EMBRACE-II Treatment Protocol in Locally Advanced Cervical Cancer.](https://pubmed.ncbi.nlm.nih.gov/40460895/)"
+    ]
+  }
+}

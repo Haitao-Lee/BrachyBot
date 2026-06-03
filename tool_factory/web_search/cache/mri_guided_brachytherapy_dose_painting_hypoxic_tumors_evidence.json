@@ -1,0 +1,160 @@
+{
+  "query": "MRI-guided brachytherapy dose painting hypoxic tumors evidence",
+  "timestamp": 1780413287.666683,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "核磁共振成像（核成像技术）_百度百科",
+        "snippet": "MRI被广泛运用在运动相关伤害的诊断上，对近骨骼和骨骼周围的软组织，包括韧带与肌肉，可呈现清晰影像，因此在脊椎及关节问题上，是极具敏感的检查。 因MRI没有辐射暴露的危险，因此经常被使用 …",
+        "url": "https://baike.baidu.com/item/%E6%A0%B8%E7%A3%81%E5%85%B1%E6%8C%AF%E6%88%90%E5%83%8F/5442944",
+        "source": "Bing CN"
+      },
+      {
+        "title": "什么是MR？与NMRI、MRI有何区别？与CT有何区别？",
+        "snippet": "2024年2月21日 · 核磁共振成像的英文名为Nuclear Magnetic Resonance Imaging，简称NMRI，又磁共振成像，其英文名Magnetic Resonance Imaging，简称MRI，MR是核磁共振成像的英文缩写。 是将人 …",
+        "url": "https://zhuanlan.zhihu.com/p/683114030",
+        "source": "Bing CN"
+      },
+      {
+        "title": "都是「拍片子」，DR、CT、MRI 有何区别？ - 医院汇 - 丁香园",
+        "snippet": "2024年9月18日 · 相比 DR 检查，CT 可以多层面多角度扫描，每一层的信息都可以清晰地显示出来。 MRI「把鸡蛋摇一摇再看」 MRI 即核磁共振，利用强大的磁场，让身体中的水分振动起来，再平静下 …",
+        "url": "https://y.dxy.cn/hospital/12547/971028.html",
+        "source": "Bing CN"
+      },
+      {
+        "title": "磁共振成像 - 医学百科",
+        "snippet": "2026年3月2日 · MRI对检测 脑内血肿 、脑外 血肿 、 脑肿瘤 、 颅内动脉瘤 、动静脉 血管 畸形、 脑缺血 、 椎管 内肿瘤、 脊髓空洞症 和 脊髓积水 等颅脑常见疾病非常有效，同时对 腰椎 椎间盘 后突、 原 …",
+        "url": "https://www.yixue.com/%e7%a3%81%e5%85%b1%e6%8c%af%e6%88%90%e5%83%8f",
+        "source": "Bing CN"
+      },
+      {
+        "title": "核磁共振 (MRI)成像_磁共振成像原理csdn-CSDN博客",
+        "snippet": "2025年10月29日 · 一、磁共振成像概述 （一）磁共振成像原理 磁共振成像（MRI）是一种常用的 医学影像 技术，被广泛应用于检测人体各种器官和组织的病变及异常情况。它具有软组织对比度高、对人 …",
+        "url": "https://blog.csdn.net/qq_45656246/article/details/154018631",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- MRI被广泛运用在运动相关伤害的诊断上，对近骨骼和骨骼周围的软组织，包括韧带与肌肉，可呈现清晰影像，因此在脊椎及关节问题上，是极具敏感的检查。 因MRI没有辐射暴露的危险，因此经常被使用 …\n- 2024年2月21日 · 核磁共振成像的英文名为Nuclear Magnetic Resonance Imaging，简称NMRI，又磁共振成像，其英文名Magnetic Resonance Imaging，简称MRI，MR是核磁共振成像的英文缩写。 是将人 …",
+    "sources": [
+      "https://baike.baidu.com/item/%E6%A0%B8%E7%A3%81%E5%85%B1%E6%8C%AF%E6%88%90%E5%83%8F/5442944",
+      "https://zhuanlan.zhihu.com/p/683114030",
+      "https://y.dxy.cn/hospital/12547/971028.html",
+      "https://www.yixue.com/%e7%a3%81%e5%85%b1%e6%8c%af%e6%88%90%e5%83%8f",
+      "https://blog.csdn.net/qq_45656246/article/details/154018631"
+    ],
+    "evidence_chain_id": "20260602_231446_707325",
+    "evidence_summary": {
+      "response_id": "20260602_231446_707325",
+      "query": "MRI-guided brachytherapy dose painting hypoxic tumors evidence",
+      "created_at": "2026-06-02T23:14:46.707344",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[核磁共振成像（核成像技术）_百度百科](https://baike.baidu.com/item/%E6%A0%B8%E7%A3%81%E5%85%B1%E6%8C%AF%E6%88%90%E5%83%8F/5442944)",
+        "[什么是MR？与NMRI、MRI有何区别？与CT有何区别？](https://zhuanlan.zhihu.com/p/683114030)",
+        "[都是「拍片子」，DR、CT、MRI 有何区别？ - 医院汇 - 丁香园](https://y.dxy.cn/hospital/12547/971028.html)",
+        "[磁共振成像 - 医学百科](https://www.yixue.com/%e7%a3%81%e5%85%b1%e6%8c%af%e6%88%90%e5%83%8f)",
+        "[核磁共振 (MRI)成像_磁共振成像原理csdn-CSDN博客](https://blog.csdn.net/qq_45656246/article/details/154018631)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "b492d06c360e",
+          "claim": "MRI被广泛运用在运动相关伤害的诊断上，对近骨骼和骨骼周围的软组织，包括韧带与肌肉，可呈现清晰影像，因此在脊椎及关节问题上，是极具敏感的检查。 因MRI没有辐射暴露的危险，因此经常被使用 …",
+          "source_url": "https://baike.baidu.com/item/%E6%A0%B8%E7%A3%81%E5%85%B1%E6%8C%AF%E6%88%90%E5%83%8F/5442944",
+          "source_type": "Bing CN",
+          "source_title": "核磁共振成像（核成像技术）_百度百科",
+          "accessed_at": "2026-06-02T23:14:47.666199",
+          "published_at": "",
+          "raw_snippet": "MRI被广泛运用在运动相关伤害的诊断上，对近骨骼和骨骼周围的软组织，包括韧带与肌肉，可呈现清晰影像，因此在脊椎及关节问题上，是极具敏感的检查。 因MRI没有辐射暴露的危险，因此经常被使用 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided brachytherapy dose painting hypoxic tumors evidence",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e83632e7b7d9",
+          "claim": "2024年2月21日 · 核磁共振成像的英文名为Nuclear Magnetic Resonance Imaging，简称NMRI，又磁共振成像，其英文名Magnetic Resonance Imaging，简称MRI，MR是核磁共振成像的英文缩写。 是将人 …",
+          "source_url": "https://zhuanlan.zhihu.com/p/683114030",
+          "source_type": "Bing CN",
+          "source_title": "什么是MR？与NMRI、MRI有何区别？与CT有何区别？",
+          "accessed_at": "2026-06-02T23:14:47.666314",
+          "published_at": "",
+          "raw_snippet": "2024年2月21日 · 核磁共振成像的英文名为Nuclear Magnetic Resonance Imaging，简称NMRI，又磁共振成像，其英文名Magnetic Resonance Imaging，简称MRI，MR是核磁共振成像的英文缩写。 是将人 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided brachytherapy dose painting hypoxic tumors evidence",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "34a35ff3dc5c",
+          "claim": "2024年9月18日 · 相比 DR 检查，CT 可以多层面多角度扫描，每一层的信息都可以清晰地显示出来。 MRI「把鸡蛋摇一摇再看」 MRI 即核磁共振，利用强大的磁场，让身体中的水分振动起来，再平静下 …",
+          "source_url": "https://y.dxy.cn/hospital/12547/971028.html",
+          "source_type": "Bing CN",
+          "source_title": "都是「拍片子」，DR、CT、MRI 有何区别？ - 医院汇 - 丁香园",
+          "accessed_at": "2026-06-02T23:14:47.666359",
+          "published_at": "",
+          "raw_snippet": "2024年9月18日 · 相比 DR 检查，CT 可以多层面多角度扫描，每一层的信息都可以清晰地显示出来。 MRI「把鸡蛋摇一摇再看」 MRI 即核磁共振，利用强大的磁场，让身体中的水分振动起来，再平静下 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided brachytherapy dose painting hypoxic tumors evidence",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "597767fc5fa8",
+          "claim": "2026年3月2日 · MRI对检测 脑内血肿 、脑外 血肿 、 脑肿瘤 、 颅内动脉瘤 、动静脉 血管 畸形、 脑缺血 、 椎管 内肿瘤、 脊髓空洞症 和 脊髓积水 等颅脑常见疾病非常有效，同时对 腰椎 椎间盘 后突、 原 …",
+          "source_url": "https://www.yixue.com/%e7%a3%81%e5%85%b1%e6%8c%af%e6%88%90%e5%83%8f",
+          "source_type": "Bing CN",
+          "source_title": "磁共振成像 - 医学百科",
+          "accessed_at": "2026-06-02T23:14:47.666399",
+          "published_at": "",
+          "raw_snippet": "2026年3月2日 · MRI对检测 脑内血肿 、脑外 血肿 、 脑肿瘤 、 颅内动脉瘤 、动静脉 血管 畸形、 脑缺血 、 椎管 内肿瘤、 脊髓空洞症 和 脊髓积水 等颅脑常见疾病非常有效，同时对 腰椎 椎间盘 后突、 原 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided brachytherapy dose painting hypoxic tumors evidence",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "91038a36143e",
+          "claim": "2025年10月29日 · 一、磁共振成像概述 （一）磁共振成像原理 磁共振成像（MRI）是一种常用的 医学影像 技术，被广泛应用于检测人体各种器官和组织的病变及异常情况。它具有软组织对比度高、对人 …",
+          "source_url": "https://blog.csdn.net/qq_45656246/article/details/154018631",
+          "source_type": "Bing CN",
+          "source_title": "核磁共振 (MRI)成像_磁共振成像原理csdn-CSDN博客",
+          "accessed_at": "2026-06-02T23:14:47.666445",
+          "published_at": "",
+          "raw_snippet": "2025年10月29日 · 一、磁共振成像概述 （一）磁共振成像原理 磁共振成像（MRI）是一种常用的 医学影像 技术，被广泛应用于检测人体各种器官和组织的病变及异常情况。它具有软组织对比度高、对人 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided brachytherapy dose painting hypoxic tumors evidence",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[核磁共振成像（核成像技术）_百度百科](https://baike.baidu.com/item/%E6%A0%B8%E7%A3%81%E5%85%B1%E6%8C%AF%E6%88%90%E5%83%8F/5442944)",
+      "[什么是MR？与NMRI、MRI有何区别？与CT有何区别？](https://zhuanlan.zhihu.com/p/683114030)",
+      "[都是「拍片子」，DR、CT、MRI 有何区别？ - 医院汇 - 丁香园](https://y.dxy.cn/hospital/12547/971028.html)",
+      "[磁共振成像 - 医学百科](https://www.yixue.com/%e7%a3%81%e5%85%b1%e6%8c%af%e6%88%90%e5%83%8f)",
+      "[核磁共振 (MRI)成像_磁共振成像原理csdn-CSDN博客](https://blog.csdn.net/qq_45656246/article/details/154018631)"
+    ]
+  }
+}

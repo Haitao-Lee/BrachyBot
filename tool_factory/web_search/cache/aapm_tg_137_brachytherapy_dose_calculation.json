@@ -1,0 +1,160 @@
+{
+  "query": "AAPM TG-137 brachytherapy dose calculation",
+  "timestamp": 1780475964.399838,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Dose uncertainty due to needle-tip localization error in prostate seed implantation.",
+        "snippet": "PubMed ID: 36819470. 2022/12/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \nwith respect to the location on template grid.\nMATERIAL AND METHODS: Trans-rectal ultrasound (TRUS) system with physical \ntemplate grid and 18-gauge bevel-tip brachytherapy needles were used. TRUS was \nset at 6.5 MHz in water phantom, and measurements were taken with 50% and 100% \nB-mode TRUS gains.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36819470/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Correlation between real-time intraoperative and postoperative dosimetry and its implications on intraoperative planning.",
+        "snippet": "PubMed ID: 30655047. 2019/05/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \nwith respect to the location on template grid.\nMATERIAL AND METHODS: Trans-rectal ultrasound (TRUS) system with physical \ntemplate grid and 18-gauge bevel-tip brachytherapy needles were used. TRUS was \nset at 6.5 MHz in water phantom, and measurements were taken with 50% and 100% \nB-mode TRUS gains.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30655047/",
+        "source": "PubMed"
+      },
+      {
+        "title": "High-dose-rate brachytherapy as monotherapy for prostate cancer: The impact of cellular repair and source decay.",
+        "snippet": "PubMed ID: 31109870. 2019/09/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \nwith respect to the location on template grid.\nMATERIAL AND METHODS: Trans-rectal ultrasound (TRUS) system with physical \ntemplate grid and 18-gauge bevel-tip brachytherapy needles were used. TRUS was \nset at 6.5 MHz in water phantom, and measurements were taken with 50% and 100% \nB-mode TRUS gains.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31109870/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Coupling I-125 permanent implant prostate brachytherapy Monte Carlo dose calculations with radiobiological models.",
+        "snippet": "PubMed ID: 28455849. 2017/08/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \nwith respect to the location on template grid.\nMATERIAL AND METHODS: Trans-rectal ultrasound (TRUS) system with physical \ntemplate grid and 18-gauge bevel-tip brachytherapy needles were used. TRUS was \nset at 6.5 MHz in water phantom, and measurements were taken with 50% and 100% \nB-mode TRUS gains.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28455849/",
+        "source": "PubMed"
+      },
+      {
+        "title": "A detailed radiobiological and dosimetric analysis of biochemical outcomes in a case-control study of permanent prostate brachytherapy patients.",
+        "snippet": "PubMed ID: 19378738. 2009/03/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \nwith respect to the location on template grid.\nMATERIAL AND METHODS: Trans-rectal ultrasound (TRUS) system with physical \ntemplate grid and 18-gauge bevel-tip brachytherapy needles were used. TRUS was \nset at 6.5 MHz in water phantom, and measurements were taken with 50% and 100% \nB-mode TRUS gains.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/19378738/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 36819470. 2022/12/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \n\n2. PubMed ID: 30655047. 2019/05/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \n\n3. PubMed ID: 31109870. 2019/09/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \n",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/36819470/",
+      "https://pubmed.ncbi.nlm.nih.gov/30655047/",
+      "https://pubmed.ncbi.nlm.nih.gov/31109870/",
+      "https://pubmed.ncbi.nlm.nih.gov/28455849/",
+      "https://pubmed.ncbi.nlm.nih.gov/19378738/"
+    ],
+    "evidence_chain_id": "20260603_163922_593662",
+    "evidence_summary": {
+      "response_id": "20260603_163922_593662",
+      "query": "AAPM TG-137 brachytherapy dose calculation",
+      "created_at": "2026-06-03T16:39:22.593686",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Dose uncertainty due to needle-tip localization error in prostate seed implantation.](https://pubmed.ncbi.nlm.nih.gov/36819470/)",
+        "[Correlation between real-time intraoperative and postoperative dosimetry and its implications on intraoperative planning.](https://pubmed.ncbi.nlm.nih.gov/30655047/)",
+        "[High-dose-rate brachytherapy as monotherapy for prostate cancer: The impact of cellular repair and source decay.](https://pubmed.ncbi.nlm.nih.gov/31109870/)",
+        "[Coupling I-125 permanent implant prostate brachytherapy Monte Carlo dose calculations with radiobiological models.](https://pubmed.ncbi.nlm.nih.gov/28455849/)",
+        "[A detailed radiobiological and dosimetric analysis of biochemical outcomes in a case-control study of permanent prostate brachytherapy patients.](https://pubmed.ncbi.nlm.nih.gov/19378738/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "29c357e0bf4a",
+          "claim": "PubMed ID: 36819470. 2022/12/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \n",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36819470/",
+          "source_type": "PubMed",
+          "source_title": "Dose uncertainty due to needle-tip localization error in prostate seed implantation.",
+          "accessed_at": "2026-06-03T16:39:24.399459",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36819470. 2022/12/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \nwith respect to the location on template grid.\nMATERIAL AND METHODS: Trans-rectal ultrasound (TRUS) system with physical \ntemplate grid and 18-gauge bevel-tip brachytherapy needles were used. TRUS was \nset at 6.5 MHz in water phantom, and measurements were taken with 50% and 100% \nB-mode TRUS gains.",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-137 brachytherapy dose calculation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "14538bc36484",
+          "claim": "PubMed ID: 30655047. 2019/05/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \n",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/30655047/",
+          "source_type": "PubMed",
+          "source_title": "Correlation between real-time intraoperative and postoperative dosimetry and its implications on intraoperative planning.",
+          "accessed_at": "2026-06-03T16:39:24.399557",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 30655047. 2019/05/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \nwith respect to the location on template grid.\nMATERIAL AND METHODS: Trans-rectal ultrasound (TRUS) system with physical \ntemplate grid and 18-gauge bevel-tip brachytherapy needles were used. TRUS was \nset at 6.5 MHz in water phantom, and measurements were taken with 50% and 100% \nB-mode TRUS gains.",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-137 brachytherapy dose calculation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "cc3cbb2ed00d",
+          "claim": "PubMed ID: 31109870. 2019/09/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \n",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31109870/",
+          "source_type": "PubMed",
+          "source_title": "High-dose-rate brachytherapy as monotherapy for prostate cancer: The impact of cellular repair and source decay.",
+          "accessed_at": "2026-06-03T16:39:24.399589",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31109870. 2019/09/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \nwith respect to the location on template grid.\nMATERIAL AND METHODS: Trans-rectal ultrasound (TRUS) system with physical \ntemplate grid and 18-gauge bevel-tip brachytherapy needles were used. TRUS was \nset at 6.5 MHz in water phantom, and measurements were taken with 50% and 100% \nB-mode TRUS gains.",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-137 brachytherapy dose calculation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "d6ffb9811759",
+          "claim": "PubMed ID: 28455849. 2017/08/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \n",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/28455849/",
+          "source_type": "PubMed",
+          "source_title": "Coupling I-125 permanent implant prostate brachytherapy Monte Carlo dose calculations with radiobiological models.",
+          "accessed_at": "2026-06-03T16:39:24.399614",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 28455849. 2017/08/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \nwith respect to the location on template grid.\nMATERIAL AND METHODS: Trans-rectal ultrasound (TRUS) system with physical \ntemplate grid and 18-gauge bevel-tip brachytherapy needles were used. TRUS was \nset at 6.5 MHz in water phantom, and measurements were taken with 50% and 100% \nB-mode TRUS gains.",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-137 brachytherapy dose calculation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8e1cfc73413e",
+          "claim": "PubMed ID: 19378738. 2009/03/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \n",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/19378738/",
+          "source_type": "PubMed",
+          "source_title": "A detailed radiobiological and dosimetric analysis of biochemical outcomes in a case-control study of permanent prostate brachytherapy patients.",
+          "accessed_at": "2026-06-03T16:39:24.399637",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 19378738. 2009/03/01 00:00. PURPOSE: This study quantified the dosimetric uncertainty caused by needle-tip \ndetection errors in ultrasound images due to bevel-tip orientation differences, \nwith respect to the location on template grid.\nMATERIAL AND METHODS: Trans-rectal ultrasound (TRUS) system with physical \ntemplate grid and 18-gauge bevel-tip brachytherapy needles were used. TRUS was \nset at 6.5 MHz in water phantom, and measurements were taken with 50% and 100% \nB-mode TRUS gains.",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-137 brachytherapy dose calculation",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Dose uncertainty due to needle-tip localization error in prostate seed implantation.](https://pubmed.ncbi.nlm.nih.gov/36819470/)",
+      "[Correlation between real-time intraoperative and postoperative dosimetry and its implications on intraoperative planning.](https://pubmed.ncbi.nlm.nih.gov/30655047/)",
+      "[High-dose-rate brachytherapy as monotherapy for prostate cancer: The impact of cellular repair and source decay.](https://pubmed.ncbi.nlm.nih.gov/31109870/)",
+      "[Coupling I-125 permanent implant prostate brachytherapy Monte Carlo dose calculations with radiobiological models.](https://pubmed.ncbi.nlm.nih.gov/28455849/)",
+      "[A detailed radiobiological and dosimetric analysis of biochemical outcomes in a case-control study of permanent prostate brachytherapy patients.](https://pubmed.ncbi.nlm.nih.gov/19378738/)"
+    ]
+  }
+}

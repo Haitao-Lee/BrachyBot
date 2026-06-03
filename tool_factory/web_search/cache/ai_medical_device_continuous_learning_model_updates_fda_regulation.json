@@ -1,0 +1,160 @@
+{
+  "query": "AI medical device continuous learning model updates FDA regulation",
+  "timestamp": 1780471231.1121523,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "AI工具集官网 | 1000+ AI工具集合，国内外AI工具集导航大全",
+        "snippet": "1 天前 · AI工具集官网收录了国内外数百个AI工具，该导航网站包括AI写作工具、AI图像生成和背景移除、AI视频制作、AI音频转录、AI辅助编程、AI音乐生成、AI绘画设计、AI对话聊天等AI工具集合大 …",
+        "url": "https://ai-bot.cn/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "千问 - 阿里Qwen大模型打造的AI对话助手",
+        "snippet": "2026年4月30日 · 千问是阿里最强大模型官方AI助手，是体验最新、最强Qwen大模型的第一入口，“聪明会思考”，旨在成为你在工作、学习、生活中的AI助手。千问集成了文生图、智能编码、文档解析、 …",
+        "url": "https://qianwen.aigc.cn/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "什么是AI？现在的AI和三年前的AI有什么区别？",
+        "snippet": "2025年11月9日 · 人工智能（AI）技术三年间实现跨越式发展，从单一任务型AI升级为多模态通用大模型。2022年AI仍以深度学习为主，2025年已具备创造性生成、多模态融合和自主执行能力。ChatGPT …",
+        "url": "https://cloud.tencent.com/developer/article/2585453",
+        "source": "Bing CN"
+      },
+      {
+        "title": "AI日报 - 每天三分钟关注AI行业趋势_AIbase",
+        "snippet": "AI日报为您提供最新的人工智能行业资讯，每天仅需三分钟，全面掌握AI技术发展、行业动态和市场趋势。关注AI日报，紧跟未来科技步伐，获取独家分析与深度解读。",
+        "url": "https://www.aibase.com/zh/daily",
+        "source": "Bing CN"
+      },
+      {
+        "title": "AI网站汇总（免费chatgpt）（70个持续增加中） - 知乎",
+        "snippet": "2024年1月9日 · 本文总结了八大类AI工具，包括：聊天AI、绘画AI、AI提示词、图像处理、UI设计和3D设计，汇总60个AI网站，一键收藏。 2024.1.9更新 …",
+        "url": "https://zhuanlan.zhihu.com/p/622871383",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 1 天前 · AI工具集官网收录了国内外数百个AI工具，该导航网站包括AI写作工具、AI图像生成和背景移除、AI视频制作、AI音频转录、AI辅助编程、AI音乐生成、AI绘画设计、AI对话聊天等AI工具集合大 …\n- 2026年4月30日 · 千问是阿里最强大模型官方AI助手，是体验最新、最强Qwen大模型的第一入口，“聪明会思考”，旨在成为你在工作、学习、生活中的AI助手。千问集成了文生图、智能编码、文档解析、 …",
+    "sources": [
+      "https://ai-bot.cn/",
+      "https://qianwen.aigc.cn/",
+      "https://cloud.tencent.com/developer/article/2585453",
+      "https://www.aibase.com/zh/daily",
+      "https://zhuanlan.zhihu.com/p/622871383"
+    ],
+    "evidence_chain_id": "20260603_152030_006809",
+    "evidence_summary": {
+      "response_id": "20260603_152030_006809",
+      "query": "AI medical device continuous learning model updates FDA regulation",
+      "created_at": "2026-06-03T15:20:30.006830",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[AI工具集官网 | 1000+ AI工具集合，国内外AI工具集导航大全](https://ai-bot.cn/)",
+        "[千问 - 阿里Qwen大模型打造的AI对话助手](https://qianwen.aigc.cn/)",
+        "[什么是AI？现在的AI和三年前的AI有什么区别？](https://cloud.tencent.com/developer/article/2585453)",
+        "[AI日报 - 每天三分钟关注AI行业趋势_AIbase](https://www.aibase.com/zh/daily)",
+        "[AI网站汇总（免费chatgpt）（70个持续增加中） - 知乎](https://zhuanlan.zhihu.com/p/622871383)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "b71fcbb69361",
+          "claim": "1 天前 · AI工具集官网收录了国内外数百个AI工具，该导航网站包括AI写作工具、AI图像生成和背景移除、AI视频制作、AI音频转录、AI辅助编程、AI音乐生成、AI绘画设计、AI对话聊天等AI工具集合大 …",
+          "source_url": "https://ai-bot.cn/",
+          "source_type": "Bing CN",
+          "source_title": "AI工具集官网 | 1000+ AI工具集合，国内外AI工具集导航大全",
+          "accessed_at": "2026-06-03T15:20:31.111786",
+          "published_at": "",
+          "raw_snippet": "1 天前 · AI工具集官网收录了国内外数百个AI工具，该导航网站包括AI写作工具、AI图像生成和背景移除、AI视频制作、AI音频转录、AI辅助编程、AI音乐生成、AI绘画设计、AI对话聊天等AI工具集合大 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AI medical device continuous learning model updates FDA regulation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "71510ec8d168",
+          "claim": "2026年4月30日 · 千问是阿里最强大模型官方AI助手，是体验最新、最强Qwen大模型的第一入口，“聪明会思考”，旨在成为你在工作、学习、生活中的AI助手。千问集成了文生图、智能编码、文档解析、 …",
+          "source_url": "https://qianwen.aigc.cn/",
+          "source_type": "Bing CN",
+          "source_title": "千问 - 阿里Qwen大模型打造的AI对话助手",
+          "accessed_at": "2026-06-03T15:20:31.111880",
+          "published_at": "",
+          "raw_snippet": "2026年4月30日 · 千问是阿里最强大模型官方AI助手，是体验最新、最强Qwen大模型的第一入口，“聪明会思考”，旨在成为你在工作、学习、生活中的AI助手。千问集成了文生图、智能编码、文档解析、 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AI medical device continuous learning model updates FDA regulation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "27b58c303cd4",
+          "claim": "2025年11月9日 · 人工智能（AI）技术三年间实现跨越式发展，从单一任务型AI升级为多模态通用大模型。2022年AI仍以深度学习为主，2025年已具备创造性生成、多模态融合和自主执行能力。ChatGPT …",
+          "source_url": "https://cloud.tencent.com/developer/article/2585453",
+          "source_type": "Bing CN",
+          "source_title": "什么是AI？现在的AI和三年前的AI有什么区别？",
+          "accessed_at": "2026-06-03T15:20:31.111915",
+          "published_at": "",
+          "raw_snippet": "2025年11月9日 · 人工智能（AI）技术三年间实现跨越式发展，从单一任务型AI升级为多模态通用大模型。2022年AI仍以深度学习为主，2025年已具备创造性生成、多模态融合和自主执行能力。ChatGPT …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AI medical device continuous learning model updates FDA regulation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "78ae7e09559f",
+          "claim": "AI日报为您提供最新的人工智能行业资讯，每天仅需三分钟，全面掌握AI技术发展、行业动态和市场趋势。关注AI日报，紧跟未来科技步伐，获取独家分析与深度解读。",
+          "source_url": "https://www.aibase.com/zh/daily",
+          "source_type": "Bing CN",
+          "source_title": "AI日报 - 每天三分钟关注AI行业趋势_AIbase",
+          "accessed_at": "2026-06-03T15:20:31.111942",
+          "published_at": "",
+          "raw_snippet": "AI日报为您提供最新的人工智能行业资讯，每天仅需三分钟，全面掌握AI技术发展、行业动态和市场趋势。关注AI日报，紧跟未来科技步伐，获取独家分析与深度解读。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AI medical device continuous learning model updates FDA regulation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "706c09e2dd3e",
+          "claim": "2024年1月9日 · 本文总结了八大类AI工具，包括：聊天AI、绘画AI、AI提示词、图像处理、UI设计和3D设计，汇总60个AI网站，一键收藏。 2024.1.9更新 …",
+          "source_url": "https://zhuanlan.zhihu.com/p/622871383",
+          "source_type": "Bing CN",
+          "source_title": "AI网站汇总（免费chatgpt）（70个持续增加中） - 知乎",
+          "accessed_at": "2026-06-03T15:20:31.111967",
+          "published_at": "",
+          "raw_snippet": "2024年1月9日 · 本文总结了八大类AI工具，包括：聊天AI、绘画AI、AI提示词、图像处理、UI设计和3D设计，汇总60个AI网站，一键收藏。 2024.1.9更新 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AI medical device continuous learning model updates FDA regulation",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[AI工具集官网 | 1000+ AI工具集合，国内外AI工具集导航大全](https://ai-bot.cn/)",
+      "[千问 - 阿里Qwen大模型打造的AI对话助手](https://qianwen.aigc.cn/)",
+      "[什么是AI？现在的AI和三年前的AI有什么区别？](https://cloud.tencent.com/developer/article/2585453)",
+      "[AI日报 - 每天三分钟关注AI行业趋势_AIbase](https://www.aibase.com/zh/daily)",
+      "[AI网站汇总（免费chatgpt）（70个持续增加中） - 知乎](https://zhuanlan.zhihu.com/p/622871383)"
+    ]
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "query": "spinal cord stimulator radiation therapy tolerance limits guidelines",
+  "timestamp": 1780431328.6298952,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Blood-Spinal Cord Barrier in Spinal Cord Injury: A Review.",
+        "snippet": "PubMed ID: 33292072. 2021/05/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33292072/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Spinal Cord Tumor Microenvironment.",
+        "snippet": "PubMed ID: 32030679. 2020/01/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32030679/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Spinal Cord Imaging.",
+        "snippet": "PubMed ID: 40645794. 2025/10/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40645794/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Spinal Cord Disorders: Myelopathy.",
+        "snippet": "PubMed ID: 29605415. 2018/11/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29605415/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Spinal cord.",
+        "snippet": "PubMed ID: 28987187. 2017/01/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28987187/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 33292072. 2021/05/01 00:00\n2. PubMed ID: 32030679. 2020/01/01 00:00\n3. PubMed ID: 40645794. 2025/10/01 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/33292072/",
+      "https://pubmed.ncbi.nlm.nih.gov/32030679/",
+      "https://pubmed.ncbi.nlm.nih.gov/40645794/",
+      "https://pubmed.ncbi.nlm.nih.gov/29605415/",
+      "https://pubmed.ncbi.nlm.nih.gov/28987187/"
+    ],
+    "evidence_chain_id": "20260603_041526_918271",
+    "evidence_summary": {
+      "response_id": "20260603_041526_918271",
+      "query": "spinal cord stimulator radiation therapy tolerance limits guidelines",
+      "created_at": "2026-06-03T04:15:26.918293",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Blood-Spinal Cord Barrier in Spinal Cord Injury: A Review.](https://pubmed.ncbi.nlm.nih.gov/33292072/)",
+        "[Spinal Cord Tumor Microenvironment.](https://pubmed.ncbi.nlm.nih.gov/32030679/)",
+        "[Spinal Cord Imaging.](https://pubmed.ncbi.nlm.nih.gov/40645794/)",
+        "[Spinal Cord Disorders: Myelopathy.](https://pubmed.ncbi.nlm.nih.gov/29605415/)",
+        "[Spinal cord.](https://pubmed.ncbi.nlm.nih.gov/28987187/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "fa1aa3d6ba35",
+          "claim": "PubMed ID: 33292072. 2021/05/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33292072/",
+          "source_type": "PubMed",
+          "source_title": "Blood-Spinal Cord Barrier in Spinal Cord Injury: A Review.",
+          "accessed_at": "2026-06-03T04:15:28.629532",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33292072. 2021/05/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "spinal cord stimulator radiation therapy tolerance limits guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "b423a4127bd1",
+          "claim": "PubMed ID: 32030679. 2020/01/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32030679/",
+          "source_type": "PubMed",
+          "source_title": "Spinal Cord Tumor Microenvironment.",
+          "accessed_at": "2026-06-03T04:15:28.629628",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32030679. 2020/01/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "spinal cord stimulator radiation therapy tolerance limits guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c739f8b6bfd3",
+          "claim": "PubMed ID: 40645794. 2025/10/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40645794/",
+          "source_type": "PubMed",
+          "source_title": "Spinal Cord Imaging.",
+          "accessed_at": "2026-06-03T04:15:28.629660",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40645794. 2025/10/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "spinal cord stimulator radiation therapy tolerance limits guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "cdc9f661a6d2",
+          "claim": "PubMed ID: 29605415. 2018/11/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/29605415/",
+          "source_type": "PubMed",
+          "source_title": "Spinal Cord Disorders: Myelopathy.",
+          "accessed_at": "2026-06-03T04:15:28.629685",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 29605415. 2018/11/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "spinal cord stimulator radiation therapy tolerance limits guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "045e04b033f3",
+          "claim": "PubMed ID: 28987187. 2017/01/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/28987187/",
+          "source_type": "PubMed",
+          "source_title": "Spinal cord.",
+          "accessed_at": "2026-06-03T04:15:28.629710",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 28987187. 2017/01/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "spinal cord stimulator radiation therapy tolerance limits guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Blood-Spinal Cord Barrier in Spinal Cord Injury: A Review.](https://pubmed.ncbi.nlm.nih.gov/33292072/)",
+      "[Spinal Cord Tumor Microenvironment.](https://pubmed.ncbi.nlm.nih.gov/32030679/)",
+      "[Spinal Cord Imaging.](https://pubmed.ncbi.nlm.nih.gov/40645794/)",
+      "[Spinal Cord Disorders: Myelopathy.](https://pubmed.ncbi.nlm.nih.gov/29605415/)",
+      "[Spinal cord.](https://pubmed.ncbi.nlm.nih.gov/28987187/)"
+    ]
+  }
+}

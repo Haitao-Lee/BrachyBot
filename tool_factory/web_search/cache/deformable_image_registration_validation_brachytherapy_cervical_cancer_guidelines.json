@@ -1,0 +1,160 @@
+{
+  "query": "deformable image registration validation brachytherapy cervical cancer guidelines",
+  "timestamp": 1780410805.5401368,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Skewfoot.",
+        "snippet": "PubMed ID: 19712883. 2009/09/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Congenital scoliosis with marked deformity, proven progression, \nsignificant compensatory curves, and/or impairment of trunk balance. \nFurthermore, in case of compression of neural structures or pain due to \nsecondary degeneration.\nCONTRAINDICATIONS: No absolute contraindication.\nSURGICAL TECHNIQUE: Pos",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/19712883/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Congenital scoliosis.",
+        "snippet": "PubMed ID: 14618384. 2003/10/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Congenital scoliosis with marked deformity, proven progression, \nsignificant compensatory curves, and/or impairment of trunk balance. \nFurthermore, in case of compression of neural structures or pain due to \nsecondary degeneration.\nCONTRAINDICATIONS: No absolute contraindication.\nSURGICAL TECHNIQUE: Pos",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/14618384/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Poland's anomaly.",
+        "snippet": "PubMed ID: 24820847. 2014/03/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Congenital scoliosis with marked deformity, proven progression, \nsignificant compensatory curves, and/or impairment of trunk balance. \nFurthermore, in case of compression of neural structures or pain due to \nsecondary degeneration.\nCONTRAINDICATIONS: No absolute contraindication.\nSURGICAL TECHNIQUE: Pos",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/24820847/",
+        "source": "PubMed"
+      },
+      {
+        "title": "[Surgical treatment of congenital scoliosis].",
+        "snippet": "PubMed ID: 37725190. 2024/02/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Congenital scoliosis with marked deformity, proven progression, \nsignificant compensatory curves, and/or impairment of trunk balance. \nFurthermore, in case of compression of neural structures or pain due to \nsecondary degeneration.\nCONTRAINDICATIONS: No absolute contraindication.\nSURGICAL TECHNIQUE: Pos",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37725190/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Delta phalanx.",
+        "snippet": "PubMed ID: 8834187. 1996/01/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Congenital scoliosis with marked deformity, proven progression, \nsignificant compensatory curves, and/or impairment of trunk balance. \nFurthermore, in case of compression of neural structures or pain due to \nsecondary degeneration.\nCONTRAINDICATIONS: No absolute contraindication.\nSURGICAL TECHNIQUE: Post",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/8834187/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 19712883. 2009/09/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Cong\n2. PubMed ID: 14618384. 2003/10/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Cong\n3. PubMed ID: 24820847. 2014/03/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Cong",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/19712883/",
+      "https://pubmed.ncbi.nlm.nih.gov/14618384/",
+      "https://pubmed.ncbi.nlm.nih.gov/24820847/",
+      "https://pubmed.ncbi.nlm.nih.gov/37725190/",
+      "https://pubmed.ncbi.nlm.nih.gov/8834187/"
+    ],
+    "evidence_chain_id": "20260602_223323_784918",
+    "evidence_summary": {
+      "response_id": "20260602_223323_784918",
+      "query": "deformable image registration validation brachytherapy cervical cancer guidelines",
+      "created_at": "2026-06-02T22:33:23.784942",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Skewfoot.](https://pubmed.ncbi.nlm.nih.gov/19712883/)",
+        "[Congenital scoliosis.](https://pubmed.ncbi.nlm.nih.gov/14618384/)",
+        "[Poland's anomaly.](https://pubmed.ncbi.nlm.nih.gov/24820847/)",
+        "[[Surgical treatment of congenital scoliosis].](https://pubmed.ncbi.nlm.nih.gov/37725190/)",
+        "[Delta phalanx.](https://pubmed.ncbi.nlm.nih.gov/8834187/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ec4901276722",
+          "claim": "PubMed ID: 19712883. 2009/09/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Cong",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/19712883/",
+          "source_type": "PubMed",
+          "source_title": "Skewfoot.",
+          "accessed_at": "2026-06-02T22:33:25.539743",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 19712883. 2009/09/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Congenital scoliosis with marked deformity, proven progression, \nsignificant compensatory curves, and/or impairment of trunk balance. \nFurthermore, in case of compression of neural structures or pain due to \nsecondary degeneration.\nCONTRAINDICATIONS: No absolute contraindication.\nSURGICAL TECHNIQUE: Pos",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "deformable image registration validation brachytherapy cervical cancer guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "919e9ae5a2d9",
+          "claim": "PubMed ID: 14618384. 2003/10/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Cong",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/14618384/",
+          "source_type": "PubMed",
+          "source_title": "Congenital scoliosis.",
+          "accessed_at": "2026-06-02T22:33:25.539846",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 14618384. 2003/10/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Congenital scoliosis with marked deformity, proven progression, \nsignificant compensatory curves, and/or impairment of trunk balance. \nFurthermore, in case of compression of neural structures or pain due to \nsecondary degeneration.\nCONTRAINDICATIONS: No absolute contraindication.\nSURGICAL TECHNIQUE: Pos",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "deformable image registration validation brachytherapy cervical cancer guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c9dd15fdbb7b",
+          "claim": "PubMed ID: 24820847. 2014/03/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Cong",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/24820847/",
+          "source_type": "PubMed",
+          "source_title": "Poland's anomaly.",
+          "accessed_at": "2026-06-02T22:33:25.539877",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 24820847. 2014/03/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Congenital scoliosis with marked deformity, proven progression, \nsignificant compensatory curves, and/or impairment of trunk balance. \nFurthermore, in case of compression of neural structures or pain due to \nsecondary degeneration.\nCONTRAINDICATIONS: No absolute contraindication.\nSURGICAL TECHNIQUE: Pos",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "deformable image registration validation brachytherapy cervical cancer guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "6e92d5260f41",
+          "claim": "PubMed ID: 37725190. 2024/02/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Cong",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37725190/",
+          "source_type": "PubMed",
+          "source_title": "[Surgical treatment of congenital scoliosis].",
+          "accessed_at": "2026-06-02T22:33:25.539902",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37725190. 2024/02/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Congenital scoliosis with marked deformity, proven progression, \nsignificant compensatory curves, and/or impairment of trunk balance. \nFurthermore, in case of compression of neural structures or pain due to \nsecondary degeneration.\nCONTRAINDICATIONS: No absolute contraindication.\nSURGICAL TECHNIQUE: Pos",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "deformable image registration validation brachytherapy cervical cancer guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "d2ef5753d1e4",
+          "claim": "PubMed ID: 8834187. 1996/01/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Conge",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/8834187/",
+          "source_type": "PubMed",
+          "source_title": "Delta phalanx.",
+          "accessed_at": "2026-06-02T22:33:25.539924",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 8834187. 1996/01/01 00:00. OBJECTIVE: Early correction of congenital scoliosis including short fusion, \nwhile minimizing both mobility restrictions and growth impairment.\nINDICATIONS: Congenital scoliosis with marked deformity, proven progression, \nsignificant compensatory curves, and/or impairment of trunk balance. \nFurthermore, in case of compression of neural structures or pain due to \nsecondary degeneration.\nCONTRAINDICATIONS: No absolute contraindication.\nSURGICAL TECHNIQUE: Post",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "deformable image registration validation brachytherapy cervical cancer guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Skewfoot.](https://pubmed.ncbi.nlm.nih.gov/19712883/)",
+      "[Congenital scoliosis.](https://pubmed.ncbi.nlm.nih.gov/14618384/)",
+      "[Poland's anomaly.](https://pubmed.ncbi.nlm.nih.gov/24820847/)",
+      "[[Surgical treatment of congenital scoliosis].](https://pubmed.ncbi.nlm.nih.gov/37725190/)",
+      "[Delta phalanx.](https://pubmed.ncbi.nlm.nih.gov/8834187/)"
+    ]
+  }
+}

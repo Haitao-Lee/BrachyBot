@@ -1,0 +1,160 @@
+{
+  "query": "GEC-ESTRO vaginal recurrence re-irradiation interstitial HDR",
+  "timestamp": 1780413936.5076091,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "GEC-ESTRO (ACROP)-ABS-CBG Consensus Brachytherapy Target Definition Guidelines for Recurrent Endometrial and Cervical Tumors in the Vagina.",
+        "snippet": "PubMed ID: 36191741. 2023/03/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the American Brachytherapy Society (ABS), and the Canadian \nBrachytherapy Group (CBG) met to develop international consensus recommendations \nfor target definitions for image-guided adaptive brachytherapy for vaginal \nrecurrences of endometrial or cervical cancer.\nMETHODS AND MATERIALS: Seventeen radiation onc",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36191741/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Recommendations from gynaecological (GYN) GEC-ESTRO working group - ACROP: Target concept for image guided adaptive brachytherapy in primary vaginal cancer.",
+        "snippet": "PubMed ID: 31874348. 2020/04/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the American Brachytherapy Society (ABS), and the Canadian \nBrachytherapy Group (CBG) met to develop international consensus recommendations \nfor target definitions for image-guided adaptive brachytherapy for vaginal \nrecurrences of endometrial or cervical cancer.\nMETHODS AND MATERIALS: Seventeen radiation onc",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31874348/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Risk Factors for Local Failure Following Chemoradiation and Magnetic Resonance Image-Guided Brachytherapy in Locally Advanced Cervical Cancer: Results From the EMBRACE-I Study.",
+        "snippet": "PubMed ID: 36599120. 2023/04/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the American Brachytherapy Society (ABS), and the Canadian \nBrachytherapy Group (CBG) met to develop international consensus recommendations \nfor target definitions for image-guided adaptive brachytherapy for vaginal \nrecurrences of endometrial or cervical cancer.\nMETHODS AND MATERIALS: Seventeen radiation onc",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36599120/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Outcomes of Computed Tomography-Guided Image-Based Interstitial Brachytherapy for Cancer of the Cervix Using GEC-ESTRO Guidelines.",
+        "snippet": "PubMed ID: 29887698. 2018/06/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the American Brachytherapy Society (ABS), and the Canadian \nBrachytherapy Group (CBG) met to develop international consensus recommendations \nfor target definitions for image-guided adaptive brachytherapy for vaginal \nrecurrences of endometrial or cervical cancer.\nMETHODS AND MATERIALS: Seventeen radiation onc",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29887698/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Image and laparoscopic guided interstitial brachytherapy for locally advanced primary or recurrent gynaecological cancer using the adaptive GEC ESTRO target concept.",
+        "snippet": "PubMed ID: 21924784. 2011/09/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the American Brachytherapy Society (ABS), and the Canadian \nBrachytherapy Group (CBG) met to develop international consensus recommendations \nfor target definitions for image-guided adaptive brachytherapy for vaginal \nrecurrences of endometrial or cervical cancer.\nMETHODS AND MATERIALS: Seventeen radiation onc",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/21924784/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 36191741. 2023/03/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the America\n2. PubMed ID: 31874348. 2020/04/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the America\n3. PubMed ID: 36599120. 2023/04/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the America",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/36191741/",
+      "https://pubmed.ncbi.nlm.nih.gov/31874348/",
+      "https://pubmed.ncbi.nlm.nih.gov/36599120/",
+      "https://pubmed.ncbi.nlm.nih.gov/29887698/",
+      "https://pubmed.ncbi.nlm.nih.gov/21924784/"
+    ],
+    "evidence_chain_id": "20260602_232534_815697",
+    "evidence_summary": {
+      "response_id": "20260602_232534_815697",
+      "query": "GEC-ESTRO vaginal recurrence re-irradiation interstitial HDR",
+      "created_at": "2026-06-02T23:25:34.815715",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[GEC-ESTRO (ACROP)-ABS-CBG Consensus Brachytherapy Target Definition Guidelines for Recurrent Endometrial and Cervical Tumors in the Vagina.](https://pubmed.ncbi.nlm.nih.gov/36191741/)",
+        "[Recommendations from gynaecological (GYN) GEC-ESTRO working group - ACROP: Target concept for image guided adaptive brachytherapy in primary vaginal cancer.](https://pubmed.ncbi.nlm.nih.gov/31874348/)",
+        "[Risk Factors for Local Failure Following Chemoradiation and Magnetic Resonance Image-Guided Brachytherapy in Locally Advanced Cervical Cancer: Results From the EMBRACE-I Study.](https://pubmed.ncbi.nlm.nih.gov/36599120/)",
+        "[Outcomes of Computed Tomography-Guided Image-Based Interstitial Brachytherapy for Cancer of the Cervix Using GEC-ESTRO Guidelines.](https://pubmed.ncbi.nlm.nih.gov/29887698/)",
+        "[Image and laparoscopic guided interstitial brachytherapy for locally advanced primary or recurrent gynaecological cancer using the adaptive GEC ESTRO target concept.](https://pubmed.ncbi.nlm.nih.gov/21924784/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "971ab70c7035",
+          "claim": "PubMed ID: 36191741. 2023/03/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the America",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36191741/",
+          "source_type": "PubMed",
+          "source_title": "GEC-ESTRO (ACROP)-ABS-CBG Consensus Brachytherapy Target Definition Guidelines for Recurrent Endometrial and Cervical Tumors in the Vagina.",
+          "accessed_at": "2026-06-02T23:25:36.507256",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36191741. 2023/03/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the American Brachytherapy Society (ABS), and the Canadian \nBrachytherapy Group (CBG) met to develop international consensus recommendations \nfor target definitions for image-guided adaptive brachytherapy for vaginal \nrecurrences of endometrial or cervical cancer.\nMETHODS AND MATERIALS: Seventeen radiation onc",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "GEC-ESTRO vaginal recurrence re-irradiation interstitial HDR",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "efde19b4937e",
+          "claim": "PubMed ID: 31874348. 2020/04/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the America",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31874348/",
+          "source_type": "PubMed",
+          "source_title": "Recommendations from gynaecological (GYN) GEC-ESTRO working group - ACROP: Target concept for image guided adaptive brachytherapy in primary vaginal cancer.",
+          "accessed_at": "2026-06-02T23:25:36.507349",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31874348. 2020/04/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the American Brachytherapy Society (ABS), and the Canadian \nBrachytherapy Group (CBG) met to develop international consensus recommendations \nfor target definitions for image-guided adaptive brachytherapy for vaginal \nrecurrences of endometrial or cervical cancer.\nMETHODS AND MATERIALS: Seventeen radiation onc",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "GEC-ESTRO vaginal recurrence re-irradiation interstitial HDR",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "dc9110540c42",
+          "claim": "PubMed ID: 36599120. 2023/04/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the America",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36599120/",
+          "source_type": "PubMed",
+          "source_title": "Risk Factors for Local Failure Following Chemoradiation and Magnetic Resonance Image-Guided Brachytherapy in Locally Advanced Cervical Cancer: Results From the EMBRACE-I Study.",
+          "accessed_at": "2026-06-02T23:25:36.507379",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36599120. 2023/04/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the American Brachytherapy Society (ABS), and the Canadian \nBrachytherapy Group (CBG) met to develop international consensus recommendations \nfor target definitions for image-guided adaptive brachytherapy for vaginal \nrecurrences of endometrial or cervical cancer.\nMETHODS AND MATERIALS: Seventeen radiation onc",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "GEC-ESTRO vaginal recurrence re-irradiation interstitial HDR",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "218b656c8dfa",
+          "claim": "PubMed ID: 29887698. 2018/06/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the America",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/29887698/",
+          "source_type": "PubMed",
+          "source_title": "Outcomes of Computed Tomography-Guided Image-Based Interstitial Brachytherapy for Cancer of the Cervix Using GEC-ESTRO Guidelines.",
+          "accessed_at": "2026-06-02T23:25:36.507401",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 29887698. 2018/06/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the American Brachytherapy Society (ABS), and the Canadian \nBrachytherapy Group (CBG) met to develop international consensus recommendations \nfor target definitions for image-guided adaptive brachytherapy for vaginal \nrecurrences of endometrial or cervical cancer.\nMETHODS AND MATERIALS: Seventeen radiation onc",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "GEC-ESTRO vaginal recurrence re-irradiation interstitial HDR",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "720d2c9565a9",
+          "claim": "PubMed ID: 21924784. 2011/09/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the America",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/21924784/",
+          "source_type": "PubMed",
+          "source_title": "Image and laparoscopic guided interstitial brachytherapy for locally advanced primary or recurrent gynaecological cancer using the adaptive GEC ESTRO target concept.",
+          "accessed_at": "2026-06-02T23:25:36.507422",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 21924784. 2011/09/01 00:00. PURPOSE: Representatives from the Gynecologic Groupe European de \nCurietherapie-European Society for Radiation Therapy and Oncology (GYN \nGEC-ESTRO), the American Brachytherapy Society (ABS), and the Canadian \nBrachytherapy Group (CBG) met to develop international consensus recommendations \nfor target definitions for image-guided adaptive brachytherapy for vaginal \nrecurrences of endometrial or cervical cancer.\nMETHODS AND MATERIALS: Seventeen radiation onc",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "GEC-ESTRO vaginal recurrence re-irradiation interstitial HDR",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[GEC-ESTRO (ACROP)-ABS-CBG Consensus Brachytherapy Target Definition Guidelines for Recurrent Endometrial and Cervical Tumors in the Vagina.](https://pubmed.ncbi.nlm.nih.gov/36191741/)",
+      "[Recommendations from gynaecological (GYN) GEC-ESTRO working group - ACROP: Target concept for image guided adaptive brachytherapy in primary vaginal cancer.](https://pubmed.ncbi.nlm.nih.gov/31874348/)",
+      "[Risk Factors for Local Failure Following Chemoradiation and Magnetic Resonance Image-Guided Brachytherapy in Locally Advanced Cervical Cancer: Results From the EMBRACE-I Study.](https://pubmed.ncbi.nlm.nih.gov/36599120/)",
+      "[Outcomes of Computed Tomography-Guided Image-Based Interstitial Brachytherapy for Cancer of the Cervix Using GEC-ESTRO Guidelines.](https://pubmed.ncbi.nlm.nih.gov/29887698/)",
+      "[Image and laparoscopic guided interstitial brachytherapy for locally advanced primary or recurrent gynaecological cancer using the adaptive GEC ESTRO target concept.](https://pubmed.ncbi.nlm.nih.gov/21924784/)"
+    ]
+  }
+}

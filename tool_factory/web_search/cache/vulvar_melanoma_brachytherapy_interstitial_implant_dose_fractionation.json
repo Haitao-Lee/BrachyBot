@@ -1,0 +1,160 @@
+{
+  "query": "vulvar melanoma brachytherapy interstitial implant dose fractionation",
+  "timestamp": 1780423858.8869827,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Vulvar Melanoma: Molecular Characteristics, Diagnosis, Surgical Management, and Medical Treatment.",
+        "snippet": "PubMed ID: 34125416. 2021/09/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with 21 cases of vulvar melanoma in 20 patients \nand to review the literature about the condition.\nMETHODS: Parameters retrospectively reviewed included age at diagnosis, family \nhistory of melanoma, location on the vulva, atypical nevi, Breslow depth, \nulceration status, histologic pattern, presenting s",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34125416/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Vulvar melanoma.",
+        "snippet": "PubMed ID: 8723827. 1996/03/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with 21 cases of vulvar melanoma in 20 patients \nand to review the literature about the condition.\nMETHODS: Parameters retrospectively reviewed included age at diagnosis, family \nhistory of melanoma, location on the vulva, atypical nevi, Breslow depth, \nulceration status, histologic pattern, presenting si",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/8723827/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Vulvar melanoma: a report of 20 cases and review of the literature.",
+        "snippet": "PubMed ID: 15034504. 2004/04/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with 21 cases of vulvar melanoma in 20 patients \nand to review the literature about the condition.\nMETHODS: Parameters retrospectively reviewed included age at diagnosis, family \nhistory of melanoma, location on the vulva, atypical nevi, Breslow depth, \nulceration status, histologic pattern, presenting s",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/15034504/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Vulvar nevi, melanosis, and melanoma: an epidemiologic, clinical, and histopathologic review.",
+        "snippet": "PubMed ID: 25267379. 2014/12/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with 21 cases of vulvar melanoma in 20 patients \nand to review the literature about the condition.\nMETHODS: Parameters retrospectively reviewed included age at diagnosis, family \nhistory of melanoma, location on the vulva, atypical nevi, Breslow depth, \nulceration status, histologic pattern, presenting s",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/25267379/",
+        "source": "PubMed"
+      },
+      {
+        "title": "[Vulvar melanoma].",
+        "snippet": "PubMed ID: 24040983. 2013/08/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with 21 cases of vulvar melanoma in 20 patients \nand to review the literature about the condition.\nMETHODS: Parameters retrospectively reviewed included age at diagnosis, family \nhistory of melanoma, location on the vulva, atypical nevi, Breslow depth, \nulceration status, histologic pattern, presenting s",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/24040983/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 34125416. 2021/09/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with \n2. PubMed ID: 8723827. 1996/03/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with 2\n3. PubMed ID: 15034504. 2004/04/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with ",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/34125416/",
+      "https://pubmed.ncbi.nlm.nih.gov/8723827/",
+      "https://pubmed.ncbi.nlm.nih.gov/15034504/",
+      "https://pubmed.ncbi.nlm.nih.gov/25267379/",
+      "https://pubmed.ncbi.nlm.nih.gov/24040983/"
+    ],
+    "evidence_chain_id": "20260603_021057_177929",
+    "evidence_summary": {
+      "response_id": "20260603_021057_177929",
+      "query": "vulvar melanoma brachytherapy interstitial implant dose fractionation",
+      "created_at": "2026-06-03T02:10:57.177951",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Vulvar Melanoma: Molecular Characteristics, Diagnosis, Surgical Management, and Medical Treatment.](https://pubmed.ncbi.nlm.nih.gov/34125416/)",
+        "[Vulvar melanoma.](https://pubmed.ncbi.nlm.nih.gov/8723827/)",
+        "[Vulvar melanoma: a report of 20 cases and review of the literature.](https://pubmed.ncbi.nlm.nih.gov/15034504/)",
+        "[Vulvar nevi, melanosis, and melanoma: an epidemiologic, clinical, and histopathologic review.](https://pubmed.ncbi.nlm.nih.gov/25267379/)",
+        "[[Vulvar melanoma].](https://pubmed.ncbi.nlm.nih.gov/24040983/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "cf5d93e1f4f2",
+          "claim": "PubMed ID: 34125416. 2021/09/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with ",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34125416/",
+          "source_type": "PubMed",
+          "source_title": "Vulvar Melanoma: Molecular Characteristics, Diagnosis, Surgical Management, and Medical Treatment.",
+          "accessed_at": "2026-06-03T02:10:58.886412",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34125416. 2021/09/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with 21 cases of vulvar melanoma in 20 patients \nand to review the literature about the condition.\nMETHODS: Parameters retrospectively reviewed included age at diagnosis, family \nhistory of melanoma, location on the vulva, atypical nevi, Breslow depth, \nulceration status, histologic pattern, presenting s",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "vulvar melanoma brachytherapy interstitial implant dose fractionation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "22e0fba8f685",
+          "claim": "PubMed ID: 8723827. 1996/03/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with 2",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/8723827/",
+          "source_type": "PubMed",
+          "source_title": "Vulvar melanoma.",
+          "accessed_at": "2026-06-03T02:10:58.886542",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 8723827. 1996/03/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with 21 cases of vulvar melanoma in 20 patients \nand to review the literature about the condition.\nMETHODS: Parameters retrospectively reviewed included age at diagnosis, family \nhistory of melanoma, location on the vulva, atypical nevi, Breslow depth, \nulceration status, histologic pattern, presenting si",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "vulvar melanoma brachytherapy interstitial implant dose fractionation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "1fa836383667",
+          "claim": "PubMed ID: 15034504. 2004/04/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with ",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/15034504/",
+          "source_type": "PubMed",
+          "source_title": "Vulvar melanoma: a report of 20 cases and review of the literature.",
+          "accessed_at": "2026-06-03T02:10:58.886587",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 15034504. 2004/04/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with 21 cases of vulvar melanoma in 20 patients \nand to review the literature about the condition.\nMETHODS: Parameters retrospectively reviewed included age at diagnosis, family \nhistory of melanoma, location on the vulva, atypical nevi, Breslow depth, \nulceration status, histologic pattern, presenting s",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "vulvar melanoma brachytherapy interstitial implant dose fractionation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "6ccd5b48c5db",
+          "claim": "PubMed ID: 25267379. 2014/12/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with ",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/25267379/",
+          "source_type": "PubMed",
+          "source_title": "Vulvar nevi, melanosis, and melanoma: an epidemiologic, clinical, and histopathologic review.",
+          "accessed_at": "2026-06-03T02:10:58.886621",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 25267379. 2014/12/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with 21 cases of vulvar melanoma in 20 patients \nand to review the literature about the condition.\nMETHODS: Parameters retrospectively reviewed included age at diagnosis, family \nhistory of melanoma, location on the vulva, atypical nevi, Breslow depth, \nulceration status, histologic pattern, presenting s",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "vulvar melanoma brachytherapy interstitial implant dose fractionation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f3022670e250",
+          "claim": "PubMed ID: 24040983. 2013/08/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with ",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/24040983/",
+          "source_type": "PubMed",
+          "source_title": "[Vulvar melanoma].",
+          "accessed_at": "2026-06-03T02:10:58.886653",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 24040983. 2013/08/01 00:00. BACKGROUND: Vulvar melanoma is the second most common vulvar malignancy and \nrepresents a significant women's health issue.\nOBJECTIVE: To report experience with 21 cases of vulvar melanoma in 20 patients \nand to review the literature about the condition.\nMETHODS: Parameters retrospectively reviewed included age at diagnosis, family \nhistory of melanoma, location on the vulva, atypical nevi, Breslow depth, \nulceration status, histologic pattern, presenting s",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "vulvar melanoma brachytherapy interstitial implant dose fractionation",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Vulvar Melanoma: Molecular Characteristics, Diagnosis, Surgical Management, and Medical Treatment.](https://pubmed.ncbi.nlm.nih.gov/34125416/)",
+      "[Vulvar melanoma.](https://pubmed.ncbi.nlm.nih.gov/8723827/)",
+      "[Vulvar melanoma: a report of 20 cases and review of the literature.](https://pubmed.ncbi.nlm.nih.gov/15034504/)",
+      "[Vulvar nevi, melanosis, and melanoma: an epidemiologic, clinical, and histopathologic review.](https://pubmed.ncbi.nlm.nih.gov/25267379/)",
+      "[[Vulvar melanoma].](https://pubmed.ncbi.nlm.nih.gov/24040983/)"
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "query": "cervical cancer brachytherapy alone versus EBRT combined local control 5-year survival",
+  "timestamp": 1780464826.22877,
+  "result": {
+    "success": true,
+    "results": [],
+    "answer": "I searched for 'cervical cancer brachytherapy alone versus EBRT combined local control 5-year survival' but couldn't find specific information. This may be a question that requires specialized knowledge or access to specific databases I don't have.",
+    "sources": [],
+    "evidence_chain_id": "20260603_133345_690423",
+    "evidence_summary": {
+      "response_id": "20260603_133345_690423",
+      "query": "cervical cancer brachytherapy alone versus EBRT combined local control 5-year survival",
+      "created_at": "2026-06-03T13:33:45.690460",
+      "num_sources": 0,
+      "source_types": [],
+      "avg_confidence": 0.0,
+      "verification_status": "unverified",
+      "citations": [],
+      "evidence": []
+    },
+    "citations": []
+  }
+}

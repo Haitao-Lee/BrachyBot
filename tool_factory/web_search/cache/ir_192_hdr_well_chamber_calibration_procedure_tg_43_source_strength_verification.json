@@ -1,0 +1,160 @@
+{
+  "query": "Ir-192 HDR well chamber calibration procedure TG-43 source strength verification",
+  "timestamp": 1780419320.0661414,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "投资者关系_百度百科",
+        "snippet": "2026年5月15日 · IR IRM 投资者关系（IR，Investors Relation）与“ 投资者关系管理 ”（IRM, Investors Relation Management ）在西方成熟 资本市场 上已有三十多年的历史。",
+        "url": "https://baike.baidu.com/item/%E6%8A%95%E8%B5%84%E8%80%85%E5%85%B3%E7%B3%BB/4672954",
+        "source": "Bing CN"
+      },
+      {
+        "title": "IR专栏｜上市公司投资者关系到底做什么？ - 知乎",
+        "snippet": "2022年3月16日 · 狭义的IR只是投资者关系管理，但实际上很多上市公司中IR的工作围绕市值管理展开，包括了更广义的投资者关系IR、分析师关系AR、媒体关系MR和监管关系GR这4R 那么上市公司 …",
+        "url": "https://zhuanlan.zhihu.com/p/481608033",
+        "source": "Bing CN"
+      },
+      {
+        "title": "投资者关系 | Xiaomi Corporation",
+        "snippet": "6 天之前 · The Investor Relations website contains information about Xiaomi Corporation's business for stockholders, potential investors, and financial analysts.",
+        "url": "https://ir.mi.com/zh-hans",
+        "source": "Bing CN"
+      },
+      {
+        "title": "从入门到进阶：上市公司IR岗位指南",
+        "snippet": "2024年11月18日 · 1、IR需要具备的专业知识 作为投资者关系岗位 (IR)的入门者，需具备扎实的资本市场基础知识，熟悉上市公司信息披露规则与投资者关系管理实务。 优秀的IR人才应当具有敏锐的市场 …",
+        "url": "http://www.dongmi.org.cn/2024/zyfx_1118/3353.html",
+        "source": "Bing CN"
+      },
+      {
+        "title": "致GP：IR非常非常重要，PR只是“锦上添花”-36氪",
+        "snippet": "2021年12月9日 · 国外黑石集团等大型资产管理公司对IR人才有着巨大的需求，IR人才也能够在系统中一步步升职，许多人将IR工作视作终生追求的职业目标；但国内尚 ...",
+        "url": "https://www.36kr.com/p/1519913914125958",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 2026年5月15日 · IR IRM 投资者关系（IR，Investors Relation）与“ 投资者关系管理 ”（IRM, Investors Relation Management ）在西方成熟 资本市场 上已有三十多年的历史。\n- 2022年3月16日 · 狭义的IR只是投资者关系管理，但实际上很多上市公司中IR的工作围绕市值管理展开，包括了更广义的投资者关系IR、分析师关系AR、媒体关系MR和监管关系GR这4R 那么上市公司 …",
+    "sources": [
+      "https://baike.baidu.com/item/%E6%8A%95%E8%B5%84%E8%80%85%E5%85%B3%E7%B3%BB/4672954",
+      "https://zhuanlan.zhihu.com/p/481608033",
+      "https://ir.mi.com/zh-hans",
+      "http://www.dongmi.org.cn/2024/zyfx_1118/3353.html",
+      "https://www.36kr.com/p/1519913914125958"
+    ],
+    "evidence_chain_id": "20260603_005519_808160",
+    "evidence_summary": {
+      "response_id": "20260603_005519_808160",
+      "query": "Ir-192 HDR well chamber calibration procedure TG-43 source strength verification",
+      "created_at": "2026-06-03T00:55:19.808186",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[投资者关系_百度百科](https://baike.baidu.com/item/%E6%8A%95%E8%B5%84%E8%80%85%E5%85%B3%E7%B3%BB/4672954)",
+        "[IR专栏｜上市公司投资者关系到底做什么？ - 知乎](https://zhuanlan.zhihu.com/p/481608033)",
+        "[投资者关系 | Xiaomi Corporation](https://ir.mi.com/zh-hans)",
+        "[从入门到进阶：上市公司IR岗位指南](http://www.dongmi.org.cn/2024/zyfx_1118/3353.html)",
+        "[致GP：IR非常非常重要，PR只是“锦上添花”-36氪](https://www.36kr.com/p/1519913914125958)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "45f69a3d969e",
+          "claim": "2026年5月15日 · IR IRM 投资者关系（IR，Investors Relation）与“ 投资者关系管理 ”（IRM, Investors Relation Management ）在西方成熟 资本市场 上已有三十多年的历史。",
+          "source_url": "https://baike.baidu.com/item/%E6%8A%95%E8%B5%84%E8%80%85%E5%85%B3%E7%B3%BB/4672954",
+          "source_type": "Bing CN",
+          "source_title": "投资者关系_百度百科",
+          "accessed_at": "2026-06-03T00:55:20.065817",
+          "published_at": "",
+          "raw_snippet": "2026年5月15日 · IR IRM 投资者关系（IR，Investors Relation）与“ 投资者关系管理 ”（IRM, Investors Relation Management ）在西方成熟 资本市场 上已有三十多年的历史。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Ir-192 HDR well chamber calibration procedure TG-43 source strength verification",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "a7f189730893",
+          "claim": "2022年3月16日 · 狭义的IR只是投资者关系管理，但实际上很多上市公司中IR的工作围绕市值管理展开，包括了更广义的投资者关系IR、分析师关系AR、媒体关系MR和监管关系GR这4R 那么上市公司 …",
+          "source_url": "https://zhuanlan.zhihu.com/p/481608033",
+          "source_type": "Bing CN",
+          "source_title": "IR专栏｜上市公司投资者关系到底做什么？ - 知乎",
+          "accessed_at": "2026-06-03T00:55:20.065869",
+          "published_at": "",
+          "raw_snippet": "2022年3月16日 · 狭义的IR只是投资者关系管理，但实际上很多上市公司中IR的工作围绕市值管理展开，包括了更广义的投资者关系IR、分析师关系AR、媒体关系MR和监管关系GR这4R 那么上市公司 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Ir-192 HDR well chamber calibration procedure TG-43 source strength verification",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e456146eb21a",
+          "claim": "6 天之前 · The Investor Relations website contains information about Xiaomi Corporation's business for stockholders, potential investors, and financial analysts.",
+          "source_url": "https://ir.mi.com/zh-hans",
+          "source_type": "Bing CN",
+          "source_title": "投资者关系 | Xiaomi Corporation",
+          "accessed_at": "2026-06-03T00:55:20.065900",
+          "published_at": "",
+          "raw_snippet": "6 天之前 · The Investor Relations website contains information about Xiaomi Corporation's business for stockholders, potential investors, and financial analysts.",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Ir-192 HDR well chamber calibration procedure TG-43 source strength verification",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "72351773ceaf",
+          "claim": "2024年11月18日 · 1、IR需要具备的专业知识 作为投资者关系岗位 (IR)的入门者，需具备扎实的资本市场基础知识，熟悉上市公司信息披露规则与投资者关系管理实务。 优秀的IR人才应当具有敏锐的市场 …",
+          "source_url": "http://www.dongmi.org.cn/2024/zyfx_1118/3353.html",
+          "source_type": "Bing CN",
+          "source_title": "从入门到进阶：上市公司IR岗位指南",
+          "accessed_at": "2026-06-03T00:55:20.065928",
+          "published_at": "",
+          "raw_snippet": "2024年11月18日 · 1、IR需要具备的专业知识 作为投资者关系岗位 (IR)的入门者，需具备扎实的资本市场基础知识，熟悉上市公司信息披露规则与投资者关系管理实务。 优秀的IR人才应当具有敏锐的市场 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Ir-192 HDR well chamber calibration procedure TG-43 source strength verification",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "17fdc0f997ae",
+          "claim": "2021年12月9日 · 国外黑石集团等大型资产管理公司对IR人才有着巨大的需求，IR人才也能够在系统中一步步升职，许多人将IR工作视作终生追求的职业目标；但国内尚 ...",
+          "source_url": "https://www.36kr.com/p/1519913914125958",
+          "source_type": "Bing CN",
+          "source_title": "致GP：IR非常非常重要，PR只是“锦上添花”-36氪",
+          "accessed_at": "2026-06-03T00:55:20.065951",
+          "published_at": "",
+          "raw_snippet": "2021年12月9日 · 国外黑石集团等大型资产管理公司对IR人才有着巨大的需求，IR人才也能够在系统中一步步升职，许多人将IR工作视作终生追求的职业目标；但国内尚 ...",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Ir-192 HDR well chamber calibration procedure TG-43 source strength verification",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[投资者关系_百度百科](https://baike.baidu.com/item/%E6%8A%95%E8%B5%84%E8%80%85%E5%85%B3%E7%B3%BB/4672954)",
+      "[IR专栏｜上市公司投资者关系到底做什么？ - 知乎](https://zhuanlan.zhihu.com/p/481608033)",
+      "[投资者关系 | Xiaomi Corporation](https://ir.mi.com/zh-hans)",
+      "[从入门到进阶：上市公司IR岗位指南](http://www.dongmi.org.cn/2024/zyfx_1118/3353.html)",
+      "[致GP：IR非常非常重要，PR只是“锦上添花”-36氪](https://www.36kr.com/p/1519913914125958)"
+    ]
+  }
+}

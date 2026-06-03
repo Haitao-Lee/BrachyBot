@@ -1,0 +1,160 @@
+{
+  "query": "3D ultrasound brachytherapy training requirements certification",
+  "timestamp": 1780417257.9682178,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "3D溜溜网 (3d66.com) - 全网设计素材首选平台",
+        "snippet": "3D溜溜网拥有上亿设计素材，提供3d模型下载、su模型下载、材质贴图素材下载、CAD图纸、灵感图库、名师设计案例、效果图、设计方案文本素材参考借鉴等，是全网设计师共同学习交流的知识平台。",
+        "url": "https://www.3d66.com/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "3DSOURCE零件库官网 | 海量零部件CAD模型免费下载,助力 ...",
+        "snippet": "2025年8月15日 · 四大优势 助力产品设计 “3DSOURCE零件库”是一款支持各大主流CAD软件、标准覆盖齐全、零部件种类非常丰富的工业云软件， 是国内领先的、用户规模非常庞大的3D零部件资源库。 …",
+        "url": "https://www.3dsource.cn/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "MakerWorld：免费下载 3D 模型",
+        "snippet": "萌宠打印好物精选｜看看大家给毛孩子打了啥 🐾 前一段时间，我们在社区发起了 「3D 打印萌宠秀」 主题征集，邀请大家带上 #萌宠打印好物，晒出毛孩子与 3D 打印作品的同框瞬间。 🙌目前本期征集已收官 …",
+        "url": "https://makerworld.com.cn/zh",
+        "source": "Bing CN"
+      },
+      {
+        "title": "腾讯混元3D",
+        "snippet": "16 小时之前 · 腾讯混元3D AI创作引擎基于腾讯混元3D生成大模型2.5版本，业界首个一站式3D内容AI创作平台。 腾讯混元3D创作平台是一站式3D内容AI创作平台。 具备文生、图生3D、3D动画生成、纹 …",
+        "url": "http://3d.hunyuan.tencent.com/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "3D Warehouse",
+        "snippet": "6 天之前 · 3D Warehouse is a website of searchable, pre-made 3D models that works seamlessly with SketchUp.",
+        "url": "https://3dwarehouse.sketchup.com/?hlf=zh-cn",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 3D溜溜网拥有上亿设计素材，提供3d模型下载、su模型下载、材质贴图素材下载、CAD图纸、灵感图库、名师设计案例、效果图、设计方案文本素材参考借鉴等，是全网设计师共同学习交流的知识平台。\n- 2025年8月15日 · 四大优势 助力产品设计 “3DSOURCE零件库”是一款支持各大主流CAD软件、标准覆盖齐全、零部件种类非常丰富的工业云软件， 是国内领先的、用户规模非常庞大的3D零部件资源库。 …",
+    "sources": [
+      "https://www.3d66.com/",
+      "https://www.3dsource.cn/",
+      "https://makerworld.com.cn/zh",
+      "http://3d.hunyuan.tencent.com/",
+      "https://3dwarehouse.sketchup.com/?hlf=zh-cn"
+    ],
+    "evidence_chain_id": "20260603_002057_089950",
+    "evidence_summary": {
+      "response_id": "20260603_002057_089950",
+      "query": "3D ultrasound brachytherapy training requirements certification",
+      "created_at": "2026-06-03T00:20:57.089970",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[3D溜溜网 (3d66.com) - 全网设计素材首选平台](https://www.3d66.com/)",
+        "[3DSOURCE零件库官网 | 海量零部件CAD模型免费下载,助力 ...](https://www.3dsource.cn/)",
+        "[MakerWorld：免费下载 3D 模型](https://makerworld.com.cn/zh)",
+        "[腾讯混元3D](http://3d.hunyuan.tencent.com/)",
+        "[3D Warehouse](https://3dwarehouse.sketchup.com/?hlf=zh-cn)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "246b3f4fc2c0",
+          "claim": "3D溜溜网拥有上亿设计素材，提供3d模型下载、su模型下载、材质贴图素材下载、CAD图纸、灵感图库、名师设计案例、效果图、设计方案文本素材参考借鉴等，是全网设计师共同学习交流的知识平台。",
+          "source_url": "https://www.3d66.com/",
+          "source_type": "Bing CN",
+          "source_title": "3D溜溜网 (3d66.com) - 全网设计素材首选平台",
+          "accessed_at": "2026-06-03T00:20:57.967828",
+          "published_at": "",
+          "raw_snippet": "3D溜溜网拥有上亿设计素材，提供3d模型下载、su模型下载、材质贴图素材下载、CAD图纸、灵感图库、名师设计案例、效果图、设计方案文本素材参考借鉴等，是全网设计师共同学习交流的知识平台。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "3D ultrasound brachytherapy training requirements certification",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f29035d445eb",
+          "claim": "2025年8月15日 · 四大优势 助力产品设计 “3DSOURCE零件库”是一款支持各大主流CAD软件、标准覆盖齐全、零部件种类非常丰富的工业云软件， 是国内领先的、用户规模非常庞大的3D零部件资源库。 …",
+          "source_url": "https://www.3dsource.cn/",
+          "source_type": "Bing CN",
+          "source_title": "3DSOURCE零件库官网 | 海量零部件CAD模型免费下载,助力 ...",
+          "accessed_at": "2026-06-03T00:20:57.967928",
+          "published_at": "",
+          "raw_snippet": "2025年8月15日 · 四大优势 助力产品设计 “3DSOURCE零件库”是一款支持各大主流CAD软件、标准覆盖齐全、零部件种类非常丰富的工业云软件， 是国内领先的、用户规模非常庞大的3D零部件资源库。 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "3D ultrasound brachytherapy training requirements certification",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "5f64cdf93e25",
+          "claim": "萌宠打印好物精选｜看看大家给毛孩子打了啥 🐾 前一段时间，我们在社区发起了 「3D 打印萌宠秀」 主题征集，邀请大家带上 #萌宠打印好物，晒出毛孩子与 3D 打印作品的同框瞬间。 🙌目前本期征集已收官 …",
+          "source_url": "https://makerworld.com.cn/zh",
+          "source_type": "Bing CN",
+          "source_title": "MakerWorld：免费下载 3D 模型",
+          "accessed_at": "2026-06-03T00:20:57.967963",
+          "published_at": "",
+          "raw_snippet": "萌宠打印好物精选｜看看大家给毛孩子打了啥 🐾 前一段时间，我们在社区发起了 「3D 打印萌宠秀」 主题征集，邀请大家带上 #萌宠打印好物，晒出毛孩子与 3D 打印作品的同框瞬间。 🙌目前本期征集已收官 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "3D ultrasound brachytherapy training requirements certification",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c39885bc98db",
+          "claim": "16 小时之前 · 腾讯混元3D AI创作引擎基于腾讯混元3D生成大模型2.5版本，业界首个一站式3D内容AI创作平台。 腾讯混元3D创作平台是一站式3D内容AI创作平台。 具备文生、图生3D、3D动画生成、纹 …",
+          "source_url": "http://3d.hunyuan.tencent.com/",
+          "source_type": "Bing CN",
+          "source_title": "腾讯混元3D",
+          "accessed_at": "2026-06-03T00:20:57.967991",
+          "published_at": "",
+          "raw_snippet": "16 小时之前 · 腾讯混元3D AI创作引擎基于腾讯混元3D生成大模型2.5版本，业界首个一站式3D内容AI创作平台。 腾讯混元3D创作平台是一站式3D内容AI创作平台。 具备文生、图生3D、3D动画生成、纹 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "3D ultrasound brachytherapy training requirements certification",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "57931b6cad83",
+          "claim": "6 天之前 · 3D Warehouse is a website of searchable, pre-made 3D models that works seamlessly with SketchUp.",
+          "source_url": "https://3dwarehouse.sketchup.com/?hlf=zh-cn",
+          "source_type": "Bing CN",
+          "source_title": "3D Warehouse",
+          "accessed_at": "2026-06-03T00:20:57.968015",
+          "published_at": "",
+          "raw_snippet": "6 天之前 · 3D Warehouse is a website of searchable, pre-made 3D models that works seamlessly with SketchUp.",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "3D ultrasound brachytherapy training requirements certification",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[3D溜溜网 (3d66.com) - 全网设计素材首选平台](https://www.3d66.com/)",
+      "[3DSOURCE零件库官网 | 海量零部件CAD模型免费下载,助力 ...](https://www.3dsource.cn/)",
+      "[MakerWorld：免费下载 3D 模型](https://makerworld.com.cn/zh)",
+      "[腾讯混元3D](http://3d.hunyuan.tencent.com/)",
+      "[3D Warehouse](https://3dwarehouse.sketchup.com/?hlf=zh-cn)"
+    ]
+  }
+}

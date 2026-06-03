@@ -1,0 +1,20 @@
+{
+  "case_type": "prostate_brachytherapy",
+  "modality": "LDR",
+  "isotope": "I-125",
+  "prescription_dose": 145,
+  "target_metrics": {
+    "v100": 95,
+    "v150": 50,
+    "v200": 15,
+    "d90": 145
+  },
+  "oar_doses": {
+    "rectum_d2cc": 125,
+    "bladder_d2cc": 130,
+    "urethra_dmax": 165
+  },
+  "status": "planned",
+  "case_id": "77774ccafb90",
+  "saved_at": 1780434479.5424595
+}

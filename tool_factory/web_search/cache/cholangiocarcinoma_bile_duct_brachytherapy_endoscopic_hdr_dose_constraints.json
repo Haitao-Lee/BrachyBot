@@ -1,0 +1,23 @@
+{
+  "query": "cholangiocarcinoma bile duct brachytherapy endoscopic HDR dose constraints",
+  "timestamp": 1780464571.5989742,
+  "result": {
+    "success": true,
+    "results": [],
+    "answer": "I searched for 'cholangiocarcinoma bile duct brachytherapy endoscopic HDR dose constraints' but couldn't find specific information. This may be a question that requires specialized knowledge or access to specific databases I don't have.",
+    "sources": [],
+    "evidence_chain_id": "20260603_132931_109520",
+    "evidence_summary": {
+      "response_id": "20260603_132931_109520",
+      "query": "cholangiocarcinoma bile duct brachytherapy endoscopic HDR dose constraints",
+      "created_at": "2026-06-03T13:29:31.109545",
+      "num_sources": 0,
+      "source_types": [],
+      "avg_confidence": 0.0,
+      "verification_status": "unverified",
+      "citations": [],
+      "evidence": []
+    },
+    "citations": []
+  }
+}

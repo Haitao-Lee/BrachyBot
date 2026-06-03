@@ -1,0 +1,160 @@
+{
+  "query": "I-125 seed model 6711 2301 1251 radial dose function g(r) comparison TG-43",
+  "timestamp": 1780468287.0447133,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "125排量摩托车_百度百科",
+        "snippet": "125排量摩托车作为入门级通勤工具，在2025年市场呈现激烈竞争态势。 豪爵 、新大洲 本田、五羊 本田等品牌相继推出前碟后鼓制动的125cc踏板车型，部分产品搭载前轮ABS系统。",
+        "url": "https://baike.baidu.com/item/125%E6%8E%92%E9%87%8F%E6%91%A9%E6%89%98%E8%BD%A6/17517235",
+        "source": "Bing CN"
+      },
+      {
+        "title": "125摩托车能跑多快？摩托车为什么叫125_车主手册",
+        "snippet": "2021年11月22日 · 摩托车为什么叫125？ 因为摩托车的排量是125CC，而厂家在给车辆命名的时候喜欢把排量给加上去，例如雅马哈福禧125、巧格125、 铃木 UY 125等，消费者为了方便就会把冗长的名字 …",
+        "url": "https://www.icauto.com.cn/baike/70/708517.html",
+        "source": "Bing CN"
+      },
+      {
+        "title": "NS125LA 2025款",
+        "snippet": "2025款新大洲本田NS125LA，格调LA满焕新出街，全新时尚姿态，延续经典浪漫。 复古外观 以全新时尚姿态，延续经典浪漫 优雅挺拔，简约棱角，重新定义现代复古 大面积涂装件，尽显型色高级感 游弋 …",
+        "url": "https://www.honda-sundiro.com/product_details/NS125LA_2025MY_94.html",
+        "source": "Bing CN"
+      },
+      {
+        "title": "豪爵、本田、铃木、雅马哈6款125踏板对比谁更强？",
+        "snippet": "2025年7月31日 · 125踏板是日常代步通勤的主力，也是摩托车销售第一的排量区间。在这个区间里，国产品牌、合资品牌常年征战不休，到底它们谁更强一些呢？ 今天我们对比 豪爵 、铃木、本田、雅马哈 …",
+        "url": "https://zhuanlan.zhihu.com/p/1934290303512220469",
+        "source": "Bing CN"
+      },
+      {
+        "title": "五羊-本田摩托（广州）有限公司",
+        "snippet": "全新125发动机搭载五羊-本田高效电喷技术i-FI，更有“动力版”和“标准版”双配置选择，适合不同需求。",
+        "url": "https://www.wuyang-honda.com/home/cpzs/ryj/wlj/detail-683.shtml",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 125排量摩托车作为入门级通勤工具，在2025年市场呈现激烈竞争态势。 豪爵 、新大洲 本田、五羊 本田等品牌相继推出前碟后鼓制动的125cc踏板车型，部分产品搭载前轮ABS系统。\n- 2021年11月22日 · 摩托车为什么叫125？ 因为摩托车的排量是125CC，而厂家在给车辆命名的时候喜欢把排量给加上去，例如雅马哈福禧125、巧格125、 铃木 UY 125等，消费者为了方便就会把冗长的名字 …",
+    "sources": [
+      "https://baike.baidu.com/item/125%E6%8E%92%E9%87%8F%E6%91%A9%E6%89%98%E8%BD%A6/17517235",
+      "https://www.icauto.com.cn/baike/70/708517.html",
+      "https://www.honda-sundiro.com/product_details/NS125LA_2025MY_94.html",
+      "https://zhuanlan.zhihu.com/p/1934290303512220469",
+      "https://www.wuyang-honda.com/home/cpzs/ryj/wlj/detail-683.shtml"
+    ],
+    "evidence_chain_id": "20260603_143124_848835",
+    "evidence_summary": {
+      "response_id": "20260603_143124_848835",
+      "query": "I-125 seed model 6711 2301 1251 radial dose function g(r) comparison TG-43",
+      "created_at": "2026-06-03T14:31:24.848856",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[125排量摩托车_百度百科](https://baike.baidu.com/item/125%E6%8E%92%E9%87%8F%E6%91%A9%E6%89%98%E8%BD%A6/17517235)",
+        "[125摩托车能跑多快？摩托车为什么叫125_车主手册](https://www.icauto.com.cn/baike/70/708517.html)",
+        "[NS125LA 2025款](https://www.honda-sundiro.com/product_details/NS125LA_2025MY_94.html)",
+        "[豪爵、本田、铃木、雅马哈6款125踏板对比谁更强？](https://zhuanlan.zhihu.com/p/1934290303512220469)",
+        "[五羊-本田摩托（广州）有限公司](https://www.wuyang-honda.com/home/cpzs/ryj/wlj/detail-683.shtml)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "89c9cdd47b63",
+          "claim": "125排量摩托车作为入门级通勤工具，在2025年市场呈现激烈竞争态势。 豪爵 、新大洲 本田、五羊 本田等品牌相继推出前碟后鼓制动的125cc踏板车型，部分产品搭载前轮ABS系统。",
+          "source_url": "https://baike.baidu.com/item/125%E6%8E%92%E9%87%8F%E6%91%A9%E6%89%98%E8%BD%A6/17517235",
+          "source_type": "Bing CN",
+          "source_title": "125排量摩托车_百度百科",
+          "accessed_at": "2026-06-03T14:31:27.044325",
+          "published_at": "",
+          "raw_snippet": "125排量摩托车作为入门级通勤工具，在2025年市场呈现激烈竞争态势。 豪爵 、新大洲 本田、五羊 本田等品牌相继推出前碟后鼓制动的125cc踏板车型，部分产品搭载前轮ABS系统。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "I-125 seed model 6711 2301 1251 radial dose function g(r) comparison TG-43",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "172fe95339a3",
+          "claim": "2021年11月22日 · 摩托车为什么叫125？ 因为摩托车的排量是125CC，而厂家在给车辆命名的时候喜欢把排量给加上去，例如雅马哈福禧125、巧格125、 铃木 UY 125等，消费者为了方便就会把冗长的名字 …",
+          "source_url": "https://www.icauto.com.cn/baike/70/708517.html",
+          "source_type": "Bing CN",
+          "source_title": "125摩托车能跑多快？摩托车为什么叫125_车主手册",
+          "accessed_at": "2026-06-03T14:31:27.044417",
+          "published_at": "",
+          "raw_snippet": "2021年11月22日 · 摩托车为什么叫125？ 因为摩托车的排量是125CC，而厂家在给车辆命名的时候喜欢把排量给加上去，例如雅马哈福禧125、巧格125、 铃木 UY 125等，消费者为了方便就会把冗长的名字 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "I-125 seed model 6711 2301 1251 radial dose function g(r) comparison TG-43",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "7357c7b9342a",
+          "claim": "2025款新大洲本田NS125LA，格调LA满焕新出街，全新时尚姿态，延续经典浪漫。 复古外观 以全新时尚姿态，延续经典浪漫 优雅挺拔，简约棱角，重新定义现代复古 大面积涂装件，尽显型色高级感 游弋 …",
+          "source_url": "https://www.honda-sundiro.com/product_details/NS125LA_2025MY_94.html",
+          "source_type": "Bing CN",
+          "source_title": "NS125LA 2025款",
+          "accessed_at": "2026-06-03T14:31:27.044466",
+          "published_at": "",
+          "raw_snippet": "2025款新大洲本田NS125LA，格调LA满焕新出街，全新时尚姿态，延续经典浪漫。 复古外观 以全新时尚姿态，延续经典浪漫 优雅挺拔，简约棱角，重新定义现代复古 大面积涂装件，尽显型色高级感 游弋 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "I-125 seed model 6711 2301 1251 radial dose function g(r) comparison TG-43",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ab9f399c955f",
+          "claim": "2025年7月31日 · 125踏板是日常代步通勤的主力，也是摩托车销售第一的排量区间。在这个区间里，国产品牌、合资品牌常年征战不休，到底它们谁更强一些呢？ 今天我们对比 豪爵 、铃木、本田、雅马哈 …",
+          "source_url": "https://zhuanlan.zhihu.com/p/1934290303512220469",
+          "source_type": "Bing CN",
+          "source_title": "豪爵、本田、铃木、雅马哈6款125踏板对比谁更强？",
+          "accessed_at": "2026-06-03T14:31:27.044495",
+          "published_at": "",
+          "raw_snippet": "2025年7月31日 · 125踏板是日常代步通勤的主力，也是摩托车销售第一的排量区间。在这个区间里，国产品牌、合资品牌常年征战不休，到底它们谁更强一些呢？ 今天我们对比 豪爵 、铃木、本田、雅马哈 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "I-125 seed model 6711 2301 1251 radial dose function g(r) comparison TG-43",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "233aeadd513b",
+          "claim": "全新125发动机搭载五羊-本田高效电喷技术i-FI，更有“动力版”和“标准版”双配置选择，适合不同需求。",
+          "source_url": "https://www.wuyang-honda.com/home/cpzs/ryj/wlj/detail-683.shtml",
+          "source_type": "Bing CN",
+          "source_title": "五羊-本田摩托（广州）有限公司",
+          "accessed_at": "2026-06-03T14:31:27.044519",
+          "published_at": "",
+          "raw_snippet": "全新125发动机搭载五羊-本田高效电喷技术i-FI，更有“动力版”和“标准版”双配置选择，适合不同需求。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "I-125 seed model 6711 2301 1251 radial dose function g(r) comparison TG-43",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[125排量摩托车_百度百科](https://baike.baidu.com/item/125%E6%8E%92%E9%87%8F%E6%91%A9%E6%89%98%E8%BD%A6/17517235)",
+      "[125摩托车能跑多快？摩托车为什么叫125_车主手册](https://www.icauto.com.cn/baike/70/708517.html)",
+      "[NS125LA 2025款](https://www.honda-sundiro.com/product_details/NS125LA_2025MY_94.html)",
+      "[豪爵、本田、铃木、雅马哈6款125踏板对比谁更强？](https://zhuanlan.zhihu.com/p/1934290303512220469)",
+      "[五羊-本田摩托（广州）有限公司](https://www.wuyang-honda.com/home/cpzs/ryj/wlj/detail-683.shtml)"
+    ]
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "query": "Potters 10-year biochemical control prostate brachytherapy",
+  "timestamp": 1780491846.5507228,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Permanent prostate brachytherapy: lessons learned, lessons to learn.",
+        "snippet": "PubMed ID: 10929587. 2000/07/01 00:00. PURPOSE: To investigate the biochemical control rate in patients undergoing \npermanent prostate brachytherapy as a function of the biologically effective \ndose (BED) and risk group.\nMETHODS AND MATERIALS: Six centers provided data on  permanent \nbrachytherapy patients with postimplant dosimetry results. The mean \nprostate-specific antigen level was 8.9 ng/mL. (125)I was used in  (58%), \n(103)Pd in , and supplemental external beam radiotherapy in 882 (22.5%)",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/10929587/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Customized dose prescription for permanent prostate brachytherapy: insights from a multicenter analysis of dosimetry outcomes.",
+        "snippet": "PubMed ID: 17689026. 2007/12/01 00:00. PURPOSE: To investigate the biochemical control rate in patients undergoing \npermanent prostate brachytherapy as a function of the biologically effective \ndose (BED) and risk group.\nMETHODS AND MATERIALS: Six centers provided data on  permanent \nbrachytherapy patients with postimplant dosimetry results. The mean \nprostate-specific antigen level was 8.9 ng/mL. (125)I was used in  (58%), \n(103)Pd in , and supplemental external beam radiotherapy in 882 (22.5%)",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/17689026/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 10929587. 2000/07/01 00:00. PURPOSE: To investigate the biochemical control rate in patients undergoing \npermanent prostate brachytherapy as a function of the biologically effective \ndose (\n2. PubMed ID: 17689026. 2007/12/01 00:00. PURPOSE: To investigate the biochemical control rate in patients undergoing \npermanent prostate brachytherapy as a function of the biologically effective \ndose (",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/10929587/",
+      "https://pubmed.ncbi.nlm.nih.gov/17689026/"
+    ],
+    "evidence_chain_id": "20260603_210405_108042",
+    "evidence_summary": {
+      "response_id": "20260603_210405_108042",
+      "query": "Potters 10-year biochemical control prostate brachytherapy",
+      "created_at": "2026-06-03T21:04:05.108072",
+      "num_sources": 2,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Permanent prostate brachytherapy: lessons learned, lessons to learn.](https://pubmed.ncbi.nlm.nih.gov/10929587/)",
+        "[Customized dose prescription for permanent prostate brachytherapy: insights from a multicenter analysis of dosimetry outcomes.](https://pubmed.ncbi.nlm.nih.gov/17689026/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "3866035671c5",
+          "claim": "PubMed ID: 10929587. 2000/07/01 00:00. PURPOSE: To investigate the biochemical control rate in patients undergoing \npermanent prostate brachytherapy as a function of the biologically effective \ndose (",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/10929587/",
+          "source_type": "PubMed",
+          "source_title": "Permanent prostate brachytherapy: lessons learned, lessons to learn.",
+          "accessed_at": "2026-06-03T21:04:06.550442",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 10929587. 2000/07/01 00:00. PURPOSE: To investigate the biochemical control rate in patients undergoing \npermanent prostate brachytherapy as a function of the biologically effective \ndose (BED) and risk group.\nMETHODS AND MATERIALS: Six centers provided data on  permanent \nbrachytherapy patients with postimplant dosimetry results. The mean \nprostate-specific antigen level was 8.9 ng/mL. (125)I was used in  (58%), \n(103)Pd in , and supplemental external beam radiotherapy in 882 (22.5%)",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Potters 10-year biochemical control prostate brachytherapy",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "62af5891750f",
+          "claim": "PubMed ID: 17689026. 2007/12/01 00:00. PURPOSE: To investigate the biochemical control rate in patients undergoing \npermanent prostate brachytherapy as a function of the biologically effective \ndose (",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/17689026/",
+          "source_type": "PubMed",
+          "source_title": "Customized dose prescription for permanent prostate brachytherapy: insights from a multicenter analysis of dosimetry outcomes.",
+          "accessed_at": "2026-06-03T21:04:06.550541",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 17689026. 2007/12/01 00:00. PURPOSE: To investigate the biochemical control rate in patients undergoing \npermanent prostate brachytherapy as a function of the biologically effective \ndose (BED) and risk group.\nMETHODS AND MATERIALS: Six centers provided data on  permanent \nbrachytherapy patients with postimplant dosimetry results. The mean \nprostate-specific antigen level was 8.9 ng/mL. (125)I was used in  (58%), \n(103)Pd in , and supplemental external beam radiotherapy in 882 (22.5%)",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Potters 10-year biochemical control prostate brachytherapy",
+          "search_type": "clinical",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Permanent prostate brachytherapy: lessons learned, lessons to learn.](https://pubmed.ncbi.nlm.nih.gov/10929587/)",
+      "[Customized dose prescription for permanent prostate brachytherapy: insights from a multicenter analysis of dosimetry outcomes.](https://pubmed.ncbi.nlm.nih.gov/17689026/)"
+    ]
+  }
+}

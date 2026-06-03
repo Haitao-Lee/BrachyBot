@@ -1,0 +1,238 @@
+{
+  "query": "pediatric sedation anesthesia brachytherapy guidelines AAPM ASA",
+  "timestamp": 1780470486.465063,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Pediatric sedation.",
+        "snippet": "PubMed ID: 25084719. 2014/08/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/25084719/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Pediatric Procedural Sedation.",
+        "snippet": "PubMed ID: 39240178. 2024/09/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39240178/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Guidelines for Monitoring and Management of Pediatric Patients Before, During, and After Sedation for Diagnostic and Therapeutic Procedures.",
+        "snippet": "PubMed ID: 31138666. 2019/06/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31138666/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Analgesia and sedation in critically ill pediatric patients: an update from the recent guidelines and point of view.",
+        "snippet": "PubMed ID: 36892607. 2023/05/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36892607/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Pediatric sedation--evolution and revolution.",
+        "snippet": "PubMed ID: 21585616. 2011/07/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/21585616/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Techniques for minimizing sedation in pediatric MRI.",
+        "snippet": "PubMed ID: 30869831. 2019/10/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30869831/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Endoscopic sedation in pediatric practice.",
+        "snippet": "PubMed ID: 18922412. 2008/10/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/18922412/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Sedation and Monitoring in the Pediatric Patient during Gastrointestinal Endoscopy.",
+        "snippet": "PubMed ID: 27372774. 2016/07/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/27372774/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 25084719. 2014/08/01 00:00\n2. PubMed ID: 39240178. 2024/09/01 00:00\n3. PubMed ID: 31138666. 2019/06/01 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/25084719/",
+      "https://pubmed.ncbi.nlm.nih.gov/39240178/",
+      "https://pubmed.ncbi.nlm.nih.gov/31138666/",
+      "https://pubmed.ncbi.nlm.nih.gov/36892607/",
+      "https://pubmed.ncbi.nlm.nih.gov/21585616/",
+      "https://pubmed.ncbi.nlm.nih.gov/30869831/",
+      "https://pubmed.ncbi.nlm.nih.gov/18922412/",
+      "https://pubmed.ncbi.nlm.nih.gov/27372774/"
+    ],
+    "evidence_chain_id": "20260603_150804_246356",
+    "evidence_summary": {
+      "response_id": "20260603_150804_246356",
+      "query": "pediatric sedation anesthesia brachytherapy guidelines AAPM ASA",
+      "created_at": "2026-06-03T15:08:04.246382",
+      "num_sources": 8,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Pediatric sedation.](https://pubmed.ncbi.nlm.nih.gov/25084719/)",
+        "[Pediatric Procedural Sedation.](https://pubmed.ncbi.nlm.nih.gov/39240178/)",
+        "[Guidelines for Monitoring and Management of Pediatric Patients Before, During, and After Sedation for Diagnostic and Therapeutic Procedures.](https://pubmed.ncbi.nlm.nih.gov/31138666/)",
+        "[Analgesia and sedation in critically ill pediatric patients: an update from the recent guidelines and point of view.](https://pubmed.ncbi.nlm.nih.gov/36892607/)",
+        "[Pediatric sedation--evolution and revolution.](https://pubmed.ncbi.nlm.nih.gov/21585616/)",
+        "[Techniques for minimizing sedation in pediatric MRI.](https://pubmed.ncbi.nlm.nih.gov/30869831/)",
+        "[Endoscopic sedation in pediatric practice.](https://pubmed.ncbi.nlm.nih.gov/18922412/)",
+        "[Sedation and Monitoring in the Pediatric Patient during Gastrointestinal Endoscopy.](https://pubmed.ncbi.nlm.nih.gov/27372774/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "5d1d304fab6e",
+          "claim": "PubMed ID: 25084719. 2014/08/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/25084719/",
+          "source_type": "PubMed",
+          "source_title": "Pediatric sedation.",
+          "accessed_at": "2026-06-03T15:08:06.464633",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 25084719. 2014/08/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric sedation anesthesia brachytherapy guidelines AAPM ASA",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2a93efed067b",
+          "claim": "PubMed ID: 39240178. 2024/09/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39240178/",
+          "source_type": "PubMed",
+          "source_title": "Pediatric Procedural Sedation.",
+          "accessed_at": "2026-06-03T15:08:06.464727",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39240178. 2024/09/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric sedation anesthesia brachytherapy guidelines AAPM ASA",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "4145ae77cdb2",
+          "claim": "PubMed ID: 31138666. 2019/06/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31138666/",
+          "source_type": "PubMed",
+          "source_title": "Guidelines for Monitoring and Management of Pediatric Patients Before, During, and After Sedation for Diagnostic and Therapeutic Procedures.",
+          "accessed_at": "2026-06-03T15:08:06.464757",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31138666. 2019/06/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric sedation anesthesia brachytherapy guidelines AAPM ASA",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "5a4295e4ed98",
+          "claim": "PubMed ID: 36892607. 2023/05/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36892607/",
+          "source_type": "PubMed",
+          "source_title": "Analgesia and sedation in critically ill pediatric patients: an update from the recent guidelines and point of view.",
+          "accessed_at": "2026-06-03T15:08:06.464780",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36892607. 2023/05/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric sedation anesthesia brachytherapy guidelines AAPM ASA",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "9508a41b2bec",
+          "claim": "PubMed ID: 21585616. 2011/07/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/21585616/",
+          "source_type": "PubMed",
+          "source_title": "Pediatric sedation--evolution and revolution.",
+          "accessed_at": "2026-06-03T15:08:06.464801",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 21585616. 2011/07/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric sedation anesthesia brachytherapy guidelines AAPM ASA",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f915fd72f67f",
+          "claim": "PubMed ID: 30869831. 2019/10/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/30869831/",
+          "source_type": "PubMed",
+          "source_title": "Techniques for minimizing sedation in pediatric MRI.",
+          "accessed_at": "2026-06-03T15:08:06.464822",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 30869831. 2019/10/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric sedation anesthesia brachytherapy guidelines AAPM ASA",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8c810fe49f1d",
+          "claim": "PubMed ID: 18922412. 2008/10/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/18922412/",
+          "source_type": "PubMed",
+          "source_title": "Endoscopic sedation in pediatric practice.",
+          "accessed_at": "2026-06-03T15:08:06.464841",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 18922412. 2008/10/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric sedation anesthesia brachytherapy guidelines AAPM ASA",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "09761684a9b5",
+          "claim": "PubMed ID: 27372774. 2016/07/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/27372774/",
+          "source_type": "PubMed",
+          "source_title": "Sedation and Monitoring in the Pediatric Patient during Gastrointestinal Endoscopy.",
+          "accessed_at": "2026-06-03T15:08:06.464860",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 27372774. 2016/07/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric sedation anesthesia brachytherapy guidelines AAPM ASA",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Pediatric sedation.](https://pubmed.ncbi.nlm.nih.gov/25084719/)",
+      "[Pediatric Procedural Sedation.](https://pubmed.ncbi.nlm.nih.gov/39240178/)",
+      "[Guidelines for Monitoring and Management of Pediatric Patients Before, During, and After Sedation for Diagnostic and Therapeutic Procedures.](https://pubmed.ncbi.nlm.nih.gov/31138666/)",
+      "[Analgesia and sedation in critically ill pediatric patients: an update from the recent guidelines and point of view.](https://pubmed.ncbi.nlm.nih.gov/36892607/)",
+      "[Pediatric sedation--evolution and revolution.](https://pubmed.ncbi.nlm.nih.gov/21585616/)",
+      "[Techniques for minimizing sedation in pediatric MRI.](https://pubmed.ncbi.nlm.nih.gov/30869831/)",
+      "[Endoscopic sedation in pediatric practice.](https://pubmed.ncbi.nlm.nih.gov/18922412/)",
+      "[Sedation and Monitoring in the Pediatric Patient during Gastrointestinal Endoscopy.](https://pubmed.ncbi.nlm.nih.gov/27372774/)"
+    ]
+  }
+}

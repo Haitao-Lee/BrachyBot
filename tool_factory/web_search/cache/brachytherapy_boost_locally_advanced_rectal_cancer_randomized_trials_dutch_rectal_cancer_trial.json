@@ -1,0 +1,82 @@
+{
+  "query": "brachytherapy boost locally advanced rectal cancer randomized trials Dutch Rectal Cancer Trial",
+  "timestamp": 1780464857.129388,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "High dose rate brachytherapy as a boost after preoperative chemoradiotherapy for more advanced rectal tumours: the Clatterbridge experience.",
+        "snippet": "PubMed ID: 17884396. 2007/11/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/17884396/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Optimisation of Organ Preservation treatment strategies in patients with rectal cancer with a good clinical response after neoadjuvant (chemo)radiotherapy: Additional contact X-ray brachytherapy versus eXtending the observation period and local excision (OPAXX) - protocol for two multicentre, parallel, single-arm, phase II studies.",
+        "snippet": "PubMed ID: 38159950. 2023/12/30 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38159950/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 17884396. 2007/11/01 00:00\n2. PubMed ID: 38159950. 2023/12/30 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/17884396/",
+      "https://pubmed.ncbi.nlm.nih.gov/38159950/"
+    ],
+    "evidence_chain_id": "20260603_133415_561135",
+    "evidence_summary": {
+      "response_id": "20260603_133415_561135",
+      "query": "brachytherapy boost locally advanced rectal cancer randomized trials Dutch Rectal Cancer Trial",
+      "created_at": "2026-06-03T13:34:15.561156",
+      "num_sources": 2,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[High dose rate brachytherapy as a boost after preoperative chemoradiotherapy for more advanced rectal tumours: the Clatterbridge experience.](https://pubmed.ncbi.nlm.nih.gov/17884396/)",
+        "[Optimisation of Organ Preservation treatment strategies in patients with rectal cancer with a good clinical response after neoadjuvant (chemo)radiotherapy: Additional contact X-ray brachytherapy versus eXtending the observation period and local excision (OPAXX) - protocol for two multicentre, parallel, single-arm, phase II studies.](https://pubmed.ncbi.nlm.nih.gov/38159950/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "37f681730088",
+          "claim": "PubMed ID: 17884396. 2007/11/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/17884396/",
+          "source_type": "PubMed",
+          "source_title": "High dose rate brachytherapy as a boost after preoperative chemoradiotherapy for more advanced rectal tumours: the Clatterbridge experience.",
+          "accessed_at": "2026-06-03T13:34:17.129107",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 17884396. 2007/11/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy boost locally advanced rectal cancer randomized trials Dutch Rectal Cancer Trial",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "66397d579e06",
+          "claim": "PubMed ID: 38159950. 2023/12/30 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38159950/",
+          "source_type": "PubMed",
+          "source_title": "Optimisation of Organ Preservation treatment strategies in patients with rectal cancer with a good clinical response after neoadjuvant (chemo)radiotherapy: Additional contact X-ray brachytherapy versus eXtending the observation period and local excision (OPAXX) - protocol for two multicentre, parallel, single-arm, phase II studies.",
+          "accessed_at": "2026-06-03T13:34:17.129201",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38159950. 2023/12/30 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy boost locally advanced rectal cancer randomized trials Dutch Rectal Cancer Trial",
+          "search_type": "clinical",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[High dose rate brachytherapy as a boost after preoperative chemoradiotherapy for more advanced rectal tumours: the Clatterbridge experience.](https://pubmed.ncbi.nlm.nih.gov/17884396/)",
+      "[Optimisation of Organ Preservation treatment strategies in patients with rectal cancer with a good clinical response after neoadjuvant (chemo)radiotherapy: Additional contact X-ray brachytherapy versus eXtending the observation period and local excision (OPAXX) - protocol for two multicentre, parallel, single-arm, phase II studies.](https://pubmed.ncbi.nlm.nih.gov/38159950/)"
+    ]
+  }
+}

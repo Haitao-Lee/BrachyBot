@@ -1,0 +1,23 @@
+{
+  "query": "HDR brachytherapy cobalt-60 vs iridium-192 dose calculation TG-43",
+  "timestamp": 1780413805.516173,
+  "result": {
+    "success": true,
+    "results": [],
+    "answer": "I searched for 'HDR brachytherapy cobalt-60 vs iridium-192 dose calculation TG-43' but couldn't find specific information. This may be a question that requires specialized knowledge or access to specific databases I don't have.",
+    "sources": [],
+    "evidence_chain_id": "20260602_232324_936377",
+    "evidence_summary": {
+      "response_id": "20260602_232324_936377",
+      "query": "HDR brachytherapy cobalt-60 vs iridium-192 dose calculation TG-43",
+      "created_at": "2026-06-02T23:23:24.936402",
+      "num_sources": 0,
+      "source_types": [],
+      "avg_confidence": 0.0,
+      "verification_status": "unverified",
+      "citations": [],
+      "evidence": []
+    },
+    "citations": []
+  }
+}

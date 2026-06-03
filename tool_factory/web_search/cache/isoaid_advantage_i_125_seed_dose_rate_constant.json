@@ -1,0 +1,160 @@
+{
+  "query": "IsoAid Advantage I-125 seed dose rate constant",
+  "timestamp": 1780415450.2475924,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "萬利",
+        "snippet": "2026年4月29日 · 萬利是一個多功能平台，提供多種服務和產品以滿足用戶需求。",
+        "url": "https://www.213268.com/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "萬利 - www.213168.com - 官方认证游戏平台",
+        "snippet": "2025年11月16日 · 欢迎来到萬利官方网站www.213168.com！我们提供最安全、最稳定、最丰富的在线娱乐游戏。立即注册，体验极致游戏乐趣，享受高品质、多元化的游戏体验。",
+        "url": "https://21316-8.com/index.html",
+        "source": "Bing CN"
+      },
+      {
+        "title": "会员注册",
+        "snippet": "2025年9月25日 · 万利官网 (www.213168.com)为您提供会员开户、游戏登陆、手机版app下载、现金代理商加盟、占股份比例代理商合作;万利平台,玩家首选! 本网站归萬利官网 www.213168.com 所有 未经 …",
+        "url": "http://213168.com.cn/zckh.html",
+        "source": "Bing CN"
+      },
+      {
+        "title": "萬利直营官网_www.213168.com_www.213268.com",
+        "snippet": "2026年4月3日 · 萬利官网是一家集娱乐、互动与优质服务于一体的网上真人娱乐平台，致力于为用户带来更安全、更便捷、更丰富的线上游戏娱乐体验。平台涵盖多种经典与热门游戏，采用国际领先的技术 …",
+        "url": "https://219168.com/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "萬利官网入口_www.213168.com_www.213268.com",
+        "snippet": "2025年12月4日 · 萬利官网入口，www.213168.com，www.213268.com，通过IARC国际认证，获得ESRB、PEGI、USK、ClassInd、GRAC、和澳大利亚分级机构等六大分级认证，其合作商店包 …",
+        "url": "https://www.meiyanger.com/",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 2026年4月29日 · 萬利是一個多功能平台，提供多種服務和產品以滿足用戶需求。\n- 2025年11月16日 · 欢迎来到萬利官方网站www.213168.com！我们提供最安全、最稳定、最丰富的在线娱乐游戏。立即注册，体验极致游戏乐趣，享受高品质、多元化的游戏体验。",
+    "sources": [
+      "https://www.213268.com/",
+      "https://21316-8.com/index.html",
+      "http://213168.com.cn/zckh.html",
+      "https://219168.com/",
+      "https://www.meiyanger.com/"
+    ],
+    "evidence_chain_id": "20260602_235049_997324",
+    "evidence_summary": {
+      "response_id": "20260602_235049_997324",
+      "query": "IsoAid Advantage I-125 seed dose rate constant",
+      "created_at": "2026-06-02T23:50:49.997354",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[萬利](https://www.213268.com/)",
+        "[萬利 - www.213168.com - 官方认证游戏平台](https://21316-8.com/index.html)",
+        "[会员注册](http://213168.com.cn/zckh.html)",
+        "[萬利直营官网_www.213168.com_www.213268.com](https://219168.com/)",
+        "[萬利官网入口_www.213168.com_www.213268.com](https://www.meiyanger.com/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "46043728a580",
+          "claim": "2026年4月29日 · 萬利是一個多功能平台，提供多種服務和產品以滿足用戶需求。",
+          "source_url": "https://www.213268.com/",
+          "source_type": "Bing CN",
+          "source_title": "萬利",
+          "accessed_at": "2026-06-02T23:50:50.247146",
+          "published_at": "",
+          "raw_snippet": "2026年4月29日 · 萬利是一個多功能平台，提供多種服務和產品以滿足用戶需求。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IsoAid Advantage I-125 seed dose rate constant",
+          "search_type": "equipment",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "4846b7a51147",
+          "claim": "2025年11月16日 · 欢迎来到萬利官方网站www.213168.com！我们提供最安全、最稳定、最丰富的在线娱乐游戏。立即注册，体验极致游戏乐趣，享受高品质、多元化的游戏体验。",
+          "source_url": "https://21316-8.com/index.html",
+          "source_type": "Bing CN",
+          "source_title": "萬利 - www.213168.com - 官方认证游戏平台",
+          "accessed_at": "2026-06-02T23:50:50.247212",
+          "published_at": "",
+          "raw_snippet": "2025年11月16日 · 欢迎来到萬利官方网站www.213168.com！我们提供最安全、最稳定、最丰富的在线娱乐游戏。立即注册，体验极致游戏乐趣，享受高品质、多元化的游戏体验。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IsoAid Advantage I-125 seed dose rate constant",
+          "search_type": "equipment",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "a1f8f51ed48b",
+          "claim": "2025年9月25日 · 万利官网 (www.213168.com)为您提供会员开户、游戏登陆、手机版app下载、现金代理商加盟、占股份比例代理商合作;万利平台,玩家首选! 本网站归萬利官网 www.213168.com 所有 未经 …",
+          "source_url": "http://213168.com.cn/zckh.html",
+          "source_type": "Bing CN",
+          "source_title": "会员注册",
+          "accessed_at": "2026-06-02T23:50:50.247259",
+          "published_at": "",
+          "raw_snippet": "2025年9月25日 · 万利官网 (www.213168.com)为您提供会员开户、游戏登陆、手机版app下载、现金代理商加盟、占股份比例代理商合作;万利平台,玩家首选! 本网站归萬利官网 www.213168.com 所有 未经 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IsoAid Advantage I-125 seed dose rate constant",
+          "search_type": "equipment",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "6f58c63225e6",
+          "claim": "2026年4月3日 · 萬利官网是一家集娱乐、互动与优质服务于一体的网上真人娱乐平台，致力于为用户带来更安全、更便捷、更丰富的线上游戏娱乐体验。平台涵盖多种经典与热门游戏，采用国际领先的技术 …",
+          "source_url": "https://219168.com/",
+          "source_type": "Bing CN",
+          "source_title": "萬利直营官网_www.213168.com_www.213268.com",
+          "accessed_at": "2026-06-02T23:50:50.247309",
+          "published_at": "",
+          "raw_snippet": "2026年4月3日 · 萬利官网是一家集娱乐、互动与优质服务于一体的网上真人娱乐平台，致力于为用户带来更安全、更便捷、更丰富的线上游戏娱乐体验。平台涵盖多种经典与热门游戏，采用国际领先的技术 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IsoAid Advantage I-125 seed dose rate constant",
+          "search_type": "equipment",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "4554b42fdb99",
+          "claim": "2025年12月4日 · 萬利官网入口，www.213168.com，www.213268.com，通过IARC国际认证，获得ESRB、PEGI、USK、ClassInd、GRAC、和澳大利亚分级机构等六大分级认证，其合作商店包 …",
+          "source_url": "https://www.meiyanger.com/",
+          "source_type": "Bing CN",
+          "source_title": "萬利官网入口_www.213168.com_www.213268.com",
+          "accessed_at": "2026-06-02T23:50:50.247348",
+          "published_at": "",
+          "raw_snippet": "2025年12月4日 · 萬利官网入口，www.213168.com，www.213268.com，通过IARC国际认证，获得ESRB、PEGI、USK、ClassInd、GRAC、和澳大利亚分级机构等六大分级认证，其合作商店包 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IsoAid Advantage I-125 seed dose rate constant",
+          "search_type": "equipment",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[萬利](https://www.213268.com/)",
+      "[萬利 - www.213168.com - 官方认证游戏平台](https://21316-8.com/index.html)",
+      "[会员注册](http://213168.com.cn/zckh.html)",
+      "[萬利直营官网_www.213168.com_www.213268.com](https://219168.com/)",
+      "[萬利官网入口_www.213168.com_www.213268.com](https://www.meiyanger.com/)"
+    ]
+  }
+}

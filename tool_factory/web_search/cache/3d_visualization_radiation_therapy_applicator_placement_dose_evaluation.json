@@ -1,0 +1,160 @@
+{
+  "query": "3D visualization radiation therapy applicator placement dose evaluation",
+  "timestamp": 1780413985.9619472,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "3D Visualization, Skeletonization and Branching Analysis of Blood Vessels in Angiogenesis.",
+        "snippet": "PubMed ID: 37175421. 2023/04/23 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: Two hundred and two subjects underwent an improvised 3-Dimensional \nProton Density Fat Saturation (3D-PD FS) Magnetic Resonance (MR) sequence on \ntheir meniscus. The transverse images were reconstructed and examined. \nFifty-three of the subjects had a healthy meniscus and their images were used as \np",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37175421/",
+        "source": "PubMed"
+      },
+      {
+        "title": "OntoTrek: 3D visualization of application ontology class hierarchies.",
+        "snippet": "PubMed ID: 37267413. 2023/06/02 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: Two hundred and two subjects underwent an improvised 3-Dimensional \nProton Density Fat Saturation (3D-PD FS) Magnetic Resonance (MR) sequence on \ntheir meniscus. The transverse images were reconstructed and examined. \nFifty-three of the subjects had a healthy meniscus and their images were used as \np",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37267413/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Visualization of meniscus with 3D axial reconstructions.",
+        "snippet": "PubMed ID: 34489193. 2021/12/01 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: Two hundred and two subjects underwent an improvised 3-Dimensional \nProton Density Fat Saturation (3D-PD FS) Magnetic Resonance (MR) sequence on \ntheir meniscus. The transverse images were reconstructed and examined. \nFifty-three of the subjects had a healthy meniscus and their images were used as \np",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34489193/",
+        "source": "PubMed"
+      },
+      {
+        "title": "3D Echocardiogram Visualization: A New Method Based on \"Focus + Context\".",
+        "snippet": "PubMed ID: 38720815. 2024/02/01 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: Two hundred and two subjects underwent an improvised 3-Dimensional \nProton Density Fat Saturation (3D-PD FS) Magnetic Resonance (MR) sequence on \ntheir meniscus. The transverse images were reconstructed and examined. \nFifty-three of the subjects had a healthy meniscus and their images were used as \np",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38720815/",
+        "source": "PubMed"
+      },
+      {
+        "title": "3D Virtual Pancreatography.",
+        "snippet": "PubMed ID: 32870794. 2022/03/01 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: Two hundred and two subjects underwent an improvised 3-Dimensional \nProton Density Fat Saturation (3D-PD FS) Magnetic Resonance (MR) sequence on \ntheir meniscus. The transverse images were reconstructed and examined. \nFifty-three of the subjects had a healthy meniscus and their images were used as \np",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32870794/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 37175421. 2023/04/23 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: T\n2. PubMed ID: 37267413. 2023/06/02 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: T\n3. PubMed ID: 34489193. 2021/12/01 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: T",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/37175421/",
+      "https://pubmed.ncbi.nlm.nih.gov/37267413/",
+      "https://pubmed.ncbi.nlm.nih.gov/34489193/",
+      "https://pubmed.ncbi.nlm.nih.gov/38720815/",
+      "https://pubmed.ncbi.nlm.nih.gov/32870794/"
+    ],
+    "evidence_chain_id": "20260602_232624_028938",
+    "evidence_summary": {
+      "response_id": "20260602_232624_028938",
+      "query": "3D visualization radiation therapy applicator placement dose evaluation",
+      "created_at": "2026-06-02T23:26:24.028959",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[3D Visualization, Skeletonization and Branching Analysis of Blood Vessels in Angiogenesis.](https://pubmed.ncbi.nlm.nih.gov/37175421/)",
+        "[OntoTrek: 3D visualization of application ontology class hierarchies.](https://pubmed.ncbi.nlm.nih.gov/37267413/)",
+        "[Visualization of meniscus with 3D axial reconstructions.](https://pubmed.ncbi.nlm.nih.gov/34489193/)",
+        "[3D Echocardiogram Visualization: A New Method Based on \"Focus + Context\".](https://pubmed.ncbi.nlm.nih.gov/38720815/)",
+        "[3D Virtual Pancreatography.](https://pubmed.ncbi.nlm.nih.gov/32870794/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "d32dd8fce638",
+          "claim": "PubMed ID: 37175421. 2023/04/23 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: T",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37175421/",
+          "source_type": "PubMed",
+          "source_title": "3D Visualization, Skeletonization and Branching Analysis of Blood Vessels in Angiogenesis.",
+          "accessed_at": "2026-06-02T23:26:25.961563",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37175421. 2023/04/23 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: Two hundred and two subjects underwent an improvised 3-Dimensional \nProton Density Fat Saturation (3D-PD FS) Magnetic Resonance (MR) sequence on \ntheir meniscus. The transverse images were reconstructed and examined. \nFifty-three of the subjects had a healthy meniscus and their images were used as \np",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "3D visualization radiation therapy applicator placement dose evaluation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ce901eda3543",
+          "claim": "PubMed ID: 37267413. 2023/06/02 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: T",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37267413/",
+          "source_type": "PubMed",
+          "source_title": "OntoTrek: 3D visualization of application ontology class hierarchies.",
+          "accessed_at": "2026-06-02T23:26:25.961665",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37267413. 2023/06/02 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: Two hundred and two subjects underwent an improvised 3-Dimensional \nProton Density Fat Saturation (3D-PD FS) Magnetic Resonance (MR) sequence on \ntheir meniscus. The transverse images were reconstructed and examined. \nFifty-three of the subjects had a healthy meniscus and their images were used as \np",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "3D visualization radiation therapy applicator placement dose evaluation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "319c8201c98e",
+          "claim": "PubMed ID: 34489193. 2021/12/01 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: T",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34489193/",
+          "source_type": "PubMed",
+          "source_title": "Visualization of meniscus with 3D axial reconstructions.",
+          "accessed_at": "2026-06-02T23:26:25.961699",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34489193. 2021/12/01 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: Two hundred and two subjects underwent an improvised 3-Dimensional \nProton Density Fat Saturation (3D-PD FS) Magnetic Resonance (MR) sequence on \ntheir meniscus. The transverse images were reconstructed and examined. \nFifty-three of the subjects had a healthy meniscus and their images were used as \np",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "3D visualization radiation therapy applicator placement dose evaluation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ea5cecacd04b",
+          "claim": "PubMed ID: 38720815. 2024/02/01 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: T",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38720815/",
+          "source_type": "PubMed",
+          "source_title": "3D Echocardiogram Visualization: A New Method Based on \"Focus + Context\".",
+          "accessed_at": "2026-06-02T23:26:25.961723",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38720815. 2024/02/01 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: Two hundred and two subjects underwent an improvised 3-Dimensional \nProton Density Fat Saturation (3D-PD FS) Magnetic Resonance (MR) sequence on \ntheir meniscus. The transverse images were reconstructed and examined. \nFifty-three of the subjects had a healthy meniscus and their images were used as \np",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "3D visualization radiation therapy applicator placement dose evaluation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c5fa4ba0d027",
+          "claim": "PubMed ID: 32870794. 2022/03/01 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: T",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32870794/",
+          "source_type": "PubMed",
+          "source_title": "3D Virtual Pancreatography.",
+          "accessed_at": "2026-06-02T23:26:25.961746",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32870794. 2022/03/01 00:00. PURPOSE: To visualize the meniscus of the knee joint in the axial plane and \nidentify injuries that cannot be visualized using conventional sequences.\nMETHODS: Two hundred and two subjects underwent an improvised 3-Dimensional \nProton Density Fat Saturation (3D-PD FS) Magnetic Resonance (MR) sequence on \ntheir meniscus. The transverse images were reconstructed and examined. \nFifty-three of the subjects had a healthy meniscus and their images were used as \np",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "3D visualization radiation therapy applicator placement dose evaluation",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[3D Visualization, Skeletonization and Branching Analysis of Blood Vessels in Angiogenesis.](https://pubmed.ncbi.nlm.nih.gov/37175421/)",
+      "[OntoTrek: 3D visualization of application ontology class hierarchies.](https://pubmed.ncbi.nlm.nih.gov/37267413/)",
+      "[Visualization of meniscus with 3D axial reconstructions.](https://pubmed.ncbi.nlm.nih.gov/34489193/)",
+      "[3D Echocardiogram Visualization: A New Method Based on \"Focus + Context\".](https://pubmed.ncbi.nlm.nih.gov/38720815/)",
+      "[3D Virtual Pancreatography.](https://pubmed.ncbi.nlm.nih.gov/32870794/)"
+    ]
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "query": "brachytherapy key performance indicators dose metrics outcome",
+  "timestamp": 1780421169.145344,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Putting the Brakes on Xerostomia in Oropharyngeal Cancer: Can Brachytherapy Be the Key?",
+        "snippet": "PubMed ID: 38631740. 2024/05/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \ntherapy in the treatment of endometrial cancer. Updated evidence-based \nrecommendations provide indications for adjuvant RT and the associated \ntechniques, the utilization and sequencing of adjuvant systemic therapies, and \nthe effect of surgical staging techniques and molecular tumor profiling.\nMETHODS",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38631740/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Radiation Therapy for Endometrial Cancer: An American Society for Radiation Oncology Clinical Practice Guideline.",
+        "snippet": "PubMed ID: 36280107. 2023/01/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \ntherapy in the treatment of endometrial cancer. Updated evidence-based \nrecommendations provide indications for adjuvant RT and the associated \ntechniques, the utilization and sequencing of adjuvant systemic therapies, and \nthe effect of surgical staging techniques and molecular tumor profiling.\nMETHODS",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36280107/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Anaesthesia for brachytherapy.",
+        "snippet": "PubMed ID: 18660663. 2008/08/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \ntherapy in the treatment of endometrial cancer. Updated evidence-based \nrecommendations provide indications for adjuvant RT and the associated \ntechniques, the utilization and sequencing of adjuvant systemic therapies, and \nthe effect of surgical staging techniques and molecular tumor profiling.\nMETHODS",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/18660663/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Partial Breast Irradiation for Patients With Early-Stage Invasive Breast Cancer or Ductal Carcinoma In Situ: An ASTRO Clinical Practice Guideline.",
+        "snippet": "PubMed ID: 37977261. 2024/03/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \ntherapy in the treatment of endometrial cancer. Updated evidence-based \nrecommendations provide indications for adjuvant RT and the associated \ntechniques, the utilization and sequencing of adjuvant systemic therapies, and \nthe effect of surgical staging techniques and molecular tumor profiling.\nMETHODS",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37977261/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Brachytherapy evolution as seen today.",
+        "snippet": "PubMed ID: 36773303. 2023/06/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \ntherapy in the treatment of endometrial cancer. Updated evidence-based \nrecommendations provide indications for adjuvant RT and the associated \ntechniques, the utilization and sequencing of adjuvant systemic therapies, and \nthe effect of surgical staging techniques and molecular tumor profiling.\nMETHODS",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36773303/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 38631740. 2024/05/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \nther\n2. PubMed ID: 36280107. 2023/01/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \nther\n3. PubMed ID: 18660663. 2008/08/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \nther",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/38631740/",
+      "https://pubmed.ncbi.nlm.nih.gov/36280107/",
+      "https://pubmed.ncbi.nlm.nih.gov/18660663/",
+      "https://pubmed.ncbi.nlm.nih.gov/37977261/",
+      "https://pubmed.ncbi.nlm.nih.gov/36773303/"
+    ],
+    "evidence_chain_id": "20260603_012607_512544",
+    "evidence_summary": {
+      "response_id": "20260603_012607_512544",
+      "query": "brachytherapy key performance indicators dose metrics outcome",
+      "created_at": "2026-06-03T01:26:07.512564",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Putting the Brakes on Xerostomia in Oropharyngeal Cancer: Can Brachytherapy Be the Key?](https://pubmed.ncbi.nlm.nih.gov/38631740/)",
+        "[Radiation Therapy for Endometrial Cancer: An American Society for Radiation Oncology Clinical Practice Guideline.](https://pubmed.ncbi.nlm.nih.gov/36280107/)",
+        "[Anaesthesia for brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/18660663/)",
+        "[Partial Breast Irradiation for Patients With Early-Stage Invasive Breast Cancer or Ductal Carcinoma In Situ: An ASTRO Clinical Practice Guideline.](https://pubmed.ncbi.nlm.nih.gov/37977261/)",
+        "[Brachytherapy evolution as seen today.](https://pubmed.ncbi.nlm.nih.gov/36773303/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "a3da858ed64b",
+          "claim": "PubMed ID: 38631740. 2024/05/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \nther",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38631740/",
+          "source_type": "PubMed",
+          "source_title": "Putting the Brakes on Xerostomia in Oropharyngeal Cancer: Can Brachytherapy Be the Key?",
+          "accessed_at": "2026-06-03T01:26:09.144913",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38631740. 2024/05/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \ntherapy in the treatment of endometrial cancer. Updated evidence-based \nrecommendations provide indications for adjuvant RT and the associated \ntechniques, the utilization and sequencing of adjuvant systemic therapies, and \nthe effect of surgical staging techniques and molecular tumor profiling.\nMETHODS",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy key performance indicators dose metrics outcome",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ba7ea1c1179c",
+          "claim": "PubMed ID: 36280107. 2023/01/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \nther",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36280107/",
+          "source_type": "PubMed",
+          "source_title": "Radiation Therapy for Endometrial Cancer: An American Society for Radiation Oncology Clinical Practice Guideline.",
+          "accessed_at": "2026-06-03T01:26:09.145021",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36280107. 2023/01/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \ntherapy in the treatment of endometrial cancer. Updated evidence-based \nrecommendations provide indications for adjuvant RT and the associated \ntechniques, the utilization and sequencing of adjuvant systemic therapies, and \nthe effect of surgical staging techniques and molecular tumor profiling.\nMETHODS",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy key performance indicators dose metrics outcome",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "44c4ea3984e2",
+          "claim": "PubMed ID: 18660663. 2008/08/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \nther",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/18660663/",
+          "source_type": "PubMed",
+          "source_title": "Anaesthesia for brachytherapy.",
+          "accessed_at": "2026-06-03T01:26:09.145053",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 18660663. 2008/08/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \ntherapy in the treatment of endometrial cancer. Updated evidence-based \nrecommendations provide indications for adjuvant RT and the associated \ntechniques, the utilization and sequencing of adjuvant systemic therapies, and \nthe effect of surgical staging techniques and molecular tumor profiling.\nMETHODS",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy key performance indicators dose metrics outcome",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "93b25bf487eb",
+          "claim": "PubMed ID: 37977261. 2024/03/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \nther",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37977261/",
+          "source_type": "PubMed",
+          "source_title": "Partial Breast Irradiation for Patients With Early-Stage Invasive Breast Cancer or Ductal Carcinoma In Situ: An ASTRO Clinical Practice Guideline.",
+          "accessed_at": "2026-06-03T01:26:09.145079",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37977261. 2024/03/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \ntherapy in the treatment of endometrial cancer. Updated evidence-based \nrecommendations provide indications for adjuvant RT and the associated \ntechniques, the utilization and sequencing of adjuvant systemic therapies, and \nthe effect of surgical staging techniques and molecular tumor profiling.\nMETHODS",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy key performance indicators dose metrics outcome",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8b7095e952e3",
+          "claim": "PubMed ID: 36773303. 2023/06/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \nther",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36773303/",
+          "source_type": "PubMed",
+          "source_title": "Brachytherapy evolution as seen today.",
+          "accessed_at": "2026-06-03T01:26:09.145103",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36773303. 2023/06/01 00:00. PURPOSE: With the results of several recently published clinical trials, this \nguideline informs on the use of adjuvant radiation therapy (RT) and systemic \ntherapy in the treatment of endometrial cancer. Updated evidence-based \nrecommendations provide indications for adjuvant RT and the associated \ntechniques, the utilization and sequencing of adjuvant systemic therapies, and \nthe effect of surgical staging techniques and molecular tumor profiling.\nMETHODS",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy key performance indicators dose metrics outcome",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Putting the Brakes on Xerostomia in Oropharyngeal Cancer: Can Brachytherapy Be the Key?](https://pubmed.ncbi.nlm.nih.gov/38631740/)",
+      "[Radiation Therapy for Endometrial Cancer: An American Society for Radiation Oncology Clinical Practice Guideline.](https://pubmed.ncbi.nlm.nih.gov/36280107/)",
+      "[Anaesthesia for brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/18660663/)",
+      "[Partial Breast Irradiation for Patients With Early-Stage Invasive Breast Cancer or Ductal Carcinoma In Situ: An ASTRO Clinical Practice Guideline.](https://pubmed.ncbi.nlm.nih.gov/37977261/)",
+      "[Brachytherapy evolution as seen today.](https://pubmed.ncbi.nlm.nih.gov/36773303/)"
+    ]
+  }
+}

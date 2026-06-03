@@ -1,0 +1,160 @@
+{
+  "query": "MRI-linac online adaptive brachytherapy technical limitations evidence 2024",
+  "timestamp": 1780410294.5644066,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "MRI/linac integration.",
+        "snippet": "PubMed ID: 18023488. 2008/01/01 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac online treatment planning.\nMETHODS: The novel magnetic field dose calculation algorithm was established by \na PB dose engine and a magnetic field with tissue inhomogeneity influence \ncorrection network. The correction network was constructed with a Res-UNet \nframework, including residual modules an",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/18023488/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Cross-engine transformation-based fast dose calculation for MRI-Linac online treatment planning.",
+        "snippet": "PubMed ID: 36346038. 2023/04/01 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac online treatment planning.\nMETHODS: The novel magnetic field dose calculation algorithm was established by \na PB dose engine and a magnetic field with tissue inhomogeneity influence \ncorrection network. The correction network was constructed with a Res-UNet \nframework, including residual modules an",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36346038/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Editorial: Radiation therapy using MRI-Linac - the right way to start: a guide for physicians and physicists.",
+        "snippet": "PubMed ID: 37621678. 2023/08/09 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac online treatment planning.\nMETHODS: The novel magnetic field dose calculation algorithm was established by \na PB dose engine and a magnetic field with tissue inhomogeneity influence \ncorrection network. The correction network was constructed with a Res-UNet \nframework, including residual modules an",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37621678/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Assessment of MRI-Linac Economics under the RO-APM.",
+        "snippet": "PubMed ID: 34682829. 2021/10/14 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac online treatment planning.\nMETHODS: The novel magnetic field dose calculation algorithm was established by \na PB dose engine and a magnetic field with tissue inhomogeneity influence \ncorrection network. The correction network was constructed with a Res-UNet \nframework, including residual modules an",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34682829/",
+        "source": "PubMed"
+      },
+      {
+        "title": "The development of the MRI linac system for online MRI-guided radiotherapy: a clinical update.",
+        "snippet": "PubMed ID: 27197553. 2016/08/01 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac online treatment planning.\nMETHODS: The novel magnetic field dose calculation algorithm was established by \na PB dose engine and a magnetic field with tissue inhomogeneity influence \ncorrection network. The correction network was constructed with a Res-UNet \nframework, including residual modules an",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/27197553/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 18023488. 2008/01/01 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac\n2. PubMed ID: 36346038. 2023/04/01 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac\n3. PubMed ID: 37621678. 2023/08/09 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/18023488/",
+      "https://pubmed.ncbi.nlm.nih.gov/36346038/",
+      "https://pubmed.ncbi.nlm.nih.gov/37621678/",
+      "https://pubmed.ncbi.nlm.nih.gov/34682829/",
+      "https://pubmed.ncbi.nlm.nih.gov/27197553/"
+    ],
+    "evidence_chain_id": "20260602_222452_794688",
+    "evidence_summary": {
+      "response_id": "20260602_222452_794688",
+      "query": "MRI-linac online adaptive brachytherapy technical limitations evidence 2024",
+      "created_at": "2026-06-02T22:24:52.794708",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[MRI/linac integration.](https://pubmed.ncbi.nlm.nih.gov/18023488/)",
+        "[Cross-engine transformation-based fast dose calculation for MRI-Linac online treatment planning.](https://pubmed.ncbi.nlm.nih.gov/36346038/)",
+        "[Editorial: Radiation therapy using MRI-Linac - the right way to start: a guide for physicians and physicists.](https://pubmed.ncbi.nlm.nih.gov/37621678/)",
+        "[Assessment of MRI-Linac Economics under the RO-APM.](https://pubmed.ncbi.nlm.nih.gov/34682829/)",
+        "[The development of the MRI linac system for online MRI-guided radiotherapy: a clinical update.](https://pubmed.ncbi.nlm.nih.gov/27197553/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "e20a2a857b2e",
+          "claim": "PubMed ID: 18023488. 2008/01/01 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/18023488/",
+          "source_type": "PubMed",
+          "source_title": "MRI/linac integration.",
+          "accessed_at": "2026-06-02T22:24:54.563911",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 18023488. 2008/01/01 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac online treatment planning.\nMETHODS: The novel magnetic field dose calculation algorithm was established by \na PB dose engine and a magnetic field with tissue inhomogeneity influence \ncorrection network. The correction network was constructed with a Res-UNet \nframework, including residual modules an",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-linac online adaptive brachytherapy technical limitations evidence 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "51637d42d781",
+          "claim": "PubMed ID: 36346038. 2023/04/01 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36346038/",
+          "source_type": "PubMed",
+          "source_title": "Cross-engine transformation-based fast dose calculation for MRI-Linac online treatment planning.",
+          "accessed_at": "2026-06-02T22:24:54.564026",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36346038. 2023/04/01 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac online treatment planning.\nMETHODS: The novel magnetic field dose calculation algorithm was established by \na PB dose engine and a magnetic field with tissue inhomogeneity influence \ncorrection network. The correction network was constructed with a Res-UNet \nframework, including residual modules an",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-linac online adaptive brachytherapy technical limitations evidence 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "852e9f3783ac",
+          "claim": "PubMed ID: 37621678. 2023/08/09 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37621678/",
+          "source_type": "PubMed",
+          "source_title": "Editorial: Radiation therapy using MRI-Linac - the right way to start: a guide for physicians and physicists.",
+          "accessed_at": "2026-06-02T22:24:54.564080",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37621678. 2023/08/09 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac online treatment planning.\nMETHODS: The novel magnetic field dose calculation algorithm was established by \na PB dose engine and a magnetic field with tissue inhomogeneity influence \ncorrection network. The correction network was constructed with a Res-UNet \nframework, including residual modules an",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-linac online adaptive brachytherapy technical limitations evidence 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "82debe0b9c14",
+          "claim": "PubMed ID: 34682829. 2021/10/14 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34682829/",
+          "source_type": "PubMed",
+          "source_title": "Assessment of MRI-Linac Economics under the RO-APM.",
+          "accessed_at": "2026-06-02T22:24:54.564112",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34682829. 2021/10/14 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac online treatment planning.\nMETHODS: The novel magnetic field dose calculation algorithm was established by \na PB dose engine and a magnetic field with tissue inhomogeneity influence \ncorrection network. The correction network was constructed with a Res-UNet \nframework, including residual modules an",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-linac online adaptive brachytherapy technical limitations evidence 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f5c50339b944",
+          "claim": "PubMed ID: 27197553. 2016/08/01 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/27197553/",
+          "source_type": "PubMed",
+          "source_title": "The development of the MRI linac system for online MRI-guided radiotherapy: a clinical update.",
+          "accessed_at": "2026-06-02T22:24:54.564143",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 27197553. 2016/08/01 00:00. PURPOSE: To propose a novel magnetic field dose calculation method based on \ntransformation from pencil beam (PB) to Monte Carlo (MC) distribution for \nMRI-Linac online treatment planning.\nMETHODS: The novel magnetic field dose calculation algorithm was established by \na PB dose engine and a magnetic field with tissue inhomogeneity influence \ncorrection network. The correction network was constructed with a Res-UNet \nframework, including residual modules an",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-linac online adaptive brachytherapy technical limitations evidence 2024",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[MRI/linac integration.](https://pubmed.ncbi.nlm.nih.gov/18023488/)",
+      "[Cross-engine transformation-based fast dose calculation for MRI-Linac online treatment planning.](https://pubmed.ncbi.nlm.nih.gov/36346038/)",
+      "[Editorial: Radiation therapy using MRI-Linac - the right way to start: a guide for physicians and physicists.](https://pubmed.ncbi.nlm.nih.gov/37621678/)",
+      "[Assessment of MRI-Linac Economics under the RO-APM.](https://pubmed.ncbi.nlm.nih.gov/34682829/)",
+      "[The development of the MRI linac system for online MRI-guided radiotherapy: a clinical update.](https://pubmed.ncbi.nlm.nih.gov/27197553/)"
+    ]
+  }
+}

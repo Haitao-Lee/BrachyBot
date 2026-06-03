@@ -1,0 +1,160 @@
+{
+  "query": "brachytherapy complications incidence prevention management board review",
+  "timestamp": 1780419431.320968,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Review of brachytherapy complications - Upper gastrointestinal tract.",
+        "snippet": "PubMed ID: 33358330. 2021/09/01 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetric parameters has not been well characterized.\nMETHODS AND MATERIALS: A total of 3126 patients were treated with low dose rate \nbrachytherapy from 1998 through 2010. 2464 had implant alone, and 313 had \nimplant preceded by Gy supplemental external beam radiation (EBRT). \nPost-implant dosimetry was b",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33358330/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Spinal brachytherapy.",
+        "snippet": "PubMed ID: 36322097. 2022/11/02 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetric parameters has not been well characterized.\nMETHODS AND MATERIALS: A total of 3126 patients were treated with low dose rate \nbrachytherapy from 1998 through 2010. 2464 had implant alone, and 313 had \nimplant preceded by Gy supplemental external beam radiation (EBRT). \nPost-implant dosimetry was b",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36322097/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Late rectal complications after prostate brachytherapy for localized prostate cancer: incidence and management.",
+        "snippet": "PubMed ID: 19248043. 2009/05/01 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetric parameters has not been well characterized.\nMETHODS AND MATERIALS: A total of 3126 patients were treated with low dose rate \nbrachytherapy from 1998 through 2010. 2464 had implant alone, and 313 had \nimplant preceded by Gy supplemental external beam radiation (EBRT). \nPost-implant dosimetry was b",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/19248043/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Long-term complications in patients with bladder-prostate rhabdomyosarcoma treated with brachytherapy: a systematic review.",
+        "snippet": "PubMed ID: 40924160. 2025/09/09 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetric parameters has not been well characterized.\nMETHODS AND MATERIALS: A total of 3126 patients were treated with low dose rate \nbrachytherapy from 1998 through 2010. 2464 had implant alone, and 313 had \nimplant preceded by Gy supplemental external beam radiation (EBRT). \nPost-implant dosimetry was b",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40924160/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Severe rectal complications after prostate brachytherapy.",
+        "snippet": "PubMed ID: 25572299. 2015/02/01 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetric parameters has not been well characterized.\nMETHODS AND MATERIALS: A total of 3126 patients were treated with low dose rate \nbrachytherapy from 1998 through 2010. 2464 had implant alone, and 313 had \nimplant preceded by Gy supplemental external beam radiation (EBRT). \nPost-implant dosimetry was b",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/25572299/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 33358330. 2021/09/01 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetr\n2. PubMed ID: 36322097. 2022/11/02 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetr\n3. PubMed ID: 19248043. 2009/05/01 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetr",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/33358330/",
+      "https://pubmed.ncbi.nlm.nih.gov/36322097/",
+      "https://pubmed.ncbi.nlm.nih.gov/19248043/",
+      "https://pubmed.ncbi.nlm.nih.gov/40924160/",
+      "https://pubmed.ncbi.nlm.nih.gov/25572299/"
+    ],
+    "evidence_chain_id": "20260603_005709_203514",
+    "evidence_summary": {
+      "response_id": "20260603_005709_203514",
+      "query": "brachytherapy complications incidence prevention management board review",
+      "created_at": "2026-06-03T00:57:09.203544",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Review of brachytherapy complications - Upper gastrointestinal tract.](https://pubmed.ncbi.nlm.nih.gov/33358330/)",
+        "[Spinal brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/36322097/)",
+        "[Late rectal complications after prostate brachytherapy for localized prostate cancer: incidence and management.](https://pubmed.ncbi.nlm.nih.gov/19248043/)",
+        "[Long-term complications in patients with bladder-prostate rhabdomyosarcoma treated with brachytherapy: a systematic review.](https://pubmed.ncbi.nlm.nih.gov/40924160/)",
+        "[Severe rectal complications after prostate brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/25572299/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "9801b82c6f93",
+          "claim": "PubMed ID: 33358330. 2021/09/01 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetr",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33358330/",
+          "source_type": "PubMed",
+          "source_title": "Review of brachytherapy complications - Upper gastrointestinal tract.",
+          "accessed_at": "2026-06-03T00:57:11.320475",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33358330. 2021/09/01 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetric parameters has not been well characterized.\nMETHODS AND MATERIALS: A total of 3126 patients were treated with low dose rate \nbrachytherapy from 1998 through 2010. 2464 had implant alone, and 313 had \nimplant preceded by Gy supplemental external beam radiation (EBRT). \nPost-implant dosimetry was b",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy complications incidence prevention management board review",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "978d01d035e8",
+          "claim": "PubMed ID: 36322097. 2022/11/02 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetr",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36322097/",
+          "source_type": "PubMed",
+          "source_title": "Spinal brachytherapy.",
+          "accessed_at": "2026-06-03T00:57:11.320592",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36322097. 2022/11/02 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetric parameters has not been well characterized.\nMETHODS AND MATERIALS: A total of 3126 patients were treated with low dose rate \nbrachytherapy from 1998 through 2010. 2464 had implant alone, and 313 had \nimplant preceded by Gy supplemental external beam radiation (EBRT). \nPost-implant dosimetry was b",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy complications incidence prevention management board review",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "71fe1f2bb852",
+          "claim": "PubMed ID: 19248043. 2009/05/01 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetr",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/19248043/",
+          "source_type": "PubMed",
+          "source_title": "Late rectal complications after prostate brachytherapy for localized prostate cancer: incidence and management.",
+          "accessed_at": "2026-06-03T00:57:11.320637",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 19248043. 2009/05/01 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetric parameters has not been well characterized.\nMETHODS AND MATERIALS: A total of 3126 patients were treated with low dose rate \nbrachytherapy from 1998 through 2010. 2464 had implant alone, and 313 had \nimplant preceded by Gy supplemental external beam radiation (EBRT). \nPost-implant dosimetry was b",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy complications incidence prevention management board review",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3890845ec3dd",
+          "claim": "PubMed ID: 40924160. 2025/09/09 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetr",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40924160/",
+          "source_type": "PubMed",
+          "source_title": "Long-term complications in patients with bladder-prostate rhabdomyosarcoma treated with brachytherapy: a systematic review.",
+          "accessed_at": "2026-06-03T00:57:11.320669",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40924160. 2025/09/09 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetric parameters has not been well characterized.\nMETHODS AND MATERIALS: A total of 3126 patients were treated with low dose rate \nbrachytherapy from 1998 through 2010. 2464 had implant alone, and 313 had \nimplant preceded by Gy supplemental external beam radiation (EBRT). \nPost-implant dosimetry was b",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy complications incidence prevention management board review",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f220a8fc36da",
+          "claim": "PubMed ID: 25572299. 2015/02/01 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetr",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/25572299/",
+          "source_type": "PubMed",
+          "source_title": "Severe rectal complications after prostate brachytherapy.",
+          "accessed_at": "2026-06-03T00:57:11.320700",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 25572299. 2015/02/01 00:00. PURPOSE: Some investigators have reported severe rectal complications after \nbrachytherapy. Due to the low number of such events, their relationship to \ndosimetric parameters has not been well characterized.\nMETHODS AND MATERIALS: A total of 3126 patients were treated with low dose rate \nbrachytherapy from 1998 through 2010. 2464 had implant alone, and 313 had \nimplant preceded by Gy supplemental external beam radiation (EBRT). \nPost-implant dosimetry was b",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy complications incidence prevention management board review",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Review of brachytherapy complications - Upper gastrointestinal tract.](https://pubmed.ncbi.nlm.nih.gov/33358330/)",
+      "[Spinal brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/36322097/)",
+      "[Late rectal complications after prostate brachytherapy for localized prostate cancer: incidence and management.](https://pubmed.ncbi.nlm.nih.gov/19248043/)",
+      "[Long-term complications in patients with bladder-prostate rhabdomyosarcoma treated with brachytherapy: a systematic review.](https://pubmed.ncbi.nlm.nih.gov/40924160/)",
+      "[Severe rectal complications after prostate brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/25572299/)"
+    ]
+  }
+}

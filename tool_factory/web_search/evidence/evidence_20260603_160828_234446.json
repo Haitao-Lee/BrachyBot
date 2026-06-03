@@ -1,0 +1,33 @@
+{
+  "response_id": "20260603_160828_234446",
+  "query": "4D imaging brachytherapy respiratory motion lung liver tumors",
+  "created_at": "2026-06-03T16:08:28.234470",
+  "num_sources": 1,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[Evaluation of different CT maps for attenuation correction and segmentation in static (99m) Tc-MAA SPECT/CT for (90) Y radioembolization treatment planning: A simulation study.](https://pubmed.ncbi.nlm.nih.gov/34013551/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "cd6cb58642c9",
+      "claim": "PubMed ID: 34013551. 2021/07/01 00:00. PURPOSE: Conventional 99m Tc-macroaggregated albumin (99m Tc-MAA) planar \nscintigraphy overestimates lung shunt fraction (LSF) compared to SPECT/CT. \nHowever, th",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/34013551/",
+      "source_type": "PubMed",
+      "source_title": "Evaluation of different CT maps for attenuation correction and segmentation in static (99m) Tc-MAA SPECT/CT for (90) Y radioembolization treatment planning: A simulation study.",
+      "accessed_at": "2026-06-03T16:08:29.715864",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 34013551. 2021/07/01 00:00. PURPOSE: Conventional 99m Tc-macroaggregated albumin (99m Tc-MAA) planar \nscintigraphy overestimates lung shunt fraction (LSF) compared to SPECT/CT. \nHowever, the respiratory motion artifact due to the temporal mismatch between \nstatic SPECT and helical CT (HCT) may compromise the SPECT quantitation accuracy \nby incorrect attenuation correction (AC) and volume-of-interest (VOI) \nsegmentation. This study aims to evaluate AC and VOI segmentation effects \nsyst",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "4D imaging brachytherapy respiratory motion lung liver tumors",
+      "search_type": "clinical",
+      "cache_hit": false
+    }
+  ]
+}

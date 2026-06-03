@@ -1,0 +1,160 @@
+{
+  "query": "AAPM TG-59 independent dose verification brachytherapy tolerance",
+  "timestamp": 1780466059.6649616,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "AAPM美国项目管理学会（中国）官网-CIPM认证、MPM认证 ...",
+        "snippet": "AAPM美国项目管理学会是全球领先的项目管理专业学会，旗下的APM认证、CIPM认证、MPM认证为全球项目管理专业人士和组织高管提供最具含金量的资格认证和高质量的服务。 AAPM一直致力于项目 …",
+        "url": "https://www.aapm.org.cn/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "AAPM: The American Association of Physicists in Medicine",
+        "snippet": "2026年5月11日 · AAPM is a scientific and professional organization, founded in 1958, composed of more than 8000 scientists whose clinical practice is dedicated to ensuring accuracy, safety and quality in …",
+        "url": "https://www.aapm.org/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "AAPM项目管理学会-AAPM美国项目管理学会（中国）官网 ...",
+        "snippet": "总部位于美国科罗拉多州，通过设立在北京的办事处，及成都、重庆、苏州、郑州、粤港澳大湾区的AAPM办公室，为中国成员提供本土化服务。 AAPM在全球42个国家拥有分会组织和合作机构，持证 …",
+        "url": "https://www.aapm.org.cn/aapmglobal/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "Home | AAPM",
+        "snippet": "AAPM Chapters are member-led regional groups that host local education and networking, from single-evening talks to full-day meetings, so you can connect with nearby colleagues and share best practices.",
+        "url": "https://site.aapm.org/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "美国项目管理学会AAPM_百度百科",
+        "snippet": "2025年11月7日 · [5] AAPM绿色项目管理评选活动，是美国项目管理学会（AAPM）在全球范围内以国家为单位开展的绿色项目管理评选活动。 涵盖“绿色项目管理示范单位”、“绿色项目管理领军人物”、“绿 …",
+        "url": "https://baike.baidu.com/item/%E7%BE%8E%E5%9B%BD%E9%A1%B9%E7%9B%AE%E7%AE%A1%E7%90%86%E5%AD%A6%E4%BC%9AAAPM/63855864",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- AAPM美国项目管理学会是全球领先的项目管理专业学会，旗下的APM认证、CIPM认证、MPM认证为全球项目管理专业人士和组织高管提供最具含金量的资格认证和高质量的服务。 AAPM一直致力于项目 …\n- 2026年5月11日 · AAPM is a scientific and professional organization, founded in 1958, composed of more than 8000 scientists whose clinical practice is ded",
+    "sources": [
+      "https://www.aapm.org.cn/",
+      "https://www.aapm.org/",
+      "https://www.aapm.org.cn/aapmglobal/",
+      "https://site.aapm.org/",
+      "https://baike.baidu.com/item/%E7%BE%8E%E5%9B%BD%E9%A1%B9%E7%9B%AE%E7%AE%A1%E7%90%86%E5%AD%A6%E4%BC%9AAAPM/63855864"
+    ],
+    "evidence_chain_id": "20260603_135418_456377",
+    "evidence_summary": {
+      "response_id": "20260603_135418_456377",
+      "query": "AAPM TG-59 independent dose verification brachytherapy tolerance",
+      "created_at": "2026-06-03T13:54:18.456400",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[AAPM美国项目管理学会（中国）官网-CIPM认证、MPM认证 ...](https://www.aapm.org.cn/)",
+        "[AAPM: The American Association of Physicists in Medicine](https://www.aapm.org/)",
+        "[AAPM项目管理学会-AAPM美国项目管理学会（中国）官网 ...](https://www.aapm.org.cn/aapmglobal/)",
+        "[Home | AAPM](https://site.aapm.org/)",
+        "[美国项目管理学会AAPM_百度百科](https://baike.baidu.com/item/%E7%BE%8E%E5%9B%BD%E9%A1%B9%E7%9B%AE%E7%AE%A1%E7%90%86%E5%AD%A6%E4%BC%9AAAPM/63855864)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "d8dd722d461d",
+          "claim": "AAPM美国项目管理学会是全球领先的项目管理专业学会，旗下的APM认证、CIPM认证、MPM认证为全球项目管理专业人士和组织高管提供最具含金量的资格认证和高质量的服务。 AAPM一直致力于项目 …",
+          "source_url": "https://www.aapm.org.cn/",
+          "source_type": "Bing CN",
+          "source_title": "AAPM美国项目管理学会（中国）官网-CIPM认证、MPM认证 ...",
+          "accessed_at": "2026-06-03T13:54:19.664648",
+          "published_at": "",
+          "raw_snippet": "AAPM美国项目管理学会是全球领先的项目管理专业学会，旗下的APM认证、CIPM认证、MPM认证为全球项目管理专业人士和组织高管提供最具含金量的资格认证和高质量的服务。 AAPM一直致力于项目 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-59 independent dose verification brachytherapy tolerance",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "443fa8305d16",
+          "claim": "2026年5月11日 · AAPM is a scientific and professional organization, founded in 1958, composed of more than 8000 scientists whose clinical practice is dedicated to ensuring accuracy, safety and quality in",
+          "source_url": "https://www.aapm.org/",
+          "source_type": "Bing CN",
+          "source_title": "AAPM: The American Association of Physicists in Medicine",
+          "accessed_at": "2026-06-03T13:54:19.664700",
+          "published_at": "",
+          "raw_snippet": "2026年5月11日 · AAPM is a scientific and professional organization, founded in 1958, composed of more than 8000 scientists whose clinical practice is dedicated to ensuring accuracy, safety and quality in …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-59 independent dose verification brachytherapy tolerance",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "d51c36c24fd1",
+          "claim": "总部位于美国科罗拉多州，通过设立在北京的办事处，及成都、重庆、苏州、郑州、粤港澳大湾区的AAPM办公室，为中国成员提供本土化服务。 AAPM在全球42个国家拥有分会组织和合作机构，持证 …",
+          "source_url": "https://www.aapm.org.cn/aapmglobal/",
+          "source_type": "Bing CN",
+          "source_title": "AAPM项目管理学会-AAPM美国项目管理学会（中国）官网 ...",
+          "accessed_at": "2026-06-03T13:54:19.664730",
+          "published_at": "",
+          "raw_snippet": "总部位于美国科罗拉多州，通过设立在北京的办事处，及成都、重庆、苏州、郑州、粤港澳大湾区的AAPM办公室，为中国成员提供本土化服务。 AAPM在全球42个国家拥有分会组织和合作机构，持证 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-59 independent dose verification brachytherapy tolerance",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c34632af52e2",
+          "claim": "AAPM Chapters are member-led regional groups that host local education and networking, from single-evening talks to full-day meetings, so you can connect with nearby colleagues and share best practice",
+          "source_url": "https://site.aapm.org/",
+          "source_type": "Bing CN",
+          "source_title": "Home | AAPM",
+          "accessed_at": "2026-06-03T13:54:19.664756",
+          "published_at": "",
+          "raw_snippet": "AAPM Chapters are member-led regional groups that host local education and networking, from single-evening talks to full-day meetings, so you can connect with nearby colleagues and share best practices.",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-59 independent dose verification brachytherapy tolerance",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "b2c0e60ede3d",
+          "claim": "2025年11月7日 · [5] AAPM绿色项目管理评选活动，是美国项目管理学会（AAPM）在全球范围内以国家为单位开展的绿色项目管理评选活动。 涵盖“绿色项目管理示范单位”、“绿色项目管理领军人物”、“绿 …",
+          "source_url": "https://baike.baidu.com/item/%E7%BE%8E%E5%9B%BD%E9%A1%B9%E7%9B%AE%E7%AE%A1%E7%90%86%E5%AD%A6%E4%BC%9AAAPM/63855864",
+          "source_type": "Bing CN",
+          "source_title": "美国项目管理学会AAPM_百度百科",
+          "accessed_at": "2026-06-03T13:54:19.664780",
+          "published_at": "",
+          "raw_snippet": "2025年11月7日 · [5] AAPM绿色项目管理评选活动，是美国项目管理学会（AAPM）在全球范围内以国家为单位开展的绿色项目管理评选活动。 涵盖“绿色项目管理示范单位”、“绿色项目管理领军人物”、“绿 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-59 independent dose verification brachytherapy tolerance",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[AAPM美国项目管理学会（中国）官网-CIPM认证、MPM认证 ...](https://www.aapm.org.cn/)",
+      "[AAPM: The American Association of Physicists in Medicine](https://www.aapm.org/)",
+      "[AAPM项目管理学会-AAPM美国项目管理学会（中国）官网 ...](https://www.aapm.org.cn/aapmglobal/)",
+      "[Home | AAPM](https://site.aapm.org/)",
+      "[美国项目管理学会AAPM_百度百科](https://baike.baidu.com/item/%E7%BE%8E%E5%9B%BD%E9%A1%B9%E7%9B%AE%E7%AE%A1%E7%90%86%E5%AD%A6%E4%BC%9AAAPM/63855864)"
+    ]
+  }
+}

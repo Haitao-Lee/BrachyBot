@@ -1,0 +1,82 @@
+{
+  "query": "AAPM TG-129 report brachytherapy limitations TG-43 recommendations",
+  "timestamp": 1780430893.2326922,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "AAPM recommendations on medical physics practices for ocular plaque brachytherapy: Report of task group 221.",
+        "snippet": "PubMed ID: 31883269. 2020/06/01 00:00. PURPOSE: Although notched Collaborative Ocular Melanoma Study (COMS) plaques \nhave been widely used, optic disc dose reduction by notched COMS plaques has not \nbeen discussed in the literature. Therefore, this study investigated optic disc \ndose reduction in ocular brachytherapy using 125 I notched COMS plaques in \ncomparison with optic disc dose for 125 I standard COMS plaques.\nMETHODS: For this simulation study, an in-house brachytherapy dose calculation ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31883269/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Optic disc dose reduction in ocular brachytherapy using (125) I notched COMS plaques: A simulation study based on current clinical practice.",
+        "snippet": "PubMed ID: 32656945. 2020/09/01 00:00. PURPOSE: Although notched Collaborative Ocular Melanoma Study (COMS) plaques \nhave been widely used, optic disc dose reduction by notched COMS plaques has not \nbeen discussed in the literature. Therefore, this study investigated optic disc \ndose reduction in ocular brachytherapy using 125 I notched COMS plaques in \ncomparison with optic disc dose for 125 I standard COMS plaques.\nMETHODS: For this simulation study, an in-house brachytherapy dose calculation ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32656945/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 31883269. 2020/06/01 00:00. PURPOSE: Although notched Collaborative Ocular Melanoma Study (COMS) plaques \nhave been widely used, optic disc dose reduction by notched COMS plaques has not \nb\n2. PubMed ID: 32656945. 2020/09/01 00:00. PURPOSE: Although notched Collaborative Ocular Melanoma Study (COMS) plaques \nhave been widely used, optic disc dose reduction by notched COMS plaques has not \nb",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/31883269/",
+      "https://pubmed.ncbi.nlm.nih.gov/32656945/"
+    ],
+    "evidence_chain_id": "20260603_040811_488227",
+    "evidence_summary": {
+      "response_id": "20260603_040811_488227",
+      "query": "AAPM TG-129 report brachytherapy limitations TG-43 recommendations",
+      "created_at": "2026-06-03T04:08:11.488251",
+      "num_sources": 2,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[AAPM recommendations on medical physics practices for ocular plaque brachytherapy: Report of task group 221.](https://pubmed.ncbi.nlm.nih.gov/31883269/)",
+        "[Optic disc dose reduction in ocular brachytherapy using (125) I notched COMS plaques: A simulation study based on current clinical practice.](https://pubmed.ncbi.nlm.nih.gov/32656945/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "a00f24c8626e",
+          "claim": "PubMed ID: 31883269. 2020/06/01 00:00. PURPOSE: Although notched Collaborative Ocular Melanoma Study (COMS) plaques \nhave been widely used, optic disc dose reduction by notched COMS plaques has not \nb",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31883269/",
+          "source_type": "PubMed",
+          "source_title": "AAPM recommendations on medical physics practices for ocular plaque brachytherapy: Report of task group 221.",
+          "accessed_at": "2026-06-03T04:08:13.232336",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31883269. 2020/06/01 00:00. PURPOSE: Although notched Collaborative Ocular Melanoma Study (COMS) plaques \nhave been widely used, optic disc dose reduction by notched COMS plaques has not \nbeen discussed in the literature. Therefore, this study investigated optic disc \ndose reduction in ocular brachytherapy using 125 I notched COMS plaques in \ncomparison with optic disc dose for 125 I standard COMS plaques.\nMETHODS: For this simulation study, an in-house brachytherapy dose calculation ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-129 report brachytherapy limitations TG-43 recommendations",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2bb098e7043e",
+          "claim": "PubMed ID: 32656945. 2020/09/01 00:00. PURPOSE: Although notched Collaborative Ocular Melanoma Study (COMS) plaques \nhave been widely used, optic disc dose reduction by notched COMS plaques has not \nb",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32656945/",
+          "source_type": "PubMed",
+          "source_title": "Optic disc dose reduction in ocular brachytherapy using (125) I notched COMS plaques: A simulation study based on current clinical practice.",
+          "accessed_at": "2026-06-03T04:08:13.232455",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32656945. 2020/09/01 00:00. PURPOSE: Although notched Collaborative Ocular Melanoma Study (COMS) plaques \nhave been widely used, optic disc dose reduction by notched COMS plaques has not \nbeen discussed in the literature. Therefore, this study investigated optic disc \ndose reduction in ocular brachytherapy using 125 I notched COMS plaques in \ncomparison with optic disc dose for 125 I standard COMS plaques.\nMETHODS: For this simulation study, an in-house brachytherapy dose calculation ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-129 report brachytherapy limitations TG-43 recommendations",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[AAPM recommendations on medical physics practices for ocular plaque brachytherapy: Report of task group 221.](https://pubmed.ncbi.nlm.nih.gov/31883269/)",
+      "[Optic disc dose reduction in ocular brachytherapy using (125) I notched COMS plaques: A simulation study based on current clinical practice.](https://pubmed.ncbi.nlm.nih.gov/32656945/)"
+    ]
+  }
+}

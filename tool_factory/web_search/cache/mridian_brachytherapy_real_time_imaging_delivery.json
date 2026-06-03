@@ -1,0 +1,56 @@
+{
+  "query": "MRIdian brachytherapy real-time imaging delivery",
+  "timestamp": 1780420996.1296866,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Magnetic Resonance-Guided Reirradiation for Local Recurrence within the Prostate or in the Prostate Bed: One-Year Clinical Results of a Prospective Registry Study.",
+        "snippet": "PubMed ID: 35454850. 2022/04/12 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35454850/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 35454850. 2022/04/12 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/35454850/"
+    ],
+    "evidence_chain_id": "20260603_012314_355222",
+    "evidence_summary": {
+      "response_id": "20260603_012314_355222",
+      "query": "MRIdian brachytherapy real-time imaging delivery",
+      "created_at": "2026-06-03T01:23:14.355241",
+      "num_sources": 1,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Magnetic Resonance-Guided Reirradiation for Local Recurrence within the Prostate or in the Prostate Bed: One-Year Clinical Results of a Prospective Registry Study.](https://pubmed.ncbi.nlm.nih.gov/35454850/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "8d175f2f5f16",
+          "claim": "PubMed ID: 35454850. 2022/04/12 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35454850/",
+          "source_type": "PubMed",
+          "source_title": "Magnetic Resonance-Guided Reirradiation for Local Recurrence within the Prostate or in the Prostate Bed: One-Year Clinical Results of a Prospective Registry Study.",
+          "accessed_at": "2026-06-03T01:23:16.129440",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35454850. 2022/04/12 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRIdian brachytherapy real-time imaging delivery",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Magnetic Resonance-Guided Reirradiation for Local Recurrence within the Prostate or in the Prostate Bed: One-Year Clinical Results of a Prospective Registry Study.](https://pubmed.ncbi.nlm.nih.gov/35454850/)"
+    ]
+  }
+}
