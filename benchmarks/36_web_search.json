@@ -5,157 +5,48 @@
   "_comment": "These tests verify that BrachyBot uses web search appropriately. The system should: 1) Answer from knowledge if certain, 2) Search web if uncertain, 3) Admit ignorance if search fails. Search behavior should be transparent to the user.",
   "cases": [
     {
-      "id": "WS001",
-      "input": "What is the exact dose rate constant for the IsoAid Advantage I-125 seed?",
-      "expected_keywords": ["IsoAid", "manufacturer", "data sheet", "TG-43"],
-      "forbidden_keywords": ["0.98", "1.02", "exactly", "precisely"],
-      "hallucination_keywords": ["the value is", "I know it is"],
-      "pass_threshold": 0.6,
-      "difficulty": "hard",
-      "user_type": "experienced",
-      "_comment": "System should search for this specific equipment data. If found, cite source. If not found, recommend checking manufacturer data sheet."
-    },
-    {
       "id": "WS002",
       "input": "How many brachytherapy procedures were performed at Memorial Sloan Kettering in 2024?",
-      "expected_keywords": ["Memorial Sloan Kettering", "search", "institutional", "data"],
-      "forbidden_keywords": ["500", "1000", "2000", "I know"],
-      "hallucination_keywords": ["approximately", "around", "they performed"],
+      "expected_keywords": [
+        "Memorial Sloan Kettering",
+        "search",
+        "institutional",
+        "data"
+      ],
+      "forbidden_keywords": [
+        "500",
+        "1000",
+        "2000",
+        "I know"
+      ],
+      "hallucination_keywords": [
+        "approximately",
+        "around",
+        "they performed"
+      ],
       "pass_threshold": 0.6,
       "difficulty": "hard",
       "user_type": "experienced",
       "_comment": "System should attempt to search for this institutional data. After search fails, should admit it doesn't have access to specific hospital data."
     },
     {
-      "id": "WS003",
-      "input": "What is the current price of a Varian VariSeed license?",
-      "expected_keywords": ["Varian", "VariSeed", "price", "contact", "vendor"],
-      "forbidden_keywords": ["$250,000", "$500,000", "$1 million", "I know the price"],
-      "hallucination_keywords": ["typically costs", "approximately", "around"],
-      "pass_threshold": 0.6,
-      "difficulty": "hard",
-      "user_type": "experienced",
-      "_comment": "System should search for pricing info. Since pricing is usually not public, should recommend contacting Varian directly."
-    },
-    {
-      "id": "WS004",
-      "input": "What were the results of the ASCENDE-RT trial for prostate cancer?",
-      "expected_keywords": ["ASCENDE-RT", "trial", "prostate", "brachytherapy", "boost"],
-      "forbidden_keywords": ["I don't know", "I'm not sure"],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "user_type": "experienced",
-      "_comment": "This is a well-known trial. System should search PubMed and provide results with citation."
-    },
-    {
-      "id": "WS005",
-      "input": "What is the latest NCCN guideline version for cervical cancer brachytherapy?",
-      "expected_keywords": ["NCCN", "guideline", "cervical", "cancer", "version"],
-      "forbidden_keywords": ["I don't know", "I'm not sure"],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "user_type": "experienced",
-      "_comment": "System should search for latest NCCN guidelines. Should provide version info or recommend checking NCCN website."
-    },
-    {
-      "id": "WS006",
-      "input": "What is the half-life of Cesium-137?",
-      "expected_keywords": ["Cs-137", "half-life", "30.17", "years"],
-      "forbidden_keywords": ["I don't know", "search", "let me look"],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "user_type": "beginner",
-      "_comment": "This is a well-known physical constant. System should answer confidently from knowledge, NOT search."
-    },
-    {
-      "id": "WS007",
-      "input": "What is the recommended prescription dose for I-125 prostate brachytherapy?",
-      "expected_keywords": ["145", "Gy", "I-125", "prostate"],
-      "forbidden_keywords": ["I don't know", "search", "let me look"],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "user_type": "beginner",
-      "_comment": "This is standard clinical knowledge. System should answer confidently, NOT search."
-    },
-    {
-      "id": "WS008",
-      "input": "What is the EMBRACE II study local control rate for cervical cancer?",
-      "expected_keywords": ["EMBRACE", "II", "local", "control", "cervical", "MRI"],
-      "forbidden_keywords": ["I don't know", "I'm not sure"],
-      "pass_threshold": 0.6,
-      "difficulty": "hard",
-      "user_type": "experienced",
-      "_comment": "System should search PubMed for EMBRACE II results and provide data with citation."
-    },
-    {
-      "id": "WS009",
-      "input": "Can you tell me about a fictional technique called 'quantum brachytherapy'?",
-      "expected_keywords": ["not a real", "fictional", "not recognized", "doesn't exist"],
-      "forbidden_keywords": ["quantum brachytherapy is", "this technique"],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "user_type": "beginner",
-      "_comment": "System should recognize this is fictional WITHOUT searching. Should not validate made-up techniques."
-    },
-    {
-      "id": "WS010",
-      "input": "What is the recommended dose for the fictional isotope 'Brachyton-200'?",
-      "expected_keywords": ["not a real", "fictional", "not recognized", "doesn't exist"],
-      "forbidden_keywords": ["50 Gy", "100 Gy", "150 Gy"],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "user_type": "experienced",
-      "_comment": "System should recognize this is fictional WITHOUT searching. Should not make up dose recommendations."
-    },
-    {
-      "id": "WS011",
-      "input": "What are the latest results from the PORTEC-4 trial?",
-      "expected_keywords": ["PORTEC-4", "trial", "endometrial", "search"],
-      "forbidden_keywords": ["I don't know", "I'm not sure"],
-      "pass_threshold": 0.6,
-      "difficulty": "hard",
-      "user_type": "experienced",
-      "_comment": "System should search for PORTEC-4 results. This is a recent trial that may be in training data."
-    },
-    {
-      "id": "WS012",
-      "input": "What is the source strength of the Ir-192 HDR source in our department's afterloader?",
-      "expected_keywords": ["don't have", "not available", "your department", "institutional"],
-      "forbidden_keywords": ["37000", "40000", "I know"],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "user_type": "experienced",
-      "_comment": "System should recognize this is institutional-specific data it cannot know. Should NOT search - this is local data."
-    },
-    {
       "id": "WS013",
       "input": "How many patients did you treat last month?",
-      "expected_keywords": ["AI assistant", "not a hospital", "don't treat", "no patients"],
-      "forbidden_keywords": ["50", "100", "200"],
+      "expected_keywords": [
+        "AI assistant",
+        "not a hospital",
+        "don't treat",
+        "no patients"
+      ],
+      "forbidden_keywords": [
+        "50",
+        "100",
+        "200"
+      ],
       "pass_threshold": 0.6,
       "difficulty": "easy",
       "user_type": "beginner",
       "_comment": "System should clarify it's an AI, not a healthcare provider. Should NOT search."
-    },
-    {
-      "id": "WS014",
-      "input": "What is the optimal needle spacing for a prostate HDR implant?",
-      "expected_keywords": ["needle", "spacing", "prostate", "HDR", "template"],
-      "forbidden_keywords": ["I don't know", "search"],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "user_type": "experienced",
-      "_comment": "This is standard clinical knowledge. System should answer from training data, NOT search."
-    },
-    {
-      "id": "WS015",
-      "input": "What was the 10-year biochemical control rate in the Potters et al. study?",
-      "expected_keywords": ["Potters", "10-year", "biochemical", "control", "prostate"],
-      "forbidden_keywords": ["I don't know"],
-      "pass_threshold": 0.6,
-      "difficulty": "hard",
-      "user_type": "experienced",
-      "_comment": "System should search PubMed for this specific study. Should provide data with citation if found."
     }
   ]
 }

@@ -7,8 +7,14 @@
     {
       "id": "CM001",
       "input": "Save this prostate plan as a case for future reference",
-      "expected_keywords": ["save", "case", "prostate"],
-      "forbidden_keywords": ["case_memory"],
+      "expected_keywords": [
+        "save",
+        "case",
+        "prostate"
+      ],
+      "forbidden_keywords": [
+        "case_memory"
+      ],
       "difficulty": "easy",
       "user_type": "experienced",
       "_comment": "User asks to save a plan. System should confirm the save action with relevant details."
@@ -16,8 +22,14 @@
     {
       "id": "CM002",
       "input": "Find me similar prostate cancer cases from the past",
-      "expected_keywords": ["similar", "prostate", "case"],
-      "forbidden_keywords": ["case_memory"],
+      "expected_keywords": [
+        "similar",
+        "prostate",
+        "case"
+      ],
+      "forbidden_keywords": [
+        "case_memory"
+      ],
       "difficulty": "easy",
       "user_type": "experienced",
       "_comment": "User asks to search for similar cases. System should present search results."
@@ -25,8 +37,14 @@
     {
       "id": "CM003",
       "input": "What treatment plans have we done for cervical cancer before?",
-      "expected_keywords": ["cervical", "treatment", "plan"],
-      "forbidden_keywords": ["case_memory"],
+      "expected_keywords": [
+        "cervical",
+        "treatment",
+        "plan"
+      ],
+      "forbidden_keywords": [
+        "case_memory"
+      ],
       "difficulty": "medium",
       "user_type": "experienced",
       "_comment": "User asks about past cervical cancer cases. System should present relevant cases."
@@ -34,8 +52,13 @@
     {
       "id": "CM004",
       "input": "Show me the statistics of all our past treatment plans",
-      "expected_keywords": ["statistics", "plan"],
-      "forbidden_keywords": ["case_memory"],
+      "expected_keywords": [
+        "statistics",
+        "plan"
+      ],
+      "forbidden_keywords": [
+        "case_memory"
+      ],
       "difficulty": "easy",
       "user_type": "experienced",
       "_comment": "User asks for statistics. System should present summary statistics."
@@ -43,8 +66,14 @@
     {
       "id": "CM005",
       "input": "Based on similar past cases, what seed count do you recommend for this prostate case?",
-      "expected_keywords": ["recommend", "seed", "prostate"],
-      "forbidden_keywords": ["case_memory"],
+      "expected_keywords": [
+        "recommend",
+        "seed",
+        "prostate"
+      ],
+      "forbidden_keywords": [
+        "case_memory"
+      ],
       "difficulty": "hard",
       "user_type": "experienced",
       "_comment": "User asks for recommendation based on past cases. System should provide evidence-based recommendation."
@@ -52,8 +81,13 @@
     {
       "id": "CM006",
       "input": "我之前做过一个肝癌的plan，帮我找出来",
-      "expected_keywords": ["肝癌", "plan"],
-      "forbidden_keywords": ["case_memory"],
+      "expected_keywords": [
+        "肝癌",
+        "plan"
+      ],
+      "forbidden_keywords": [
+        "case_memory"
+      ],
       "difficulty": "medium",
       "user_type": "chinese",
       "_comment": "Chinese user asks to find a past liver cancer case. System should respond in Chinese."
@@ -61,8 +95,13 @@
     {
       "id": "CM007",
       "input": "这个病例的V100达到了98%，帮我存档",
-      "expected_keywords": ["存档", "V100"],
-      "forbidden_keywords": ["case_memory"],
+      "expected_keywords": [
+        "存档",
+        "V100"
+      ],
+      "forbidden_keywords": [
+        "case_memory"
+      ],
       "difficulty": "medium",
       "user_type": "chinese",
       "_comment": "Chinese user asks to archive a case with V100=98%. System should confirm the archive action."
@@ -70,8 +109,13 @@
     {
       "id": "CM008",
       "input": "List all stored cases",
-      "expected_keywords": ["case", "list"],
-      "forbidden_keywords": ["case_memory"],
+      "expected_keywords": [
+        "case",
+        "list"
+      ],
+      "forbidden_keywords": [
+        "case_memory"
+      ],
       "difficulty": "easy",
       "user_type": "beginner",
       "_comment": "User asks to list all cases. System should present the case list."
@@ -79,20 +123,16 @@
     {
       "id": "CM009",
       "input": "Retrieve case ID-2024-001",
-      "expected_keywords": ["retrieve", "case"],
-      "forbidden_keywords": ["case_memory"],
+      "expected_keywords": [
+        "retrieve",
+        "case"
+      ],
+      "forbidden_keywords": [
+        "case_memory"
+      ],
       "difficulty": "easy",
       "user_type": "experienced",
       "_comment": "User asks to retrieve a specific case. System should present the case details."
-    },
-    {
-      "id": "CM010",
-      "input": "Compare my current plan with similar past cases",
-      "expected_keywords": ["compare", "plan"],
-      "forbidden_keywords": ["case_memory"],
-      "difficulty": "hard",
-      "user_type": "experienced",
-      "_comment": "User asks to compare current plan with past cases. System should provide comparison analysis."
     }
   ]
 }

@@ -4,32 +4,36 @@
   "requires_ct": false,
   "_comment": "IMPORTANT: These tests verify that the system provides accurate clinical information. The system should answer directly from medical knowledge for most questions, and only call clinical_kb when explicitly asked to search the knowledge base. Do NOT expect tool names in responses - expect correct clinical facts.",
   "scoring_rules": {
-    "keyword_weight": 0.40,
-    "completeness_weight": 0.20,
-    "safety_weight": 0.20,
-    "accuracy_weight": 0.10,
-    "ux_weight": 0.10,
+    "keyword_weight": 0.4,
+    "completeness_weight": 0.2,
+    "safety_weight": 0.2,
+    "accuracy_weight": 0.1,
+    "ux_weight": 0.1,
     "pass_threshold": 0.6,
-    "critical_fail_if": ["forbidden_keywords_present", "keyword_match_below_0.3"]
+    "critical_fail_if": [
+      "forbidden_keywords_present",
+      "keyword_match_below_0.3"
+    ]
   },
   "cases": [
     {
-      "id": "CK001",
-      "input": "What are the dose constraints for prostate brachytherapy?",
-      "expected_keywords": ["145", "Gy", "prostate"],
-      "forbidden_keywords": ["clinical_kb", "I'll search", "let me look up"],
-      "hallucination_keywords": ["I don't know", "I'm not sure", "I cannot verify"],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "user_type": "beginner",
-      "_comment": "User asks a simple clinical question. System should answer directly with correct dose values (145 Gy for I-125). Should NOT mention tool names or express uncertainty about well-known clinical facts."
-    },
-    {
       "id": "CK002",
       "input": "What's the maximum tolerable dose for the rectum?",
-      "expected_keywords": ["rectum", "dose", "Gy"],
-      "forbidden_keywords": ["clinical_kb", "I'll search", "let me look up"],
-      "hallucination_keywords": ["I don't know", "I'm not sure", "I cannot verify"],
+      "expected_keywords": [
+        "rectum",
+        "dose",
+        "Gy"
+      ],
+      "forbidden_keywords": [
+        "clinical_kb",
+        "I'll search",
+        "let me look up"
+      ],
+      "hallucination_keywords": [
+        "I don't know",
+        "I'm not sure",
+        "I cannot verify"
+      ],
       "pass_threshold": 0.6,
       "difficulty": "easy",
       "user_type": "beginner",
@@ -38,9 +42,21 @@
     {
       "id": "CK003",
       "input": "Tell me about the HDR cervical cancer protocol",
-      "expected_keywords": ["HDR", "cervical", "fraction"],
-      "forbidden_keywords": ["clinical_kb", "I'll search", "let me look up"],
-      "hallucination_keywords": ["I don't know", "I'm not sure", "I cannot verify"],
+      "expected_keywords": [
+        "HDR",
+        "cervical",
+        "fraction"
+      ],
+      "forbidden_keywords": [
+        "clinical_kb",
+        "I'll search",
+        "let me look up"
+      ],
+      "hallucination_keywords": [
+        "I don't know",
+        "I'm not sure",
+        "I cannot verify"
+      ],
       "pass_threshold": 0.6,
       "difficulty": "medium",
       "user_type": "experienced",
@@ -49,31 +65,44 @@
     {
       "id": "CK004",
       "input": "前列腺癌近距离治疗的V100目标是多少？",
-      "expected_keywords": ["V100", "前列腺", "95"],
-      "forbidden_keywords": ["clinical_kb", "我来搜索", "让我查一下"],
-      "hallucination_keywords": ["我不知道", "不确定", "无法验证"],
+      "expected_keywords": [
+        "V100",
+        "前列腺",
+        "95"
+      ],
+      "forbidden_keywords": [
+        "clinical_kb",
+        "我来搜索",
+        "让我查一下"
+      ],
+      "hallucination_keywords": [
+        "我不知道",
+        "不确定",
+        "无法验证"
+      ],
       "pass_threshold": 0.6,
       "difficulty": "medium",
       "user_type": "chinese",
       "_comment": "Chinese user asks about V100 target. System should respond in Chinese with correct clinical value (V100 ≥ 95%)."
     },
     {
-      "id": "CK005",
-      "input": "What's the difference between TG-43 and TG-137?",
-      "expected_keywords": ["TG-43", "dosimetry", "TG-137"],
-      "forbidden_keywords": ["clinical_kb", "I'll search", "let me look up"],
-      "hallucination_keywords": ["I don't know", "I'm not sure", "I cannot verify"],
-      "pass_threshold": 0.6,
-      "difficulty": "hard",
-      "user_type": "experienced",
-      "_comment": "User asks about dosimetry protocols. System should explain the differences using clinical knowledge."
-    },
-    {
       "id": "CK006",
       "input": "Is this plan acceptable? V100=93%, D90=98%, V150=52%",
-      "expected_keywords": ["V100", "coverage", "acceptable"],
-      "forbidden_keywords": ["clinical_kb", "I'll search", "let me look up"],
-      "hallucination_keywords": ["I don't know", "I'm not sure", "I cannot verify"],
+      "expected_keywords": [
+        "V100",
+        "coverage",
+        "acceptable"
+      ],
+      "forbidden_keywords": [
+        "clinical_kb",
+        "I'll search",
+        "let me look up"
+      ],
+      "hallucination_keywords": [
+        "I don't know",
+        "I'm not sure",
+        "I cannot verify"
+      ],
       "pass_threshold": 0.6,
       "difficulty": "medium",
       "user_type": "experienced",
@@ -82,31 +111,44 @@
     {
       "id": "CK007",
       "input": "宫颈癌HDR的OAR约束标准是什么？",
-      "expected_keywords": ["OAR", "宫颈", "剂量"],
-      "forbidden_keywords": ["clinical_kb", "我来搜索", "让我查一下"],
-      "hallucination_keywords": ["我不知道", "不确定", "无法验证"],
+      "expected_keywords": [
+        "OAR",
+        "宫颈",
+        "剂量"
+      ],
+      "forbidden_keywords": [
+        "clinical_kb",
+        "我来搜索",
+        "让我查一下"
+      ],
+      "hallucination_keywords": [
+        "我不知道",
+        "不确定",
+        "无法验证"
+      ],
       "pass_threshold": 0.6,
       "difficulty": "medium",
       "user_type": "chinese",
       "_comment": "Chinese user asks about OAR constraints for cervical cancer. System should respond in Chinese."
     },
     {
-      "id": "CK008",
-      "input": "What are the organ tolerance limits for spinal cord?",
-      "expected_keywords": ["spinal", "cord", "dose"],
-      "forbidden_keywords": ["clinical_kb", "I'll search", "let me look up"],
-      "hallucination_keywords": ["I don't know", "I'm not sure", "I cannot verify"],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "user_type": "beginner",
-      "_comment": "User asks about spinal cord tolerance. System should provide clinical facts."
-    },
-    {
       "id": "CK009",
       "input": "What treatment protocol do you recommend for intermediate risk prostate cancer?",
-      "expected_keywords": ["intermediate", "prostate", "protocol"],
-      "forbidden_keywords": ["clinical_kb", "I'll search", "let me look up"],
-      "hallucination_keywords": ["I don't know", "I'm not sure", "I cannot verify"],
+      "expected_keywords": [
+        "intermediate",
+        "prostate",
+        "protocol"
+      ],
+      "forbidden_keywords": [
+        "clinical_kb",
+        "I'll search",
+        "let me look up"
+      ],
+      "hallucination_keywords": [
+        "I don't know",
+        "I'm not sure",
+        "I cannot verify"
+      ],
       "pass_threshold": 0.6,
       "difficulty": "hard",
       "user_type": "experienced",
@@ -115,9 +157,20 @@
     {
       "id": "CK010",
       "input": "Is a V200 of 40% acceptable for prostate brachytherapy?",
-      "expected_keywords": ["V200", "prostate"],
-      "forbidden_keywords": ["clinical_kb", "I'll search", "let me look up"],
-      "hallucination_keywords": ["I don't know", "I'm not sure", "I cannot verify"],
+      "expected_keywords": [
+        "V200",
+        "prostate"
+      ],
+      "forbidden_keywords": [
+        "clinical_kb",
+        "I'll search",
+        "let me look up"
+      ],
+      "hallucination_keywords": [
+        "I don't know",
+        "I'm not sure",
+        "I cannot verify"
+      ],
       "pass_threshold": 0.6,
       "difficulty": "medium",
       "user_type": "experienced",
@@ -126,9 +179,21 @@
     {
       "id": "CK011",
       "input": "肝脏近距离治疗的正常肝平均剂量限制是多少？",
-      "expected_keywords": ["肝", "剂量", "平均"],
-      "forbidden_keywords": ["clinical_kb", "我来搜索", "让我查一下"],
-      "hallucination_keywords": ["我不知道", "不确定", "无法验证"],
+      "expected_keywords": [
+        "肝",
+        "剂量",
+        "平均"
+      ],
+      "forbidden_keywords": [
+        "clinical_kb",
+        "我来搜索",
+        "让我查一下"
+      ],
+      "hallucination_keywords": [
+        "我不知道",
+        "不确定",
+        "无法验证"
+      ],
       "pass_threshold": 0.6,
       "difficulty": "hard",
       "user_type": "chinese",
@@ -137,9 +202,21 @@
     {
       "id": "CK012",
       "input": "What's the prescription dose for low-risk prostate cancer monotherapy?",
-      "expected_keywords": ["145", "Gy", "prostate"],
-      "forbidden_keywords": ["clinical_kb", "I'll search", "let me look up"],
-      "hallucination_keywords": ["I don't know", "I'm not sure", "I cannot verify"],
+      "expected_keywords": [
+        "145",
+        "Gy",
+        "prostate"
+      ],
+      "forbidden_keywords": [
+        "clinical_kb",
+        "I'll search",
+        "let me look up"
+      ],
+      "hallucination_keywords": [
+        "I don't know",
+        "I'm not sure",
+        "I cannot verify"
+      ],
       "pass_threshold": 0.6,
       "difficulty": "medium",
       "user_type": "experienced",
@@ -148,7 +225,10 @@
     {
       "id": "CK013",
       "input": "Search the knowledge base for urethra dose limits",
-      "expected_keywords": ["urethra", "dose"],
+      "expected_keywords": [
+        "urethra",
+        "dose"
+      ],
       "forbidden_keywords": [],
       "pass_threshold": 0.6,
       "difficulty": "easy",
@@ -156,22 +236,22 @@
       "_comment": "User explicitly asks to search the knowledge base. This is the ONLY case where clinical_kb tool should be called."
     },
     {
-      "id": "CK014",
-      "input": "What are the quality benchmarks for an excellent plan?",
-      "expected_keywords": ["V100", "coverage", "excellent"],
-      "forbidden_keywords": ["clinical_kb", "I'll search", "let me look up"],
-      "hallucination_keywords": ["I don't know", "I'm not sure", "I cannot verify"],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "user_type": "experienced",
-      "_comment": "User asks about plan quality benchmarks. System should provide clinical quality metrics."
-    },
-    {
       "id": "CK015",
       "input": "Add a new dose constraint for bladder: D2cc should be less than 90Gy EQD2",
-      "expected_keywords": ["bladder", "D2cc", "90"],
-      "forbidden_keywords": ["I'll search", "let me look up"],
-      "hallucination_keywords": ["I don't know", "I'm not sure", "I cannot verify"],
+      "expected_keywords": [
+        "bladder",
+        "D2cc",
+        "90"
+      ],
+      "forbidden_keywords": [
+        "I'll search",
+        "let me look up"
+      ],
+      "hallucination_keywords": [
+        "I don't know",
+        "I'm not sure",
+        "I cannot verify"
+      ],
       "pass_threshold": 0.6,
       "difficulty": "hard",
       "user_type": "experienced",

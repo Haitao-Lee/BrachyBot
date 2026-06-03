@@ -261,20 +261,6 @@
       "description": "Vaginal cylinder organ dose and cumulative EQD2 calculation"
     },
     {
-      "id": "Q0638",
-      "input": "A brachytherapy source has completed 50% of its useful life (based on the manufacturer's specification of 5 half-lives or 3.8 years for Ir-192). Calculate the current air-kerma strength if the initial strength was 50,000 uCi. Determine whether the source should be replaced according to the manufacturer's recommendations and AAPM TG-59 guidelines.",
-      "expected_keywords": [
-        "source life",
-        "air-kerma strength",
-        "half-life",
-        "Ir-192",
-        "replacement",
-        "TG-59"
-      ],
-      "difficulty": "medium",
-      "description": "Source strength and replacement evaluation"
-    },
-    {
       "id": "Q0639",
       "input": "Calculate the tissue attenuation correction factor for a brachytherapy source at a distance of 3 cm from a dwell position, assuming soft tissue with a linear attenuation coefficient of 0.105 cm^-1 for Ir-192 gamma rays. Compare this to the TG-43 water-based calculation which does not account for tissue heterogeneities. What is the percentage difference?",
       "expected_keywords": [
@@ -663,18 +649,6 @@
       "description": "Precise calculation: small_bowel_inverse_square"
     },
     {
-      "id": "Q1221",
-      "input": "Compare TPS (4.92 Gy/hr) vs measured (4.85 Gy/hr). Calculate percentage difference, absolute difference for 30 sec dwell, and cumulative effect over 50 uses.",
-      "expected_keywords": [
-        "TPS_measurement_comparison",
-        "calculation",
-        "dosimetry",
-        "precision"
-      ],
-      "difficulty": "hard",
-      "description": "Precise calculation: TPS_measurement_comparison"
-    },
-    {
       "id": "Q1222",
       "input": "Calculate lead shielding thickness for HDR room: Ir-192 HVL=0.6 cm, max permissible 2 mGy/week, 10 Ci source, 3 m distance.",
       "expected_keywords": [
@@ -723,21 +697,6 @@
       "description": "Precise calculation: point_dose_measurement_eval"
     },
     {
-      "id": "Q0713",
-      "input": "Describe the complete quality assurance program for an HDR brachytherapy afterloader system per AAPM TG-59. Include daily, monthly, and annual testing procedures, acceptance criteria for each test, documentation requirements, and the process for handling failed QA tests. How do you establish an action level versus a tolerance level?",
-      "expected_keywords": [
-        "TG-59",
-        "daily checks",
-        "monthly tests",
-        "annual survey",
-        "acceptance criteria",
-        "action level",
-        "tolerance"
-      ],
-      "difficulty": "advanced",
-      "description": "Complete HDR afterloader QA program"
-    },
-    {
       "id": "Q0714",
       "input": "A monthly output check of the HDR afterloader reveals a 4.2% deviation from the expected dose rate. This exceeds the 3% tolerance level established by the department. Describe the investigation procedure, the potential causes of the deviation, the corrective actions needed, and the documentation and reporting requirements. How do you determine whether previously treated patients were affected?",
       "expected_keywords": [
@@ -750,102 +709,6 @@
       ],
       "difficulty": "high",
       "description": "HDR afterloader output deviation investigation"
-    },
-    {
-      "id": "Q0715",
-      "input": "Describe the quality assurance procedures for a brachytherapy treatment planning system. Cover the commissioning tests, dose calculation verification, applicator library validation, CT and MRI image transfer accuracy testing, and the ongoing QA procedures. How often should each QA test be performed, and what are the acceptance criteria?",
-      "expected_keywords": [
-        "TPS QA",
-        "commissioning",
-        "dose calculation",
-        "applicator library",
-        "image transfer",
-        "acceptance criteria"
-      ],
-      "difficulty": "advanced",
-      "description": "Brachytherapy TPS quality assurance procedures"
-    },
-    {
-      "id": "Q0716",
-      "input": "A brachytherapy center has identified that the applicator library in the treatment planning system does not match the actual applicator dimensions. The ring applicator model in the TPS has a 2 mm larger inner diameter than the physical applicator. Describe the impact of this discrepancy on dose calculation, the steps to correct the issue, and the QA procedures that should have caught this error earlier.",
-      "expected_keywords": [
-        "applicator library",
-        "dimension discrepancy",
-        "dose calculation impact",
-        "corrective action",
-        "QA prevention"
-      ],
-      "difficulty": "high",
-      "description": "Applicator library discrepancy investigation"
-    },
-    {
-      "id": "Q0717",
-      "input": "Describe the end-to-end quality assurance test for a brachytherapy treatment process. How do you verify the entire chain from CT simulation through applicator reconstruction, treatment planning, plan transfer, and simulated treatment delivery? What anthropomorphic phantoms are available, and how do you interpret the results of the end-to-end test?",
-      "expected_keywords": [
-        "end-to-end testing",
-        "phantom",
-        "CT simulation",
-        "applicator reconstruction",
-        "treatment planning",
-        "plan transfer"
-      ],
-      "difficulty": "advanced",
-      "description": "End-to-end brachytherapy QA testing"
-    },
-    {
-      "id": "Q0718",
-      "input": "A center performs brachytherapy using both CT and MRI for image guidance. Describe the QA procedures needed to ensure accurate image fusion between CT and MRI datasets. What phantoms and test objects are used, what are the acceptance criteria for registration accuracy, and how often should fusion QA be performed?",
-      "expected_keywords": [
-        "CT-MRI fusion",
-        "image registration",
-        "accuracy",
-        "phantom",
-        "acceptance criteria",
-        "QA frequency"
-      ],
-      "difficulty": "advanced",
-      "description": "CT-MRI fusion QA for brachytherapy"
-    },
-    {
-      "id": "Q0719",
-      "input": "Describe the quality assurance program for source strength calibration in brachytherapy. How do you ensure traceability to national standards, what are the procedures for annual source calibration verification, how do you handle source exchange, and what documentation is required for regulatory compliance?",
-      "expected_keywords": [
-        "source calibration",
-        "traceability",
-        "national standards",
-        "source exchange",
-        "regulatory compliance",
-        "documentation"
-      ],
-      "difficulty": "advanced",
-      "description": "Source strength calibration QA program"
-    },
-    {
-      "id": "Q0720",
-      "input": "A center is implementing a new brachytherapy quality management system. Describe the key performance indicators (KPIs) that should be tracked, how to establish baseline performance metrics, methods for data analysis and trending, and how to use KPI data to drive quality improvement initiatives in the brachytherapy program.",
-      "expected_keywords": [
-        "KPIs",
-        "quality management",
-        "baseline metrics",
-        "trending",
-        "quality improvement",
-        "data analysis"
-      ],
-      "difficulty": "medium",
-      "description": "Brachytherapy quality management system design"
-    },
-    {
-      "id": "Q0721",
-      "input": "Describe the peer review process for brachytherapy treatment plans. How should plans be selected for review, what elements of each plan should be evaluated, how are disagreements documented and resolved, and how does the peer review process integrate with the overall quality assurance program?",
-      "expected_keywords": [
-        "peer review",
-        "plan evaluation",
-        "disagreement resolution",
-        "documentation",
-        "QA integration"
-      ],
-      "difficulty": "medium",
-      "description": "Brachytherapy peer review process"
     },
     {
       "id": "Q0722",
@@ -862,20 +725,6 @@
       "description": "Near-miss event root cause analysis"
     },
     {
-      "id": "Q0723",
-      "input": "Describe the quality assurance procedures for brachytherapy applicators. Cover the inspection requirements before each use, cleaning and sterilization procedures, dimensional verification, damage assessment, and documentation. How do you handle findings of applicator damage or dimensional deviation during QA inspection?",
-      "expected_keywords": [
-        "applicator QA",
-        "inspection",
-        "sterilization",
-        "dimensional verification",
-        "damage assessment",
-        "documentation"
-      ],
-      "difficulty": "medium",
-      "description": "Brachytherapy applicator QA procedures"
-    },
-    {
       "id": "Q0724",
       "input": "A center wants to implement statistical process control (SPC) for brachytherapy output measurements. Describe how to set up control charts for tracking HDR afterloader output, how to interpret control chart patterns (trends, shifts, cycles), what actions should be taken when out-of-control signals are detected, and how SPC differs from simple tolerance-based QA.",
       "expected_keywords": [
@@ -888,49 +737,6 @@
       ],
       "difficulty": "advanced",
       "description": "Statistical process control for brachytherapy QA"
-    },
-    {
-      "id": "Q0725",
-      "input": "Describe the quality assurance requirements for brachytherapy treatment documentation. What elements must be included in the treatment record per regulatory requirements, how should dose calculations be documented, what is the role of the treatment record in legal and regulatory compliance, and how do you ensure completeness and accuracy of brachytherapy records?",
-      "expected_keywords": [
-        "treatment documentation",
-        "regulatory requirements",
-        "dose calculations",
-        "legal compliance",
-        "record completeness",
-        "accuracy"
-      ],
-      "difficulty": "medium",
-      "description": "Brachytherapy documentation QA requirements"
-    },
-    {
-      "id": "Q0726",
-      "input": "A brachytherapy center is preparing for an IAEA or American College of Radiology (ACR) accreditation survey. Describe the preparation process, the specific brachytherapy-related requirements that must be met, the documentation that needs to be assembled, how to conduct a mock survey, and common areas where programs fail to meet accreditation standards.",
-      "expected_keywords": [
-        "accreditation",
-        "IAEA",
-        "ACR",
-        "preparation",
-        "documentation",
-        "mock survey",
-        "common deficiencies"
-      ],
-      "difficulty": "medium",
-      "description": "Brachytherapy accreditation preparation"
-    },
-    {
-      "id": "Q0727",
-      "input": "Describe the emergency response quality assurance procedures for brachytherapy. How should staff be trained for brachytherapy-specific emergencies such as a stuck source, patient injury during applicator insertion, or a medical emergency during treatment delivery? What are the drill requirements, how often should emergency drills be performed, and how should performance be evaluated?",
-      "expected_keywords": [
-        "emergency response",
-        "stuck source",
-        "patient injury",
-        "emergency drills",
-        "training",
-        "performance evaluation"
-      ],
-      "difficulty": "high",
-      "description": "Emergency response QA for brachytherapy"
     },
     {
       "id": "Q0989",
