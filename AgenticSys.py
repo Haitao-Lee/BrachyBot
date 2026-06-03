@@ -968,59 +968,42 @@ class BrachyAgent:
         return result
 
     def _align_label_to_ct(self, label_array):
-        """Align label array to CT coordinate system using SimpleITK resampling.
-        Handles ANY orientation mismatch (RAS vs LPI, MONAI transforms, etc.)
-
-        Key insight: the label data is in RAS order (from MONAI transforms),
-        but the CT is in LPI order (from DICOMOrient). We must NOT copy the
-        CT's direction onto the label — that would make the resampler think
-        they're already aligned. Instead, we set the label's direction to RAS
-        so the resampler correctly maps RAS → LPI."""
+        """Align label array to CT data by testing all axis flip combinations.
+        Picks the orientation where label voxels overlap most with non-air CT regions.
+        This is pure data-driven — no metadata dependency, works for ANY mismatch."""
         import numpy as np
-        try:
-            import SimpleITK as sitk
-        except ImportError:
-            logger.warning("SimpleITK not available, returning label as-is")
-            return label_array
 
-        ct_image = self.memory.retrieve("ct_image")
         ct_data = self.memory.retrieve("ct_data")
-        if ct_image is None or ct_data is None or label_array is None:
+        if ct_data is None or label_array is None:
+            return label_array
+        if ct_data.shape != label_array.shape:
+            logger.warning(f"Label shape {label_array.shape} != CT shape {ct_data.shape}, skipping alignment")
             return label_array
 
-        try:
-            # Create SimpleITK image from label array
-            label_sitk = sitk.GetImageFromArray(label_array.astype(np.uint8))
+        non_air = ct_data > -900
+        best_label = label_array
+        best_score = -1
 
-            # Set label metadata to RAS orientation (what MONAI outputs)
-            # Do NOT copy CT's direction — that would hide the orientation mismatch
-            label_sitk.SetOrigin((0.0, 0.0, 0.0))
-            label_sitk.SetDirection((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0))  # RAS
-            label_sitk.SetSpacing(ct_image.GetSpacing())  # Same spacing as CT
+        for z_flip in [False, True]:
+            for y_flip in [False, True]:
+                for x_flip in [False, True]:
+                    candidate = label_array
+                    if z_flip: candidate = candidate[::-1, :, :]
+                    if y_flip: candidate = candidate[:, ::-1, :]
+                    if x_flip: candidate = candidate[:, :, ::-1]
+                    score = int(((candidate > 0) & non_air).sum())
+                    if score > best_score:
+                        best_score = score
+                        best_label = candidate
 
-            # Resample label from RAS space to CT's LPI space
-            resampler = sitk.ResampleImageFilter()
-            resampler.SetReferenceImage(ct_image)  # Target: CT's LPI coordinate system
-            resampler.SetInterpolator(sitk.sitkNearestNeighbor)
-            resampler.SetDefaultPixelValue(0)
-            aligned = resampler.Execute(label_sitk)
-            aligned_array = sitk.GetArrayFromImage(aligned)
+        # Log which flips were applied
+        if best_label is not label_array:
+            # Check which specific flips were needed
+            y_flipped = not np.array_equal(best_label, label_array) and np.array_equal(best_label[:, ::-1, :], label_array)
+            z_flipped = not np.array_equal(best_label, label_array) and np.array_equal(best_label[::-1, :, :], label_array)
+            logger.info(f"Label aligned: Y-flip={y_flipped}, Z-flip={z_flipped}, overlap={best_score}")
 
-            # Verify alignment: label should overlap with non-air CT regions
-            non_air = ct_data > -900
-            score_orig = ((label_array > 0) & non_air).sum()
-            score_aligned = ((aligned_array > 0) & non_air).sum()
-
-            if score_aligned >= score_orig:
-                logger.info(f"Label aligned RAS→LPI: overlap {score_orig} → {score_aligned}")
-                return aligned_array
-            else:
-                logger.warning(f"Alignment decreased overlap ({score_aligned} < {score_orig}), keeping original")
-                return label_array
-
-        except Exception as e:
-            logger.warning(f"Label alignment failed: {e}, returning as-is")
-            return label_array
+        return best_label
 
     def _store_tool_result(self, tool_name: str, result):
         """Store tool result in memory based on tool type."""
@@ -2745,7 +2728,8 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
             try:
                 response, llm_meta = self._run_llm_function_calling(message, steps, step_id)
             except Exception as e:
-                logger.error(f"LLM function calling failed: {e}")
+                import traceback as _tb
+                logger.error(f"LLM function calling failed: {e}\n{_tb.format_exc()}")
                 add_step("error", "LLM Error", str(e), status="error")
                 response = f"Error: {e}"
                 llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
@@ -2859,7 +2843,8 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
                     else:
                         yield ev
             except Exception as e:
-                logger.error(f"LLM function calling failed: {e}")
+                import traceback as _tb
+                logger.error(f"LLM function calling failed: {e}\n{_tb.format_exc()}")
                 add_step("error", "LLM Error", str(e), status="error")
                 response = f"Error: {e}"
                 llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
