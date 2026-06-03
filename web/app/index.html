@@ -1062,7 +1062,7 @@
             transition: background 0.1s;
         }
         .tree-item:hover { background: rgba(255,255,255,0.04); }
-        .tree-item.selected { background: rgba(139,92,246,0.12); }
+        .tree-item.selected { background: rgba(139,92,246,0.15); border-left: 2px solid var(--primary); padding-left: calc(0.4rem - 2px); }
         .tree-item .eye-btn {
             width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;
             font-size: 0.6rem; cursor: pointer; opacity: 0.5; flex-shrink: 0;
@@ -3554,6 +3554,18 @@ function classifyOrgan(organName) {
 // Context menu state
 let activeContextMenu = null;
 
+// Multi-select state (like Windows Explorer)
+const selectedItems = new Set();  // Set of organ IDs (e.g., 'organ_1', 'ctv')
+let lastClickedId = null;  // For shift+click range selection
+
+function getSelectableIds() {
+    // Return all organ IDs + ctv in tree order
+    const ids = [];
+    if (dataTreeState.ctv.loaded) ids.push('ctv');
+    dataTreeState.organs.forEach(o => ids.push(o.id));
+    return ids;
+}
+
 // Predefined colors for organs
 const ORGAN_COLORS = [
     '#22c55e', '#06b6d4', '#8b5cf6', '#f59e0b', '#ef4444',
@@ -3693,15 +3705,6 @@ function renderDataTree() {
     html += `</div></div>`;
 
     body.innerHTML = html;
-
-    // Attach right-click handlers to organ items
-    document.querySelectorAll('.tree-item[data-organ-id]').forEach(el => {
-        el.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            showContextMenu(e.clientX, e.clientY, el.dataset.organId);
-        });
-    });
 }
 
 function renderTreeItem(id, itemState, info) {
@@ -3715,8 +3718,11 @@ function renderTreeItem(id, itemState, info) {
     const recon3dBtn = canRecon3d ? `<button class="recon3d-btn" title="3D Reconstruct" onclick="event.stopPropagation();reconstructOrgan3D('${id}')">&#9638;</button>` : '';
 
     const dataAttr = (id === 'ctv' || id.startsWith('organ_')) ? `data-organ-id="${id}"` : '';
+    const selectedClass = selectedItems.has(id) ? 'selected' : '';
 
-    return `<div class="tree-item" ${loadedClass} ${indent} ${dataAttr} onclick="selectDataItem('${id}')">
+    return `<div class="tree-item ${selectedClass}" ${loadedClass} ${indent} ${dataAttr}
+        onclick="handleTreeItemClick('${id}', event)"
+        oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('${id}', event)">
         <button class="eye-btn ${eyeClass}" onclick="event.stopPropagation();toggleDataVisibility('${id}')" ${disabledAttr}>${eyeIcon}</button>
         <span class="color-swatch" style="background:${itemState.color};"></span>
         <span class="item-label">${itemState.label}</span>
@@ -3729,14 +3735,57 @@ function renderTreeItem(id, itemState, info) {
     </div>`;
 }
 
-function showContextMenu(x, y, organId) {
-    // Remove existing context menu
+function handleTreeItemClick(id, event) {
+    const selectableIds = getSelectableIds();
+    if (event.shiftKey && lastClickedId) {
+        // Shift+click: range select
+        const startIdx = selectableIds.indexOf(lastClickedId);
+        const endIdx = selectableIds.indexOf(id);
+        if (startIdx >= 0 && endIdx >= 0) {
+            const lo = Math.min(startIdx, endIdx);
+            const hi = Math.max(startIdx, endIdx);
+            if (!event.ctrlKey) selectedItems.clear();
+            for (let i = lo; i <= hi; i++) selectedItems.add(selectableIds[i]);
+        }
+    } else if (event.ctrlKey || event.metaKey) {
+        // Ctrl+click: toggle individual
+        if (selectedItems.has(id)) selectedItems.delete(id);
+        else selectedItems.add(id);
+    } else {
+        // Normal click: single select
+        selectedItems.clear();
+        selectedItems.add(id);
+    }
+    lastClickedId = id;
+    renderDataTree();
+}
+
+function handleTreeItemRightClick(id, event) {
+    // If right-clicking an unselected item, select only it
+    if (!selectedItems.has(id)) {
+        selectedItems.clear();
+        selectedItems.add(id);
+        lastClickedId = id;
+        renderDataTree();
+    }
+    showContextMenu(event.clientX, event.clientY);
+}
+
+function getSelectedOrganIds() {
+    // Return selected IDs that are organs (not ct/dose/seeds)
+    return [...selectedItems].filter(id => id === 'ctv' || id.startsWith('organ_'));
+}
+
+function showContextMenu(x, y) {
     hideContextMenu();
 
-    const organ = organId === 'ctv' ? null : dataTreeState.organs.find(o => o.id === organId);
-    const isCTV = organId === 'ctv';
-    const label = isCTV ? 'CTV' : (organ ? organ.label : organId);
-    const currentCat = isCTV ? 'ctv' : (organ ? organ.category : 'traversable');
+    const selIds = getSelectedOrganIds();
+    if (selIds.length === 0) return;
+
+    const isSingle = selIds.length === 1;
+    const firstId = selIds[0];
+    const isCTVOnly = selIds.every(id => id === 'ctv');
+    const hasOrgans = selIds.some(id => id.startsWith('organ_'));
 
     const menu = document.createElement('div');
     menu.className = 'ctx-menu';
@@ -3746,42 +3795,59 @@ function showContextMenu(x, y, organId) {
 
     let items = '';
 
-    // 3D Reconstruct
-    items += `<div class="ctx-menu-item" onclick="hideContextMenu();reconstructOrgan3D('${organId}')">
-        <span class="ctx-icon">&#9638;</span> 3D Reconstruct</div>`;
+    // Selection info
+    if (!isSingle) {
+        items += `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
+            <span class="ctx-icon">&#9745;</span> ${selIds.length} items selected</div>`;
+        items += `<div class="ctx-menu-sep"></div>`;
+    }
+
+    // 3D Reconstruct (single or batch)
+    if (isSingle) {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();reconstructOrgan3D('${firstId}')">
+            <span class="ctx-icon">&#9638;</span> 3D Reconstruct</div>`;
+    } else {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchReconstruct3D()">
+            <span class="ctx-icon">&#9638;</span> 3D Reconstruct All (${selIds.length})</div>`;
+    }
     items += `<div class="ctx-menu-sep"></div>`;
 
-    // Move to category
-    if (!isCTV) {
+    // Move to category (only for organs, not CTV)
+    if (hasOrgans) {
         for (const [catKey, catInfo] of Object.entries(ORGAN_CATEGORIES)) {
-            const isActive = currentCat === catKey;
-            items += `<div class="ctx-menu-item${isActive ? '' : ''}" onclick="hideContextMenu();moveOrganToCategory('${organId}','${catKey}')">
-                <span class="ctx-icon">${catInfo.icon}</span> ${isActive ? '● ' : ''}Move to ${catInfo.label}</div>`;
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchMoveToCategory('${catKey}')">
+                <span class="ctx-icon">${catInfo.icon}</span> Move to ${catInfo.label}</div>`;
         }
         items += `<div class="ctx-menu-sep"></div>`;
     }
 
-    // Toggle visibility
-    items += `<div class="ctx-menu-item" onclick="hideContextMenu();toggleDataVisibility('${organId}')">
-        <span class="ctx-icon">${(isCTV ? dataTreeState.ctv.visible : organ?.visible) ? '&#128065;' : '&#128064;'}</span> Toggle Visibility</div>`;
+    // Visibility
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchToggleVisibility(true)">
+        <span class="ctx-icon">&#128065;</span> Show Selected</div>`;
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchToggleVisibility(false)">
+        <span class="ctx-icon">&#128064;</span> Hide Selected</div>`;
 
-    // Solo (hide all others)
-    items += `<div class="ctx-menu-item" onclick="hideContextMenu();soloOrgan('${organId}')">
-        <span class="ctx-icon">&#128269;</span> Solo (hide others)</div>`;
+    // Solo
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchSolo()">
+        <span class="ctx-icon">&#128269;</span> Solo Selected</div>`;
+
+    items += `<div class="ctx-menu-sep"></div>`;
 
     // Show all
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();showAllOrgans()">
         <span class="ctx-icon">&#128065;</span> Show All</div>`;
 
+    // Clear selection
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();selectedItems.clear();renderDataTree();">
+        <span class="ctx-icon">&#10005;</span> Clear Selection</div>`;
+
     menu.innerHTML = items;
     document.body.appendChild(menu);
 
-    // Adjust position if menu goes off-screen
     const rect = menu.getBoundingClientRect();
     if (rect.right > window.innerWidth) menu.style.left = (x - rect.width) + 'px';
     if (rect.bottom > window.innerHeight) menu.style.top = (y - rect.height) + 'px';
 
-    // Close on click outside
     setTimeout(() => {
         document.addEventListener('click', hideContextMenu, { once: true });
         document.addEventListener('contextmenu', hideContextMenu, { once: true });
@@ -3797,6 +3863,41 @@ function hideContextMenu() {
     }
 }
 
+function batchToggleVisibility(visible) {
+    getSelectedOrganIds().forEach(id => {
+        if (id === 'ctv') dataTreeState.ctv.visible = visible;
+        else { const o = dataTreeState.organs.find(o => o.id === id); if (o) o.visible = visible; }
+    });
+    renderDataTree();
+    if (state.ctLoaded) loadAllSlices();
+}
+
+function batchMoveToCategory(category) {
+    getSelectedOrganIds().forEach(id => {
+        if (id.startsWith('organ_')) {
+            const o = dataTreeState.organs.find(o => o.id === id);
+            if (o) o.category = category;
+        }
+    });
+    renderDataTree();
+    if (state.ctLoaded) loadAllSlices();
+}
+
+function batchSolo() {
+    const selSet = new Set(getSelectedOrganIds());
+    dataTreeState.organs.forEach(o => { o.visible = selSet.has(o.id); });
+    dataTreeState.ctv.visible = selSet.has('ctv');
+    renderDataTree();
+    if (state.ctLoaded) loadAllSlices();
+}
+
+async function batchReconstruct3D() {
+    const ids = getSelectedOrganIds();
+    for (const id of ids) {
+        await reconstructOrgan3D(id);
+    }
+}
+
 function moveOrganToCategory(organId, newCategory) {
     const organ = dataTreeState.organs.find(o => o.id === organId);
     if (organ) {
@@ -3807,7 +3908,6 @@ function moveOrganToCategory(organId, newCategory) {
 }
 
 function soloOrgan(organId) {
-    // Hide all except the selected organ
     dataTreeState.organs.forEach(o => { o.visible = (o.id === organId); });
     if (organId === 'ctv') { dataTreeState.ctv.visible = true; }
     else { dataTreeState.ctv.visible = false; }
