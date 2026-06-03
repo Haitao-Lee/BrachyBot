@@ -983,6 +983,7 @@ class BrachyAgent:
         non_air = ct_data > -900
         best_label = label_array
         best_score = -1
+        scores = {}
 
         for z_flip in [False, True]:
             for y_flip in [False, True]:
@@ -992,16 +993,15 @@ class BrachyAgent:
                     if y_flip: candidate = candidate[:, ::-1, :]
                     if x_flip: candidate = candidate[:, :, ::-1]
                     score = int(((candidate > 0) & non_air).sum())
+                    key = f"Z{'↑' if not z_flip else '↓'}Y{'↑' if not y_flip else '↓'}X{'→' if not x_flip else '←'}"
+                    scores[key] = score
                     if score > best_score:
                         best_score = score
                         best_label = candidate
 
-        # Log which flips were applied
-        if best_label is not label_array:
-            # Check which specific flips were needed
-            y_flipped = not np.array_equal(best_label, label_array) and np.array_equal(best_label[:, ::-1, :], label_array)
-            z_flipped = not np.array_equal(best_label, label_array) and np.array_equal(best_label[::-1, :, :], label_array)
-            logger.info(f"Label aligned: Y-flip={y_flipped}, Z-flip={z_flipped}, overlap={best_score}")
+        # Log all scores for debugging
+        logger.info(f"Label alignment scores: {scores}")
+        logger.info(f"Best: {max(scores, key=scores.get)} (score={best_score})")
 
         return best_label
 
