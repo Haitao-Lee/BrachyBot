@@ -513,21 +513,10 @@ def create_app(config: Optional[Dict] = None):
             import numpy as np
             import json as _json
 
-            ctv_array = agent.memory.retrieve("ctv_array")
-            oar_array = agent.memory.retrieve("oar_array")
+            ctv_array = agent._get_label_array("ctv_array")
+            oar_array = agent._get_label_array("oar_array")
 
             shape = ct_data.shape  # (Z, Y, X)
-
-            # Diagnostic: check label orientation vs CT
-            if oar_array is not None:
-                logger.info(f"Label volume diagnostic: CT shape={ct_data.shape}, OAR shape={oar_array.shape}")
-                # Check if label Y-axis is inverted vs CT by comparing edge voxels
-                ct_y0_mean = float(ct_data[:, 0, :].mean())
-                ct_ymean = float(ct_data[:, -1, :].mean())
-                oar_y0_count = int((oar_array[:, 0, :] > 0).sum())
-                oar_ymean_count = int((oar_array[:, -1, :] > 0).sum())
-                logger.info(f"  CT Y=0 mean HU: {ct_y0_mean:.0f}, Y=max mean HU: {ct_ymean:.0f}")
-                logger.info(f"  OAR Y=0 non-zero: {oar_y0_count}, Y=max non-zero: {oar_ymean_count}")
 
             # Build color LUT for all labels
             color_lut = {}
@@ -619,9 +608,9 @@ def create_app(config: Optional[Dict] = None):
 
             # Get the segmentation mask
             if overlay_type == "ctv":
-                mask_data = agent.memory.retrieve("ctv_array")
+                mask_data = agent._get_label_array("ctv_array")
             else:
-                mask_data = agent.memory.retrieve("oar_array")
+                mask_data = agent._get_label_array("oar_array")
 
             if mask_data is None:
                 img = Image.new('RGBA', (1, 1), (0, 0, 0, 0))
@@ -706,7 +695,7 @@ def create_app(config: Optional[Dict] = None):
 
         # If organ_names is empty but oar_array exists, generate from array
         if not organ_names:
-            oar_array = agent.memory.retrieve("oar_array")
+            oar_array = agent._get_label_array("oar_array")
             if oar_array is not None:
                 import numpy as np
                 organ_counts_generated = {}
@@ -826,9 +815,9 @@ def create_app(config: Optional[Dict] = None):
 
             # Get mask data
             if source == "ctv":
-                mask_data = agent.memory.retrieve("ctv_array")
+                mask_data = agent._get_label_array("ctv_array")
             else:
-                mask_data = agent.memory.retrieve("oar_array")
+                mask_data = agent._get_label_array("oar_array")
 
             if mask_data is None:
                 return jsonify({"error": f"No {source} mask data available"}), 400
@@ -887,9 +876,9 @@ def create_app(config: Optional[Dict] = None):
             from scipy.ndimage import binary_closing, binary_fill_holes
 
             if source == "ctv":
-                mask_data = agent.memory.retrieve("ctv_array")
+                mask_data = agent._get_label_array("ctv_array")
             else:
-                mask_data = agent.memory.retrieve("oar_array")
+                mask_data = agent._get_label_array("oar_array")
 
             if mask_data is None:
                 return jsonify({"error": f"No {source} mask data available"}), 400
@@ -1240,8 +1229,8 @@ def create_app(config: Optional[Dict] = None):
 
             seed_positions = agent.memory.retrieve("seed_positions")
             dose_distribution = agent.memory.retrieve("dose_distribution")
-            ctv_array = agent.memory.retrieve("ctv_array")
-            oar_array = agent.memory.retrieve("oar_array")
+            ctv_array = agent._get_label_array("ctv_array")
+            oar_array = agent._get_label_array("oar_array")
 
             structures = {}
             if ctv_array is not None:
