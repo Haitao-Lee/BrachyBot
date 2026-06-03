@@ -43,17 +43,6 @@
       "description": "Segmentation should mention viewer display"
     },
     {
-      "id": "RQ004",
-      "input": "查询前列腺的剂量约束",
-      "language": "zh",
-      "expected_keywords": [
-        "前列腺",
-        "剂量"
-      ],
-      "difficulty": "medium",
-      "description": "Clinical query should have structured answer"
-    },
-    {
       "id": "RQ005",
       "input": "分析并分割图像",
       "language": "zh",

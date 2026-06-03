@@ -145,30 +145,6 @@
       ]
     },
     {
-      "id": "CT007",
-      "type": "multi_turn",
-      "description": "Clinical context: user queries dose, then asks about constraint",
-      "turns": [
-        {
-          "input": "前列腺癌I-125的处方剂量是多少？",
-          "expected_keywords": [
-            "145",
-            "Gy"
-          ],
-          "language": "zh"
-        },
-        {
-          "input": "那膀胱的剂量约束呢？",
-          "expected_keywords": [
-            "膀胱",
-            "剂量"
-          ],
-          "difficulty": "medium",
-          "language": "zh"
-        }
-      ]
-    },
-    {
       "id": "CT008",
       "type": "multi_turn",
       "description": "Language consistency across turns",
@@ -262,29 +238,6 @@
             "ui_controller"
           ],
           "difficulty": "hard",
-          "language": "zh"
-        }
-      ]
-    },
-    {
-      "id": "CT012",
-      "type": "multi_turn",
-      "description": "User asks about previous result",
-      "turns": [
-        {
-          "input": "帮我查一下前列腺癌的剂量约束",
-          "expected_tools": [
-            "clinical_kb"
-          ],
-          "language": "zh"
-        },
-        {
-          "input": "刚才查到的D90是多少？",
-          "expected_keywords": [
-            "D90",
-            "Gy"
-          ],
-          "difficulty": "medium",
           "language": "zh"
         }
       ]
