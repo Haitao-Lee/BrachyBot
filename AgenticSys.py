@@ -961,44 +961,61 @@ class BrachyAgent:
 
         return result
 
-    def _align_label_to_ct(self, label_array) -> 'np.ndarray':
-        """Ensure label array orientation matches CT data orientation.
-        The segmentation model may output labels in a different orientation
-        than the CT (due to MONAI RAS transforms). We detect and correct
-        by checking if flipping axes improves alignment."""
+    def _align_label_to_ct(self, label_array):
+        """Align label array to CT coordinate system using SimpleITK resampling.
+        This handles ANY orientation mismatch (RAS vs LPI, MONAI transforms, etc.)
+        by using the CT's spatial metadata as the reference frame."""
         import numpy as np
+        try:
+            import SimpleITK as sitk
+        except ImportError:
+            logger.warning("SimpleITK not available, returning label as-is")
+            return label_array
+
+        ct_image = self.memory.retrieve("ct_image")
         ct_data = self.memory.retrieve("ct_data")
-        if ct_data is None or label_array is None:
-            return label_array
-        if ct_data.shape != label_array.shape:
-            logger.warning(f"Label shape {label_array.shape} != CT shape {ct_data.shape}, skipping alignment")
+        if ct_image is None or ct_data is None or label_array is None:
             return label_array
 
-        # Check if label data needs axis flips to match CT
-        # Compare label edge activity with CT edge structure
-        # If label has content where CT has air (and vice versa), axes may be wrong
-        best_label = label_array
-        best_score = -1
+        try:
+            # Create SimpleITK image from label array
+            # Use CT's metadata as reference (direction, origin, spacing)
+            label_sitk = sitk.GetImageFromArray(label_array.astype(np.uint8))
+            label_sitk.CopyInformation(ct_image)
 
-        for z_flip in [False, True]:
-            for y_flip in [False, True]:
-                candidate = label_array.copy()
-                if z_flip: candidate = candidate[::-1, :, :]
-                if y_flip: candidate = candidate[:, ::-1, :]
-                # Score: overlap of label with non-air CT regions
-                non_air = ct_data > -900
-                label_active = candidate > 0
-                score = (label_active & non_air).sum()
-                if score > best_score:
-                    best_score = score
-                    best_label = candidate
+            # If shapes match, check if resampling is needed
+            if label_array.shape == ct_data.shape:
+                # Compare physical space — if identical, no resampling needed
+                if (label_sitk.GetDirection() == ct_image.GetDirection() and
+                    label_sitk.GetOrigin() == ct_image.GetOrigin() and
+                    label_sitk.GetSpacing() == ct_image.GetSpacing()):
+                    return label_array
 
-        flipped_y = not np.array_equal(best_label, label_array) and np.array_equal(best_label[:, ::-1, :], label_array)
-        flipped_z = not np.array_equal(best_label, label_array) and np.array_equal(best_label[::-1, :, :], label_array)
-        if flipped_y or flipped_z:
-            logger.info(f"Label aligned: Y-flip={flipped_y}, Z-flip={flipped_z}")
+            # Resample label to CT's physical space using nearest neighbor
+            resampler = sitk.ResampleImageFilter()
+            resampler.SetReferenceImage(ct_image)
+            resampler.SetInterpolator(sitk.sitkNearestNeighbor)
+            resampler.SetDefaultPixelValue(0)
+            aligned = resampler.Execute(label_sitk)
+            aligned_array = sitk.GetArrayFromImage(aligned)
 
-        return best_label
+            # Verify alignment improved
+            non_air = ct_data > -900
+            label_active_orig = label_array > 0
+            label_active_aligned = aligned_array > 0
+            score_orig = (label_active_orig & non_air).sum()
+            score_aligned = (label_active_aligned & non_air).sum()
+
+            if score_aligned >= score_orig:
+                logger.info(f"Label aligned via SimpleITK resampling: {label_array.shape} → {aligned_array.shape}")
+                return aligned_array
+            else:
+                logger.warning(f"Resampling decreased alignment quality ({score_aligned} < {score_orig}), keeping original")
+                return label_array
+
+        except Exception as e:
+            logger.warning(f"Label alignment failed: {e}, returning as-is")
+            return label_array
 
     def _store_tool_result(self, tool_name: str, result):
         """Store tool result in memory based on tool type."""
