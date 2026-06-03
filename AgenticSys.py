@@ -947,14 +947,29 @@ class BrachyAgent:
             ct_path = ui.get("ct_path", "")
 
         tools = []
+        _lang = "zh" if re.search(r'[一-鿿]', message) else "en"
 
-        has_segment = bool(re.search(r'(分割|segment|再分)', msg, re.IGNORECASE))
-        has_analyze = bool(re.search(r'(分析|analyze)', msg, re.IGNORECASE))
-        has_dose = bool(re.search(r'(剂量|dose|计算剂量)', msg, re.IGNORECASE))
+        # Detect actions and their positions in the message to preserve user's order
+        action_positions = []
+        for match in re.finditer(r'(分析|analyze)', msg, re.IGNORECASE):
+            action_positions.append((match.start(), 'analyze'))
+        for match in re.finditer(r'(分割|segment|再分)', msg, re.IGNORECASE):
+            action_positions.append((match.start(), 'segment'))
+        for match in re.finditer(r'(剂量|dose|计算剂量)', msg, re.IGNORECASE):
+            action_positions.append((match.start(), 'dose'))
 
-        # Analysis first (if requested) — "分析然后分割" means analyze before segment
-        if has_analyze and ct_path:
-            analysis_code = f"""
+        # Deduplicate (keep first occurrence of each action type)
+        seen = set()
+        ordered_actions = []
+        for pos, action in sorted(action_positions):
+            if action not in seen:
+                seen.add(action)
+                ordered_actions.append(action)
+
+        # Build tools in user-specified order
+        for action in ordered_actions:
+            if action == 'analyze' and ct_path:
+                analysis_code = f"""
 import nibabel as nib
 import numpy as np
 
@@ -974,19 +989,21 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
     pct = np.sum((data >= lo) & (data < hi)) / total * 100
     print(f"  {{name}}: {{pct:.1f}}%")
 """
-            tools.append({"id": "tool_direct_analysis", "tool": "code_executor", "params": {"code": analysis_code, "description": "Analyze CT image"}})
-            logger.info(f"Direct tool: analysis with correct path")
+                tools.append({"id": "tool_direct_analysis", "tool": "code_executor", "params": {"code": analysis_code, "description": "Analyze CT image"}})
+                logger.info(f"Direct tool: analysis")
 
-        # Segmentation (after analysis)
-        if has_segment and ct_path:
-            tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": {"image_path": ct_path}})
-            tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": {"image_path": ct_path}})
-            logger.info(f"Direct tool: segmentation")
+            elif action == 'segment' and ct_path:
+                tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": {"image_path": ct_path}})
+                tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": {"image_path": ct_path}})
+                logger.info(f"Direct tool: segmentation")
 
-        # Dose calculation
-        if has_dose and ct_path:
-            tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
-            logger.info(f"Direct tool: dose calculation")
+            elif action == 'dose' and ct_path:
+                tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
+                logger.info(f"Direct tool: dose")
+
+        # If only analyze (no segment/dose), let LLM handle it (needs code generation context)
+        if ordered_actions == ['analyze'] and not tools:
+            return None
 
         return tools if tools else None
 
@@ -2661,7 +2678,6 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
                     logger.error(f"Direct tool execution failed: {tc['tool']}: {e}")
 
             # Build structured summary grouped by category
-            _lang = "zh" if re.search(r'[一-鿿]', message) else "en"
             analysis_results = []
             segmentation_results = []
             other_results = []
