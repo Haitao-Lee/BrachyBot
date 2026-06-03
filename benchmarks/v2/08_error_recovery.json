@@ -1,0 +1,87 @@
+{
+  "category": "error_recovery",
+  "description": "Tests whether BrachyBot handles errors gracefully and recovers appropriately.",
+  "evaluation": "Bot should report errors clearly, not crash, and suggest alternatives.",
+  "cases": [
+    {
+      "id": "ER001",
+      "input": "分割一个不存在的文件 /tmp/fake.nii",
+      "language": "zh",
+      "expected_behavior": "Should report file not found, not crash",
+      "difficulty": "medium",
+      "description": "File not found — should handle gracefully"
+    },
+    {
+      "id": "ER002",
+      "input": "计算剂量（没有种子计划）",
+      "language": "zh",
+      "expected_behavior": "Should report missing prerequisites",
+      "difficulty": "medium",
+      "description": "Missing prerequisite — should explain what's needed"
+    },
+    {
+      "id": "ER003",
+      "input": "评估剂量（没有剂量分布）",
+      "language": "zh",
+      "expected_behavior": "Should report no dose distribution available",
+      "difficulty": "medium",
+      "description": "No dose data — should handle gracefully"
+    },
+    {
+      "id": "ER004",
+      "input": "导出DICOM（没有计划）",
+      "language": "zh",
+      "expected_behavior": "Should report no plan to export",
+      "difficulty": "medium",
+      "description": "No plan — should handle gracefully"
+    },
+    {
+      "id": "ER005",
+      "input": "帮我查一篇根本不存在的论文",
+      "language": "zh",
+      "expected_behavior": "Should report search returned no results",
+      "difficulty": "medium",
+      "description": "Empty search results — should report honestly"
+    },
+    {
+      "id": "ER006",
+      "input": "运行一个不存在的工具",
+      "language": "zh",
+      "expected_behavior": "Should say tool not found",
+      "difficulty": "medium",
+      "description": "Unknown tool — should handle gracefully"
+    },
+    {
+      "id": "ER007",
+      "input": "分析一个损坏的CT文件",
+      "language": "zh",
+      "expected_behavior": "Should report file read error",
+      "difficulty": "hard",
+      "description": "Corrupt file — should handle gracefully"
+    },
+    {
+      "id": "ER008",
+      "input": "分割一个空的CT文件",
+      "language": "zh",
+      "expected_behavior": "Should report empty or invalid data",
+      "difficulty": "hard",
+      "description": "Empty data — should handle gracefully"
+    },
+    {
+      "id": "ER009",
+      "input": "帮我查一下这个完全不存在的东西",
+      "language": "zh",
+      "expected_behavior": "Should report no results found",
+      "difficulty": "medium",
+      "description": "No results — should handle gracefully"
+    },
+    {
+      "id": "ER010",
+      "input": "把CT的尺寸改成1024x1024",
+      "language": "zh",
+      "expected_behavior": "Should explain this operation is not supported",
+      "difficulty": "medium",
+      "description": "Unsupported operation — should refuse gracefully"
+    }
+  ]
+}
