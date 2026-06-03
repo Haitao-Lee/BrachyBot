@@ -1049,8 +1049,7 @@ class BrachyAgent:
             stdout = result.data.get("stdout", "").strip()
             output = stdout if stdout else str(result.data)
             lines = [l.strip() for l in output.split('\n') if l.strip()]
-            header = "图像分析完成：" if lang == "zh" else "Image analysis completed:"
-            return f"{header}\n" + "\n".join(lines)
+            return "\n".join(lines)
 
         # All other tools: use result.message directly
         return result.message or f"{tool_name} completed."
@@ -1177,20 +1176,19 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
 
         parts = []
         if lang == "zh":
-            if analysis: parts.append(f"## ① 分析结果\n" + "\n".join(analysis))
-            if segmentation: parts.append(f"## ② 分割结果\n" + "\n".join(segmentation))
+            if analysis: parts.append(f"## 🔍 分析结果\n" + "\n".join(analysis))
+            if segmentation: parts.append(f"## 🎯 分割结果\n" + "\n".join(segmentation))
             if other: parts.append("\n\n".join(other))
             if errors: parts.append(f"## ⚠️ 问题\n" + "\n".join(errors))
-            # Auto-acknowledge viewer switch if segmentation was done
             if segmentation and not errors:
-                parts.append("分割结果已自动显示在 Viewer 面板中。")
+                parts.append("✅ 分割结果已自动显示在 Viewer 面板中。")
         else:
-            if analysis: parts.append(f"## ① Analysis\n" + "\n".join(analysis))
-            if segmentation: parts.append(f"## ② Segmentation\n" + "\n".join(segmentation))
+            if analysis: parts.append(f"## 🔍 Analysis\n" + "\n".join(analysis))
+            if segmentation: parts.append(f"## 🎯 Segmentation\n" + "\n".join(segmentation))
             if other: parts.append("\n\n".join(other))
             if errors: parts.append(f"## ⚠️ Issues\n" + "\n".join(errors))
             if segmentation and not errors:
-                parts.append("Segmentation results are displayed in the Viewer panel.")
+                parts.append("✅ Segmentation results are displayed in the Viewer panel.")
         return "\n\n".join(parts) or "Tools executed."
 
     def _detect_realtime_query(self, message: str) -> Optional[str]:
