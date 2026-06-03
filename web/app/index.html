@@ -3652,12 +3652,12 @@ function renderDataTree() {
         const gVis = nonTrav.some(o => o.visible);
         const gOp = nonTrav[0]?.opacity ?? 0.5;
         html += `<div class="tree-group" data-group="non_traversable">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)" style="font-size:0.7rem;">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)">
                 <span class="arrow">&#9660;</span>
-                <span style="color:#f97316;">🚫 Non-traversable (${nonTrav.length})</span>
+                <span style="color:rgba(249,115,22,0.7);font-size:0.63rem;">&#9679; Non-traversable (${nonTrav.length})</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
                     <button class="eye-btn ${gVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('non_traversable', ${!gVis})" title="Toggle">${gVis ? '&#128065;' : '&#128064;'}</button>
-                    <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(gOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('non_traversable', this.value)" title="Opacity" style="width:50px;height:3px;">
+                    <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(gOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('non_traversable', this.value)" title="Opacity" style="width:50px;height:2px;">
                 </span>
             </div>
             <div class="tree-group-items">`;
@@ -3669,17 +3669,16 @@ function renderDataTree() {
         html += `</div></div>`;
     }
 
-    // Traversable sub-group
     if (trav.length > 0) {
         const gVis = trav.some(o => o.visible);
         const gOp = trav[0]?.opacity ?? 0.5;
         html += `<div class="tree-group" data-group="traversable">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)" style="font-size:0.7rem;">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)">
                 <span class="arrow">&#9660;</span>
-                <span style="color:#22c55e;">✅ Traversable (${trav.length})</span>
+                <span style="color:rgba(34,197,94,0.7);font-size:0.63rem;">&#9679; Traversable (${trav.length})</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
                     <button class="eye-btn ${gVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('traversable', ${!gVis})" title="Toggle">${gVis ? '&#128065;' : '&#128064;'}</button>
-                    <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(gOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('traversable', this.value)" title="Opacity" style="width:50px;height:3px;">
+                    <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(gOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('traversable', this.value)" title="Opacity" style="width:50px;height:2px;">
                 </span>
             </div>
             <div class="tree-group-items">`;
@@ -3736,10 +3735,17 @@ function renderTreeItem(id, itemState, info) {
     </div>`;
 }
 
+function getItemGroup(id) {
+    if (id === 'ctv') return 'ctv';
+    const organ = dataTreeState.organs.find(o => o.id === id);
+    return organ ? organ.category : 'other';
+}
+
 function handleTreeItemClick(id, event) {
-    const selectableIds = getSelectableIds();
     if (event.shiftKey && lastClickedId) {
-        // Shift+click: range select
+        // Shift+click: range select within the SAME group only
+        const group = getItemGroup(id);
+        const selectableIds = getSelectableIds().filter(i => getItemGroup(i) === group);
         const startIdx = selectableIds.indexOf(lastClickedId);
         const endIdx = selectableIds.indexOf(id);
         if (startIdx >= 0 && endIdx >= 0) {
@@ -4500,7 +4506,12 @@ async function reconstructOrgan3D(id) {
             label_id = parseInt(id.replace('organ_', ''));
             source = 'oar';
             const organ = dataTreeState.organs.find(o => o.id === id);
-            color = organ ? parseInt(organ.color.replace('#', '0x')) : 0x0ea5e9;
+            if (organ) {
+                // Parse color: supports #rrggbb and rgb(r,g,b)
+                const c = organ.color;
+                if (c.startsWith('#')) { color = parseInt(c.slice(1), 16); }
+                else { const m = c.match(/(\d+)/g); color = m ? (parseInt(m[0]) << 16 | parseInt(m[1]) << 8 | parseInt(m[2])) : 0x0ea5e9; }
+            } else { color = 0x0ea5e9; }
         } else {
             return;
         }
