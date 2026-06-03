@@ -917,10 +917,14 @@ class BrachyAgent:
                 return f"OAR分割完成。共分割 {count} 个器官。"
             return f"OAR segmentation completed. {count} organs segmented."
         elif tool_name == "code_executor":
-            output = str(result.data) if result.data else ""
+            output = ""
+            if isinstance(result.data, dict):
+                output = result.data.get("stdout", str(result.data))
+            else:
+                output = str(result.data) if result.data else ""
             if lang == "zh":
-                return f"图像分析完成。\n{output}"
-            return f"Image analysis completed.\n{output}"
+                return f"图像分析完成。\n{output.strip()}"
+            return f"Image analysis completed.\n{output.strip()}"
         elif tool_name == "dose_engine":
             return f"{'剂量计算完成' if lang == 'zh' else 'Dose calculation completed'}. {str(result.data)[:200]}"
         else:
