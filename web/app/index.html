@@ -3652,7 +3652,7 @@ function renderDataTree() {
         const gVis = nonTrav.some(o => o.visible);
         const gOp = nonTrav[0]?.opacity ?? 0.5;
         html += `<div class="tree-group" data-group="non_traversable">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'non_traversable')">
                 <span class="arrow">&#9660;</span>
                 <span style="color:rgba(249,115,22,0.7);font-size:0.63rem;">&#9679; Non-traversable (${nonTrav.length})</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
@@ -3673,7 +3673,7 @@ function renderDataTree() {
         const gVis = trav.some(o => o.visible);
         const gOp = trav[0]?.opacity ?? 0.5;
         html += `<div class="tree-group" data-group="traversable">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'traversable')">
                 <span class="arrow">&#9660;</span>
                 <span style="color:rgba(34,197,94,0.7);font-size:0.63rem;">&#9679; Traversable (${trav.length})</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
@@ -3776,6 +3776,69 @@ function handleTreeItemRightClick(id, event) {
         renderDataTree();
     }
     showContextMenu(event.clientX, event.clientY);
+}
+
+function showGroupContextMenu(x, y, category) {
+    hideContextMenu();
+    const organs = dataTreeState.organs.filter(o => o.category === category);
+    if (organs.length === 0) return;
+    const catInfo = ORGAN_CATEGORIES[category];
+
+    const menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    menu.id = 'ctxMenu';
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+
+    let items = `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
+        <span class="ctx-icon">${catInfo.icon}</span> ${catInfo.label} (${organs.length})</div>`;
+    items += `<div class="ctx-menu-sep"></div>`;
+
+    // 3D Reconstruct all in group
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();groupReconstruct3D('${category}')">
+        <span class="ctx-icon">&#9638;</span> 3D Reconstruct All (${organs.length})</div>`;
+    items += `<div class="ctx-menu-sep"></div>`;
+
+    // Visibility
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility('${category}',true)">
+        <span class="ctx-icon">&#128065;</span> Show All</div>`;
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility('${category}',false)">
+        <span class="ctx-icon">&#128064;</span> Hide All</div>`;
+
+    // Solo this group
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();soloGroup('${category}')">
+        <span class="ctx-icon">&#128269;</span> Solo This Group</div>`;
+
+    items += `<div class="ctx-menu-sep"></div>`;
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();showAllOrgans()">
+        <span class="ctx-icon">&#128065;</span> Show All Organs</div>`;
+
+    menu.innerHTML = items;
+    document.body.appendChild(menu);
+
+    const rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) menu.style.left = (x - rect.width) + 'px';
+    if (rect.bottom > window.innerHeight) menu.style.top = (y - rect.height) + 'px';
+
+    setTimeout(() => {
+        document.addEventListener('click', hideContextMenu, { once: true });
+        document.addEventListener('contextmenu', hideContextMenu, { once: true });
+    }, 0);
+    activeContextMenu = menu;
+}
+
+function soloGroup(category) {
+    dataTreeState.organs.forEach(o => { o.visible = (o.category === category); });
+    dataTreeState.ctv.visible = (category === 'ctv');
+    renderDataTree();
+    if (state.ctLoaded) loadAllSlices();
+}
+
+async function groupReconstruct3D(category) {
+    const organs = dataTreeState.organs.filter(o => o.category === category);
+    for (const organ of organs) {
+        await reconstructOrgan3D(organ.id);
+    }
 }
 
 function getSelectedOrganIds() {
