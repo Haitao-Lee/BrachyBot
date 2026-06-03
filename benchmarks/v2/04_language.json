@@ -13,7 +13,8 @@
       ],
       "forbidden_keywords": [],
       "difficulty": "easy",
-      "description": "Chinese input → Chinese analysis output"
+      "description": "Chinese input → Chinese analysis output",
+      "context": "CT已加载"
     },
     {
       "id": "LN002",
@@ -25,7 +26,8 @@
       ],
       "forbidden_keywords": [],
       "difficulty": "easy",
-      "description": "English input → English analysis output"
+      "description": "English input → English analysis output",
+      "context": "CT已加载"
     },
     {
       "id": "LN003",
@@ -39,7 +41,8 @@
         "segmentation completed"
       ],
       "difficulty": "easy",
-      "description": "Chinese segmentation → Chinese result"
+      "description": "Chinese segmentation → Chinese result",
+      "context": "CT已加载"
     },
     {
       "id": "LN004",
@@ -53,7 +56,8 @@
         "分割完成"
       ],
       "difficulty": "easy",
-      "description": "English segmentation → English result"
+      "description": "English segmentation → English result",
+      "context": "CT已加载"
     },
     {
       "id": "LN005",
@@ -64,7 +68,8 @@
         "分割"
       ],
       "difficulty": "easy",
-      "description": "Chinese multi-step → Chinese output"
+      "description": "Chinese multi-step → Chinese output",
+      "context": "CT已加载"
     },
     {
       "id": "LN006",
@@ -75,7 +80,8 @@
         "Segmentation"
       ],
       "difficulty": "easy",
-      "description": "English multi-step → English output"
+      "description": "English multi-step → English output",
+      "context": "CT已加载"
     },
     {
       "id": "LN007",
@@ -90,7 +96,8 @@
         "Hi"
       ],
       "difficulty": "easy",
-      "description": "Chinese greeting → Chinese response"
+      "description": "Chinese greeting → Chinese response",
+      "context": "CT已加载"
     },
     {
       "id": "LN008",
@@ -104,7 +111,8 @@
         "你好"
       ],
       "difficulty": "easy",
-      "description": "English greeting → English response"
+      "description": "English greeting → English response",
+      "context": "CT已加载"
     },
     {
       "id": "LN009",
@@ -115,7 +123,8 @@
         "剂量"
       ],
       "difficulty": "medium",
-      "description": "Chinese clinical query → Chinese response"
+      "description": "Chinese clinical query → Chinese response",
+      "context": "CT已加载"
     },
     {
       "id": "LN010",
@@ -130,7 +139,8 @@
         "前列腺"
       ],
       "difficulty": "medium",
-      "description": "English clinical query → English response"
+      "description": "English clinical query → English response",
+      "context": "CT已加载"
     },
     {
       "id": "LN011",
@@ -145,7 +155,8 @@
         "Segmentation"
       ],
       "difficulty": "medium",
-      "description": "Chinese multi-action → Chinese output"
+      "description": "Chinese multi-action → Chinese output",
+      "context": "CT已加载"
     },
     {
       "id": "LN012",
@@ -156,7 +167,8 @@
         "切换"
       ],
       "difficulty": "medium",
-      "description": "UI action in Chinese"
+      "description": "UI action in Chinese",
+      "context": "CT已加载"
     },
     {
       "id": "LN013",
@@ -167,7 +179,8 @@
         "完成"
       ],
       "difficulty": "medium",
-      "description": "Segmentation request with follow-up — both in Chinese"
+      "description": "Segmentation request with follow-up — both in Chinese",
+      "context": "CT已加载"
     },
     {
       "id": "LN014",
@@ -178,7 +191,8 @@
         "D90"
       ],
       "difficulty": "medium",
-      "description": "English dose query"
+      "description": "English dose query",
+      "context": "CT已加载"
     },
     {
       "id": "LN015",
@@ -189,7 +203,8 @@
         "范围"
       ],
       "difficulty": "easy",
-      "description": "Chinese HU query"
+      "description": "Chinese HU query",
+      "context": "CT已加载"
     }
   ]
 }
