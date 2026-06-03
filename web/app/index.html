@@ -2993,18 +2993,17 @@ function renderSliceFromVolume(axis, sliceIndex) {
     for (let py = 0; py < height; py++) {
         for (let px = 0; px < width; px++) {
             // Map display coords to volume coords for label lookup
-            // Must match CT rendering: ct_arr[Z, Y, X] = ct_arr[zOffset + y * X + x]
+            // Y-flip: label volume Y-axis is inverted relative to CT display
             let volZ, volY2, volX2;
-            if (axis === 'axial') { volZ = sliceIndex; volY2 = py; volX2 = px; }
-            else if (axis === 'sagittal') {
-                // CT: zOffset = srcZ * Y * X + sliceIndex; val = data[zOffset + y * X]
-                // → ct_arr[srcZ, y, sliceIndex] where srcZ from py, y from px
-                volZ = Math.min(Math.floor(py / resampleRatio), Z - 1);
+            if (axis === 'axial') {
+                volZ = sliceIndex;
+                volY2 = Y - 1 - py;  // Flip Y to match CT orientation
+                volX2 = px;
+            } else if (axis === 'sagittal') {
+                volZ = Z - 1 - Math.min(Math.floor(py / resampleRatio), Z - 1);  // Flip Z
                 volY2 = px; volX2 = sliceIndex;
             } else {
-                // CT: zOffset = srcZ * Y * X + sliceIndex * X; val = data[zOffset + x]
-                // → ct_arr[srcZ, sliceIndex, x] where srcZ from py, x from px
-                volZ = Math.min(Math.floor(py / resampleRatio), Z - 1);
+                volZ = Z - 1 - Math.min(Math.floor(py / resampleRatio), Z - 1);  // Flip Z
                 volY2 = sliceIndex; volX2 = px;
             }
             const flatIdx = volZ * labelSliceSize + volY2 * X + volX2;
