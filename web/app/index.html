@@ -10,6 +10,7 @@
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <style>
         :root {
             --primary: #0ea5e9;
@@ -2046,6 +2047,21 @@
                     </div>
                     <div class="viewer-resize-h" data-view="3d"></div>
                     <div class="viewer-card-ctrl">
+                        <button class="file-btn" style="padding:2px 5px;font-size:0.55rem;" onclick="reset3DView()" title="Reset camera">&#8635; Reset</button>
+                        <div class="ctrl-sep"></div>
+                        <label style="font-size:0.55rem;">Mesh Op</label>
+                        <input type="range" min="0" max="100" value="70" id="meshOpacity3D" oninput="update3DMeshOpacity(this.value)" style="width:50px;">
+                        <div class="ctrl-sep"></div>
+                        <label class="ctrl-toggle" style="font-size:0.55rem;">
+                            <input type="checkbox" id="wireframe3D" onchange="toggle3DWireframe(this.checked)">
+                            Wire
+                        </label>
+                        <div class="ctrl-sep"></div>
+                        <label class="ctrl-toggle" style="font-size:0.55rem;">
+                            <input type="checkbox" id="skinToggle3D" onchange="toggle3DSkin(this.checked)">
+                            Skin
+                        </label>
+                        <div class="ctrl-sep"></div>
                         <label>Dose Op</label>
                         <input type="range" min="0" max="100" value="40" id="doseOpacity" oninput="updateDoseOpacity(this.value)">
                         <div class="ctrl-sep"></div>
@@ -4670,16 +4686,89 @@ async function reconstructOrgan3D(id) {
     }
 }
 
-function render3DMesh(meshData) {
-    const canvas = document.getElementById('canvas3D');
-    canvas.innerHTML = '';
+// Persistent 3D scene manager
+const scene3D = {
+    scene: null, camera: null, renderer: null, controls: null,
+    meshes: {},       // {organ_id: THREE.Mesh}
+    skinMesh: null,   // CT skin mesh
+    initialized: false,
+};
 
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(canvas.clientWidth, canvas.clientHeight);
-    renderer.setClearColor(0x000000, 0);
-    canvas.appendChild(renderer.domElement);
+function init3DScene() {
+    const canvas = document.getElementById('canvas3D');
+    if (!canvas || scene3D.initialized) return;
+
+    scene3D.scene = new THREE.Scene();
+    scene3D.scene.background = new THREE.Color(0x1a1a2e);
+
+    scene3D.camera = new THREE.PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 2000);
+    scene3D.camera.position.set(0, 0, 300);
+
+    scene3D.renderer = new THREE.WebGLRenderer({ antialias: true });
+    scene3D.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+    scene3D.renderer.setPixelRatio(window.devicePixelRatio);
+    scene3D.renderer.shadowMap.enabled = false;
+    canvas.appendChild(scene3D.renderer.domElement);
+
+    // OrbitControls: left=rotate, middle=pan, scroll=zoom
+    scene3D.controls = new THREE.OrbitControls(scene3D.camera, scene3D.renderer.domElement);
+    scene3D.controls.enableDamping = true;
+    scene3D.controls.dampingFactor = 0.1;
+    scene3D.controls.rotateSpeed = 0.8;
+    scene3D.controls.zoomSpeed = 1.2;
+    scene3D.controls.panSpeed = 0.8;
+
+    // Lighting
+    scene3D.scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const dir1 = new THREE.DirectionalLight(0xffffff, 0.7);
+    dir1.position.set(200, 200, 200);
+    scene3D.scene.add(dir1);
+    const dir2 = new THREE.DirectionalLight(0xffffff, 0.3);
+    dir2.position.set(-200, -100, -200);
+    scene3D.scene.add(dir2);
+
+    // Axis indicator
+    const axisLen = 40;
+    const axisMat = (color) => new THREE.LineBasicMaterial({ color, linewidth: 2 });
+    [['x', 0xff0000], ['y', 0x00ff00], ['z', 0x0000ff]].forEach(([axis, color]) => {
+        const geo = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(...(axis === 'x' ? [axisLen, 0, 0] : axis === 'y' ? [0, axisLen, 0] : [0, 0, axisLen]))
+        ]);
+        scene3D.scene.add(new THREE.Line(geo, axisMat(color)));
+    });
+
+    // Animation loop
+    function animate() {
+        requestAnimationFrame(animate);
+        scene3D.controls.update();
+        scene3D.renderer.render(scene3D.scene, scene3D.camera);
+    }
+    animate();
+    scene3D.initialized = true;
+
+    // Handle resize
+    const observer = new ResizeObserver(() => {
+        const w = canvas.clientWidth, h = canvas.clientHeight;
+        if (w > 0 && h > 0) {
+            scene3D.camera.aspect = w / h;
+            scene3D.camera.updateProjectionMatrix();
+            scene3D.renderer.setSize(w, h);
+        }
+    });
+    observer.observe(canvas);
+}
+
+function addMeshToScene(meshData) {
+    init3DScene();
+    const id = meshData.organ_id || meshData.source || 'mesh_' + Date.now();
+
+    // Remove existing mesh with same ID
+    if (scene3D.meshes[id]) {
+        scene3D.scene.remove(scene3D.meshes[id]);
+        scene3D.meshes[id].geometry.dispose();
+        scene3D.meshes[id].material.dispose();
+    }
 
     const geometry = new THREE.BufferGeometry();
     const vertices = new Float32Array(meshData.vertices.flat());
@@ -4688,54 +4777,111 @@ function render3DMesh(meshData) {
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     geometry.computeVertexNormals();
 
-    const meshColor = meshData.color || 0x0ea5e9;
-    const material = new THREE.MeshPhongMaterial({
-        color: meshColor, transparent: true, opacity: 0.7, side: THREE.DoubleSide,
-    });
-    const mesh = new THREE.Mesh(geometry, material);
-    scene.add(mesh);
-
+    // Center and scale to fit view
     geometry.computeBoundingBox();
     const bbox = geometry.boundingBox;
     const center = new THREE.Vector3();
     bbox.getCenter(center);
     const size = new THREE.Vector3();
     bbox.getSize(size);
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const scale = 10 / maxDim;
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    const scale = 200 / maxDim;
+
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({
+        color: meshData.color || 0x0ea5e9,
+        transparent: true,
+        opacity: parseFloat(document.getElementById('meshOpacity3D')?.value || 70) / 100,
+        side: THREE.DoubleSide,
+        shininess: 30,
+    }));
     mesh.scale.set(scale, scale, scale);
     mesh.position.sub(center.multiplyScalar(scale));
 
-    camera.position.set(12, 8, 12);
-    camera.lookAt(0, 0, 0);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-    dir.position.set(10, 10, 10);
-    scene.add(dir);
+    scene3D.scene.add(mesh);
+    scene3D.meshes[id] = mesh;
 
-    let isDragging = false;
-    let prevMouse = { x: 0, y: 0 };
-    let rotation = { x: 0.3, y: 0.5 };
+    // Fit camera to all meshes
+    fitCameraToScene();
+}
 
-    renderer.domElement.addEventListener('mousedown', (e) => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY }; });
-    renderer.domElement.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
-        rotation.y += (e.clientX - prevMouse.x) * 0.01;
-        rotation.x += (e.clientY - prevMouse.y) * 0.01;
-        prevMouse = { x: e.clientX, y: e.clientY };
-    });
-    renderer.domElement.addEventListener('mouseup', () => { isDragging = false; });
-    renderer.domElement.addEventListener('mouseleave', () => { isDragging = false; });
+function fitCameraToScene() {
+    if (!scene3D.camera || !scene3D.controls) return;
+    const box = new THREE.Box3();
+    Object.values(scene3D.meshes).forEach(m => { if (m) box.expandByObject(m); });
+    if (scene3D.skinMesh) box.expandByObject(scene3D.skinMesh);
+    if (box.isEmpty()) return;
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    scene3D.controls.target.copy(center);
+    scene3D.camera.position.set(center.x + maxDim * 0.8, center.y + maxDim * 0.5, center.z + maxDim * 0.8);
+    scene3D.camera.lookAt(center);
+    scene3D.controls.update();
+}
 
-    function animate() {
-        requestAnimationFrame(animate);
-        if (!isDragging) rotation.y += 0.003;
-        mesh.rotation.x = rotation.x;
-        mesh.rotation.y = rotation.y;
-        renderer.render(scene, camera);
-    }
-    animate();
+function render3DMesh(meshData) {
+    addMeshToScene(meshData);
     window.dose3D = true;
+}
+
+function reset3DView() {
+    fitCameraToScene();
+}
+
+function update3DMeshOpacity(val) {
+    const opacity = parseInt(val) / 100;
+    Object.values(scene3D.meshes).forEach(mesh => {
+        if (mesh && mesh.material) mesh.material.opacity = opacity;
+    });
+}
+
+function toggle3DWireframe(on) {
+    Object.values(scene3D.meshes).forEach(mesh => {
+        if (mesh && mesh.material) mesh.material.wireframe = on;
+    });
+}
+
+async function toggle3DSkin(on) {
+    if (!on) {
+        if (scene3D.skinMesh) {
+            scene3D.scene.remove(scene3D.skinMesh);
+            scene3D.skinMesh.geometry.dispose();
+            scene3D.skinMesh.material.dispose();
+            scene3D.skinMesh = null;
+        }
+        return;
+    }
+    // Fetch CT skin mesh from server
+    try {
+        const res = await fetch(API + '/viewer/3d_skin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.success) {
+            init3DScene();
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(data.vertices.flat()), 3));
+            geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(data.faces.flat()), 1));
+            geometry.computeVertexNormals();
+            geometry.computeBoundingBox();
+            const bbox = geometry.boundingBox;
+            const center = new THREE.Vector3(); bbox.getCenter(center);
+            const size = new THREE.Vector3(); bbox.getSize(size);
+            const maxDim = Math.max(size.x, size.y, size.z) || 1;
+            const scale = 200 / maxDim;
+            const mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({
+                color: 0xcccccc, transparent: true, opacity: 0.15, side: THREE.DoubleSide,
+            }));
+            mesh.scale.set(scale, scale, scale);
+            mesh.position.sub(center.multiplyScalar(scale));
+            scene3D.scene.add(mesh);
+            scene3D.skinMesh = mesh;
+            fitCameraToScene();
+        }
+    } catch (e) {
+        console.error('CT skin failed:', e);
+    }
 }
 
 /******** VIEWER INTERACTIVE TOOLS (Slicer-like) ********/
