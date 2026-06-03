@@ -158,8 +158,8 @@ class VoCoBTCVTumorTool(BaseTool):
                 pred_image.SetSpacing(self.SPACING)
                 # Set origin and direction to match the transformed image
                 # The transforms change orientation to RAS, so we need to account for that
-                pred_image.SetOrigin(image.GetOrigin())
-                pred_image.SetDirection(image.GetDirection())
+                pred_image.SetOrigin((0.0, 0.0, 0.0))  # RAS origin
+                pred_image.SetDirection((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0))  # RAS direction
 
                 # Resample prediction back to original image space using nearest neighbor
                 resampler = sitk.ResampleImageFilter()
