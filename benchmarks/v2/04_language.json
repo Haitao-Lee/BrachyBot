@@ -14,7 +14,9 @@
       "forbidden_keywords": [],
       "difficulty": "easy",
       "description": "Chinese input → Chinese analysis output",
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "LN002",
@@ -27,7 +29,9 @@
       "forbidden_keywords": [],
       "difficulty": "easy",
       "description": "English input → English analysis output",
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "LN003",
@@ -42,7 +46,9 @@
       ],
       "difficulty": "easy",
       "description": "Chinese segmentation → Chinese result",
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "LN004",
@@ -57,7 +63,9 @@
       ],
       "difficulty": "easy",
       "description": "English segmentation → English result",
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "LN005",
@@ -69,7 +77,9 @@
       ],
       "difficulty": "easy",
       "description": "Chinese multi-step → Chinese output",
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "LN006",
@@ -81,7 +91,9 @@
       ],
       "difficulty": "easy",
       "description": "English multi-step → English output",
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "LN007",
@@ -97,7 +109,9 @@
       ],
       "difficulty": "easy",
       "description": "Chinese greeting → Chinese response",
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "LN008",
@@ -112,7 +126,9 @@
       ],
       "difficulty": "easy",
       "description": "English greeting → English response",
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "LN009",
@@ -124,7 +140,9 @@
       ],
       "difficulty": "medium",
       "description": "Chinese clinical query → Chinese response",
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "LN010",
@@ -140,7 +158,9 @@
       ],
       "difficulty": "medium",
       "description": "English clinical query → English response",
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "LN011",
@@ -156,7 +176,9 @@
       ],
       "difficulty": "medium",
       "description": "Chinese multi-action → Chinese output",
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "LN012",
@@ -168,7 +190,9 @@
       ],
       "difficulty": "medium",
       "description": "UI action in Chinese",
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "LN013",
@@ -180,7 +204,9 @@
       ],
       "difficulty": "medium",
       "description": "Segmentation request with follow-up — both in Chinese",
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "LN014",
@@ -192,7 +218,9 @@
       ],
       "difficulty": "medium",
       "description": "English dose query",
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "LN015",
@@ -204,7 +232,9 @@
       ],
       "difficulty": "easy",
       "description": "Chinese HU query",
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     }
   ]
 }

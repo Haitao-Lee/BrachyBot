@@ -1,38 +1,45 @@
 # BrachyBot Benchmark v2
 
-**Focus: System capabilities, not knowledge recall.**
+## Test Material
+- **CT File**: `/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii`
+- **Patient**: 胰腺癌 (pancreatic cancer)
+- **Specs**: 48 × 512 × 512 voxels, 0.68 × 0.68 × 5.0 mm spacing
 
-## Design Principles
+## How to Run
 
-1. **Test what matters**: Tool calling accuracy, multi-step execution, UI control, language consistency
-2. **Not knowledge trivia**: Removed pure knowledge questions any LLM can answer
-3. **Real scenarios**: Based on actual clinical workflows
-4. **Measurable**: `expected_tools`, `forbidden_keywords`, `language` — not just keyword matching
+### Step 1: Upload CT
+Before running any test, the agent MUST upload the CT file to BrachyBot:
+```
+POST /api/chat
+{
+  "message": "请加载CT文件 /home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "ui_state": {"ct_path": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"}
+}
+```
 
-## Categories (8, 136 cases total)
+### Step 2: Run Tests
+Each test case has a `context` field describing what must be set up BEFORE asking the question.
+The testing agent must:
+1. Read the `context` field
+2. Set up the required state (upload CT, run segmentation, etc.)
+3. Then send the `input` message
+4. Verify the response matches `expected_tools`, `expected_keywords`, `forbidden_keywords`
 
-| Category | Cases | What it tests |
-|----------|-------|---------------|
-| `01_tool_calling` | 30 | Correct tool selection for each request |
-| `02_multi_step` | 15 | All steps executed in correct order |
-| `03_hallucination` | 15 | No fabricated results, honest about uncertainty |
-| `04_language` | 15 | Input/output language consistency |
-| `05_context` | 31 | Multi-turn context retention |
-| `06_response_quality` | 10 | Structured output, no filler phrases |
-| `07_safety` | 10 | Refuse unsafe requests, cite guidelines |
-| `08_error_recovery` | 10 | Graceful error handling |
+### Context Setup Guide
+| Context | Setup Action |
+|---------|-------------|
+| `CT已加载` | Upload CT file (Step 1) |
+| `CT已加载，已执行CTV分割` | Upload CT + run CTV segmentation |
+| `CT已加载，已执行OAR分割` | Upload CT + run OAR segmentation |
+| `CT已加载，已完成分割和计划` | Upload CT + run segmentation + run seed planning |
+| `CT已加载，未执行分割` | Upload CT only (no segmentation) |
 
-## Evaluation
-
-- **Tool calling**: Check `expected_tools` and `forbidden_tools`
-- **Language**: Check `language` field matches output
-- **Hallucination**: Check `forbidden_keywords` not present
-- **Multi-turn**: Check context across turns
-- **Quality**: Check for table format, section headers, no transitional phrases
-
-## What was removed from v1
-
-- 1200+ pure knowledge questions (prescription doses, organ tolerances, etc.)
-- Duplicate test cases across categories
-- Tests that any LLM can pass without BrachyBot's tools
-- English-only tests (v2 has Chinese + English)
+## Categories (8, 129 cases)
+1. `01_tool_calling` (26) — correct tool selection
+2. `02_multi_step` (6) — all steps in order
+3. `03_hallucination` (12) — no fabrication
+4. `04_language` (15) — language consistency
+5. `05_context` (13) — multi-turn context
+6. `06_response_quality` (9) — structured output
+7. `07_safety` (8) — refuse unsafe requests
+8. `08_error_recovery` (10) — graceful error handling

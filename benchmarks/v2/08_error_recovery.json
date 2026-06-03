@@ -25,7 +25,9 @@
         "分割完成",
         "segmentation completed"
       ],
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "ER002",
@@ -43,7 +45,9 @@
         "没有"
       ],
       "forbidden_keywords": [],
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "ER003",
@@ -60,7 +64,9 @@
         "先"
       ],
       "forbidden_keywords": [],
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "ER004",
@@ -77,7 +83,9 @@
         "先"
       ],
       "forbidden_keywords": [],
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "ER005",
@@ -93,7 +101,9 @@
         "search"
       ],
       "forbidden_keywords": [],
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "ER006",
@@ -110,7 +120,9 @@
         "unknown"
       ],
       "forbidden_keywords": [],
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "ER007",
@@ -127,7 +139,9 @@
         "error"
       ],
       "forbidden_keywords": [],
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "ER008",
@@ -144,7 +158,9 @@
         "无法"
       ],
       "forbidden_keywords": [],
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "ER009",
@@ -160,7 +176,9 @@
         "search"
       ],
       "forbidden_keywords": [],
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "ER010",
@@ -176,7 +194,9 @@
         "not supported"
       ],
       "forbidden_keywords": [],
-      "context": "CT已加载"
+      "context": "CT已加载",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     }
   ]
 }

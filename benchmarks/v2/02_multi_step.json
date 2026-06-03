@@ -13,7 +13,9 @@
         "oar_segmentation"
       ],
       "difficulty": "easy",
-      "description": "Analyze AND segment"
+      "description": "Analyze AND segment",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "MS002",
@@ -27,7 +29,9 @@
         "ui_controller"
       ],
       "difficulty": "medium",
-      "description": "Three actions: analyze, segment, switch panel"
+      "description": "Three actions: analyze, segment, switch panel",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "MS003",
@@ -38,7 +42,9 @@
         "code_executor"
       ],
       "difficulty": "easy",
-      "description": "Analysis with specific request"
+      "description": "Analysis with specific request",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "MS004",
@@ -51,7 +57,9 @@
         "ui_controller"
       ],
       "difficulty": "medium",
-      "description": "Segment then toggle UI"
+      "description": "Segment then toggle UI",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "MS005",
@@ -64,7 +72,9 @@
         "case_memory"
       ],
       "difficulty": "medium",
-      "description": "Segment then save"
+      "description": "Segment then save",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "MS006",
@@ -78,7 +88,9 @@
         "ui_controller"
       ],
       "difficulty": "medium",
-      "description": "Analyze, segment, 3D reconstruct"
+      "description": "Analyze, segment, 3D reconstruct",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     }
   ]
 }

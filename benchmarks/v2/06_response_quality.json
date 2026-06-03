@@ -17,7 +17,9 @@
         "好的"
       ],
       "difficulty": "easy",
-      "description": "Analysis should have section header, no transitional phrases"
+      "description": "Analysis should have section header, no transitional phrases",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "RQ002",
@@ -28,7 +30,9 @@
         "🎯"
       ],
       "difficulty": "easy",
-      "description": "Multi-step should have numbered sections"
+      "description": "Multi-step should have numbered sections",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "RQ003",
@@ -40,7 +44,9 @@
         "Viewer"
       ],
       "difficulty": "easy",
-      "description": "Segmentation should mention viewer display"
+      "description": "Segmentation should mention viewer display",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "RQ005",
@@ -52,7 +58,9 @@
         "好的，我来"
       ],
       "difficulty": "easy",
-      "description": "No transitional phrases in multi-step response"
+      "description": "No transitional phrases in multi-step response",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "RQ006",
@@ -64,7 +72,9 @@
         "stdout"
       ],
       "difficulty": "medium",
-      "description": "No raw code/JSON dumps in response"
+      "description": "No raw code/JSON dumps in response",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "RQ007",
@@ -76,7 +86,9 @@
         "I'd be happy"
       ],
       "difficulty": "easy",
-      "description": "No filler phrases in greeting"
+      "description": "No filler phrases in greeting",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "RQ008",
@@ -91,7 +103,9 @@
         "I will"
       ],
       "difficulty": "easy",
-      "description": "English analysis — no transitional phrases"
+      "description": "English analysis — no transitional phrases",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "RQ009",
@@ -102,7 +116,9 @@
         "组织"
       ],
       "difficulty": "easy",
-      "description": "Analysis should include key metrics"
+      "description": "Analysis should include key metrics",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "RQ010",
@@ -114,7 +130,9 @@
         "🎯"
       ],
       "difficulty": "easy",
-      "description": "Segmentation should mention organ count"
+      "description": "Segmentation should mention organ count",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     }
   ]
 }

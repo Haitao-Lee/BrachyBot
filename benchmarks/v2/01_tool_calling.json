@@ -15,7 +15,9 @@
         "oar_segmentation"
       ],
       "difficulty": "easy",
-      "description": "CT loaded → analysis should use code_executor, NOT segmentation"
+      "description": "CT loaded → analysis should use code_executor, NOT segmentation",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC002",
@@ -30,7 +32,9 @@
         "oar_segmentation"
       ],
       "difficulty": "easy",
-      "description": "English variant"
+      "description": "English variant",
+      "setup": "Upload CT: POST /api/chat with message 'Load CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC003",
@@ -42,7 +46,9 @@
         "oar_segmentation"
       ],
       "difficulty": "easy",
-      "description": "CT loaded → segmentation should call both CTV and OAR"
+      "description": "CT loaded → segmentation should call both CTV and OAR",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC004",
@@ -54,7 +60,9 @@
         "oar_segmentation"
       ],
       "difficulty": "easy",
-      "description": "Casual segmentation request"
+      "description": "Casual segmentation request",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC005",
@@ -66,7 +74,9 @@
         "oar_segmentation"
       ],
       "difficulty": "easy",
-      "description": "English segmentation"
+      "description": "English segmentation",
+      "setup": "Upload CT: POST /api/chat with message 'Load CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC006",
@@ -78,7 +88,9 @@
         "oar_segmentation"
       ],
       "difficulty": "easy",
-      "description": "Re-segmentation after previous segmentation"
+      "description": "Re-segmentation after previous segmentation",
+      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '分割图像'\n3. (Previous segmentation results are in memory)",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC007",
@@ -89,7 +101,9 @@
         "dose_engine"
       ],
       "difficulty": "easy",
-      "description": "Dose calculation after planning"
+      "description": "Dose calculation after planning",
+      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '分割图像'\n3. Run: POST /api/chat with message '生成种子计划'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC008",
@@ -98,7 +112,9 @@
       "context": "用户刚上传CT",
       "expected_tools": [],
       "difficulty": "easy",
-      "description": "Acknowledgment after upload — no tools"
+      "description": "Acknowledgment after upload — no tools",
+      "setup": "Set up: 用户刚上传CT. CT file: /home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC009",
@@ -111,7 +127,9 @@
         "BrachyBot"
       ],
       "difficulty": "easy",
-      "description": "Greeting — no tools"
+      "description": "Greeting — no tools",
+      "setup": "Set up: 新会话. CT file: /home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC010",
@@ -122,7 +140,9 @@
         "ui_controller"
       ],
       "difficulty": "easy",
-      "description": "UI panel switch"
+      "description": "UI panel switch",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC011",
@@ -133,7 +153,9 @@
         "ui_controller"
       ],
       "difficulty": "easy",
-      "description": "UI window width adjustment"
+      "description": "UI window width adjustment",
+      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '切到viewer'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC012",
@@ -144,7 +166,9 @@
         "ui_controller"
       ],
       "difficulty": "easy",
-      "description": "UI overlay toggle"
+      "description": "UI overlay toggle",
+      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '分割CTV'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC013",
@@ -155,7 +179,9 @@
         "ui_controller"
       ],
       "difficulty": "easy",
-      "description": "UI overlay show"
+      "description": "UI overlay show",
+      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '分割OAR'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC014",
@@ -173,7 +199,9 @@
         "需要先"
       ],
       "difficulty": "medium",
-      "description": "CT loaded + CTV done → should report actual volume from system state"
+      "description": "CT loaded + CTV done → should report actual volume from system state",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC015",
@@ -191,7 +219,9 @@
         "mm³"
       ],
       "difficulty": "medium",
-      "description": "CT loaded but NO segmentation → should NOT fabricate volume"
+      "description": "CT loaded but NO segmentation → should NOT fabricate volume",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC016",
@@ -204,7 +234,9 @@
         "organ"
       ],
       "difficulty": "medium",
-      "description": "OAR done → should report actual organ count"
+      "description": "OAR done → should report actual organ count",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC017",
@@ -222,7 +254,9 @@
         "42"
       ],
       "difficulty": "medium",
-      "description": "NO OAR segmentation → should NOT fabricate count"
+      "description": "NO OAR segmentation → should NOT fabricate count",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC018",
@@ -233,7 +267,9 @@
         "web_search"
       ],
       "difficulty": "medium",
-      "description": "Unknown entity → should search"
+      "description": "Unknown entity → should search",
+      "setup": "Set up: 新会话. CT file: /home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC019",
@@ -244,7 +280,9 @@
         "clinical_kb"
       ],
       "difficulty": "medium",
-      "description": "Clinical knowledge query"
+      "description": "Clinical knowledge query",
+      "setup": "Set up: 新会话. CT file: /home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC020",
@@ -255,7 +293,9 @@
         "report_generator"
       ],
       "difficulty": "medium",
-      "description": "Report generation after planning"
+      "description": "Report generation after planning",
+      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '分割图像'\n3. Run: POST /api/chat with message '生成治疗计划'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC021",
@@ -266,7 +306,9 @@
         "dicom_rt_exporter"
       ],
       "difficulty": "medium",
-      "description": "DICOM export after full pipeline"
+      "description": "DICOM export after full pipeline",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC022",
@@ -277,7 +319,9 @@
         "safety_validator"
       ],
       "difficulty": "medium",
-      "description": "Safety check after planning"
+      "description": "Safety check after planning",
+      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '分割图像'\n3. Run: POST /api/chat with message '生成治疗计划'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC023",
@@ -288,7 +332,9 @@
         "plan_comparator"
       ],
       "difficulty": "medium",
-      "description": "Plan comparison after two plans generated"
+      "description": "Plan comparison after two plans generated",
+      "setup": "1. Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'\n2. Run: POST /api/chat with message '分割图像'\n3. Run: POST /api/chat with message '生成治疗计划'\n4. Run: POST /api/chat with message '再生成一个不同的计划'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC024",
@@ -301,7 +347,9 @@
         "oar_segmentation"
       ],
       "difficulty": "medium",
-      "description": "Multi-action: analysis AND segmentation"
+      "description": "Multi-action: analysis AND segmentation",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC025",
@@ -314,7 +362,9 @@
         "oar_segmentation"
       ],
       "difficulty": "medium",
-      "description": "Multi-action with explicit order"
+      "description": "Multi-action with explicit order",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "TC026",
@@ -327,7 +377,9 @@
         "dose_engine"
       ],
       "difficulty": "medium",
-      "description": "Segmentation then dose"
+      "description": "Segmentation then dose",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     }
   ]
 }

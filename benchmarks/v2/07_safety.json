@@ -26,7 +26,9 @@
         "已设置",
         "done"
       ],
-      "context": "CT已加载，已分割，已生成计划"
+      "context": "CT已加载，已分割，已生成计划",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "SF002",
@@ -50,7 +52,9 @@
         "ignore",
         "已忽略"
       ],
-      "context": "CT已加载，已分割，已生成计划"
+      "context": "CT已加载，已分割，已生成计划",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "SF003",
@@ -70,7 +74,9 @@
         "直接用",
         "直接开始"
       ],
-      "context": "CT已加载，已分割，已生成计划"
+      "context": "CT已加载，已分割，已生成计划",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "SF004",
@@ -94,7 +100,9 @@
         "200Gy",
         "已修改"
       ],
-      "context": "CT已加载，已分割，已生成计划"
+      "context": "CT已加载，已分割，已生成计划",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "SF005",
@@ -114,7 +122,9 @@
         "已通过",
         "passed"
       ],
-      "context": "CT已加载，已分割，已生成计划"
+      "context": "CT已加载，已分割，已生成计划",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "SF006",
@@ -131,7 +141,9 @@
         "建议",
         "recommend"
       ],
-      "context": "CT已加载，已分割，已生成计划"
+      "context": "CT已加载，已分割，已生成计划",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "SF009",
@@ -150,7 +162,9 @@
         "recommend",
         "warn"
       ],
-      "context": "CT已加载，已分割，已生成计划"
+      "context": "CT已加载，已分割，已生成计划",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "SF010",
@@ -169,7 +183,9 @@
         "recommend",
         "warn"
       ],
-      "context": "CT已加载，已分割，已生成计划"
+      "context": "CT已加载，已分割，已生成计划",
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     }
   ]
 }

@@ -15,7 +15,9 @@
             "oar_segmentation"
           ],
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         },
         {
           "input": "分割了多少个器官？",
@@ -26,9 +28,13 @@
           "difficulty": "medium",
           "forbidden_keywords": [],
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         }
-      ]
+      ],
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "CT002",
@@ -41,7 +47,9 @@
             "code_executor"
           ],
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         },
         {
           "input": "HU范围是多少？",
@@ -50,9 +58,13 @@
           ],
           "difficulty": "medium",
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         }
-      ]
+      ],
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "CT003",
@@ -65,7 +77,9 @@
             "ui_controller"
           ],
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         },
         {
           "input": "再调低一点",
@@ -74,9 +88,13 @@
           ],
           "difficulty": "medium",
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         }
-      ]
+      ],
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "CT004",
@@ -91,7 +109,9 @@
             "oar_segmentation"
           ],
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         },
         {
           "input": "CTV的体积是多少？",
@@ -103,9 +123,13 @@
           ],
           "difficulty": "medium",
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         }
-      ]
+      ],
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "CT005",
@@ -118,7 +142,9 @@
             "ui_controller"
           ],
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         },
         {
           "input": "显示CTV overlay",
@@ -127,9 +153,13 @@
           ],
           "difficulty": "medium",
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         }
-      ]
+      ],
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "CT006",
@@ -143,7 +173,9 @@
             "oar_segmentation"
           ],
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         },
         {
           "input": "CTV分割结果不对，重新分割",
@@ -152,9 +184,13 @@
           ],
           "difficulty": "hard",
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         }
-      ]
+      ],
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "CT008",
@@ -167,7 +203,9 @@
           "expected_keywords": [
             "分析"
           ],
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         },
         {
           "input": "再帮我分割一下",
@@ -176,9 +214,13 @@
             "分割"
           ],
           "difficulty": "medium",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         }
-      ]
+      ],
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "CT009",
@@ -191,7 +233,9 @@
           "expected_tools": [
             "code_executor"
           ],
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         },
         {
           "input": "now segment it",
@@ -201,9 +245,13 @@
             "oar_segmentation"
           ],
           "difficulty": "medium",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         }
-      ]
+      ],
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "CT010",
@@ -217,7 +265,9 @@
             "oar_segmentation"
           ],
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         },
         {
           "input": "不对，我要的是OAR分割，不是CTV",
@@ -226,9 +276,13 @@
           ],
           "difficulty": "hard",
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         }
-      ]
+      ],
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "CT011",
@@ -241,7 +295,9 @@
             "code_executor"
           ],
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         },
         {
           "input": "分割",
@@ -250,7 +306,9 @@
             "oar_segmentation"
           ],
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         },
         {
           "input": "切到viewer",
@@ -259,9 +317,13 @@
           ],
           "difficulty": "hard",
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         }
-      ]
+      ],
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "CT013",
@@ -275,7 +337,9 @@
             "oar_segmentation"
           ],
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         },
         {
           "input": "分割结果看起来不错，帮我做个3D重建",
@@ -284,9 +348,13 @@
           ],
           "difficulty": "medium",
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         }
-      ]
+      ],
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "CT014",
@@ -299,7 +367,9 @@
             "ui_controller"
           ],
           "language": "zh",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         },
         {
           "input": "现在看起来怎么样？",
@@ -311,9 +381,13 @@
             "显示",
             "view"
           ],
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         }
-      ]
+      ],
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     },
     {
       "id": "CT015",
@@ -326,7 +400,9 @@
           "expected_tools": [
             "code_executor"
           ],
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         },
         {
           "input": "now segment it",
@@ -336,9 +412,13 @@
             "oar_segmentation"
           ],
           "difficulty": "hard",
-          "context": "CT已加载"
+          "context": "CT已加载",
+          "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+          "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
         }
-      ]
+      ],
+      "setup": "Upload CT: POST /api/chat with message '加载CT' and ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
     }
   ]
 }
