@@ -306,32 +306,44 @@ docs/benchmark_result/screenshots/
 
 ---
 
-## 10. File Structure
+## 10. File Structure (v2)
 
 ```
 benchmarks/
-├── README.md                    # Consolidated documentation
-├── robust_scheduler.py          # Main robust scheduler
-├── unified_agent.py             # Unified agent script
-├── smart_scheduler.py           # Smart scheduler for helping
-├── 01_greeting.json             # Benchmark test cases
-├── 02_ct_analysis.json
-├── ...
-└── 36_web_search.json
+├── README.md                    # This file
+├── aligned_benchmark.py         # Main test script (v2)
+├── auto_monitor.py              # Auto-monitoring and restart
+├── generate_final_report.py     # Report generation (v2)
+├── run_aligned_agents.sh        # Run 4 agents in parallel
+├── v1/                          # v1 benchmark (36 categories, READ-ONLY)
+├── v2/                          # v2 benchmark (8 categories, current)
+│   ├── README.md                # v2 documentation
+│   ├── 01_tool_calling.json     # 15 cases
+│   ├── 02_multi_step.json       # 5 cases
+│   ├── 03_hallucination.json    # 11 cases
+│   ├── 04_language.json         # 6 cases
+│   ├── 05_context.json          # 7 cases
+│   ├── 06_response_quality.json # 5 cases
+│   ├── 07_safety.json           # 5 cases
+│   └── 08_error_recovery.json   # 6 cases
+└── archive/                     # Archived v1 scripts and logs
+    ├── v1_scripts/              # Old v1 scripts
+    ├── v1_logs/                 # Old v1 logs
+    └── v1_docs/                 # Old v1 documentation
 
 docs/benchmark_result/
-├── screenshots/                 # All test screenshots
-│   ├── 01_Q0001.png
-│   ├── 01_Q0002.png
+├── screenshots_v2/              # v2 test screenshots
+│   ├── 01_TC001.png
+│   ├── 01_TC002.png
 │   ├── ...
-│   └── 36_Q1803.png
-├── reports/                     # Test reports
-│   ├── agent1_report.md
-│   ├── agent2_report.md
-│   ├── agent3_report.md
-│   ├── agent4_report.md
+│   └── 08_ER006.png
+├── reports_v2/                  # v2 test reports
+│   ├── agent1_tool_calling.md
+│   ├── agent2_language.md
+│   ├── agent3_safety.md
+│   ├── agent4_error_recovery.md
 │   └── final_report.md
-└── scheduler_state.json         # Scheduler state for resume
+└── auto_monitor_v2.log          # Monitor logs
 ```
 
 ---
@@ -497,6 +509,11 @@ python3 generate_final_report.py
 
 ```
 benchmarks/
+├── README.md                      # This file
+├── aligned_benchmark.py           # Main test script (v2)
+├── auto_monitor.py                # Auto-monitoring
+├── generate_final_report.py       # Report generation (v2)
+├── run_aligned_agents.sh          # Run 4 agents in parallel
 ├── v1/                            # v1 benchmark (36 categories, READ-ONLY)
 ├── v2/                            # v2 benchmark (8 categories, current)
 │   ├── README.md                  # v2 documentation
@@ -508,9 +525,10 @@ benchmarks/
 │   ├── 06_response_quality.json
 │   ├── 07_safety.json
 │   └── 08_error_recovery.json
-├── aligned_benchmark.py           # Main test script (v2)
-├── auto_monitor.py                # Auto-monitoring
-└── generate_final_report.py       # Report generation (v2)
+└── archive/                       # Archived v1 scripts and logs
+    ├── v1_scripts/                # Old v1 scripts
+    ├── v1_logs/                   # Old v1 logs
+    └── v1_docs/                   # Old v1 documentation
 
 docs/benchmark_result/
 ├── screenshots_v2/                # v2 screenshots
@@ -520,7 +538,7 @@ docs/benchmark_result/
 │   ├── agent3_*.md
 │   ├── agent4_*.md
 │   └── final_report.md
-└── auto_monitor.log               # Monitor logs
+└── auto_monitor_v2.log            # Monitor logs
 ```
 
 ---
