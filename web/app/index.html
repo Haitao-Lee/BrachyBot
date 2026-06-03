@@ -1041,63 +1041,64 @@
             flex-shrink: 0;
         }
         .data-tree-body { padding: 0.25rem 0; flex: 1; overflow-y: auto; }
-        .tree-group { margin-bottom: 0.15rem; }
+        .tree-group { margin-bottom: 0.1rem; }
         .tree-group-header {
-            display: flex; align-items: center; gap: 0.3rem;
-            padding: 0.2rem 0.5rem; cursor: pointer;
+            display: flex; align-items: center; gap: 0.4rem;
+            padding: 0.25rem 0.5rem; cursor: pointer;
             font-size: 0.68rem; font-weight: 600; color: var(--text);
-            user-select: none;
+            user-select: none; border-radius: 4px;
+            transition: background 0.1s;
         }
-        .tree-group-header:hover { background: var(--bg-3); }
-        .tree-group-header .arrow { font-size: 0.5rem; transition: transform 0.15s; color: var(--text-dim); }
+        .tree-group-header:hover { background: rgba(255,255,255,0.04); }
+        .tree-group-header .arrow { font-size: 0.45rem; transition: transform 0.15s; color: var(--text-dim); width: 10px; text-align: center; }
         .tree-group-header .arrow.collapsed { transform: rotate(-90deg); }
-        .tree-group-items { padding-left: 0.8rem; }
+        .tree-group-items { padding-left: 0.6rem; margin-left: 0.3rem; border-left: 1px solid rgba(255,255,255,0.04); }
         .tree-group-items.collapsed { display: none; }
         .tree-item {
-            display: flex; align-items: center; gap: 0.3rem;
-            padding: 0.15rem 0.4rem; cursor: pointer;
+            display: flex; align-items: center; gap: 0.35rem;
+            padding: 0.2rem 0.4rem; cursor: pointer;
             font-size: 0.65rem; color: var(--text);
-            border-radius: 3px; user-select: none;
+            border-radius: 4px; user-select: none;
+            transition: background 0.1s;
         }
-        .tree-item:hover { background: var(--bg-3); }
-        .tree-item.selected { background: rgba(139,92,246,0.15); }
+        .tree-item:hover { background: rgba(255,255,255,0.04); }
+        .tree-item.selected { background: rgba(139,92,246,0.12); }
         .tree-item .eye-btn {
-            width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;
-            font-size: 0.6rem; cursor: pointer; opacity: 0.6; flex-shrink: 0;
+            width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;
+            font-size: 0.6rem; cursor: pointer; opacity: 0.5; flex-shrink: 0;
             border: none; background: none; color: var(--text); padding: 0;
+            border-radius: 3px; transition: opacity 0.1s, background 0.1s;
         }
-        .tree-item .eye-btn:hover { opacity: 1; }
-        .tree-item .eye-btn.hidden { opacity: 0.2; }
+        .tree-item .eye-btn:hover { opacity: 1; background: rgba(255,255,255,0.06); }
+        .tree-item .eye-btn.hidden { opacity: 0.15; }
         .tree-item .color-swatch {
-            width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0;
-            border: 1px solid rgba(255,255,255,0.15);
+            width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+            border: 1px solid rgba(255,255,255,0.1);
         }
-        .tree-item .item-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-        .tree-item .item-info { font-size: 0.55rem; color: var(--text-dim); flex-shrink: 0; }
+        .tree-item .item-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; font-size: 0.63rem; }
+        .tree-item .item-info { font-size: 0.52rem; color: var(--text-dim); flex-shrink: 0; opacity: 0.7; }
         .tree-item .opacity-slider {
-            width: 40px; height: 3px; flex-shrink: 0;
-            -webkit-appearance: none; background: var(--bg-3); border-radius: 2px; outline: none;
+            width: 36px; height: 2px; flex-shrink: 0;
+            -webkit-appearance: none; background: rgba(255,255,255,0.08); border-radius: 2px; outline: none;
+            transition: background 0.1s;
         }
+        .tree-item .opacity-slider:hover { background: rgba(255,255,255,0.15); }
         .tree-item .recon3d-btn {
             width: 18px; height: 18px; border: none; background: none;
-            color: var(--text-dim); cursor: pointer; font-size: 0.6rem;
+            color: var(--text-dim); cursor: pointer; font-size: 0.55rem;
             display: flex; align-items: center; justify-content: center;
-            border-radius: 3px; flex-shrink: 0; opacity: 0.5;
+            border-radius: 3px; flex-shrink: 0; opacity: 0;
             transition: opacity 0.15s, color 0.15s;
         }
-        .tree-item .recon3d-btn:hover { opacity: 1; color: var(--primary); }
-        .tree-item .recon3d-btn.active { opacity: 1; color: var(--accent); }
+        .tree-item:hover .recon3d-btn { opacity: 0.5; }
+        .tree-item .recon3d-btn:hover { opacity: 1; color: var(--primary); background: rgba(255,255,255,0.06); }
         /* Context menu */
-        .ctx-menu { position: fixed; z-index: 9999; background: var(--bg-3); border: 1px solid var(--card-border); border-radius: 6px; padding: 4px 0; min-width: 180px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
-        .ctx-menu-item { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 0.7rem; color: var(--text); cursor: pointer; white-space: nowrap; }
-        .ctx-menu-item:hover { background: var(--primary); color: white; border-radius: 4px; margin: 0 2px; }
-        .ctx-menu-item .ctx-icon { width: 16px; text-align: center; font-size: 0.75rem; }
-        .ctx-menu-sep { height: 1px; background: var(--card-border); margin: 4px 8px; }
+        .ctx-menu { position: fixed; z-index: 9999; background: var(--bg-2); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 4px 0; min-width: 180px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); backdrop-filter: blur(8px); }
+        .ctx-menu-item { display: flex; align-items: center; gap: 8px; padding: 7px 14px; font-size: 0.68rem; color: var(--text); cursor: pointer; white-space: nowrap; border-radius: 4px; margin: 0 4px; transition: background 0.1s; }
+        .ctx-menu-item:hover { background: var(--primary); color: white; }
+        .ctx-menu-item .ctx-icon { width: 16px; text-align: center; font-size: 0.7rem; }
+        .ctx-menu-sep { height: 1px; background: rgba(255,255,255,0.06); margin: 4px 10px; }
         .ctx-menu-item.danger { color: var(--danger); }
-        .tree-group-header-controls { display: flex; align-items: center; gap: 6px; padding: 2px 8px 2px 1.8rem; }
-        .tree-group-header-controls .eye-btn { width: 20px; height: 20px; font-size: 0.65rem; background: none; border: none; cursor: pointer; color: var(--text-dim); padding: 0; display: flex; align-items: center; justify-content: center; }
-        .tree-group-header-controls .eye-btn.hidden { opacity: 0.3; }
-        .tree-group-header-controls .opacity-slider { width: 60px; height: 3px; }
         .tree-item .opacity-slider::-webkit-slider-thumb {
             -webkit-appearance: none; width: 8px; height: 8px;
             border-radius: 50%; background: var(--primary); cursor: pointer;
@@ -3004,17 +3005,14 @@ function renderSliceFromVolume(axis, sliceIndex) {
     for (let py = 0; py < height; py++) {
         for (let px = 0; px < width; px++) {
             // Map display coords to volume coords for label lookup
-            // Y-flip: label volume Y-axis is inverted relative to CT display
+            // Must match CT rendering coordinate mapping exactly
             let volZ, volY2, volX2;
-            if (axis === 'axial') {
-                volZ = sliceIndex;
-                volY2 = Y - 1 - py;  // Flip Y to match CT orientation
-                volX2 = px;
-            } else if (axis === 'sagittal') {
-                volZ = Z - 1 - Math.min(Math.floor(py / resampleRatio), Z - 1);  // Flip Z
+            if (axis === 'axial') { volZ = sliceIndex; volY2 = py; volX2 = px; }
+            else if (axis === 'sagittal') {
+                volZ = Math.min(Math.floor(py / resampleRatio), Z - 1);
                 volY2 = px; volX2 = sliceIndex;
             } else {
-                volZ = Z - 1 - Math.min(Math.floor(py / resampleRatio), Z - 1);  // Flip Z
+                volZ = Math.min(Math.floor(py / resampleRatio), Z - 1);
                 volY2 = sliceIndex; volX2 = px;
             }
             const flatIdx = volZ * labelSliceSize + volY2 * X + volX2;
@@ -3608,39 +3606,46 @@ function renderDataTree() {
     html += renderTreeItem('ct', dataTreeState.ct, state.ctShape ? `${state.ctShape[2]}×${state.ctShape[1]}×${state.ctShape[0]}` : '');
     html += `</div></div>`;
 
-    // === Label Image group (CTV + OAR with categories) ===
-    const hasLabels = dataTreeState.ctv.loaded || dataTreeState.organs.length > 0;
+    // === Segmentation group (CTV + OAR parallel) ===
+    const hasSeg = dataTreeState.ctv.loaded || dataTreeState.organs.length > 0;
     html += `<div class="tree-group">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)">
             <span class="arrow">&#9660;</span>
-            <span>Label Image ${hasLabels ? `(${dataTreeState.organs.length + (dataTreeState.ctv.loaded ? 1 : 0)})` : ''}</span>
+            <span>Segmentation ${hasSeg ? `(${dataTreeState.organs.length + (dataTreeState.ctv.loaded ? 1 : 0)})` : ''}</span>
         </div>
         <div class="tree-group-items">`;
 
-    // CTV item
+    // CTV — parallel to OAR
     if (dataTreeState.ctv.loaded) {
         const ctvVolume = state.ctvVolume || null;
         const ctvInfo = ctvVolume ? `${ctvVolume.toFixed(1)} mm³` : 'loaded';
         html += renderTreeItem('ctv', dataTreeState.ctv, ctvInfo);
     }
 
-    // OAR sub-groups by category with group-level controls
+    // OAR with sub-categories
     const nonTrav = dataTreeState.organs.filter(o => o.category === 'non_traversable');
     const trav = dataTreeState.organs.filter(o => o.category === 'traversable');
 
+    // OAR master group
+    html += `<div class="tree-group" data-group="oar">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+            <span class="arrow">&#9660;</span>
+            <span>OAR (${dataTreeState.organs.length})</span>
+        </div>
+        <div class="tree-group-items">`;
+
+    // Non-traversable sub-group
     if (nonTrav.length > 0) {
         const gVis = nonTrav.some(o => o.visible);
-        const gOp = nonTrav.length > 0 ? nonTrav[0].opacity : 0.5;
-        html += `<div class="tree-group" style="margin-left:0.5rem;">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+        const gOp = nonTrav[0]?.opacity ?? 0.5;
+        html += `<div class="tree-group" data-group="non_traversable">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" style="font-size:0.7rem;">
                 <span class="arrow">&#9660;</span>
                 <span style="color:#f97316;">🚫 Non-traversable (${nonTrav.length})</span>
-            </div>
-            <div class="tree-group-header-controls">
-                <button class="eye-btn ${gVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('non_traversable', ${!gVis})" title="Toggle group">${gVis ? '&#128065;' : '&#128064;'}</button>
-                <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(gOp * 100)}"
-                    onclick="event.stopPropagation()"
-                    oninput="setGroupOpacity('non_traversable', this.value)" title="Group opacity" style="flex:1;">
+                <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+                    <button class="eye-btn ${gVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('non_traversable', ${!gVis})" title="Toggle">${gVis ? '&#128065;' : '&#128064;'}</button>
+                    <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(gOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('non_traversable', this.value)" title="Opacity" style="width:50px;height:3px;">
+                </span>
             </div>
             <div class="tree-group-items">`;
         for (const organ of nonTrav) {
@@ -3651,19 +3656,18 @@ function renderDataTree() {
         html += `</div></div>`;
     }
 
+    // Traversable sub-group
     if (trav.length > 0) {
         const gVis = trav.some(o => o.visible);
-        const gOp = trav.length > 0 ? trav[0].opacity : 0.5;
-        html += `<div class="tree-group" style="margin-left:0.5rem;">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+        const gOp = trav[0]?.opacity ?? 0.5;
+        html += `<div class="tree-group" data-group="traversable">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" style="font-size:0.7rem;">
                 <span class="arrow">&#9660;</span>
                 <span style="color:#22c55e;">✅ Traversable (${trav.length})</span>
-            </div>
-            <div class="tree-group-header-controls">
-                <button class="eye-btn ${gVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('traversable', ${!gVis})" title="Toggle group">${gVis ? '&#128065;' : '&#128064;'}</button>
-                <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(gOp * 100)}"
-                    onclick="event.stopPropagation()"
-                    oninput="setGroupOpacity('traversable', this.value)" title="Group opacity" style="flex:1;">
+                <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+                    <button class="eye-btn ${gVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('traversable', ${!gVis})" title="Toggle">${gVis ? '&#128065;' : '&#128064;'}</button>
+                    <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(gOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('traversable', this.value)" title="Opacity" style="width:50px;height:3px;">
+                </span>
             </div>
             <div class="tree-group-items">`;
         for (const organ of trav) {
@@ -3674,7 +3678,8 @@ function renderDataTree() {
         html += `</div></div>`;
     }
 
-    html += `</div></div>`;
+    html += `</div></div>`; // close OAR group
+    html += `</div></div>`; // close Segmentation group
 
     // === Dose group ===
     html += `<div class="tree-group">
@@ -3831,7 +3836,10 @@ function setGroupOpacity(category, value) {
 
 function toggleTreeGroup(header) {
     const arrow = header.querySelector('.arrow');
-    const items = header.nextElementSibling;
+    // Find the .tree-group-items that is a sibling of the parent .tree-group
+    const group = header.closest('.tree-group');
+    if (!group) return;
+    const items = group.querySelector(':scope > .tree-group-items');
     if (arrow && items) {
         arrow.classList.toggle('collapsed');
         items.classList.toggle('collapsed');
