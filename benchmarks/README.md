@@ -4,7 +4,7 @@
 
 Benchmark tests for evaluating BrachyBot's performance. Measures clinical accuracy, honesty, response quality, and safety.
 
-**v2 Total:** 60 test cases across 8 categories
+**v2 Total:** 525 test cases across 22 categories
 
 ---
 
@@ -47,18 +47,54 @@ benchmarks/
 
 ---
 
-## v2 Categories
+## v2 Categories (22 categories, 525 cases)
+
+### Core Functionality (Categories 01-08)
 
 | # | Category | Cases | Description |
 |---|----------|-------|-------------|
-| 1 | tool_calling | 15 | Correct tool selection |
-| 2 | multi_step | 5 | All steps in order |
-| 3 | hallucination | 11 | No fabrication |
-| 4 | language | 6 | Language consistency |
-| 5 | context | 7 | Multi-turn context |
-| 6 | response_quality | 5 | Structured output |
-| 7 | safety | 5 | Refuse unsafe requests |
-| 8 | error_recovery | 6 | Graceful error handling |
+| 01 | ct_analysis | 30 | CT image analysis |
+| 02 | ctv_segmentation | 15 | CTV tumor segmentation |
+| 03 | hallucination | 21 | Fabrication detection |
+| 04 | dose_engine | 14 | Dose calculation |
+| 05 | context | 15 | Multi-turn context |
+| 06 | dose_evaluation | 13 | Dose evaluation |
+| 07 | safety | 25 | Safety constraints |
+| 08 | error_recovery | 14 | Error handling |
+
+### Tool-Specific Tests (Categories 09-10)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 09 | knowledge_tools | 15 | Clinical knowledge base |
+| 10 | web_search | 10 | Web search |
+
+### Quality Tests (Categories 11-16)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 11 | hallucination | 15 | Advanced hallucination |
+| 12 | language | 15 | Language consistency |
+| 13 | context | 10 | Context retention |
+| 14 | response_quality | 10 | Response formatting |
+| 15 | safety | 10 | Safety validation |
+| 16 | error_recovery | 10 | Error handling |
+
+### Workflow Tests (Categories 17-20)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 17 | advanced_workflows | 15 | Complex workflows |
+| 18 | edge_cases | 15 | Edge cases |
+| 19 | regression | 15 | Regression tests |
+| 20 | clinical_scenarios | 15 | Clinical scenarios |
+
+### Input Variation Tests (Categories 21-22)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 21 | input_variations | 112 | Same intent, different phrasings |
+| 22 | input_variations_all | 111 | Comprehensive variations |
 
 ---
 

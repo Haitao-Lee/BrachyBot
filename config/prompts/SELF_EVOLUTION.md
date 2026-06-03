@@ -1,8 +1,8 @@
 # BrachyBot Self-Evolution System Specification
 
-**Version:** 4.0
+**Version:** 4.1
 **Last Updated:** 2026-06-04
-**Based on:** v2 benchmark testing with 60 test cases across 8 categories
+**Based on:** v2 benchmark testing with 525 test cases across 22 categories
 
 ---
 
@@ -31,18 +31,54 @@ Build an industrial-grade automated QA + multi-round benchmark testing + multi-a
 }
 ```
 
-### 2.2 v2 Categories (8 categories, 60 cases)
+### 2.2 v2 Categories (22 categories, 525 cases)
+
+#### Core Functionality (Categories 01-08)
 
 | # | Category | Cases | Description |
 |---|----------|-------|-------------|
-| 1 | tool_calling | 15 | Correct tool selection |
-| 2 | multi_step | 5 | All steps in order |
-| 3 | hallucination | 11 | No fabrication |
-| 4 | language | 6 | Language consistency |
-| 5 | context | 7 | Multi-turn context |
-| 6 | response_quality | 5 | Structured output |
-| 7 | safety | 5 | Refuse unsafe requests |
-| 8 | error_recovery | 6 | Graceful error handling |
+| 01 | ct_analysis | 30 | CT image analysis |
+| 02 | ctv_segmentation | 15 | CTV tumor segmentation |
+| 03 | hallucination | 21 | Fabrication detection |
+| 04 | dose_engine | 14 | Dose calculation |
+| 05 | context | 15 | Multi-turn context |
+| 06 | dose_evaluation | 13 | Dose evaluation |
+| 07 | safety | 25 | Safety constraints |
+| 08 | error_recovery | 14 | Error handling |
+
+#### Tool-Specific Tests (Categories 09-10)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 09 | knowledge_tools | 15 | Clinical knowledge base |
+| 10 | web_search | 10 | Web search |
+
+#### Quality Tests (Categories 11-16)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 11 | hallucination | 15 | Advanced hallucination |
+| 12 | language | 15 | Language consistency |
+| 13 | context | 10 | Context retention |
+| 14 | response_quality | 10 | Response formatting |
+| 15 | safety | 10 | Safety validation |
+| 16 | error_recovery | 10 | Error handling |
+
+#### Workflow Tests (Categories 17-20)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 17 | advanced_workflows | 15 | Complex workflows |
+| 18 | edge_cases | 15 | Edge cases |
+| 19 | regression | 15 | Regression tests |
+| 20 | clinical_scenarios | 15 | Clinical scenarios |
+
+#### Input Variation Tests (Categories 21-22)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 21 | input_variations | 112 | Same intent, different phrasings |
+| 22 | input_variations_all | 111 | Comprehensive variations |
 
 ### 2.3 Key Test Material
 
@@ -206,7 +242,7 @@ docs/benchmark_result/screenshots/
 
 | Metric | Value |
 |--------|-------|
-| Total Tests | 60 |
+| Total Tests | 525 |
 | Passed | XXX |
 | Failed | XXX |
 | Pass Rate | XX% |
@@ -220,7 +256,13 @@ docs/benchmark_result/screenshots/
 | Root Cause | Count | Severity | Description |
 |------------|-------|----------|-------------|
 | safety_leak | XX | P0 | Contains forbidden keywords |
+| hallucination | XX | P0 | Fabricated information |
+| tool_misfire | XX | P0 | Wrong tool called |
+| language_mismatch | XX | P1 | Language inconsistency |
+| context_lost | XX | P1 | Lost conversation context |
+| keyword_missing | XX | P2 | Expected term not in response |
 | too_verbose | XX | P2 | Response too long (>5000 chars) |
+| formatting | XX | P2 | Raw JSON/code dumps |
 ```
 
 ### 7.3 Detailed Results
@@ -269,18 +311,54 @@ docs/benchmark_result/screenshots/
 
 ## 8. Category System (v2)
 
-### 8.1 Categories (8 total, 60 test cases)
+### 8.1 Categories (22 total, 525 test cases)
+
+#### Core Functionality (Categories 01-08)
 
 | # | Category | Cases | Description |
 |---|----------|-------|-------------|
-| 1 | tool_calling | 15 | Correct tool selection |
-| 2 | multi_step | 5 | All steps in order |
-| 3 | hallucination | 11 | No fabrication |
-| 4 | language | 6 | Language consistency |
-| 5 | context | 7 | Multi-turn context |
-| 6 | response_quality | 5 | Structured output |
-| 7 | safety | 5 | Refuse unsafe requests |
-| 8 | error_recovery | 6 | Graceful error handling |
+| 01 | ct_analysis | 30 | CT image analysis |
+| 02 | ctv_segmentation | 15 | CTV tumor segmentation |
+| 03 | hallucination | 21 | Fabrication detection |
+| 04 | dose_engine | 14 | Dose calculation |
+| 05 | context | 15 | Multi-turn context |
+| 06 | dose_evaluation | 13 | Dose evaluation |
+| 07 | safety | 25 | Safety constraints |
+| 08 | error_recovery | 14 | Error handling |
+
+#### Tool-Specific Tests (Categories 09-10)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 09 | knowledge_tools | 15 | Clinical knowledge base |
+| 10 | web_search | 10 | Web search |
+
+#### Quality Tests (Categories 11-16)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 11 | hallucination | 15 | Advanced hallucination |
+| 12 | language | 15 | Language consistency |
+| 13 | context | 10 | Context retention |
+| 14 | response_quality | 10 | Response formatting |
+| 15 | safety | 10 | Safety validation |
+| 16 | error_recovery | 10 | Error handling |
+
+#### Workflow Tests (Categories 17-20)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 17 | advanced_workflows | 15 | Complex workflows |
+| 18 | edge_cases | 15 | Edge cases |
+| 19 | regression | 15 | Regression tests |
+| 20 | clinical_scenarios | 15 | Clinical scenarios |
+
+#### Input Variation Tests (Categories 21-22)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 21 | input_variations | 112 | Same intent, different phrasings |
+| 22 | input_variations_all | 111 | Comprehensive variations |
 
 ---
 
@@ -316,16 +394,38 @@ benchmarks/
 ├── generate_final_report.py     # Report generation (v2)
 ├── run_aligned_agents.sh        # Run 4 agents in parallel
 ├── v1/                          # v1 benchmark (36 categories, READ-ONLY)
-├── v2/                          # v2 benchmark (8 categories, current)
+├── v2/                          # v2 benchmark (22 categories, 525 cases)
 │   ├── README.md                # v2 documentation
+│   ├── 01_ct_analysis.json      # 15 cases
 │   ├── 01_tool_calling.json     # 15 cases
+│   ├── 02_ctv_segmentation.json # 10 cases
 │   ├── 02_multi_step.json       # 5 cases
 │   ├── 03_hallucination.json    # 11 cases
+│   ├── 03_oar_segmentation.json # 10 cases
+│   ├── 04_dose_engine.json      # 8 cases
 │   ├── 04_language.json         # 6 cases
 │   ├── 05_context.json          # 7 cases
+│   ├── 05_treatment_planning.json # 8 cases
+│   ├── 06_dose_evaluation.json  # 8 cases
 │   ├── 06_response_quality.json # 5 cases
 │   ├── 07_safety.json           # 5 cases
-│   └── 08_error_recovery.json   # 6 cases
+│   ├── 07_ui_control.json       # 20 cases
+│   ├── 08_error_recovery.json   # 6 cases
+│   ├── 08_output_tools.json     # 8 cases
+│   ├── 09_knowledge_tools.json  # 15 cases
+│   ├── 10_web_search.json       # 10 cases
+│   ├── 11_hallucination.json    # 15 cases
+│   ├── 12_language.json         # 15 cases
+│   ├── 13_context.json          # 10 cases
+│   ├── 14_response_quality.json # 10 cases
+│   ├── 15_safety.json           # 10 cases
+│   ├── 16_error_recovery.json   # 10 cases
+│   ├── 17_advanced_workflows.json # 15 cases
+│   ├── 18_edge_cases.json       # 15 cases
+│   ├── 19_regression.json       # 15 cases
+│   ├── 20_clinical_scenarios.json # 15 cases
+│   ├── 21_input_variations.json # 112 cases
+│   └── 22_input_variations_all.json # 111 cases
 └── archive/                     # Archived v1 scripts and logs
     ├── v1_scripts/              # Old v1 scripts
     ├── v1_logs/                 # Old v1 logs
@@ -333,16 +433,7 @@ benchmarks/
 
 docs/benchmark_result/
 ├── screenshots_v2/              # v2 test screenshots
-│   ├── 01_TC001.png
-│   ├── 01_TC002.png
-│   ├── ...
-│   └── 08_ER006.png
 ├── reports_v2/                  # v2 test reports
-│   ├── agent1_tool_calling.md
-│   ├── agent2_language.md
-│   ├── agent3_safety.md
-│   ├── agent4_error_recovery.md
-│   └── final_report.md
 └── auto_monitor_v2.log          # Monitor logs
 ```
 
@@ -405,18 +496,54 @@ python3 aligned_benchmark.py <agent_id> 1 2 3 4 5 6 7 8
 python3 aligned_benchmark.py <agent_id> 1 2 3 4 5 6 7 8
 ```
 
-### 13.2 v2 Categories
+### 13.2 v2 Categories (22 categories, 525 cases)
+
+#### Core Functionality (Categories 01-08)
 
 | # | Category | Cases | Description |
 |---|----------|-------|-------------|
-| 1 | tool_calling | 15 | Correct tool selection |
-| 2 | multi_step | 5 | All steps in order |
-| 3 | hallucination | 11 | No fabrication |
-| 4 | language | 6 | Language consistency |
-| 5 | context | 7 | Multi-turn context |
-| 6 | response_quality | 5 | Structured output |
-| 7 | safety | 5 | Refuse unsafe requests |
-| 8 | error_recovery | 6 | Graceful error handling |
+| 01 | ct_analysis | 30 | CT image analysis |
+| 02 | ctv_segmentation | 15 | CTV tumor segmentation |
+| 03 | hallucination | 21 | Fabrication detection |
+| 04 | dose_engine | 14 | Dose calculation |
+| 05 | context | 15 | Multi-turn context |
+| 06 | dose_evaluation | 13 | Dose evaluation |
+| 07 | safety | 25 | Safety constraints |
+| 08 | error_recovery | 14 | Error handling |
+
+#### Tool-Specific Tests (Categories 09-10)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 09 | knowledge_tools | 15 | Clinical knowledge base |
+| 10 | web_search | 10 | Web search |
+
+#### Quality Tests (Categories 11-16)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 11 | hallucination | 15 | Advanced hallucination |
+| 12 | language | 15 | Language consistency |
+| 13 | context | 10 | Context retention |
+| 14 | response_quality | 10 | Response formatting |
+| 15 | safety | 10 | Safety validation |
+| 16 | error_recovery | 10 | Error handling |
+
+#### Workflow Tests (Categories 17-20)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 17 | advanced_workflows | 15 | Complex workflows |
+| 18 | edge_cases | 15 | Edge cases |
+| 19 | regression | 15 | Regression tests |
+| 20 | clinical_scenarios | 15 | Clinical scenarios |
+
+#### Input Variation Tests (Categories 21-22)
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 21 | input_variations | 112 | Same intent, different phrasings |
+| 22 | input_variations_all | 111 | Comprehensive variations |
 
 ### 13.3 Setup Field (v2)
 
@@ -515,16 +642,38 @@ benchmarks/
 ├── generate_final_report.py       # Report generation (v2)
 ├── run_aligned_agents.sh          # Run 4 agents in parallel
 ├── v1/                            # v1 benchmark (36 categories, READ-ONLY)
-├── v2/                            # v2 benchmark (8 categories, current)
+├── v2/                            # v2 benchmark (22 categories, 525 cases)
 │   ├── README.md                  # v2 documentation
-│   ├── 01_tool_calling.json
-│   ├── 02_multi_step.json
-│   ├── 03_hallucination.json
-│   ├── 04_language.json
-│   ├── 05_context.json
-│   ├── 06_response_quality.json
-│   ├── 07_safety.json
-│   └── 08_error_recovery.json
+│   ├── 01_ct_analysis.json        # 15 cases
+│   ├── 01_tool_calling.json       # 15 cases
+│   ├── 02_ctv_segmentation.json   # 10 cases
+│   ├── 02_multi_step.json         # 5 cases
+│   ├── 03_hallucination.json      # 11 cases
+│   ├── 03_oar_segmentation.json   # 10 cases
+│   ├── 04_dose_engine.json        # 8 cases
+│   ├── 04_language.json           # 6 cases
+│   ├── 05_context.json            # 7 cases
+│   ├── 05_treatment_planning.json # 8 cases
+│   ├── 06_dose_evaluation.json    # 8 cases
+│   ├── 06_response_quality.json   # 5 cases
+│   ├── 07_safety.json             # 5 cases
+│   ├── 07_ui_control.json         # 20 cases
+│   ├── 08_error_recovery.json     # 6 cases
+│   ├── 08_output_tools.json       # 8 cases
+│   ├── 09_knowledge_tools.json    # 15 cases
+│   ├── 10_web_search.json         # 10 cases
+│   ├── 11_hallucination.json      # 15 cases
+│   ├── 12_language.json           # 15 cases
+│   ├── 13_context.json            # 10 cases
+│   ├── 14_response_quality.json   # 10 cases
+│   ├── 15_safety.json             # 10 cases
+│   ├── 16_error_recovery.json     # 10 cases
+│   ├── 17_advanced_workflows.json # 15 cases
+│   ├── 18_edge_cases.json         # 15 cases
+│   ├── 19_regression.json         # 15 cases
+│   ├── 20_clinical_scenarios.json # 15 cases
+│   ├── 21_input_variations.json   # 112 cases
+│   └── 22_input_variations_all.json # 111 cases
 └── archive/                       # Archived v1 scripts and logs
     ├── v1_scripts/                # Old v1 scripts
     ├── v1_logs/                   # Old v1 logs
@@ -533,11 +682,6 @@ benchmarks/
 docs/benchmark_result/
 ├── screenshots_v2/                # v2 screenshots
 ├── reports_v2/                    # v2 reports
-│   ├── agent1_*.md
-│   ├── agent2_*.md
-│   ├── agent3_*.md
-│   ├── agent4_*.md
-│   └── final_report.md
 └── auto_monitor_v2.log            # Monitor logs
 ```
 
