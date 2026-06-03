@@ -4188,20 +4188,26 @@ function wrapViewersInRow(panel, mode) {
     }
 }
 
-// Global vertical resize state
-const _vResize = { active: false, card: null, startX: 0, startW: 0 };
+// Unified resize state — supports synchronized row/column resizing
+const _resize = { active: false, type: null, card: null, cards: [], startPos: 0, startSizes: [], handle: null };
 
 function setupVerticalResize() {
     document.querySelectorAll('.viewer-resize-v').forEach(handle => {
-        if (handle._resizeListener) return; // Skip if already has listener
+        if (handle._resizeListener) return;
         handle._resizeListener = true;
         handle.addEventListener('mousedown', e => {
             const card = handle.previousElementSibling;
             if (!card || card.classList.contains('fullscreen')) return;
-            _vResize.active = true;
-            _vResize.card = card;
-            _vResize.startX = e.clientX;
-            _vResize.startW = card.offsetWidth;
+            // Find all cards in the same row (siblings in a .viewers-row)
+            const row = card.closest('.viewers-row') || card.parentElement;
+            const allCards = row ? Array.from(row.querySelectorAll('.viewer-card')) : [card];
+            _resize.active = true;
+            _resize.type = 'width';
+            _resize.card = card;
+            _resize.cards = allCards;
+            _resize.startPos = e.clientX;
+            _resize.startSizes = allCards.map(c => c.offsetWidth);
+            _resize.handle = handle;
             document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';
             e.preventDefault();
@@ -4209,20 +4215,68 @@ function setupVerticalResize() {
     });
 }
 
-// Global mousemove handler for vertical resize
+function setupHorizontalResize() {
+    document.querySelectorAll('.viewer-resize-h').forEach(handle => {
+        if (handle._resizeListener) return;
+        handle._resizeListener = true;
+        handle.addEventListener('mousedown', e => {
+            const viewerCard = handle.parentElement;
+            if (!viewerCard || !viewerCard.classList.contains('viewer-card')) return;
+            // Find all cards in the same column (same position in each row)
+            const panel = document.getElementById('viewersPanel');
+            const rows = panel ? Array.from(panel.querySelectorAll('.viewers-row')) : [];
+            let allCards = [viewerCard];
+            if (rows.length > 1) {
+                // Find which column this card is in
+                const row = viewerCard.closest('.viewers-row');
+                if (row) {
+                    const rowCards = Array.from(row.querySelectorAll('.viewer-card'));
+                    const colIdx = rowCards.indexOf(viewerCard);
+                    allCards = rows.map(r => Array.from(r.querySelectorAll('.viewer-card'))[colIdx]).filter(Boolean);
+                }
+            }
+            _resize.active = true;
+            _resize.type = 'height';
+            _resize.card = viewerCard;
+            _resize.cards = allCards;
+            _resize.startPos = e.clientY;
+            _resize.startSizes = allCards.map(c => c.offsetHeight);
+            _resize.handle = handle;
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+    });
+}
+
+// Global mousemove handler for synchronized resize
 document.addEventListener('mousemove', e => {
-    if (!_vResize.active || !_vResize.card) return;
-    const dx = e.clientX - _vResize.startX;
-    const newW = Math.max(150, _vResize.startW + dx);
-    _vResize.card.style.width = newW + 'px';
-    _vResize.card.style.flex = 'none';
+    if (!_resize.active || !_resize.cards.length) return;
+    const delta = _resize.type === 'width'
+        ? e.clientX - _resize.startPos
+        : e.clientY - _resize.startPos;
+
+    _resize.cards.forEach((card, i) => {
+        const startSize = _resize.startSizes[i];
+        const minSize = _resize.type === 'width' ? 150 : 100;
+        const newSize = Math.max(minSize, startSize + delta);
+        if (_resize.type === 'width') {
+            card.style.width = newSize + 'px';
+            card.style.flex = 'none';
+        } else {
+            card.style.height = newSize + 'px';
+            card.style.flex = 'none';
+        }
+    });
 });
 
-// Global mouseup handler for vertical resize
+// Global mouseup handler
 document.addEventListener('mouseup', () => {
-    if (_vResize.active) {
-        _vResize.active = false;
-        _vResize.card = null;
+    if (_resize.active) {
+        _resize.active = false;
+        _resize.card = null;
+        _resize.cards = [];
+        _resize.handle = null;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
     }
@@ -4266,6 +4320,7 @@ function setViewerLayout(layout) {
         });
         // Setup vertical resize handlers
         setupVerticalResize();
+        setupHorizontalResize();
     } else if (layout === '3d-top') {
         panel.classList.add('layout-3d-top');
         wrapViewersInRow(panel, 'after-3d');
@@ -4275,6 +4330,8 @@ function setViewerLayout(layout) {
     } else {
         panel.classList.add('layout-vertical');
     }
+    // Setup resize handles for all layouts
+    setupHorizontalResize();
     // Update active button
     document.querySelectorAll('.layout-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.layout === layout);

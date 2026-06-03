@@ -904,8 +904,15 @@ def create_app(config: Optional[Dict] = None):
                 spacing = (1.0, 1.0, 1.0)
 
             # Generate mesh with marching cubes
+            # Ensure level is within data range
+            data_min, data_max = float(binary_mask.min()), float(binary_mask.max())
+            level = 0.5
+            if level <= data_min or level >= data_max:
+                level = (data_min + data_max) / 2.0
+            if data_min == data_max:
+                return jsonify({"error": "Mask is uniform, cannot generate mesh"}), 400
             vertices, faces, normals, values = measure.marching_cubes(
-                binary_mask, level=0.5, spacing=spacing, allow_degenerate=False
+                binary_mask, level=level, spacing=spacing, allow_degenerate=False
             )
 
             # Simple decimation: if too many faces, use quadric decimation
