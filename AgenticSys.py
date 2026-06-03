@@ -916,6 +916,11 @@ class BrachyAgent:
             if lang == "zh":
                 return f"OAR分割完成。共分割 {count} 个器官。"
             return f"OAR segmentation completed. {count} organs segmented."
+        elif tool_name == "code_executor":
+            output = str(result.data) if result.data else ""
+            if lang == "zh":
+                return f"图像分析完成。\n{output}"
+            return f"Image analysis completed.\n{output}"
         elif tool_name == "dose_engine":
             return f"{'剂量计算完成' if lang == 'zh' else 'Dose calculation completed'}. {str(result.data)[:200]}"
         else:
@@ -949,10 +954,30 @@ class BrachyAgent:
             tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
             logger.info(f"Direct tool: dose calculation")
 
-        # "analyze" alone → let LLM handle with code_executor (needs code generation)
-        # "analyze" + "segment" → only do segmentation (analysis is redundant after segmentation)
-        if has_analyze and not has_segment and not has_dose:
-            return None  # Let LLM handle pure analysis
+        # Analysis: use code_executor with correct CT path from memory
+        if has_analyze and ct_path:
+            analysis_code = f"""
+import nibabel as nib
+import numpy as np
+
+ct = nib.load('{ct_path}')
+data = ct.get_fdata()
+spacing = ct.header.get_zooms()
+
+print(f"Dimensions: {{data.shape[0]}} x {{data.shape[1]}} x {{data.shape[2]}}")
+print(f"Voxel size: {{spacing[0]:.2f}} x {{spacing[1]:.2f}} x {{spacing[2]:.2f}} mm")
+print(f"Scan range: {{data.shape[0]*spacing[0]/10:.1f}} x {{data.shape[1]*spacing[1]/10:.1f}} x {{data.shape[2]*spacing[2]/10:.1f}} cm")
+print(f"HU range: {{data.min():.0f}} ~ {{data.max():.0f}}")
+print(f"Mean HU: {{data.mean():.1f}}")
+print()
+print("Tissue distribution:")
+total = data.size
+for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -30, 200), ("Muscle/organ", 200, 400), ("Bone", 400, 9999)]:
+    pct = np.sum((data >= lo) & (data < hi)) / total * 100
+    print(f"  {{name}}: {{pct:.1f}}%")
+"""
+            tools.append({"id": "tool_direct_analysis", "tool": "code_executor", "params": {"code": analysis_code, "description": "Analyze CT image"}})
+            logger.info(f"Direct tool: analysis with correct path")
 
         return tools if tools else None
 
