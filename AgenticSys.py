@@ -694,6 +694,12 @@ class BrachyAgent:
         except ImportError as e:
             logger.warning(f"UIInspectorTool not available: {e}")
 
+        try:
+            from tool_factory.ui_controller import UIControllerTool
+            self.registry.register(UIControllerTool())
+        except ImportError as e:
+            logger.warning(f"UIControllerTool not available: {e}")
+
         self.registry.register(CTVSegmentationTool())
         self.registry.register(OARSegmentationTool())
         self.registry.register(DoseEngineTool())
@@ -1089,6 +1095,9 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
             (r'(分析|analyze)', 'analyze'),
             (r'(分割|segment|再分)', 'segment'),
             (r'(剂量|dose|计算剂量)', 'dose'),
+            (r'(切换|switch).*(viewer|查看|浏览|视图)', 'ui:panel:viewers'),
+            (r'(切换|switch).*(input|输入)', 'ui:panel:input'),
+            (r'(切换|switch).*(metrics|指标)', 'ui:panel:metrics'),
         ]
         action_positions = []
         for pattern, action in ACTION_PATTERNS:
@@ -1109,6 +1118,13 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
         # Map actions to tool calls
         tools = []
         for action in ordered_actions:
+            # UI control actions
+            if action.startswith('ui:'):
+                _, target, value = action.split(':')
+                tools.append({"id": f"tool_ui_{target}_{value}", "tool": "ui_controller",
+                              "params": {"actions": [{"target": target, "command": "switch", "value": value}]}})
+                continue
+
             if action == 'analyze' and ct_path:
                 code = self._ANALYSIS_CODE_TEMPLATE.format(ct_path=ct_path)
                 tools.append({"id": "tool_direct_analysis", "tool": "code_executor",
