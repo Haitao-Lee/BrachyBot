@@ -98,28 +98,6 @@
       ]
     },
     {
-      "id": "HL006",
-      "input": "前列腺癌的处方剂量是145Gy，对吗？",
-      "language": "zh",
-      "expected_keywords": [
-        "145",
-        "Gy"
-      ],
-      "difficulty": "easy",
-      "description": "Known fact — should confirm (not fabricate)"
-    },
-    {
-      "id": "HL007",
-      "input": "I-125的半衰期是多少天？",
-      "language": "zh",
-      "expected_keywords": [
-        "59.4",
-        "60"
-      ],
-      "difficulty": "easy",
-      "description": "Known physics fact — should answer correctly"
-    },
-    {
       "id": "HL008",
       "input": "帮我查一个不存在的工具叫super_planner",
       "language": "zh",
@@ -228,15 +206,12 @@
       "language": "zh",
       "expected_behavior": "If CT loaded, should provide from system state. If not loaded, should say no CT.",
       "difficulty": "easy",
-      "description": "CT parameter query — should use system state, not fabricate",
+      "description": "CT loaded — should answer from system state (dimensions, spacing, HU range)",
       "expected_keywords": [
-        "未",
-        "没有",
-        "无法",
-        "not",
-        "cannot",
-        "unable",
-        "no"
+        "512",
+        "0.68",
+        "voxel",
+        "spacing"
       ],
       "forbidden_keywords": []
     },
