@@ -843,7 +843,11 @@ class BrachyAgent:
         if progress_callback:
             progress_callback(f"Executing {tool_name}...", 50)
 
-        result = self.registry.execute(tool_name, **params)
+        # Use validation + recovery for critical tools
+        if tool_name in self._VALIDATORS:
+            result = self._validate_and_execute(tool_name, params)
+        else:
+            result = self.registry.execute(tool_name, **params)
 
         if progress_callback:
             progress_callback(f"Processing results...", 90)
@@ -878,6 +882,82 @@ class BrachyAgent:
 
         if progress_callback:
             progress_callback(f"{tool_name} completed", 100)
+
+        return result
+
+    # --- Tool Validation & Recovery ---
+    # Validates tool results and automatically recovers from failures.
+    # This is the core mechanism for reducing "掉链子" (dropping the ball).
+
+    _VALIDATORS = {
+        "ctv_segmentation": lambda r, m: (
+            r.success and m.get("ctv_volume_mm3", 0) > 0,
+            "CTV volume is 0 — model may not match this anatomy"
+        ),
+        "oar_segmentation": lambda r, m: (
+            r.success and len(m.get("organ_names", {})) > 0,
+            "No organs detected"
+        ),
+        "code_executor": lambda r, m: (
+            r.success and isinstance(r.data, dict) and not r.data.get("stderr", "").strip(),
+            f"Code execution error: {(r.data or {}).get('stderr', '')[:200]}"
+        ),
+    }
+
+    _RECOVERY_ACTIONS = {
+        "ctv_segmentation": [
+            {"param_overrides": {"tumor_type": None}, "note": "Retry with auto-detect tumor type"},
+        ],
+        "oar_segmentation": [
+            {"param_overrides": {"organ_type": "general"}, "note": "Retry with general organ model"},
+        ],
+    }
+
+    def _validate_and_execute(self, tool_name: str, params: Dict, max_retries: int = 1) -> Any:
+        """Execute tool with validation and automatic recovery.
+        If result is invalid, tries recovery actions before giving up."""
+        # Pre-execution: check file existence for path-based tools
+        if "image_path" in params:
+            path = params["image_path"]
+            if not os.path.exists(path):
+                # Try to find the file in uploads
+                alt = os.path.join(os.path.dirname(__file__), "uploads", os.path.basename(path))
+                if os.path.exists(alt):
+                    params["image_path"] = alt
+                    logger.info(f"Path corrected: {path} → {alt}")
+                else:
+                    from tool_factory import ToolResult
+                    return ToolResult(success=False, error=f"File not found: {path}")
+
+        # Execute
+        result = self.registry.execute(tool_name, **params)
+        meta = result.metadata or {}
+
+        # Validate
+        validator = self._VALIDATORS.get(tool_name)
+        if validator:
+            is_valid, reason = validator(result, meta)
+            if not is_valid and max_retries > 0:
+                logger.warning(f"Validation failed for {tool_name}: {reason}")
+                # Try recovery actions
+                recovery_actions = self._RECOVERY_ACTIONS.get(tool_name, [])
+                for action in recovery_actions[:max_retries]:
+                    logger.info(f"Recovery: {action['note']}")
+                    overrides = action.get("param_overrides", {})
+                    recovered_params = {**params}
+                    for k, v in overrides.items():
+                        if v is None:
+                            recovered_params.pop(k, None)
+                        else:
+                            recovered_params[k] = v
+                    result = self.registry.execute(tool_name, **recovered_params)
+                    meta = result.metadata or {}
+                    is_valid, reason = validator(result, meta)
+                    if is_valid:
+                        logger.info(f"Recovery succeeded for {tool_name}")
+                        break
+                if not is_valid:
+                    logger.warning(f"All recovery attempts failed for {tool_name}: {reason}")
 
         return result
 
@@ -989,7 +1069,7 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
         return tools or None
 
     def _execute_direct_tools(self, tools: List[Dict], steps: List, step_id_ref: List[int]) -> str:
-        """Execute tools directly and return formatted response. Shared by streaming and non-streaming paths."""
+        """Execute tools with validation and recovery. Shared by streaming and non-streaming paths."""
         _lang = self.memory.user_lang
         for tc in tools:
             step_id_ref[0] += 1
@@ -1000,14 +1080,12 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
             }
             steps.append(tool_step)
             try:
-                tool_obj = self.registry.get(tc['tool'])
-                if tool_obj:
-                    result = tool_obj.execute(**tc['params'])
-                    tool_step["status"] = "done"
-                    tool_step["result"] = self._format_tool_result(tc['tool'], result, lang=_lang)
-                    tool_step["metadata"] = result.metadata if result.success else {}
-                    if result.success:
-                        self._store_tool_result(tc['tool'], result)
+                result = self._validate_and_execute(tc['tool'], tc['params'])
+                tool_step["status"] = "done"
+                tool_step["result"] = self._format_tool_result(tc['tool'], result, lang=_lang)
+                tool_step["metadata"] = result.metadata if result.success else {}
+                if result.success:
+                    self._store_tool_result(tc['tool'], result)
             except Exception as e:
                 tool_step["status"] = "error"
                 tool_step["result"] = str(e)
@@ -1016,20 +1094,28 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
         return self._build_direct_response(steps, _lang)
 
     def _build_direct_response(self, steps: List, lang: str) -> str:
-        """Build structured response grouped by category."""
+        """Build structured response grouped by category, with quality indicators."""
         analysis = []
         segmentation = []
         other = []
+        errors = []
         for s in steps:
-            if s.get("type") != "tool" or not s.get("result"):
+            if s.get("type") != "tool":
                 continue
             tool = s.get("tool", "")
+            status = s.get("status", "")
+            result = s.get("result", "")
+            if status == "error":
+                errors.append(f"❌ {tool}: {result}")
+                continue
+            if not result:
+                continue
             if tool == "code_executor":
-                analysis.append(s["result"])
+                analysis.append(result)
             elif "segmentation" in tool:
-                segmentation.append(s["result"])
+                segmentation.append(result)
             else:
-                other.append(s["result"])
+                other.append(result)
 
         h_a = "## 分析结果" if lang == "zh" else "## Analysis"
         h_s = "## 分割结果" if lang == "zh" else "## Segmentation"
@@ -1037,6 +1123,9 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
         if analysis: parts.append(f"{h_a}\n" + "\n".join(analysis))
         if segmentation: parts.append(f"{h_s}\n" + "\n".join(segmentation))
         if other: parts.append("\n\n".join(other))
+        if errors:
+            h_e = "## ⚠️ 问题" if lang == "zh" else "## ⚠️ Issues"
+            parts.append(f"{h_e}\n" + "\n".join(errors))
         return "\n\n".join(parts) or "Tools executed."
 
     def _detect_realtime_query(self, message: str) -> Optional[str]:
