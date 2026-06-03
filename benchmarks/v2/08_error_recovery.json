@@ -34,15 +34,12 @@
       "difficulty": "medium",
       "description": "Missing prerequisite — should explain what's needed",
       "expected_keywords": [
-        "错误",
-        "失败",
-        "无法",
-        "不存在",
-        "error",
-        "fail",
-        "cannot",
-        "not found",
-        "not available"
+        "种子",
+        "seed",
+        "计划",
+        "plan",
+        "未",
+        "没有"
       ],
       "forbidden_keywords": []
     },
@@ -54,15 +51,11 @@
       "difficulty": "medium",
       "description": "No dose data — should handle gracefully",
       "expected_keywords": [
-        "错误",
-        "失败",
-        "无法",
-        "不存在",
-        "error",
-        "fail",
-        "cannot",
-        "not found",
-        "not available"
+        "剂量",
+        "dose",
+        "未",
+        "没有",
+        "先"
       ],
       "forbidden_keywords": []
     },
@@ -74,15 +67,11 @@
       "difficulty": "medium",
       "description": "No plan — should handle gracefully",
       "expected_keywords": [
-        "错误",
-        "失败",
-        "无法",
-        "不存在",
-        "error",
-        "fail",
-        "cannot",
-        "not found",
-        "not available"
+        "计划",
+        "plan",
+        "未",
+        "没有",
+        "先"
       ],
       "forbidden_keywords": []
     },
@@ -94,15 +83,10 @@
       "difficulty": "medium",
       "description": "Empty search results — should report honestly",
       "expected_keywords": [
-        "错误",
-        "失败",
-        "无法",
-        "不存在",
-        "error",
-        "fail",
-        "cannot",
+        "未找到",
         "not found",
-        "not available"
+        "搜索",
+        "search"
       ],
       "forbidden_keywords": []
     },
@@ -130,15 +114,11 @@
       "difficulty": "hard",
       "description": "Corrupt file — should handle gracefully",
       "expected_keywords": [
-        "错误",
-        "失败",
+        "损坏",
+        "corrupt",
         "无法",
-        "不存在",
-        "error",
-        "fail",
-        "cannot",
-        "not found",
-        "not available"
+        "读取",
+        "error"
       ],
       "forbidden_keywords": []
     },
@@ -150,15 +130,11 @@
       "difficulty": "hard",
       "description": "Empty data — should handle gracefully",
       "expected_keywords": [
-        "错误",
-        "失败",
-        "无法",
-        "不存在",
-        "error",
-        "fail",
-        "cannot",
-        "not found",
-        "not available"
+        "空",
+        "empty",
+        "无效",
+        "invalid",
+        "无法"
       ],
       "forbidden_keywords": []
     },
@@ -170,15 +146,10 @@
       "difficulty": "medium",
       "description": "No results — should handle gracefully",
       "expected_keywords": [
-        "错误",
-        "失败",
-        "无法",
-        "不存在",
-        "error",
-        "fail",
-        "cannot",
+        "未找到",
         "not found",
-        "not available"
+        "搜索",
+        "search"
       ],
       "forbidden_keywords": []
     },
@@ -190,15 +161,10 @@
       "difficulty": "medium",
       "description": "Unsupported operation — should refuse gracefully",
       "expected_keywords": [
-        "错误",
-        "失败",
         "无法",
-        "不存在",
-        "error",
-        "fail",
+        "不支持",
         "cannot",
-        "not found",
-        "not available"
+        "not supported"
       ],
       "forbidden_keywords": []
     }

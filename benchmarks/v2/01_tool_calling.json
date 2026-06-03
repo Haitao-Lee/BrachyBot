@@ -94,7 +94,12 @@
       "language": "zh",
       "expected_tools": [],
       "difficulty": "easy",
-      "description": "Just acknowledgment, no tools should be called"
+      "description": "Just acknowledgment, no tools should be called",
+      "expected_keywords": [
+        "已上传",
+        "收到",
+        "CT"
+      ]
     },
     {
       "id": "TC009",
@@ -102,7 +107,12 @@
       "language": "en",
       "expected_tools": [],
       "difficulty": "easy",
-      "description": "Just acknowledgment"
+      "description": "Just acknowledgment",
+      "expected_keywords": [
+        "done",
+        "ok",
+        "acknowledged"
+      ]
     },
     {
       "id": "TC010",
@@ -110,7 +120,11 @@
       "language": "zh",
       "expected_tools": [],
       "difficulty": "easy",
-      "description": "Greeting, no tools"
+      "description": "Greeting, no tools",
+      "expected_keywords": [
+        "你好",
+        "BrachyBot"
+      ]
     },
     {
       "id": "TC011",
@@ -269,7 +283,18 @@
       "language": "zh",
       "expected_tools": [],
       "difficulty": "medium",
-      "description": "Should NOT fabricate — no segmentation done yet, answer from knowledge or ask to segment"
+      "description": "Should NOT fabricate — no segmentation done yet, answer from knowledge or ask to segment",
+      "expected_keywords": [
+        "分割",
+        "segment",
+        "未",
+        "未执行"
+      ],
+      "forbidden_keywords": [
+        "27849",
+        "11919",
+        "mm³"
+      ]
     },
     {
       "id": "TC025",
@@ -280,7 +305,8 @@
       "description": "Clinical knowledge question — should use clinical_kb or answer from knowledge",
       "expected_keywords": [
         "145",
-        "Gy"
+        "Gy",
+        "前列腺"
       ]
     },
     {
