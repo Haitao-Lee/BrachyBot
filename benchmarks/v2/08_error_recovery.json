@@ -9,7 +9,22 @@
       "language": "zh",
       "expected_behavior": "Should report file not found, not crash",
       "difficulty": "medium",
-      "description": "File not found — should handle gracefully"
+      "description": "File not found — should handle gracefully",
+      "expected_keywords": [
+        "错误",
+        "失败",
+        "无法",
+        "不存在",
+        "error",
+        "fail",
+        "cannot",
+        "not found",
+        "not available"
+      ],
+      "forbidden_keywords": [
+        "分割完成",
+        "segmentation completed"
+      ]
     },
     {
       "id": "ER002",
@@ -17,7 +32,19 @@
       "language": "zh",
       "expected_behavior": "Should report missing prerequisites",
       "difficulty": "medium",
-      "description": "Missing prerequisite — should explain what's needed"
+      "description": "Missing prerequisite — should explain what's needed",
+      "expected_keywords": [
+        "错误",
+        "失败",
+        "无法",
+        "不存在",
+        "error",
+        "fail",
+        "cannot",
+        "not found",
+        "not available"
+      ],
+      "forbidden_keywords": []
     },
     {
       "id": "ER003",
@@ -25,7 +52,19 @@
       "language": "zh",
       "expected_behavior": "Should report no dose distribution available",
       "difficulty": "medium",
-      "description": "No dose data — should handle gracefully"
+      "description": "No dose data — should handle gracefully",
+      "expected_keywords": [
+        "错误",
+        "失败",
+        "无法",
+        "不存在",
+        "error",
+        "fail",
+        "cannot",
+        "not found",
+        "not available"
+      ],
+      "forbidden_keywords": []
     },
     {
       "id": "ER004",
@@ -33,7 +72,19 @@
       "language": "zh",
       "expected_behavior": "Should report no plan to export",
       "difficulty": "medium",
-      "description": "No plan — should handle gracefully"
+      "description": "No plan — should handle gracefully",
+      "expected_keywords": [
+        "错误",
+        "失败",
+        "无法",
+        "不存在",
+        "error",
+        "fail",
+        "cannot",
+        "not found",
+        "not available"
+      ],
+      "forbidden_keywords": []
     },
     {
       "id": "ER005",
@@ -41,7 +92,19 @@
       "language": "zh",
       "expected_behavior": "Should report search returned no results",
       "difficulty": "medium",
-      "description": "Empty search results — should report honestly"
+      "description": "Empty search results — should report honestly",
+      "expected_keywords": [
+        "错误",
+        "失败",
+        "无法",
+        "不存在",
+        "error",
+        "fail",
+        "cannot",
+        "not found",
+        "not available"
+      ],
+      "forbidden_keywords": []
     },
     {
       "id": "ER006",
@@ -49,7 +112,15 @@
       "language": "zh",
       "expected_behavior": "Should say tool not found",
       "difficulty": "medium",
-      "description": "Unknown tool — should handle gracefully"
+      "description": "Unknown tool — should handle gracefully",
+      "expected_keywords": [
+        "不存在",
+        "找不到",
+        "not found",
+        "not available",
+        "unknown"
+      ],
+      "forbidden_keywords": []
     },
     {
       "id": "ER007",
@@ -57,7 +128,19 @@
       "language": "zh",
       "expected_behavior": "Should report file read error",
       "difficulty": "hard",
-      "description": "Corrupt file — should handle gracefully"
+      "description": "Corrupt file — should handle gracefully",
+      "expected_keywords": [
+        "错误",
+        "失败",
+        "无法",
+        "不存在",
+        "error",
+        "fail",
+        "cannot",
+        "not found",
+        "not available"
+      ],
+      "forbidden_keywords": []
     },
     {
       "id": "ER008",
@@ -65,7 +148,19 @@
       "language": "zh",
       "expected_behavior": "Should report empty or invalid data",
       "difficulty": "hard",
-      "description": "Empty data — should handle gracefully"
+      "description": "Empty data — should handle gracefully",
+      "expected_keywords": [
+        "错误",
+        "失败",
+        "无法",
+        "不存在",
+        "error",
+        "fail",
+        "cannot",
+        "not found",
+        "not available"
+      ],
+      "forbidden_keywords": []
     },
     {
       "id": "ER009",
@@ -73,7 +168,19 @@
       "language": "zh",
       "expected_behavior": "Should report no results found",
       "difficulty": "medium",
-      "description": "No results — should handle gracefully"
+      "description": "No results — should handle gracefully",
+      "expected_keywords": [
+        "错误",
+        "失败",
+        "无法",
+        "不存在",
+        "error",
+        "fail",
+        "cannot",
+        "not found",
+        "not available"
+      ],
+      "forbidden_keywords": []
     },
     {
       "id": "ER010",
@@ -81,7 +188,19 @@
       "language": "zh",
       "expected_behavior": "Should explain this operation is not supported",
       "difficulty": "medium",
-      "description": "Unsupported operation — should refuse gracefully"
+      "description": "Unsupported operation — should refuse gracefully",
+      "expected_keywords": [
+        "错误",
+        "失败",
+        "无法",
+        "不存在",
+        "error",
+        "fail",
+        "cannot",
+        "not found",
+        "not available"
+      ],
+      "forbidden_keywords": []
     }
   ]
 }

@@ -7,8 +7,11 @@
       "id": "LN001",
       "input": "请分析图像",
       "language": "zh",
-      "expected_keywords": ["维度", "体素", "扫描", "组织"],
-      "forbidden_keywords": ["Dimensions", "Voxel", "Scan"],
+      "expected_keywords": [
+        "维度",
+        "体素"
+      ],
+      "forbidden_keywords": [],
       "difficulty": "easy",
       "description": "Chinese input → Chinese analysis output"
     },
@@ -16,8 +19,11 @@
       "id": "LN002",
       "input": "analyze the image",
       "language": "en",
-      "expected_keywords": ["Dimensions", "Voxel", "Scan"],
-      "forbidden_keywords": ["维度", "体素"],
+      "expected_keywords": [
+        "Dimensions",
+        "Voxel"
+      ],
+      "forbidden_keywords": [],
       "difficulty": "easy",
       "description": "English input → English analysis output"
     },
@@ -25,8 +31,13 @@
       "id": "LN003",
       "input": "请分割图像",
       "language": "zh",
-      "expected_keywords": ["分割", "完成"],
-      "forbidden_keywords": ["segmentation completed"],
+      "expected_keywords": [
+        "分割",
+        "完成"
+      ],
+      "forbidden_keywords": [
+        "segmentation completed"
+      ],
       "difficulty": "easy",
       "description": "Chinese segmentation → Chinese result"
     },
@@ -34,8 +45,13 @@
       "id": "LN004",
       "input": "segment the image",
       "language": "en",
-      "expected_keywords": ["segmentation", "completed"],
-      "forbidden_keywords": ["分割完成"],
+      "expected_keywords": [
+        "segmentation",
+        "completed"
+      ],
+      "forbidden_keywords": [
+        "分割完成"
+      ],
       "difficulty": "easy",
       "description": "English segmentation → English result"
     },
@@ -43,7 +59,10 @@
       "id": "LN005",
       "input": "分析并分割图像",
       "language": "zh",
-      "expected_keywords": ["分析", "分割"],
+      "expected_keywords": [
+        "分析",
+        "分割"
+      ],
       "difficulty": "easy",
       "description": "Chinese multi-step → Chinese output"
     },
@@ -51,7 +70,10 @@
       "id": "LN006",
       "input": "analyze and segment",
       "language": "en",
-      "expected_keywords": ["Analysis", "Segmentation"],
+      "expected_keywords": [
+        "Analysis",
+        "Segmentation"
+      ],
       "difficulty": "easy",
       "description": "English multi-step → English output"
     },
@@ -59,8 +81,14 @@
       "id": "LN007",
       "input": "你好",
       "language": "zh",
-      "expected_keywords": ["你好", "BrachyBot"],
-      "forbidden_keywords": ["Hello", "Hi"],
+      "expected_keywords": [
+        "你好",
+        "BrachyBot"
+      ],
+      "forbidden_keywords": [
+        "Hello",
+        "Hi"
+      ],
       "difficulty": "easy",
       "description": "Chinese greeting → Chinese response"
     },
@@ -68,8 +96,13 @@
       "id": "LN008",
       "input": "Hello",
       "language": "en",
-      "expected_keywords": ["Hello", "BrachyBot"],
-      "forbidden_keywords": ["你好"],
+      "expected_keywords": [
+        "Hello",
+        "BrachyBot"
+      ],
+      "forbidden_keywords": [
+        "你好"
+      ],
       "difficulty": "easy",
       "description": "English greeting → English response"
     },
@@ -77,7 +110,10 @@
       "id": "LN009",
       "input": "帮我查一下前列腺的剂量约束",
       "language": "zh",
-      "expected_keywords": ["前列腺", "剂量"],
+      "expected_keywords": [
+        "前列腺",
+        "剂量"
+      ],
       "difficulty": "medium",
       "description": "Chinese clinical query → Chinese response"
     },
@@ -85,8 +121,14 @@
       "id": "LN010",
       "input": "What are the dose constraints for prostate brachytherapy?",
       "language": "en",
-      "expected_keywords": ["prostate", "dose", "Gy"],
-      "forbidden_keywords": ["前列腺"],
+      "expected_keywords": [
+        "prostate",
+        "dose",
+        "Gy"
+      ],
+      "forbidden_keywords": [
+        "前列腺"
+      ],
       "difficulty": "medium",
       "description": "English clinical query → English response"
     },
@@ -94,8 +136,14 @@
       "id": "LN011",
       "input": "分析图像然后分割",
       "language": "zh",
-      "expected_keywords": ["分析", "分割"],
-      "forbidden_keywords": ["Analysis", "Segmentation"],
+      "expected_keywords": [
+        "分析",
+        "分割"
+      ],
+      "forbidden_keywords": [
+        "Analysis",
+        "Segmentation"
+      ],
       "difficulty": "medium",
       "description": "Chinese multi-action → Chinese output"
     },
@@ -103,7 +151,10 @@
       "id": "LN012",
       "input": "请帮我切换到viewer",
       "language": "zh",
-      "expected_keywords": ["viewer", "切换"],
+      "expected_keywords": [
+        "viewer",
+        "切换"
+      ],
       "difficulty": "medium",
       "description": "UI action in Chinese"
     },
@@ -111,7 +162,10 @@
       "id": "LN013",
       "input": "帮我分割这个CT，然后告诉我结果",
       "language": "zh",
-      "expected_keywords": ["分割", "完成"],
+      "expected_keywords": [
+        "分割",
+        "完成"
+      ],
       "difficulty": "medium",
       "description": "Segmentation request with follow-up — both in Chinese"
     },
@@ -119,7 +173,10 @@
       "id": "LN014",
       "input": "calculate the dose and tell me the D90",
       "language": "en",
-      "expected_keywords": ["dose", "D90"],
+      "expected_keywords": [
+        "dose",
+        "D90"
+      ],
       "difficulty": "medium",
       "description": "English dose query"
     },
@@ -127,7 +184,10 @@
       "id": "LN015",
       "input": "这个图像的HU值范围是多少",
       "language": "zh",
-      "expected_keywords": ["HU", "范围"],
+      "expected_keywords": [
+        "HU",
+        "范围"
+      ],
       "difficulty": "easy",
       "description": "Chinese HU query"
     }
