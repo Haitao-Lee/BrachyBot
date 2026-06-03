@@ -1,0 +1,69 @@
+{
+  "response_id": "20260603_141818_042347",
+  "query": "EORTC 22861 anal canal brachytherapy boost chemoradiation trial results",
+  "created_at": "2026-06-03T14:18:18.042372",
+  "num_sources": 3,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[Prognostic factors for recurrence and survival in anal cancer: generating hypotheses from the mature outcomes of the first United Kingdom Coordinating Committee on Cancer Research Anal Cancer Trial (ACT I).](https://pubmed.ncbi.nlm.nih.gov/23011911/)",
+    "[Shortened irradiation scheme, continuous infusion of 5-fluorouracil and fractionation of mitomycin C in locally advanced anal carcinomas. Results of a phase II study of the European Organization for Research and Treatment of Cancer. Radiotherapy and Gastrointestinal Cooperative Groups.](https://pubmed.ncbi.nlm.nih.gov/12504657/)",
+    "[[Indications of the association of radiotherapy and hormonal treatment in prostate cancer].](https://pubmed.ncbi.nlm.nih.gov/16226044/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "c0f41cd1ab0e",
+      "claim": "PubMed ID: 23011911. 2013/02/15 00:00. BACKGROUND: Only 2 prospective studies have previously reported prognostic \nfactors for anal cancer, European Organization for Research and Treatment of \nCancer ",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/23011911/",
+      "source_type": "PubMed",
+      "source_title": "Prognostic factors for recurrence and survival in anal cancer: generating hypotheses from the mature outcomes of the first United Kingdom Coordinating Committee on Cancer Research Anal Cancer Trial (ACT I).",
+      "accessed_at": "2026-06-03T14:18:19.878293",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 23011911. 2013/02/15 00:00. BACKGROUND: Only 2 prospective studies have previously reported prognostic \nfactors for anal cancer, European Organization for Research and Treatment of \nCancer trial 22861 (EORTC 22861) and Radiation Therapy Oncology Group trial \n (RTOG ). Both of those trials reported that clinically positive lymph \nnodes and male sex predicted poorer overall survival (OS). The EORTC 22861 trial \nindicated that the same factors were prognostic for locoregional control. In",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "EORTC 22861 anal canal brachytherapy boost chemoradiation trial results",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "23496e7348b1",
+      "claim": "PubMed ID: 12504657. 2003/01/01 00:00. BACKGROUND: Only 2 prospective studies have previously reported prognostic \nfactors for anal cancer, European Organization for Research and Treatment of \nCancer ",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/12504657/",
+      "source_type": "PubMed",
+      "source_title": "Shortened irradiation scheme, continuous infusion of 5-fluorouracil and fractionation of mitomycin C in locally advanced anal carcinomas. Results of a phase II study of the European Organization for Research and Treatment of Cancer. Radiotherapy and Gastrointestinal Cooperative Groups.",
+      "accessed_at": "2026-06-03T14:18:19.878411",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 12504657. 2003/01/01 00:00. BACKGROUND: Only 2 prospective studies have previously reported prognostic \nfactors for anal cancer, European Organization for Research and Treatment of \nCancer trial 22861 (EORTC 22861) and Radiation Therapy Oncology Group trial \n (RTOG ). Both of those trials reported that clinically positive lymph \nnodes and male sex predicted poorer overall survival (OS). The EORTC 22861 trial \nindicated that the same factors were prognostic for locoregional control. In",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "EORTC 22861 anal canal brachytherapy boost chemoradiation trial results",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "9c0bc0c364df",
+      "claim": "PubMed ID: 16226044. 2005/11/01 00:00. BACKGROUND: Only 2 prospective studies have previously reported prognostic \nfactors for anal cancer, European Organization for Research and Treatment of \nCancer ",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/16226044/",
+      "source_type": "PubMed",
+      "source_title": "[Indications of the association of radiotherapy and hormonal treatment in prostate cancer].",
+      "accessed_at": "2026-06-03T14:18:19.878454",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 16226044. 2005/11/01 00:00. BACKGROUND: Only 2 prospective studies have previously reported prognostic \nfactors for anal cancer, European Organization for Research and Treatment of \nCancer trial 22861 (EORTC 22861) and Radiation Therapy Oncology Group trial \n (RTOG ). Both of those trials reported that clinically positive lymph \nnodes and male sex predicted poorer overall survival (OS). The EORTC 22861 trial \nindicated that the same factors were prognostic for locoregional control. In",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "EORTC 22861 anal canal brachytherapy boost chemoradiation trial results",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

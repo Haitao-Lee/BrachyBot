@@ -1,0 +1,160 @@
+{
+  "query": "brachytherapy seeds MRI safety I-125 activation",
+  "timestamp": 1780458169.8768308,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Spinal brachytherapy.",
+        "snippet": "PubMed ID: 36322097. 2022/11/02 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36322097/",
+        "source": "PubMed"
+      },
+      {
+        "title": "A review on permanent implants for prostate brachytherapy with comparison between stranded and loose seeds.",
+        "snippet": "PubMed ID: 34480718. 2022/02/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34480718/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Survival of patients with advanced pancreatic cancer after iodine125 seeds implantation brachytherapy: A meta-analysis.",
+        "snippet": "PubMed ID: 28151849. 2017/02/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28151849/",
+        "source": "PubMed"
+      },
+      {
+        "title": "4D Brachytherapy, a novel real-time prostate brachytherapy technique using stranded and loose seeds.",
+        "snippet": "PubMed ID: 22239223. 2012/02/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/22239223/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Expert consensus statement on computed tomography-guided (125)I radioactive seeds permanent interstitial brachytherapy.",
+        "snippet": "PubMed ID: 29516952. 2018/01/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29516952/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 36322097. 2022/11/02 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nmini\n2. PubMed ID: 34480718. 2022/02/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nmini\n3. PubMed ID: 28151849. 2017/02/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nmini",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/36322097/",
+      "https://pubmed.ncbi.nlm.nih.gov/34480718/",
+      "https://pubmed.ncbi.nlm.nih.gov/28151849/",
+      "https://pubmed.ncbi.nlm.nih.gov/22239223/",
+      "https://pubmed.ncbi.nlm.nih.gov/29516952/"
+    ],
+    "evidence_chain_id": "20260603_114248_253084",
+    "evidence_summary": {
+      "response_id": "20260603_114248_253084",
+      "query": "brachytherapy seeds MRI safety I-125 activation",
+      "created_at": "2026-06-03T11:42:48.253112",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Spinal brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/36322097/)",
+        "[A review on permanent implants for prostate brachytherapy with comparison between stranded and loose seeds.](https://pubmed.ncbi.nlm.nih.gov/34480718/)",
+        "[Survival of patients with advanced pancreatic cancer after iodine125 seeds implantation brachytherapy: A meta-analysis.](https://pubmed.ncbi.nlm.nih.gov/28151849/)",
+        "[4D Brachytherapy, a novel real-time prostate brachytherapy technique using stranded and loose seeds.](https://pubmed.ncbi.nlm.nih.gov/22239223/)",
+        "[Expert consensus statement on computed tomography-guided (125)I radioactive seeds permanent interstitial brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/29516952/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "f787a7d69321",
+          "claim": "PubMed ID: 36322097. 2022/11/02 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nmini",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36322097/",
+          "source_type": "PubMed",
+          "source_title": "Spinal brachytherapy.",
+          "accessed_at": "2026-06-03T11:42:49.876454",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36322097. 2022/11/02 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy seeds MRI safety I-125 activation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c5bc4f459ffc",
+          "claim": "PubMed ID: 34480718. 2022/02/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nmini",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34480718/",
+          "source_type": "PubMed",
+          "source_title": "A review on permanent implants for prostate brachytherapy with comparison between stranded and loose seeds.",
+          "accessed_at": "2026-06-03T11:42:49.876551",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34480718. 2022/02/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy seeds MRI safety I-125 activation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "691a4cb328c2",
+          "claim": "PubMed ID: 28151849. 2017/02/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nmini",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/28151849/",
+          "source_type": "PubMed",
+          "source_title": "Survival of patients with advanced pancreatic cancer after iodine125 seeds implantation brachytherapy: A meta-analysis.",
+          "accessed_at": "2026-06-03T11:42:49.876581",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 28151849. 2017/02/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy seeds MRI safety I-125 activation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "06887019bbd4",
+          "claim": "PubMed ID: 22239223. 2012/02/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nmini",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/22239223/",
+          "source_type": "PubMed",
+          "source_title": "4D Brachytherapy, a novel real-time prostate brachytherapy technique using stranded and loose seeds.",
+          "accessed_at": "2026-06-03T11:42:49.876604",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 22239223. 2012/02/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy seeds MRI safety I-125 activation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "415738aab598",
+          "claim": "PubMed ID: 29516952. 2018/01/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nmini",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/29516952/",
+          "source_type": "PubMed",
+          "source_title": "Expert consensus statement on computed tomography-guided (125)I radioactive seeds permanent interstitial brachytherapy.",
+          "accessed_at": "2026-06-03T11:42:49.876626",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 29516952. 2018/01/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy seeds MRI safety I-125 activation",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Spinal brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/36322097/)",
+      "[A review on permanent implants for prostate brachytherapy with comparison between stranded and loose seeds.](https://pubmed.ncbi.nlm.nih.gov/34480718/)",
+      "[Survival of patients with advanced pancreatic cancer after iodine125 seeds implantation brachytherapy: A meta-analysis.](https://pubmed.ncbi.nlm.nih.gov/28151849/)",
+      "[4D Brachytherapy, a novel real-time prostate brachytherapy technique using stranded and loose seeds.](https://pubmed.ncbi.nlm.nih.gov/22239223/)",
+      "[Expert consensus statement on computed tomography-guided (125)I radioactive seeds permanent interstitial brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/29516952/)"
+    ]
+  }
+}

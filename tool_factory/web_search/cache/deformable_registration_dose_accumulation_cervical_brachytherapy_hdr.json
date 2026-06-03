@@ -1,0 +1,160 @@
+{
+  "query": "deformable registration dose accumulation cervical brachytherapy HDR",
+  "timestamp": 1780410223.5686452,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Deformable registration of lateral cephalogram and cone-beam computed tomography image.",
+        "snippet": "PubMed ID: 34496039. 2021/11/01 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \nyears. Real-time and robust registration has been made possible by supervised \ntransformation estimation. However, the quality of registrations using this \nframework depends on the quality of ground truth labels such as displacement \nfield.\nPURPOSE: To propose a simple and reliable method for regist",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34496039/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Characterizing a deformable registration algorithm for surface-guided breast radiotherapy.",
+        "snippet": "PubMed ID: 31724177. 2020/02/01 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \nyears. Real-time and robust registration has been made possible by supervised \ntransformation estimation. However, the quality of registrations using this \nframework depends on the quality of ground truth labels such as displacement \nfield.\nPURPOSE: To propose a simple and reliable method for regist",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31724177/",
+        "source": "PubMed"
+      },
+      {
+        "title": "LungRegNet: An unsupervised deformable image registration method for 4D-CT lung.",
+        "snippet": "PubMed ID: 32017141. 2020/04/01 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \nyears. Real-time and robust registration has been made possible by supervised \ntransformation estimation. However, the quality of registrations using this \nframework depends on the quality of ground truth labels such as displacement \nfield.\nPURPOSE: To propose a simple and reliable method for regist",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32017141/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Stillbirths: rates, risk factors, and acceleration towards 2030.",
+        "snippet": "PubMed ID: 26794078. 2016/02/06 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \nyears. Real-time and robust registration has been made possible by supervised \ntransformation estimation. However, the quality of registrations using this \nframework depends on the quality of ground truth labels such as displacement \nfield.\nPURPOSE: To propose a simple and reliable method for regist",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/26794078/",
+        "source": "PubMed"
+      },
+      {
+        "title": "UDRSNet: An unsupervised deformable registration module based on image structure similarity.",
+        "snippet": "PubMed ID: 38353628. 2024/07/01 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \nyears. Real-time and robust registration has been made possible by supervised \ntransformation estimation. However, the quality of registrations using this \nframework depends on the quality of ground truth labels such as displacement \nfield.\nPURPOSE: To propose a simple and reliable method for regist",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38353628/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 34496039. 2021/11/01 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \n\n2. PubMed ID: 31724177. 2020/02/01 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \n\n3. PubMed ID: 32017141. 2020/04/01 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \n",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/34496039/",
+      "https://pubmed.ncbi.nlm.nih.gov/31724177/",
+      "https://pubmed.ncbi.nlm.nih.gov/32017141/",
+      "https://pubmed.ncbi.nlm.nih.gov/26794078/",
+      "https://pubmed.ncbi.nlm.nih.gov/38353628/"
+    ],
+    "evidence_chain_id": "20260602_222341_539617",
+    "evidence_summary": {
+      "response_id": "20260602_222341_539617",
+      "query": "deformable registration dose accumulation cervical brachytherapy HDR",
+      "created_at": "2026-06-02T22:23:41.539639",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Deformable registration of lateral cephalogram and cone-beam computed tomography image.](https://pubmed.ncbi.nlm.nih.gov/34496039/)",
+        "[Characterizing a deformable registration algorithm for surface-guided breast radiotherapy.](https://pubmed.ncbi.nlm.nih.gov/31724177/)",
+        "[LungRegNet: An unsupervised deformable image registration method for 4D-CT lung.](https://pubmed.ncbi.nlm.nih.gov/32017141/)",
+        "[Stillbirths: rates, risk factors, and acceleration towards 2030.](https://pubmed.ncbi.nlm.nih.gov/26794078/)",
+        "[UDRSNet: An unsupervised deformable registration module based on image structure similarity.](https://pubmed.ncbi.nlm.nih.gov/38353628/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "54ebb4515fc0",
+          "claim": "PubMed ID: 34496039. 2021/11/01 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \n",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34496039/",
+          "source_type": "PubMed",
+          "source_title": "Deformable registration of lateral cephalogram and cone-beam computed tomography image.",
+          "accessed_at": "2026-06-02T22:23:43.568296",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34496039. 2021/11/01 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \nyears. Real-time and robust registration has been made possible by supervised \ntransformation estimation. However, the quality of registrations using this \nframework depends on the quality of ground truth labels such as displacement \nfield.\nPURPOSE: To propose a simple and reliable method for regist",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "deformable registration dose accumulation cervical brachytherapy HDR",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "19edbebf1c76",
+          "claim": "PubMed ID: 31724177. 2020/02/01 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \n",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31724177/",
+          "source_type": "PubMed",
+          "source_title": "Characterizing a deformable registration algorithm for surface-guided breast radiotherapy.",
+          "accessed_at": "2026-06-02T22:23:43.568385",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31724177. 2020/02/01 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \nyears. Real-time and robust registration has been made possible by supervised \ntransformation estimation. However, the quality of registrations using this \nframework depends on the quality of ground truth labels such as displacement \nfield.\nPURPOSE: To propose a simple and reliable method for regist",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "deformable registration dose accumulation cervical brachytherapy HDR",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "4be744d3d165",
+          "claim": "PubMed ID: 32017141. 2020/04/01 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \n",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32017141/",
+          "source_type": "PubMed",
+          "source_title": "LungRegNet: An unsupervised deformable image registration method for 4D-CT lung.",
+          "accessed_at": "2026-06-02T22:23:43.568412",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32017141. 2020/04/01 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \nyears. Real-time and robust registration has been made possible by supervised \ntransformation estimation. However, the quality of registrations using this \nframework depends on the quality of ground truth labels such as displacement \nfield.\nPURPOSE: To propose a simple and reliable method for regist",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "deformable registration dose accumulation cervical brachytherapy HDR",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "34cb0fde75f3",
+          "claim": "PubMed ID: 26794078. 2016/02/06 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \n",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/26794078/",
+          "source_type": "PubMed",
+          "source_title": "Stillbirths: rates, risk factors, and acceleration towards 2030.",
+          "accessed_at": "2026-06-02T22:23:43.568441",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 26794078. 2016/02/06 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \nyears. Real-time and robust registration has been made possible by supervised \ntransformation estimation. However, the quality of registrations using this \nframework depends on the quality of ground truth labels such as displacement \nfield.\nPURPOSE: To propose a simple and reliable method for regist",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "deformable registration dose accumulation cervical brachytherapy HDR",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "374d3f73b201",
+          "claim": "PubMed ID: 38353628. 2024/07/01 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \n",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38353628/",
+          "source_type": "PubMed",
+          "source_title": "UDRSNet: An unsupervised deformable registration module based on image structure similarity.",
+          "accessed_at": "2026-06-02T22:23:43.568462",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38353628. 2024/07/01 00:00. BACKGROUND: Image registration is a challenging problem in many clinical tasks, \nbut deep learning has made significant progress in this area over the past few \nyears. Real-time and robust registration has been made possible by supervised \ntransformation estimation. However, the quality of registrations using this \nframework depends on the quality of ground truth labels such as displacement \nfield.\nPURPOSE: To propose a simple and reliable method for regist",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "deformable registration dose accumulation cervical brachytherapy HDR",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Deformable registration of lateral cephalogram and cone-beam computed tomography image.](https://pubmed.ncbi.nlm.nih.gov/34496039/)",
+      "[Characterizing a deformable registration algorithm for surface-guided breast radiotherapy.](https://pubmed.ncbi.nlm.nih.gov/31724177/)",
+      "[LungRegNet: An unsupervised deformable image registration method for 4D-CT lung.](https://pubmed.ncbi.nlm.nih.gov/32017141/)",
+      "[Stillbirths: rates, risk factors, and acceleration towards 2030.](https://pubmed.ncbi.nlm.nih.gov/26794078/)",
+      "[UDRSNet: An unsupervised deformable registration module based on image structure similarity.](https://pubmed.ncbi.nlm.nih.gov/38353628/)"
+    ]
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "query": "VP shunt radiation brachytherapy compatibility",
+  "timestamp": 1780410728.0547612,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Free intraabdominal catheter management post-VP shunt disconnection in pediatric patients: systematic review.",
+        "snippet": "PubMed ID: 40694115. 2025/07/22 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregnancy, and it also constitutes an infrequent cause of ventriculoperitoneal \n(VP) shunt malfunction. Patients with neurological deficits, as those with \nmyelomeningocele or cerebral palsy, are prone to developing a neurogenic bowel \nand to suffer chronic constipation. Although previously recognized, V",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40694115/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Ventriculoperitoneal Shunt.",
+        "snippet": "PubMed ID: 29083724. 2023/08/23 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregnancy, and it also constitutes an infrequent cause of ventriculoperitoneal \n(VP) shunt malfunction. Patients with neurological deficits, as those with \nmyelomeningocele or cerebral palsy, are prone to developing a neurogenic bowel \nand to suffer chronic constipation. Although previously recognized, V",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29083724/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Lumbar peritoneal shunt.",
+        "snippet": "PubMed ID: 20508332. 2010/03/01 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregnancy, and it also constitutes an infrequent cause of ventriculoperitoneal \n(VP) shunt malfunction. Patients with neurological deficits, as those with \nmyelomeningocele or cerebral palsy, are prone to developing a neurogenic bowel \nand to suffer chronic constipation. Although previously recognized, V",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/20508332/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Severe constipation: an under-appreciated cause of VP shunt malfunction: a case-based update.",
+        "snippet": "PubMed ID: 17926043. 2008/04/01 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregnancy, and it also constitutes an infrequent cause of ventriculoperitoneal \n(VP) shunt malfunction. Patients with neurological deficits, as those with \nmyelomeningocele or cerebral palsy, are prone to developing a neurogenic bowel \nand to suffer chronic constipation. Although previously recognized, V",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/17926043/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Ventriculoperitoneal shunt failures at Red Cross War Memorial Children's Hospital.",
+        "snippet": "PubMed ID: 38780622. 2024/09/01 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregnancy, and it also constitutes an infrequent cause of ventriculoperitoneal \n(VP) shunt malfunction. Patients with neurological deficits, as those with \nmyelomeningocele or cerebral palsy, are prone to developing a neurogenic bowel \nand to suffer chronic constipation. Although previously recognized, V",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38780622/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 40694115. 2025/07/22 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregn\n2. PubMed ID: 29083724. 2023/08/23 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregn\n3. PubMed ID: 20508332. 2010/03/01 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregn",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/40694115/",
+      "https://pubmed.ncbi.nlm.nih.gov/29083724/",
+      "https://pubmed.ncbi.nlm.nih.gov/20508332/",
+      "https://pubmed.ncbi.nlm.nih.gov/17926043/",
+      "https://pubmed.ncbi.nlm.nih.gov/38780622/"
+    ],
+    "evidence_chain_id": "20260602_223206_091689",
+    "evidence_summary": {
+      "response_id": "20260602_223206_091689",
+      "query": "VP shunt radiation brachytherapy compatibility",
+      "created_at": "2026-06-02T22:32:06.091713",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Free intraabdominal catheter management post-VP shunt disconnection in pediatric patients: systematic review.](https://pubmed.ncbi.nlm.nih.gov/40694115/)",
+        "[Ventriculoperitoneal Shunt.](https://pubmed.ncbi.nlm.nih.gov/29083724/)",
+        "[Lumbar peritoneal shunt.](https://pubmed.ncbi.nlm.nih.gov/20508332/)",
+        "[Severe constipation: an under-appreciated cause of VP shunt malfunction: a case-based update.](https://pubmed.ncbi.nlm.nih.gov/17926043/)",
+        "[Ventriculoperitoneal shunt failures at Red Cross War Memorial Children's Hospital.](https://pubmed.ncbi.nlm.nih.gov/38780622/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "8ffab7fcc78e",
+          "claim": "PubMed ID: 40694115. 2025/07/22 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregn",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40694115/",
+          "source_type": "PubMed",
+          "source_title": "Free intraabdominal catheter management post-VP shunt disconnection in pediatric patients: systematic review.",
+          "accessed_at": "2026-06-02T22:32:08.054373",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40694115. 2025/07/22 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregnancy, and it also constitutes an infrequent cause of ventriculoperitoneal \n(VP) shunt malfunction. Patients with neurological deficits, as those with \nmyelomeningocele or cerebral palsy, are prone to developing a neurogenic bowel \nand to suffer chronic constipation. Although previously recognized, V",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "VP shunt radiation brachytherapy compatibility",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "9a46a58ecaa9",
+          "claim": "PubMed ID: 29083724. 2023/08/23 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregn",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/29083724/",
+          "source_type": "PubMed",
+          "source_title": "Ventriculoperitoneal Shunt.",
+          "accessed_at": "2026-06-02T22:32:08.054483",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 29083724. 2023/08/23 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregnancy, and it also constitutes an infrequent cause of ventriculoperitoneal \n(VP) shunt malfunction. Patients with neurological deficits, as those with \nmyelomeningocele or cerebral palsy, are prone to developing a neurogenic bowel \nand to suffer chronic constipation. Although previously recognized, V",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "VP shunt radiation brachytherapy compatibility",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f644790c0a48",
+          "claim": "PubMed ID: 20508332. 2010/03/01 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregn",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/20508332/",
+          "source_type": "PubMed",
+          "source_title": "Lumbar peritoneal shunt.",
+          "accessed_at": "2026-06-02T22:32:08.054515",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 20508332. 2010/03/01 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregnancy, and it also constitutes an infrequent cause of ventriculoperitoneal \n(VP) shunt malfunction. Patients with neurological deficits, as those with \nmyelomeningocele or cerebral palsy, are prone to developing a neurogenic bowel \nand to suffer chronic constipation. Although previously recognized, V",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "VP shunt radiation brachytherapy compatibility",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2bf8f71eb2c9",
+          "claim": "PubMed ID: 17926043. 2008/04/01 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregn",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/17926043/",
+          "source_type": "PubMed",
+          "source_title": "Severe constipation: an under-appreciated cause of VP shunt malfunction: a case-based update.",
+          "accessed_at": "2026-06-02T22:32:08.054540",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 17926043. 2008/04/01 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregnancy, and it also constitutes an infrequent cause of ventriculoperitoneal \n(VP) shunt malfunction. Patients with neurological deficits, as those with \nmyelomeningocele or cerebral palsy, are prone to developing a neurogenic bowel \nand to suffer chronic constipation. Although previously recognized, V",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "VP shunt radiation brachytherapy compatibility",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "5cc012a4f3fa",
+          "claim": "PubMed ID: 38780622. 2024/09/01 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregn",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38780622/",
+          "source_type": "PubMed",
+          "source_title": "Ventriculoperitoneal shunt failures at Red Cross War Memorial Children's Hospital.",
+          "accessed_at": "2026-06-02T22:32:08.054563",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38780622. 2024/09/01 00:00. BACKGROUND: Increased intra-abdominal pressure has been reported to result in \nraised intracranial pressure in a variety of conditions such as obesity and \npregnancy, and it also constitutes an infrequent cause of ventriculoperitoneal \n(VP) shunt malfunction. Patients with neurological deficits, as those with \nmyelomeningocele or cerebral palsy, are prone to developing a neurogenic bowel \nand to suffer chronic constipation. Although previously recognized, V",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "VP shunt radiation brachytherapy compatibility",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Free intraabdominal catheter management post-VP shunt disconnection in pediatric patients: systematic review.](https://pubmed.ncbi.nlm.nih.gov/40694115/)",
+      "[Ventriculoperitoneal Shunt.](https://pubmed.ncbi.nlm.nih.gov/29083724/)",
+      "[Lumbar peritoneal shunt.](https://pubmed.ncbi.nlm.nih.gov/20508332/)",
+      "[Severe constipation: an under-appreciated cause of VP shunt malfunction: a case-based update.](https://pubmed.ncbi.nlm.nih.gov/17926043/)",
+      "[Ventriculoperitoneal shunt failures at Red Cross War Memorial Children's Hospital.](https://pubmed.ncbi.nlm.nih.gov/38780622/)"
+    ]
+  }
+}

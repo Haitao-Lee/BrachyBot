@@ -1,0 +1,160 @@
+{
+  "query": "PARP inhibitor breast cancer BRCA1 olaparib rucaparib indication",
+  "timestamp": 1780418296.7122557,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "PARP inhibitor resistance: the underlying mechanisms and clinical implications.",
+        "snippet": "PubMed ID: 32563252. 2020/06/20 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32563252/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Clinical approaches to overcome PARP inhibitor resistance.",
+        "snippet": "PubMed ID: 40442774. 2025/05/30 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40442774/",
+        "source": "PubMed"
+      },
+      {
+        "title": "PARP Inhibitor Resistance: A Tug-of-War in BRCA-Mutated Cells.",
+        "snippet": "PubMed ID: 31421928. 2019/10/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31421928/",
+        "source": "PubMed"
+      },
+      {
+        "title": "PARP inhibitor combination therapy.",
+        "snippet": "PubMed ID: 27931843. 2016/12/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/27931843/",
+        "source": "PubMed"
+      },
+      {
+        "title": "CRISPR screens reveal genetic determinants of PARP inhibitor sensitivity and resistance in prostate cancer.",
+        "snippet": "PubMed ID: 36650183. 2023/01/17 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36650183/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 32563252. 2020/06/20 00:00\n2. PubMed ID: 40442774. 2025/05/30 00:00\n3. PubMed ID: 31421928. 2019/10/01 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/32563252/",
+      "https://pubmed.ncbi.nlm.nih.gov/40442774/",
+      "https://pubmed.ncbi.nlm.nih.gov/31421928/",
+      "https://pubmed.ncbi.nlm.nih.gov/27931843/",
+      "https://pubmed.ncbi.nlm.nih.gov/36650183/"
+    ],
+    "evidence_chain_id": "20260603_003814_740897",
+    "evidence_summary": {
+      "response_id": "20260603_003814_740897",
+      "query": "PARP inhibitor breast cancer BRCA1 olaparib rucaparib indication",
+      "created_at": "2026-06-03T00:38:14.740914",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[PARP inhibitor resistance: the underlying mechanisms and clinical implications.](https://pubmed.ncbi.nlm.nih.gov/32563252/)",
+        "[Clinical approaches to overcome PARP inhibitor resistance.](https://pubmed.ncbi.nlm.nih.gov/40442774/)",
+        "[PARP Inhibitor Resistance: A Tug-of-War in BRCA-Mutated Cells.](https://pubmed.ncbi.nlm.nih.gov/31421928/)",
+        "[PARP inhibitor combination therapy.](https://pubmed.ncbi.nlm.nih.gov/27931843/)",
+        "[CRISPR screens reveal genetic determinants of PARP inhibitor sensitivity and resistance in prostate cancer.](https://pubmed.ncbi.nlm.nih.gov/36650183/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "f8b400bca7e6",
+          "claim": "PubMed ID: 32563252. 2020/06/20 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32563252/",
+          "source_type": "PubMed",
+          "source_title": "PARP inhibitor resistance: the underlying mechanisms and clinical implications.",
+          "accessed_at": "2026-06-03T00:38:16.711847",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32563252. 2020/06/20 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PARP inhibitor breast cancer BRCA1 olaparib rucaparib indication",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "d575e4ad2388",
+          "claim": "PubMed ID: 40442774. 2025/05/30 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40442774/",
+          "source_type": "PubMed",
+          "source_title": "Clinical approaches to overcome PARP inhibitor resistance.",
+          "accessed_at": "2026-06-03T00:38:16.711949",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40442774. 2025/05/30 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PARP inhibitor breast cancer BRCA1 olaparib rucaparib indication",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "bf1fed990669",
+          "claim": "PubMed ID: 31421928. 2019/10/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31421928/",
+          "source_type": "PubMed",
+          "source_title": "PARP Inhibitor Resistance: A Tug-of-War in BRCA-Mutated Cells.",
+          "accessed_at": "2026-06-03T00:38:16.711984",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31421928. 2019/10/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PARP inhibitor breast cancer BRCA1 olaparib rucaparib indication",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "89b4e1c713c2",
+          "claim": "PubMed ID: 27931843. 2016/12/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/27931843/",
+          "source_type": "PubMed",
+          "source_title": "PARP inhibitor combination therapy.",
+          "accessed_at": "2026-06-03T00:38:16.712011",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 27931843. 2016/12/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PARP inhibitor breast cancer BRCA1 olaparib rucaparib indication",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "97b282c8ea07",
+          "claim": "PubMed ID: 36650183. 2023/01/17 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36650183/",
+          "source_type": "PubMed",
+          "source_title": "CRISPR screens reveal genetic determinants of PARP inhibitor sensitivity and resistance in prostate cancer.",
+          "accessed_at": "2026-06-03T00:38:16.712034",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36650183. 2023/01/17 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PARP inhibitor breast cancer BRCA1 olaparib rucaparib indication",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[PARP inhibitor resistance: the underlying mechanisms and clinical implications.](https://pubmed.ncbi.nlm.nih.gov/32563252/)",
+      "[Clinical approaches to overcome PARP inhibitor resistance.](https://pubmed.ncbi.nlm.nih.gov/40442774/)",
+      "[PARP Inhibitor Resistance: A Tug-of-War in BRCA-Mutated Cells.](https://pubmed.ncbi.nlm.nih.gov/31421928/)",
+      "[PARP inhibitor combination therapy.](https://pubmed.ncbi.nlm.nih.gov/27931843/)",
+      "[CRISPR screens reveal genetic determinants of PARP inhibitor sensitivity and resistance in prostate cancer.](https://pubmed.ncbi.nlm.nih.gov/36650183/)"
+    ]
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "query": "multi-institutional consensus contouring study interstitial vaginal brachytherapy Dice Hausdorff STAPLE Delphi atlas",
+  "timestamp": 1780423882.0225925,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Delineation of the neck node levels for head and neck tumors: a 2013 update. DAHANCA, EORTC, HKNPCSG, NCIC CTG, NCRI, RTOG, TROG consensus guidelines.",
+        "snippet": "PubMed ID: 24183870. 2014/01/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements in diagnostic confidence and research collaboration. The emergence \nof new diagnostic tests and the lessons we have learned from the past 7 years \nusing the MSIS definition, prompted us to develop an evidence-based and \nvalidated updated version of the criteria.\nMETHODS: This multi-institutional st",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/24183870/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Clinical practice guidelines for the management of pain, agitation, and delirium in adult patients in the intensive care unit.",
+        "snippet": "PubMed ID: 23269131. 2013/01/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements in diagnostic confidence and research collaboration. The emergence \nof new diagnostic tests and the lessons we have learned from the past 7 years \nusing the MSIS definition, prompted us to develop an evidence-based and \nvalidated updated version of the criteria.\nMETHODS: This multi-institutional st",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/23269131/",
+        "source": "PubMed"
+      },
+      {
+        "title": "International Multi-institutional Patterns of Contouring Practice and Clinical Target Volume Recommendations for Stereotactic Body Radiation Therapy for Non-Spine Bone Metastases.",
+        "snippet": "PubMed ID: 34509549. 2022/02/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements in diagnostic confidence and research collaboration. The emergence \nof new diagnostic tests and the lessons we have learned from the past 7 years \nusing the MSIS definition, prompted us to develop an evidence-based and \nvalidated updated version of the criteria.\nMETHODS: This multi-institutional st",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34509549/",
+        "source": "PubMed"
+      },
+      {
+        "title": "The 2018 Definition of Periprosthetic Hip and Knee Infection: An Evidence-Based and Validated Criteria.",
+        "snippet": "PubMed ID: 29551303. 2018/05/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements in diagnostic confidence and research collaboration. The emergence \nof new diagnostic tests and the lessons we have learned from the past 7 years \nusing the MSIS definition, prompted us to develop an evidence-based and \nvalidated updated version of the criteria.\nMETHODS: This multi-institutional st",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29551303/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Delineation of the primary tumour Clinical Target Volumes (CTV-P) in laryngeal, hypopharyngeal, oropharyngeal and oral cavity squamous cell carcinoma: AIRO, CACA, DAHANCA, EORTC, GEORCC, GORTEC, HKNPCSG, HNCIG, IAG-KHT, LPRHHT, NCIC CTG, NCRI, NRG Oncology, PHNS, SBRT, SOMERA, SRO, SSHNO, TROG consensus guidelines.",
+        "snippet": "PubMed ID: 29180076. 2018/01/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements in diagnostic confidence and research collaboration. The emergence \nof new diagnostic tests and the lessons we have learned from the past 7 years \nusing the MSIS definition, prompted us to develop an evidence-based and \nvalidated updated version of the criteria.\nMETHODS: This multi-institutional st",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29180076/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 24183870. 2014/01/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements\n2. PubMed ID: 23269131. 2013/01/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements\n3. PubMed ID: 34509549. 2022/02/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/24183870/",
+      "https://pubmed.ncbi.nlm.nih.gov/23269131/",
+      "https://pubmed.ncbi.nlm.nih.gov/34509549/",
+      "https://pubmed.ncbi.nlm.nih.gov/29551303/",
+      "https://pubmed.ncbi.nlm.nih.gov/29180076/"
+    ],
+    "evidence_chain_id": "20260603_021120_453694",
+    "evidence_summary": {
+      "response_id": "20260603_021120_453694",
+      "query": "multi-institutional consensus contouring study interstitial vaginal brachytherapy Dice Hausdorff STAPLE Delphi atlas",
+      "created_at": "2026-06-03T02:11:20.453718",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Delineation of the neck node levels for head and neck tumors: a 2013 update. DAHANCA, EORTC, HKNPCSG, NCIC CTG, NCRI, RTOG, TROG consensus guidelines.](https://pubmed.ncbi.nlm.nih.gov/24183870/)",
+        "[Clinical practice guidelines for the management of pain, agitation, and delirium in adult patients in the intensive care unit.](https://pubmed.ncbi.nlm.nih.gov/23269131/)",
+        "[International Multi-institutional Patterns of Contouring Practice and Clinical Target Volume Recommendations for Stereotactic Body Radiation Therapy for Non-Spine Bone Metastases.](https://pubmed.ncbi.nlm.nih.gov/34509549/)",
+        "[The 2018 Definition of Periprosthetic Hip and Knee Infection: An Evidence-Based and Validated Criteria.](https://pubmed.ncbi.nlm.nih.gov/29551303/)",
+        "[Delineation of the primary tumour Clinical Target Volumes (CTV-P) in laryngeal, hypopharyngeal, oropharyngeal and oral cavity squamous cell carcinoma: AIRO, CACA, DAHANCA, EORTC, GEORCC, GORTEC, HKNPCSG, HNCIG, IAG-KHT, LPRHHT, NCIC CTG, NCRI, NRG Oncology, PHNS, SBRT, SOMERA, SRO, SSHNO, TROG consensus guidelines.](https://pubmed.ncbi.nlm.nih.gov/29180076/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ed300847ce2a",
+          "claim": "PubMed ID: 24183870. 2014/01/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/24183870/",
+          "source_type": "PubMed",
+          "source_title": "Delineation of the neck node levels for head and neck tumors: a 2013 update. DAHANCA, EORTC, HKNPCSG, NCIC CTG, NCRI, RTOG, TROG consensus guidelines.",
+          "accessed_at": "2026-06-03T02:11:22.022171",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 24183870. 2014/01/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements in diagnostic confidence and research collaboration. The emergence \nof new diagnostic tests and the lessons we have learned from the past 7 years \nusing the MSIS definition, prompted us to develop an evidence-based and \nvalidated updated version of the criteria.\nMETHODS: This multi-institutional st",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "multi-institutional consensus contouring study interstitial vaginal brachytherapy Dice Hausdorff STAPLE Delphi atlas",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "5f2568079e37",
+          "claim": "PubMed ID: 23269131. 2013/01/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/23269131/",
+          "source_type": "PubMed",
+          "source_title": "Clinical practice guidelines for the management of pain, agitation, and delirium in adult patients in the intensive care unit.",
+          "accessed_at": "2026-06-03T02:11:22.022280",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 23269131. 2013/01/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements in diagnostic confidence and research collaboration. The emergence \nof new diagnostic tests and the lessons we have learned from the past 7 years \nusing the MSIS definition, prompted us to develop an evidence-based and \nvalidated updated version of the criteria.\nMETHODS: This multi-institutional st",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "multi-institutional consensus contouring study interstitial vaginal brachytherapy Dice Hausdorff STAPLE Delphi atlas",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c3783833d7cf",
+          "claim": "PubMed ID: 34509549. 2022/02/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34509549/",
+          "source_type": "PubMed",
+          "source_title": "International Multi-institutional Patterns of Contouring Practice and Clinical Target Volume Recommendations for Stereotactic Body Radiation Therapy for Non-Spine Bone Metastases.",
+          "accessed_at": "2026-06-03T02:11:22.022312",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34509549. 2022/02/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements in diagnostic confidence and research collaboration. The emergence \nof new diagnostic tests and the lessons we have learned from the past 7 years \nusing the MSIS definition, prompted us to develop an evidence-based and \nvalidated updated version of the criteria.\nMETHODS: This multi-institutional st",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "multi-institutional consensus contouring study interstitial vaginal brachytherapy Dice Hausdorff STAPLE Delphi atlas",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "17d9fc5048be",
+          "claim": "PubMed ID: 29551303. 2018/05/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/29551303/",
+          "source_type": "PubMed",
+          "source_title": "The 2018 Definition of Periprosthetic Hip and Knee Infection: An Evidence-Based and Validated Criteria.",
+          "accessed_at": "2026-06-03T02:11:22.022337",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 29551303. 2018/05/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements in diagnostic confidence and research collaboration. The emergence \nof new diagnostic tests and the lessons we have learned from the past 7 years \nusing the MSIS definition, prompted us to develop an evidence-based and \nvalidated updated version of the criteria.\nMETHODS: This multi-institutional st",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "multi-institutional consensus contouring study interstitial vaginal brachytherapy Dice Hausdorff STAPLE Delphi atlas",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8f6cf8469865",
+          "claim": "PubMed ID: 29180076. 2018/01/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/29180076/",
+          "source_type": "PubMed",
+          "source_title": "Delineation of the primary tumour Clinical Target Volumes (CTV-P) in laryngeal, hypopharyngeal, oropharyngeal and oral cavity squamous cell carcinoma: AIRO, CACA, DAHANCA, EORTC, GEORCC, GORTEC, HKNPCSG, HNCIG, IAG-KHT, LPRHHT, NCIC CTG, NCRI, NRG Oncology, PHNS, SBRT, SOMERA, SRO, SSHNO, TROG consensus guidelines.",
+          "accessed_at": "2026-06-03T02:11:22.022359",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 29180076. 2018/01/01 00:00. BACKGROUND: The introduction of the Musculoskeletal Infection Society (MSIS) \ncriteria for periprosthetic joint infection (PJI) in 2011 resulted in \nimprovements in diagnostic confidence and research collaboration. The emergence \nof new diagnostic tests and the lessons we have learned from the past 7 years \nusing the MSIS definition, prompted us to develop an evidence-based and \nvalidated updated version of the criteria.\nMETHODS: This multi-institutional st",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "multi-institutional consensus contouring study interstitial vaginal brachytherapy Dice Hausdorff STAPLE Delphi atlas",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Delineation of the neck node levels for head and neck tumors: a 2013 update. DAHANCA, EORTC, HKNPCSG, NCIC CTG, NCRI, RTOG, TROG consensus guidelines.](https://pubmed.ncbi.nlm.nih.gov/24183870/)",
+      "[Clinical practice guidelines for the management of pain, agitation, and delirium in adult patients in the intensive care unit.](https://pubmed.ncbi.nlm.nih.gov/23269131/)",
+      "[International Multi-institutional Patterns of Contouring Practice and Clinical Target Volume Recommendations for Stereotactic Body Radiation Therapy for Non-Spine Bone Metastases.](https://pubmed.ncbi.nlm.nih.gov/34509549/)",
+      "[The 2018 Definition of Periprosthetic Hip and Knee Infection: An Evidence-Based and Validated Criteria.](https://pubmed.ncbi.nlm.nih.gov/29551303/)",
+      "[Delineation of the primary tumour Clinical Target Volumes (CTV-P) in laryngeal, hypopharyngeal, oropharyngeal and oral cavity squamous cell carcinoma: AIRO, CACA, DAHANCA, EORTC, GEORCC, GORTEC, HKNPCSG, HNCIG, IAG-KHT, LPRHHT, NCIC CTG, NCRI, NRG Oncology, PHNS, SBRT, SOMERA, SRO, SSHNO, TROG consensus guidelines.](https://pubmed.ncbi.nlm.nih.gov/29180076/)"
+    ]
+  }
+}

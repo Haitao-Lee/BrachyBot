@@ -1,0 +1,160 @@
+{
+  "query": "MRIdian Elekta Unity brachytherapy adaptive treatment evidence",
+  "timestamp": 1780410239.1682315,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Treatment of glioblastoma using MRIdian® A3i BrainTx™: Imaging and treatment workflow demonstration.",
+        "snippet": "PubMed ID: 36966049. 2023/01/01 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therapy \n(SABR).\nMATERIALS AND METHODS: We retrospectively compared the Planning Target Volumes \n(PTVs), the spared healthy liver parenchyma volumes, the Treatment Planning \nSystem (TPS) and machine performances, and the patients' outcomes when using \neither a conventional accelerator (Versa HD®, Elekta, ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36966049/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Patient positioning and immobilization procedures for hybrid MR-Linac systems.",
+        "snippet": "PubMed ID: 34544481. 2021/09/20 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therapy \n(SABR).\nMATERIALS AND METHODS: We retrospectively compared the Planning Target Volumes \n(PTVs), the spared healthy liver parenchyma volumes, the Treatment Planning \nSystem (TPS) and machine performances, and the patients' outcomes when using \neither a conventional accelerator (Versa HD®, Elekta, ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34544481/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Stereotactic Magnetic Resonance-Guided Adaptive and Non-Adaptive Radiotherapy on Combination MR-Linear Accelerators: Current Practice and Future Directions.",
+        "snippet": "PubMed ID: 37046741. 2023/03/30 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therapy \n(SABR).\nMATERIALS AND METHODS: We retrospectively compared the Planning Target Volumes \n(PTVs), the spared healthy liver parenchyma volumes, the Treatment Planning \nSystem (TPS) and machine performances, and the patients' outcomes when using \neither a conventional accelerator (Versa HD®, Elekta, ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37046741/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Ionization chamber correction factors for MR-linacs.",
+        "snippet": "PubMed ID: 29762130. 2018/06/07 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therapy \n(SABR).\nMATERIALS AND METHODS: We retrospectively compared the Planning Target Volumes \n(PTVs), the spared healthy liver parenchyma volumes, the Treatment Planning \nSystem (TPS) and machine performances, and the patients' outcomes when using \neither a conventional accelerator (Versa HD®, Elekta, ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29762130/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Is MRI-Linac helpful in SABR treatments for liver cancer?",
+        "snippet": "PubMed ID: 37007109. 2023/03/16 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therapy \n(SABR).\nMATERIALS AND METHODS: We retrospectively compared the Planning Target Volumes \n(PTVs), the spared healthy liver parenchyma volumes, the Treatment Planning \nSystem (TPS) and machine performances, and the patients' outcomes when using \neither a conventional accelerator (Versa HD®, Elekta, ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37007109/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 36966049. 2023/01/01 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therap\n2. PubMed ID: 34544481. 2021/09/20 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therap\n3. PubMed ID: 37046741. 2023/03/30 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therap",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/36966049/",
+      "https://pubmed.ncbi.nlm.nih.gov/34544481/",
+      "https://pubmed.ncbi.nlm.nih.gov/37046741/",
+      "https://pubmed.ncbi.nlm.nih.gov/29762130/",
+      "https://pubmed.ncbi.nlm.nih.gov/37007109/"
+    ],
+    "evidence_chain_id": "20260602_222357_578391",
+    "evidence_summary": {
+      "response_id": "20260602_222357_578391",
+      "query": "MRIdian Elekta Unity brachytherapy adaptive treatment evidence",
+      "created_at": "2026-06-02T22:23:57.578408",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Treatment of glioblastoma using MRIdian® A3i BrainTx™: Imaging and treatment workflow demonstration.](https://pubmed.ncbi.nlm.nih.gov/36966049/)",
+        "[Patient positioning and immobilization procedures for hybrid MR-Linac systems.](https://pubmed.ncbi.nlm.nih.gov/34544481/)",
+        "[Stereotactic Magnetic Resonance-Guided Adaptive and Non-Adaptive Radiotherapy on Combination MR-Linear Accelerators: Current Practice and Future Directions.](https://pubmed.ncbi.nlm.nih.gov/37046741/)",
+        "[Ionization chamber correction factors for MR-linacs.](https://pubmed.ncbi.nlm.nih.gov/29762130/)",
+        "[Is MRI-Linac helpful in SABR treatments for liver cancer?](https://pubmed.ncbi.nlm.nih.gov/37007109/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "e9141ce9605b",
+          "claim": "PubMed ID: 36966049. 2023/01/01 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therap",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36966049/",
+          "source_type": "PubMed",
+          "source_title": "Treatment of glioblastoma using MRIdian® A3i BrainTx™: Imaging and treatment workflow demonstration.",
+          "accessed_at": "2026-06-02T22:23:59.167992",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36966049. 2023/01/01 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therapy \n(SABR).\nMATERIALS AND METHODS: We retrospectively compared the Planning Target Volumes \n(PTVs), the spared healthy liver parenchyma volumes, the Treatment Planning \nSystem (TPS) and machine performances, and the patients' outcomes when using \neither a conventional accelerator (Versa HD®, Elekta, ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRIdian Elekta Unity brachytherapy adaptive treatment evidence",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "4e2cbc46c990",
+          "claim": "PubMed ID: 34544481. 2021/09/20 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therap",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34544481/",
+          "source_type": "PubMed",
+          "source_title": "Patient positioning and immobilization procedures for hybrid MR-Linac systems.",
+          "accessed_at": "2026-06-02T22:23:59.168040",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34544481. 2021/09/20 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therapy \n(SABR).\nMATERIALS AND METHODS: We retrospectively compared the Planning Target Volumes \n(PTVs), the spared healthy liver parenchyma volumes, the Treatment Planning \nSystem (TPS) and machine performances, and the patients' outcomes when using \neither a conventional accelerator (Versa HD®, Elekta, ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRIdian Elekta Unity brachytherapy adaptive treatment evidence",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "370e3a96d644",
+          "claim": "PubMed ID: 37046741. 2023/03/30 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therap",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37046741/",
+          "source_type": "PubMed",
+          "source_title": "Stereotactic Magnetic Resonance-Guided Adaptive and Non-Adaptive Radiotherapy on Combination MR-Linear Accelerators: Current Practice and Future Directions.",
+          "accessed_at": "2026-06-02T22:23:59.168064",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37046741. 2023/03/30 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therapy \n(SABR).\nMATERIALS AND METHODS: We retrospectively compared the Planning Target Volumes \n(PTVs), the spared healthy liver parenchyma volumes, the Treatment Planning \nSystem (TPS) and machine performances, and the patients' outcomes when using \neither a conventional accelerator (Versa HD®, Elekta, ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRIdian Elekta Unity brachytherapy adaptive treatment evidence",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "52de81df2544",
+          "claim": "PubMed ID: 29762130. 2018/06/07 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therap",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/29762130/",
+          "source_type": "PubMed",
+          "source_title": "Ionization chamber correction factors for MR-linacs.",
+          "accessed_at": "2026-06-02T22:23:59.168083",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 29762130. 2018/06/07 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therapy \n(SABR).\nMATERIALS AND METHODS: We retrospectively compared the Planning Target Volumes \n(PTVs), the spared healthy liver parenchyma volumes, the Treatment Planning \nSystem (TPS) and machine performances, and the patients' outcomes when using \neither a conventional accelerator (Versa HD®, Elekta, ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRIdian Elekta Unity brachytherapy adaptive treatment evidence",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "9f3fb612561d",
+          "claim": "PubMed ID: 37007109. 2023/03/16 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therap",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37007109/",
+          "source_type": "PubMed",
+          "source_title": "Is MRI-Linac helpful in SABR treatments for liver cancer?",
+          "accessed_at": "2026-06-02T22:23:59.168101",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37007109. 2023/03/16 00:00. OBJECTIVE: To determine the MRI-Linac added value over conventional image-guided \nradiation therapy (IGRT) in liver tumors Stereotactic ablative radiation therapy \n(SABR).\nMATERIALS AND METHODS: We retrospectively compared the Planning Target Volumes \n(PTVs), the spared healthy liver parenchyma volumes, the Treatment Planning \nSystem (TPS) and machine performances, and the patients' outcomes when using \neither a conventional accelerator (Versa HD®, Elekta, ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRIdian Elekta Unity brachytherapy adaptive treatment evidence",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Treatment of glioblastoma using MRIdian® A3i BrainTx™: Imaging and treatment workflow demonstration.](https://pubmed.ncbi.nlm.nih.gov/36966049/)",
+      "[Patient positioning and immobilization procedures for hybrid MR-Linac systems.](https://pubmed.ncbi.nlm.nih.gov/34544481/)",
+      "[Stereotactic Magnetic Resonance-Guided Adaptive and Non-Adaptive Radiotherapy on Combination MR-Linear Accelerators: Current Practice and Future Directions.](https://pubmed.ncbi.nlm.nih.gov/37046741/)",
+      "[Ionization chamber correction factors for MR-linacs.](https://pubmed.ncbi.nlm.nih.gov/29762130/)",
+      "[Is MRI-Linac helpful in SABR treatments for liver cancer?](https://pubmed.ncbi.nlm.nih.gov/37007109/)"
+    ]
+  }
+}

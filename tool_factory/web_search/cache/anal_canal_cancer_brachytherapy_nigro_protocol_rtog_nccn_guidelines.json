@@ -1,0 +1,23 @@
+{
+  "query": "anal canal cancer brachytherapy Nigro protocol RTOG NCCN guidelines",
+  "timestamp": 1780467607.4069376,
+  "result": {
+    "success": true,
+    "results": [],
+    "answer": "I searched for 'anal canal cancer brachytherapy Nigro protocol RTOG NCCN guidelines' but couldn't find specific information. This may be a question that requires specialized knowledge or access to specific databases I don't have.",
+    "sources": [],
+    "evidence_chain_id": "20260603_142006_892477",
+    "evidence_summary": {
+      "response_id": "20260603_142006_892477",
+      "query": "anal canal cancer brachytherapy Nigro protocol RTOG NCCN guidelines",
+      "created_at": "2026-06-03T14:20:06.892487",
+      "num_sources": 0,
+      "source_types": [],
+      "avg_confidence": 0.0,
+      "verification_status": "unverified",
+      "citations": [],
+      "evidence": []
+    },
+    "citations": []
+  }
+}

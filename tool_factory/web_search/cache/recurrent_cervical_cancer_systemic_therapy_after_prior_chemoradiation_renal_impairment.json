@@ -1,0 +1,160 @@
+{
+  "query": "recurrent cervical cancer systemic therapy after prior chemoradiation renal impairment",
+  "timestamp": 1780410932.4907212,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "RECURRENT中文 (简体)翻译：剑桥词典 - Cambridge Dictionary",
+        "snippet": "Whether the recurrent episode is symptomatic or asymptomatic may depend, at least in part, on the number of virus particles present at the skin surface.",
+        "url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/recurrent",
+        "source": "Bing CN"
+      },
+      {
+        "title": "recurrent是什么意思_recurrent的翻译_音标_读音_用法_例句 ...",
+        "snippet": "爱词霸权威在线词典,为您提供recurrent的中文意思,recurrent的用法讲解,recurrent的读音,recurrent的同义词,recurrent的反义词,recurrent的例句等英语服务。",
+        "url": "https://www.iciba.com/word?w=recurrent",
+        "source": "Bing CN"
+      },
+      {
+        "title": "recurrent - 搜索 词典",
+        "snippet": "2013年1月10日 · 必应词典为您提供recurrent的释义，美 [rɪˈkʌrənt]，英 [rɪ'kʌrənt]，n. 回归神经； adj. 反复出现的；重复发生的； 网络释义： 循环的；反复发生的；复发的；",
+        "url": "https://global.bing.com/dict/search?q=recurrent&amp;FORM=BDVSP6&amp;cc=cn",
+        "source": "Bing CN"
+      },
+      {
+        "title": "recurrent_百度百科",
+        "snippet": "“recurrent”是一个形容词，意为“反复出现的；周期性的，经常发生的” [4] [11]。 “recurrent”常可与近义词“recurring”互换使用 [5]，但“recurrent”更常用于医学语境。 此外，“recurrent”还具有解剖学上的专有 …",
+        "url": "https://baike.baidu.com/item/recurrent/53091262",
+        "source": "Bing CN"
+      },
+      {
+        "title": "循环神经网络（RNN） | 菜鸟教程",
+        "snippet": "循环神经网络（RNN） 循环神经网络（Recurrent Neural Network，RNN） 是一种专门处理序列数据（如文本、语音、时间序列）的神经网络。 与传统的前馈神经网络不同，RNN 具有&quot;记忆&quot;能力，能 …",
+        "url": "https://www.runoob.com/nlp/recurrent-neural-network.html",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- Whether the recurrent episode is symptomatic or asymptomatic may depend, at least in part, on the number of virus particles present at the skin surfac\n- 爱词霸权威在线词典,为您提供recurrent的中文意思,recurrent的用法讲解,recurrent的读音,recurrent的同义词,recurrent的反义词,recurrent的例句等英语服务。",
+    "sources": [
+      "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/recurrent",
+      "https://www.iciba.com/word?w=recurrent",
+      "https://global.bing.com/dict/search?q=recurrent&amp;FORM=BDVSP6&amp;cc=cn",
+      "https://baike.baidu.com/item/recurrent/53091262",
+      "https://www.runoob.com/nlp/recurrent-neural-network.html"
+    ],
+    "evidence_chain_id": "20260602_223531_579106",
+    "evidence_summary": {
+      "response_id": "20260602_223531_579106",
+      "query": "recurrent cervical cancer systemic therapy after prior chemoradiation renal impairment",
+      "created_at": "2026-06-02T22:35:31.579126",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[RECURRENT中文 (简体)翻译：剑桥词典 - Cambridge Dictionary](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/recurrent)",
+        "[recurrent是什么意思_recurrent的翻译_音标_读音_用法_例句 ...](https://www.iciba.com/word?w=recurrent)",
+        "[recurrent - 搜索 词典](https://global.bing.com/dict/search?q=recurrent&amp;FORM=BDVSP6&amp;cc=cn)",
+        "[recurrent_百度百科](https://baike.baidu.com/item/recurrent/53091262)",
+        "[循环神经网络（RNN） | 菜鸟教程](https://www.runoob.com/nlp/recurrent-neural-network.html)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "9008d239a38e",
+          "claim": "Whether the recurrent episode is symptomatic or asymptomatic may depend, at least in part, on the number of virus particles present at the skin surface.",
+          "source_url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/recurrent",
+          "source_type": "Bing CN",
+          "source_title": "RECURRENT中文 (简体)翻译：剑桥词典 - Cambridge Dictionary",
+          "accessed_at": "2026-06-02T22:35:32.490214",
+          "published_at": "",
+          "raw_snippet": "Whether the recurrent episode is symptomatic or asymptomatic may depend, at least in part, on the number of virus particles present at the skin surface.",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "recurrent cervical cancer systemic therapy after prior chemoradiation renal impairment",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "eecaf1fd1f4c",
+          "claim": "爱词霸权威在线词典,为您提供recurrent的中文意思,recurrent的用法讲解,recurrent的读音,recurrent的同义词,recurrent的反义词,recurrent的例句等英语服务。",
+          "source_url": "https://www.iciba.com/word?w=recurrent",
+          "source_type": "Bing CN",
+          "source_title": "recurrent是什么意思_recurrent的翻译_音标_读音_用法_例句 ...",
+          "accessed_at": "2026-06-02T22:35:32.490344",
+          "published_at": "",
+          "raw_snippet": "爱词霸权威在线词典,为您提供recurrent的中文意思,recurrent的用法讲解,recurrent的读音,recurrent的同义词,recurrent的反义词,recurrent的例句等英语服务。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "recurrent cervical cancer systemic therapy after prior chemoradiation renal impairment",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "13ed22d87555",
+          "claim": "2013年1月10日 · 必应词典为您提供recurrent的释义，美 [rɪˈkʌrənt]，英 [rɪ'kʌrənt]，n. 回归神经； adj. 反复出现的；重复发生的； 网络释义： 循环的；反复发生的；复发的；",
+          "source_url": "https://global.bing.com/dict/search?q=recurrent&amp;FORM=BDVSP6&amp;cc=cn",
+          "source_type": "Bing CN",
+          "source_title": "recurrent - 搜索 词典",
+          "accessed_at": "2026-06-02T22:35:32.490392",
+          "published_at": "",
+          "raw_snippet": "2013年1月10日 · 必应词典为您提供recurrent的释义，美 [rɪˈkʌrənt]，英 [rɪ'kʌrənt]，n. 回归神经； adj. 反复出现的；重复发生的； 网络释义： 循环的；反复发生的；复发的；",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "recurrent cervical cancer systemic therapy after prior chemoradiation renal impairment",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3d0a78730d94",
+          "claim": "“recurrent”是一个形容词，意为“反复出现的；周期性的，经常发生的” [4] [11]。 “recurrent”常可与近义词“recurring”互换使用 [5]，但“recurrent”更常用于医学语境。 此外，“recurrent”还具有解剖学上的专有 …",
+          "source_url": "https://baike.baidu.com/item/recurrent/53091262",
+          "source_type": "Bing CN",
+          "source_title": "recurrent_百度百科",
+          "accessed_at": "2026-06-02T22:35:32.490432",
+          "published_at": "",
+          "raw_snippet": "“recurrent”是一个形容词，意为“反复出现的；周期性的，经常发生的” [4] [11]。 “recurrent”常可与近义词“recurring”互换使用 [5]，但“recurrent”更常用于医学语境。 此外，“recurrent”还具有解剖学上的专有 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "recurrent cervical cancer systemic therapy after prior chemoradiation renal impairment",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8f9df3960602",
+          "claim": "循环神经网络（RNN） 循环神经网络（Recurrent Neural Network，RNN） 是一种专门处理序列数据（如文本、语音、时间序列）的神经网络。 与传统的前馈神经网络不同，RNN 具有&quot;记忆&quot;能力，能 …",
+          "source_url": "https://www.runoob.com/nlp/recurrent-neural-network.html",
+          "source_type": "Bing CN",
+          "source_title": "循环神经网络（RNN） | 菜鸟教程",
+          "accessed_at": "2026-06-02T22:35:32.490484",
+          "published_at": "",
+          "raw_snippet": "循环神经网络（RNN） 循环神经网络（Recurrent Neural Network，RNN） 是一种专门处理序列数据（如文本、语音、时间序列）的神经网络。 与传统的前馈神经网络不同，RNN 具有&quot;记忆&quot;能力，能 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "recurrent cervical cancer systemic therapy after prior chemoradiation renal impairment",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[RECURRENT中文 (简体)翻译：剑桥词典 - Cambridge Dictionary](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/recurrent)",
+      "[recurrent是什么意思_recurrent的翻译_音标_读音_用法_例句 ...](https://www.iciba.com/word?w=recurrent)",
+      "[recurrent - 搜索 词典](https://global.bing.com/dict/search?q=recurrent&amp;FORM=BDVSP6&amp;cc=cn)",
+      "[recurrent_百度百科](https://baike.baidu.com/item/recurrent/53091262)",
+      "[循环神经网络（RNN） | 菜鸟教程](https://www.runoob.com/nlp/recurrent-neural-network.html)"
+    ]
+  }
+}

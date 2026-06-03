@@ -1,0 +1,160 @@
+{
+  "query": "IGABT cervical cancer imaging protocol CT MRI equipment requirements",
+  "timestamp": 1780413849.4265406,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "MRI-guided adaptive brachytherapy in locally advanced cervical cancer (EMBRACE-I): a multicentre prospective cohort study.",
+        "snippet": "PubMed ID: 33794207. 2021/04/01 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here, we report on EMBRACE-I, which aimed to evaluate local tumour \ncontrol and morbidity after chemoradiotherapy and MRI-based IGABT.\nMETHODS: EMBRACE-I was a prospective, observational, multicentre cohort study. \nData from patients from 24 centres in Europe, Asia, and North America were \nprospectively",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33794207/",
+        "source": "PubMed"
+      },
+      {
+        "title": "High-Dose-Rate Three-Dimensional Image-Guided Adaptive Brachytherapy (3D IGABT) for Locally Advanced Cervical Cancer (LACC): A Narrative Review on Imaging Modality and Clinical Evidence.",
+        "snippet": "PubMed ID: 38275830. 2023/12/21 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here, we report on EMBRACE-I, which aimed to evaluate local tumour \ncontrol and morbidity after chemoradiotherapy and MRI-based IGABT.\nMETHODS: EMBRACE-I was a prospective, observational, multicentre cohort study. \nData from patients from 24 centres in Europe, Asia, and North America were \nprospectively",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38275830/",
+        "source": "PubMed"
+      },
+      {
+        "title": "The EMBRACE II study: The outcome and prospect of two decades of evolution within the GEC-ESTRO GYN working group and the EMBRACE studies.",
+        "snippet": "PubMed ID: 29594251. 2018/01/11 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here, we report on EMBRACE-I, which aimed to evaluate local tumour \ncontrol and morbidity after chemoradiotherapy and MRI-based IGABT.\nMETHODS: EMBRACE-I was a prospective, observational, multicentre cohort study. \nData from patients from 24 centres in Europe, Asia, and North America were \nprospectively",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29594251/",
+        "source": "PubMed"
+      },
+      {
+        "title": "IBS-GEC ESTRO-ABS recommendations for CT based contouring in image guided adaptive brachytherapy for cervical cancer.",
+        "snippet": "PubMed ID: 34019918. 2021/07/01 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here, we report on EMBRACE-I, which aimed to evaluate local tumour \ncontrol and morbidity after chemoradiotherapy and MRI-based IGABT.\nMETHODS: EMBRACE-I was a prospective, observational, multicentre cohort study. \nData from patients from 24 centres in Europe, Asia, and North America were \nprospectively",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34019918/",
+        "source": "PubMed"
+      },
+      {
+        "title": "The association of vagina equivalent dose in 2Gy fraction (EQD(2)) to late vagina toxicity in patients of cervical cancer treated with WPRT plus IGABT.",
+        "snippet": "PubMed ID: 35715305. 2022/09/01 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here, we report on EMBRACE-I, which aimed to evaluate local tumour \ncontrol and morbidity after chemoradiotherapy and MRI-based IGABT.\nMETHODS: EMBRACE-I was a prospective, observational, multicentre cohort study. \nData from patients from 24 centres in Europe, Asia, and North America were \nprospectively",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35715305/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 33794207. 2021/04/01 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here\n2. PubMed ID: 38275830. 2023/12/21 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here\n3. PubMed ID: 29594251. 2018/01/11 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/33794207/",
+      "https://pubmed.ncbi.nlm.nih.gov/38275830/",
+      "https://pubmed.ncbi.nlm.nih.gov/29594251/",
+      "https://pubmed.ncbi.nlm.nih.gov/34019918/",
+      "https://pubmed.ncbi.nlm.nih.gov/35715305/"
+    ],
+    "evidence_chain_id": "20260602_232407_831248",
+    "evidence_summary": {
+      "response_id": "20260602_232407_831248",
+      "query": "IGABT cervical cancer imaging protocol CT MRI equipment requirements",
+      "created_at": "2026-06-02T23:24:07.831266",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[MRI-guided adaptive brachytherapy in locally advanced cervical cancer (EMBRACE-I): a multicentre prospective cohort study.](https://pubmed.ncbi.nlm.nih.gov/33794207/)",
+        "[High-Dose-Rate Three-Dimensional Image-Guided Adaptive Brachytherapy (3D IGABT) for Locally Advanced Cervical Cancer (LACC): A Narrative Review on Imaging Modality and Clinical Evidence.](https://pubmed.ncbi.nlm.nih.gov/38275830/)",
+        "[The EMBRACE II study: The outcome and prospect of two decades of evolution within the GEC-ESTRO GYN working group and the EMBRACE studies.](https://pubmed.ncbi.nlm.nih.gov/29594251/)",
+        "[IBS-GEC ESTRO-ABS recommendations for CT based contouring in image guided adaptive brachytherapy for cervical cancer.](https://pubmed.ncbi.nlm.nih.gov/34019918/)",
+        "[The association of vagina equivalent dose in 2Gy fraction (EQD(2)) to late vagina toxicity in patients of cervical cancer treated with WPRT plus IGABT.](https://pubmed.ncbi.nlm.nih.gov/35715305/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "2d0b9d48b166",
+          "claim": "PubMed ID: 33794207. 2021/04/01 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33794207/",
+          "source_type": "PubMed",
+          "source_title": "MRI-guided adaptive brachytherapy in locally advanced cervical cancer (EMBRACE-I): a multicentre prospective cohort study.",
+          "accessed_at": "2026-06-02T23:24:09.426109",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33794207. 2021/04/01 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here, we report on EMBRACE-I, which aimed to evaluate local tumour \ncontrol and morbidity after chemoradiotherapy and MRI-based IGABT.\nMETHODS: EMBRACE-I was a prospective, observational, multicentre cohort study. \nData from patients from 24 centres in Europe, Asia, and North America were \nprospectively",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IGABT cervical cancer imaging protocol CT MRI equipment requirements",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ee4250a5a818",
+          "claim": "PubMed ID: 38275830. 2023/12/21 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38275830/",
+          "source_type": "PubMed",
+          "source_title": "High-Dose-Rate Three-Dimensional Image-Guided Adaptive Brachytherapy (3D IGABT) for Locally Advanced Cervical Cancer (LACC): A Narrative Review on Imaging Modality and Clinical Evidence.",
+          "accessed_at": "2026-06-02T23:24:09.426217",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38275830. 2023/12/21 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here, we report on EMBRACE-I, which aimed to evaluate local tumour \ncontrol and morbidity after chemoradiotherapy and MRI-based IGABT.\nMETHODS: EMBRACE-I was a prospective, observational, multicentre cohort study. \nData from patients from 24 centres in Europe, Asia, and North America were \nprospectively",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IGABT cervical cancer imaging protocol CT MRI equipment requirements",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c155f77ab71e",
+          "claim": "PubMed ID: 29594251. 2018/01/11 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/29594251/",
+          "source_type": "PubMed",
+          "source_title": "The EMBRACE II study: The outcome and prospect of two decades of evolution within the GEC-ESTRO GYN working group and the EMBRACE studies.",
+          "accessed_at": "2026-06-02T23:24:09.426253",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 29594251. 2018/01/11 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here, we report on EMBRACE-I, which aimed to evaluate local tumour \ncontrol and morbidity after chemoradiotherapy and MRI-based IGABT.\nMETHODS: EMBRACE-I was a prospective, observational, multicentre cohort study. \nData from patients from 24 centres in Europe, Asia, and North America were \nprospectively",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IGABT cervical cancer imaging protocol CT MRI equipment requirements",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3efb777d1de0",
+          "claim": "PubMed ID: 34019918. 2021/07/01 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34019918/",
+          "source_type": "PubMed",
+          "source_title": "IBS-GEC ESTRO-ABS recommendations for CT based contouring in image guided adaptive brachytherapy for cervical cancer.",
+          "accessed_at": "2026-06-02T23:24:09.426277",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34019918. 2021/07/01 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here, we report on EMBRACE-I, which aimed to evaluate local tumour \ncontrol and morbidity after chemoradiotherapy and MRI-based IGABT.\nMETHODS: EMBRACE-I was a prospective, observational, multicentre cohort study. \nData from patients from 24 centres in Europe, Asia, and North America were \nprospectively",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IGABT cervical cancer imaging protocol CT MRI equipment requirements",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "a0e9ecf55c17",
+          "claim": "PubMed ID: 35715305. 2022/09/01 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35715305/",
+          "source_type": "PubMed",
+          "source_title": "The association of vagina equivalent dose in 2Gy fraction (EQD(2)) to late vagina toxicity in patients of cervical cancer treated with WPRT plus IGABT.",
+          "accessed_at": "2026-06-02T23:24:09.426299",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35715305. 2022/09/01 00:00. BACKGROUND: The concept of the use of MRI for image-guided adaptive \nbrachytherapy (IGABT) in locally advanced cervical cancer was introduced 20 \nyears ago. Here, we report on EMBRACE-I, which aimed to evaluate local tumour \ncontrol and morbidity after chemoradiotherapy and MRI-based IGABT.\nMETHODS: EMBRACE-I was a prospective, observational, multicentre cohort study. \nData from patients from 24 centres in Europe, Asia, and North America were \nprospectively",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IGABT cervical cancer imaging protocol CT MRI equipment requirements",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[MRI-guided adaptive brachytherapy in locally advanced cervical cancer (EMBRACE-I): a multicentre prospective cohort study.](https://pubmed.ncbi.nlm.nih.gov/33794207/)",
+      "[High-Dose-Rate Three-Dimensional Image-Guided Adaptive Brachytherapy (3D IGABT) for Locally Advanced Cervical Cancer (LACC): A Narrative Review on Imaging Modality and Clinical Evidence.](https://pubmed.ncbi.nlm.nih.gov/38275830/)",
+      "[The EMBRACE II study: The outcome and prospect of two decades of evolution within the GEC-ESTRO GYN working group and the EMBRACE studies.](https://pubmed.ncbi.nlm.nih.gov/29594251/)",
+      "[IBS-GEC ESTRO-ABS recommendations for CT based contouring in image guided adaptive brachytherapy for cervical cancer.](https://pubmed.ncbi.nlm.nih.gov/34019918/)",
+      "[The association of vagina equivalent dose in 2Gy fraction (EQD(2)) to late vagina toxicity in patients of cervical cancer treated with WPRT plus IGABT.](https://pubmed.ncbi.nlm.nih.gov/35715305/)"
+    ]
+  }
+}

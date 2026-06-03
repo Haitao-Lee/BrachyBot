@@ -1,0 +1,160 @@
+{
+  "query": "Nucletron Plato brachytherapy optimization algorithm",
+  "timestamp": 1780418861.6748888,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "中国科学技术大学测速网站",
+        "snippet": "中国科学技术大学测速网站 (IPv4 / IPv6) 欢迎报考中国科学技术大学，详情请见 zsb.ustc.edu.cn",
+        "url": "https://test.ustc.edu.cn/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "中国科学技术大学测速网站",
+        "snippet": "中国科学技术大学测速网站提供快速准确的网络速度测试服务，显示IP地址及网络测速信息。",
+        "url": "http://test.ustc.edu.cn/results/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "中国科学技术大学测速网站",
+        "snippet": "中国科学技术大学测速网站，提供网络延迟、下载速度和上传速度测试功能。",
+        "url": "https://test.ustc.edu.cn/backend/getIP_util.php",
+        "source": "Bing CN"
+      },
+      {
+        "title": "中国科学技术大学测速网站",
+        "snippet": "中国科学技术大学测速网站，提供网络速度测试和相关信息查询服务。",
+        "url": "https://test.ustc.edu.cn/backend/getIP_ipInfo_apikey.php",
+        "source": "Bing CN"
+      },
+      {
+        "title": "中国科学技术大学测速网站",
+        "snippet": "16 小时之前 · 中国科学技术大学测速网站，提供网络速度测试和校内外测速站点对比。",
+        "url": "http://test.ustc.edu.cn/results/result.php?id=98378",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 中国科学技术大学测速网站 (IPv4 / IPv6) 欢迎报考中国科学技术大学，详情请见 zsb.ustc.edu.cn\n- 中国科学技术大学测速网站提供快速准确的网络速度测试服务，显示IP地址及网络测速信息。",
+    "sources": [
+      "https://test.ustc.edu.cn/",
+      "http://test.ustc.edu.cn/results/",
+      "https://test.ustc.edu.cn/backend/getIP_util.php",
+      "https://test.ustc.edu.cn/backend/getIP_ipInfo_apikey.php",
+      "http://test.ustc.edu.cn/results/result.php?id=98378"
+    ],
+    "evidence_chain_id": "20260603_004740_824759",
+    "evidence_summary": {
+      "response_id": "20260603_004740_824759",
+      "query": "Nucletron Plato brachytherapy optimization algorithm",
+      "created_at": "2026-06-03T00:47:40.824777",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[中国科学技术大学测速网站](https://test.ustc.edu.cn/)",
+        "[中国科学技术大学测速网站](http://test.ustc.edu.cn/results/)",
+        "[中国科学技术大学测速网站](https://test.ustc.edu.cn/backend/getIP_util.php)",
+        "[中国科学技术大学测速网站](https://test.ustc.edu.cn/backend/getIP_ipInfo_apikey.php)",
+        "[中国科学技术大学测速网站](http://test.ustc.edu.cn/results/result.php?id=98378)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "4a1d7d3614b6",
+          "claim": "中国科学技术大学测速网站 (IPv4 / IPv6) 欢迎报考中国科学技术大学，详情请见 zsb.ustc.edu.cn",
+          "source_url": "https://test.ustc.edu.cn/",
+          "source_type": "Bing CN",
+          "source_title": "中国科学技术大学测速网站",
+          "accessed_at": "2026-06-03T00:47:41.674480",
+          "published_at": "",
+          "raw_snippet": "中国科学技术大学测速网站 (IPv4 / IPv6) 欢迎报考中国科学技术大学，详情请见 zsb.ustc.edu.cn",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Nucletron Plato brachytherapy optimization algorithm",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e569000a8bdd",
+          "claim": "中国科学技术大学测速网站提供快速准确的网络速度测试服务，显示IP地址及网络测速信息。",
+          "source_url": "http://test.ustc.edu.cn/results/",
+          "source_type": "Bing CN",
+          "source_title": "中国科学技术大学测速网站",
+          "accessed_at": "2026-06-03T00:47:41.674585",
+          "published_at": "",
+          "raw_snippet": "中国科学技术大学测速网站提供快速准确的网络速度测试服务，显示IP地址及网络测速信息。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Nucletron Plato brachytherapy optimization algorithm",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "a1b684ddea66",
+          "claim": "中国科学技术大学测速网站，提供网络延迟、下载速度和上传速度测试功能。",
+          "source_url": "https://test.ustc.edu.cn/backend/getIP_util.php",
+          "source_type": "Bing CN",
+          "source_title": "中国科学技术大学测速网站",
+          "accessed_at": "2026-06-03T00:47:41.674622",
+          "published_at": "",
+          "raw_snippet": "中国科学技术大学测速网站，提供网络延迟、下载速度和上传速度测试功能。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Nucletron Plato brachytherapy optimization algorithm",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "9b2aae1454a8",
+          "claim": "中国科学技术大学测速网站，提供网络速度测试和相关信息查询服务。",
+          "source_url": "https://test.ustc.edu.cn/backend/getIP_ipInfo_apikey.php",
+          "source_type": "Bing CN",
+          "source_title": "中国科学技术大学测速网站",
+          "accessed_at": "2026-06-03T00:47:41.674651",
+          "published_at": "",
+          "raw_snippet": "中国科学技术大学测速网站，提供网络速度测试和相关信息查询服务。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Nucletron Plato brachytherapy optimization algorithm",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "1770eaa26272",
+          "claim": "16 小时之前 · 中国科学技术大学测速网站，提供网络速度测试和校内外测速站点对比。",
+          "source_url": "http://test.ustc.edu.cn/results/result.php?id=98378",
+          "source_type": "Bing CN",
+          "source_title": "中国科学技术大学测速网站",
+          "accessed_at": "2026-06-03T00:47:41.674677",
+          "published_at": "",
+          "raw_snippet": "16 小时之前 · 中国科学技术大学测速网站，提供网络速度测试和校内外测速站点对比。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Nucletron Plato brachytherapy optimization algorithm",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[中国科学技术大学测速网站](https://test.ustc.edu.cn/)",
+      "[中国科学技术大学测速网站](http://test.ustc.edu.cn/results/)",
+      "[中国科学技术大学测速网站](https://test.ustc.edu.cn/backend/getIP_util.php)",
+      "[中国科学技术大学测速网站](https://test.ustc.edu.cn/backend/getIP_ipInfo_apikey.php)",
+      "[中国科学技术大学测速网站](http://test.ustc.edu.cn/results/result.php?id=98378)"
+    ]
+  }
+}

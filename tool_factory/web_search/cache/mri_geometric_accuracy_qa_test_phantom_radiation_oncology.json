@@ -1,0 +1,160 @@
+{
+  "query": "MRI geometric accuracy QA test phantom radiation oncology",
+  "timestamp": 1780411369.2677658,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Geometric distortions in clinical MRI sequences for radiotherapy: insights gained from a multicenter investigation.",
+        "snippet": "PubMed ID: 37815867. 2023/11/01 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninherent geometric distortion in acquired MR images pose a potential challenge \nto treatment accuracy. This study aimed to evaluate the geometric distortion \nlevels in the clinical MRI protocols used across Danish RT centers and discuss \ninfluence of specific sequence parameters. Based on the variety in",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37815867/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Geometric evaluations of CT and MRI based deep learning segmentation for brain OARs in radiotherapy.",
+        "snippet": "PubMed ID: 37579753. 2023/08/29 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninherent geometric distortion in acquired MR images pose a potential challenge \nto treatment accuracy. This study aimed to evaluate the geometric distortion \nlevels in the clinical MRI protocols used across Danish RT centers and discuss \ninfluence of specific sequence parameters. Based on the variety in",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37579753/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Characterizing geometric distortions of 3D sequences in clinical head MRI.",
+        "snippet": "PubMed ID: 35657535. 2022/12/01 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninherent geometric distortion in acquired MR images pose a potential challenge \nto treatment accuracy. This study aimed to evaluate the geometric distortion \nlevels in the clinical MRI protocols used across Danish RT centers and discuss \ninfluence of specific sequence parameters. Based on the variety in",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35657535/",
+        "source": "PubMed"
+      },
+      {
+        "title": "MRI of geometric and compositional features of vulnerable carotid plaque.",
+        "snippet": "PubMed ID: 17261706. 2007/02/01 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninherent geometric distortion in acquired MR images pose a potential challenge \nto treatment accuracy. This study aimed to evaluate the geometric distortion \nlevels in the clinical MRI protocols used across Danish RT centers and discuss \ninfluence of specific sequence parameters. Based on the variety in",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/17261706/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Dosimetric impact of geometric distortions in an MRI-only proton therapy workflow for lung, liver and pancreas.",
+        "snippet": "PubMed ID: 33168274. 2022/02/01 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninherent geometric distortion in acquired MR images pose a potential challenge \nto treatment accuracy. This study aimed to evaluate the geometric distortion \nlevels in the clinical MRI protocols used across Danish RT centers and discuss \ninfluence of specific sequence parameters. Based on the variety in",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33168274/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 37815867. 2023/11/01 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninhe\n2. PubMed ID: 37579753. 2023/08/29 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninhe\n3. PubMed ID: 35657535. 2022/12/01 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninhe",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/37815867/",
+      "https://pubmed.ncbi.nlm.nih.gov/37579753/",
+      "https://pubmed.ncbi.nlm.nih.gov/35657535/",
+      "https://pubmed.ncbi.nlm.nih.gov/17261706/",
+      "https://pubmed.ncbi.nlm.nih.gov/33168274/"
+    ],
+    "evidence_chain_id": "20260602_224247_121361",
+    "evidence_summary": {
+      "response_id": "20260602_224247_121361",
+      "query": "MRI geometric accuracy QA test phantom radiation oncology",
+      "created_at": "2026-06-02T22:42:47.121379",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Geometric distortions in clinical MRI sequences for radiotherapy: insights gained from a multicenter investigation.](https://pubmed.ncbi.nlm.nih.gov/37815867/)",
+        "[Geometric evaluations of CT and MRI based deep learning segmentation for brain OARs in radiotherapy.](https://pubmed.ncbi.nlm.nih.gov/37579753/)",
+        "[Characterizing geometric distortions of 3D sequences in clinical head MRI.](https://pubmed.ncbi.nlm.nih.gov/35657535/)",
+        "[MRI of geometric and compositional features of vulnerable carotid plaque.](https://pubmed.ncbi.nlm.nih.gov/17261706/)",
+        "[Dosimetric impact of geometric distortions in an MRI-only proton therapy workflow for lung, liver and pancreas.](https://pubmed.ncbi.nlm.nih.gov/33168274/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "615c3e0ad4e4",
+          "claim": "PubMed ID: 37815867. 2023/11/01 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninhe",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37815867/",
+          "source_type": "PubMed",
+          "source_title": "Geometric distortions in clinical MRI sequences for radiotherapy: insights gained from a multicenter investigation.",
+          "accessed_at": "2026-06-02T22:42:49.267393",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37815867. 2023/11/01 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninherent geometric distortion in acquired MR images pose a potential challenge \nto treatment accuracy. This study aimed to evaluate the geometric distortion \nlevels in the clinical MRI protocols used across Danish RT centers and discuss \ninfluence of specific sequence parameters. Based on the variety in",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI geometric accuracy QA test phantom radiation oncology",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "a031578a4af8",
+          "claim": "PubMed ID: 37579753. 2023/08/29 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninhe",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37579753/",
+          "source_type": "PubMed",
+          "source_title": "Geometric evaluations of CT and MRI based deep learning segmentation for brain OARs in radiotherapy.",
+          "accessed_at": "2026-06-02T22:42:49.267522",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37579753. 2023/08/29 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninherent geometric distortion in acquired MR images pose a potential challenge \nto treatment accuracy. This study aimed to evaluate the geometric distortion \nlevels in the clinical MRI protocols used across Danish RT centers and discuss \ninfluence of specific sequence parameters. Based on the variety in",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI geometric accuracy QA test phantom radiation oncology",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2f5f6158dc34",
+          "claim": "PubMed ID: 35657535. 2022/12/01 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninhe",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35657535/",
+          "source_type": "PubMed",
+          "source_title": "Characterizing geometric distortions of 3D sequences in clinical head MRI.",
+          "accessed_at": "2026-06-02T22:42:49.267547",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35657535. 2022/12/01 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninherent geometric distortion in acquired MR images pose a potential challenge \nto treatment accuracy. This study aimed to evaluate the geometric distortion \nlevels in the clinical MRI protocols used across Danish RT centers and discuss \ninfluence of specific sequence parameters. Based on the variety in",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI geometric accuracy QA test phantom radiation oncology",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "7540ee6ad958",
+          "claim": "PubMed ID: 17261706. 2007/02/01 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninhe",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/17261706/",
+          "source_type": "PubMed",
+          "source_title": "MRI of geometric and compositional features of vulnerable carotid plaque.",
+          "accessed_at": "2026-06-02T22:42:49.267567",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 17261706. 2007/02/01 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninherent geometric distortion in acquired MR images pose a potential challenge \nto treatment accuracy. This study aimed to evaluate the geometric distortion \nlevels in the clinical MRI protocols used across Danish RT centers and discuss \ninfluence of specific sequence parameters. Based on the variety in",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI geometric accuracy QA test phantom radiation oncology",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "4518334cbdb1",
+          "claim": "PubMed ID: 33168274. 2022/02/01 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninhe",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33168274/",
+          "source_type": "PubMed",
+          "source_title": "Dosimetric impact of geometric distortions in an MRI-only proton therapy workflow for lung, liver and pancreas.",
+          "accessed_at": "2026-06-02T22:42:49.267584",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33168274. 2022/02/01 00:00. BACKGROUND: As magnetic resonance imaging (MRI) becomes increasingly integrated \ninto radiotherapy (RT) for enhanced treatment planning and adaptation, the \ninherent geometric distortion in acquired MR images pose a potential challenge \nto treatment accuracy. This study aimed to evaluate the geometric distortion \nlevels in the clinical MRI protocols used across Danish RT centers and discuss \ninfluence of specific sequence parameters. Based on the variety in",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI geometric accuracy QA test phantom radiation oncology",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Geometric distortions in clinical MRI sequences for radiotherapy: insights gained from a multicenter investigation.](https://pubmed.ncbi.nlm.nih.gov/37815867/)",
+      "[Geometric evaluations of CT and MRI based deep learning segmentation for brain OARs in radiotherapy.](https://pubmed.ncbi.nlm.nih.gov/37579753/)",
+      "[Characterizing geometric distortions of 3D sequences in clinical head MRI.](https://pubmed.ncbi.nlm.nih.gov/35657535/)",
+      "[MRI of geometric and compositional features of vulnerable carotid plaque.](https://pubmed.ncbi.nlm.nih.gov/17261706/)",
+      "[Dosimetric impact of geometric distortions in an MRI-only proton therapy workflow for lung, liver and pancreas.](https://pubmed.ncbi.nlm.nih.gov/33168274/)"
+    ]
+  }
+}

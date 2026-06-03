@@ -1,0 +1,160 @@
+{
+  "query": "radiation safety fetus brachytherapy pregnant patient AAPM ABS guidelines",
+  "timestamp": 1780414425.0927243,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Ultraviolet and laser radiation safety.",
+        "snippet": "PubMed ID: 15559991. 1994/11/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/15559991/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Non-ionizing radiation safety: radiofrequency radiation, electric and magnetic fields.",
+        "snippet": "PubMed ID: 1589456. 1992/04/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/1589456/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Occupational radiation safety.",
+        "snippet": "PubMed ID: 23687243. 2013/05/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/23687243/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Non-Ionizing Radiation in Swedish Health Care-Exposure and Safety Aspects.",
+        "snippet": "PubMed ID: 30987016. 2019/04/02 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30987016/",
+        "source": "PubMed"
+      },
+      {
+        "title": "SAR Simulations & Safety.",
+        "snippet": "PubMed ID: 28336426. 2018/03/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28336426/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 15559991. 1994/11/01 00:00\n2. PubMed ID: 1589456. 1992/04/01 00:00\n3. PubMed ID: 23687243. 2013/05/01 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/15559991/",
+      "https://pubmed.ncbi.nlm.nih.gov/1589456/",
+      "https://pubmed.ncbi.nlm.nih.gov/23687243/",
+      "https://pubmed.ncbi.nlm.nih.gov/30987016/",
+      "https://pubmed.ncbi.nlm.nih.gov/28336426/"
+    ],
+    "evidence_chain_id": "20260602_233343_108198",
+    "evidence_summary": {
+      "response_id": "20260602_233343_108198",
+      "query": "radiation safety fetus brachytherapy pregnant patient AAPM ABS guidelines",
+      "created_at": "2026-06-02T23:33:43.108216",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Ultraviolet and laser radiation safety.](https://pubmed.ncbi.nlm.nih.gov/15559991/)",
+        "[Non-ionizing radiation safety: radiofrequency radiation, electric and magnetic fields.](https://pubmed.ncbi.nlm.nih.gov/1589456/)",
+        "[Occupational radiation safety.](https://pubmed.ncbi.nlm.nih.gov/23687243/)",
+        "[Non-Ionizing Radiation in Swedish Health Care-Exposure and Safety Aspects.](https://pubmed.ncbi.nlm.nih.gov/30987016/)",
+        "[SAR Simulations & Safety.](https://pubmed.ncbi.nlm.nih.gov/28336426/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "51fc57d75229",
+          "claim": "PubMed ID: 15559991. 1994/11/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/15559991/",
+          "source_type": "PubMed",
+          "source_title": "Ultraviolet and laser radiation safety.",
+          "accessed_at": "2026-06-02T23:33:45.092274",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 15559991. 1994/11/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiation safety fetus brachytherapy pregnant patient AAPM ABS guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "7e92fdba1fe5",
+          "claim": "PubMed ID: 1589456. 1992/04/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/1589456/",
+          "source_type": "PubMed",
+          "source_title": "Non-ionizing radiation safety: radiofrequency radiation, electric and magnetic fields.",
+          "accessed_at": "2026-06-02T23:33:45.092373",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 1589456. 1992/04/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiation safety fetus brachytherapy pregnant patient AAPM ABS guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "d948c3466d50",
+          "claim": "PubMed ID: 23687243. 2013/05/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/23687243/",
+          "source_type": "PubMed",
+          "source_title": "Occupational radiation safety.",
+          "accessed_at": "2026-06-02T23:33:45.092402",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 23687243. 2013/05/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiation safety fetus brachytherapy pregnant patient AAPM ABS guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2dbbb37b29ed",
+          "claim": "PubMed ID: 30987016. 2019/04/02 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/30987016/",
+          "source_type": "PubMed",
+          "source_title": "Non-Ionizing Radiation in Swedish Health Care-Exposure and Safety Aspects.",
+          "accessed_at": "2026-06-02T23:33:45.092436",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 30987016. 2019/04/02 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiation safety fetus brachytherapy pregnant patient AAPM ABS guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "367c65d2bfa9",
+          "claim": "PubMed ID: 28336426. 2018/03/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/28336426/",
+          "source_type": "PubMed",
+          "source_title": "SAR Simulations & Safety.",
+          "accessed_at": "2026-06-02T23:33:45.092463",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 28336426. 2018/03/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiation safety fetus brachytherapy pregnant patient AAPM ABS guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Ultraviolet and laser radiation safety.](https://pubmed.ncbi.nlm.nih.gov/15559991/)",
+      "[Non-ionizing radiation safety: radiofrequency radiation, electric and magnetic fields.](https://pubmed.ncbi.nlm.nih.gov/1589456/)",
+      "[Occupational radiation safety.](https://pubmed.ncbi.nlm.nih.gov/23687243/)",
+      "[Non-Ionizing Radiation in Swedish Health Care-Exposure and Safety Aspects.](https://pubmed.ncbi.nlm.nih.gov/30987016/)",
+      "[SAR Simulations & Safety.](https://pubmed.ncbi.nlm.nih.gov/28336426/)"
+    ]
+  }
+}

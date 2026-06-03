@@ -38,12 +38,26 @@
       "tools_used": [],
       "duration_seconds": 0,
       "iterations": 0
+    },
+    {
+      "timestamp": 1780490257.6881044,
+      "date": "2026-06-03 20:37",
+      "organ": "unknown",
+      "cancer_type": "unknown",
+      "plan_score": 85,
+      "v100": 95,
+      "v200": 0,
+      "seed_count": 0,
+      "tools_used": [],
+      "duration_seconds": 0,
+      "iterations": 0
     }
   ],
   "plan_scores": [
     "85",
     "85",
-    0
+    0,
+    85
   ],
   "tool_usage": {},
   "user_feedback": [
@@ -54,6 +68,14 @@
       "rating": "5",
       "comment": "这个方案很好，评分5分",
       "category": "plan_quality"
+    },
+    {
+      "timestamp": 1780490277.7637265,
+      "date": "2026-06-03 20:37",
+      "session_id": null,
+      "rating": 5,
+      "comment": "",
+      "category": "general"
     }
   ],
   "error_log": [
@@ -62,6 +84,24 @@
       "date": "2026-06-01 22:54",
       "error_type": "dose_engine_timeout",
       "message": "Dose engine timeout occurred",
+      "tool": "",
+      "context": "",
+      "resolution": ""
+    },
+    {
+      "timestamp": 1780412777.0549827,
+      "date": "2026-06-02 23:06",
+      "error_type": "dose_engine_timeout",
+      "message": "Dose calculation exceeded timeout limit",
+      "tool": "",
+      "context": "",
+      "resolution": ""
+    },
+    {
+      "timestamp": 1780490319.5412924,
+      "date": "2026-06-03 20:38",
+      "error_type": "timeout",
+      "message": "",
       "tool": "",
       "context": "",
       "resolution": ""

@@ -1,0 +1,11 @@
+{
+  "response_id": "20260603_115212_142838",
+  "query": "PET-CT head neck cancer brachytherapy planning FDG target delineation",
+  "created_at": "2026-06-03T11:52:12.142866",
+  "num_sources": 0,
+  "source_types": [],
+  "avg_confidence": 0.0,
+  "verification_status": "unverified",
+  "citations": [],
+  "evidence": []
+}

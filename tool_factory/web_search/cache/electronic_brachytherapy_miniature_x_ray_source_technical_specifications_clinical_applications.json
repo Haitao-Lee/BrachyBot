@@ -1,0 +1,160 @@
+{
+  "query": "electronic brachytherapy miniature X-ray source technical specifications clinical applications",
+  "timestamp": 1780474093.0026598,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Electronic brachytherapy--current status and future directions.",
+        "snippet": "PubMed ID: 25748070. 2015/05/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techniques, more recently, electronic brachytherapy (EB) has \nemerged as a potential alternative. At this time, there are no evidence-based \nguidelines to assist clinicians in patient selection for EB and concerns exits \nregarding differences in dosimetry as compared to traditional brachytherapy \ntechniq",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/25748070/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Intraoperative radiation and electronic brachytherapy in Brachytherapy: A look back and forward.",
+        "snippet": "PubMed ID: 36725199. 2023/01/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techniques, more recently, electronic brachytherapy (EB) has \nemerged as a potential alternative. At this time, there are no evidence-based \nguidelines to assist clinicians in patient selection for EB and concerns exits \nregarding differences in dosimetry as compared to traditional brachytherapy \ntechniq",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36725199/",
+        "source": "PubMed"
+      },
+      {
+        "title": "The American Brachytherapy Society consensus statement for electronic brachytherapy.",
+        "snippet": "PubMed ID: 30497939. 2019/05/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techniques, more recently, electronic brachytherapy (EB) has \nemerged as a potential alternative. At this time, there are no evidence-based \nguidelines to assist clinicians in patient selection for EB and concerns exits \nregarding differences in dosimetry as compared to traditional brachytherapy \ntechniq",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30497939/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Breast brachytherapy.",
+        "snippet": "PubMed ID: 33353845. 2021/09/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techniques, more recently, electronic brachytherapy (EB) has \nemerged as a potential alternative. At this time, there are no evidence-based \nguidelines to assist clinicians in patient selection for EB and concerns exits \nregarding differences in dosimetry as compared to traditional brachytherapy \ntechniq",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33353845/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Electronic brachytherapy: overused and overpriced?",
+        "snippet": "PubMed ID: 26562266. 2015/09/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techniques, more recently, electronic brachytherapy (EB) has \nemerged as a potential alternative. At this time, there are no evidence-based \nguidelines to assist clinicians in patient selection for EB and concerns exits \nregarding differences in dosimetry as compared to traditional brachytherapy \ntechniq",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/26562266/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 25748070. 2015/05/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techn\n2. PubMed ID: 36725199. 2023/01/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techn\n3. PubMed ID: 30497939. 2019/05/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techn",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/25748070/",
+      "https://pubmed.ncbi.nlm.nih.gov/36725199/",
+      "https://pubmed.ncbi.nlm.nih.gov/30497939/",
+      "https://pubmed.ncbi.nlm.nih.gov/33353845/",
+      "https://pubmed.ncbi.nlm.nih.gov/26562266/"
+    ],
+    "evidence_chain_id": "20260603_160811_350314",
+    "evidence_summary": {
+      "response_id": "20260603_160811_350314",
+      "query": "electronic brachytherapy miniature X-ray source technical specifications clinical applications",
+      "created_at": "2026-06-03T16:08:11.350344",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Electronic brachytherapy--current status and future directions.](https://pubmed.ncbi.nlm.nih.gov/25748070/)",
+        "[Intraoperative radiation and electronic brachytherapy in Brachytherapy: A look back and forward.](https://pubmed.ncbi.nlm.nih.gov/36725199/)",
+        "[The American Brachytherapy Society consensus statement for electronic brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/30497939/)",
+        "[Breast brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/33353845/)",
+        "[Electronic brachytherapy: overused and overpriced?](https://pubmed.ncbi.nlm.nih.gov/26562266/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "b571e621e7cc",
+          "claim": "PubMed ID: 25748070. 2015/05/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techn",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/25748070/",
+          "source_type": "PubMed",
+          "source_title": "Electronic brachytherapy--current status and future directions.",
+          "accessed_at": "2026-06-03T16:08:13.002300",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 25748070. 2015/05/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techniques, more recently, electronic brachytherapy (EB) has \nemerged as a potential alternative. At this time, there are no evidence-based \nguidelines to assist clinicians in patient selection for EB and concerns exits \nregarding differences in dosimetry as compared to traditional brachytherapy \ntechniq",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "electronic brachytherapy miniature X-ray source technical specifications clinical applications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8827cc0477ef",
+          "claim": "PubMed ID: 36725199. 2023/01/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techn",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36725199/",
+          "source_type": "PubMed",
+          "source_title": "Intraoperative radiation and electronic brachytherapy in Brachytherapy: A look back and forward.",
+          "accessed_at": "2026-06-03T16:08:13.002388",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36725199. 2023/01/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techniques, more recently, electronic brachytherapy (EB) has \nemerged as a potential alternative. At this time, there are no evidence-based \nguidelines to assist clinicians in patient selection for EB and concerns exits \nregarding differences in dosimetry as compared to traditional brachytherapy \ntechniq",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "electronic brachytherapy miniature X-ray source technical specifications clinical applications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "bc3efeae4e9e",
+          "claim": "PubMed ID: 30497939. 2019/05/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techn",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/30497939/",
+          "source_type": "PubMed",
+          "source_title": "The American Brachytherapy Society consensus statement for electronic brachytherapy.",
+          "accessed_at": "2026-06-03T16:08:13.002416",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 30497939. 2019/05/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techniques, more recently, electronic brachytherapy (EB) has \nemerged as a potential alternative. At this time, there are no evidence-based \nguidelines to assist clinicians in patient selection for EB and concerns exits \nregarding differences in dosimetry as compared to traditional brachytherapy \ntechniq",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "electronic brachytherapy miniature X-ray source technical specifications clinical applications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "4b84ef38ab4d",
+          "claim": "PubMed ID: 33353845. 2021/09/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techn",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33353845/",
+          "source_type": "PubMed",
+          "source_title": "Breast brachytherapy.",
+          "accessed_at": "2026-06-03T16:08:13.002448",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33353845. 2021/09/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techniques, more recently, electronic brachytherapy (EB) has \nemerged as a potential alternative. At this time, there are no evidence-based \nguidelines to assist clinicians in patient selection for EB and concerns exits \nregarding differences in dosimetry as compared to traditional brachytherapy \ntechniq",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "electronic brachytherapy miniature X-ray source technical specifications clinical applications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "0e76b3f5105d",
+          "claim": "PubMed ID: 26562266. 2015/09/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techn",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/26562266/",
+          "source_type": "PubMed",
+          "source_title": "Electronic brachytherapy: overused and overpriced?",
+          "accessed_at": "2026-06-03T16:08:13.002470",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 26562266. 2015/09/01 00:00. PURPOSE: Brachytherapy is utilized in the treatment of many different \nmalignancies; although traditionally performed with low-dose-rate or \nhigh-dose-rate techniques, more recently, electronic brachytherapy (EB) has \nemerged as a potential alternative. At this time, there are no evidence-based \nguidelines to assist clinicians in patient selection for EB and concerns exits \nregarding differences in dosimetry as compared to traditional brachytherapy \ntechniq",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "electronic brachytherapy miniature X-ray source technical specifications clinical applications",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Electronic brachytherapy--current status and future directions.](https://pubmed.ncbi.nlm.nih.gov/25748070/)",
+      "[Intraoperative radiation and electronic brachytherapy in Brachytherapy: A look back and forward.](https://pubmed.ncbi.nlm.nih.gov/36725199/)",
+      "[The American Brachytherapy Society consensus statement for electronic brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/30497939/)",
+      "[Breast brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/33353845/)",
+      "[Electronic brachytherapy: overused and overpriced?](https://pubmed.ncbi.nlm.nih.gov/26562266/)"
+    ]
+  }
+}

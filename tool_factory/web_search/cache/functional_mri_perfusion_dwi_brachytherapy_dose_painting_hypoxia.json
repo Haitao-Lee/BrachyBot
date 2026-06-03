@@ -1,0 +1,160 @@
+{
+  "query": "functional MRI perfusion DWI brachytherapy dose painting hypoxia",
+  "timestamp": 1780413298.9732,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "functional_百度百科",
+        "snippet": "Companies are abandoning conventional functional departments and organizing employees into cross disciplinary teams that focus on particular products, problems or customers.",
+        "url": "https://baike.baidu.com/item/functional/2599905",
+        "source": "Bing CN"
+      },
+      {
+        "title": "FUNCTIONAL中文 (简体)翻译：剑桥词典",
+        "snippet": "FUNCTIONAL翻译：实用的, 为实用而设计的，实用的, 正常工作的, （机器、系统等）正常工作的, 功能性的, （语言）功能性的，实用性的（如道歉、提问或拒绝等）。 了解更多。",
+        "url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/functional",
+        "source": "Bing CN"
+      },
+      {
+        "title": "functional - 搜索 词典",
+        "snippet": "必应词典为您提供functional的释义，美 [ˈfʌŋkʃən (ə)l]，英 [ˈfʌŋkʃ (ə)nəl]，adj. 实用的；作用的；功能的；机能的； 网络释义： 功能性；有功能的；泛函；",
+        "url": "https://global.bing.com/dict/search?q=functional&amp;FORM=BDVSP6&amp;cc=cn",
+        "source": "Bing CN"
+      },
+      {
+        "title": "C++ 标准库 &lt;functional&gt; | 菜鸟教程",
+        "snippet": "C++ 标准库 &lt;functional&gt; C++ 标准库中的 &lt;functional&gt; 头文件提供了一组函数模板，这些模板允许我们使用函数对象（function objects）作为参数传递给算法，或者作为算法的返回值。 函数对象是那些重 …",
+        "url": "https://www.runoob.com/cplusplus/cpp-libs-functional.html",
+        "source": "Bing CN"
+      },
+      {
+        "title": "functional是什么意思_functional的翻译_音标_读音_用法_例句 ...",
+        "snippet": "Companies are abandoning conventional functional departments and organising employees into cross-disciplinary teams that focus on particular products, problems or customers.",
+        "url": "https://www.iciba.com/word?w=functional",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- Companies are abandoning conventional functional departments and organizing employees into cross disciplinary teams that focus on particular products,\n- FUNCTIONAL翻译：实用的, 为实用而设计的，实用的, 正常工作的, （机器、系统等）正常工作的, 功能性的, （语言）功能性的，实用性的（如道歉、提问或拒绝等）。 了解更多。",
+    "sources": [
+      "https://baike.baidu.com/item/functional/2599905",
+      "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/functional",
+      "https://global.bing.com/dict/search?q=functional&amp;FORM=BDVSP6&amp;cc=cn",
+      "https://www.runoob.com/cplusplus/cpp-libs-functional.html",
+      "https://www.iciba.com/word?w=functional"
+    ],
+    "evidence_chain_id": "20260602_231458_079977",
+    "evidence_summary": {
+      "response_id": "20260602_231458_079977",
+      "query": "functional MRI perfusion DWI brachytherapy dose painting hypoxia",
+      "created_at": "2026-06-02T23:14:58.080000",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "verified",
+      "citations": [
+        "[functional_百度百科](https://baike.baidu.com/item/functional/2599905)",
+        "[FUNCTIONAL中文 (简体)翻译：剑桥词典](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/functional)",
+        "[functional - 搜索 词典](https://global.bing.com/dict/search?q=functional&amp;FORM=BDVSP6&amp;cc=cn)",
+        "[C++ 标准库 &lt;functional&gt; | 菜鸟教程](https://www.runoob.com/cplusplus/cpp-libs-functional.html)",
+        "[functional是什么意思_functional的翻译_音标_读音_用法_例句 ...](https://www.iciba.com/word?w=functional)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "1145989c06a1",
+          "claim": "Companies are abandoning conventional functional departments and organizing employees into cross disciplinary teams that focus on particular products, problems or customers.",
+          "source_url": "https://baike.baidu.com/item/functional/2599905",
+          "source_type": "Bing CN",
+          "source_title": "functional_百度百科",
+          "accessed_at": "2026-06-02T23:14:58.972772",
+          "published_at": "",
+          "raw_snippet": "Companies are abandoning conventional functional departments and organizing employees into cross disciplinary teams that focus on particular products, problems or customers.",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "verified",
+          "cross_references": [],
+          "search_query": "functional MRI perfusion DWI brachytherapy dose painting hypoxia",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e1932e616aa0",
+          "claim": "FUNCTIONAL翻译：实用的, 为实用而设计的，实用的, 正常工作的, （机器、系统等）正常工作的, 功能性的, （语言）功能性的，实用性的（如道歉、提问或拒绝等）。 了解更多。",
+          "source_url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/functional",
+          "source_type": "Bing CN",
+          "source_title": "FUNCTIONAL中文 (简体)翻译：剑桥词典",
+          "accessed_at": "2026-06-02T23:14:58.972873",
+          "published_at": "",
+          "raw_snippet": "FUNCTIONAL翻译：实用的, 为实用而设计的，实用的, 正常工作的, （机器、系统等）正常工作的, 功能性的, （语言）功能性的，实用性的（如道歉、提问或拒绝等）。 了解更多。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "functional MRI perfusion DWI brachytherapy dose painting hypoxia",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "700372ab9ea4",
+          "claim": "必应词典为您提供functional的释义，美 [ˈfʌŋkʃən (ə)l]，英 [ˈfʌŋkʃ (ə)nəl]，adj. 实用的；作用的；功能的；机能的； 网络释义： 功能性；有功能的；泛函；",
+          "source_url": "https://global.bing.com/dict/search?q=functional&amp;FORM=BDVSP6&amp;cc=cn",
+          "source_type": "Bing CN",
+          "source_title": "functional - 搜索 词典",
+          "accessed_at": "2026-06-02T23:14:58.972908",
+          "published_at": "",
+          "raw_snippet": "必应词典为您提供functional的释义，美 [ˈfʌŋkʃən (ə)l]，英 [ˈfʌŋkʃ (ə)nəl]，adj. 实用的；作用的；功能的；机能的； 网络释义： 功能性；有功能的；泛函；",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "functional MRI perfusion DWI brachytherapy dose painting hypoxia",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e99a88a4180b",
+          "claim": "C++ 标准库 &lt;functional&gt; C++ 标准库中的 &lt;functional&gt; 头文件提供了一组函数模板，这些模板允许我们使用函数对象（function objects）作为参数传递给算法，或者作为算法的返回值。 函数对象是那些重 …",
+          "source_url": "https://www.runoob.com/cplusplus/cpp-libs-functional.html",
+          "source_type": "Bing CN",
+          "source_title": "C++ 标准库 &lt;functional&gt; | 菜鸟教程",
+          "accessed_at": "2026-06-02T23:14:58.972935",
+          "published_at": "",
+          "raw_snippet": "C++ 标准库 &lt;functional&gt; C++ 标准库中的 &lt;functional&gt; 头文件提供了一组函数模板，这些模板允许我们使用函数对象（function objects）作为参数传递给算法，或者作为算法的返回值。 函数对象是那些重 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "functional MRI perfusion DWI brachytherapy dose painting hypoxia",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "d2c0de725b11",
+          "claim": "Companies are abandoning conventional functional departments and organising employees into cross-disciplinary teams that focus on particular products, problems or customers.",
+          "source_url": "https://www.iciba.com/word?w=functional",
+          "source_type": "Bing CN",
+          "source_title": "functional是什么意思_functional的翻译_音标_读音_用法_例句 ...",
+          "accessed_at": "2026-06-02T23:14:58.972958",
+          "published_at": "",
+          "raw_snippet": "Companies are abandoning conventional functional departments and organising employees into cross-disciplinary teams that focus on particular products, problems or customers.",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "verified",
+          "cross_references": [],
+          "search_query": "functional MRI perfusion DWI brachytherapy dose painting hypoxia",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[functional_百度百科](https://baike.baidu.com/item/functional/2599905)",
+      "[FUNCTIONAL中文 (简体)翻译：剑桥词典](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/functional)",
+      "[functional - 搜索 词典](https://global.bing.com/dict/search?q=functional&amp;FORM=BDVSP6&amp;cc=cn)",
+      "[C++ 标准库 &lt;functional&gt; | 菜鸟教程](https://www.runoob.com/cplusplus/cpp-libs-functional.html)",
+      "[functional是什么意思_functional的翻译_音标_读音_用法_例句 ...](https://www.iciba.com/word?w=functional)"
+    ]
+  }
+}

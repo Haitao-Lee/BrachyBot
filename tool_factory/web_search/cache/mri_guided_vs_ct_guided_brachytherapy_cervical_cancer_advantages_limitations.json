@@ -1,0 +1,160 @@
+{
+  "query": "MRI-guided vs CT-guided brachytherapy cervical cancer advantages limitations",
+  "timestamp": 1780420678.3203912,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Microultrasonography-Guided vs MRI-Guided Biopsy for Prostate Cancer Diagnosis: The OPTIMUM Randomized Clinical Trial.",
+        "snippet": "PubMed ID: 40121537. 2025/05/20 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40121537/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Effect of MRI-Guided Fibrosis Ablation vs Conventional Catheter Ablation on Atrial Arrhythmia Recurrence in Patients With Persistent Atrial Fibrillation: The DECAAF II Randomized Clinical Trial.",
+        "snippet": "PubMed ID: 35727277. 2022/06/21 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35727277/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Magnetic Resonance Imaging-Guided vs Computed Tomography-Guided Stereotactic Body Radiotherapy for Prostate Cancer: The MIRAGE Randomized Clinical Trial.",
+        "snippet": "PubMed ID: 36633877. 2023/03/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36633877/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Microultrasonography-Guided vs MRI-Guided Biopsy for Prostate Cancer Diagnosis.",
+        "snippet": "PubMed ID: 40658431. 2025/08/19 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40658431/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Staged Bilateral MRI-Guided Focused Ultrasound Subthalamotomy for Parkinson Disease.",
+        "snippet": "PubMed ID: 38739377. 2024/06/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38739377/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 40121537. 2025/05/20 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran\n2. PubMed ID: 35727277. 2022/06/21 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran\n3. PubMed ID: 36633877. 2023/03/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/40121537/",
+      "https://pubmed.ncbi.nlm.nih.gov/35727277/",
+      "https://pubmed.ncbi.nlm.nih.gov/36633877/",
+      "https://pubmed.ncbi.nlm.nih.gov/40658431/",
+      "https://pubmed.ncbi.nlm.nih.gov/38739377/"
+    ],
+    "evidence_chain_id": "20260603_011756_354791",
+    "evidence_summary": {
+      "response_id": "20260603_011756_354791",
+      "query": "MRI-guided vs CT-guided brachytherapy cervical cancer advantages limitations",
+      "created_at": "2026-06-03T01:17:56.354824",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Microultrasonography-Guided vs MRI-Guided Biopsy for Prostate Cancer Diagnosis: The OPTIMUM Randomized Clinical Trial.](https://pubmed.ncbi.nlm.nih.gov/40121537/)",
+        "[Effect of MRI-Guided Fibrosis Ablation vs Conventional Catheter Ablation on Atrial Arrhythmia Recurrence in Patients With Persistent Atrial Fibrillation: The DECAAF II Randomized Clinical Trial.](https://pubmed.ncbi.nlm.nih.gov/35727277/)",
+        "[Magnetic Resonance Imaging-Guided vs Computed Tomography-Guided Stereotactic Body Radiotherapy for Prostate Cancer: The MIRAGE Randomized Clinical Trial.](https://pubmed.ncbi.nlm.nih.gov/36633877/)",
+        "[Microultrasonography-Guided vs MRI-Guided Biopsy for Prostate Cancer Diagnosis.](https://pubmed.ncbi.nlm.nih.gov/40658431/)",
+        "[Staged Bilateral MRI-Guided Focused Ultrasound Subthalamotomy for Parkinson Disease.](https://pubmed.ncbi.nlm.nih.gov/38739377/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "9d2fb85a7ade",
+          "claim": "PubMed ID: 40121537. 2025/05/20 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40121537/",
+          "source_type": "PubMed",
+          "source_title": "Microultrasonography-Guided vs MRI-Guided Biopsy for Prostate Cancer Diagnosis: The OPTIMUM Randomized Clinical Trial.",
+          "accessed_at": "2026-06-03T01:17:58.320008",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40121537. 2025/05/20 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided vs CT-guided brachytherapy cervical cancer advantages limitations",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "005c79912b22",
+          "claim": "PubMed ID: 35727277. 2022/06/21 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35727277/",
+          "source_type": "PubMed",
+          "source_title": "Effect of MRI-Guided Fibrosis Ablation vs Conventional Catheter Ablation on Atrial Arrhythmia Recurrence in Patients With Persistent Atrial Fibrillation: The DECAAF II Randomized Clinical Trial.",
+          "accessed_at": "2026-06-03T01:17:58.320103",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35727277. 2022/06/21 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided vs CT-guided brachytherapy cervical cancer advantages limitations",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "33abd8e1d0d5",
+          "claim": "PubMed ID: 36633877. 2023/03/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36633877/",
+          "source_type": "PubMed",
+          "source_title": "Magnetic Resonance Imaging-Guided vs Computed Tomography-Guided Stereotactic Body Radiotherapy for Prostate Cancer: The MIRAGE Randomized Clinical Trial.",
+          "accessed_at": "2026-06-03T01:17:58.320135",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36633877. 2023/03/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided vs CT-guided brachytherapy cervical cancer advantages limitations",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c7521c40af8b",
+          "claim": "PubMed ID: 40658431. 2025/08/19 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40658431/",
+          "source_type": "PubMed",
+          "source_title": "Microultrasonography-Guided vs MRI-Guided Biopsy for Prostate Cancer Diagnosis.",
+          "accessed_at": "2026-06-03T01:17:58.320158",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40658431. 2025/08/19 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided vs CT-guided brachytherapy cervical cancer advantages limitations",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "a6555f032fde",
+          "claim": "PubMed ID: 38739377. 2024/06/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38739377/",
+          "source_type": "PubMed",
+          "source_title": "Staged Bilateral MRI-Guided Focused Ultrasound Subthalamotomy for Parkinson Disease.",
+          "accessed_at": "2026-06-03T01:17:58.320178",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38739377. 2024/06/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided vs CT-guided brachytherapy cervical cancer advantages limitations",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Microultrasonography-Guided vs MRI-Guided Biopsy for Prostate Cancer Diagnosis: The OPTIMUM Randomized Clinical Trial.](https://pubmed.ncbi.nlm.nih.gov/40121537/)",
+      "[Effect of MRI-Guided Fibrosis Ablation vs Conventional Catheter Ablation on Atrial Arrhythmia Recurrence in Patients With Persistent Atrial Fibrillation: The DECAAF II Randomized Clinical Trial.](https://pubmed.ncbi.nlm.nih.gov/35727277/)",
+      "[Magnetic Resonance Imaging-Guided vs Computed Tomography-Guided Stereotactic Body Radiotherapy for Prostate Cancer: The MIRAGE Randomized Clinical Trial.](https://pubmed.ncbi.nlm.nih.gov/36633877/)",
+      "[Microultrasonography-Guided vs MRI-Guided Biopsy for Prostate Cancer Diagnosis.](https://pubmed.ncbi.nlm.nih.gov/40658431/)",
+      "[Staged Bilateral MRI-Guided Focused Ultrasound Subthalamotomy for Parkinson Disease.](https://pubmed.ncbi.nlm.nih.gov/38739377/)"
+    ]
+  }
+}

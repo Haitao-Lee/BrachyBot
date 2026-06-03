@@ -1,0 +1,160 @@
+{
+  "query": "Meta DINOv3 vision transformer self-supervised learning",
+  "timestamp": 1780410072.0440514,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Meta（美国以社交网络、虚拟现实等为主的上市公司）_百度百科",
+        "snippet": "Meta公司（Meta Platform Inc），原名Facebook，是美国一家互联网科技公司，由马克&#183;扎克伯格创立于2004年2月4日，总部位于加利福尼亚州门洛帕克。 其核心业务涵盖社交网络、虚拟现实及人工智能 …",
+        "url": "https://baike.baidu.com/item/Meta/62004169",
+        "source": "Bing CN"
+      },
+      {
+        "title": "Latest Meta Company News | Meta Newsroom - About Facebook",
+        "snippet": "Meta Partners With Broadcom to Co-Develop Custom AI Silicon April 14, 2026April 14, 2026 See More News Next &#187;",
+        "url": "https://about.fb.com/news/category/technologies/meta/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "META-快懂百科",
+        "snippet": "2004年2月4日 · Meta，原名Facebook，是美国一家经营社交网络服务、虚拟现实、元宇宙等产品的互联网科技公司。2004年2月4日，由马克&#183;扎克伯格创立并担任首席执行官，总部位于美国加州门洛帕 …",
+        "url": "https://m.baike.com/wikiid/7024039443887838471",
+        "source": "Bing CN"
+      },
+      {
+        "title": "Meta - Home",
+        "snippet": "Meta to Participate in the Morgan Stanley Technology, Media &amp; Telecom Conference February 25, 2026",
+        "url": "https://investor.atmeta.com/home/default.aspx",
+        "source": "Bing CN"
+      },
+      {
+        "title": "为巨额亏损的硬件业务寻找新出路，Meta 2027年将内测AI吊坠",
+        "snippet": "1 天前 · 5月30日，外媒The Information曝出最新消息，Meta预计在2027年春季启动AI吊坠产品的内部测试。这一动作被视作其硬件部门Reality Labs的重大战略调整，在VR ...",
+        "url": "https://news.qq.com/rain/a/20260601A04ZYJ00",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- Meta公司（Meta Platform Inc），原名Facebook，是美国一家互联网科技公司，由马克&#183;扎克伯格创立于2004年2月4日，总部位于加利福尼亚州门洛帕克。 其核心业务涵盖社交网络、虚拟现实及人工智能 …\n- Meta Partners With Broadcom to Co-Develop Custom AI Silicon April 14, 2026April 14, 2026 See More News Next &#187;",
+    "sources": [
+      "https://baike.baidu.com/item/Meta/62004169",
+      "https://about.fb.com/news/category/technologies/meta/",
+      "https://m.baike.com/wikiid/7024039443887838471",
+      "https://investor.atmeta.com/home/default.aspx",
+      "https://news.qq.com/rain/a/20260601A04ZYJ00"
+    ],
+    "evidence_chain_id": "20260602_222111_111988",
+    "evidence_summary": {
+      "response_id": "20260602_222111_111988",
+      "query": "Meta DINOv3 vision transformer self-supervised learning",
+      "created_at": "2026-06-02T22:21:11.112012",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[Meta（美国以社交网络、虚拟现实等为主的上市公司）_百度百科](https://baike.baidu.com/item/Meta/62004169)",
+        "[Latest Meta Company News | Meta Newsroom - About Facebook](https://about.fb.com/news/category/technologies/meta/)",
+        "[META-快懂百科](https://m.baike.com/wikiid/7024039443887838471)",
+        "[Meta - Home](https://investor.atmeta.com/home/default.aspx)",
+        "[为巨额亏损的硬件业务寻找新出路，Meta 2027年将内测AI吊坠](https://news.qq.com/rain/a/20260601A04ZYJ00)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "d9c9f1656160",
+          "claim": "Meta公司（Meta Platform Inc），原名Facebook，是美国一家互联网科技公司，由马克&#183;扎克伯格创立于2004年2月4日，总部位于加利福尼亚州门洛帕克。 其核心业务涵盖社交网络、虚拟现实及人工智能 …",
+          "source_url": "https://baike.baidu.com/item/Meta/62004169",
+          "source_type": "Bing CN",
+          "source_title": "Meta（美国以社交网络、虚拟现实等为主的上市公司）_百度百科",
+          "accessed_at": "2026-06-02T22:21:12.043669",
+          "published_at": "",
+          "raw_snippet": "Meta公司（Meta Platform Inc），原名Facebook，是美国一家互联网科技公司，由马克&#183;扎克伯格创立于2004年2月4日，总部位于加利福尼亚州门洛帕克。 其核心业务涵盖社交网络、虚拟现实及人工智能 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Meta DINOv3 vision transformer self-supervised learning",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e1a2bbb01d71",
+          "claim": "Meta Partners With Broadcom to Co-Develop Custom AI Silicon April 14, 2026April 14, 2026 See More News Next &#187;",
+          "source_url": "https://about.fb.com/news/category/technologies/meta/",
+          "source_type": "Bing CN",
+          "source_title": "Latest Meta Company News | Meta Newsroom - About Facebook",
+          "accessed_at": "2026-06-02T22:21:12.043767",
+          "published_at": "",
+          "raw_snippet": "Meta Partners With Broadcom to Co-Develop Custom AI Silicon April 14, 2026April 14, 2026 See More News Next &#187;",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Meta DINOv3 vision transformer self-supervised learning",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "4144103c646b",
+          "claim": "2004年2月4日 · Meta，原名Facebook，是美国一家经营社交网络服务、虚拟现实、元宇宙等产品的互联网科技公司。2004年2月4日，由马克&#183;扎克伯格创立并担任首席执行官，总部位于美国加州门洛帕 …",
+          "source_url": "https://m.baike.com/wikiid/7024039443887838471",
+          "source_type": "Bing CN",
+          "source_title": "META-快懂百科",
+          "accessed_at": "2026-06-02T22:21:12.043802",
+          "published_at": "",
+          "raw_snippet": "2004年2月4日 · Meta，原名Facebook，是美国一家经营社交网络服务、虚拟现实、元宇宙等产品的互联网科技公司。2004年2月4日，由马克&#183;扎克伯格创立并担任首席执行官，总部位于美国加州门洛帕 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Meta DINOv3 vision transformer self-supervised learning",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ff2bb09523df",
+          "claim": "Meta to Participate in the Morgan Stanley Technology, Media &amp; Telecom Conference February 25, 2026",
+          "source_url": "https://investor.atmeta.com/home/default.aspx",
+          "source_type": "Bing CN",
+          "source_title": "Meta - Home",
+          "accessed_at": "2026-06-02T22:21:12.043831",
+          "published_at": "",
+          "raw_snippet": "Meta to Participate in the Morgan Stanley Technology, Media &amp; Telecom Conference February 25, 2026",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Meta DINOv3 vision transformer self-supervised learning",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f8cf795a77ac",
+          "claim": "1 天前 · 5月30日，外媒The Information曝出最新消息，Meta预计在2027年春季启动AI吊坠产品的内部测试。这一动作被视作其硬件部门Reality Labs的重大战略调整，在VR ...",
+          "source_url": "https://news.qq.com/rain/a/20260601A04ZYJ00",
+          "source_type": "Bing CN",
+          "source_title": "为巨额亏损的硬件业务寻找新出路，Meta 2027年将内测AI吊坠",
+          "accessed_at": "2026-06-02T22:21:12.043858",
+          "published_at": "",
+          "raw_snippet": "1 天前 · 5月30日，外媒The Information曝出最新消息，Meta预计在2027年春季启动AI吊坠产品的内部测试。这一动作被视作其硬件部门Reality Labs的重大战略调整，在VR ...",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Meta DINOv3 vision transformer self-supervised learning",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Meta（美国以社交网络、虚拟现实等为主的上市公司）_百度百科](https://baike.baidu.com/item/Meta/62004169)",
+      "[Latest Meta Company News | Meta Newsroom - About Facebook](https://about.fb.com/news/category/technologies/meta/)",
+      "[META-快懂百科](https://m.baike.com/wikiid/7024039443887838471)",
+      "[Meta - Home](https://investor.atmeta.com/home/default.aspx)",
+      "[为巨额亏损的硬件业务寻找新出路，Meta 2027年将内测AI吊坠](https://news.qq.com/rain/a/20260601A04ZYJ00)"
+    ]
+  }
+}

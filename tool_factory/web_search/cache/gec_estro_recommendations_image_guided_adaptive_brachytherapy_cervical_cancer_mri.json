@@ -1,0 +1,160 @@
+{
+  "query": "GEC-ESTRO recommendations image-guided adaptive brachytherapy cervical cancer MRI",
+  "timestamp": 1780410419.890235,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Recommendations from gynaecological (GYN) GEC ESTRO working group (II): concepts and terms in 3D image-based treatment planning in cervix cancer brachytherapy-3D dose volume parameters and aspects of 3D image-based anatomy, radiation physics, radiobiology.",
+        "snippet": "PubMed ID: 16403584. 2006/01/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general \nrecommendations on behalf of the GEC-ESTRO Group.\nMETHODS: We have done an exhaustive review of published articles to look for \ngeneral recommendations.\nRESULTS: Randomized controlled trials, systemic reviews and meta-analysis are \nlacking in literature and there is wide variety of prescription te",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/16403584/",
+        "source": "PubMed"
+      },
+      {
+        "title": "GEC-ESTRO ACROP recommendations in skin brachytherapy.",
+        "snippet": "PubMed ID: 29455924. 2018/03/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general \nrecommendations on behalf of the GEC-ESTRO Group.\nMETHODS: We have done an exhaustive review of published articles to look for \ngeneral recommendations.\nRESULTS: Randomized controlled trials, systemic reviews and meta-analysis are \nlacking in literature and there is wide variety of prescription te",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29455924/",
+        "source": "PubMed"
+      },
+      {
+        "title": "IBS-GEC ESTRO-ABS recommendations for CT based contouring in image guided adaptive brachytherapy for cervical cancer.",
+        "snippet": "PubMed ID: 34019918. 2021/07/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general \nrecommendations on behalf of the GEC-ESTRO Group.\nMETHODS: We have done an exhaustive review of published articles to look for \ngeneral recommendations.\nRESULTS: Randomized controlled trials, systemic reviews and meta-analysis are \nlacking in literature and there is wide variety of prescription te",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34019918/",
+        "source": "PubMed"
+      },
+      {
+        "title": "GEC-ESTRO recommendations for head & neck cancer brachytherapy (interventional radiotherapy): 2nd update with focus on HDR and PDR.",
+        "snippet": "PubMed ID: 39284416. 2024/12/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general \nrecommendations on behalf of the GEC-ESTRO Group.\nMETHODS: We have done an exhaustive review of published articles to look for \ngeneral recommendations.\nRESULTS: Randomized controlled trials, systemic reviews and meta-analysis are \nlacking in literature and there is wide variety of prescription te",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39284416/",
+        "source": "PubMed"
+      },
+      {
+        "title": "GEC-ESTRO ACROP prostate brachytherapy guidelines.",
+        "snippet": "PubMed ID: 34999134. 2022/02/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general \nrecommendations on behalf of the GEC-ESTRO Group.\nMETHODS: We have done an exhaustive review of published articles to look for \ngeneral recommendations.\nRESULTS: Randomized controlled trials, systemic reviews and meta-analysis are \nlacking in literature and there is wide variety of prescription te",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34999134/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 16403584. 2006/01/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general\n2. PubMed ID: 29455924. 2018/03/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general\n3. PubMed ID: 34019918. 2021/07/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/16403584/",
+      "https://pubmed.ncbi.nlm.nih.gov/29455924/",
+      "https://pubmed.ncbi.nlm.nih.gov/34019918/",
+      "https://pubmed.ncbi.nlm.nih.gov/39284416/",
+      "https://pubmed.ncbi.nlm.nih.gov/34999134/"
+    ],
+    "evidence_chain_id": "20260602_222658_150146",
+    "evidence_summary": {
+      "response_id": "20260602_222658_150146",
+      "query": "GEC-ESTRO recommendations image-guided adaptive brachytherapy cervical cancer MRI",
+      "created_at": "2026-06-02T22:26:58.150170",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Recommendations from gynaecological (GYN) GEC ESTRO working group (II): concepts and terms in 3D image-based treatment planning in cervix cancer brachytherapy-3D dose volume parameters and aspects of 3D image-based anatomy, radiation physics, radiobiology.](https://pubmed.ncbi.nlm.nih.gov/16403584/)",
+        "[GEC-ESTRO ACROP recommendations in skin brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/29455924/)",
+        "[IBS-GEC ESTRO-ABS recommendations for CT based contouring in image guided adaptive brachytherapy for cervical cancer.](https://pubmed.ncbi.nlm.nih.gov/34019918/)",
+        "[GEC-ESTRO recommendations for head & neck cancer brachytherapy (interventional radiotherapy): 2nd update with focus on HDR and PDR.](https://pubmed.ncbi.nlm.nih.gov/39284416/)",
+        "[GEC-ESTRO ACROP prostate brachytherapy guidelines.](https://pubmed.ncbi.nlm.nih.gov/34999134/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "21983d455bb6",
+          "claim": "PubMed ID: 16403584. 2006/01/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/16403584/",
+          "source_type": "PubMed",
+          "source_title": "Recommendations from gynaecological (GYN) GEC ESTRO working group (II): concepts and terms in 3D image-based treatment planning in cervix cancer brachytherapy-3D dose volume parameters and aspects of 3D image-based anatomy, radiation physics, radiobiology.",
+          "accessed_at": "2026-06-02T22:26:59.889841",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 16403584. 2006/01/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general \nrecommendations on behalf of the GEC-ESTRO Group.\nMETHODS: We have done an exhaustive review of published articles to look for \ngeneral recommendations.\nRESULTS: Randomized controlled trials, systemic reviews and meta-analysis are \nlacking in literature and there is wide variety of prescription te",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "GEC-ESTRO recommendations image-guided adaptive brachytherapy cervical cancer MRI",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "4ba7b34589b4",
+          "claim": "PubMed ID: 29455924. 2018/03/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/29455924/",
+          "source_type": "PubMed",
+          "source_title": "GEC-ESTRO ACROP recommendations in skin brachytherapy.",
+          "accessed_at": "2026-06-02T22:26:59.889944",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 29455924. 2018/03/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general \nrecommendations on behalf of the GEC-ESTRO Group.\nMETHODS: We have done an exhaustive review of published articles to look for \ngeneral recommendations.\nRESULTS: Randomized controlled trials, systemic reviews and meta-analysis are \nlacking in literature and there is wide variety of prescription te",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "GEC-ESTRO recommendations image-guided adaptive brachytherapy cervical cancer MRI",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "7e35d12923c9",
+          "claim": "PubMed ID: 34019918. 2021/07/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34019918/",
+          "source_type": "PubMed",
+          "source_title": "IBS-GEC ESTRO-ABS recommendations for CT based contouring in image guided adaptive brachytherapy for cervical cancer.",
+          "accessed_at": "2026-06-02T22:26:59.889975",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34019918. 2021/07/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general \nrecommendations on behalf of the GEC-ESTRO Group.\nMETHODS: We have done an exhaustive review of published articles to look for \ngeneral recommendations.\nRESULTS: Randomized controlled trials, systemic reviews and meta-analysis are \nlacking in literature and there is wide variety of prescription te",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "GEC-ESTRO recommendations image-guided adaptive brachytherapy cervical cancer MRI",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2c3b27f83c60",
+          "claim": "PubMed ID: 39284416. 2024/12/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39284416/",
+          "source_type": "PubMed",
+          "source_title": "GEC-ESTRO recommendations for head & neck cancer brachytherapy (interventional radiotherapy): 2nd update with focus on HDR and PDR.",
+          "accessed_at": "2026-06-02T22:26:59.890000",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39284416. 2024/12/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general \nrecommendations on behalf of the GEC-ESTRO Group.\nMETHODS: We have done an exhaustive review of published articles to look for \ngeneral recommendations.\nRESULTS: Randomized controlled trials, systemic reviews and meta-analysis are \nlacking in literature and there is wide variety of prescription te",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "GEC-ESTRO recommendations image-guided adaptive brachytherapy cervical cancer MRI",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "481b58ba16ea",
+          "claim": "PubMed ID: 34999134. 2022/02/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34999134/",
+          "source_type": "PubMed",
+          "source_title": "GEC-ESTRO ACROP prostate brachytherapy guidelines.",
+          "accessed_at": "2026-06-02T22:26:59.890023",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34999134. 2022/02/01 00:00. PURPOSE: The aim of this publication is to compile available literature data and \nexpert experience regarding skin brachytherapy (BT) in order to produce general \nrecommendations on behalf of the GEC-ESTRO Group.\nMETHODS: We have done an exhaustive review of published articles to look for \ngeneral recommendations.\nRESULTS: Randomized controlled trials, systemic reviews and meta-analysis are \nlacking in literature and there is wide variety of prescription te",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "GEC-ESTRO recommendations image-guided adaptive brachytherapy cervical cancer MRI",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Recommendations from gynaecological (GYN) GEC ESTRO working group (II): concepts and terms in 3D image-based treatment planning in cervix cancer brachytherapy-3D dose volume parameters and aspects of 3D image-based anatomy, radiation physics, radiobiology.](https://pubmed.ncbi.nlm.nih.gov/16403584/)",
+      "[GEC-ESTRO ACROP recommendations in skin brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/29455924/)",
+      "[IBS-GEC ESTRO-ABS recommendations for CT based contouring in image guided adaptive brachytherapy for cervical cancer.](https://pubmed.ncbi.nlm.nih.gov/34019918/)",
+      "[GEC-ESTRO recommendations for head & neck cancer brachytherapy (interventional radiotherapy): 2nd update with focus on HDR and PDR.](https://pubmed.ncbi.nlm.nih.gov/39284416/)",
+      "[GEC-ESTRO ACROP prostate brachytherapy guidelines.](https://pubmed.ncbi.nlm.nih.gov/34999134/)"
+    ]
+  }
+}

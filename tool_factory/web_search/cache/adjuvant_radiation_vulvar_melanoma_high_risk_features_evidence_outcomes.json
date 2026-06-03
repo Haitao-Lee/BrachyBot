@@ -1,0 +1,160 @@
+{
+  "query": "adjuvant radiation vulvar melanoma high-risk features evidence outcomes",
+  "timestamp": 1780429724.6247294,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Treatment Landscape of Renal Cell Carcinoma.",
+        "snippet": "PubMed ID: 38153686. 2023/12/01 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto determine the safety of hypofractionated proton beam radiation therapy (PBT) \nduring adjuvant chemotherapy.\nMETHODS AND MATERIALS: Nine patients were enrolled in a single-institution phase \n1 trial (NCT03885284) between 2019 and 2022. Patients had PDAC of the pancreatic \nhead and underwent R0 or R1 re",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38153686/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Immunomodulatory activity of gamma radiation-attenuated Toxoplasma gondii in adjuvant arthritic mice.",
+        "snippet": "PubMed ID: 32505115. 2020/08/01 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto determine the safety of hypofractionated proton beam radiation therapy (PBT) \nduring adjuvant chemotherapy.\nMETHODS AND MATERIALS: Nine patients were enrolled in a single-institution phase \n1 trial (NCT03885284) between 2019 and 2022. Patients had PDAC of the pancreatic \nhead and underwent R0 or R1 re",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32505115/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Radiotherapy for Meningioma.",
+        "snippet": "PubMed ID: 37432622. 2023/01/01 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto determine the safety of hypofractionated proton beam radiation therapy (PBT) \nduring adjuvant chemotherapy.\nMETHODS AND MATERIALS: Nine patients were enrolled in a single-institution phase \n1 trial (NCT03885284) between 2019 and 2022. Patients had PDAC of the pancreatic \nhead and underwent R0 or R1 re",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37432622/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Phase 1 Study of Hypofractionated Proton Beam Radiation Therapy in Adjuvant Pancreatic Cancer (PROTON-PANC).",
+        "snippet": "PubMed ID: 37717786. 2024/02/01 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto determine the safety of hypofractionated proton beam radiation therapy (PBT) \nduring adjuvant chemotherapy.\nMETHODS AND MATERIALS: Nine patients were enrolled in a single-institution phase \n1 trial (NCT03885284) between 2019 and 2022. Patients had PDAC of the pancreatic \nhead and underwent R0 or R1 re",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37717786/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Advances of Amifostine in Radiation Protection: Administration and Delivery.",
+        "snippet": "PubMed ID: 37747899. 2023/11/06 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto determine the safety of hypofractionated proton beam radiation therapy (PBT) \nduring adjuvant chemotherapy.\nMETHODS AND MATERIALS: Nine patients were enrolled in a single-institution phase \n1 trial (NCT03885284) between 2019 and 2022. Patients had PDAC of the pancreatic \nhead and underwent R0 or R1 re",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37747899/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 38153686. 2023/12/01 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto de\n2. PubMed ID: 32505115. 2020/08/01 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto de\n3. PubMed ID: 37432622. 2023/01/01 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto de",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/38153686/",
+      "https://pubmed.ncbi.nlm.nih.gov/32505115/",
+      "https://pubmed.ncbi.nlm.nih.gov/37432622/",
+      "https://pubmed.ncbi.nlm.nih.gov/37717786/",
+      "https://pubmed.ncbi.nlm.nih.gov/37747899/"
+    ],
+    "evidence_chain_id": "20260603_034842_313684",
+    "evidence_summary": {
+      "response_id": "20260603_034842_313684",
+      "query": "adjuvant radiation vulvar melanoma high-risk features evidence outcomes",
+      "created_at": "2026-06-03T03:48:42.313706",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Treatment Landscape of Renal Cell Carcinoma.](https://pubmed.ncbi.nlm.nih.gov/38153686/)",
+        "[Immunomodulatory activity of gamma radiation-attenuated Toxoplasma gondii in adjuvant arthritic mice.](https://pubmed.ncbi.nlm.nih.gov/32505115/)",
+        "[Radiotherapy for Meningioma.](https://pubmed.ncbi.nlm.nih.gov/37432622/)",
+        "[Phase 1 Study of Hypofractionated Proton Beam Radiation Therapy in Adjuvant Pancreatic Cancer (PROTON-PANC).](https://pubmed.ncbi.nlm.nih.gov/37717786/)",
+        "[Advances of Amifostine in Radiation Protection: Administration and Delivery.](https://pubmed.ncbi.nlm.nih.gov/37747899/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "8118f8c60be2",
+          "claim": "PubMed ID: 38153686. 2023/12/01 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto de",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38153686/",
+          "source_type": "PubMed",
+          "source_title": "Treatment Landscape of Renal Cell Carcinoma.",
+          "accessed_at": "2026-06-03T03:48:44.624338",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38153686. 2023/12/01 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto determine the safety of hypofractionated proton beam radiation therapy (PBT) \nduring adjuvant chemotherapy.\nMETHODS AND MATERIALS: Nine patients were enrolled in a single-institution phase \n1 trial (NCT03885284) between 2019 and 2022. Patients had PDAC of the pancreatic \nhead and underwent R0 or R1 re",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "adjuvant radiation vulvar melanoma high-risk features evidence outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "b87fd037c755",
+          "claim": "PubMed ID: 32505115. 2020/08/01 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto de",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32505115/",
+          "source_type": "PubMed",
+          "source_title": "Immunomodulatory activity of gamma radiation-attenuated Toxoplasma gondii in adjuvant arthritic mice.",
+          "accessed_at": "2026-06-03T03:48:44.624449",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32505115. 2020/08/01 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto determine the safety of hypofractionated proton beam radiation therapy (PBT) \nduring adjuvant chemotherapy.\nMETHODS AND MATERIALS: Nine patients were enrolled in a single-institution phase \n1 trial (NCT03885284) between 2019 and 2022. Patients had PDAC of the pancreatic \nhead and underwent R0 or R1 re",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "adjuvant radiation vulvar melanoma high-risk features evidence outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "383d3da87115",
+          "claim": "PubMed ID: 37432622. 2023/01/01 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto de",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37432622/",
+          "source_type": "PubMed",
+          "source_title": "Radiotherapy for Meningioma.",
+          "accessed_at": "2026-06-03T03:48:44.624495",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37432622. 2023/01/01 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto determine the safety of hypofractionated proton beam radiation therapy (PBT) \nduring adjuvant chemotherapy.\nMETHODS AND MATERIALS: Nine patients were enrolled in a single-institution phase \n1 trial (NCT03885284) between 2019 and 2022. Patients had PDAC of the pancreatic \nhead and underwent R0 or R1 re",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "adjuvant radiation vulvar melanoma high-risk features evidence outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ed35536c9e11",
+          "claim": "PubMed ID: 37717786. 2024/02/01 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto de",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37717786/",
+          "source_type": "PubMed",
+          "source_title": "Phase 1 Study of Hypofractionated Proton Beam Radiation Therapy in Adjuvant Pancreatic Cancer (PROTON-PANC).",
+          "accessed_at": "2026-06-03T03:48:44.624520",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37717786. 2024/02/01 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto determine the safety of hypofractionated proton beam radiation therapy (PBT) \nduring adjuvant chemotherapy.\nMETHODS AND MATERIALS: Nine patients were enrolled in a single-institution phase \n1 trial (NCT03885284) between 2019 and 2022. Patients had PDAC of the pancreatic \nhead and underwent R0 or R1 re",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "adjuvant radiation vulvar melanoma high-risk features evidence outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "61a8abac7ad6",
+          "claim": "PubMed ID: 37747899. 2023/11/06 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto de",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37747899/",
+          "source_type": "PubMed",
+          "source_title": "Advances of Amifostine in Radiation Protection: Administration and Delivery.",
+          "accessed_at": "2026-06-03T03:48:44.624542",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37747899. 2023/11/06 00:00. PURPOSE: Despite improvement in systemic therapy, patients with pancreatic \nductal adenocarcinoma (PDAC) frequently experience local recurrence. We sought \nto determine the safety of hypofractionated proton beam radiation therapy (PBT) \nduring adjuvant chemotherapy.\nMETHODS AND MATERIALS: Nine patients were enrolled in a single-institution phase \n1 trial (NCT03885284) between 2019 and 2022. Patients had PDAC of the pancreatic \nhead and underwent R0 or R1 re",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "adjuvant radiation vulvar melanoma high-risk features evidence outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Treatment Landscape of Renal Cell Carcinoma.](https://pubmed.ncbi.nlm.nih.gov/38153686/)",
+      "[Immunomodulatory activity of gamma radiation-attenuated Toxoplasma gondii in adjuvant arthritic mice.](https://pubmed.ncbi.nlm.nih.gov/32505115/)",
+      "[Radiotherapy for Meningioma.](https://pubmed.ncbi.nlm.nih.gov/37432622/)",
+      "[Phase 1 Study of Hypofractionated Proton Beam Radiation Therapy in Adjuvant Pancreatic Cancer (PROTON-PANC).](https://pubmed.ncbi.nlm.nih.gov/37717786/)",
+      "[Advances of Amifostine in Radiation Protection: Administration and Delivery.](https://pubmed.ncbi.nlm.nih.gov/37747899/)"
+    ]
+  }
+}

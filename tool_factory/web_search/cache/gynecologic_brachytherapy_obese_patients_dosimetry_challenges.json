@@ -1,0 +1,160 @@
+{
+  "query": "gynecologic brachytherapy obese patients dosimetry challenges",
+  "timestamp": 1780416069.0220397,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "有一个妹妹是种怎样的体验？ - 知乎",
+        "snippet": "2020年2月26日 · 但也不能说什么都不知道吧 00年的时候搬家，妹妹读幼儿园，有一天我带她去上学，似乎是妹妹第一天不跟妈妈一起走，而且那天幼儿园放假，只不过幼儿园跟小学是在一起的，妈妈又在 …",
+        "url": "https://www.zhihu.com/question/29685255",
+        "source": "Bing CN"
+      },
+      {
+        "title": "徐文兵的爱人是谁 - 百度知道",
+        "snippet": "2022年12月27日 · 小川诗织。在《黄帝内经》第二季《通天》之中，徐文兵和梁冬遵守十年之约，再次开启《黄帝内经》的对话解读，其中徐文兵老师聊到他的现任妻子——小川诗织 (节目里叫小川，网上 …",
+        "url": "https://zhidao.baidu.com/question/1711880086599874820.html",
+        "source": "Bing CN"
+      },
+      {
+        "title": "为什么有人喜欢《缘之空》这类兄妹禁忌之恋的剧情? - 知乎",
+        "snippet": "2010年10月4日 · 日漫里有一批妹系题材的作品，其中优秀代表是伏见司，他的两部大热作品《我的妹妹不可能这么可爱》《埃罗芒阿老师》，全都是跟妹妹谈恋爱。 主打卖点是妹妹的作品还有《最近， …",
+        "url": "https://www.zhihu.com/question/601851638",
+        "source": "Bing CN"
+      },
+      {
+        "title": "歌曲《晚风》歌词 - 百度知道",
+        "snippet": "2023年11月21日 · 歌曲《晚风》歌词如下： 女：温柔的晚风 轻轻吹过爱人的梦中 温柔的晚风 轻轻吹过故乡的天空 温柔的晚风 轻轻吹过城市的灯火 今夜的晚风 你去哪里请告诉我 男：温柔的晚风 轻轻吹过 …",
+        "url": "https://zhidao.baidu.com/question/1393917253131335700.html",
+        "source": "Bing CN"
+      },
+      {
+        "title": "有谁还存有菠萝包轻小说里作者秋也凉写的小说《我才不要 ...",
+        "snippet": "2023年12月1日 · emmm…我只有秋也凉写的《妹妹爱人》又名《只喜欢你》ps：你们现在都找不到了，因为被封了，你懂的，嘿嘿。 但是他写的《我才不要什么姐姐呢》，这本小说我… 显示全部 关注 …",
+        "url": "https://www.zhihu.com/question/343809281",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 2020年2月26日 · 但也不能说什么都不知道吧 00年的时候搬家，妹妹读幼儿园，有一天我带她去上学，似乎是妹妹第一天不跟妈妈一起走，而且那天幼儿园放假，只不过幼儿园跟小学是在一起的，妈妈又在 …\n- 2022年12月27日 · 小川诗织。在《黄帝内经》第二季《通天》之中，徐文兵和梁冬遵守十年之约，再次开启《黄帝内经》的对话解读，其中徐文兵老师聊到他的现任妻子——小川诗织 (节目里叫小川，网上 …",
+    "sources": [
+      "https://www.zhihu.com/question/29685255",
+      "https://zhidao.baidu.com/question/1711880086599874820.html",
+      "https://www.zhihu.com/question/601851638",
+      "https://zhidao.baidu.com/question/1393917253131335700.html",
+      "https://www.zhihu.com/question/343809281"
+    ],
+    "evidence_chain_id": "20260603_000107_439059",
+    "evidence_summary": {
+      "response_id": "20260603_000107_439059",
+      "query": "gynecologic brachytherapy obese patients dosimetry challenges",
+      "created_at": "2026-06-03T00:01:07.439077",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[有一个妹妹是种怎样的体验？ - 知乎](https://www.zhihu.com/question/29685255)",
+        "[徐文兵的爱人是谁 - 百度知道](https://zhidao.baidu.com/question/1711880086599874820.html)",
+        "[为什么有人喜欢《缘之空》这类兄妹禁忌之恋的剧情? - 知乎](https://www.zhihu.com/question/601851638)",
+        "[歌曲《晚风》歌词 - 百度知道](https://zhidao.baidu.com/question/1393917253131335700.html)",
+        "[有谁还存有菠萝包轻小说里作者秋也凉写的小说《我才不要 ...](https://www.zhihu.com/question/343809281)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "45dca1e2c665",
+          "claim": "2020年2月26日 · 但也不能说什么都不知道吧 00年的时候搬家，妹妹读幼儿园，有一天我带她去上学，似乎是妹妹第一天不跟妈妈一起走，而且那天幼儿园放假，只不过幼儿园跟小学是在一起的，妈妈又在 …",
+          "source_url": "https://www.zhihu.com/question/29685255",
+          "source_type": "Bing CN",
+          "source_title": "有一个妹妹是种怎样的体验？ - 知乎",
+          "accessed_at": "2026-06-03T00:01:09.021696",
+          "published_at": "",
+          "raw_snippet": "2020年2月26日 · 但也不能说什么都不知道吧 00年的时候搬家，妹妹读幼儿园，有一天我带她去上学，似乎是妹妹第一天不跟妈妈一起走，而且那天幼儿园放假，只不过幼儿园跟小学是在一起的，妈妈又在 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "gynecologic brachytherapy obese patients dosimetry challenges",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "7d999e6f8b8b",
+          "claim": "2022年12月27日 · 小川诗织。在《黄帝内经》第二季《通天》之中，徐文兵和梁冬遵守十年之约，再次开启《黄帝内经》的对话解读，其中徐文兵老师聊到他的现任妻子——小川诗织 (节目里叫小川，网上 …",
+          "source_url": "https://zhidao.baidu.com/question/1711880086599874820.html",
+          "source_type": "Bing CN",
+          "source_title": "徐文兵的爱人是谁 - 百度知道",
+          "accessed_at": "2026-06-03T00:01:09.021752",
+          "published_at": "",
+          "raw_snippet": "2022年12月27日 · 小川诗织。在《黄帝内经》第二季《通天》之中，徐文兵和梁冬遵守十年之约，再次开启《黄帝内经》的对话解读，其中徐文兵老师聊到他的现任妻子——小川诗织 (节目里叫小川，网上 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "gynecologic brachytherapy obese patients dosimetry challenges",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "92e2134cc8e7",
+          "claim": "2010年10月4日 · 日漫里有一批妹系题材的作品，其中优秀代表是伏见司，他的两部大热作品《我的妹妹不可能这么可爱》《埃罗芒阿老师》，全都是跟妹妹谈恋爱。 主打卖点是妹妹的作品还有《最近， …",
+          "source_url": "https://www.zhihu.com/question/601851638",
+          "source_type": "Bing CN",
+          "source_title": "为什么有人喜欢《缘之空》这类兄妹禁忌之恋的剧情? - 知乎",
+          "accessed_at": "2026-06-03T00:01:09.021784",
+          "published_at": "",
+          "raw_snippet": "2010年10月4日 · 日漫里有一批妹系题材的作品，其中优秀代表是伏见司，他的两部大热作品《我的妹妹不可能这么可爱》《埃罗芒阿老师》，全都是跟妹妹谈恋爱。 主打卖点是妹妹的作品还有《最近， …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "gynecologic brachytherapy obese patients dosimetry challenges",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2bed46e8822b",
+          "claim": "2023年11月21日 · 歌曲《晚风》歌词如下： 女：温柔的晚风 轻轻吹过爱人的梦中 温柔的晚风 轻轻吹过故乡的天空 温柔的晚风 轻轻吹过城市的灯火 今夜的晚风 你去哪里请告诉我 男：温柔的晚风 轻轻吹过 …",
+          "source_url": "https://zhidao.baidu.com/question/1393917253131335700.html",
+          "source_type": "Bing CN",
+          "source_title": "歌曲《晚风》歌词 - 百度知道",
+          "accessed_at": "2026-06-03T00:01:09.021811",
+          "published_at": "",
+          "raw_snippet": "2023年11月21日 · 歌曲《晚风》歌词如下： 女：温柔的晚风 轻轻吹过爱人的梦中 温柔的晚风 轻轻吹过故乡的天空 温柔的晚风 轻轻吹过城市的灯火 今夜的晚风 你去哪里请告诉我 男：温柔的晚风 轻轻吹过 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "gynecologic brachytherapy obese patients dosimetry challenges",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "9eb956694b68",
+          "claim": "2023年12月1日 · emmm…我只有秋也凉写的《妹妹爱人》又名《只喜欢你》ps：你们现在都找不到了，因为被封了，你懂的，嘿嘿。 但是他写的《我才不要什么姐姐呢》，这本小说我… 显示全部 关注 …",
+          "source_url": "https://www.zhihu.com/question/343809281",
+          "source_type": "Bing CN",
+          "source_title": "有谁还存有菠萝包轻小说里作者秋也凉写的小说《我才不要 ...",
+          "accessed_at": "2026-06-03T00:01:09.021837",
+          "published_at": "",
+          "raw_snippet": "2023年12月1日 · emmm…我只有秋也凉写的《妹妹爱人》又名《只喜欢你》ps：你们现在都找不到了，因为被封了，你懂的，嘿嘿。 但是他写的《我才不要什么姐姐呢》，这本小说我… 显示全部 关注 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "gynecologic brachytherapy obese patients dosimetry challenges",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[有一个妹妹是种怎样的体验？ - 知乎](https://www.zhihu.com/question/29685255)",
+      "[徐文兵的爱人是谁 - 百度知道](https://zhidao.baidu.com/question/1711880086599874820.html)",
+      "[为什么有人喜欢《缘之空》这类兄妹禁忌之恋的剧情? - 知乎](https://www.zhihu.com/question/601851638)",
+      "[歌曲《晚风》歌词 - 百度知道](https://zhidao.baidu.com/question/1393917253131335700.html)",
+      "[有谁还存有菠萝包轻小说里作者秋也凉写的小说《我才不要 ...](https://www.zhihu.com/question/343809281)"
+    ]
+  }
+}

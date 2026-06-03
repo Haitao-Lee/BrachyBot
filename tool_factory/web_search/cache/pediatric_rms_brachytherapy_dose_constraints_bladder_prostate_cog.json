@@ -1,0 +1,160 @@
+{
+  "query": "pediatric RMS brachytherapy dose constraints bladder prostate COG",
+  "timestamp": 1780416309.7610826,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Pediatrics | American Academy of Pediatrics",
+        "snippet": "The official journal of the American Academy of Pediatrics and the world's leading pediatrics resource Pediatrics is the most-cited journal in pediatric medicine and among the top 100 most-cited journals in …",
+        "url": "https://publications.aap.org/pediatrics",
+        "source": "Bing CN"
+      },
+      {
+        "title": "PEDIATRIC中文 (简体)翻译：剑桥词典",
+        "snippet": "Now that closure methods using a catheter, like balloon angioplasty, are confronting common anomalies, they are occupying more of the energies of the pediatric cardiologist. This article builds on …",
+        "url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/pediatric",
+        "source": "Bing CN"
+      },
+      {
+        "title": "Pediatric Research - Nature",
+        "snippet": "2025年4月26日 · Pediatric Research publishes original research papers, reviews, and commentaries on the etiologies and treatment of diseases of children and disorders of development, extending from …",
+        "url": "https://www.nature.com/pr/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "pediatric是什么意思_pediatric的翻译_音标_读音_用法_例句 ...",
+        "snippet": "爱词霸权威在线词典,为您提供pediatric的中文意思,pediatric的用法讲解,pediatric的读音,pediatric的同义词,pediatric的反义词,pediatric的例句等英语服务。",
+        "url": "https://www.iciba.com/word?w=pediatric",
+        "source": "Bing CN"
+      },
+      {
+        "title": "Temporal trends in clinical and molecular epidemiology of pediatric ...",
+        "snippet": "2025年11月1日 · We aimed to investigate the temporal trends in the clinical and molecular epidemiology of pediatric hand, foot, and mouth disease (HFMD) since its designation as a notifiable disease (2008).",
+        "url": "https://www.sciencedirect.com/science/article/pii/S0163445325002397",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- The official journal of the American Academy of Pediatrics and the world's leading pediatrics resource Pediatrics is the most-cited journal in pediatr\n- Now that closure methods using a catheter, like balloon angioplasty, are confronting common anomalies, they are occupying more of the energies of the ",
+    "sources": [
+      "https://publications.aap.org/pediatrics",
+      "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/pediatric",
+      "https://www.nature.com/pr/",
+      "https://www.iciba.com/word?w=pediatric",
+      "https://www.sciencedirect.com/science/article/pii/S0163445325002397"
+    ],
+    "evidence_chain_id": "20260603_000508_770917",
+    "evidence_summary": {
+      "response_id": "20260603_000508_770917",
+      "query": "pediatric RMS brachytherapy dose constraints bladder prostate COG",
+      "created_at": "2026-06-03T00:05:08.770935",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[Pediatrics | American Academy of Pediatrics](https://publications.aap.org/pediatrics)",
+        "[PEDIATRIC中文 (简体)翻译：剑桥词典](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/pediatric)",
+        "[Pediatric Research - Nature](https://www.nature.com/pr/)",
+        "[pediatric是什么意思_pediatric的翻译_音标_读音_用法_例句 ...](https://www.iciba.com/word?w=pediatric)",
+        "[Temporal trends in clinical and molecular epidemiology of pediatric ...](https://www.sciencedirect.com/science/article/pii/S0163445325002397)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ec487d1a3907",
+          "claim": "The official journal of the American Academy of Pediatrics and the world's leading pediatrics resource Pediatrics is the most-cited journal in pediatric medicine and among the top 100 most-cited journ",
+          "source_url": "https://publications.aap.org/pediatrics",
+          "source_type": "Bing CN",
+          "source_title": "Pediatrics | American Academy of Pediatrics",
+          "accessed_at": "2026-06-03T00:05:09.760688",
+          "published_at": "",
+          "raw_snippet": "The official journal of the American Academy of Pediatrics and the world's leading pediatrics resource Pediatrics is the most-cited journal in pediatric medicine and among the top 100 most-cited journals in …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric RMS brachytherapy dose constraints bladder prostate COG",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "cda838ce31a2",
+          "claim": "Now that closure methods using a catheter, like balloon angioplasty, are confronting common anomalies, they are occupying more of the energies of the pediatric cardiologist. This article builds on …",
+          "source_url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/pediatric",
+          "source_type": "Bing CN",
+          "source_title": "PEDIATRIC中文 (简体)翻译：剑桥词典",
+          "accessed_at": "2026-06-03T00:05:09.760789",
+          "published_at": "",
+          "raw_snippet": "Now that closure methods using a catheter, like balloon angioplasty, are confronting common anomalies, they are occupying more of the energies of the pediatric cardiologist. This article builds on …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric RMS brachytherapy dose constraints bladder prostate COG",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "9773066a493c",
+          "claim": "2025年4月26日 · Pediatric Research publishes original research papers, reviews, and commentaries on the etiologies and treatment of diseases of children and disorders of development, extending from …",
+          "source_url": "https://www.nature.com/pr/",
+          "source_type": "Bing CN",
+          "source_title": "Pediatric Research - Nature",
+          "accessed_at": "2026-06-03T00:05:09.760821",
+          "published_at": "",
+          "raw_snippet": "2025年4月26日 · Pediatric Research publishes original research papers, reviews, and commentaries on the etiologies and treatment of diseases of children and disorders of development, extending from …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric RMS brachytherapy dose constraints bladder prostate COG",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "fa99218a763a",
+          "claim": "爱词霸权威在线词典,为您提供pediatric的中文意思,pediatric的用法讲解,pediatric的读音,pediatric的同义词,pediatric的反义词,pediatric的例句等英语服务。",
+          "source_url": "https://www.iciba.com/word?w=pediatric",
+          "source_type": "Bing CN",
+          "source_title": "pediatric是什么意思_pediatric的翻译_音标_读音_用法_例句 ...",
+          "accessed_at": "2026-06-03T00:05:09.760849",
+          "published_at": "",
+          "raw_snippet": "爱词霸权威在线词典,为您提供pediatric的中文意思,pediatric的用法讲解,pediatric的读音,pediatric的同义词,pediatric的反义词,pediatric的例句等英语服务。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric RMS brachytherapy dose constraints bladder prostate COG",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "efba9e309ffc",
+          "claim": "2025年11月1日 · We aimed to investigate the temporal trends in the clinical and molecular epidemiology of pediatric hand, foot, and mouth disease (HFMD) since its designation as a notifiable disease (200",
+          "source_url": "https://www.sciencedirect.com/science/article/pii/S0163445325002397",
+          "source_type": "Bing CN",
+          "source_title": "Temporal trends in clinical and molecular epidemiology of pediatric ...",
+          "accessed_at": "2026-06-03T00:05:09.760873",
+          "published_at": "",
+          "raw_snippet": "2025年11月1日 · We aimed to investigate the temporal trends in the clinical and molecular epidemiology of pediatric hand, foot, and mouth disease (HFMD) since its designation as a notifiable disease (2008).",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric RMS brachytherapy dose constraints bladder prostate COG",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Pediatrics | American Academy of Pediatrics](https://publications.aap.org/pediatrics)",
+      "[PEDIATRIC中文 (简体)翻译：剑桥词典](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/pediatric)",
+      "[Pediatric Research - Nature](https://www.nature.com/pr/)",
+      "[pediatric是什么意思_pediatric的翻译_音标_读音_用法_例句 ...](https://www.iciba.com/word?w=pediatric)",
+      "[Temporal trends in clinical and molecular epidemiology of pediatric ...](https://www.sciencedirect.com/science/article/pii/S0163445325002397)"
+    ]
+  }
+}

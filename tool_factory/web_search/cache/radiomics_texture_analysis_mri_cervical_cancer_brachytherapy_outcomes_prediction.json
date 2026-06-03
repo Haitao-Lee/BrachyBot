@@ -1,0 +1,160 @@
+{
+  "query": "radiomics texture analysis MRI cervical cancer brachytherapy outcomes prediction",
+  "timestamp": 1780410599.89283,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Delta radiomics: an updated systematic review.",
+        "snippet": "PubMed ID: 39017760. 2024/08/01 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpoints. Delta radiomics, on the other hand, consists in the analysis of \nfeature variation at different acquisition time points, usually before and after \ntherapy. The aim of this study was to provide a systematic review of the \ndifferent delta radiomics approaches.\nMETHODS: Eligible articles were sea",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39017760/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Artificial intelligence-based MRI radiomics and radiogenomics in glioma.",
+        "snippet": "PubMed ID: 38486342. 2024/03/14 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpoints. Delta radiomics, on the other hand, consists in the analysis of \nfeature variation at different acquisition time points, usually before and after \ntherapy. The aim of this study was to provide a systematic review of the \ndifferent delta radiomics approaches.\nMETHODS: Eligible articles were sea",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38486342/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Radiomics Texture Analysis of Bone Marrow Alterations in MRI Knee Examinations.",
+        "snippet": "PubMed ID: 37998099. 2023/11/20 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpoints. Delta radiomics, on the other hand, consists in the analysis of \nfeature variation at different acquisition time points, usually before and after \ntherapy. The aim of this study was to provide a systematic review of the \ndifferent delta radiomics approaches.\nMETHODS: Eligible articles were sea",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37998099/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Radiomics for Parkinson's disease classification using advanced texture-based biomarkers.",
+        "snippet": "PubMed ID: 37791007. 2023/09/05 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpoints. Delta radiomics, on the other hand, consists in the analysis of \nfeature variation at different acquisition time points, usually before and after \ntherapy. The aim of this study was to provide a systematic review of the \ndifferent delta radiomics approaches.\nMETHODS: Eligible articles were sea",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37791007/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Artificial Intelligence CT Texture Radiomics for Outcome Prediction After EVAR: A Narrative Review.",
+        "snippet": "PubMed ID: 41975677. 2026/03/24 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpoints. Delta radiomics, on the other hand, consists in the analysis of \nfeature variation at different acquisition time points, usually before and after \ntherapy. The aim of this study was to provide a systematic review of the \ndifferent delta radiomics approaches.\nMETHODS: Eligible articles were sea",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/41975677/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 39017760. 2024/08/01 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpo\n2. PubMed ID: 38486342. 2024/03/14 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpo\n3. PubMed ID: 37998099. 2023/11/20 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpo",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/39017760/",
+      "https://pubmed.ncbi.nlm.nih.gov/38486342/",
+      "https://pubmed.ncbi.nlm.nih.gov/37998099/",
+      "https://pubmed.ncbi.nlm.nih.gov/37791007/",
+      "https://pubmed.ncbi.nlm.nih.gov/41975677/"
+    ],
+    "evidence_chain_id": "20260602_222958_294675",
+    "evidence_summary": {
+      "response_id": "20260602_222958_294675",
+      "query": "radiomics texture analysis MRI cervical cancer brachytherapy outcomes prediction",
+      "created_at": "2026-06-02T22:29:58.294708",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Delta radiomics: an updated systematic review.](https://pubmed.ncbi.nlm.nih.gov/39017760/)",
+        "[Artificial intelligence-based MRI radiomics and radiogenomics in glioma.](https://pubmed.ncbi.nlm.nih.gov/38486342/)",
+        "[Radiomics Texture Analysis of Bone Marrow Alterations in MRI Knee Examinations.](https://pubmed.ncbi.nlm.nih.gov/37998099/)",
+        "[Radiomics for Parkinson's disease classification using advanced texture-based biomarkers.](https://pubmed.ncbi.nlm.nih.gov/37791007/)",
+        "[Artificial Intelligence CT Texture Radiomics for Outcome Prediction After EVAR: A Narrative Review.](https://pubmed.ncbi.nlm.nih.gov/41975677/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "7d20c92465c9",
+          "claim": "PubMed ID: 39017760. 2024/08/01 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpo",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39017760/",
+          "source_type": "PubMed",
+          "source_title": "Delta radiomics: an updated systematic review.",
+          "accessed_at": "2026-06-02T22:29:59.892411",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39017760. 2024/08/01 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpoints. Delta radiomics, on the other hand, consists in the analysis of \nfeature variation at different acquisition time points, usually before and after \ntherapy. The aim of this study was to provide a systematic review of the \ndifferent delta radiomics approaches.\nMETHODS: Eligible articles were sea",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiomics texture analysis MRI cervical cancer brachytherapy outcomes prediction",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "eac26f7296d8",
+          "claim": "PubMed ID: 38486342. 2024/03/14 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpo",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38486342/",
+          "source_type": "PubMed",
+          "source_title": "Artificial intelligence-based MRI radiomics and radiogenomics in glioma.",
+          "accessed_at": "2026-06-02T22:29:59.892532",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38486342. 2024/03/14 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpoints. Delta radiomics, on the other hand, consists in the analysis of \nfeature variation at different acquisition time points, usually before and after \ntherapy. The aim of this study was to provide a systematic review of the \ndifferent delta radiomics approaches.\nMETHODS: Eligible articles were sea",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiomics texture analysis MRI cervical cancer brachytherapy outcomes prediction",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "67ad930f8409",
+          "claim": "PubMed ID: 37998099. 2023/11/20 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpo",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37998099/",
+          "source_type": "PubMed",
+          "source_title": "Radiomics Texture Analysis of Bone Marrow Alterations in MRI Knee Examinations.",
+          "accessed_at": "2026-06-02T22:29:59.892564",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37998099. 2023/11/20 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpoints. Delta radiomics, on the other hand, consists in the analysis of \nfeature variation at different acquisition time points, usually before and after \ntherapy. The aim of this study was to provide a systematic review of the \ndifferent delta radiomics approaches.\nMETHODS: Eligible articles were sea",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiomics texture analysis MRI cervical cancer brachytherapy outcomes prediction",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "0939e1a1c4c2",
+          "claim": "PubMed ID: 37791007. 2023/09/05 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpo",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37791007/",
+          "source_type": "PubMed",
+          "source_title": "Radiomics for Parkinson's disease classification using advanced texture-based biomarkers.",
+          "accessed_at": "2026-06-02T22:29:59.892588",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37791007. 2023/09/05 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpoints. Delta radiomics, on the other hand, consists in the analysis of \nfeature variation at different acquisition time points, usually before and after \ntherapy. The aim of this study was to provide a systematic review of the \ndifferent delta radiomics approaches.\nMETHODS: Eligible articles were sea",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiomics texture analysis MRI cervical cancer brachytherapy outcomes prediction",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "74da6b83372c",
+          "claim": "PubMed ID: 41975677. 2026/03/24 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpo",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/41975677/",
+          "source_type": "PubMed",
+          "source_title": "Artificial Intelligence CT Texture Radiomics for Outcome Prediction After EVAR: A Narrative Review.",
+          "accessed_at": "2026-06-02T22:29:59.892611",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 41975677. 2026/03/24 00:00. BACKGROUND: Radiomics can provide quantitative features from medical imaging \nthat can be correlated with various biological features and diverse clinical \nendpoints. Delta radiomics, on the other hand, consists in the analysis of \nfeature variation at different acquisition time points, usually before and after \ntherapy. The aim of this study was to provide a systematic review of the \ndifferent delta radiomics approaches.\nMETHODS: Eligible articles were sea",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiomics texture analysis MRI cervical cancer brachytherapy outcomes prediction",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Delta radiomics: an updated systematic review.](https://pubmed.ncbi.nlm.nih.gov/39017760/)",
+      "[Artificial intelligence-based MRI radiomics and radiogenomics in glioma.](https://pubmed.ncbi.nlm.nih.gov/38486342/)",
+      "[Radiomics Texture Analysis of Bone Marrow Alterations in MRI Knee Examinations.](https://pubmed.ncbi.nlm.nih.gov/37998099/)",
+      "[Radiomics for Parkinson's disease classification using advanced texture-based biomarkers.](https://pubmed.ncbi.nlm.nih.gov/37791007/)",
+      "[Artificial Intelligence CT Texture Radiomics for Outcome Prediction After EVAR: A Narrative Review.](https://pubmed.ncbi.nlm.nih.gov/41975677/)"
+    ]
+  }
+}

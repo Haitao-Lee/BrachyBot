@@ -1,0 +1,160 @@
+{
+  "query": "IORT intraoperative radiation therapy recurrent cervical cancer pelvic exenteration dose applicator guidelines",
+  "timestamp": 1780423558.3219326,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Outcomes Of Intraoperative Radiotherapy (Iort) For Spinal Tumours.",
+        "snippet": "PubMed ID: 35466650. 2022/01/01 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nspinal instability neoplastic score (SINS). A novel technique named \n'Intraoperative radiotherapy (IORT) was proposed where surgery and radiotherapy \nwere performed in the same session. During our literature search, we found no \npublished systematic review or meta-analysis regarding the outcomes of IO",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35466650/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Intraoperative radiotherapy (IORT) as boost in breast cancer.",
+        "snippet": "PubMed ID: 28103903. 2017/01/19 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nspinal instability neoplastic score (SINS). A novel technique named \n'Intraoperative radiotherapy (IORT) was proposed where surgery and radiotherapy \nwere performed in the same session. During our literature search, we found no \npublished systematic review or meta-analysis regarding the outcomes of IO",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28103903/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Intraoperative radiation therapy (IORT) for soft tissue sarcoma - ESTRO IORT Task Force/ACROP recommendations.",
+        "snippet": "PubMed ID: 32679306. 2020/09/01 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nspinal instability neoplastic score (SINS). A novel technique named \n'Intraoperative radiotherapy (IORT) was proposed where surgery and radiotherapy \nwere performed in the same session. During our literature search, we found no \npublished systematic review or meta-analysis regarding the outcomes of IO",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32679306/",
+        "source": "PubMed"
+      },
+      {
+        "title": "ESTRO/ACROP IORT recommendations for intraoperative radiation therapy in locally recurrent rectal cancer.",
+        "snippet": "PubMed ID: 32613091. 2020/06/17 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nspinal instability neoplastic score (SINS). A novel technique named \n'Intraoperative radiotherapy (IORT) was proposed where surgery and radiotherapy \nwere performed in the same session. During our literature search, we found no \npublished systematic review or meta-analysis regarding the outcomes of IO",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32613091/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Intraoperative radiation therapy (IORT) in soft-tissue sarcoma.",
+        "snippet": "PubMed ID: 28100249. 2017/01/19 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nspinal instability neoplastic score (SINS). A novel technique named \n'Intraoperative radiotherapy (IORT) was proposed where surgery and radiotherapy \nwere performed in the same session. During our literature search, we found no \npublished systematic review or meta-analysis regarding the outcomes of IO",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28100249/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 35466650. 2022/01/01 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nsp\n2. PubMed ID: 28103903. 2017/01/19 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nsp\n3. PubMed ID: 32679306. 2020/09/01 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nsp",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/35466650/",
+      "https://pubmed.ncbi.nlm.nih.gov/28103903/",
+      "https://pubmed.ncbi.nlm.nih.gov/32679306/",
+      "https://pubmed.ncbi.nlm.nih.gov/32613091/",
+      "https://pubmed.ncbi.nlm.nih.gov/28100249/"
+    ],
+    "evidence_chain_id": "20260603_020556_165919",
+    "evidence_summary": {
+      "response_id": "20260603_020556_165919",
+      "query": "IORT intraoperative radiation therapy recurrent cervical cancer pelvic exenteration dose applicator guidelines",
+      "created_at": "2026-06-03T02:05:56.165947",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Outcomes Of Intraoperative Radiotherapy (Iort) For Spinal Tumours.](https://pubmed.ncbi.nlm.nih.gov/35466650/)",
+        "[Intraoperative radiotherapy (IORT) as boost in breast cancer.](https://pubmed.ncbi.nlm.nih.gov/28103903/)",
+        "[Intraoperative radiation therapy (IORT) for soft tissue sarcoma - ESTRO IORT Task Force/ACROP recommendations.](https://pubmed.ncbi.nlm.nih.gov/32679306/)",
+        "[ESTRO/ACROP IORT recommendations for intraoperative radiation therapy in locally recurrent rectal cancer.](https://pubmed.ncbi.nlm.nih.gov/32613091/)",
+        "[Intraoperative radiation therapy (IORT) in soft-tissue sarcoma.](https://pubmed.ncbi.nlm.nih.gov/28100249/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "fb9fb3feeb92",
+          "claim": "PubMed ID: 35466650. 2022/01/01 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nsp",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35466650/",
+          "source_type": "PubMed",
+          "source_title": "Outcomes Of Intraoperative Radiotherapy (Iort) For Spinal Tumours.",
+          "accessed_at": "2026-06-03T02:05:58.321519",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35466650. 2022/01/01 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nspinal instability neoplastic score (SINS). A novel technique named \n'Intraoperative radiotherapy (IORT) was proposed where surgery and radiotherapy \nwere performed in the same session. During our literature search, we found no \npublished systematic review or meta-analysis regarding the outcomes of IO",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IORT intraoperative radiation therapy recurrent cervical cancer pelvic exenteration dose applicator guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e8cb53e18a89",
+          "claim": "PubMed ID: 28103903. 2017/01/19 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nsp",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/28103903/",
+          "source_type": "PubMed",
+          "source_title": "Intraoperative radiotherapy (IORT) as boost in breast cancer.",
+          "accessed_at": "2026-06-03T02:05:58.321631",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 28103903. 2017/01/19 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nspinal instability neoplastic score (SINS). A novel technique named \n'Intraoperative radiotherapy (IORT) was proposed where surgery and radiotherapy \nwere performed in the same session. During our literature search, we found no \npublished systematic review or meta-analysis regarding the outcomes of IO",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IORT intraoperative radiation therapy recurrent cervical cancer pelvic exenteration dose applicator guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f63a0cfbe013",
+          "claim": "PubMed ID: 32679306. 2020/09/01 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nsp",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32679306/",
+          "source_type": "PubMed",
+          "source_title": "Intraoperative radiation therapy (IORT) for soft tissue sarcoma - ESTRO IORT Task Force/ACROP recommendations.",
+          "accessed_at": "2026-06-03T02:05:58.321661",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32679306. 2020/09/01 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nspinal instability neoplastic score (SINS). A novel technique named \n'Intraoperative radiotherapy (IORT) was proposed where surgery and radiotherapy \nwere performed in the same session. During our literature search, we found no \npublished systematic review or meta-analysis regarding the outcomes of IO",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IORT intraoperative radiation therapy recurrent cervical cancer pelvic exenteration dose applicator guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f0ec9f37550e",
+          "claim": "PubMed ID: 32613091. 2020/06/17 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nsp",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32613091/",
+          "source_type": "PubMed",
+          "source_title": "ESTRO/ACROP IORT recommendations for intraoperative radiation therapy in locally recurrent rectal cancer.",
+          "accessed_at": "2026-06-03T02:05:58.321686",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32613091. 2020/06/17 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nspinal instability neoplastic score (SINS). A novel technique named \n'Intraoperative radiotherapy (IORT) was proposed where surgery and radiotherapy \nwere performed in the same session. During our literature search, we found no \npublished systematic review or meta-analysis regarding the outcomes of IO",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IORT intraoperative radiation therapy recurrent cervical cancer pelvic exenteration dose applicator guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "28a392a1a62f",
+          "claim": "PubMed ID: 28100249. 2017/01/19 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nsp",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/28100249/",
+          "source_type": "PubMed",
+          "source_title": "Intraoperative radiation therapy (IORT) in soft-tissue sarcoma.",
+          "accessed_at": "2026-06-03T02:05:58.321708",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 28100249. 2017/01/19 00:00. BACKGROUND: The spinal column is a major site of neoplastic proliferation where \ndecisions regarding surgical or radiotherapeutic intervention are based upon \nspinal instability neoplastic score (SINS). A novel technique named \n'Intraoperative radiotherapy (IORT) was proposed where surgery and radiotherapy \nwere performed in the same session. During our literature search, we found no \npublished systematic review or meta-analysis regarding the outcomes of IO",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IORT intraoperative radiation therapy recurrent cervical cancer pelvic exenteration dose applicator guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Outcomes Of Intraoperative Radiotherapy (Iort) For Spinal Tumours.](https://pubmed.ncbi.nlm.nih.gov/35466650/)",
+      "[Intraoperative radiotherapy (IORT) as boost in breast cancer.](https://pubmed.ncbi.nlm.nih.gov/28103903/)",
+      "[Intraoperative radiation therapy (IORT) for soft tissue sarcoma - ESTRO IORT Task Force/ACROP recommendations.](https://pubmed.ncbi.nlm.nih.gov/32679306/)",
+      "[ESTRO/ACROP IORT recommendations for intraoperative radiation therapy in locally recurrent rectal cancer.](https://pubmed.ncbi.nlm.nih.gov/32613091/)",
+      "[Intraoperative radiation therapy (IORT) in soft-tissue sarcoma.](https://pubmed.ncbi.nlm.nih.gov/28100249/)"
+    ]
+  }
+}

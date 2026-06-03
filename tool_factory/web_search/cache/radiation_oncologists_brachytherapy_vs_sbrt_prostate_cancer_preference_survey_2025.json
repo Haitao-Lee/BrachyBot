@@ -1,0 +1,160 @@
+{
+  "query": "radiation oncologists brachytherapy vs SBRT prostate cancer preference survey 2025",
+  "timestamp": 1780463720.6304548,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Basic cancer immunology for radiation oncologists.",
+        "snippet": "PubMed ID: 35352493. 2022/06/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35352493/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Radiation Oncologists and Radiopharmaceutical Therapy: Strategies for Addressing Fair Compensation.",
+        "snippet": "PubMed ID: 37923492. 2023/11/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37923492/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Pharmacologic Pain Management: What Radiation Oncologists Should Know.",
+        "snippet": "PubMed ID: 36990640. 2023/04/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36990640/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Radiation oncologists' perspectives on reducing radiation-induced heart disease in early breast cancer.",
+        "snippet": "PubMed ID: 31748146. 2020/04/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31748146/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Enhancing Career Paths for Tomorrow's Radiation Oncologists.",
+        "snippet": "PubMed ID: 31128144. 2019/09/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31128144/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 35352493. 2022/06/01 00:00\n2. PubMed ID: 37923492. 2023/11/01 00:00\n3. PubMed ID: 36990640. 2023/04/01 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/35352493/",
+      "https://pubmed.ncbi.nlm.nih.gov/37923492/",
+      "https://pubmed.ncbi.nlm.nih.gov/36990640/",
+      "https://pubmed.ncbi.nlm.nih.gov/31748146/",
+      "https://pubmed.ncbi.nlm.nih.gov/31128144/"
+    ],
+    "evidence_chain_id": "20260603_131519_026742",
+    "evidence_summary": {
+      "response_id": "20260603_131519_026742",
+      "query": "radiation oncologists brachytherapy vs SBRT prostate cancer preference survey 2025",
+      "created_at": "2026-06-03T13:15:19.026751",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Basic cancer immunology for radiation oncologists.](https://pubmed.ncbi.nlm.nih.gov/35352493/)",
+        "[Radiation Oncologists and Radiopharmaceutical Therapy: Strategies for Addressing Fair Compensation.](https://pubmed.ncbi.nlm.nih.gov/37923492/)",
+        "[Pharmacologic Pain Management: What Radiation Oncologists Should Know.](https://pubmed.ncbi.nlm.nih.gov/36990640/)",
+        "[Radiation oncologists' perspectives on reducing radiation-induced heart disease in early breast cancer.](https://pubmed.ncbi.nlm.nih.gov/31748146/)",
+        "[Enhancing Career Paths for Tomorrow's Radiation Oncologists.](https://pubmed.ncbi.nlm.nih.gov/31128144/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "c9f5ee979f75",
+          "claim": "PubMed ID: 35352493. 2022/06/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35352493/",
+          "source_type": "PubMed",
+          "source_title": "Basic cancer immunology for radiation oncologists.",
+          "accessed_at": "2026-06-03T13:15:20.629920",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35352493. 2022/06/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiation oncologists brachytherapy vs SBRT prostate cancer preference survey 2025",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "07b717fc8bd5",
+          "claim": "PubMed ID: 37923492. 2023/11/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37923492/",
+          "source_type": "PubMed",
+          "source_title": "Radiation Oncologists and Radiopharmaceutical Therapy: Strategies for Addressing Fair Compensation.",
+          "accessed_at": "2026-06-03T13:15:20.630049",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37923492. 2023/11/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiation oncologists brachytherapy vs SBRT prostate cancer preference survey 2025",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "a04fa29490e6",
+          "claim": "PubMed ID: 36990640. 2023/04/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36990640/",
+          "source_type": "PubMed",
+          "source_title": "Pharmacologic Pain Management: What Radiation Oncologists Should Know.",
+          "accessed_at": "2026-06-03T13:15:20.630103",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36990640. 2023/04/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiation oncologists brachytherapy vs SBRT prostate cancer preference survey 2025",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "caf84e17c480",
+          "claim": "PubMed ID: 31748146. 2020/04/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31748146/",
+          "source_type": "PubMed",
+          "source_title": "Radiation oncologists' perspectives on reducing radiation-induced heart disease in early breast cancer.",
+          "accessed_at": "2026-06-03T13:15:20.630145",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31748146. 2020/04/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiation oncologists brachytherapy vs SBRT prostate cancer preference survey 2025",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "db94c39554f9",
+          "claim": "PubMed ID: 31128144. 2019/09/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31128144/",
+          "source_type": "PubMed",
+          "source_title": "Enhancing Career Paths for Tomorrow's Radiation Oncologists.",
+          "accessed_at": "2026-06-03T13:15:20.630188",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31128144. 2019/09/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiation oncologists brachytherapy vs SBRT prostate cancer preference survey 2025",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Basic cancer immunology for radiation oncologists.](https://pubmed.ncbi.nlm.nih.gov/35352493/)",
+      "[Radiation Oncologists and Radiopharmaceutical Therapy: Strategies for Addressing Fair Compensation.](https://pubmed.ncbi.nlm.nih.gov/37923492/)",
+      "[Pharmacologic Pain Management: What Radiation Oncologists Should Know.](https://pubmed.ncbi.nlm.nih.gov/36990640/)",
+      "[Radiation oncologists' perspectives on reducing radiation-induced heart disease in early breast cancer.](https://pubmed.ncbi.nlm.nih.gov/31748146/)",
+      "[Enhancing Career Paths for Tomorrow's Radiation Oncologists.](https://pubmed.ncbi.nlm.nih.gov/31128144/)"
+    ]
+  }
+}

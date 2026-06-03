@@ -1,0 +1,160 @@
+{
+  "query": "rectal dose constraint re-irradiation brachytherapy EQD2 tolerance limit",
+  "timestamp": 1780414826.1805978,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "RECTAL中文 (简体)翻译：剑桥词典 - Cambridge Dictionary",
+        "snippet": "relating to the rectum (= the last section of the large bowel) 直肠的 rectal bleeding 直肠出血 a rectal examination 直肠检查",
+        "url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/rectal",
+        "source": "Bing CN"
+      },
+      {
+        "title": "rectal是什么意思_rectal的翻译_音标_读音_用法_例句_爱 ...",
+        "snippet": "爱词霸权威在线词典,为您提供rectal的中文意思,rectal的用法讲解,rectal的读音,rectal的同义词,rectal的反义词,rectal的例句等英语服务。",
+        "url": "https://www.iciba.com/word?w=rectal",
+        "source": "Bing CN"
+      },
+      {
+        "title": "rectal - 搜索 词典",
+        "snippet": "4. Both colon and rectal cancer have many commonalities and for that are commonly referred as ' colorectal cancer '. 结肠 和 直肠癌 有 很多 共同之处 常统 称为 “ 结 直肠癌 ”。",
+        "url": "https://global.bing.com/dict/search?q=rectal&amp;FORM=BDVSP6&amp;cc=cn",
+        "source": "Bing CN"
+      },
+      {
+        "title": "rectal_百度百科",
+        "snippet": "Rectal是英语中表示“直肠的”的形容词，发音为英 [ˈrektəl]、美 [ˈrektəl]，词性为形容词，主要用于医学领域描述与直肠相关的事物，如直肠检查（rectal examination）或直肠温度（rectal temperature）等场 …",
+        "url": "https://baike.baidu.com/item/rectal/53091569",
+        "source": "Bing CN"
+      },
+      {
+        "title": "rectal中文，rectal的意思，rectal翻譯及用法 - 英漢詞典",
+        "snippet": "2023年3月3日 · A doctor will do a digital rectal exam (DRE) to check the size and condition of the prostate by inserting a gloved finger into the rectum. 醫生會用直腸指檢驗 (DRE) - - -將帶有套體的手 …",
+        "url": "https://www.chinesewords.org/en/rectal",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- relating to the rectum (= the last section of the large bowel) 直肠的 rectal bleeding 直肠出血 a rectal examination 直肠检查\n- 爱词霸权威在线词典,为您提供rectal的中文意思,rectal的用法讲解,rectal的读音,rectal的同义词,rectal的反义词,rectal的例句等英语服务。",
+    "sources": [
+      "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/rectal",
+      "https://www.iciba.com/word?w=rectal",
+      "https://global.bing.com/dict/search?q=rectal&amp;FORM=BDVSP6&amp;cc=cn",
+      "https://baike.baidu.com/item/rectal/53091569",
+      "https://www.chinesewords.org/en/rectal"
+    ],
+    "evidence_chain_id": "20260602_234025_179854",
+    "evidence_summary": {
+      "response_id": "20260602_234025_179854",
+      "query": "rectal dose constraint re-irradiation brachytherapy EQD2 tolerance limit",
+      "created_at": "2026-06-02T23:40:25.179881",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[RECTAL中文 (简体)翻译：剑桥词典 - Cambridge Dictionary](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/rectal)",
+        "[rectal是什么意思_rectal的翻译_音标_读音_用法_例句_爱 ...](https://www.iciba.com/word?w=rectal)",
+        "[rectal - 搜索 词典](https://global.bing.com/dict/search?q=rectal&amp;FORM=BDVSP6&amp;cc=cn)",
+        "[rectal_百度百科](https://baike.baidu.com/item/rectal/53091569)",
+        "[rectal中文，rectal的意思，rectal翻譯及用法 - 英漢詞典](https://www.chinesewords.org/en/rectal)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "5980c971e558",
+          "claim": "relating to the rectum (= the last section of the large bowel) 直肠的 rectal bleeding 直肠出血 a rectal examination 直肠检查",
+          "source_url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/rectal",
+          "source_type": "Bing CN",
+          "source_title": "RECTAL中文 (简体)翻译：剑桥词典 - Cambridge Dictionary",
+          "accessed_at": "2026-06-02T23:40:26.180200",
+          "published_at": "",
+          "raw_snippet": "relating to the rectum (= the last section of the large bowel) 直肠的 rectal bleeding 直肠出血 a rectal examination 直肠检查",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "rectal dose constraint re-irradiation brachytherapy EQD2 tolerance limit",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f8a3163464ad",
+          "claim": "爱词霸权威在线词典,为您提供rectal的中文意思,rectal的用法讲解,rectal的读音,rectal的同义词,rectal的反义词,rectal的例句等英语服务。",
+          "source_url": "https://www.iciba.com/word?w=rectal",
+          "source_type": "Bing CN",
+          "source_title": "rectal是什么意思_rectal的翻译_音标_读音_用法_例句_爱 ...",
+          "accessed_at": "2026-06-02T23:40:26.180298",
+          "published_at": "",
+          "raw_snippet": "爱词霸权威在线词典,为您提供rectal的中文意思,rectal的用法讲解,rectal的读音,rectal的同义词,rectal的反义词,rectal的例句等英语服务。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "rectal dose constraint re-irradiation brachytherapy EQD2 tolerance limit",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "514724344d89",
+          "claim": "4. Both colon and rectal cancer have many commonalities and for that are commonly referred as ' colorectal cancer '. 结肠 和 直肠癌 有 很多 共同之处 常统 称为 “ 结 直肠癌 ”。",
+          "source_url": "https://global.bing.com/dict/search?q=rectal&amp;FORM=BDVSP6&amp;cc=cn",
+          "source_type": "Bing CN",
+          "source_title": "rectal - 搜索 词典",
+          "accessed_at": "2026-06-02T23:40:26.180331",
+          "published_at": "",
+          "raw_snippet": "4. Both colon and rectal cancer have many commonalities and for that are commonly referred as ' colorectal cancer '. 结肠 和 直肠癌 有 很多 共同之处 常统 称为 “ 结 直肠癌 ”。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "rectal dose constraint re-irradiation brachytherapy EQD2 tolerance limit",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "5089a9452ce6",
+          "claim": "Rectal是英语中表示“直肠的”的形容词，发音为英 [ˈrektəl]、美 [ˈrektəl]，词性为形容词，主要用于医学领域描述与直肠相关的事物，如直肠检查（rectal examination）或直肠温度（rectal temperature）等场 …",
+          "source_url": "https://baike.baidu.com/item/rectal/53091569",
+          "source_type": "Bing CN",
+          "source_title": "rectal_百度百科",
+          "accessed_at": "2026-06-02T23:40:26.180358",
+          "published_at": "",
+          "raw_snippet": "Rectal是英语中表示“直肠的”的形容词，发音为英 [ˈrektəl]、美 [ˈrektəl]，词性为形容词，主要用于医学领域描述与直肠相关的事物，如直肠检查（rectal examination）或直肠温度（rectal temperature）等场 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "rectal dose constraint re-irradiation brachytherapy EQD2 tolerance limit",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8d0a14289965",
+          "claim": "2023年3月3日 · A doctor will do a digital rectal exam (DRE) to check the size and condition of the prostate by inserting a gloved finger into the rectum. 醫生會用直腸指檢驗 (DRE) - - -將帶有套體的手 …",
+          "source_url": "https://www.chinesewords.org/en/rectal",
+          "source_type": "Bing CN",
+          "source_title": "rectal中文，rectal的意思，rectal翻譯及用法 - 英漢詞典",
+          "accessed_at": "2026-06-02T23:40:26.180382",
+          "published_at": "",
+          "raw_snippet": "2023年3月3日 · A doctor will do a digital rectal exam (DRE) to check the size and condition of the prostate by inserting a gloved finger into the rectum. 醫生會用直腸指檢驗 (DRE) - - -將帶有套體的手 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "rectal dose constraint re-irradiation brachytherapy EQD2 tolerance limit",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[RECTAL中文 (简体)翻译：剑桥词典 - Cambridge Dictionary](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/rectal)",
+      "[rectal是什么意思_rectal的翻译_音标_读音_用法_例句_爱 ...](https://www.iciba.com/word?w=rectal)",
+      "[rectal - 搜索 词典](https://global.bing.com/dict/search?q=rectal&amp;FORM=BDVSP6&amp;cc=cn)",
+      "[rectal_百度百科](https://baike.baidu.com/item/rectal/53091569)",
+      "[rectal中文，rectal的意思，rectal翻譯及用法 - 英漢詞典](https://www.chinesewords.org/en/rectal)"
+    ]
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "query": "NRC patient release criteria LDR brachytherapy 0.4 mCi seeds safety instructions",
+  "timestamp": 1780410687.4885674,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Work-related musculoskeletal disorders: the epidemiologic evidence and the debate.",
+        "snippet": "PubMed ID: 14759746. 2004/02/01 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimproving hypertension care. We aimed to study the impact of pharmacist \nprescribing on blood pressure (BP) control in community-dwelling patients.\nMETHODS AND RESULTS: We designed a patient-level, randomized, controlled trial, \nenrolling adults with above-target BP (as defined by Canadian guidelines) \n",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/14759746/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Patient-centered innovation: Lessons learned.",
+        "snippet": "PubMed ID: 33766403. 2021/04/01 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimproving hypertension care. We aimed to study the impact of pharmacist \nprescribing on blood pressure (BP) control in community-dwelling patients.\nMETHODS AND RESULTS: We designed a patient-level, randomized, controlled trial, \nenrolling adults with above-target BP (as defined by Canadian guidelines) \n",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33766403/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Patient-centered innovation: Will it become as deep as it is broad?",
+        "snippet": "PubMed ID: 34416972. 2021/09/01 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimproving hypertension care. We aimed to study the impact of pharmacist \nprescribing on blood pressure (BP) control in community-dwelling patients.\nMETHODS AND RESULTS: We designed a patient-level, randomized, controlled trial, \nenrolling adults with above-target BP (as defined by Canadian guidelines) \n",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34416972/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Randomized Trial of the Effect of Pharmacist Prescribing on Improving Blood Pressure in the Community: The Alberta Clinical Trial in Optimizing Hypertension (RxACTION).",
+        "snippet": "PubMed ID: 26063762. 2015/07/14 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimproving hypertension care. We aimed to study the impact of pharmacist \nprescribing on blood pressure (BP) control in community-dwelling patients.\nMETHODS AND RESULTS: We designed a patient-level, randomized, controlled trial, \nenrolling adults with above-target BP (as defined by Canadian guidelines) \n",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/26063762/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Patient Satisfaction with Virtual vs In-Person Voice Therapy.",
+        "snippet": "PubMed ID: 35410780. 2024/09/01 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimproving hypertension care. We aimed to study the impact of pharmacist \nprescribing on blood pressure (BP) control in community-dwelling patients.\nMETHODS AND RESULTS: We designed a patient-level, randomized, controlled trial, \nenrolling adults with above-target BP (as defined by Canadian guidelines) \n",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35410780/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 14759746. 2004/02/01 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimpr\n2. PubMed ID: 33766403. 2021/04/01 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimpr\n3. PubMed ID: 34416972. 2021/09/01 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimpr",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/14759746/",
+      "https://pubmed.ncbi.nlm.nih.gov/33766403/",
+      "https://pubmed.ncbi.nlm.nih.gov/34416972/",
+      "https://pubmed.ncbi.nlm.nih.gov/26063762/",
+      "https://pubmed.ncbi.nlm.nih.gov/35410780/"
+    ],
+    "evidence_chain_id": "20260602_223125_853280",
+    "evidence_summary": {
+      "response_id": "20260602_223125_853280",
+      "query": "NRC patient release criteria LDR brachytherapy 0.4 mCi seeds safety instructions",
+      "created_at": "2026-06-02T22:31:25.853304",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Work-related musculoskeletal disorders: the epidemiologic evidence and the debate.](https://pubmed.ncbi.nlm.nih.gov/14759746/)",
+        "[Patient-centered innovation: Lessons learned.](https://pubmed.ncbi.nlm.nih.gov/33766403/)",
+        "[Patient-centered innovation: Will it become as deep as it is broad?](https://pubmed.ncbi.nlm.nih.gov/34416972/)",
+        "[Randomized Trial of the Effect of Pharmacist Prescribing on Improving Blood Pressure in the Community: The Alberta Clinical Trial in Optimizing Hypertension (RxACTION).](https://pubmed.ncbi.nlm.nih.gov/26063762/)",
+        "[Patient Satisfaction with Virtual vs In-Person Voice Therapy.](https://pubmed.ncbi.nlm.nih.gov/35410780/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "5e8c3db3ccc0",
+          "claim": "PubMed ID: 14759746. 2004/02/01 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimpr",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/14759746/",
+          "source_type": "PubMed",
+          "source_title": "Work-related musculoskeletal disorders: the epidemiologic evidence and the debate.",
+          "accessed_at": "2026-06-02T22:31:27.487967",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 14759746. 2004/02/01 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimproving hypertension care. We aimed to study the impact of pharmacist \nprescribing on blood pressure (BP) control in community-dwelling patients.\nMETHODS AND RESULTS: We designed a patient-level, randomized, controlled trial, \nenrolling adults with above-target BP (as defined by Canadian guidelines) \n",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "NRC patient release criteria LDR brachytherapy 0.4 mCi seeds safety instructions",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "5837df8bb904",
+          "claim": "PubMed ID: 33766403. 2021/04/01 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimpr",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33766403/",
+          "source_type": "PubMed",
+          "source_title": "Patient-centered innovation: Lessons learned.",
+          "accessed_at": "2026-06-02T22:31:27.488097",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33766403. 2021/04/01 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimproving hypertension care. We aimed to study the impact of pharmacist \nprescribing on blood pressure (BP) control in community-dwelling patients.\nMETHODS AND RESULTS: We designed a patient-level, randomized, controlled trial, \nenrolling adults with above-target BP (as defined by Canadian guidelines) \n",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "NRC patient release criteria LDR brachytherapy 0.4 mCi seeds safety instructions",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "88c7a9127a73",
+          "claim": "PubMed ID: 34416972. 2021/09/01 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimpr",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34416972/",
+          "source_type": "PubMed",
+          "source_title": "Patient-centered innovation: Will it become as deep as it is broad?",
+          "accessed_at": "2026-06-02T22:31:27.488170",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34416972. 2021/09/01 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimproving hypertension care. We aimed to study the impact of pharmacist \nprescribing on blood pressure (BP) control in community-dwelling patients.\nMETHODS AND RESULTS: We designed a patient-level, randomized, controlled trial, \nenrolling adults with above-target BP (as defined by Canadian guidelines) \n",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "NRC patient release criteria LDR brachytherapy 0.4 mCi seeds safety instructions",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "aa3b899f38f4",
+          "claim": "PubMed ID: 26063762. 2015/07/14 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimpr",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/26063762/",
+          "source_type": "PubMed",
+          "source_title": "Randomized Trial of the Effect of Pharmacist Prescribing on Improving Blood Pressure in the Community: The Alberta Clinical Trial in Optimizing Hypertension (RxACTION).",
+          "accessed_at": "2026-06-02T22:31:27.488220",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 26063762. 2015/07/14 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimproving hypertension care. We aimed to study the impact of pharmacist \nprescribing on blood pressure (BP) control in community-dwelling patients.\nMETHODS AND RESULTS: We designed a patient-level, randomized, controlled trial, \nenrolling adults with above-target BP (as defined by Canadian guidelines) \n",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "NRC patient release criteria LDR brachytherapy 0.4 mCi seeds safety instructions",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "4694dc1b4893",
+          "claim": "PubMed ID: 35410780. 2024/09/01 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimpr",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35410780/",
+          "source_type": "PubMed",
+          "source_title": "Patient Satisfaction with Virtual vs In-Person Voice Therapy.",
+          "accessed_at": "2026-06-02T22:31:27.488264",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35410780. 2024/09/01 00:00. BACKGROUND: Hypertension control rates remain suboptimal. Pharmacists' scope of \npractice is evolving, and their position in the community may be ideal for \nimproving hypertension care. We aimed to study the impact of pharmacist \nprescribing on blood pressure (BP) control in community-dwelling patients.\nMETHODS AND RESULTS: We designed a patient-level, randomized, controlled trial, \nenrolling adults with above-target BP (as defined by Canadian guidelines) \n",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "NRC patient release criteria LDR brachytherapy 0.4 mCi seeds safety instructions",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Work-related musculoskeletal disorders: the epidemiologic evidence and the debate.](https://pubmed.ncbi.nlm.nih.gov/14759746/)",
+      "[Patient-centered innovation: Lessons learned.](https://pubmed.ncbi.nlm.nih.gov/33766403/)",
+      "[Patient-centered innovation: Will it become as deep as it is broad?](https://pubmed.ncbi.nlm.nih.gov/34416972/)",
+      "[Randomized Trial of the Effect of Pharmacist Prescribing on Improving Blood Pressure in the Community: The Alberta Clinical Trial in Optimizing Hypertension (RxACTION).](https://pubmed.ncbi.nlm.nih.gov/26063762/)",
+      "[Patient Satisfaction with Virtual vs In-Person Voice Therapy.](https://pubmed.ncbi.nlm.nih.gov/35410780/)"
+    ]
+  }
+}

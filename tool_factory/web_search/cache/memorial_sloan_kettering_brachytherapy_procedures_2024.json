@@ -1,0 +1,160 @@
+{
+  "query": "Memorial Sloan Kettering brachytherapy procedures 2024",
+  "timestamp": 1780491647.3747988,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Proton Therapy in Uveal Melanoma.",
+        "snippet": "PubMed ID: 39456591. 2024/10/16 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nrefers to the treatment of the chest wall and ipsilateral regional nodes, \nincluding at-risk axillary, supra/infraclavicular, and internal mammary nodes. \nUpdated recommendations detail indications for PMRT in the upfront surgical \nsetting and after neoadjuvant systemic therapy, and provide guidance ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39456591/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Postmastectomy Radiation Therapy: An ASTRO/ASCO/SSO Clinical Practice Guideline.",
+        "snippet": "PubMed ID: 40956255. 2025/11/01 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nrefers to the treatment of the chest wall and ipsilateral regional nodes, \nincluding at-risk axillary, supra/infraclavicular, and internal mammary nodes. \nUpdated recommendations detail indications for PMRT in the upfront surgical \nsetting and after neoadjuvant systemic therapy, and provide guidance ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40956255/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Systematic Review of Sublobar Resection for Treatment of High-Risk Patients with Stage I Non-Small Cell Lung Cancer.",
+        "snippet": "PubMed ID: 39674442. 2025/04/01 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nrefers to the treatment of the chest wall and ipsilateral regional nodes, \nincluding at-risk axillary, supra/infraclavicular, and internal mammary nodes. \nUpdated recommendations detail indications for PMRT in the upfront surgical \nsetting and after neoadjuvant systemic therapy, and provide guidance ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39674442/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Clinical Outcomes, Patterns of Failure, and Salvage Therapies of a Large Modern Cohort of Patients With Anal Squamous Cell Carcinoma Treated With Definitive-Intent Intensity-Modulated Radiation Therapy.",
+        "snippet": "PubMed ID: 39536799. 2025/03/15 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nrefers to the treatment of the chest wall and ipsilateral regional nodes, \nincluding at-risk axillary, supra/infraclavicular, and internal mammary nodes. \nUpdated recommendations detail indications for PMRT in the upfront surgical \nsetting and after neoadjuvant systemic therapy, and provide guidance ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39536799/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Commissioning considerations for the Bravos high-dose-rate afterloader: Towards improving treatment delivery accuracy.",
+        "snippet": "PubMed ID: 39112321. 2024/11/01 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nrefers to the treatment of the chest wall and ipsilateral regional nodes, \nincluding at-risk axillary, supra/infraclavicular, and internal mammary nodes. \nUpdated recommendations detail indications for PMRT in the upfront surgical \nsetting and after neoadjuvant systemic therapy, and provide guidance ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39112321/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 39456591. 2024/10/16 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nr\n2. PubMed ID: 40956255. 2025/11/01 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nr\n3. PubMed ID: 39674442. 2025/04/01 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nr",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/39456591/",
+      "https://pubmed.ncbi.nlm.nih.gov/40956255/",
+      "https://pubmed.ncbi.nlm.nih.gov/39674442/",
+      "https://pubmed.ncbi.nlm.nih.gov/39536799/",
+      "https://pubmed.ncbi.nlm.nih.gov/39112321/"
+    ],
+    "evidence_chain_id": "20260603_210045_543460",
+    "evidence_summary": {
+      "response_id": "20260603_210045_543460",
+      "query": "Memorial Sloan Kettering brachytherapy procedures 2024",
+      "created_at": "2026-06-03T21:00:45.543494",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Proton Therapy in Uveal Melanoma.](https://pubmed.ncbi.nlm.nih.gov/39456591/)",
+        "[Postmastectomy Radiation Therapy: An ASTRO/ASCO/SSO Clinical Practice Guideline.](https://pubmed.ncbi.nlm.nih.gov/40956255/)",
+        "[Systematic Review of Sublobar Resection for Treatment of High-Risk Patients with Stage I Non-Small Cell Lung Cancer.](https://pubmed.ncbi.nlm.nih.gov/39674442/)",
+        "[Clinical Outcomes, Patterns of Failure, and Salvage Therapies of a Large Modern Cohort of Patients With Anal Squamous Cell Carcinoma Treated With Definitive-Intent Intensity-Modulated Radiation Therapy.](https://pubmed.ncbi.nlm.nih.gov/39536799/)",
+        "[Commissioning considerations for the Bravos high-dose-rate afterloader: Towards improving treatment delivery accuracy.](https://pubmed.ncbi.nlm.nih.gov/39112321/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "366168fb1c06",
+          "claim": "PubMed ID: 39456591. 2024/10/16 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nr",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39456591/",
+          "source_type": "PubMed",
+          "source_title": "Proton Therapy in Uveal Melanoma.",
+          "accessed_at": "2026-06-03T21:00:47.371281",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39456591. 2024/10/16 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nrefers to the treatment of the chest wall and ipsilateral regional nodes, \nincluding at-risk axillary, supra/infraclavicular, and internal mammary nodes. \nUpdated recommendations detail indications for PMRT in the upfront surgical \nsetting and after neoadjuvant systemic therapy, and provide guidance ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Memorial Sloan Kettering brachytherapy procedures 2024",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e1eb081adb92",
+          "claim": "PubMed ID: 40956255. 2025/11/01 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nr",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40956255/",
+          "source_type": "PubMed",
+          "source_title": "Postmastectomy Radiation Therapy: An ASTRO/ASCO/SSO Clinical Practice Guideline.",
+          "accessed_at": "2026-06-03T21:00:47.371377",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40956255. 2025/11/01 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nrefers to the treatment of the chest wall and ipsilateral regional nodes, \nincluding at-risk axillary, supra/infraclavicular, and internal mammary nodes. \nUpdated recommendations detail indications for PMRT in the upfront surgical \nsetting and after neoadjuvant systemic therapy, and provide guidance ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Memorial Sloan Kettering brachytherapy procedures 2024",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "6d42cf9f7e20",
+          "claim": "PubMed ID: 39674442. 2025/04/01 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nr",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39674442/",
+          "source_type": "PubMed",
+          "source_title": "Systematic Review of Sublobar Resection for Treatment of High-Risk Patients with Stage I Non-Small Cell Lung Cancer.",
+          "accessed_at": "2026-06-03T21:00:47.371408",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39674442. 2025/04/01 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nrefers to the treatment of the chest wall and ipsilateral regional nodes, \nincluding at-risk axillary, supra/infraclavicular, and internal mammary nodes. \nUpdated recommendations detail indications for PMRT in the upfront surgical \nsetting and after neoadjuvant systemic therapy, and provide guidance ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Memorial Sloan Kettering brachytherapy procedures 2024",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "68bcaacb438a",
+          "claim": "PubMed ID: 39536799. 2025/03/15 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nr",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39536799/",
+          "source_type": "PubMed",
+          "source_title": "Clinical Outcomes, Patterns of Failure, and Salvage Therapies of a Large Modern Cohort of Patients With Anal Squamous Cell Carcinoma Treated With Definitive-Intent Intensity-Modulated Radiation Therapy.",
+          "accessed_at": "2026-06-03T21:00:47.371445",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39536799. 2025/03/15 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nrefers to the treatment of the chest wall and ipsilateral regional nodes, \nincluding at-risk axillary, supra/infraclavicular, and internal mammary nodes. \nUpdated recommendations detail indications for PMRT in the upfront surgical \nsetting and after neoadjuvant systemic therapy, and provide guidance ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Memorial Sloan Kettering brachytherapy procedures 2024",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "6a5fc4e24fcb",
+          "claim": "PubMed ID: 39112321. 2024/11/01 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nr",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39112321/",
+          "source_type": "PubMed",
+          "source_title": "Commissioning considerations for the Bravos high-dose-rate afterloader: Towards improving treatment delivery accuracy.",
+          "accessed_at": "2026-06-03T21:00:47.371472",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39112321. 2024/11/01 00:00. PURPOSE: This guideline provides evidence-based recommendations on the use of \npostmastectomy radiation therapy (PMRT) in the treatment of breast cancer. PMRT \nrefers to the treatment of the chest wall and ipsilateral regional nodes, \nincluding at-risk axillary, supra/infraclavicular, and internal mammary nodes. \nUpdated recommendations detail indications for PMRT in the upfront surgical \nsetting and after neoadjuvant systemic therapy, and provide guidance ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Memorial Sloan Kettering brachytherapy procedures 2024",
+          "search_type": "clinical",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Proton Therapy in Uveal Melanoma.](https://pubmed.ncbi.nlm.nih.gov/39456591/)",
+      "[Postmastectomy Radiation Therapy: An ASTRO/ASCO/SSO Clinical Practice Guideline.](https://pubmed.ncbi.nlm.nih.gov/40956255/)",
+      "[Systematic Review of Sublobar Resection for Treatment of High-Risk Patients with Stage I Non-Small Cell Lung Cancer.](https://pubmed.ncbi.nlm.nih.gov/39674442/)",
+      "[Clinical Outcomes, Patterns of Failure, and Salvage Therapies of a Large Modern Cohort of Patients With Anal Squamous Cell Carcinoma Treated With Definitive-Intent Intensity-Modulated Radiation Therapy.](https://pubmed.ncbi.nlm.nih.gov/39536799/)",
+      "[Commissioning considerations for the Bravos high-dose-rate afterloader: Towards improving treatment delivery accuracy.](https://pubmed.ncbi.nlm.nih.gov/39112321/)"
+    ]
+  }
+}

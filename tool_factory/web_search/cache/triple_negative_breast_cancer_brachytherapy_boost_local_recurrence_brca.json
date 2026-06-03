@@ -1,0 +1,23 @@
+{
+  "query": "triple negative breast cancer brachytherapy boost local recurrence BRCA",
+  "timestamp": 1780469711.4423444,
+  "result": {
+    "success": true,
+    "results": [],
+    "answer": "I searched for 'triple negative breast cancer brachytherapy boost local recurrence BRCA' but couldn't find specific information. This may be a question that requires specialized knowledge or access to specific databases I don't have.",
+    "sources": [],
+    "evidence_chain_id": "20260603_145510_938141",
+    "evidence_summary": {
+      "response_id": "20260603_145510_938141",
+      "query": "triple negative breast cancer brachytherapy boost local recurrence BRCA",
+      "created_at": "2026-06-03T14:55:10.938166",
+      "num_sources": 0,
+      "source_types": [],
+      "avg_confidence": 0.0,
+      "verification_status": "unverified",
+      "citations": [],
+      "evidence": []
+    },
+    "citations": []
+  }
+}

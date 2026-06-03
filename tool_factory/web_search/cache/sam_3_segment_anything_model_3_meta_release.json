@@ -1,0 +1,160 @@
+{
+  "query": "SAM 3 Segment Anything Model 3 Meta release",
+  "timestamp": 1780408628.7607353,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "一篇文章搞懂Segment Anything (SAM) - 知乎",
+        "snippet": "2023年7月3日 · 边缘检测 SAM在训练的时候就是采用的包含point prompt的方式，作者这里还对比了一些在训练时没有包含的方式，边界检测就是其中一种。 SAM在使用边界检测时，使用方式是在图片上 …",
+        "url": "https://zhuanlan.zhihu.com/p/637971092",
+        "source": "Bing CN"
+      },
+      {
+        "title": "万字长文从零解读SAM (Segment Anything Model)大模型 ...",
+        "snippet": "2025年2月27日 · 这样，可以是的SAM能够适配各种下游任务。 例如，给定一个猫的边界框，SAM能够输出其mask，从而和实例分割任务搭配起来。 SAM Model 如下图所示，SAM模型包含三个核心组 …",
+        "url": "https://blog.csdn.net/sinat_37574187/article/details/145898023",
+        "source": "Bing CN"
+      },
+      {
+        "title": "GitHub - facebookresearch/segment-anything: The repository …",
+        "snippet": "Segment Anything Model 2 (SAM 2) is a foundation model towards solving promptable visual segmentation in images and videos. We extend SAM to video by considering images as a video with …",
+        "url": "https://github.com/facebookresearch/segment-anything",
+        "source": "Bing CN"
+      },
+      {
+        "title": "SAM 3: Segment Anything with Concepts | Ultralytics 文档",
+        "snippet": "2025年10月13日 · 了解 SAM 3，Meta 推出的 Segment Anything Model 的最新进化版本，引入了可提示的概念分割功能，支持通过文本和图像示例提示来检测图像和视频中视觉概念的所有实例。",
+        "url": "https://docs.ultralytics.com/zh/models/sam-3",
+        "source": "Bing CN"
+      },
+      {
+        "title": "从零解读 SAM (Segment Anything Model) 大模型！万物皆 ...",
+        "snippet": "2024年6月18日 · 一、SAM Task SAM借鉴了NLP领域的Prompt策略，通过给图像分割任务提供Prompt提示来完成任意目标的快速分割。 Prompt类型可以是「前景/背景点集、粗略的框或遮罩、任意形式的 …",
+        "url": "https://www.51cto.com/article/790784.html",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 2023年7月3日 · 边缘检测 SAM在训练的时候就是采用的包含point prompt的方式，作者这里还对比了一些在训练时没有包含的方式，边界检测就是其中一种。 SAM在使用边界检测时，使用方式是在图片上 …\n- 2025年2月27日 · 这样，可以是的SAM能够适配各种下游任务。 例如，给定一个猫的边界框，SAM能够输出其mask，从而和实例分割任务搭配起来。 SAM Model 如下图所示，SAM模型包含三个核心组 …",
+    "sources": [
+      "https://zhuanlan.zhihu.com/p/637971092",
+      "https://blog.csdn.net/sinat_37574187/article/details/145898023",
+      "https://github.com/facebookresearch/segment-anything",
+      "https://docs.ultralytics.com/zh/models/sam-3",
+      "https://www.51cto.com/article/790784.html"
+    ],
+    "evidence_chain_id": "20260602_215707_794973",
+    "evidence_summary": {
+      "response_id": "20260602_215707_794973",
+      "query": "SAM 3 Segment Anything Model 3 Meta release",
+      "created_at": "2026-06-02T21:57:07.794995",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[一篇文章搞懂Segment Anything (SAM) - 知乎](https://zhuanlan.zhihu.com/p/637971092)",
+        "[万字长文从零解读SAM (Segment Anything Model)大模型 ...](https://blog.csdn.net/sinat_37574187/article/details/145898023)",
+        "[GitHub - facebookresearch/segment-anything: The repository …](https://github.com/facebookresearch/segment-anything)",
+        "[SAM 3: Segment Anything with Concepts | Ultralytics 文档](https://docs.ultralytics.com/zh/models/sam-3)",
+        "[从零解读 SAM (Segment Anything Model) 大模型！万物皆 ...](https://www.51cto.com/article/790784.html)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "7bd5905a47eb",
+          "claim": "2023年7月3日 · 边缘检测 SAM在训练的时候就是采用的包含point prompt的方式，作者这里还对比了一些在训练时没有包含的方式，边界检测就是其中一种。 SAM在使用边界检测时，使用方式是在图片上 …",
+          "source_url": "https://zhuanlan.zhihu.com/p/637971092",
+          "source_type": "Bing CN",
+          "source_title": "一篇文章搞懂Segment Anything (SAM) - 知乎",
+          "accessed_at": "2026-06-02T21:57:08.760325",
+          "published_at": "",
+          "raw_snippet": "2023年7月3日 · 边缘检测 SAM在训练的时候就是采用的包含point prompt的方式，作者这里还对比了一些在训练时没有包含的方式，边界检测就是其中一种。 SAM在使用边界检测时，使用方式是在图片上 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "SAM 3 Segment Anything Model 3 Meta release",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "b0cf6bc3c2dc",
+          "claim": "2025年2月27日 · 这样，可以是的SAM能够适配各种下游任务。 例如，给定一个猫的边界框，SAM能够输出其mask，从而和实例分割任务搭配起来。 SAM Model 如下图所示，SAM模型包含三个核心组 …",
+          "source_url": "https://blog.csdn.net/sinat_37574187/article/details/145898023",
+          "source_type": "Bing CN",
+          "source_title": "万字长文从零解读SAM (Segment Anything Model)大模型 ...",
+          "accessed_at": "2026-06-02T21:57:08.760462",
+          "published_at": "",
+          "raw_snippet": "2025年2月27日 · 这样，可以是的SAM能够适配各种下游任务。 例如，给定一个猫的边界框，SAM能够输出其mask，从而和实例分割任务搭配起来。 SAM Model 如下图所示，SAM模型包含三个核心组 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "SAM 3 Segment Anything Model 3 Meta release",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "23f39e9cacbf",
+          "claim": "Segment Anything Model 2 (SAM 2) is a foundation model towards solving promptable visual segmentation in images and videos. We extend SAM to video by considering images as a video with …",
+          "source_url": "https://github.com/facebookresearch/segment-anything",
+          "source_type": "Bing CN",
+          "source_title": "GitHub - facebookresearch/segment-anything: The repository …",
+          "accessed_at": "2026-06-02T21:57:08.760500",
+          "published_at": "",
+          "raw_snippet": "Segment Anything Model 2 (SAM 2) is a foundation model towards solving promptable visual segmentation in images and videos. We extend SAM to video by considering images as a video with …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "SAM 3 Segment Anything Model 3 Meta release",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "1a2f3c547fe4",
+          "claim": "2025年10月13日 · 了解 SAM 3，Meta 推出的 Segment Anything Model 的最新进化版本，引入了可提示的概念分割功能，支持通过文本和图像示例提示来检测图像和视频中视觉概念的所有实例。",
+          "source_url": "https://docs.ultralytics.com/zh/models/sam-3",
+          "source_type": "Bing CN",
+          "source_title": "SAM 3: Segment Anything with Concepts | Ultralytics 文档",
+          "accessed_at": "2026-06-02T21:57:08.760529",
+          "published_at": "",
+          "raw_snippet": "2025年10月13日 · 了解 SAM 3，Meta 推出的 Segment Anything Model 的最新进化版本，引入了可提示的概念分割功能，支持通过文本和图像示例提示来检测图像和视频中视觉概念的所有实例。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "SAM 3 Segment Anything Model 3 Meta release",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "52612bfcfc5e",
+          "claim": "2024年6月18日 · 一、SAM Task SAM借鉴了NLP领域的Prompt策略，通过给图像分割任务提供Prompt提示来完成任意目标的快速分割。 Prompt类型可以是「前景/背景点集、粗略的框或遮罩、任意形式的 …",
+          "source_url": "https://www.51cto.com/article/790784.html",
+          "source_type": "Bing CN",
+          "source_title": "从零解读 SAM (Segment Anything Model) 大模型！万物皆 ...",
+          "accessed_at": "2026-06-02T21:57:08.760553",
+          "published_at": "",
+          "raw_snippet": "2024年6月18日 · 一、SAM Task SAM借鉴了NLP领域的Prompt策略，通过给图像分割任务提供Prompt提示来完成任意目标的快速分割。 Prompt类型可以是「前景/背景点集、粗略的框或遮罩、任意形式的 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "SAM 3 Segment Anything Model 3 Meta release",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[一篇文章搞懂Segment Anything (SAM) - 知乎](https://zhuanlan.zhihu.com/p/637971092)",
+      "[万字长文从零解读SAM (Segment Anything Model)大模型 ...](https://blog.csdn.net/sinat_37574187/article/details/145898023)",
+      "[GitHub - facebookresearch/segment-anything: The repository …](https://github.com/facebookresearch/segment-anything)",
+      "[SAM 3: Segment Anything with Concepts | Ultralytics 文档](https://docs.ultralytics.com/zh/models/sam-3)",
+      "[从零解读 SAM (Segment Anything Model) 大模型！万物皆 ...](https://www.51cto.com/article/790784.html)"
+    ]
+  }
+}

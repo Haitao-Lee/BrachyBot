@@ -1,0 +1,23 @@
+{
+  "query": "brachytherapy immunotherapy radiosensitizer preclinical evidence solid tumors",
+  "timestamp": 1780474827.6224353,
+  "result": {
+    "success": true,
+    "results": [],
+    "answer": "I searched for 'brachytherapy immunotherapy radiosensitizer preclinical evidence solid tumors' but couldn't find specific information. This may be a question that requires specialized knowledge or access to specific databases I don't have.",
+    "sources": [],
+    "evidence_chain_id": "20260603_162027_083468",
+    "evidence_summary": {
+      "response_id": "20260603_162027_083468",
+      "query": "brachytherapy immunotherapy radiosensitizer preclinical evidence solid tumors",
+      "created_at": "2026-06-03T16:20:27.083493",
+      "num_sources": 0,
+      "source_types": [],
+      "avg_confidence": 0.0,
+      "verification_status": "unverified",
+      "citations": [],
+      "evidence": []
+    },
+    "citations": []
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "query": "intraoperative brachytherapy pancreatic cancer neoadjuvant clinical trials results",
+  "timestamp": 1780423554.6092427,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Intraoperative brachytherapy for resected brain metastases.",
+        "snippet": "PubMed ID: 30850332. 2019/05/01 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic brachytherapy (eBx) system was used as a single-dose \nirradiation and an exclusive radiotherapy approach at the time of surgery in \npatients with early breast cancer (EBC). We also compared the results of the \nsystematic review to the Bulgarian experience. (2) Methods and Materials: We \nperformed a ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30850332/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Intraoperative radiation and electronic brachytherapy in Brachytherapy: A look back and forward.",
+        "snippet": "PubMed ID: 36725199. 2023/01/01 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic brachytherapy (eBx) system was used as a single-dose \nirradiation and an exclusive radiotherapy approach at the time of surgery in \npatients with early breast cancer (EBC). We also compared the results of the \nsystematic review to the Bulgarian experience. (2) Methods and Materials: We \nperformed a ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36725199/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Intraoperative high-dose-rate brachytherapy: An American Brachytherapy Society consensus report.",
+        "snippet": "PubMed ID: 28173994. 2017/05/01 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic brachytherapy (eBx) system was used as a single-dose \nirradiation and an exclusive radiotherapy approach at the time of surgery in \npatients with early breast cancer (EBC). We also compared the results of the \nsystematic review to the Bulgarian experience. (2) Methods and Materials: We \nperformed a ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28173994/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Intraoperative Radiotherapy with Balloon-Based Electronic Brachytherapy System-A Systematic Review and First Bulgarian Experience in Breast Cancer Patients.",
+        "snippet": "PubMed ID: 34677253. 2021/10/03 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic brachytherapy (eBx) system was used as a single-dose \nirradiation and an exclusive radiotherapy approach at the time of surgery in \npatients with early breast cancer (EBC). We also compared the results of the \nsystematic review to the Bulgarian experience. (2) Methods and Materials: We \nperformed a ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34677253/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Intraoperative brachytherapy in pancreatic cancer.",
+        "snippet": "PubMed ID: 3072994. 1988/01/01 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic brachytherapy (eBx) system was used as a single-dose \nirradiation and an exclusive radiotherapy approach at the time of surgery in \npatients with early breast cancer (EBC). We also compared the results of the \nsystematic review to the Bulgarian experience. (2) Methods and Materials: We \nperformed a s",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/3072994/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 30850332. 2019/05/01 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic \n2. PubMed ID: 36725199. 2023/01/01 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic \n3. PubMed ID: 28173994. 2017/05/01 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic ",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/30850332/",
+      "https://pubmed.ncbi.nlm.nih.gov/36725199/",
+      "https://pubmed.ncbi.nlm.nih.gov/28173994/",
+      "https://pubmed.ncbi.nlm.nih.gov/34677253/",
+      "https://pubmed.ncbi.nlm.nih.gov/3072994/"
+    ],
+    "evidence_chain_id": "20260603_020552_965185",
+    "evidence_summary": {
+      "response_id": "20260603_020552_965185",
+      "query": "intraoperative brachytherapy pancreatic cancer neoadjuvant clinical trials results",
+      "created_at": "2026-06-03T02:05:52.965201",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Intraoperative brachytherapy for resected brain metastases.](https://pubmed.ncbi.nlm.nih.gov/30850332/)",
+        "[Intraoperative radiation and electronic brachytherapy in Brachytherapy: A look back and forward.](https://pubmed.ncbi.nlm.nih.gov/36725199/)",
+        "[Intraoperative high-dose-rate brachytherapy: An American Brachytherapy Society consensus report.](https://pubmed.ncbi.nlm.nih.gov/28173994/)",
+        "[Intraoperative Radiotherapy with Balloon-Based Electronic Brachytherapy System-A Systematic Review and First Bulgarian Experience in Breast Cancer Patients.](https://pubmed.ncbi.nlm.nih.gov/34677253/)",
+        "[Intraoperative brachytherapy in pancreatic cancer.](https://pubmed.ncbi.nlm.nih.gov/3072994/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "4da92e1a18c8",
+          "claim": "PubMed ID: 30850332. 2019/05/01 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic ",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/30850332/",
+          "source_type": "PubMed",
+          "source_title": "Intraoperative brachytherapy for resected brain metastases.",
+          "accessed_at": "2026-06-03T02:05:54.608859",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 30850332. 2019/05/01 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic brachytherapy (eBx) system was used as a single-dose \nirradiation and an exclusive radiotherapy approach at the time of surgery in \npatients with early breast cancer (EBC). We also compared the results of the \nsystematic review to the Bulgarian experience. (2) Methods and Materials: We \nperformed a ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "intraoperative brachytherapy pancreatic cancer neoadjuvant clinical trials results",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "590ec5df8bf2",
+          "claim": "PubMed ID: 36725199. 2023/01/01 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic ",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36725199/",
+          "source_type": "PubMed",
+          "source_title": "Intraoperative radiation and electronic brachytherapy in Brachytherapy: A look back and forward.",
+          "accessed_at": "2026-06-03T02:05:54.608963",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36725199. 2023/01/01 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic brachytherapy (eBx) system was used as a single-dose \nirradiation and an exclusive radiotherapy approach at the time of surgery in \npatients with early breast cancer (EBC). We also compared the results of the \nsystematic review to the Bulgarian experience. (2) Methods and Materials: We \nperformed a ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "intraoperative brachytherapy pancreatic cancer neoadjuvant clinical trials results",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "9f6d69e7630c",
+          "claim": "PubMed ID: 28173994. 2017/05/01 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic ",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/28173994/",
+          "source_type": "PubMed",
+          "source_title": "Intraoperative high-dose-rate brachytherapy: An American Brachytherapy Society consensus report.",
+          "accessed_at": "2026-06-03T02:05:54.608994",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 28173994. 2017/05/01 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic brachytherapy (eBx) system was used as a single-dose \nirradiation and an exclusive radiotherapy approach at the time of surgery in \npatients with early breast cancer (EBC). We also compared the results of the \nsystematic review to the Bulgarian experience. (2) Methods and Materials: We \nperformed a ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "intraoperative brachytherapy pancreatic cancer neoadjuvant clinical trials results",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e16af536dc05",
+          "claim": "PubMed ID: 34677253. 2021/10/03 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic ",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34677253/",
+          "source_type": "PubMed",
+          "source_title": "Intraoperative Radiotherapy with Balloon-Based Electronic Brachytherapy System-A Systematic Review and First Bulgarian Experience in Breast Cancer Patients.",
+          "accessed_at": "2026-06-03T02:05:54.609017",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34677253. 2021/10/03 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic brachytherapy (eBx) system was used as a single-dose \nirradiation and an exclusive radiotherapy approach at the time of surgery in \npatients with early breast cancer (EBC). We also compared the results of the \nsystematic review to the Bulgarian experience. (2) Methods and Materials: We \nperformed a ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "intraoperative brachytherapy pancreatic cancer neoadjuvant clinical trials results",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ea0ec6497258",
+          "claim": "PubMed ID: 3072994. 1988/01/01 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic b",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/3072994/",
+          "source_type": "PubMed",
+          "source_title": "Intraoperative brachytherapy in pancreatic cancer.",
+          "accessed_at": "2026-06-03T02:05:54.609037",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 3072994. 1988/01/01 00:00. Background: We aimed to analyze currently available studies with \nintraoperative radiotherapy (IORT) as a choice of treatment where the Xoft \nAxxent® electronic brachytherapy (eBx) system was used as a single-dose \nirradiation and an exclusive radiotherapy approach at the time of surgery in \npatients with early breast cancer (EBC). We also compared the results of the \nsystematic review to the Bulgarian experience. (2) Methods and Materials: We \nperformed a s",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "intraoperative brachytherapy pancreatic cancer neoadjuvant clinical trials results",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Intraoperative brachytherapy for resected brain metastases.](https://pubmed.ncbi.nlm.nih.gov/30850332/)",
+      "[Intraoperative radiation and electronic brachytherapy in Brachytherapy: A look back and forward.](https://pubmed.ncbi.nlm.nih.gov/36725199/)",
+      "[Intraoperative high-dose-rate brachytherapy: An American Brachytherapy Society consensus report.](https://pubmed.ncbi.nlm.nih.gov/28173994/)",
+      "[Intraoperative Radiotherapy with Balloon-Based Electronic Brachytherapy System-A Systematic Review and First Bulgarian Experience in Breast Cancer Patients.](https://pubmed.ncbi.nlm.nih.gov/34677253/)",
+      "[Intraoperative brachytherapy in pancreatic cancer.](https://pubmed.ncbi.nlm.nih.gov/3072994/)"
+    ]
+  }
+}

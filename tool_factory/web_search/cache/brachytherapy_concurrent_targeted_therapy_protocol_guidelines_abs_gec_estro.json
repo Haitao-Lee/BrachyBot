@@ -1,0 +1,160 @@
+{
+  "query": "brachytherapy concurrent targeted therapy protocol guidelines ABS GEC-ESTRO",
+  "timestamp": 1780415764.9184625,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "A phase III randomised trial on the addition of a contact X-ray brachytherapy boost to standard neoadjuvant chemo-radiotherapy for organ preservation in early rectal adenocarcinoma: 5 year results of the OPERA trial.",
+        "snippet": "PubMed ID: 39532203. 2025/02/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreservation (OP) rate for early rectal adenocarcinoma (ADK) of low-mid rectum. \nWe report the results after 5 years of follow-up.\nPATIENTS AND METHODS: OPERA was a multicentre, phase III trial that included \noperable patients (pts), with cT2-cT3b low-mid rectal ADK, tumours <5 cm, cN0 or \ncN1 <8 mm. All p",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39532203/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Global challenges of radiotherapy for the treatment of locally advanced cervical cancer.",
+        "snippet": "PubMed ID: 35256434. 2022/03/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreservation (OP) rate for early rectal adenocarcinoma (ADK) of low-mid rectum. \nWe report the results after 5 years of follow-up.\nPATIENTS AND METHODS: OPERA was a multicentre, phase III trial that included \noperable patients (pts), with cT2-cT3b low-mid rectal ADK, tumours <5 cm, cN0 or \ncN1 <8 mm. All p",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35256434/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Image guided brachytherapy in locally advanced cervical cancer: Improved pelvic control and survival in RetroEMBRACE, a multicenter cohort study.",
+        "snippet": "PubMed ID: 27134181. 2016/09/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreservation (OP) rate for early rectal adenocarcinoma (ADK) of low-mid rectum. \nWe report the results after 5 years of follow-up.\nPATIENTS AND METHODS: OPERA was a multicentre, phase III trial that included \noperable patients (pts), with cT2-cT3b low-mid rectal ADK, tumours <5 cm, cN0 or \ncN1 <8 mm. All p",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/27134181/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Concurrent chemoradiation for cervical cancer: Comparison of LDR and HDR brachytherapy.",
+        "snippet": "PubMed ID: 30971370. 2019/05/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreservation (OP) rate for early rectal adenocarcinoma (ADK) of low-mid rectum. \nWe report the results after 5 years of follow-up.\nPATIENTS AND METHODS: OPERA was a multicentre, phase III trial that included \noperable patients (pts), with cT2-cT3b low-mid rectal ADK, tumours <5 cm, cN0 or \ncN1 <8 mm. All p",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30971370/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Concurrent chemotherapy with high-dose rate brachytherapy after treatment with chemoradiotherapy in cases of locally advanced carcinoma cervix: A study from rural area of Maharashtra, India.",
+        "snippet": "PubMed ID: 36412413. 2022/10/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreservation (OP) rate for early rectal adenocarcinoma (ADK) of low-mid rectum. \nWe report the results after 5 years of follow-up.\nPATIENTS AND METHODS: OPERA was a multicentre, phase III trial that included \noperable patients (pts), with cT2-cT3b low-mid rectal ADK, tumours <5 cm, cN0 or \ncN1 <8 mm. All p",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36412413/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 39532203. 2025/02/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreserv\n2. PubMed ID: 35256434. 2022/03/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreserv\n3. PubMed ID: 27134181. 2016/09/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreserv",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/39532203/",
+      "https://pubmed.ncbi.nlm.nih.gov/35256434/",
+      "https://pubmed.ncbi.nlm.nih.gov/27134181/",
+      "https://pubmed.ncbi.nlm.nih.gov/30971370/",
+      "https://pubmed.ncbi.nlm.nih.gov/36412413/"
+    ],
+    "evidence_chain_id": "20260602_235603_275763",
+    "evidence_summary": {
+      "response_id": "20260602_235603_275763",
+      "query": "brachytherapy concurrent targeted therapy protocol guidelines ABS GEC-ESTRO",
+      "created_at": "2026-06-02T23:56:03.275786",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[A phase III randomised trial on the addition of a contact X-ray brachytherapy boost to standard neoadjuvant chemo-radiotherapy for organ preservation in early rectal adenocarcinoma: 5 year results of the OPERA trial.](https://pubmed.ncbi.nlm.nih.gov/39532203/)",
+        "[Global challenges of radiotherapy for the treatment of locally advanced cervical cancer.](https://pubmed.ncbi.nlm.nih.gov/35256434/)",
+        "[Image guided brachytherapy in locally advanced cervical cancer: Improved pelvic control and survival in RetroEMBRACE, a multicenter cohort study.](https://pubmed.ncbi.nlm.nih.gov/27134181/)",
+        "[Concurrent chemoradiation for cervical cancer: Comparison of LDR and HDR brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/30971370/)",
+        "[Concurrent chemotherapy with high-dose rate brachytherapy after treatment with chemoradiotherapy in cases of locally advanced carcinoma cervix: A study from rural area of Maharashtra, India.](https://pubmed.ncbi.nlm.nih.gov/36412413/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "34ffd0b52940",
+          "claim": "PubMed ID: 39532203. 2025/02/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreserv",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39532203/",
+          "source_type": "PubMed",
+          "source_title": "A phase III randomised trial on the addition of a contact X-ray brachytherapy boost to standard neoadjuvant chemo-radiotherapy for organ preservation in early rectal adenocarcinoma: 5 year results of the OPERA trial.",
+          "accessed_at": "2026-06-02T23:56:04.918008",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39532203. 2025/02/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreservation (OP) rate for early rectal adenocarcinoma (ADK) of low-mid rectum. \nWe report the results after 5 years of follow-up.\nPATIENTS AND METHODS: OPERA was a multicentre, phase III trial that included \noperable patients (pts), with cT2-cT3b low-mid rectal ADK, tumours <5 cm, cN0 or \ncN1 <8 mm. All p",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy concurrent targeted therapy protocol guidelines ABS GEC-ESTRO",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "7e1d1fb38c52",
+          "claim": "PubMed ID: 35256434. 2022/03/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreserv",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35256434/",
+          "source_type": "PubMed",
+          "source_title": "Global challenges of radiotherapy for the treatment of locally advanced cervical cancer.",
+          "accessed_at": "2026-06-02T23:56:04.918111",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35256434. 2022/03/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreservation (OP) rate for early rectal adenocarcinoma (ADK) of low-mid rectum. \nWe report the results after 5 years of follow-up.\nPATIENTS AND METHODS: OPERA was a multicentre, phase III trial that included \noperable patients (pts), with cT2-cT3b low-mid rectal ADK, tumours <5 cm, cN0 or \ncN1 <8 mm. All p",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy concurrent targeted therapy protocol guidelines ABS GEC-ESTRO",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "bf1f9f15414a",
+          "claim": "PubMed ID: 27134181. 2016/09/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreserv",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/27134181/",
+          "source_type": "PubMed",
+          "source_title": "Image guided brachytherapy in locally advanced cervical cancer: Improved pelvic control and survival in RetroEMBRACE, a multicenter cohort study.",
+          "accessed_at": "2026-06-02T23:56:04.918141",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 27134181. 2016/09/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreservation (OP) rate for early rectal adenocarcinoma (ADK) of low-mid rectum. \nWe report the results after 5 years of follow-up.\nPATIENTS AND METHODS: OPERA was a multicentre, phase III trial that included \noperable patients (pts), with cT2-cT3b low-mid rectal ADK, tumours <5 cm, cN0 or \ncN1 <8 mm. All p",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy concurrent targeted therapy protocol guidelines ABS GEC-ESTRO",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "1550e7da557e",
+          "claim": "PubMed ID: 30971370. 2019/05/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreserv",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/30971370/",
+          "source_type": "PubMed",
+          "source_title": "Concurrent chemoradiation for cervical cancer: Comparison of LDR and HDR brachytherapy.",
+          "accessed_at": "2026-06-02T23:56:04.918164",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 30971370. 2019/05/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreservation (OP) rate for early rectal adenocarcinoma (ADK) of low-mid rectum. \nWe report the results after 5 years of follow-up.\nPATIENTS AND METHODS: OPERA was a multicentre, phase III trial that included \noperable patients (pts), with cT2-cT3b low-mid rectal ADK, tumours <5 cm, cN0 or \ncN1 <8 mm. All p",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy concurrent targeted therapy protocol guidelines ABS GEC-ESTRO",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "6cfb0b98a22c",
+          "claim": "PubMed ID: 36412413. 2022/10/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreserv",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36412413/",
+          "source_type": "PubMed",
+          "source_title": "Concurrent chemotherapy with high-dose rate brachytherapy after treatment with chemoradiotherapy in cases of locally advanced carcinoma cervix: A study from rural area of Maharashtra, India.",
+          "accessed_at": "2026-06-02T23:56:04.918185",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36412413. 2022/10/01 00:00. BACKGROUND: The OPERA trial has shown that a contact X-ray brachytherapy 50 kV \n(CXB) boost with neoadjuvant chemoradiotherapy (NCRT) can increase organ \npreservation (OP) rate for early rectal adenocarcinoma (ADK) of low-mid rectum. \nWe report the results after 5 years of follow-up.\nPATIENTS AND METHODS: OPERA was a multicentre, phase III trial that included \noperable patients (pts), with cT2-cT3b low-mid rectal ADK, tumours <5 cm, cN0 or \ncN1 <8 mm. All p",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy concurrent targeted therapy protocol guidelines ABS GEC-ESTRO",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[A phase III randomised trial on the addition of a contact X-ray brachytherapy boost to standard neoadjuvant chemo-radiotherapy for organ preservation in early rectal adenocarcinoma: 5 year results of the OPERA trial.](https://pubmed.ncbi.nlm.nih.gov/39532203/)",
+      "[Global challenges of radiotherapy for the treatment of locally advanced cervical cancer.](https://pubmed.ncbi.nlm.nih.gov/35256434/)",
+      "[Image guided brachytherapy in locally advanced cervical cancer: Improved pelvic control and survival in RetroEMBRACE, a multicenter cohort study.](https://pubmed.ncbi.nlm.nih.gov/27134181/)",
+      "[Concurrent chemoradiation for cervical cancer: Comparison of LDR and HDR brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/30971370/)",
+      "[Concurrent chemotherapy with high-dose rate brachytherapy after treatment with chemoradiotherapy in cases of locally advanced carcinoma cervix: A study from rural area of Maharashtra, India.](https://pubmed.ncbi.nlm.nih.gov/36412413/)"
+    ]
+  }
+}

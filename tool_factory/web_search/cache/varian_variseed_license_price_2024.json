@@ -1,0 +1,160 @@
+{
+  "query": "Varian VariSeed license price 2024",
+  "timestamp": 1780415489.3413599,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "High Source Strength of Most Blister Packs Delivered for 125I Seed Brachytherapy: A Case Report.",
+        "snippet": "PubMed ID: 41080395. 2025/09/10 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nresult in inadequate coverage of the prostate. We sought here to evaluate the \ndisplacement of periurethral stranded seeds after a prostate brachytherapy \nimplant (Day 0) and its dosimetric consequences 1 month later (Day 30).\nMETHODS AND MATERIALS: Subjects were 10 consecutive patients who underwent \n",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/41080395/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Displacement of periurethral stranded seeds and its dosimetric consequences in prostate brachytherapy.",
+        "snippet": "PubMed ID: 21306959. 2011/09/01 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nresult in inadequate coverage of the prostate. We sought here to evaluate the \ndisplacement of periurethral stranded seeds after a prostate brachytherapy \nimplant (Day 0) and its dosimetric consequences 1 month later (Day 30).\nMETHODS AND MATERIALS: Subjects were 10 consecutive patients who underwent \n",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/21306959/",
+        "source": "PubMed"
+      },
+      {
+        "title": "A simple method for dose fusion from multimodality treatment of prostate cancer: brachytherapy to external beam therapy.",
+        "snippet": "PubMed ID: 20843747. 2011/05/01 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nresult in inadequate coverage of the prostate. We sought here to evaluate the \ndisplacement of periurethral stranded seeds after a prostate brachytherapy \nimplant (Day 0) and its dosimetric consequences 1 month later (Day 30).\nMETHODS AND MATERIALS: Subjects were 10 consecutive patients who underwent \n",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/20843747/",
+        "source": "PubMed"
+      },
+      {
+        "title": "[Iodine-125 transperineal prostate brachytherapy with preplanning technique: pre and post-implant dosimetry results analysis].",
+        "snippet": "PubMed ID: 12719038. 2003/04/01 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nresult in inadequate coverage of the prostate. We sought here to evaluate the \ndisplacement of periurethral stranded seeds after a prostate brachytherapy \nimplant (Day 0) and its dosimetric consequences 1 month later (Day 30).\nMETHODS AND MATERIALS: Subjects were 10 consecutive patients who underwent \n",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/12719038/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Relationship between radiation doses and erectile function deterioration in patients with localized prostate cancer treated with permanent prostate brachytherapy.",
+        "snippet": "PubMed ID: 32893378. 2020/12/01 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nresult in inadequate coverage of the prostate. We sought here to evaluate the \ndisplacement of periurethral stranded seeds after a prostate brachytherapy \nimplant (Day 0) and its dosimetric consequences 1 month later (Day 30).\nMETHODS AND MATERIALS: Subjects were 10 consecutive patients who underwent \n",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32893378/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 41080395. 2025/09/10 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nres\n2. PubMed ID: 21306959. 2011/09/01 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nres\n3. PubMed ID: 20843747. 2011/05/01 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nres",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/41080395/",
+      "https://pubmed.ncbi.nlm.nih.gov/21306959/",
+      "https://pubmed.ncbi.nlm.nih.gov/20843747/",
+      "https://pubmed.ncbi.nlm.nih.gov/12719038/",
+      "https://pubmed.ncbi.nlm.nih.gov/32893378/"
+    ],
+    "evidence_chain_id": "20260602_235127_699362",
+    "evidence_summary": {
+      "response_id": "20260602_235127_699362",
+      "query": "Varian VariSeed license price 2024",
+      "created_at": "2026-06-02T23:51:27.699381",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[High Source Strength of Most Blister Packs Delivered for 125I Seed Brachytherapy: A Case Report.](https://pubmed.ncbi.nlm.nih.gov/41080395/)",
+        "[Displacement of periurethral stranded seeds and its dosimetric consequences in prostate brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/21306959/)",
+        "[A simple method for dose fusion from multimodality treatment of prostate cancer: brachytherapy to external beam therapy.](https://pubmed.ncbi.nlm.nih.gov/20843747/)",
+        "[[Iodine-125 transperineal prostate brachytherapy with preplanning technique: pre and post-implant dosimetry results analysis].](https://pubmed.ncbi.nlm.nih.gov/12719038/)",
+        "[Relationship between radiation doses and erectile function deterioration in patients with localized prostate cancer treated with permanent prostate brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/32893378/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "88bc5ed1f023",
+          "claim": "PubMed ID: 41080395. 2025/09/10 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nres",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/41080395/",
+          "source_type": "PubMed",
+          "source_title": "High Source Strength of Most Blister Packs Delivered for 125I Seed Brachytherapy: A Case Report.",
+          "accessed_at": "2026-06-02T23:51:29.340952",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 41080395. 2025/09/10 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nresult in inadequate coverage of the prostate. We sought here to evaluate the \ndisplacement of periurethral stranded seeds after a prostate brachytherapy \nimplant (Day 0) and its dosimetric consequences 1 month later (Day 30).\nMETHODS AND MATERIALS: Subjects were 10 consecutive patients who underwent \n",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Varian VariSeed license price 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "baf1919b9624",
+          "claim": "PubMed ID: 21306959. 2011/09/01 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nres",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/21306959/",
+          "source_type": "PubMed",
+          "source_title": "Displacement of periurethral stranded seeds and its dosimetric consequences in prostate brachytherapy.",
+          "accessed_at": "2026-06-02T23:51:29.341054",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 21306959. 2011/09/01 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nresult in inadequate coverage of the prostate. We sought here to evaluate the \ndisplacement of periurethral stranded seeds after a prostate brachytherapy \nimplant (Day 0) and its dosimetric consequences 1 month later (Day 30).\nMETHODS AND MATERIALS: Subjects were 10 consecutive patients who underwent \n",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Varian VariSeed license price 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "9b6e5bda20d9",
+          "claim": "PubMed ID: 20843747. 2011/05/01 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nres",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/20843747/",
+          "source_type": "PubMed",
+          "source_title": "A simple method for dose fusion from multimodality treatment of prostate cancer: brachytherapy to external beam therapy.",
+          "accessed_at": "2026-06-02T23:51:29.341085",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 20843747. 2011/05/01 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nresult in inadequate coverage of the prostate. We sought here to evaluate the \ndisplacement of periurethral stranded seeds after a prostate brachytherapy \nimplant (Day 0) and its dosimetric consequences 1 month later (Day 30).\nMETHODS AND MATERIALS: Subjects were 10 consecutive patients who underwent \n",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Varian VariSeed license price 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e60fefdb6a04",
+          "claim": "PubMed ID: 12719038. 2003/04/01 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nres",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/12719038/",
+          "source_type": "PubMed",
+          "source_title": "[Iodine-125 transperineal prostate brachytherapy with preplanning technique: pre and post-implant dosimetry results analysis].",
+          "accessed_at": "2026-06-02T23:51:29.341111",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 12719038. 2003/04/01 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nresult in inadequate coverage of the prostate. We sought here to evaluate the \ndisplacement of periurethral stranded seeds after a prostate brachytherapy \nimplant (Day 0) and its dosimetric consequences 1 month later (Day 30).\nMETHODS AND MATERIALS: Subjects were 10 consecutive patients who underwent \n",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Varian VariSeed license price 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c62c573e1e5d",
+          "claim": "PubMed ID: 32893378. 2020/12/01 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nres",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32893378/",
+          "source_type": "PubMed",
+          "source_title": "Relationship between radiation doses and erectile function deterioration in patients with localized prostate cancer treated with permanent prostate brachytherapy.",
+          "accessed_at": "2026-06-02T23:51:29.341135",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32893378. 2020/12/01 00:00. PURPOSE: The use of stranded seeds for prostate brachytherapy has raised concern \nthat displacement of strands, particularly in the periurethral region, may \nresult in inadequate coverage of the prostate. We sought here to evaluate the \ndisplacement of periurethral stranded seeds after a prostate brachytherapy \nimplant (Day 0) and its dosimetric consequences 1 month later (Day 30).\nMETHODS AND MATERIALS: Subjects were 10 consecutive patients who underwent \n",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "Varian VariSeed license price 2024",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[High Source Strength of Most Blister Packs Delivered for 125I Seed Brachytherapy: A Case Report.](https://pubmed.ncbi.nlm.nih.gov/41080395/)",
+      "[Displacement of periurethral stranded seeds and its dosimetric consequences in prostate brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/21306959/)",
+      "[A simple method for dose fusion from multimodality treatment of prostate cancer: brachytherapy to external beam therapy.](https://pubmed.ncbi.nlm.nih.gov/20843747/)",
+      "[[Iodine-125 transperineal prostate brachytherapy with preplanning technique: pre and post-implant dosimetry results analysis].](https://pubmed.ncbi.nlm.nih.gov/12719038/)",
+      "[Relationship between radiation doses and erectile function deterioration in patients with localized prostate cancer treated with permanent prostate brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/32893378/)"
+    ]
+  }
+}

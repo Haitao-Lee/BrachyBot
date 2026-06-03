@@ -1,0 +1,160 @@
+{
+  "query": "IBA m3QA brachytherapy QA specifications",
+  "timestamp": 1780474469.1588776,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Roles for IBA-derived auxin in plant development.",
+        "snippet": "PubMed ID: 28992091. 2018/01/04 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the targeted diagnosis and treatment of bone \nmetastases. The biodistribution and internal dosimetry of a single therapeutic \ndose of 177Lu-DOTA-IBA were evaluated using a series of single-photon emission \ncomputerized tomography (SPECT) images and blood samples. Five patients with \nmultiple bone metastas",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28992091/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Dot-immunobinding assay (Dot-Iba).",
+        "snippet": "PubMed ID: 26043995. 2015/01/01 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the targeted diagnosis and treatment of bone \nmetastases. The biodistribution and internal dosimetry of a single therapeutic \ndose of 177Lu-DOTA-IBA were evaluated using a series of single-photon emission \ncomputerized tomography (SPECT) images and blood samples. Five patients with \nmultiple bone metastas",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/26043995/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Biodistribution and dosimetry of (177)Lu-DOTA-IBA for therapy of bone metastases.",
+        "snippet": "PubMed ID: 38517637. 2024/03/22 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the targeted diagnosis and treatment of bone \nmetastases. The biodistribution and internal dosimetry of a single therapeutic \ndose of 177Lu-DOTA-IBA were evaluated using a series of single-photon emission \ncomputerized tomography (SPECT) images and blood samples. Five patients with \nmultiple bone metastas",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38517637/",
+        "source": "PubMed"
+      },
+      {
+        "title": "IBA Delivery Technique and Media Salts Affected In Vitro Rooting and Acclimatization of Eight Prunus Genotypes.",
+        "snippet": "PubMed ID: 36679002. 2023/01/07 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the targeted diagnosis and treatment of bone \nmetastases. The biodistribution and internal dosimetry of a single therapeutic \ndose of 177Lu-DOTA-IBA were evaluated using a series of single-photon emission \ncomputerized tomography (SPECT) images and blood samples. Five patients with \nmultiple bone metastas",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36679002/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Evaluation of (188)Re- IBA as a novel radiopharmaceutical for bone marrow ablation.",
+        "snippet": "PubMed ID: 38531242. 2024/06/01 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the targeted diagnosis and treatment of bone \nmetastases. The biodistribution and internal dosimetry of a single therapeutic \ndose of 177Lu-DOTA-IBA were evaluated using a series of single-photon emission \ncomputerized tomography (SPECT) images and blood samples. Five patients with \nmultiple bone metastas",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38531242/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 28992091. 2018/01/04 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the ta\n2. PubMed ID: 26043995. 2015/01/01 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the ta\n3. PubMed ID: 38517637. 2024/03/22 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the ta",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/28992091/",
+      "https://pubmed.ncbi.nlm.nih.gov/26043995/",
+      "https://pubmed.ncbi.nlm.nih.gov/38517637/",
+      "https://pubmed.ncbi.nlm.nih.gov/36679002/",
+      "https://pubmed.ncbi.nlm.nih.gov/38531242/"
+    ],
+    "evidence_chain_id": "20260603_161427_542943",
+    "evidence_summary": {
+      "response_id": "20260603_161427_542943",
+      "query": "IBA m3QA brachytherapy QA specifications",
+      "created_at": "2026-06-03T16:14:27.542972",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Roles for IBA-derived auxin in plant development.](https://pubmed.ncbi.nlm.nih.gov/28992091/)",
+        "[Dot-immunobinding assay (Dot-Iba).](https://pubmed.ncbi.nlm.nih.gov/26043995/)",
+        "[Biodistribution and dosimetry of (177)Lu-DOTA-IBA for therapy of bone metastases.](https://pubmed.ncbi.nlm.nih.gov/38517637/)",
+        "[IBA Delivery Technique and Media Salts Affected In Vitro Rooting and Acclimatization of Eight Prunus Genotypes.](https://pubmed.ncbi.nlm.nih.gov/36679002/)",
+        "[Evaluation of (188)Re- IBA as a novel radiopharmaceutical for bone marrow ablation.](https://pubmed.ncbi.nlm.nih.gov/38531242/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "300c3b603531",
+          "claim": "PubMed ID: 28992091. 2018/01/04 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the ta",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/28992091/",
+          "source_type": "PubMed",
+          "source_title": "Roles for IBA-derived auxin in plant development.",
+          "accessed_at": "2026-06-03T16:14:29.158490",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 28992091. 2018/01/04 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the targeted diagnosis and treatment of bone \nmetastases. The biodistribution and internal dosimetry of a single therapeutic \ndose of 177Lu-DOTA-IBA were evaluated using a series of single-photon emission \ncomputerized tomography (SPECT) images and blood samples. Five patients with \nmultiple bone metastas",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IBA m3QA brachytherapy QA specifications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "fcfa57bf1329",
+          "claim": "PubMed ID: 26043995. 2015/01/01 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the ta",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/26043995/",
+          "source_type": "PubMed",
+          "source_title": "Dot-immunobinding assay (Dot-Iba).",
+          "accessed_at": "2026-06-03T16:14:29.158590",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 26043995. 2015/01/01 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the targeted diagnosis and treatment of bone \nmetastases. The biodistribution and internal dosimetry of a single therapeutic \ndose of 177Lu-DOTA-IBA were evaluated using a series of single-photon emission \ncomputerized tomography (SPECT) images and blood samples. Five patients with \nmultiple bone metastas",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IBA m3QA brachytherapy QA specifications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "6d57d6881c64",
+          "claim": "PubMed ID: 38517637. 2024/03/22 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the ta",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38517637/",
+          "source_type": "PubMed",
+          "source_title": "Biodistribution and dosimetry of (177)Lu-DOTA-IBA for therapy of bone metastases.",
+          "accessed_at": "2026-06-03T16:14:29.158621",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38517637. 2024/03/22 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the targeted diagnosis and treatment of bone \nmetastases. The biodistribution and internal dosimetry of a single therapeutic \ndose of 177Lu-DOTA-IBA were evaluated using a series of single-photon emission \ncomputerized tomography (SPECT) images and blood samples. Five patients with \nmultiple bone metastas",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IBA m3QA brachytherapy QA specifications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "7da49e607616",
+          "claim": "PubMed ID: 36679002. 2023/01/07 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the ta",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36679002/",
+          "source_type": "PubMed",
+          "source_title": "IBA Delivery Technique and Media Salts Affected In Vitro Rooting and Acclimatization of Eight Prunus Genotypes.",
+          "accessed_at": "2026-06-03T16:14:29.158648",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36679002. 2023/01/07 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the targeted diagnosis and treatment of bone \nmetastases. The biodistribution and internal dosimetry of a single therapeutic \ndose of 177Lu-DOTA-IBA were evaluated using a series of single-photon emission \ncomputerized tomography (SPECT) images and blood samples. Five patients with \nmultiple bone metastas",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IBA m3QA brachytherapy QA specifications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "4ec5121a6a7e",
+          "claim": "PubMed ID: 38531242. 2024/06/01 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the ta",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38531242/",
+          "source_type": "PubMed",
+          "source_title": "Evaluation of (188)Re- IBA as a novel radiopharmaceutical for bone marrow ablation.",
+          "accessed_at": "2026-06-03T16:14:29.158674",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38531242. 2024/06/01 00:00. BACKGROUND: We designed and synthesized a novel bisphosphonate \nradiopharmaceutical (68 Ga- or 177Lu-labeled DOTA-ibandronate \n[68 Ga/177Lu-DOTA-IBA]) for the targeted diagnosis and treatment of bone \nmetastases. The biodistribution and internal dosimetry of a single therapeutic \ndose of 177Lu-DOTA-IBA were evaluated using a series of single-photon emission \ncomputerized tomography (SPECT) images and blood samples. Five patients with \nmultiple bone metastas",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "IBA m3QA brachytherapy QA specifications",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Roles for IBA-derived auxin in plant development.](https://pubmed.ncbi.nlm.nih.gov/28992091/)",
+      "[Dot-immunobinding assay (Dot-Iba).](https://pubmed.ncbi.nlm.nih.gov/26043995/)",
+      "[Biodistribution and dosimetry of (177)Lu-DOTA-IBA for therapy of bone metastases.](https://pubmed.ncbi.nlm.nih.gov/38517637/)",
+      "[IBA Delivery Technique and Media Salts Affected In Vitro Rooting and Acclimatization of Eight Prunus Genotypes.](https://pubmed.ncbi.nlm.nih.gov/36679002/)",
+      "[Evaluation of (188)Re- IBA as a novel radiopharmaceutical for bone marrow ablation.](https://pubmed.ncbi.nlm.nih.gov/38531242/)"
+    ]
+  }
+}

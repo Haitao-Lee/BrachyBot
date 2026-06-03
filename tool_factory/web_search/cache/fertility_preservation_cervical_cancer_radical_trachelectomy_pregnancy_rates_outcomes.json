@@ -1,0 +1,160 @@
+{
+  "query": "fertility preservation cervical cancer radical trachelectomy pregnancy rates outcomes",
+  "timestamp": 1780419210.3066134,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Fertility preservation in uro-oncology.",
+        "snippet": "PubMed ID: 36349382. 2022/12/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36349382/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Fertility Preservation in Cervical Cancer-Treatment Strategies and Indications.",
+        "snippet": "PubMed ID: 38248104. 2024/01/04 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38248104/",
+        "source": "PubMed"
+      },
+      {
+        "title": "[Fertility preservation].",
+        "snippet": "PubMed ID: 34852903. 2021/11/29 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34852903/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Fertility preservation in gynecologic cancers.",
+        "snippet": "PubMed ID: 31604663. 2019/12/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31604663/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Fertility Preservation in Gynecologic Cancer.",
+        "snippet": "PubMed ID: 30867103. 2019/04/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30867103/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 36349382. 2022/12/01 00:00\n2. PubMed ID: 38248104. 2024/01/04 00:00\n3. PubMed ID: 34852903. 2021/11/29 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/36349382/",
+      "https://pubmed.ncbi.nlm.nih.gov/38248104/",
+      "https://pubmed.ncbi.nlm.nih.gov/34852903/",
+      "https://pubmed.ncbi.nlm.nih.gov/31604663/",
+      "https://pubmed.ncbi.nlm.nih.gov/30867103/"
+    ],
+    "evidence_chain_id": "20260603_005328_880257",
+    "evidence_summary": {
+      "response_id": "20260603_005328_880257",
+      "query": "fertility preservation cervical cancer radical trachelectomy pregnancy rates outcomes",
+      "created_at": "2026-06-03T00:53:28.880274",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Fertility preservation in uro-oncology.](https://pubmed.ncbi.nlm.nih.gov/36349382/)",
+        "[Fertility Preservation in Cervical Cancer-Treatment Strategies and Indications.](https://pubmed.ncbi.nlm.nih.gov/38248104/)",
+        "[[Fertility preservation].](https://pubmed.ncbi.nlm.nih.gov/34852903/)",
+        "[Fertility preservation in gynecologic cancers.](https://pubmed.ncbi.nlm.nih.gov/31604663/)",
+        "[Fertility Preservation in Gynecologic Cancer.](https://pubmed.ncbi.nlm.nih.gov/30867103/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "6dfb28e8e09b",
+          "claim": "PubMed ID: 36349382. 2022/12/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36349382/",
+          "source_type": "PubMed",
+          "source_title": "Fertility preservation in uro-oncology.",
+          "accessed_at": "2026-06-03T00:53:30.306229",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36349382. 2022/12/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "fertility preservation cervical cancer radical trachelectomy pregnancy rates outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c05e47303ea1",
+          "claim": "PubMed ID: 38248104. 2024/01/04 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38248104/",
+          "source_type": "PubMed",
+          "source_title": "Fertility Preservation in Cervical Cancer-Treatment Strategies and Indications.",
+          "accessed_at": "2026-06-03T00:53:30.306332",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38248104. 2024/01/04 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "fertility preservation cervical cancer radical trachelectomy pregnancy rates outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "274c9064b9c7",
+          "claim": "PubMed ID: 34852903. 2021/11/29 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34852903/",
+          "source_type": "PubMed",
+          "source_title": "[Fertility preservation].",
+          "accessed_at": "2026-06-03T00:53:30.306365",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34852903. 2021/11/29 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "fertility preservation cervical cancer radical trachelectomy pregnancy rates outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "114bb45e447e",
+          "claim": "PubMed ID: 31604663. 2019/12/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31604663/",
+          "source_type": "PubMed",
+          "source_title": "Fertility preservation in gynecologic cancers.",
+          "accessed_at": "2026-06-03T00:53:30.306391",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31604663. 2019/12/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "fertility preservation cervical cancer radical trachelectomy pregnancy rates outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "492a37bdbf08",
+          "claim": "PubMed ID: 30867103. 2019/04/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/30867103/",
+          "source_type": "PubMed",
+          "source_title": "Fertility Preservation in Gynecologic Cancer.",
+          "accessed_at": "2026-06-03T00:53:30.306413",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 30867103. 2019/04/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "fertility preservation cervical cancer radical trachelectomy pregnancy rates outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Fertility preservation in uro-oncology.](https://pubmed.ncbi.nlm.nih.gov/36349382/)",
+      "[Fertility Preservation in Cervical Cancer-Treatment Strategies and Indications.](https://pubmed.ncbi.nlm.nih.gov/38248104/)",
+      "[[Fertility preservation].](https://pubmed.ncbi.nlm.nih.gov/34852903/)",
+      "[Fertility preservation in gynecologic cancers.](https://pubmed.ncbi.nlm.nih.gov/31604663/)",
+      "[Fertility Preservation in Gynecologic Cancer.](https://pubmed.ncbi.nlm.nih.gov/30867103/)"
+    ]
+  }
+}

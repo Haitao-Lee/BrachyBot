@@ -1,0 +1,160 @@
+{
+  "query": "PTW Delta4 brachytherapy QA capabilities specifications",
+  "timestamp": 1780474466.0389988,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Evaluation of PTW Seven29 for tomotherapy patient-specific quality assurance and comparison with ScandiDos Delta(4).",
+        "snippet": "PubMed ID: 22557796. 2012/04/01 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntargets represent a major challenge. By monitoring a moving target it is \npossible to make the beam follow the motion, shaped by a Dynamic MLC (DMLC). The \naim of this work was to evaluate the dose delivered to moving targets using the \nRapidArc (Varian Medical Systems, Inc.) technology with and without ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/22557796/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Comparison of four commercial devices for RapidArc and sliding window IMRT QA.",
+        "snippet": "PubMed ID: 21587184. 2011/04/04 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntargets represent a major challenge. By monitoring a moving target it is \npossible to make the beam follow the motion, shaped by a Dynamic MLC (DMLC). The \naim of this work was to evaluate the dose delivered to moving targets using the \nRapidArc (Varian Medical Systems, Inc.) technology with and without ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/21587184/",
+        "source": "PubMed"
+      },
+      {
+        "title": "DMLC motion tracking of moving targets for intensity modulated arc therapy treatment: a feasibility study.",
+        "snippet": "PubMed ID: 18720056. 2009/01/01 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntargets represent a major challenge. By monitoring a moving target it is \npossible to make the beam follow the motion, shaped by a Dynamic MLC (DMLC). The \naim of this work was to evaluate the dose delivered to moving targets using the \nRapidArc (Varian Medical Systems, Inc.) technology with and without ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/18720056/",
+        "source": "PubMed"
+      },
+      {
+        "title": "A comparison of the gamma index analysis in various commercial IMRT/VMAT QA systems.",
+        "snippet": "PubMed ID: 24100148. 2013/12/01 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntargets represent a major challenge. By monitoring a moving target it is \npossible to make the beam follow the motion, shaped by a Dynamic MLC (DMLC). The \naim of this work was to evaluate the dose delivered to moving targets using the \nRapidArc (Varian Medical Systems, Inc.) technology with and without ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/24100148/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Analyzation of the local confidence limits for IMRT and VMAT based on AAPM TG119 report.",
+        "snippet": "PubMed ID: 31296358. 2020/01/01 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntargets represent a major challenge. By monitoring a moving target it is \npossible to make the beam follow the motion, shaped by a Dynamic MLC (DMLC). The \naim of this work was to evaluate the dose delivered to moving targets using the \nRapidArc (Varian Medical Systems, Inc.) technology with and without ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31296358/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 22557796. 2012/04/01 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntarge\n2. PubMed ID: 21587184. 2011/04/04 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntarge\n3. PubMed ID: 18720056. 2009/01/01 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntarge",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/22557796/",
+      "https://pubmed.ncbi.nlm.nih.gov/21587184/",
+      "https://pubmed.ncbi.nlm.nih.gov/18720056/",
+      "https://pubmed.ncbi.nlm.nih.gov/24100148/",
+      "https://pubmed.ncbi.nlm.nih.gov/31296358/"
+    ],
+    "evidence_chain_id": "20260603_161424_254934",
+    "evidence_summary": {
+      "response_id": "20260603_161424_254934",
+      "query": "PTW Delta4 brachytherapy QA capabilities specifications",
+      "created_at": "2026-06-03T16:14:24.254959",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Evaluation of PTW Seven29 for tomotherapy patient-specific quality assurance and comparison with ScandiDos Delta(4).](https://pubmed.ncbi.nlm.nih.gov/22557796/)",
+        "[Comparison of four commercial devices for RapidArc and sliding window IMRT QA.](https://pubmed.ncbi.nlm.nih.gov/21587184/)",
+        "[DMLC motion tracking of moving targets for intensity modulated arc therapy treatment: a feasibility study.](https://pubmed.ncbi.nlm.nih.gov/18720056/)",
+        "[A comparison of the gamma index analysis in various commercial IMRT/VMAT QA systems.](https://pubmed.ncbi.nlm.nih.gov/24100148/)",
+        "[Analyzation of the local confidence limits for IMRT and VMAT based on AAPM TG119 report.](https://pubmed.ncbi.nlm.nih.gov/31296358/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "f40375bb56d5",
+          "claim": "PubMed ID: 22557796. 2012/04/01 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntarge",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/22557796/",
+          "source_type": "PubMed",
+          "source_title": "Evaluation of PTW Seven29 for tomotherapy patient-specific quality assurance and comparison with ScandiDos Delta(4).",
+          "accessed_at": "2026-06-03T16:14:26.038554",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 22557796. 2012/04/01 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntargets represent a major challenge. By monitoring a moving target it is \npossible to make the beam follow the motion, shaped by a Dynamic MLC (DMLC). The \naim of this work was to evaluate the dose delivered to moving targets using the \nRapidArc (Varian Medical Systems, Inc.) technology with and without ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PTW Delta4 brachytherapy QA capabilities specifications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "55de4f9d6107",
+          "claim": "PubMed ID: 21587184. 2011/04/04 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntarge",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/21587184/",
+          "source_type": "PubMed",
+          "source_title": "Comparison of four commercial devices for RapidArc and sliding window IMRT QA.",
+          "accessed_at": "2026-06-03T16:14:26.038678",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 21587184. 2011/04/04 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntargets represent a major challenge. By monitoring a moving target it is \npossible to make the beam follow the motion, shaped by a Dynamic MLC (DMLC). The \naim of this work was to evaluate the dose delivered to moving targets using the \nRapidArc (Varian Medical Systems, Inc.) technology with and without ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PTW Delta4 brachytherapy QA capabilities specifications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "5c0ff8c3d052",
+          "claim": "PubMed ID: 18720056. 2009/01/01 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntarge",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/18720056/",
+          "source_type": "PubMed",
+          "source_title": "DMLC motion tracking of moving targets for intensity modulated arc therapy treatment: a feasibility study.",
+          "accessed_at": "2026-06-03T16:14:26.038716",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 18720056. 2009/01/01 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntargets represent a major challenge. By monitoring a moving target it is \npossible to make the beam follow the motion, shaped by a Dynamic MLC (DMLC). The \naim of this work was to evaluate the dose delivered to moving targets using the \nRapidArc (Varian Medical Systems, Inc.) technology with and without ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PTW Delta4 brachytherapy QA capabilities specifications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3a16b9743900",
+          "claim": "PubMed ID: 24100148. 2013/12/01 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntarge",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/24100148/",
+          "source_type": "PubMed",
+          "source_title": "A comparison of the gamma index analysis in various commercial IMRT/VMAT QA systems.",
+          "accessed_at": "2026-06-03T16:14:26.038744",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 24100148. 2013/12/01 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntargets represent a major challenge. By monitoring a moving target it is \npossible to make the beam follow the motion, shaped by a Dynamic MLC (DMLC). The \naim of this work was to evaluate the dose delivered to moving targets using the \nRapidArc (Varian Medical Systems, Inc.) technology with and without ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PTW Delta4 brachytherapy QA capabilities specifications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "b895b0a7ad77",
+          "claim": "PubMed ID: 31296358. 2020/01/01 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntarge",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31296358/",
+          "source_type": "PubMed",
+          "source_title": "Analyzation of the local confidence limits for IMRT and VMAT based on AAPM TG119 report.",
+          "accessed_at": "2026-06-03T16:14:26.038770",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31296358. 2020/01/01 00:00. PURPOSE: Intensity modulated arc therapy offers great advantages with the \ncapability of delivering a fast and highly conformal treatment. However, moving \ntargets represent a major challenge. By monitoring a moving target it is \npossible to make the beam follow the motion, shaped by a Dynamic MLC (DMLC). The \naim of this work was to evaluate the dose delivered to moving targets using the \nRapidArc (Varian Medical Systems, Inc.) technology with and without ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PTW Delta4 brachytherapy QA capabilities specifications",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Evaluation of PTW Seven29 for tomotherapy patient-specific quality assurance and comparison with ScandiDos Delta(4).](https://pubmed.ncbi.nlm.nih.gov/22557796/)",
+      "[Comparison of four commercial devices for RapidArc and sliding window IMRT QA.](https://pubmed.ncbi.nlm.nih.gov/21587184/)",
+      "[DMLC motion tracking of moving targets for intensity modulated arc therapy treatment: a feasibility study.](https://pubmed.ncbi.nlm.nih.gov/18720056/)",
+      "[A comparison of the gamma index analysis in various commercial IMRT/VMAT QA systems.](https://pubmed.ncbi.nlm.nih.gov/24100148/)",
+      "[Analyzation of the local confidence limits for IMRT and VMAT based on AAPM TG119 report.](https://pubmed.ncbi.nlm.nih.gov/31296358/)"
+    ]
+  }
+}

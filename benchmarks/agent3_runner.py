@@ -21,7 +21,26 @@ os.makedirs(REPORT_DIR, exist_ok=True)
 
 CATEGORIES = [19, 20, 21, 22, 23, 24, 25, 26, 27]
 
-def send_message(text, session_id, timeout=300, retries=3):
+def check_server():
+    try:
+        r = requests.get(f"{BASE_URL}/", timeout=5)
+        return r.status_code == 200
+    except:
+        return False
+
+def wait_for_server(timeout=600):
+    print(f"\n    Waiting for server (timeout: {timeout}s)...", end="", flush=True)
+    start = time.time()
+    while time.time() - start < timeout:
+        if check_server():
+            print(" online!", flush=True)
+            return True
+        print(".", end="", flush=True)
+        time.sleep(10)
+    print(f" TIMEOUT after {timeout}s", flush=True)
+    return False
+
+def send_message(text, session_id, timeout=300, retries=5):
     payload = {
         "message": text,
         "clear_context": True,
@@ -30,15 +49,25 @@ def send_message(text, session_id, timeout=300, retries=3):
     }
     for attempt in range(retries):
         try:
+            if not check_server():
+                if not wait_for_server(timeout=300):
+                    continue
             response = requests.post(f"{BASE_URL}/api/chat", json=payload, timeout=timeout)
             data = response.json()
             return data.get('response', '')
+        except requests.exceptions.Timeout:
+            print(f"\n    Timeout attempt {attempt+1}/{retries}", end="", flush=True)
+            time.sleep(15)
+        except requests.exceptions.ConnectionError:
+            print(f"\n    ConnError attempt {attempt+1}/{retries}", end="", flush=True)
+            time.sleep(15)
         except Exception as e:
             if attempt < retries - 1:
-                print(f"\n    Retry {attempt+1}/{retries}: {str(e)[:80]}", end="", flush=True)
-                time.sleep(5)
+                print(f"\n    Retry {attempt+1}/{retries}: {type(e).__name__}", end="", flush=True)
+                time.sleep(10)
             else:
-                return f"Error: {str(e)}"
+                return f"Error: {str(e)[:200]}"
+    return f"Error: All {retries} attempts failed"
 
 def take_screenshot_batch(results, cat_num):
     """Take screenshots using a single browser instance for all results."""
@@ -135,19 +164,27 @@ def run_category(cat_num, agent_id):
 
     results = []
 
-    # Load existing results for this category to skip completed cases
+    # Determine completed cases from BOTH screenshots AND intermediate results
+    screenshot_completed = set()
+    for f in glob.glob(f"{SCREENSHOT_DIR}/{cat_num:02d}_*.png"):
+        bn = os.path.basename(f)
+        cid = bn.replace(f"{cat_num:02d}_", "").replace(".png", "")
+        if os.path.getsize(f) > 1000:
+            screenshot_completed.add(cid)
+
     existing_results = []
     existing_file = f"/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/agent3_cat{cat_num:02d}.json"
+    result_completed = set()
     if os.path.exists(existing_file):
         try:
             with open(existing_file, 'r') as ef:
                 existing_results = json.load(ef)
-            existing_ids = set(r['case_id'] for r in existing_results)
-            print(f"  Resuming: {len(existing_results)} existing results loaded")
+            result_completed = set(r['case_id'] for r in existing_results)
         except:
-            existing_ids = set()
-    else:
-        existing_ids = set()
+            pass
+
+    existing_ids = screenshot_completed | result_completed
+    print(f"  Screenshots: {len(screenshot_completed)}, Results: {len(result_completed)}, Total completed: {len(existing_ids)}")
 
     for i, test_case in enumerate(test_cases):
         case_id = test_case.get('id', f'Q{i+1:04d}')
@@ -177,6 +214,22 @@ def run_category(cat_num, agent_id):
         if not passed:
             root_cause, root_cause_detail = analyze_failure(response, test_case)
 
+        # Take screenshot immediately for this case
+        screenshot_path = None
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page(viewport={'width': 1920, 'height': 1080})
+                page.goto(BASE_URL, timeout=30000, wait_until='domcontentloaded')
+                time.sleep(3)
+                screenshot_path = f"{SCREENSHOT_DIR}/{cat_num:02d}_{case_id}.png"
+                if not (os.path.exists(screenshot_path) and os.path.getsize(screenshot_path) > 1000):
+                    page.screenshot(path=screenshot_path, full_page=True)
+                browser.close()
+        except Exception as e:
+            screenshot_path = None
+
         result = {
             'case_id': case_id,
             'category': cat_name,
@@ -190,24 +243,23 @@ def run_category(cat_num, agent_id):
             'root_cause': root_cause,
             'root_cause_detail': root_cause_detail,
             'response_time': response_time,
-            'screenshot': None,
+            'screenshot': screenshot_path,
             'difficulty': test_case.get('difficulty', 'unknown'),
             'timestamp': datetime.now().isoformat()
         }
         results.append(result)
 
         status = "PASS" if passed else "FAIL"
-        print(f"{status} ({total_score:.2f}) [{response_time:.1f}s]")
+        print(f"{status} ({total_score:.2f}) [{response_time:.1f}s]", end="")
+        if screenshot_path:
+            print(" [screenshot]", end="")
+        print()
         if root_cause:
             print(f"    -> {root_cause}: {root_cause_detail}")
         sys.stdout.flush()
 
         # Save intermediate results after every case
         save_intermediate(results, cat_num)
-
-    # Try batch screenshots for this category
-    print(f"  Taking screenshots for {len(results)} cases...")
-    take_screenshot_batch(results, cat_num)
 
     # Final save for this category
     save_intermediate(results, cat_num)

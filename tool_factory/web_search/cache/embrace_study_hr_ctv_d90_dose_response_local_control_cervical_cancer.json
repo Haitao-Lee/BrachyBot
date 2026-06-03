@@ -1,0 +1,56 @@
+{
+  "query": "EMBRACE study HR-CTV D90 dose response local control cervical cancer",
+  "timestamp": 1780419513.9977286,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "The BRCA2 c.68-7T > A variant is not pathogenic: A model for clinical calibration of spliceogenicity.",
+        "snippet": "PubMed ID: 29460995. 2018/05/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29460995/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 29460995. 2018/05/01 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/29460995/"
+    ],
+    "evidence_chain_id": "20260603_005832_470954",
+    "evidence_summary": {
+      "response_id": "20260603_005832_470954",
+      "query": "EMBRACE study HR-CTV D90 dose response local control cervical cancer",
+      "created_at": "2026-06-03T00:58:32.470983",
+      "num_sources": 1,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[The BRCA2 c.68-7T > A variant is not pathogenic: A model for clinical calibration of spliceogenicity.](https://pubmed.ncbi.nlm.nih.gov/29460995/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "f0eb0095f9a5",
+          "claim": "PubMed ID: 29460995. 2018/05/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/29460995/",
+          "source_type": "PubMed",
+          "source_title": "The BRCA2 c.68-7T > A variant is not pathogenic: A model for clinical calibration of spliceogenicity.",
+          "accessed_at": "2026-06-03T00:58:33.997473",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 29460995. 2018/05/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "EMBRACE study HR-CTV D90 dose response local control cervical cancer",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[The BRCA2 c.68-7T > A variant is not pathogenic: A model for clinical calibration of spliceogenicity.](https://pubmed.ncbi.nlm.nih.gov/29460995/)"
+    ]
+  }
+}

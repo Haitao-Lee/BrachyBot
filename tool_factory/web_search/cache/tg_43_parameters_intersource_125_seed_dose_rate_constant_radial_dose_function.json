@@ -1,0 +1,160 @@
+{
+  "query": "TG-43 parameters InterSource-125 seed dose rate constant radial dose function",
+  "timestamp": 1780469815.2906659,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Investigation of TG-43 Dosimetric Parameters for (192)Ir Brachytherapy Source Using GATE Monte Carlo Code.",
+        "snippet": "PubMed ID: 37969149. 2023/07/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore its clinical application. The purpose of this investigation is to verify \nthe dosimetric data of the high dose rate (HDR) BEBIG 192Ir source (Ir2.A).\nMATERIALS AND METHODS: The HDR 192Ir encapsulated seed was simulated and its \nmain dosimetric data were calculated using Geant4 Application for Tomogra",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37969149/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Update of the CLRP Monte Carlo TG-43 parameter database for high-energy brachytherapy sources.",
+        "snippet": "PubMed ID: 36542404. 2023/03/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore its clinical application. The purpose of this investigation is to verify \nthe dosimetric data of the high dose rate (HDR) BEBIG 192Ir source (Ir2.A).\nMATERIALS AND METHODS: The HDR 192Ir encapsulated seed was simulated and its \nmain dosimetric data were calculated using Geant4 Application for Tomogra",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36542404/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Update of the CLRP TG-43 parameter database for low-energy brachytherapy sources.",
+        "snippet": "PubMed ID: 32436344. 2020/09/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore its clinical application. The purpose of this investigation is to verify \nthe dosimetric data of the high dose rate (HDR) BEBIG 192Ir source (Ir2.A).\nMATERIALS AND METHODS: The HDR 192Ir encapsulated seed was simulated and its \nmain dosimetric data were calculated using Geant4 Application for Tomogra",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32436344/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Monte Carlo calculated TG-43 dosimetry parameters for the SeedLink 125Iodine brachytherapy system.",
+        "snippet": "PubMed ID: 14528972. 2003/09/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore its clinical application. The purpose of this investigation is to verify \nthe dosimetric data of the high dose rate (HDR) BEBIG 192Ir source (Ir2.A).\nMATERIALS AND METHODS: The HDR 192Ir encapsulated seed was simulated and its \nmain dosimetric data were calculated using Geant4 Application for Tomogra",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/14528972/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Dosimetry parameters of BARC OcuProsta I-125 seed source.",
+        "snippet": "PubMed ID: 15920985. 2005/03/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore its clinical application. The purpose of this investigation is to verify \nthe dosimetric data of the high dose rate (HDR) BEBIG 192Ir source (Ir2.A).\nMATERIALS AND METHODS: The HDR 192Ir encapsulated seed was simulated and its \nmain dosimetric data were calculated using Geant4 Application for Tomogra",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/15920985/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 37969149. 2023/07/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore i\n2. PubMed ID: 36542404. 2023/03/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore i\n3. PubMed ID: 32436344. 2020/09/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore i",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/37969149/",
+      "https://pubmed.ncbi.nlm.nih.gov/36542404/",
+      "https://pubmed.ncbi.nlm.nih.gov/32436344/",
+      "https://pubmed.ncbi.nlm.nih.gov/14528972/",
+      "https://pubmed.ncbi.nlm.nih.gov/15920985/"
+    ],
+    "evidence_chain_id": "20260603_145653_319593",
+    "evidence_summary": {
+      "response_id": "20260603_145653_319593",
+      "query": "TG-43 parameters InterSource-125 seed dose rate constant radial dose function",
+      "created_at": "2026-06-03T14:56:53.319624",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Investigation of TG-43 Dosimetric Parameters for (192)Ir Brachytherapy Source Using GATE Monte Carlo Code.](https://pubmed.ncbi.nlm.nih.gov/37969149/)",
+        "[Update of the CLRP Monte Carlo TG-43 parameter database for high-energy brachytherapy sources.](https://pubmed.ncbi.nlm.nih.gov/36542404/)",
+        "[Update of the CLRP TG-43 parameter database for low-energy brachytherapy sources.](https://pubmed.ncbi.nlm.nih.gov/32436344/)",
+        "[Monte Carlo calculated TG-43 dosimetry parameters for the SeedLink 125Iodine brachytherapy system.](https://pubmed.ncbi.nlm.nih.gov/14528972/)",
+        "[Dosimetry parameters of BARC OcuProsta I-125 seed source.](https://pubmed.ncbi.nlm.nih.gov/15920985/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "41e059cd6e0c",
+          "claim": "PubMed ID: 37969149. 2023/07/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore i",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37969149/",
+          "source_type": "PubMed",
+          "source_title": "Investigation of TG-43 Dosimetric Parameters for (192)Ir Brachytherapy Source Using GATE Monte Carlo Code.",
+          "accessed_at": "2026-06-03T14:56:55.290278",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37969149. 2023/07/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore its clinical application. The purpose of this investigation is to verify \nthe dosimetric data of the high dose rate (HDR) BEBIG 192Ir source (Ir2.A).\nMATERIALS AND METHODS: The HDR 192Ir encapsulated seed was simulated and its \nmain dosimetric data were calculated using Geant4 Application for Tomogra",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "TG-43 parameters InterSource-125 seed dose rate constant radial dose function",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ab19e8faa005",
+          "claim": "PubMed ID: 36542404. 2023/03/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore i",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36542404/",
+          "source_type": "PubMed",
+          "source_title": "Update of the CLRP Monte Carlo TG-43 parameter database for high-energy brachytherapy sources.",
+          "accessed_at": "2026-06-03T14:56:55.290372",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36542404. 2023/03/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore its clinical application. The purpose of this investigation is to verify \nthe dosimetric data of the high dose rate (HDR) BEBIG 192Ir source (Ir2.A).\nMATERIALS AND METHODS: The HDR 192Ir encapsulated seed was simulated and its \nmain dosimetric data were calculated using Geant4 Application for Tomogra",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "TG-43 parameters InterSource-125 seed dose rate constant radial dose function",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8dd674c6e66c",
+          "claim": "PubMed ID: 32436344. 2020/09/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore i",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32436344/",
+          "source_type": "PubMed",
+          "source_title": "Update of the CLRP TG-43 parameter database for low-energy brachytherapy sources.",
+          "accessed_at": "2026-06-03T14:56:55.290403",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32436344. 2020/09/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore its clinical application. The purpose of this investigation is to verify \nthe dosimetric data of the high dose rate (HDR) BEBIG 192Ir source (Ir2.A).\nMATERIALS AND METHODS: The HDR 192Ir encapsulated seed was simulated and its \nmain dosimetric data were calculated using Geant4 Application for Tomogra",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "TG-43 parameters InterSource-125 seed dose rate constant radial dose function",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "5d10ea70b2c5",
+          "claim": "PubMed ID: 14528972. 2003/09/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore i",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/14528972/",
+          "source_type": "PubMed",
+          "source_title": "Monte Carlo calculated TG-43 dosimetry parameters for the SeedLink 125Iodine brachytherapy system.",
+          "accessed_at": "2026-06-03T14:56:55.290436",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 14528972. 2003/09/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore its clinical application. The purpose of this investigation is to verify \nthe dosimetric data of the high dose rate (HDR) BEBIG 192Ir source (Ir2.A).\nMATERIALS AND METHODS: The HDR 192Ir encapsulated seed was simulated and its \nmain dosimetric data were calculated using Geant4 Application for Tomogra",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "TG-43 parameters InterSource-125 seed dose rate constant radial dose function",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "cc8534a1b2e1",
+          "claim": "PubMed ID: 15920985. 2005/03/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore i",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/15920985/",
+          "source_type": "PubMed",
+          "source_title": "Dosimetry parameters of BARC OcuProsta I-125 seed source.",
+          "accessed_at": "2026-06-03T14:56:55.290465",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 15920985. 2005/03/01 00:00. PURPOSE: According to the revised Task Group number 43 recommendations, a \nbrachytherapy source must be validated against a similar or identical source \nbefore its clinical application. The purpose of this investigation is to verify \nthe dosimetric data of the high dose rate (HDR) BEBIG 192Ir source (Ir2.A).\nMATERIALS AND METHODS: The HDR 192Ir encapsulated seed was simulated and its \nmain dosimetric data were calculated using Geant4 Application for Tomogra",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "TG-43 parameters InterSource-125 seed dose rate constant radial dose function",
+          "search_type": "clinical",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Investigation of TG-43 Dosimetric Parameters for (192)Ir Brachytherapy Source Using GATE Monte Carlo Code.](https://pubmed.ncbi.nlm.nih.gov/37969149/)",
+      "[Update of the CLRP Monte Carlo TG-43 parameter database for high-energy brachytherapy sources.](https://pubmed.ncbi.nlm.nih.gov/36542404/)",
+      "[Update of the CLRP TG-43 parameter database for low-energy brachytherapy sources.](https://pubmed.ncbi.nlm.nih.gov/32436344/)",
+      "[Monte Carlo calculated TG-43 dosimetry parameters for the SeedLink 125Iodine brachytherapy system.](https://pubmed.ncbi.nlm.nih.gov/14528972/)",
+      "[Dosimetry parameters of BARC OcuProsta I-125 seed source.](https://pubmed.ncbi.nlm.nih.gov/15920985/)"
+    ]
+  }
+}

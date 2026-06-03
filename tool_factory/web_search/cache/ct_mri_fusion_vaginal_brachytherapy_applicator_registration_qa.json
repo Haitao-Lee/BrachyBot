@@ -1,0 +1,160 @@
+{
+  "query": "CT MRI fusion vaginal brachytherapy applicator registration QA",
+  "timestamp": 1780413963.6481469,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "[Progress in CT and MRI of preoperative T staging of laryngeal carcinoma].",
+        "snippet": "PubMed ID: 32791625. 2020/05/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32791625/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Brain CT and MRI: differential diagnosis of imaging findings.",
+        "snippet": "PubMed ID: 27430457. 2016/01/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/27430457/",
+        "source": "PubMed"
+      },
+      {
+        "title": "From PET/CT to PET/MRI: advances in instrumentation and clinical applications.",
+        "snippet": "PubMed ID: 25058336. 2014/11/03 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/25058336/",
+        "source": "PubMed"
+      },
+      {
+        "title": "MRI and CT in blunt renal trauma: an update.",
+        "snippet": "PubMed ID: 9163832. 1997/04/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/9163832/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Targeted Nanotheransotics: Integration of Preclinical MRI and CT in the Molecular Imaging and Therapy of Advanced Diseases.",
+        "snippet": "PubMed ID: 38751937. 2024/04/23 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38751937/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 32791625. 2020/05/01 00:00\n2. PubMed ID: 27430457. 2016/01/01 00:00\n3. PubMed ID: 25058336. 2014/11/03 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/32791625/",
+      "https://pubmed.ncbi.nlm.nih.gov/27430457/",
+      "https://pubmed.ncbi.nlm.nih.gov/25058336/",
+      "https://pubmed.ncbi.nlm.nih.gov/9163832/",
+      "https://pubmed.ncbi.nlm.nih.gov/38751937/"
+    ],
+    "evidence_chain_id": "20260602_232601_561011",
+    "evidence_summary": {
+      "response_id": "20260602_232601_561011",
+      "query": "CT MRI fusion vaginal brachytherapy applicator registration QA",
+      "created_at": "2026-06-02T23:26:01.561036",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[[Progress in CT and MRI of preoperative T staging of laryngeal carcinoma].](https://pubmed.ncbi.nlm.nih.gov/32791625/)",
+        "[Brain CT and MRI: differential diagnosis of imaging findings.](https://pubmed.ncbi.nlm.nih.gov/27430457/)",
+        "[From PET/CT to PET/MRI: advances in instrumentation and clinical applications.](https://pubmed.ncbi.nlm.nih.gov/25058336/)",
+        "[MRI and CT in blunt renal trauma: an update.](https://pubmed.ncbi.nlm.nih.gov/9163832/)",
+        "[Targeted Nanotheransotics: Integration of Preclinical MRI and CT in the Molecular Imaging and Therapy of Advanced Diseases.](https://pubmed.ncbi.nlm.nih.gov/38751937/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "3baf7a72f9a5",
+          "claim": "PubMed ID: 32791625. 2020/05/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32791625/",
+          "source_type": "PubMed",
+          "source_title": "[Progress in CT and MRI of preoperative T staging of laryngeal carcinoma].",
+          "accessed_at": "2026-06-02T23:26:03.647755",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32791625. 2020/05/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "CT MRI fusion vaginal brachytherapy applicator registration QA",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8052dc3c4325",
+          "claim": "PubMed ID: 27430457. 2016/01/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/27430457/",
+          "source_type": "PubMed",
+          "source_title": "Brain CT and MRI: differential diagnosis of imaging findings.",
+          "accessed_at": "2026-06-02T23:26:03.647848",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 27430457. 2016/01/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "CT MRI fusion vaginal brachytherapy applicator registration QA",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e2a2b83b910a",
+          "claim": "PubMed ID: 25058336. 2014/11/03 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/25058336/",
+          "source_type": "PubMed",
+          "source_title": "From PET/CT to PET/MRI: advances in instrumentation and clinical applications.",
+          "accessed_at": "2026-06-02T23:26:03.647881",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 25058336. 2014/11/03 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "CT MRI fusion vaginal brachytherapy applicator registration QA",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c333df9c8bb0",
+          "claim": "PubMed ID: 9163832. 1997/04/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/9163832/",
+          "source_type": "PubMed",
+          "source_title": "MRI and CT in blunt renal trauma: an update.",
+          "accessed_at": "2026-06-02T23:26:03.647909",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 9163832. 1997/04/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "CT MRI fusion vaginal brachytherapy applicator registration QA",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "445d89e85fb0",
+          "claim": "PubMed ID: 38751937. 2024/04/23 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38751937/",
+          "source_type": "PubMed",
+          "source_title": "Targeted Nanotheransotics: Integration of Preclinical MRI and CT in the Molecular Imaging and Therapy of Advanced Diseases.",
+          "accessed_at": "2026-06-02T23:26:03.647934",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38751937. 2024/04/23 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "CT MRI fusion vaginal brachytherapy applicator registration QA",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[[Progress in CT and MRI of preoperative T staging of laryngeal carcinoma].](https://pubmed.ncbi.nlm.nih.gov/32791625/)",
+      "[Brain CT and MRI: differential diagnosis of imaging findings.](https://pubmed.ncbi.nlm.nih.gov/27430457/)",
+      "[From PET/CT to PET/MRI: advances in instrumentation and clinical applications.](https://pubmed.ncbi.nlm.nih.gov/25058336/)",
+      "[MRI and CT in blunt renal trauma: an update.](https://pubmed.ncbi.nlm.nih.gov/9163832/)",
+      "[Targeted Nanotheransotics: Integration of Preclinical MRI and CT in the Molecular Imaging and Therapy of Advanced Diseases.](https://pubmed.ncbi.nlm.nih.gov/38751937/)"
+    ]
+  }
+}

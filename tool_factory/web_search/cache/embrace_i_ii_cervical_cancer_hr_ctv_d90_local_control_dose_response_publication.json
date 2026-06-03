@@ -1,0 +1,160 @@
+{
+  "query": "EMBRACE I II cervical cancer HR-CTV D90 local control dose-response publication",
+  "timestamp": 1780419515.9245763,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Cognitive behaviour therapy for eating disorders: a \"transdiagnostic\" theory and treatment.",
+        "snippet": "PubMed ID: 12711261. 2003/05/01 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninfection and as a consequence thereof. PCS is found mainly in adults, less \nfrequently in children and adolescents. It can develop both in patients who \ninitially had only mild symptoms or none at all and in those who had a severe \ncourse of coronavirus disease 2019 (COVID-19).\nMETHODS: The data prese",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/12711261/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Supportive care in cancer-a MASCC perspective.",
+        "snippet": "PubMed ID: 32342221. 2020/08/01 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninfection and as a consequence thereof. PCS is found mainly in adults, less \nfrequently in children and adolescents. It can develop both in patients who \ninitially had only mild symptoms or none at all and in those who had a severe \ncourse of coronavirus disease 2019 (COVID-19).\nMETHODS: The data prese",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32342221/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Post-COVID Syndrome.",
+        "snippet": "PubMed ID: 36633452. 2023/01/27 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninfection and as a consequence thereof. PCS is found mainly in adults, less \nfrequently in children and adolescents. It can develop both in patients who \ninitially had only mild symptoms or none at all and in those who had a severe \ncourse of coronavirus disease 2019 (COVID-19).\nMETHODS: The data prese",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36633452/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Medical futility: definition, determination, and disputes in critical care.",
+        "snippet": "PubMed ID: 16159066. 2005/01/01 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninfection and as a consequence thereof. PCS is found mainly in adults, less \nfrequently in children and adolescents. It can develop both in patients who \ninitially had only mild symptoms or none at all and in those who had a severe \ncourse of coronavirus disease 2019 (COVID-19).\nMETHODS: The data prese",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/16159066/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Embracing risk.",
+        "snippet": "PubMed ID: 26203124. 2015/08/01 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninfection and as a consequence thereof. PCS is found mainly in adults, less \nfrequently in children and adolescents. It can develop both in patients who \ninitially had only mild symptoms or none at all and in those who had a severe \ncourse of coronavirus disease 2019 (COVID-19).\nMETHODS: The data prese",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/26203124/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 12711261. 2003/05/01 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninf\n2. PubMed ID: 32342221. 2020/08/01 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninf\n3. PubMed ID: 36633452. 2023/01/27 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninf",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/12711261/",
+      "https://pubmed.ncbi.nlm.nih.gov/32342221/",
+      "https://pubmed.ncbi.nlm.nih.gov/36633452/",
+      "https://pubmed.ncbi.nlm.nih.gov/16159066/",
+      "https://pubmed.ncbi.nlm.nih.gov/26203124/"
+    ],
+    "evidence_chain_id": "20260603_005833_998300",
+    "evidence_summary": {
+      "response_id": "20260603_005833_998300",
+      "query": "EMBRACE I II cervical cancer HR-CTV D90 local control dose-response publication",
+      "created_at": "2026-06-03T00:58:33.998317",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Cognitive behaviour therapy for eating disorders: a \"transdiagnostic\" theory and treatment.](https://pubmed.ncbi.nlm.nih.gov/12711261/)",
+        "[Supportive care in cancer-a MASCC perspective.](https://pubmed.ncbi.nlm.nih.gov/32342221/)",
+        "[Post-COVID Syndrome.](https://pubmed.ncbi.nlm.nih.gov/36633452/)",
+        "[Medical futility: definition, determination, and disputes in critical care.](https://pubmed.ncbi.nlm.nih.gov/16159066/)",
+        "[Embracing risk.](https://pubmed.ncbi.nlm.nih.gov/26203124/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "6ea08017c649",
+          "claim": "PubMed ID: 12711261. 2003/05/01 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninf",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/12711261/",
+          "source_type": "PubMed",
+          "source_title": "Cognitive behaviour therapy for eating disorders: a \"transdiagnostic\" theory and treatment.",
+          "accessed_at": "2026-06-03T00:58:35.924153",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 12711261. 2003/05/01 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninfection and as a consequence thereof. PCS is found mainly in adults, less \nfrequently in children and adolescents. It can develop both in patients who \ninitially had only mild symptoms or none at all and in those who had a severe \ncourse of coronavirus disease 2019 (COVID-19).\nMETHODS: The data prese",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "EMBRACE I II cervical cancer HR-CTV D90 local control dose-response publication",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c6b10b92dd87",
+          "claim": "PubMed ID: 32342221. 2020/08/01 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninf",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32342221/",
+          "source_type": "PubMed",
+          "source_title": "Supportive care in cancer-a MASCC perspective.",
+          "accessed_at": "2026-06-03T00:58:35.924252",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32342221. 2020/08/01 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninfection and as a consequence thereof. PCS is found mainly in adults, less \nfrequently in children and adolescents. It can develop both in patients who \ninitially had only mild symptoms or none at all and in those who had a severe \ncourse of coronavirus disease 2019 (COVID-19).\nMETHODS: The data prese",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "EMBRACE I II cervical cancer HR-CTV D90 local control dose-response publication",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ea35a5f89aac",
+          "claim": "PubMed ID: 36633452. 2023/01/27 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninf",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36633452/",
+          "source_type": "PubMed",
+          "source_title": "Post-COVID Syndrome.",
+          "accessed_at": "2026-06-03T00:58:35.924284",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36633452. 2023/01/27 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninfection and as a consequence thereof. PCS is found mainly in adults, less \nfrequently in children and adolescents. It can develop both in patients who \ninitially had only mild symptoms or none at all and in those who had a severe \ncourse of coronavirus disease 2019 (COVID-19).\nMETHODS: The data prese",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "EMBRACE I II cervical cancer HR-CTV D90 local control dose-response publication",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2a071cad0cde",
+          "claim": "PubMed ID: 16159066. 2005/01/01 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninf",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/16159066/",
+          "source_type": "PubMed",
+          "source_title": "Medical futility: definition, determination, and disputes in critical care.",
+          "accessed_at": "2026-06-03T00:58:35.924313",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 16159066. 2005/01/01 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninfection and as a consequence thereof. PCS is found mainly in adults, less \nfrequently in children and adolescents. It can develop both in patients who \ninitially had only mild symptoms or none at all and in those who had a severe \ncourse of coronavirus disease 2019 (COVID-19).\nMETHODS: The data prese",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "EMBRACE I II cervical cancer HR-CTV D90 local control dose-response publication",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "34e11e8cc1bb",
+          "claim": "PubMed ID: 26203124. 2015/08/01 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninf",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/26203124/",
+          "source_type": "PubMed",
+          "source_title": "Embracing risk.",
+          "accessed_at": "2026-06-03T00:58:35.924349",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 26203124. 2015/08/01 00:00. BACKGROUND: As defined by the WHO, the term post-COVID syndrome (PCS) embraces a \ngroup of symptoms that can occur following the acute phase of a SARS-CoV-2 \ninfection and as a consequence thereof. PCS is found mainly in adults, less \nfrequently in children and adolescents. It can develop both in patients who \ninitially had only mild symptoms or none at all and in those who had a severe \ncourse of coronavirus disease 2019 (COVID-19).\nMETHODS: The data prese",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "EMBRACE I II cervical cancer HR-CTV D90 local control dose-response publication",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Cognitive behaviour therapy for eating disorders: a \"transdiagnostic\" theory and treatment.](https://pubmed.ncbi.nlm.nih.gov/12711261/)",
+      "[Supportive care in cancer-a MASCC perspective.](https://pubmed.ncbi.nlm.nih.gov/32342221/)",
+      "[Post-COVID Syndrome.](https://pubmed.ncbi.nlm.nih.gov/36633452/)",
+      "[Medical futility: definition, determination, and disputes in critical care.](https://pubmed.ncbi.nlm.nih.gov/16159066/)",
+      "[Embracing risk.](https://pubmed.ncbi.nlm.nih.gov/26203124/)"
+    ]
+  }
+}

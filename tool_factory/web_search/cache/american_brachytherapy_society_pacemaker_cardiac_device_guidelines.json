@@ -1,0 +1,160 @@
+{
+  "query": "American Brachytherapy Society pacemaker cardiac device guidelines",
+  "timestamp": 1780415222.807785,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "American Brachytherapy Society consensus guidelines for adjuvant vaginal cuff brachytherapy after hysterectomy.",
+        "snippet": "PubMed ID: 22265439. 2012/01/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (ABS) guidelines.\nMETHODS AND MATERIALS: A panel of members of the ABS performed a literature \nreview, supplemented their clinical experience, and formulated recommendations \nfor adjuvant vaginal cuff brachytherapy.\nRESULTS: The ABS endorses the National Comprehensive Cancer Network guidelines \nfor in",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/22265439/",
+        "source": "PubMed"
+      },
+      {
+        "title": "The American Brachytherapy society consensus statement for skin brachytherapy.",
+        "snippet": "PubMed ID: 32409128. 2020/07/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (ABS) guidelines.\nMETHODS AND MATERIALS: A panel of members of the ABS performed a literature \nreview, supplemented their clinical experience, and formulated recommendations \nfor adjuvant vaginal cuff brachytherapy.\nRESULTS: The ABS endorses the National Comprehensive Cancer Network guidelines \nfor in",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32409128/",
+        "source": "PubMed"
+      },
+      {
+        "title": "American Brachytherapy Society (ABS) consensus statement for soft-tissue sarcoma brachytherapy.",
+        "snippet": "PubMed ID: 34303600. 2021/11/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (ABS) guidelines.\nMETHODS AND MATERIALS: A panel of members of the ABS performed a literature \nreview, supplemented their clinical experience, and formulated recommendations \nfor adjuvant vaginal cuff brachytherapy.\nRESULTS: The ABS endorses the National Comprehensive Cancer Network guidelines \nfor in",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34303600/",
+        "source": "PubMed"
+      },
+      {
+        "title": "American Brachytherapy Society (ABS) rectoprostatic gel spacer consensus statement.",
+        "snippet": "PubMed ID: 40976759. 2025/11/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (ABS) guidelines.\nMETHODS AND MATERIALS: A panel of members of the ABS performed a literature \nreview, supplemented their clinical experience, and formulated recommendations \nfor adjuvant vaginal cuff brachytherapy.\nRESULTS: The ABS endorses the National Comprehensive Cancer Network guidelines \nfor in",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40976759/",
+        "source": "PubMed"
+      },
+      {
+        "title": "The American Brachytherapy Society consensus statement for electronic brachytherapy.",
+        "snippet": "PubMed ID: 30497939. 2019/05/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (ABS) guidelines.\nMETHODS AND MATERIALS: A panel of members of the ABS performed a literature \nreview, supplemented their clinical experience, and formulated recommendations \nfor adjuvant vaginal cuff brachytherapy.\nRESULTS: The ABS endorses the National Comprehensive Cancer Network guidelines \nfor in",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30497939/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 22265439. 2012/01/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (A\n2. PubMed ID: 32409128. 2020/07/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (A\n3. PubMed ID: 34303600. 2021/11/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (A",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/22265439/",
+      "https://pubmed.ncbi.nlm.nih.gov/32409128/",
+      "https://pubmed.ncbi.nlm.nih.gov/34303600/",
+      "https://pubmed.ncbi.nlm.nih.gov/40976759/",
+      "https://pubmed.ncbi.nlm.nih.gov/30497939/"
+    ],
+    "evidence_chain_id": "20260602_234700_507300",
+    "evidence_summary": {
+      "response_id": "20260602_234700_507300",
+      "query": "American Brachytherapy Society pacemaker cardiac device guidelines",
+      "created_at": "2026-06-02T23:47:00.507315",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[American Brachytherapy Society consensus guidelines for adjuvant vaginal cuff brachytherapy after hysterectomy.](https://pubmed.ncbi.nlm.nih.gov/22265439/)",
+        "[The American Brachytherapy society consensus statement for skin brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/32409128/)",
+        "[American Brachytherapy Society (ABS) consensus statement for soft-tissue sarcoma brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/34303600/)",
+        "[American Brachytherapy Society (ABS) rectoprostatic gel spacer consensus statement.](https://pubmed.ncbi.nlm.nih.gov/40976759/)",
+        "[The American Brachytherapy Society consensus statement for electronic brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/30497939/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "a164d7164519",
+          "claim": "PubMed ID: 22265439. 2012/01/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (A",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/22265439/",
+          "source_type": "PubMed",
+          "source_title": "American Brachytherapy Society consensus guidelines for adjuvant vaginal cuff brachytherapy after hysterectomy.",
+          "accessed_at": "2026-06-02T23:47:02.807271",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 22265439. 2012/01/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (ABS) guidelines.\nMETHODS AND MATERIALS: A panel of members of the ABS performed a literature \nreview, supplemented their clinical experience, and formulated recommendations \nfor adjuvant vaginal cuff brachytherapy.\nRESULTS: The ABS endorses the National Comprehensive Cancer Network guidelines \nfor in",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "American Brachytherapy Society pacemaker cardiac device guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "19147ef44a2c",
+          "claim": "PubMed ID: 32409128. 2020/07/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (A",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32409128/",
+          "source_type": "PubMed",
+          "source_title": "The American Brachytherapy society consensus statement for skin brachytherapy.",
+          "accessed_at": "2026-06-02T23:47:02.807388",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32409128. 2020/07/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (ABS) guidelines.\nMETHODS AND MATERIALS: A panel of members of the ABS performed a literature \nreview, supplemented their clinical experience, and formulated recommendations \nfor adjuvant vaginal cuff brachytherapy.\nRESULTS: The ABS endorses the National Comprehensive Cancer Network guidelines \nfor in",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "American Brachytherapy Society pacemaker cardiac device guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "0cb7e7ad6eeb",
+          "claim": "PubMed ID: 34303600. 2021/11/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (A",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34303600/",
+          "source_type": "PubMed",
+          "source_title": "American Brachytherapy Society (ABS) consensus statement for soft-tissue sarcoma brachytherapy.",
+          "accessed_at": "2026-06-02T23:47:02.807442",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34303600. 2021/11/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (ABS) guidelines.\nMETHODS AND MATERIALS: A panel of members of the ABS performed a literature \nreview, supplemented their clinical experience, and formulated recommendations \nfor adjuvant vaginal cuff brachytherapy.\nRESULTS: The ABS endorses the National Comprehensive Cancer Network guidelines \nfor in",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "American Brachytherapy Society pacemaker cardiac device guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "80c87add69cf",
+          "claim": "PubMed ID: 40976759. 2025/11/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (A",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40976759/",
+          "source_type": "PubMed",
+          "source_title": "American Brachytherapy Society (ABS) rectoprostatic gel spacer consensus statement.",
+          "accessed_at": "2026-06-02T23:47:02.807487",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40976759. 2025/11/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (ABS) guidelines.\nMETHODS AND MATERIALS: A panel of members of the ABS performed a literature \nreview, supplemented their clinical experience, and formulated recommendations \nfor adjuvant vaginal cuff brachytherapy.\nRESULTS: The ABS endorses the National Comprehensive Cancer Network guidelines \nfor in",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "American Brachytherapy Society pacemaker cardiac device guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "6d814a225944",
+          "claim": "PubMed ID: 30497939. 2019/05/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (A",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/30497939/",
+          "source_type": "PubMed",
+          "source_title": "The American Brachytherapy Society consensus statement for electronic brachytherapy.",
+          "accessed_at": "2026-06-02T23:47:02.807525",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 30497939. 2019/05/01 00:00. PURPOSE: To develop recommendations for the use of adjuvant vaginal cuff \nbrachytherapy after hysterectomy and update previous American Brachytherapy \nSociety (ABS) guidelines.\nMETHODS AND MATERIALS: A panel of members of the ABS performed a literature \nreview, supplemented their clinical experience, and formulated recommendations \nfor adjuvant vaginal cuff brachytherapy.\nRESULTS: The ABS endorses the National Comprehensive Cancer Network guidelines \nfor in",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "American Brachytherapy Society pacemaker cardiac device guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[American Brachytherapy Society consensus guidelines for adjuvant vaginal cuff brachytherapy after hysterectomy.](https://pubmed.ncbi.nlm.nih.gov/22265439/)",
+      "[The American Brachytherapy society consensus statement for skin brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/32409128/)",
+      "[American Brachytherapy Society (ABS) consensus statement for soft-tissue sarcoma brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/34303600/)",
+      "[American Brachytherapy Society (ABS) rectoprostatic gel spacer consensus statement.](https://pubmed.ncbi.nlm.nih.gov/40976759/)",
+      "[The American Brachytherapy Society consensus statement for electronic brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/30497939/)"
+    ]
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "query": "cost-effectiveness 4 vs 5 HDR fractions cervical cancer Markov model",
+  "timestamp": 1780424069.8604777,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "cost是什么意思_cost的翻译_音标_读音_用法_例句_爱词霸 ...",
+        "snippet": "Changing building codes, evolving tastes, and the high cost of maintaining those wonderful old signs have businesses embracing LEDs, which are energy efficient, but still carry great cost.",
+        "url": "https://www.iciba.com/word?w=cost",
+        "source": "Bing CN"
+      },
+      {
+        "title": "COST中文 (简体)翻译：剑桥词典 - Cambridge Dictionary",
+        "snippet": "Whether or not we go to Spain for our holiday depends on the cost. Do you agree with the principle that everyone should pay something towards the cost of healthcare? The average cost of a new house …",
+        "url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/cost",
+        "source": "Bing CN"
+      },
+      {
+        "title": "cost（英语单词）_百度百科",
+        "snippet": "&quot;Cost&quot;是英语基础词汇，兼具名词与动词词性，英式音标为 [kɒst]，美式音标为 [kɔːst]。 作为名词时表示费用、成本或代价，动词用法涵盖物品计价、成本估算及抽象损失表达，其复数形式为costs，过去 …",
+        "url": "https://baike.baidu.com/item/COST/10544155",
+        "source": "Bing CN"
+      },
+      {
+        "title": "spend，cost，take和pay的区别 - 知乎",
+        "snippet": "2020年3月25日 · spend，cost，take和pay的区别是它们都可以表示“花费”，但用法却不尽相同。 spend的必须是人， 常用于以下结构： (1) spend time ／money on sth. 在……上花费时间（金钱） …",
+        "url": "https://zhuanlan.zhihu.com/p/116868000",
+        "source": "Bing CN"
+      },
+      {
+        "title": "COST | European Cooperation in Science and Technology",
+        "snippet": "2026年5月21日 · COST funds science &amp; technology research networks known as COST Actions that connect researchers &amp; innovators across Europe &amp; beyond.",
+        "url": "https://www.cost.eu/",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- Changing building codes, evolving tastes, and the high cost of maintaining those wonderful old signs have businesses embracing LEDs, which are energy \n- Whether or not we go to Spain for our holiday depends on the cost. Do you agree with the principle that everyone should pay something towards the cost",
+    "sources": [
+      "https://www.iciba.com/word?w=cost",
+      "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/cost",
+      "https://baike.baidu.com/item/COST/10544155",
+      "https://zhuanlan.zhihu.com/p/116868000",
+      "https://www.cost.eu/"
+    ],
+    "evidence_chain_id": "20260603_021428_834718",
+    "evidence_summary": {
+      "response_id": "20260603_021428_834718",
+      "query": "cost-effectiveness 4 vs 5 HDR fractions cervical cancer Markov model",
+      "created_at": "2026-06-03T02:14:28.834741",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[cost是什么意思_cost的翻译_音标_读音_用法_例句_爱词霸 ...](https://www.iciba.com/word?w=cost)",
+        "[COST中文 (简体)翻译：剑桥词典 - Cambridge Dictionary](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/cost)",
+        "[cost（英语单词）_百度百科](https://baike.baidu.com/item/COST/10544155)",
+        "[spend，cost，take和pay的区别 - 知乎](https://zhuanlan.zhihu.com/p/116868000)",
+        "[COST | European Cooperation in Science and Technology](https://www.cost.eu/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "0919889a05c1",
+          "claim": "Changing building codes, evolving tastes, and the high cost of maintaining those wonderful old signs have businesses embracing LEDs, which are energy efficient, but still carry great cost.",
+          "source_url": "https://www.iciba.com/word?w=cost",
+          "source_type": "Bing CN",
+          "source_title": "cost是什么意思_cost的翻译_音标_读音_用法_例句_爱词霸 ...",
+          "accessed_at": "2026-06-03T02:14:29.860084",
+          "published_at": "",
+          "raw_snippet": "Changing building codes, evolving tastes, and the high cost of maintaining those wonderful old signs have businesses embracing LEDs, which are energy efficient, but still carry great cost.",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "cost-effectiveness 4 vs 5 HDR fractions cervical cancer Markov model",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e93abf17e03f",
+          "claim": "Whether or not we go to Spain for our holiday depends on the cost. Do you agree with the principle that everyone should pay something towards the cost of healthcare? The average cost of a new house …",
+          "source_url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/cost",
+          "source_type": "Bing CN",
+          "source_title": "COST中文 (简体)翻译：剑桥词典 - Cambridge Dictionary",
+          "accessed_at": "2026-06-03T02:14:29.860182",
+          "published_at": "",
+          "raw_snippet": "Whether or not we go to Spain for our holiday depends on the cost. Do you agree with the principle that everyone should pay something towards the cost of healthcare? The average cost of a new house …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "cost-effectiveness 4 vs 5 HDR fractions cervical cancer Markov model",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "11f1ae4a5125",
+          "claim": "&quot;Cost&quot;是英语基础词汇，兼具名词与动词词性，英式音标为 [kɒst]，美式音标为 [kɔːst]。 作为名词时表示费用、成本或代价，动词用法涵盖物品计价、成本估算及抽象损失表达，其复数形式为costs，过去 …",
+          "source_url": "https://baike.baidu.com/item/COST/10544155",
+          "source_type": "Bing CN",
+          "source_title": "cost（英语单词）_百度百科",
+          "accessed_at": "2026-06-03T02:14:29.860215",
+          "published_at": "",
+          "raw_snippet": "&quot;Cost&quot;是英语基础词汇，兼具名词与动词词性，英式音标为 [kɒst]，美式音标为 [kɔːst]。 作为名词时表示费用、成本或代价，动词用法涵盖物品计价、成本估算及抽象损失表达，其复数形式为costs，过去 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "cost-effectiveness 4 vs 5 HDR fractions cervical cancer Markov model",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "87af44a03b0a",
+          "claim": "2020年3月25日 · spend，cost，take和pay的区别是它们都可以表示“花费”，但用法却不尽相同。 spend的必须是人， 常用于以下结构： (1) spend time ／money on sth. 在……上花费时间（金钱） …",
+          "source_url": "https://zhuanlan.zhihu.com/p/116868000",
+          "source_type": "Bing CN",
+          "source_title": "spend，cost，take和pay的区别 - 知乎",
+          "accessed_at": "2026-06-03T02:14:29.860244",
+          "published_at": "",
+          "raw_snippet": "2020年3月25日 · spend，cost，take和pay的区别是它们都可以表示“花费”，但用法却不尽相同。 spend的必须是人， 常用于以下结构： (1) spend time ／money on sth. 在……上花费时间（金钱） …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "cost-effectiveness 4 vs 5 HDR fractions cervical cancer Markov model",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3ce4d9ab7498",
+          "claim": "2026年5月21日 · COST funds science &amp; technology research networks known as COST Actions that connect researchers &amp; innovators across Europe &amp; beyond.",
+          "source_url": "https://www.cost.eu/",
+          "source_type": "Bing CN",
+          "source_title": "COST | European Cooperation in Science and Technology",
+          "accessed_at": "2026-06-03T02:14:29.860269",
+          "published_at": "",
+          "raw_snippet": "2026年5月21日 · COST funds science &amp; technology research networks known as COST Actions that connect researchers &amp; innovators across Europe &amp; beyond.",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "cost-effectiveness 4 vs 5 HDR fractions cervical cancer Markov model",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[cost是什么意思_cost的翻译_音标_读音_用法_例句_爱词霸 ...](https://www.iciba.com/word?w=cost)",
+      "[COST中文 (简体)翻译：剑桥词典 - Cambridge Dictionary](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/cost)",
+      "[cost（英语单词）_百度百科](https://baike.baidu.com/item/COST/10544155)",
+      "[spend，cost，take和pay的区别 - 知乎](https://zhuanlan.zhihu.com/p/116868000)",
+      "[COST | European Cooperation in Science and Technology](https://www.cost.eu/)"
+    ]
+  }
+}

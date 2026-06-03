@@ -1,0 +1,23 @@
+{
+  "query": "PET-MRI brachytherapy planning cervical cancer prostate advantages",
+  "timestamp": 1780459375.3662426,
+  "result": {
+    "success": true,
+    "results": [],
+    "answer": "I searched for 'PET-MRI brachytherapy planning cervical cancer prostate advantages' but couldn't find specific information. This may be a question that requires specialized knowledge or access to specific databases I don't have.",
+    "sources": [],
+    "evidence_chain_id": "20260603_120254_875011",
+    "evidence_summary": {
+      "response_id": "20260603_120254_875011",
+      "query": "PET-MRI brachytherapy planning cervical cancer prostate advantages",
+      "created_at": "2026-06-03T12:02:54.875037",
+      "num_sources": 0,
+      "source_types": [],
+      "avg_confidence": 0.0,
+      "verification_status": "unverified",
+      "citations": [],
+      "evidence": []
+    },
+    "citations": []
+  }
+}

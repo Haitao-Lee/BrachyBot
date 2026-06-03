@@ -1,0 +1,11 @@
+{
+  "response_id": "20260603_144121_184995",
+  "query": "AAPM brachytherapy source calibration frequency tolerance verification",
+  "created_at": "2026-06-03T14:41:21.185015",
+  "num_sources": 0,
+  "source_types": [],
+  "avg_confidence": 0.0,
+  "verification_status": "unverified",
+  "citations": [],
+  "evidence": []
+}

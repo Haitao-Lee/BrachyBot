@@ -1,0 +1,160 @@
+{
+  "query": "magnetic resonance thermometry brachytherapy proton resonance frequency shift clinical applications",
+  "timestamp": 1780474596.972848,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Magnetic resonance spectroscopy.",
+        "snippet": "PubMed ID: 28779760. 2017/09/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28779760/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Magnetic resonance spectroscopy.",
+        "snippet": "PubMed ID: 18975700. 2008/10/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/18975700/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Magnetic resonance sensors.",
+        "snippet": "PubMed ID: 25407909. 2014/11/17 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/25407909/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Magnetic Resonance Spectroscopy for Psychiatry: Progress in the Last Decade.",
+        "snippet": "PubMed ID: 31759569. 2020/02/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31759569/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Advanced methodology for in vivo magnetic resonance spectroscopy.",
+        "snippet": "PubMed ID: 33709530. 2021/05/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33709530/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 28779760. 2017/09/01 00:00\n2. PubMed ID: 18975700. 2008/10/01 00:00\n3. PubMed ID: 25407909. 2014/11/17 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/28779760/",
+      "https://pubmed.ncbi.nlm.nih.gov/18975700/",
+      "https://pubmed.ncbi.nlm.nih.gov/25407909/",
+      "https://pubmed.ncbi.nlm.nih.gov/31759569/",
+      "https://pubmed.ncbi.nlm.nih.gov/33709530/"
+    ],
+    "evidence_chain_id": "20260603_161635_361663",
+    "evidence_summary": {
+      "response_id": "20260603_161635_361663",
+      "query": "magnetic resonance thermometry brachytherapy proton resonance frequency shift clinical applications",
+      "created_at": "2026-06-03T16:16:35.361684",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Magnetic resonance spectroscopy.](https://pubmed.ncbi.nlm.nih.gov/28779760/)",
+        "[Magnetic resonance spectroscopy.](https://pubmed.ncbi.nlm.nih.gov/18975700/)",
+        "[Magnetic resonance sensors.](https://pubmed.ncbi.nlm.nih.gov/25407909/)",
+        "[Magnetic Resonance Spectroscopy for Psychiatry: Progress in the Last Decade.](https://pubmed.ncbi.nlm.nih.gov/31759569/)",
+        "[Advanced methodology for in vivo magnetic resonance spectroscopy.](https://pubmed.ncbi.nlm.nih.gov/33709530/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "5162e6b2fee7",
+          "claim": "PubMed ID: 28779760. 2017/09/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/28779760/",
+          "source_type": "PubMed",
+          "source_title": "Magnetic resonance spectroscopy.",
+          "accessed_at": "2026-06-03T16:16:36.972395",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 28779760. 2017/09/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "magnetic resonance thermometry brachytherapy proton resonance frequency shift clinical applications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "02141058a435",
+          "claim": "PubMed ID: 18975700. 2008/10/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/18975700/",
+          "source_type": "PubMed",
+          "source_title": "Magnetic resonance spectroscopy.",
+          "accessed_at": "2026-06-03T16:16:36.972523",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 18975700. 2008/10/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "magnetic resonance thermometry brachytherapy proton resonance frequency shift clinical applications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "560ae8f4b1f2",
+          "claim": "PubMed ID: 25407909. 2014/11/17 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/25407909/",
+          "source_type": "PubMed",
+          "source_title": "Magnetic resonance sensors.",
+          "accessed_at": "2026-06-03T16:16:36.972559",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 25407909. 2014/11/17 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "magnetic resonance thermometry brachytherapy proton resonance frequency shift clinical applications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "bdd9f718a287",
+          "claim": "PubMed ID: 31759569. 2020/02/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31759569/",
+          "source_type": "PubMed",
+          "source_title": "Magnetic Resonance Spectroscopy for Psychiatry: Progress in the Last Decade.",
+          "accessed_at": "2026-06-03T16:16:36.972586",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31759569. 2020/02/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "magnetic resonance thermometry brachytherapy proton resonance frequency shift clinical applications",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2c57a3561da8",
+          "claim": "PubMed ID: 33709530. 2021/05/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33709530/",
+          "source_type": "PubMed",
+          "source_title": "Advanced methodology for in vivo magnetic resonance spectroscopy.",
+          "accessed_at": "2026-06-03T16:16:36.972612",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33709530. 2021/05/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "magnetic resonance thermometry brachytherapy proton resonance frequency shift clinical applications",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Magnetic resonance spectroscopy.](https://pubmed.ncbi.nlm.nih.gov/28779760/)",
+      "[Magnetic resonance spectroscopy.](https://pubmed.ncbi.nlm.nih.gov/18975700/)",
+      "[Magnetic resonance sensors.](https://pubmed.ncbi.nlm.nih.gov/25407909/)",
+      "[Magnetic Resonance Spectroscopy for Psychiatry: Progress in the Last Decade.](https://pubmed.ncbi.nlm.nih.gov/31759569/)",
+      "[Advanced methodology for in vivo magnetic resonance spectroscopy.](https://pubmed.ncbi.nlm.nih.gov/33709530/)"
+    ]
+  }
+}

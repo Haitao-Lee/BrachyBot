@@ -1,0 +1,160 @@
+{
+  "query": "AAPM TG-119 Monte Carlo dose calculation brachytherapy recommendations",
+  "timestamp": 1780428789.689458,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Application of AAPM TG 119 to volumetric arc therapy (VMAT).",
+        "snippet": "PubMed ID: 22955639. 2012/09/06 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy of VMAT based on the TG \n119 protocols at local institution.\nMATERIAL AND METHODS: The phantom, structure sets, VMAT and IMRT beam parameter \nsetup, dose prescriptions and planning objectives were following TG 119 \nguidelines to create local treatment plans of VMAT and IMRT. The local planning \nresul",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/22955639/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Evaluation of the conformity of intensity-modulated radiation therapy and volumetric modulated arc therapy using AAPM TG 119 protocol.",
+        "snippet": "PubMed ID: 39153061. 2024/11/01 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy of VMAT based on the TG \n119 protocols at local institution.\nMATERIAL AND METHODS: The phantom, structure sets, VMAT and IMRT beam parameter \nsetup, dose prescriptions and planning objectives were following TG 119 \nguidelines to create local treatment plans of VMAT and IMRT. The local planning \nresul",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39153061/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Comparison of Rapid Arc and Intensity Modulated Radiotherapy in a True Beam Linear Accelerator for 6 MV: Application of AAPM TG-119 tests in treatment planning and quality assurance.",
+        "snippet": "PubMed ID: 40336866. 2023/11/29 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy of VMAT based on the TG \n119 protocols at local institution.\nMATERIAL AND METHODS: The phantom, structure sets, VMAT and IMRT beam parameter \nsetup, dose prescriptions and planning objectives were following TG 119 \nguidelines to create local treatment plans of VMAT and IMRT. The local planning \nresul",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40336866/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Dosimetric Evaluation of Volumetric Modulated Arc Therapy (VMAT) and Intensity Modulated Radiotherapy (IMRT) Using AAPM TG 119 Protocol.",
+        "snippet": "PubMed ID: 31531292. 2019/08/01 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy of VMAT based on the TG \n119 protocols at local institution.\nMATERIAL AND METHODS: The phantom, structure sets, VMAT and IMRT beam parameter \nsetup, dose prescriptions and planning objectives were following TG 119 \nguidelines to create local treatment plans of VMAT and IMRT. The local planning \nresul",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31531292/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Analyzing the performance of the planning system by use of AAPM TG 119 test cases.",
+        "snippet": "PubMed ID: 26141766. 2016/01/01 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy of VMAT based on the TG \n119 protocols at local institution.\nMATERIAL AND METHODS: The phantom, structure sets, VMAT and IMRT beam parameter \nsetup, dose prescriptions and planning objectives were following TG 119 \nguidelines to create local treatment plans of VMAT and IMRT. The local planning \nresul",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/26141766/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 22955639. 2012/09/06 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy o\n2. PubMed ID: 39153061. 2024/11/01 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy o\n3. PubMed ID: 40336866. 2023/11/29 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy o",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/22955639/",
+      "https://pubmed.ncbi.nlm.nih.gov/39153061/",
+      "https://pubmed.ncbi.nlm.nih.gov/40336866/",
+      "https://pubmed.ncbi.nlm.nih.gov/31531292/",
+      "https://pubmed.ncbi.nlm.nih.gov/26141766/"
+    ],
+    "evidence_chain_id": "20260603_033307_454773",
+    "evidence_summary": {
+      "response_id": "20260603_033307_454773",
+      "query": "AAPM TG-119 Monte Carlo dose calculation brachytherapy recommendations",
+      "created_at": "2026-06-03T03:33:07.454798",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Application of AAPM TG 119 to volumetric arc therapy (VMAT).](https://pubmed.ncbi.nlm.nih.gov/22955639/)",
+        "[Evaluation of the conformity of intensity-modulated radiation therapy and volumetric modulated arc therapy using AAPM TG 119 protocol.](https://pubmed.ncbi.nlm.nih.gov/39153061/)",
+        "[Comparison of Rapid Arc and Intensity Modulated Radiotherapy in a True Beam Linear Accelerator for 6 MV: Application of AAPM TG-119 tests in treatment planning and quality assurance.](https://pubmed.ncbi.nlm.nih.gov/40336866/)",
+        "[Dosimetric Evaluation of Volumetric Modulated Arc Therapy (VMAT) and Intensity Modulated Radiotherapy (IMRT) Using AAPM TG 119 Protocol.](https://pubmed.ncbi.nlm.nih.gov/31531292/)",
+        "[Analyzing the performance of the planning system by use of AAPM TG 119 test cases.](https://pubmed.ncbi.nlm.nih.gov/26141766/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "81c0745e77ca",
+          "claim": "PubMed ID: 22955639. 2012/09/06 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy o",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/22955639/",
+          "source_type": "PubMed",
+          "source_title": "Application of AAPM TG 119 to volumetric arc therapy (VMAT).",
+          "accessed_at": "2026-06-03T03:33:09.689048",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 22955639. 2012/09/06 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy of VMAT based on the TG \n119 protocols at local institution.\nMATERIAL AND METHODS: The phantom, structure sets, VMAT and IMRT beam parameter \nsetup, dose prescriptions and planning objectives were following TG 119 \nguidelines to create local treatment plans of VMAT and IMRT. The local planning \nresul",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-119 Monte Carlo dose calculation brachytherapy recommendations",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "a9808387edb3",
+          "claim": "PubMed ID: 39153061. 2024/11/01 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy o",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39153061/",
+          "source_type": "PubMed",
+          "source_title": "Evaluation of the conformity of intensity-modulated radiation therapy and volumetric modulated arc therapy using AAPM TG 119 protocol.",
+          "accessed_at": "2026-06-03T03:33:09.689153",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39153061. 2024/11/01 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy of VMAT based on the TG \n119 protocols at local institution.\nMATERIAL AND METHODS: The phantom, structure sets, VMAT and IMRT beam parameter \nsetup, dose prescriptions and planning objectives were following TG 119 \nguidelines to create local treatment plans of VMAT and IMRT. The local planning \nresul",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-119 Monte Carlo dose calculation brachytherapy recommendations",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "38e0a60c1836",
+          "claim": "PubMed ID: 40336866. 2023/11/29 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy o",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40336866/",
+          "source_type": "PubMed",
+          "source_title": "Comparison of Rapid Arc and Intensity Modulated Radiotherapy in a True Beam Linear Accelerator for 6 MV: Application of AAPM TG-119 tests in treatment planning and quality assurance.",
+          "accessed_at": "2026-06-03T03:33:09.689183",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40336866. 2023/11/29 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy of VMAT based on the TG \n119 protocols at local institution.\nMATERIAL AND METHODS: The phantom, structure sets, VMAT and IMRT beam parameter \nsetup, dose prescriptions and planning objectives were following TG 119 \nguidelines to create local treatment plans of VMAT and IMRT. The local planning \nresul",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-119 Monte Carlo dose calculation brachytherapy recommendations",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "a56ee7c9bb8f",
+          "claim": "PubMed ID: 31531292. 2019/08/01 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy o",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31531292/",
+          "source_type": "PubMed",
+          "source_title": "Dosimetric Evaluation of Volumetric Modulated Arc Therapy (VMAT) and Intensity Modulated Radiotherapy (IMRT) Using AAPM TG 119 Protocol.",
+          "accessed_at": "2026-06-03T03:33:09.689208",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31531292. 2019/08/01 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy of VMAT based on the TG \n119 protocols at local institution.\nMATERIAL AND METHODS: The phantom, structure sets, VMAT and IMRT beam parameter \nsetup, dose prescriptions and planning objectives were following TG 119 \nguidelines to create local treatment plans of VMAT and IMRT. The local planning \nresul",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-119 Monte Carlo dose calculation brachytherapy recommendations",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2780e7b387c1",
+          "claim": "PubMed ID: 26141766. 2016/01/01 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy o",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/26141766/",
+          "source_type": "PubMed",
+          "source_title": "Analyzing the performance of the planning system by use of AAPM TG 119 test cases.",
+          "accessed_at": "2026-06-03T03:33:09.689229",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 26141766. 2016/01/01 00:00. BACKGROUND: The commissioning accuracy of Volumetric Modulated Arc Therapy \n(VMAT) need to be evaluated.\nOBJECTIVE: To test and evaluate commissioning accuracy of VMAT based on the TG \n119 protocols at local institution.\nMATERIAL AND METHODS: The phantom, structure sets, VMAT and IMRT beam parameter \nsetup, dose prescriptions and planning objectives were following TG 119 \nguidelines to create local treatment plans of VMAT and IMRT. The local planning \nresul",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-119 Monte Carlo dose calculation brachytherapy recommendations",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Application of AAPM TG 119 to volumetric arc therapy (VMAT).](https://pubmed.ncbi.nlm.nih.gov/22955639/)",
+      "[Evaluation of the conformity of intensity-modulated radiation therapy and volumetric modulated arc therapy using AAPM TG 119 protocol.](https://pubmed.ncbi.nlm.nih.gov/39153061/)",
+      "[Comparison of Rapid Arc and Intensity Modulated Radiotherapy in a True Beam Linear Accelerator for 6 MV: Application of AAPM TG-119 tests in treatment planning and quality assurance.](https://pubmed.ncbi.nlm.nih.gov/40336866/)",
+      "[Dosimetric Evaluation of Volumetric Modulated Arc Therapy (VMAT) and Intensity Modulated Radiotherapy (IMRT) Using AAPM TG 119 Protocol.](https://pubmed.ncbi.nlm.nih.gov/31531292/)",
+      "[Analyzing the performance of the planning system by use of AAPM TG 119 test cases.](https://pubmed.ncbi.nlm.nih.gov/26141766/)"
+    ]
+  }
+}

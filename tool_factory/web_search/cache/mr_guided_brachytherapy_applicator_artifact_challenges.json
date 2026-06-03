@@ -1,0 +1,160 @@
+{
+  "query": "MR-guided brachytherapy applicator artifact challenges",
+  "timestamp": 1780422150.143515,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "MR-guided HDR prostate brachytherapy with teleoperated steerable needles.",
+        "snippet": "PubMed ID: 37480476. 2023/10/01 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensional \ntemplate combined with MR-guided iodine-125 (125I) brachytherapy in the \ntreatment of recurrent brain metastases.\nMATERIAL AND METHODS: Twenty-eight patients with recurrent 38 brain metastases \nunderwent 125I brachytherapy from December, 2017 to January, 2021. A \npre-treatment brachytherapy plan ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37480476/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Three-dimensional template combined with MR-guided iodine-125 brachytherapy for recurrent brain metastases.",
+        "snippet": "PubMed ID: 37425207. 2023/06/01 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensional \ntemplate combined with MR-guided iodine-125 (125I) brachytherapy in the \ntreatment of recurrent brain metastases.\nMATERIAL AND METHODS: Twenty-eight patients with recurrent 38 brain metastases \nunderwent 125I brachytherapy from December, 2017 to January, 2021. A \npre-treatment brachytherapy plan ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/37425207/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Robotic MR-guided high dose rate brachytherapy needle implantation in the prostate (ROBiNSon)-a proof-of-concept study.",
+        "snippet": "PubMed ID: 39084657. 2024/08/21 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensional \ntemplate combined with MR-guided iodine-125 (125I) brachytherapy in the \ntreatment of recurrent brain metastases.\nMATERIAL AND METHODS: Twenty-eight patients with recurrent 38 brain metastases \nunderwent 125I brachytherapy from December, 2017 to January, 2021. A \npre-treatment brachytherapy plan ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39084657/",
+        "source": "PubMed"
+      },
+      {
+        "title": "MR-guided prostate interventions.",
+        "snippet": "PubMed ID: 18219689. 2008/02/01 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensional \ntemplate combined with MR-guided iodine-125 (125I) brachytherapy in the \ntreatment of recurrent brain metastases.\nMATERIAL AND METHODS: Twenty-eight patients with recurrent 38 brain metastases \nunderwent 125I brachytherapy from December, 2017 to January, 2021. A \npre-treatment brachytherapy plan ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/18219689/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Magnetic Resonance-Guided Gynecologic Brachytherapy.",
+        "snippet": "PubMed ID: 26499280. 2015/11/01 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensional \ntemplate combined with MR-guided iodine-125 (125I) brachytherapy in the \ntreatment of recurrent brain metastases.\nMATERIAL AND METHODS: Twenty-eight patients with recurrent 38 brain metastases \nunderwent 125I brachytherapy from December, 2017 to January, 2021. A \npre-treatment brachytherapy plan ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/26499280/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 37480476. 2023/10/01 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensiona\n2. PubMed ID: 37425207. 2023/06/01 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensiona\n3. PubMed ID: 39084657. 2024/08/21 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensiona",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/37480476/",
+      "https://pubmed.ncbi.nlm.nih.gov/37425207/",
+      "https://pubmed.ncbi.nlm.nih.gov/39084657/",
+      "https://pubmed.ncbi.nlm.nih.gov/18219689/",
+      "https://pubmed.ncbi.nlm.nih.gov/26499280/"
+    ],
+    "evidence_chain_id": "20260603_014228_714825",
+    "evidence_summary": {
+      "response_id": "20260603_014228_714825",
+      "query": "MR-guided brachytherapy applicator artifact challenges",
+      "created_at": "2026-06-03T01:42:28.714846",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[MR-guided HDR prostate brachytherapy with teleoperated steerable needles.](https://pubmed.ncbi.nlm.nih.gov/37480476/)",
+        "[Three-dimensional template combined with MR-guided iodine-125 brachytherapy for recurrent brain metastases.](https://pubmed.ncbi.nlm.nih.gov/37425207/)",
+        "[Robotic MR-guided high dose rate brachytherapy needle implantation in the prostate (ROBiNSon)-a proof-of-concept study.](https://pubmed.ncbi.nlm.nih.gov/39084657/)",
+        "[MR-guided prostate interventions.](https://pubmed.ncbi.nlm.nih.gov/18219689/)",
+        "[Magnetic Resonance-Guided Gynecologic Brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/26499280/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ef3d81b069b1",
+          "claim": "PubMed ID: 37480476. 2023/10/01 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensiona",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37480476/",
+          "source_type": "PubMed",
+          "source_title": "MR-guided HDR prostate brachytherapy with teleoperated steerable needles.",
+          "accessed_at": "2026-06-03T01:42:30.143117",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37480476. 2023/10/01 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensional \ntemplate combined with MR-guided iodine-125 (125I) brachytherapy in the \ntreatment of recurrent brain metastases.\nMATERIAL AND METHODS: Twenty-eight patients with recurrent 38 brain metastases \nunderwent 125I brachytherapy from December, 2017 to January, 2021. A \npre-treatment brachytherapy plan ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MR-guided brachytherapy applicator artifact challenges",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3179fbafc853",
+          "claim": "PubMed ID: 37425207. 2023/06/01 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensiona",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/37425207/",
+          "source_type": "PubMed",
+          "source_title": "Three-dimensional template combined with MR-guided iodine-125 brachytherapy for recurrent brain metastases.",
+          "accessed_at": "2026-06-03T01:42:30.143215",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 37425207. 2023/06/01 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensional \ntemplate combined with MR-guided iodine-125 (125I) brachytherapy in the \ntreatment of recurrent brain metastases.\nMATERIAL AND METHODS: Twenty-eight patients with recurrent 38 brain metastases \nunderwent 125I brachytherapy from December, 2017 to January, 2021. A \npre-treatment brachytherapy plan ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MR-guided brachytherapy applicator artifact challenges",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "d3e6f9e41a92",
+          "claim": "PubMed ID: 39084657. 2024/08/21 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensiona",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39084657/",
+          "source_type": "PubMed",
+          "source_title": "Robotic MR-guided high dose rate brachytherapy needle implantation in the prostate (ROBiNSon)-a proof-of-concept study.",
+          "accessed_at": "2026-06-03T01:42:30.143247",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39084657. 2024/08/21 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensional \ntemplate combined with MR-guided iodine-125 (125I) brachytherapy in the \ntreatment of recurrent brain metastases.\nMATERIAL AND METHODS: Twenty-eight patients with recurrent 38 brain metastases \nunderwent 125I brachytherapy from December, 2017 to January, 2021. A \npre-treatment brachytherapy plan ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MR-guided brachytherapy applicator artifact challenges",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "5da8955b3cfe",
+          "claim": "PubMed ID: 18219689. 2008/02/01 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensiona",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/18219689/",
+          "source_type": "PubMed",
+          "source_title": "MR-guided prostate interventions.",
+          "accessed_at": "2026-06-03T01:42:30.143273",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 18219689. 2008/02/01 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensional \ntemplate combined with MR-guided iodine-125 (125I) brachytherapy in the \ntreatment of recurrent brain metastases.\nMATERIAL AND METHODS: Twenty-eight patients with recurrent 38 brain metastases \nunderwent 125I brachytherapy from December, 2017 to January, 2021. A \npre-treatment brachytherapy plan ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MR-guided brachytherapy applicator artifact challenges",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3e9f1434bc7c",
+          "claim": "PubMed ID: 26499280. 2015/11/01 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensiona",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/26499280/",
+          "source_type": "PubMed",
+          "source_title": "Magnetic Resonance-Guided Gynecologic Brachytherapy.",
+          "accessed_at": "2026-06-03T01:42:30.143298",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 26499280. 2015/11/01 00:00. PURPOSE: Treatment of recurrent brain metastases is extremely challenging. Here, \nwe evaluated the feasibility and efficacy of an individualized three-dimensional \ntemplate combined with MR-guided iodine-125 (125I) brachytherapy in the \ntreatment of recurrent brain metastases.\nMATERIAL AND METHODS: Twenty-eight patients with recurrent 38 brain metastases \nunderwent 125I brachytherapy from December, 2017 to January, 2021. A \npre-treatment brachytherapy plan ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MR-guided brachytherapy applicator artifact challenges",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[MR-guided HDR prostate brachytherapy with teleoperated steerable needles.](https://pubmed.ncbi.nlm.nih.gov/37480476/)",
+      "[Three-dimensional template combined with MR-guided iodine-125 brachytherapy for recurrent brain metastases.](https://pubmed.ncbi.nlm.nih.gov/37425207/)",
+      "[Robotic MR-guided high dose rate brachytherapy needle implantation in the prostate (ROBiNSon)-a proof-of-concept study.](https://pubmed.ncbi.nlm.nih.gov/39084657/)",
+      "[MR-guided prostate interventions.](https://pubmed.ncbi.nlm.nih.gov/18219689/)",
+      "[Magnetic Resonance-Guided Gynecologic Brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/26499280/)"
+    ]
+  }
+}

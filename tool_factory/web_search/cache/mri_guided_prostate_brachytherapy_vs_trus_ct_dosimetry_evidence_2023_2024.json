@@ -1,0 +1,160 @@
+{
+  "query": "MRI-guided prostate brachytherapy vs TRUS CT dosimetry evidence 2023 2024",
+  "timestamp": 1780415624.3593366,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Microultrasonography-Guided vs MRI-Guided Biopsy for Prostate Cancer Diagnosis: The OPTIMUM Randomized Clinical Trial.",
+        "snippet": "PubMed ID: 40121537. 2025/05/20 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40121537/",
+        "source": "PubMed"
+      },
+      {
+        "title": "MRI-GUIDED RADIOTHERAPY FOR PROSTATE CANCER: A NEW PARADIGM.",
+        "snippet": "PubMed ID: 36938552. 2022/10/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36938552/",
+        "source": "PubMed"
+      },
+      {
+        "title": "MRI-guided Minimally Invasive Focal Therapies for Prostate Cancer.",
+        "snippet": "PubMed ID: 38051187. 2023/12/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38051187/",
+        "source": "PubMed"
+      },
+      {
+        "title": "MRI-Guided Radiotherapy for Prostate Cancer: Seeing is Believing.",
+        "snippet": "PubMed ID: 38105093. 2024/01/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38105093/",
+        "source": "PubMed"
+      },
+      {
+        "title": "[MRI-guided minimally invasive treatment of prostate cancer].",
+        "snippet": "PubMed ID: 34251481. 2021/09/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34251481/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 40121537. 2025/05/20 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran\n2. PubMed ID: 36938552. 2022/10/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran\n3. PubMed ID: 38051187. 2023/12/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/40121537/",
+      "https://pubmed.ncbi.nlm.nih.gov/36938552/",
+      "https://pubmed.ncbi.nlm.nih.gov/38051187/",
+      "https://pubmed.ncbi.nlm.nih.gov/38105093/",
+      "https://pubmed.ncbi.nlm.nih.gov/34251481/"
+    ],
+    "evidence_chain_id": "20260602_235342_703757",
+    "evidence_summary": {
+      "response_id": "20260602_235342_703757",
+      "query": "MRI-guided prostate brachytherapy vs TRUS CT dosimetry evidence 2023 2024",
+      "created_at": "2026-06-02T23:53:42.703773",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Microultrasonography-Guided vs MRI-Guided Biopsy for Prostate Cancer Diagnosis: The OPTIMUM Randomized Clinical Trial.](https://pubmed.ncbi.nlm.nih.gov/40121537/)",
+        "[MRI-GUIDED RADIOTHERAPY FOR PROSTATE CANCER: A NEW PARADIGM.](https://pubmed.ncbi.nlm.nih.gov/36938552/)",
+        "[MRI-guided Minimally Invasive Focal Therapies for Prostate Cancer.](https://pubmed.ncbi.nlm.nih.gov/38051187/)",
+        "[MRI-Guided Radiotherapy for Prostate Cancer: Seeing is Believing.](https://pubmed.ncbi.nlm.nih.gov/38105093/)",
+        "[[MRI-guided minimally invasive treatment of prostate cancer].](https://pubmed.ncbi.nlm.nih.gov/34251481/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "9d2fb85a7ade",
+          "claim": "PubMed ID: 40121537. 2025/05/20 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40121537/",
+          "source_type": "PubMed",
+          "source_title": "Microultrasonography-Guided vs MRI-Guided Biopsy for Prostate Cancer Diagnosis: The OPTIMUM Randomized Clinical Trial.",
+          "accessed_at": "2026-06-02T23:53:44.358956",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40121537. 2025/05/20 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided prostate brachytherapy vs TRUS CT dosimetry evidence 2023 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e6ccec424a43",
+          "claim": "PubMed ID: 36938552. 2022/10/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36938552/",
+          "source_type": "PubMed",
+          "source_title": "MRI-GUIDED RADIOTHERAPY FOR PROSTATE CANCER: A NEW PARADIGM.",
+          "accessed_at": "2026-06-02T23:53:44.359062",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36938552. 2022/10/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided prostate brachytherapy vs TRUS CT dosimetry evidence 2023 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "aa41fb911815",
+          "claim": "PubMed ID: 38051187. 2023/12/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38051187/",
+          "source_type": "PubMed",
+          "source_title": "MRI-guided Minimally Invasive Focal Therapies for Prostate Cancer.",
+          "accessed_at": "2026-06-02T23:53:44.359093",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38051187. 2023/12/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided prostate brachytherapy vs TRUS CT dosimetry evidence 2023 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f54eceb0feed",
+          "claim": "PubMed ID: 38105093. 2024/01/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38105093/",
+          "source_type": "PubMed",
+          "source_title": "MRI-Guided Radiotherapy for Prostate Cancer: Seeing is Believing.",
+          "accessed_at": "2026-06-02T23:53:44.359118",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38105093. 2024/01/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided prostate brachytherapy vs TRUS CT dosimetry evidence 2023 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2d527d97fbf2",
+          "claim": "PubMed ID: 34251481. 2021/09/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nran",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34251481/",
+          "source_type": "PubMed",
+          "source_title": "[MRI-guided minimally invasive treatment of prostate cancer].",
+          "accessed_at": "2026-06-02T23:53:44.359141",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34251481. 2021/09/01 00:00. OBJECTIVE: To compare microultrasonography-guided and MRI fusion-guided biopsy.\nDESIGN, SETTING, AND PARTICIPANTS: A multicenter, international, open-label, \nrandomized, noninferiority trial of biopsy-naive men from 20 centers (8 \ncountries) with clinical suspicion of prostate cancer (elevated \nprostate-specific antigen [PSA] and/or abnormal digital rectal examination \nfindings) from December 2021 to September 2024.\nINTERVENTIONS: Participants were assigned",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MRI-guided prostate brachytherapy vs TRUS CT dosimetry evidence 2023 2024",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Microultrasonography-Guided vs MRI-Guided Biopsy for Prostate Cancer Diagnosis: The OPTIMUM Randomized Clinical Trial.](https://pubmed.ncbi.nlm.nih.gov/40121537/)",
+      "[MRI-GUIDED RADIOTHERAPY FOR PROSTATE CANCER: A NEW PARADIGM.](https://pubmed.ncbi.nlm.nih.gov/36938552/)",
+      "[MRI-guided Minimally Invasive Focal Therapies for Prostate Cancer.](https://pubmed.ncbi.nlm.nih.gov/38051187/)",
+      "[MRI-Guided Radiotherapy for Prostate Cancer: Seeing is Believing.](https://pubmed.ncbi.nlm.nih.gov/38105093/)",
+      "[[MRI-guided minimally invasive treatment of prostate cancer].](https://pubmed.ncbi.nlm.nih.gov/34251481/)"
+    ]
+  }
+}

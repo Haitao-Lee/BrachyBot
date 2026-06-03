@@ -1,0 +1,160 @@
+{
+  "query": "breast cancer radiation therapy breastfeeding safety guidelines",
+  "timestamp": 1780419331.2523646,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Breast cancer: presentation, investigation and management.",
+        "snippet": "PubMed ID: 35243878. 2022/02/02 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micelle-based \nnanoparticles), and BCSCs-based therapies. Furthermore, prognostic and \npredictive biomarkers will be discussed also biomarkers that have been applied \nby some tests such as Oncotype DX, Mamm αPrint, and uPA/PAI-1 are regarded as \nsuitable prognostic and predictive factors in breast cancer.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35243878/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Breast cancer: Biology, biomarkers, and treatments.",
+        "snippet": "PubMed ID: 32361569. 2020/07/01 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micelle-based \nnanoparticles), and BCSCs-based therapies. Furthermore, prognostic and \npredictive biomarkers will be discussed also biomarkers that have been applied \nby some tests such as Oncotype DX, Mamm αPrint, and uPA/PAI-1 are regarded as \nsuitable prognostic and predictive factors in breast cancer.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32361569/",
+        "source": "PubMed"
+      },
+      {
+        "title": "The Role of Progesterone Receptors in Breast Cancer.",
+        "snippet": "PubMed ID: 35115765. 2022/01/26 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micelle-based \nnanoparticles), and BCSCs-based therapies. Furthermore, prognostic and \npredictive biomarkers will be discussed also biomarkers that have been applied \nby some tests such as Oncotype DX, Mamm αPrint, and uPA/PAI-1 are regarded as \nsuitable prognostic and predictive factors in breast cancer.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35115765/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Breast cancer in young women: an overview.",
+        "snippet": "PubMed ID: 28260181. 2017/09/01 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micelle-based \nnanoparticles), and BCSCs-based therapies. Furthermore, prognostic and \npredictive biomarkers will be discussed also biomarkers that have been applied \nby some tests such as Oncotype DX, Mamm αPrint, and uPA/PAI-1 are regarded as \nsuitable prognostic and predictive factors in breast cancer.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28260181/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Breast cancer survivorship.",
+        "snippet": "PubMed ID: 38534002. 2024/07/01 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micelle-based \nnanoparticles), and BCSCs-based therapies. Furthermore, prognostic and \npredictive biomarkers will be discussed also biomarkers that have been applied \nby some tests such as Oncotype DX, Mamm αPrint, and uPA/PAI-1 are regarded as \nsuitable prognostic and predictive factors in breast cancer.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38534002/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 35243878. 2022/02/02 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micell\n2. PubMed ID: 32361569. 2020/07/01 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micell\n3. PubMed ID: 35115765. 2022/01/26 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micell",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/35243878/",
+      "https://pubmed.ncbi.nlm.nih.gov/32361569/",
+      "https://pubmed.ncbi.nlm.nih.gov/35115765/",
+      "https://pubmed.ncbi.nlm.nih.gov/28260181/",
+      "https://pubmed.ncbi.nlm.nih.gov/38534002/"
+    ],
+    "evidence_chain_id": "20260603_005529_415667",
+    "evidence_summary": {
+      "response_id": "20260603_005529_415667",
+      "query": "breast cancer radiation therapy breastfeeding safety guidelines",
+      "created_at": "2026-06-03T00:55:29.415693",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Breast cancer: presentation, investigation and management.](https://pubmed.ncbi.nlm.nih.gov/35243878/)",
+        "[Breast cancer: Biology, biomarkers, and treatments.](https://pubmed.ncbi.nlm.nih.gov/32361569/)",
+        "[The Role of Progesterone Receptors in Breast Cancer.](https://pubmed.ncbi.nlm.nih.gov/35115765/)",
+        "[Breast cancer in young women: an overview.](https://pubmed.ncbi.nlm.nih.gov/28260181/)",
+        "[Breast cancer survivorship.](https://pubmed.ncbi.nlm.nih.gov/38534002/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "86bbe5f22eb5",
+          "claim": "PubMed ID: 35243878. 2022/02/02 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micell",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35243878/",
+          "source_type": "PubMed",
+          "source_title": "Breast cancer: presentation, investigation and management.",
+          "accessed_at": "2026-06-03T00:55:31.251951",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35243878. 2022/02/02 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micelle-based \nnanoparticles), and BCSCs-based therapies. Furthermore, prognostic and \npredictive biomarkers will be discussed also biomarkers that have been applied \nby some tests such as Oncotype DX, Mamm αPrint, and uPA/PAI-1 are regarded as \nsuitable prognostic and predictive factors in breast cancer.",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "breast cancer radiation therapy breastfeeding safety guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e96d2012f6f7",
+          "claim": "PubMed ID: 32361569. 2020/07/01 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micell",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32361569/",
+          "source_type": "PubMed",
+          "source_title": "Breast cancer: Biology, biomarkers, and treatments.",
+          "accessed_at": "2026-06-03T00:55:31.252056",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32361569. 2020/07/01 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micelle-based \nnanoparticles), and BCSCs-based therapies. Furthermore, prognostic and \npredictive biomarkers will be discussed also biomarkers that have been applied \nby some tests such as Oncotype DX, Mamm αPrint, and uPA/PAI-1 are regarded as \nsuitable prognostic and predictive factors in breast cancer.",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "breast cancer radiation therapy breastfeeding safety guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "b3d14f2dfebd",
+          "claim": "PubMed ID: 35115765. 2022/01/26 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micell",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35115765/",
+          "source_type": "PubMed",
+          "source_title": "The Role of Progesterone Receptors in Breast Cancer.",
+          "accessed_at": "2026-06-03T00:55:31.252088",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35115765. 2022/01/26 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micelle-based \nnanoparticles), and BCSCs-based therapies. Furthermore, prognostic and \npredictive biomarkers will be discussed also biomarkers that have been applied \nby some tests such as Oncotype DX, Mamm αPrint, and uPA/PAI-1 are regarded as \nsuitable prognostic and predictive factors in breast cancer.",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "breast cancer radiation therapy breastfeeding safety guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "70eaa07e2da4",
+          "claim": "PubMed ID: 28260181. 2017/09/01 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micell",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/28260181/",
+          "source_type": "PubMed",
+          "source_title": "Breast cancer in young women: an overview.",
+          "accessed_at": "2026-06-03T00:55:31.252114",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 28260181. 2017/09/01 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micelle-based \nnanoparticles), and BCSCs-based therapies. Furthermore, prognostic and \npredictive biomarkers will be discussed also biomarkers that have been applied \nby some tests such as Oncotype DX, Mamm αPrint, and uPA/PAI-1 are regarded as \nsuitable prognostic and predictive factors in breast cancer.",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "breast cancer radiation therapy breastfeeding safety guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "fefc4806f9e5",
+          "claim": "PubMed ID: 38534002. 2024/07/01 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micell",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38534002/",
+          "source_type": "PubMed",
+          "source_title": "Breast cancer survivorship.",
+          "accessed_at": "2026-06-03T00:55:31.252139",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38534002. 2024/07/01 00:00. we present \nthe current treatments, novel approaches such as antibody-drug conjugation \nsystems (ADCs), nanoparticles (albumin-, metal-, lipid-, polymer-, micelle-based \nnanoparticles), and BCSCs-based therapies. Furthermore, prognostic and \npredictive biomarkers will be discussed also biomarkers that have been applied \nby some tests such as Oncotype DX, Mamm αPrint, and uPA/PAI-1 are regarded as \nsuitable prognostic and predictive factors in breast cancer.",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "breast cancer radiation therapy breastfeeding safety guidelines",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Breast cancer: presentation, investigation and management.](https://pubmed.ncbi.nlm.nih.gov/35243878/)",
+      "[Breast cancer: Biology, biomarkers, and treatments.](https://pubmed.ncbi.nlm.nih.gov/32361569/)",
+      "[The Role of Progesterone Receptors in Breast Cancer.](https://pubmed.ncbi.nlm.nih.gov/35115765/)",
+      "[Breast cancer in young women: an overview.](https://pubmed.ncbi.nlm.nih.gov/28260181/)",
+      "[Breast cancer survivorship.](https://pubmed.ncbi.nlm.nih.gov/38534002/)"
+    ]
+  }
+}

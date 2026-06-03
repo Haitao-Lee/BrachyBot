@@ -1,0 +1,160 @@
+{
+  "query": "QUANTEC bladder dose constraints brachytherapy D2cc gynecological",
+  "timestamp": 1780464770.134136,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "KR QUANTEC | KUKA",
+        "snippet": "可持续的低总体拥有成本 (TCO) KR QUANTEC 不仅具有较高的生产效率，而且还具有经济的调试和保养设计。 凭借平均故障间隔的最高值以及整个模块系统中减少的部件数量，该系列在总体拥有成本 …",
+        "url": "https://www.kuka.cn/zh-cn/products/robotics-systems/industrial-robots/kr-quantec",
+        "source": "Bing CN"
+      },
+      {
+        "title": "KR QUANTEC-K &amp; KR QUANTEC-P 高负载机器人",
+        "snippet": "KR QUANTEC-K &amp; KR QUANTEC-P 高负载机器人 #行业标杆，重载王者# 物流、食品、玻璃、汽车，搬运、点焊、加工、铸造，更高的适应型，更好的灵活性！",
+        "url": "https://www.kukacenter.com/series/59",
+        "source": "Bing CN"
+      },
+      {
+        "title": "放射治疗器官限量（QUANTEC）-MedSci.cn",
+        "snippet": "放射治疗器官限量（QUANTEC）",
+        "url": "https://m.medsci.cn/scale/show.do?id=256c312408",
+        "source": "Bing CN"
+      },
+      {
+        "title": "库卡机器人，库卡KR QUANTEC",
+        "snippet": "2025年4月1日 · KUKA库卡机器人 KR QUANTEC ultra C 工业机器人 05-18 2021 库卡机器人 KR QUANTEC ultra KR QUANTEC ultra 是 KR QUANTEC 系列中强劲、坚固和精度高的机器人。 在任何 …",
+        "url": "http://www.kuka-xj.com/product/peijian/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "QUANTEC Radiation - Evidence-Based Dose Constraints",
+        "snippet": "2026年1月20日 · Building upon the foundation laid by the original QUANTEC (Quantitative Analyses of Normal Tissue Effects in the Clinic) initiative, our goal is to provide introductory, methodology, and …",
+        "url": "https://quantecradiation.org/",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 可持续的低总体拥有成本 (TCO) KR QUANTEC 不仅具有较高的生产效率，而且还具有经济的调试和保养设计。 凭借平均故障间隔的最高值以及整个模块系统中减少的部件数量，该系列在总体拥有成本 …\n- KR QUANTEC-K &amp; KR QUANTEC-P 高负载机器人 #行业标杆，重载王者# 物流、食品、玻璃、汽车，搬运、点焊、加工、铸造，更高的适应型，更好的灵活性！",
+    "sources": [
+      "https://www.kuka.cn/zh-cn/products/robotics-systems/industrial-robots/kr-quantec",
+      "https://www.kukacenter.com/series/59",
+      "https://m.medsci.cn/scale/show.do?id=256c312408",
+      "http://www.kuka-xj.com/product/peijian/",
+      "https://quantecradiation.org/"
+    ],
+    "evidence_chain_id": "20260603_133249_171743",
+    "evidence_summary": {
+      "response_id": "20260603_133249_171743",
+      "query": "QUANTEC bladder dose constraints brachytherapy D2cc gynecological",
+      "created_at": "2026-06-03T13:32:49.171772",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[KR QUANTEC | KUKA](https://www.kuka.cn/zh-cn/products/robotics-systems/industrial-robots/kr-quantec)",
+        "[KR QUANTEC-K &amp; KR QUANTEC-P 高负载机器人](https://www.kukacenter.com/series/59)",
+        "[放射治疗器官限量（QUANTEC）-MedSci.cn](https://m.medsci.cn/scale/show.do?id=256c312408)",
+        "[库卡机器人，库卡KR QUANTEC](http://www.kuka-xj.com/product/peijian/)",
+        "[QUANTEC Radiation - Evidence-Based Dose Constraints](https://quantecradiation.org/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "b9f564f1ce30",
+          "claim": "可持续的低总体拥有成本 (TCO) KR QUANTEC 不仅具有较高的生产效率，而且还具有经济的调试和保养设计。 凭借平均故障间隔的最高值以及整个模块系统中减少的部件数量，该系列在总体拥有成本 …",
+          "source_url": "https://www.kuka.cn/zh-cn/products/robotics-systems/industrial-robots/kr-quantec",
+          "source_type": "Bing CN",
+          "source_title": "KR QUANTEC | KUKA",
+          "accessed_at": "2026-06-03T13:32:50.133662",
+          "published_at": "",
+          "raw_snippet": "可持续的低总体拥有成本 (TCO) KR QUANTEC 不仅具有较高的生产效率，而且还具有经济的调试和保养设计。 凭借平均故障间隔的最高值以及整个模块系统中减少的部件数量，该系列在总体拥有成本 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "QUANTEC bladder dose constraints brachytherapy D2cc gynecological",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "4fd3ac6cfb38",
+          "claim": "KR QUANTEC-K &amp; KR QUANTEC-P 高负载机器人 #行业标杆，重载王者# 物流、食品、玻璃、汽车，搬运、点焊、加工、铸造，更高的适应型，更好的灵活性！",
+          "source_url": "https://www.kukacenter.com/series/59",
+          "source_type": "Bing CN",
+          "source_title": "KR QUANTEC-K &amp; KR QUANTEC-P 高负载机器人",
+          "accessed_at": "2026-06-03T13:32:50.133790",
+          "published_at": "",
+          "raw_snippet": "KR QUANTEC-K &amp; KR QUANTEC-P 高负载机器人 #行业标杆，重载王者# 物流、食品、玻璃、汽车，搬运、点焊、加工、铸造，更高的适应型，更好的灵活性！",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "QUANTEC bladder dose constraints brachytherapy D2cc gynecological",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "23d3693d261e",
+          "claim": "放射治疗器官限量（QUANTEC）",
+          "source_url": "https://m.medsci.cn/scale/show.do?id=256c312408",
+          "source_type": "Bing CN",
+          "source_title": "放射治疗器官限量（QUANTEC）-MedSci.cn",
+          "accessed_at": "2026-06-03T13:32:50.133832",
+          "published_at": "",
+          "raw_snippet": "放射治疗器官限量（QUANTEC）",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "QUANTEC bladder dose constraints brachytherapy D2cc gynecological",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8482c740a0f5",
+          "claim": "2025年4月1日 · KUKA库卡机器人 KR QUANTEC ultra C 工业机器人 05-18 2021 库卡机器人 KR QUANTEC ultra KR QUANTEC ultra 是 KR QUANTEC 系列中强劲、坚固和精度高的机器人。 在任何 …",
+          "source_url": "http://www.kuka-xj.com/product/peijian/",
+          "source_type": "Bing CN",
+          "source_title": "库卡机器人，库卡KR QUANTEC",
+          "accessed_at": "2026-06-03T13:32:50.133865",
+          "published_at": "",
+          "raw_snippet": "2025年4月1日 · KUKA库卡机器人 KR QUANTEC ultra C 工业机器人 05-18 2021 库卡机器人 KR QUANTEC ultra KR QUANTEC ultra 是 KR QUANTEC 系列中强劲、坚固和精度高的机器人。 在任何 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "QUANTEC bladder dose constraints brachytherapy D2cc gynecological",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "0f28547f7ee7",
+          "claim": "2026年1月20日 · Building upon the foundation laid by the original QUANTEC (Quantitative Analyses of Normal Tissue Effects in the Clinic) initiative, our goal is to provide introductory, methodology, and ",
+          "source_url": "https://quantecradiation.org/",
+          "source_type": "Bing CN",
+          "source_title": "QUANTEC Radiation - Evidence-Based Dose Constraints",
+          "accessed_at": "2026-06-03T13:32:50.133896",
+          "published_at": "",
+          "raw_snippet": "2026年1月20日 · Building upon the foundation laid by the original QUANTEC (Quantitative Analyses of Normal Tissue Effects in the Clinic) initiative, our goal is to provide introductory, methodology, and …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "QUANTEC bladder dose constraints brachytherapy D2cc gynecological",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[KR QUANTEC | KUKA](https://www.kuka.cn/zh-cn/products/robotics-systems/industrial-robots/kr-quantec)",
+      "[KR QUANTEC-K &amp; KR QUANTEC-P 高负载机器人](https://www.kukacenter.com/series/59)",
+      "[放射治疗器官限量（QUANTEC）-MedSci.cn](https://m.medsci.cn/scale/show.do?id=256c312408)",
+      "[库卡机器人，库卡KR QUANTEC](http://www.kuka-xj.com/product/peijian/)",
+      "[QUANTEC Radiation - Evidence-Based Dose Constraints](https://quantecradiation.org/)"
+    ]
+  }
+}

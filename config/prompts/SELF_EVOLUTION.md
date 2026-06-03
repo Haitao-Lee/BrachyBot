@@ -388,6 +388,132 @@ docs/benchmark_result/
 
 ---
 
-**Document Version:** 3.0  
-**Last Updated:** 2026-06-02  
+## 13. Test Execution Guide
+
+### 13.1 Quick Start
+
+```bash
+# Run single category test
+python3 aligned_benchmark.py <agent_id> <category_number>
+
+# Run multiple categories
+python3 aligned_benchmark.py <agent_id> 1 2 3 4 5 6 8 17
+
+# Run all missing categories
+python3 aligned_benchmark.py <agent_id> 16 28 29 30 31 32 33 34 35 36
+```
+
+### 13.2 Multi-Turn Conversation Testing
+
+**Category 34 (multi_turn) requires special handling:**
+
+```json
+{
+  "type": "multi_turn",
+  "turns": [
+    {"input": "Turn 1 input", "expected_keywords": ["keyword1"]},
+    {"input": "Turn 2 input", "expected_keywords": ["keyword2"]}
+  ]
+}
+```
+
+**Screenshot naming for multi-turn:**
+```
+{category_num:02d}_{case_id}_turn{turn_num}.png
+```
+
+Example:
+- `34_MT001_turn1.png` - First turn
+- `34_MT001_turn2.png` - Second turn
+
+### 13.3 Screenshot-Response Alignment
+
+**CRITICAL: Screenshots MUST match recorded responses**
+
+1. Open browser and navigate to BrachyBot
+2. Type the input
+3. Wait for response to complete
+4. Take screenshot (captures EXACT response)
+5. Extract response text FROM THE UI
+6. Score the extracted response
+
+**Never:**
+- Take screenshot before response is complete
+- Use API response instead of UI response
+- Skip screenshots for any test case
+
+### 13.4 Language Consistency
+
+**Requirements:**
+- Chinese input → Chinese response
+- English input → English response
+- Language mismatch = P1 failure
+
+**Detection:**
+```python
+def detect_language(text):
+    chinese_chars = len(re.findall(r'[一-鿿]', text))
+    english_chars = len(re.findall(r'[a-zA-Z]', text))
+    if chinese_chars > english_chars * 0.3:
+        return 'zh'
+    else:
+        return 'en'
+```
+
+### 13.5 Auto-Monitoring
+
+**Features:**
+- Monitors agent progress every 5 minutes
+- Restarts stuck or non-compliant agents
+- No restart limit (retries until correct)
+- Logs all actions for audit
+
+**Start monitoring:**
+```bash
+nohup python3 auto_monitor.py > auto_monitor.log 2>&1 &
+```
+
+### 13.6 Report Generation
+
+**Final report generation:**
+```bash
+python3 generate_final_report.py
+```
+
+**Report contents:**
+- Executive summary
+- Agent performance
+- Root cause analysis
+- Category breakdown
+- Data sources
+
+### 13.7 Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Timeout errors | Check server status, increase timeout |
+| Screenshot blank | Wait longer for response |
+| Language mismatch | Check input language |
+| Server offline | Run `wait_for_server()` |
+| Agent stuck | Check auto_monitor logs |
+
+### 13.8 File Locations
+
+```
+benchmarks/
+├── aligned_benchmark.py           # Main test script
+├── auto_monitor.py                # Auto-monitoring
+├── generate_final_report.py       # Report generation
+└── *.json                         # Test cases
+
+docs/benchmark_result/
+├── screenshots/                   # All screenshots
+├── reports/                       # All reports
+└── auto_monitor.log              # Monitor logs
+```
+
+---
+
+**Document Version:** 3.1  
+**Last Updated:** 2026-06-04  
 **Maintainer:** BrachyBot QA System

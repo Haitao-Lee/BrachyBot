@@ -1,0 +1,160 @@
+{
+  "query": "penile cancer brachytherapy local control rates outcomes",
+  "timestamp": 1780418649.5326655,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Editorial: penile cancer.",
+        "snippet": "PubMed ID: 30601185. 2019/03/01 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediators that are important in the prognosis and therapy of the disease. This \nreview aims to provide a summary of the immune micro-environment, molecular \noncogenesis and the role of HPV in the disease applying to the potential of the \nuse of immunotherapy.\nMETHODS: Narrative, non-systematic review based ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30601185/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Penile cancer: potential target for immunotherapy?",
+        "snippet": "PubMed ID: 33145666. 2021/05/01 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediators that are important in the prognosis and therapy of the disease. This \nreview aims to provide a summary of the immune micro-environment, molecular \noncogenesis and the role of HPV in the disease applying to the potential of the \nuse of immunotherapy.\nMETHODS: Narrative, non-systematic review based ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33145666/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Penile cancer.",
+        "snippet": "PubMed ID: 16488287. 2006/03/01 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediators that are important in the prognosis and therapy of the disease. This \nreview aims to provide a summary of the immune micro-environment, molecular \noncogenesis and the role of HPV in the disease applying to the potential of the \nuse of immunotherapy.\nMETHODS: Narrative, non-systematic review based ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/16488287/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Penile cancer in Ireland - A national review.",
+        "snippet": "PubMed ID: 34034967. 2022/06/01 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediators that are important in the prognosis and therapy of the disease. This \nreview aims to provide a summary of the immune micro-environment, molecular \noncogenesis and the role of HPV in the disease applying to the potential of the \nuse of immunotherapy.\nMETHODS: Narrative, non-systematic review based ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34034967/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Penile cancer.",
+        "snippet": "PubMed ID: 33574296. 2021/02/11 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediators that are important in the prognosis and therapy of the disease. This \nreview aims to provide a summary of the immune micro-environment, molecular \noncogenesis and the role of HPV in the disease applying to the potential of the \nuse of immunotherapy.\nMETHODS: Narrative, non-systematic review based ",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33574296/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 30601185. 2019/03/01 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediator\n2. PubMed ID: 33145666. 2021/05/01 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediator\n3. PubMed ID: 16488287. 2006/03/01 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediator",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/30601185/",
+      "https://pubmed.ncbi.nlm.nih.gov/33145666/",
+      "https://pubmed.ncbi.nlm.nih.gov/16488287/",
+      "https://pubmed.ncbi.nlm.nih.gov/34034967/",
+      "https://pubmed.ncbi.nlm.nih.gov/33574296/"
+    ],
+    "evidence_chain_id": "20260603_004407_117697",
+    "evidence_summary": {
+      "response_id": "20260603_004407_117697",
+      "query": "penile cancer brachytherapy local control rates outcomes",
+      "created_at": "2026-06-03T00:44:07.117716",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Editorial: penile cancer.](https://pubmed.ncbi.nlm.nih.gov/30601185/)",
+        "[Penile cancer: potential target for immunotherapy?](https://pubmed.ncbi.nlm.nih.gov/33145666/)",
+        "[Penile cancer.](https://pubmed.ncbi.nlm.nih.gov/16488287/)",
+        "[Penile cancer in Ireland - A national review.](https://pubmed.ncbi.nlm.nih.gov/34034967/)",
+        "[Penile cancer.](https://pubmed.ncbi.nlm.nih.gov/33574296/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "2c4ea12bb281",
+          "claim": "PubMed ID: 30601185. 2019/03/01 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediator",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/30601185/",
+          "source_type": "PubMed",
+          "source_title": "Editorial: penile cancer.",
+          "accessed_at": "2026-06-03T00:44:09.532077",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 30601185. 2019/03/01 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediators that are important in the prognosis and therapy of the disease. This \nreview aims to provide a summary of the immune micro-environment, molecular \noncogenesis and the role of HPV in the disease applying to the potential of the \nuse of immunotherapy.\nMETHODS: Narrative, non-systematic review based ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "penile cancer brachytherapy local control rates outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f8af39ddbc3d",
+          "claim": "PubMed ID: 33145666. 2021/05/01 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediator",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33145666/",
+          "source_type": "PubMed",
+          "source_title": "Penile cancer: potential target for immunotherapy?",
+          "accessed_at": "2026-06-03T00:44:09.532216",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33145666. 2021/05/01 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediators that are important in the prognosis and therapy of the disease. This \nreview aims to provide a summary of the immune micro-environment, molecular \noncogenesis and the role of HPV in the disease applying to the potential of the \nuse of immunotherapy.\nMETHODS: Narrative, non-systematic review based ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "penile cancer brachytherapy local control rates outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "351585040774",
+          "claim": "PubMed ID: 16488287. 2006/03/01 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediator",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/16488287/",
+          "source_type": "PubMed",
+          "source_title": "Penile cancer.",
+          "accessed_at": "2026-06-03T00:44:09.532278",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 16488287. 2006/03/01 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediators that are important in the prognosis and therapy of the disease. This \nreview aims to provide a summary of the immune micro-environment, molecular \noncogenesis and the role of HPV in the disease applying to the potential of the \nuse of immunotherapy.\nMETHODS: Narrative, non-systematic review based ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "penile cancer brachytherapy local control rates outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "b0673022f952",
+          "claim": "PubMed ID: 34034967. 2022/06/01 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediator",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34034967/",
+          "source_type": "PubMed",
+          "source_title": "Penile cancer in Ireland - A national review.",
+          "accessed_at": "2026-06-03T00:44:09.532322",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34034967. 2022/06/01 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediators that are important in the prognosis and therapy of the disease. This \nreview aims to provide a summary of the immune micro-environment, molecular \noncogenesis and the role of HPV in the disease applying to the potential of the \nuse of immunotherapy.\nMETHODS: Narrative, non-systematic review based ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "penile cancer brachytherapy local control rates outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "5245530411b3",
+          "claim": "PubMed ID: 33574296. 2021/02/11 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediator",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33574296/",
+          "source_type": "PubMed",
+          "source_title": "Penile cancer.",
+          "accessed_at": "2026-06-03T00:44:09.532363",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33574296. 2021/02/11 00:00. PURPOSE: Penile cancer (PeCa) is a rare malignancy with a poor prognosis in \nadvanced disease. There is still a limited understanding of the biological \nmediators that are important in the prognosis and therapy of the disease. This \nreview aims to provide a summary of the immune micro-environment, molecular \noncogenesis and the role of HPV in the disease applying to the potential of the \nuse of immunotherapy.\nMETHODS: Narrative, non-systematic review based ",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "penile cancer brachytherapy local control rates outcomes",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Editorial: penile cancer.](https://pubmed.ncbi.nlm.nih.gov/30601185/)",
+      "[Penile cancer: potential target for immunotherapy?](https://pubmed.ncbi.nlm.nih.gov/33145666/)",
+      "[Penile cancer.](https://pubmed.ncbi.nlm.nih.gov/16488287/)",
+      "[Penile cancer in Ireland - A national review.](https://pubmed.ncbi.nlm.nih.gov/34034967/)",
+      "[Penile cancer.](https://pubmed.ncbi.nlm.nih.gov/33574296/)"
+    ]
+  }
+}

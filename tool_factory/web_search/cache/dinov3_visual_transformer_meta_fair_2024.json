@@ -1,0 +1,290 @@
+{
+  "query": "DINOv3 visual transformer Meta FAIR 2024",
+  "timestamp": 1780410101.5665057,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "GitHub - facebookresearch/dinov3: Reference PyTorch …",
+        "snippet": "2025年8月14日 · import torch # DINOv3 dinov3_vitl16_dinotxt_tet1280d20h24l, tokenizer = torch. hub. load (REPO_DIR, 'dinov3_vitl16_dinotxt_tet1280d20h24l', …",
+        "url": "https://github.com/facebookresearch/dinov3",
+        "source": "Bing CN"
+      },
+      {
+        "title": "万字长文超详解之DINO-V3（DINO全系列之补充篇） - 知乎",
+        "snippet": "2026年1月6日 · DINOv3的核心创新在于：（1）数据与模型规模的协同优化， 通过精心设计的数据清洗、多样化和增强策略，确保大规模数据的质量。 优化模型结构（ViT）以适应超大规模训练，平衡计 …",
+        "url": "https://zhuanlan.zhihu.com/p/1940400858836742367",
+        "source": "Bing CN"
+      },
+      {
+        "title": "[2508.10104] DINOv3 - arXiv.org",
+        "snippet": "2025年8月14日 · This technical report introduces DINOv3, a major milestone toward realizing this vision by leveraging simple yet effective strategies. First, we leverage the benefit of scaling both dataset and …",
+        "url": "https://arxiv.org/abs/2508.10104",
+        "source": "Bing CN"
+      },
+      {
+        "title": "【DINOv3】（2）下载DINOv3项目和预训练模型 - CSDN博客",
+        "snippet": "2025年11月17日 · dinov3_vit7b16_ade20k_m2f_head-bf307cb1.pth：DINOv3 ViT-7B/16 模型在 ADE20K 语义分割数据集上训练的M2F语义分割检测头（Mask2Former head），输出语义分割掩膜 [batch, …",
+        "url": "https://blog.csdn.net/youcans/article/details/153884972",
+        "source": "Bing CN"
+      },
+      {
+        "title": "DINOv3详解+实际下游任务模型使用细节（分割，深度，分类 ...",
+        "snippet": "2025年9月26日 · 总结：前面是各版本对比+流程图表对比，可以拿了去做组会汇报，后面是dinov3的详解结构讲解（张量变化角度），然后是实际的GitHub项目中的下流任务的流程图（主要是分割的详细 …",
+        "url": "https://www.cnblogs.com/tlnshuju/p/19114366",
+        "source": "Bing CN"
+      },
+      {
+        "title": "DINOv3",
+        "snippet": "本文提出了DINOv3，这是一种面向大规模自监督视觉学习的新型基础模型。 DINOv3通过多种关键技术改进，解决了在大规模训练中密集特征图退化的问题，并引入了Gram anchoring方法以稳定训练过程。",
+        "url": "https://www.modelscope.cn/papers/2508.10104/overview",
+        "source": "Bing CN"
+      },
+      {
+        "title": "标注成本骤降，DINOv3炸裂发布！冻结 backbone 即拿即用 ...",
+        "snippet": "2025年8月20日 · Meta开源DINOv3自监督视觉骨干网络，无需微调即可用于图像分类、目标检测等任务，显著降低标注成本。 在语义分割、深度估计等密集预测任务中表现优异，超越专业解决方案。 提 …",
+        "url": "https://cloud.tencent.com/developer/article/2557404",
+        "source": "Bing CN"
+      },
+      {
+        "title": "DINOv3 - Hugging Face 文档",
+        "snippet": "2025年8月13日 · DINOv3 是一个多功能的视觉基础模型系列，在无需微调的情况下，在广泛的场景中都能超越专门的最优性能。 DINOv3 生成高质量的密集特征，在各种视觉任务上取得了出色的表现，显 …",
+        "url": "https://hugging-face.cn/docs/transformers/model_doc/dinov3",
+        "source": "Bing CN"
+      },
+      {
+        "title": "DINOv3 + YOLO26 实战指南：如何用自监督学习把目标检测 ...",
+        "snippet": "2026年4月23日 · 输出多尺度特征 DINOv3 训练完成后，会输出 C2/C3/C4/C5 四个层级的特征图。 这正好和 YOLO 的多尺度检测对上了——小目标用浅层特征，大目标用深层 ...",
+        "url": "https://finance.sina.com.cn/wm/2026-04-23/doc-inhvpcus4852302.shtml",
+        "source": "Bing CN"
+      },
+      {
+        "title": "DINOv3详解+实际下游任务模型使用细节（分割，深度，分类 ...",
+        "snippet": "2025年9月24日 · 总结：前面是各版本对比+流程图表对比，可以拿了去做组会汇报，后面是dinov3的详解结构讲解（张量变化角度），然后是实际的GitHub项目中的下流任务的流程图（主要是分割的详细 …",
+        "url": "https://jishuzhan.net/article/1971030829775765505",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 2025年8月14日 · import torch # DINOv3 dinov3_vitl16_dinotxt_tet1280d20h24l, tokenizer = torch. hub. load (REPO_DIR, 'dinov3_vitl16_dinotxt_tet1280d20h24l\n- 2026年1月6日 · DINOv3的核心创新在于：（1）数据与模型规模的协同优化， 通过精心设计的数据清洗、多样化和增强策略，确保大规模数据的质量。 优化模型结构（ViT）以适应超大规模训练，平衡计 …",
+    "sources": [
+      "https://github.com/facebookresearch/dinov3",
+      "https://zhuanlan.zhihu.com/p/1940400858836742367",
+      "https://arxiv.org/abs/2508.10104",
+      "https://blog.csdn.net/youcans/article/details/153884972",
+      "https://www.cnblogs.com/tlnshuju/p/19114366",
+      "https://www.modelscope.cn/papers/2508.10104/overview",
+      "https://cloud.tencent.com/developer/article/2557404",
+      "https://hugging-face.cn/docs/transformers/model_doc/dinov3",
+      "https://finance.sina.com.cn/wm/2026-04-23/doc-inhvpcus4852302.shtml",
+      "https://jishuzhan.net/article/1971030829775765505"
+    ],
+    "evidence_chain_id": "20260602_222140_548896",
+    "evidence_summary": {
+      "response_id": "20260602_222140_548896",
+      "query": "DINOv3 visual transformer Meta FAIR 2024",
+      "created_at": "2026-06-02T22:21:40.548926",
+      "num_sources": 10,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[GitHub - facebookresearch/dinov3: Reference PyTorch …](https://github.com/facebookresearch/dinov3)",
+        "[万字长文超详解之DINO-V3（DINO全系列之补充篇） - 知乎](https://zhuanlan.zhihu.com/p/1940400858836742367)",
+        "[[2508.10104] DINOv3 - arXiv.org](https://arxiv.org/abs/2508.10104)",
+        "[【DINOv3】（2）下载DINOv3项目和预训练模型 - CSDN博客](https://blog.csdn.net/youcans/article/details/153884972)",
+        "[DINOv3详解+实际下游任务模型使用细节（分割，深度，分类 ...](https://www.cnblogs.com/tlnshuju/p/19114366)",
+        "[DINOv3](https://www.modelscope.cn/papers/2508.10104/overview)",
+        "[标注成本骤降，DINOv3炸裂发布！冻结 backbone 即拿即用 ...](https://cloud.tencent.com/developer/article/2557404)",
+        "[DINOv3 - Hugging Face 文档](https://hugging-face.cn/docs/transformers/model_doc/dinov3)",
+        "[DINOv3 + YOLO26 实战指南：如何用自监督学习把目标检测 ...](https://finance.sina.com.cn/wm/2026-04-23/doc-inhvpcus4852302.shtml)",
+        "[DINOv3详解+实际下游任务模型使用细节（分割，深度，分类 ...](https://jishuzhan.net/article/1971030829775765505)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "7d61f8d98b96",
+          "claim": "2025年8月14日 · import torch # DINOv3 dinov3_vitl16_dinotxt_tet1280d20h24l, tokenizer = torch. hub. load (REPO_DIR, 'dinov3_vitl16_dinotxt_tet1280d20h24l', …",
+          "source_url": "https://github.com/facebookresearch/dinov3",
+          "source_type": "Bing CN",
+          "source_title": "GitHub - facebookresearch/dinov3: Reference PyTorch …",
+          "accessed_at": "2026-06-02T22:21:41.565951",
+          "published_at": "",
+          "raw_snippet": "2025年8月14日 · import torch # DINOv3 dinov3_vitl16_dinotxt_tet1280d20h24l, tokenizer = torch. hub. load (REPO_DIR, 'dinov3_vitl16_dinotxt_tet1280d20h24l', …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DINOv3 visual transformer Meta FAIR 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "77c8a5da5463",
+          "claim": "2026年1月6日 · DINOv3的核心创新在于：（1）数据与模型规模的协同优化， 通过精心设计的数据清洗、多样化和增强策略，确保大规模数据的质量。 优化模型结构（ViT）以适应超大规模训练，平衡计 …",
+          "source_url": "https://zhuanlan.zhihu.com/p/1940400858836742367",
+          "source_type": "Bing CN",
+          "source_title": "万字长文超详解之DINO-V3（DINO全系列之补充篇） - 知乎",
+          "accessed_at": "2026-06-02T22:21:41.566053",
+          "published_at": "",
+          "raw_snippet": "2026年1月6日 · DINOv3的核心创新在于：（1）数据与模型规模的协同优化， 通过精心设计的数据清洗、多样化和增强策略，确保大规模数据的质量。 优化模型结构（ViT）以适应超大规模训练，平衡计 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DINOv3 visual transformer Meta FAIR 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "4fdda903d639",
+          "claim": "2025年8月14日 · This technical report introduces DINOv3, a major milestone toward realizing this vision by leveraging simple yet effective strategies. First, we leverage the benefit of scaling both datas",
+          "source_url": "https://arxiv.org/abs/2508.10104",
+          "source_type": "Bing CN",
+          "source_title": "[2508.10104] DINOv3 - arXiv.org",
+          "accessed_at": "2026-06-02T22:21:41.566090",
+          "published_at": "",
+          "raw_snippet": "2025年8月14日 · This technical report introduces DINOv3, a major milestone toward realizing this vision by leveraging simple yet effective strategies. First, we leverage the benefit of scaling both dataset and …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DINOv3 visual transformer Meta FAIR 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e53ee5488deb",
+          "claim": "2025年11月17日 · dinov3_vit7b16_ade20k_m2f_head-bf307cb1.pth：DINOv3 ViT-7B/16 模型在 ADE20K 语义分割数据集上训练的M2F语义分割检测头（Mask2Former head），输出语义分割掩膜 [batch, …",
+          "source_url": "https://blog.csdn.net/youcans/article/details/153884972",
+          "source_type": "Bing CN",
+          "source_title": "【DINOv3】（2）下载DINOv3项目和预训练模型 - CSDN博客",
+          "accessed_at": "2026-06-02T22:21:41.566119",
+          "published_at": "",
+          "raw_snippet": "2025年11月17日 · dinov3_vit7b16_ade20k_m2f_head-bf307cb1.pth：DINOv3 ViT-7B/16 模型在 ADE20K 语义分割数据集上训练的M2F语义分割检测头（Mask2Former head），输出语义分割掩膜 [batch, …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DINOv3 visual transformer Meta FAIR 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "09fcbf33ffd0",
+          "claim": "2025年9月26日 · 总结：前面是各版本对比+流程图表对比，可以拿了去做组会汇报，后面是dinov3的详解结构讲解（张量变化角度），然后是实际的GitHub项目中的下流任务的流程图（主要是分割的详细 …",
+          "source_url": "https://www.cnblogs.com/tlnshuju/p/19114366",
+          "source_type": "Bing CN",
+          "source_title": "DINOv3详解+实际下游任务模型使用细节（分割，深度，分类 ...",
+          "accessed_at": "2026-06-02T22:21:41.566147",
+          "published_at": "",
+          "raw_snippet": "2025年9月26日 · 总结：前面是各版本对比+流程图表对比，可以拿了去做组会汇报，后面是dinov3的详解结构讲解（张量变化角度），然后是实际的GitHub项目中的下流任务的流程图（主要是分割的详细 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DINOv3 visual transformer Meta FAIR 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "61f6ed6bf099",
+          "claim": "本文提出了DINOv3，这是一种面向大规模自监督视觉学习的新型基础模型。 DINOv3通过多种关键技术改进，解决了在大规模训练中密集特征图退化的问题，并引入了Gram anchoring方法以稳定训练过程。",
+          "source_url": "https://www.modelscope.cn/papers/2508.10104/overview",
+          "source_type": "Bing CN",
+          "source_title": "DINOv3",
+          "accessed_at": "2026-06-02T22:21:41.566175",
+          "published_at": "",
+          "raw_snippet": "本文提出了DINOv3，这是一种面向大规模自监督视觉学习的新型基础模型。 DINOv3通过多种关键技术改进，解决了在大规模训练中密集特征图退化的问题，并引入了Gram anchoring方法以稳定训练过程。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DINOv3 visual transformer Meta FAIR 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3c089a35b8d7",
+          "claim": "2025年8月20日 · Meta开源DINOv3自监督视觉骨干网络，无需微调即可用于图像分类、目标检测等任务，显著降低标注成本。 在语义分割、深度估计等密集预测任务中表现优异，超越专业解决方案。 提 …",
+          "source_url": "https://cloud.tencent.com/developer/article/2557404",
+          "source_type": "Bing CN",
+          "source_title": "标注成本骤降，DINOv3炸裂发布！冻结 backbone 即拿即用 ...",
+          "accessed_at": "2026-06-02T22:21:41.566201",
+          "published_at": "",
+          "raw_snippet": "2025年8月20日 · Meta开源DINOv3自监督视觉骨干网络，无需微调即可用于图像分类、目标检测等任务，显著降低标注成本。 在语义分割、深度估计等密集预测任务中表现优异，超越专业解决方案。 提 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DINOv3 visual transformer Meta FAIR 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "77c6581b3870",
+          "claim": "2025年8月13日 · DINOv3 是一个多功能的视觉基础模型系列，在无需微调的情况下，在广泛的场景中都能超越专门的最优性能。 DINOv3 生成高质量的密集特征，在各种视觉任务上取得了出色的表现，显 …",
+          "source_url": "https://hugging-face.cn/docs/transformers/model_doc/dinov3",
+          "source_type": "Bing CN",
+          "source_title": "DINOv3 - Hugging Face 文档",
+          "accessed_at": "2026-06-02T22:21:41.566226",
+          "published_at": "",
+          "raw_snippet": "2025年8月13日 · DINOv3 是一个多功能的视觉基础模型系列，在无需微调的情况下，在广泛的场景中都能超越专门的最优性能。 DINOv3 生成高质量的密集特征，在各种视觉任务上取得了出色的表现，显 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DINOv3 visual transformer Meta FAIR 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ad55fcb8c123",
+          "claim": "2026年4月23日 · 输出多尺度特征 DINOv3 训练完成后，会输出 C2/C3/C4/C5 四个层级的特征图。 这正好和 YOLO 的多尺度检测对上了——小目标用浅层特征，大目标用深层 ...",
+          "source_url": "https://finance.sina.com.cn/wm/2026-04-23/doc-inhvpcus4852302.shtml",
+          "source_type": "Bing CN",
+          "source_title": "DINOv3 + YOLO26 实战指南：如何用自监督学习把目标检测 ...",
+          "accessed_at": "2026-06-02T22:21:41.566251",
+          "published_at": "",
+          "raw_snippet": "2026年4月23日 · 输出多尺度特征 DINOv3 训练完成后，会输出 C2/C3/C4/C5 四个层级的特征图。 这正好和 YOLO 的多尺度检测对上了——小目标用浅层特征，大目标用深层 ...",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DINOv3 visual transformer Meta FAIR 2024",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e2f4eba9f86f",
+          "claim": "2025年9月24日 · 总结：前面是各版本对比+流程图表对比，可以拿了去做组会汇报，后面是dinov3的详解结构讲解（张量变化角度），然后是实际的GitHub项目中的下流任务的流程图（主要是分割的详细 …",
+          "source_url": "https://jishuzhan.net/article/1971030829775765505",
+          "source_type": "Bing CN",
+          "source_title": "DINOv3详解+实际下游任务模型使用细节（分割，深度，分类 ...",
+          "accessed_at": "2026-06-02T22:21:41.566274",
+          "published_at": "",
+          "raw_snippet": "2025年9月24日 · 总结：前面是各版本对比+流程图表对比，可以拿了去做组会汇报，后面是dinov3的详解结构讲解（张量变化角度），然后是实际的GitHub项目中的下流任务的流程图（主要是分割的详细 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "DINOv3 visual transformer Meta FAIR 2024",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[GitHub - facebookresearch/dinov3: Reference PyTorch …](https://github.com/facebookresearch/dinov3)",
+      "[万字长文超详解之DINO-V3（DINO全系列之补充篇） - 知乎](https://zhuanlan.zhihu.com/p/1940400858836742367)",
+      "[[2508.10104] DINOv3 - arXiv.org](https://arxiv.org/abs/2508.10104)",
+      "[【DINOv3】（2）下载DINOv3项目和预训练模型 - CSDN博客](https://blog.csdn.net/youcans/article/details/153884972)",
+      "[DINOv3详解+实际下游任务模型使用细节（分割，深度，分类 ...](https://www.cnblogs.com/tlnshuju/p/19114366)",
+      "[DINOv3](https://www.modelscope.cn/papers/2508.10104/overview)",
+      "[标注成本骤降，DINOv3炸裂发布！冻结 backbone 即拿即用 ...](https://cloud.tencent.com/developer/article/2557404)",
+      "[DINOv3 - Hugging Face 文档](https://hugging-face.cn/docs/transformers/model_doc/dinov3)",
+      "[DINOv3 + YOLO26 实战指南：如何用自监督学习把目标检测 ...](https://finance.sina.com.cn/wm/2026-04-23/doc-inhvpcus4852302.shtml)",
+      "[DINOv3详解+实际下游任务模型使用细节（分割，深度，分类 ...](https://jishuzhan.net/article/1971030829775765505)"
+    ]
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "query": "PET-CT cervical cancer brachytherapy target delineation guidelines GEC-ESTRO ABS",
+  "timestamp": 1780410872.9841924,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "[STAGING CERVICAL CANCER USING PET-CT AND PET-MRI].",
+        "snippet": "PubMed ID: 34263572. 2021/07/01 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimaging, and a number of new insights and techniques have been developed since. \nThe aim of the present document is to provide state-of-the-art guidelines for \nnuclear medicine physicians performing parathyroid scintigraphy, single-photon \nemission computed tomography/computed tomography (SPECT/CT), posit",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34263572/",
+        "source": "PubMed"
+      },
+      {
+        "title": "PET-CT versus MRI in the diagnosis of lymph node metastasis of cervical cancer: A meta-analysis.",
+        "snippet": "PubMed ID: 34981608. 2022/05/01 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimaging, and a number of new insights and techniques have been developed since. \nThe aim of the present document is to provide state-of-the-art guidelines for \nnuclear medicine physicians performing parathyroid scintigraphy, single-photon \nemission computed tomography/computed tomography (SPECT/CT), posit",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/34981608/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Impact of PET/CT Imaging with FDG in Locally Advanced Cervical Carcinoma-A Literature Review.",
+        "snippet": "PubMed ID: 38785469. 2024/04/29 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimaging, and a number of new insights and techniques have been developed since. \nThe aim of the present document is to provide state-of-the-art guidelines for \nnuclear medicine physicians performing parathyroid scintigraphy, single-photon \nemission computed tomography/computed tomography (SPECT/CT), posit",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38785469/",
+        "source": "PubMed"
+      },
+      {
+        "title": "The EANM practice guidelines for parathyroid imaging.",
+        "snippet": "PubMed ID: 33839893. 2021/08/01 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimaging, and a number of new insights and techniques have been developed since. \nThe aim of the present document is to provide state-of-the-art guidelines for \nnuclear medicine physicians performing parathyroid scintigraphy, single-photon \nemission computed tomography/computed tomography (SPECT/CT), posit",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33839893/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Precision matters: the value of PET/CT and PET/MRI in the clinical management of cervical cancer.",
+        "snippet": "PubMed ID: 39331065. 2025/05/01 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimaging, and a number of new insights and techniques have been developed since. \nThe aim of the present document is to provide state-of-the-art guidelines for \nnuclear medicine physicians performing parathyroid scintigraphy, single-photon \nemission computed tomography/computed tomography (SPECT/CT), posit",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39331065/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 34263572. 2021/07/01 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimagin\n2. PubMed ID: 34981608. 2022/05/01 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimagin\n3. PubMed ID: 38785469. 2024/04/29 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimagin",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/34263572/",
+      "https://pubmed.ncbi.nlm.nih.gov/34981608/",
+      "https://pubmed.ncbi.nlm.nih.gov/38785469/",
+      "https://pubmed.ncbi.nlm.nih.gov/33839893/",
+      "https://pubmed.ncbi.nlm.nih.gov/39331065/"
+    ],
+    "evidence_chain_id": "20260602_223431_286651",
+    "evidence_summary": {
+      "response_id": "20260602_223431_286651",
+      "query": "PET-CT cervical cancer brachytherapy target delineation guidelines GEC-ESTRO ABS",
+      "created_at": "2026-06-02T22:34:31.286671",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[[STAGING CERVICAL CANCER USING PET-CT AND PET-MRI].](https://pubmed.ncbi.nlm.nih.gov/34263572/)",
+        "[PET-CT versus MRI in the diagnosis of lymph node metastasis of cervical cancer: A meta-analysis.](https://pubmed.ncbi.nlm.nih.gov/34981608/)",
+        "[Impact of PET/CT Imaging with FDG in Locally Advanced Cervical Carcinoma-A Literature Review.](https://pubmed.ncbi.nlm.nih.gov/38785469/)",
+        "[The EANM practice guidelines for parathyroid imaging.](https://pubmed.ncbi.nlm.nih.gov/33839893/)",
+        "[Precision matters: the value of PET/CT and PET/MRI in the clinical management of cervical cancer.](https://pubmed.ncbi.nlm.nih.gov/39331065/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ae93f02dc241",
+          "claim": "PubMed ID: 34263572. 2021/07/01 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimagin",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34263572/",
+          "source_type": "PubMed",
+          "source_title": "[STAGING CERVICAL CANCER USING PET-CT AND PET-MRI].",
+          "accessed_at": "2026-06-02T22:34:32.983733",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34263572. 2021/07/01 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimaging, and a number of new insights and techniques have been developed since. \nThe aim of the present document is to provide state-of-the-art guidelines for \nnuclear medicine physicians performing parathyroid scintigraphy, single-photon \nemission computed tomography/computed tomography (SPECT/CT), posit",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PET-CT cervical cancer brachytherapy target delineation guidelines GEC-ESTRO ABS",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3aeee79b7211",
+          "claim": "PubMed ID: 34981608. 2022/05/01 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimagin",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/34981608/",
+          "source_type": "PubMed",
+          "source_title": "PET-CT versus MRI in the diagnosis of lymph node metastasis of cervical cancer: A meta-analysis.",
+          "accessed_at": "2026-06-02T22:34:32.983863",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 34981608. 2022/05/01 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimaging, and a number of new insights and techniques have been developed since. \nThe aim of the present document is to provide state-of-the-art guidelines for \nnuclear medicine physicians performing parathyroid scintigraphy, single-photon \nemission computed tomography/computed tomography (SPECT/CT), posit",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PET-CT cervical cancer brachytherapy target delineation guidelines GEC-ESTRO ABS",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "10ce65afd08d",
+          "claim": "PubMed ID: 38785469. 2024/04/29 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimagin",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38785469/",
+          "source_type": "PubMed",
+          "source_title": "Impact of PET/CT Imaging with FDG in Locally Advanced Cervical Carcinoma-A Literature Review.",
+          "accessed_at": "2026-06-02T22:34:32.983897",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38785469. 2024/04/29 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimaging, and a number of new insights and techniques have been developed since. \nThe aim of the present document is to provide state-of-the-art guidelines for \nnuclear medicine physicians performing parathyroid scintigraphy, single-photon \nemission computed tomography/computed tomography (SPECT/CT), posit",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PET-CT cervical cancer brachytherapy target delineation guidelines GEC-ESTRO ABS",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "a9d1cacfccec",
+          "claim": "PubMed ID: 33839893. 2021/08/01 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimagin",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33839893/",
+          "source_type": "PubMed",
+          "source_title": "The EANM practice guidelines for parathyroid imaging.",
+          "accessed_at": "2026-06-02T22:34:32.983924",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33839893. 2021/08/01 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimaging, and a number of new insights and techniques have been developed since. \nThe aim of the present document is to provide state-of-the-art guidelines for \nnuclear medicine physicians performing parathyroid scintigraphy, single-photon \nemission computed tomography/computed tomography (SPECT/CT), posit",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PET-CT cervical cancer brachytherapy target delineation guidelines GEC-ESTRO ABS",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c820aa5ab50f",
+          "claim": "PubMed ID: 39331065. 2025/05/01 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimagin",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39331065/",
+          "source_type": "PubMed",
+          "source_title": "Precision matters: the value of PET/CT and PET/MRI in the clinical management of cervical cancer.",
+          "accessed_at": "2026-06-02T22:34:32.983962",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39331065. 2025/05/01 00:00. METHODS: Over a decade has now passed since the European Association of Nuclear \nMedicine (EANM) issued the first edition of the guideline on parathyroid \nimaging, and a number of new insights and techniques have been developed since. \nThe aim of the present document is to provide state-of-the-art guidelines for \nnuclear medicine physicians performing parathyroid scintigraphy, single-photon \nemission computed tomography/computed tomography (SPECT/CT), posit",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PET-CT cervical cancer brachytherapy target delineation guidelines GEC-ESTRO ABS",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[[STAGING CERVICAL CANCER USING PET-CT AND PET-MRI].](https://pubmed.ncbi.nlm.nih.gov/34263572/)",
+      "[PET-CT versus MRI in the diagnosis of lymph node metastasis of cervical cancer: A meta-analysis.](https://pubmed.ncbi.nlm.nih.gov/34981608/)",
+      "[Impact of PET/CT Imaging with FDG in Locally Advanced Cervical Carcinoma-A Literature Review.](https://pubmed.ncbi.nlm.nih.gov/38785469/)",
+      "[The EANM practice guidelines for parathyroid imaging.](https://pubmed.ncbi.nlm.nih.gov/33839893/)",
+      "[Precision matters: the value of PET/CT and PET/MRI in the clinical management of cervical cancer.](https://pubmed.ncbi.nlm.nih.gov/39331065/)"
+    ]
+  }
+}

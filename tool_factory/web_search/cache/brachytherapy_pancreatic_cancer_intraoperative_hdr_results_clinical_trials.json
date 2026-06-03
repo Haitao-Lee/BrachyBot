@@ -1,0 +1,160 @@
+{
+  "query": "brachytherapy pancreatic cancer intraoperative HDR results clinical trials",
+  "timestamp": 1780465236.1231103,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Brachytherapy and pancreatic cancer.",
+        "snippet": "PubMed ID: 9143059. 1997/05/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patien",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/9143059/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Intraoperative brachytherapy in pancreatic cancer.",
+        "snippet": "PubMed ID: 3072994. 1988/01/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patien",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/3072994/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Locally Advanced Pancreatic Cancer: Percutaneous Management Using Ablation, Brachytherapy, Intra-arterial Chemotherapy, and Intra-tumoral Immunotherapy.",
+        "snippet": "PubMed ID: 33864144. 2021/04/17 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33864144/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Chinese expert consensus on radioactive (125)I seeds interstitial implantation brachytherapy for pancreatic cancer.",
+        "snippet": "PubMed ID: 30589023. 2018/01/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30589023/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Survival of patients with advanced pancreatic cancer after iodine125 seeds implantation brachytherapy: A meta-analysis.",
+        "snippet": "PubMed ID: 28151849. 2017/02/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28151849/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 9143059. 1997/05/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminim\n2. PubMed ID: 3072994. 1988/01/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminim\n3. PubMed ID: 33864144. 2021/04/17 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nmini",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/9143059/",
+      "https://pubmed.ncbi.nlm.nih.gov/3072994/",
+      "https://pubmed.ncbi.nlm.nih.gov/33864144/",
+      "https://pubmed.ncbi.nlm.nih.gov/30589023/",
+      "https://pubmed.ncbi.nlm.nih.gov/28151849/"
+    ],
+    "evidence_chain_id": "20260603_134034_037954",
+    "evidence_summary": {
+      "response_id": "20260603_134034_037954",
+      "query": "brachytherapy pancreatic cancer intraoperative HDR results clinical trials",
+      "created_at": "2026-06-03T13:40:34.037990",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Brachytherapy and pancreatic cancer.](https://pubmed.ncbi.nlm.nih.gov/9143059/)",
+        "[Intraoperative brachytherapy in pancreatic cancer.](https://pubmed.ncbi.nlm.nih.gov/3072994/)",
+        "[Locally Advanced Pancreatic Cancer: Percutaneous Management Using Ablation, Brachytherapy, Intra-arterial Chemotherapy, and Intra-tumoral Immunotherapy.](https://pubmed.ncbi.nlm.nih.gov/33864144/)",
+        "[Chinese expert consensus on radioactive (125)I seeds interstitial implantation brachytherapy for pancreatic cancer.](https://pubmed.ncbi.nlm.nih.gov/30589023/)",
+        "[Survival of patients with advanced pancreatic cancer after iodine125 seeds implantation brachytherapy: A meta-analysis.](https://pubmed.ncbi.nlm.nih.gov/28151849/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "43709072cbf0",
+          "claim": "PubMed ID: 9143059. 1997/05/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminim",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/9143059/",
+          "source_type": "PubMed",
+          "source_title": "Brachytherapy and pancreatic cancer.",
+          "accessed_at": "2026-06-03T13:40:36.122685",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 9143059. 1997/05/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patien",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy pancreatic cancer intraoperative HDR results clinical trials",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "165f849d3541",
+          "claim": "PubMed ID: 3072994. 1988/01/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminim",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/3072994/",
+          "source_type": "PubMed",
+          "source_title": "Intraoperative brachytherapy in pancreatic cancer.",
+          "accessed_at": "2026-06-03T13:40:36.122791",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 3072994. 1988/01/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patien",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy pancreatic cancer intraoperative HDR results clinical trials",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "9029f0934922",
+          "claim": "PubMed ID: 33864144. 2021/04/17 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nmini",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33864144/",
+          "source_type": "PubMed",
+          "source_title": "Locally Advanced Pancreatic Cancer: Percutaneous Management Using Ablation, Brachytherapy, Intra-arterial Chemotherapy, and Intra-tumoral Immunotherapy.",
+          "accessed_at": "2026-06-03T13:40:36.122827",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33864144. 2021/04/17 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy pancreatic cancer intraoperative HDR results clinical trials",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "bd72309bc6d9",
+          "claim": "PubMed ID: 30589023. 2018/01/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nmini",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/30589023/",
+          "source_type": "PubMed",
+          "source_title": "Chinese expert consensus on radioactive (125)I seeds interstitial implantation brachytherapy for pancreatic cancer.",
+          "accessed_at": "2026-06-03T13:40:36.122855",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 30589023. 2018/01/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy pancreatic cancer intraoperative HDR results clinical trials",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "691a4cb328c2",
+          "claim": "PubMed ID: 28151849. 2017/02/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nmini",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/28151849/",
+          "source_type": "PubMed",
+          "source_title": "Survival of patients with advanced pancreatic cancer after iodine125 seeds implantation brachytherapy: A meta-analysis.",
+          "accessed_at": "2026-06-03T13:40:36.122880",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 28151849. 2017/02/01 00:00. BACKGROUND: Brachytherapy with iodine-labeled seeds (I-seeds) implantation is \nincreasingly being used to treat tumors because of its positional precision, \nminimal invasion, least damage to noncancerous tissue due to slow and continuous \nrelease of radioactivity and facilitation with modern medical imaging \ntechnologies. This study evaluates the survival and pain relief outcomes of the \nI-seeds implantation brachytherapy in advanced pancreatic cancer patie",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "brachytherapy pancreatic cancer intraoperative HDR results clinical trials",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Brachytherapy and pancreatic cancer.](https://pubmed.ncbi.nlm.nih.gov/9143059/)",
+      "[Intraoperative brachytherapy in pancreatic cancer.](https://pubmed.ncbi.nlm.nih.gov/3072994/)",
+      "[Locally Advanced Pancreatic Cancer: Percutaneous Management Using Ablation, Brachytherapy, Intra-arterial Chemotherapy, and Intra-tumoral Immunotherapy.](https://pubmed.ncbi.nlm.nih.gov/33864144/)",
+      "[Chinese expert consensus on radioactive (125)I seeds interstitial implantation brachytherapy for pancreatic cancer.](https://pubmed.ncbi.nlm.nih.gov/30589023/)",
+      "[Survival of patients with advanced pancreatic cancer after iodine125 seeds implantation brachytherapy: A meta-analysis.](https://pubmed.ncbi.nlm.nih.gov/28151849/)"
+    ]
+  }
+}

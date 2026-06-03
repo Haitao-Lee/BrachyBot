@@ -1,0 +1,160 @@
+{
+  "query": "epistemic aleatoric uncertainty machine learning medical AI explanation",
+  "timestamp": 1780471219.897957,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "EPISTEMIC中文 (简体)翻译：剑桥词典 - Cambridge Dictionary",
+        "snippet": "More indirectly, these two stylistic dimensions mark different epistemic relations to the discourse, emphasizing and privileging different kinds of information.",
+        "url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/epistemic",
+        "source": "Bing CN"
+      },
+      {
+        "title": "epistemic_百度百科",
+        "snippet": "2025年8月26日 · Epistemic是英语形容词，音标为英 [ˌepɪˈstiːmɪk]/美 [ˌɛpɪˈstimɪk]，译为“知识的”或“与认识相关的”，常作为哲学、语言学及认知科学领域的分析工具，用于描述人类认知机制及其与知识建 …",
+        "url": "https://baike.baidu.com/item/epistemic/50950644",
+        "source": "Bing CN"
+      },
+      {
+        "title": "epistemic - 搜索 词典",
+        "snippet": "必应词典为您提供epistemic的释义，美 [ˌepɪ'sti:mɪk]，英 [ˌepɪ'sti:mɪk]，adj. 知识的；认识的； 网络释义： 认知；认知价值；认知的；",
+        "url": "https://global.bing.com/dict/search?q=epistemic&amp;FORM=BDVSP6&amp;cc=cn",
+        "source": "Bing CN"
+      },
+      {
+        "title": "epistemic是什么意思_epistemic的翻译_音标_读音_用法_例句 ...",
+        "snippet": "爱词霸权威在线词典,为您提供epistemic的中文意思,epistemic的用法讲解,epistemic的读音,epistemic的同义词,epistemic的反义词,epistemic的例句等英语服务。",
+        "url": "https://www.iciba.com/word?w=epistemic",
+        "source": "Bing CN"
+      },
+      {
+        "title": "EPISTEMIC Definition &amp; Meaning - Merriam-Webster",
+        "snippet": "2 天之前 · The meaning of EPISTEMIC is of or relating to knowledge or knowing : cognitive. The Evolution of &lt;span class='mwtparahw'&gt;Epistemic&lt;/span&gt;",
+        "url": "https://www.merriam-webster.com/dictionary/epistemic",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- More indirectly, these two stylistic dimensions mark different epistemic relations to the discourse, emphasizing and privileging different kinds of in\n- 2025年8月26日 · Epistemic是英语形容词，音标为英 [ˌepɪˈstiːmɪk]/美 [ˌɛpɪˈstimɪk]，译为“知识的”或“与认识相关的”，常作为哲学、语言学及认知科学领域的分析工具，用于描述人类认知机制及其与知识建 …",
+    "sources": [
+      "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/epistemic",
+      "https://baike.baidu.com/item/epistemic/50950644",
+      "https://global.bing.com/dict/search?q=epistemic&amp;FORM=BDVSP6&amp;cc=cn",
+      "https://www.iciba.com/word?w=epistemic",
+      "https://www.merriam-webster.com/dictionary/epistemic"
+    ],
+    "evidence_chain_id": "20260603_152018_790863",
+    "evidence_summary": {
+      "response_id": "20260603_152018_790863",
+      "query": "epistemic aleatoric uncertainty machine learning medical AI explanation",
+      "created_at": "2026-06-03T15:20:18.790879",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[EPISTEMIC中文 (简体)翻译：剑桥词典 - Cambridge Dictionary](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/epistemic)",
+        "[epistemic_百度百科](https://baike.baidu.com/item/epistemic/50950644)",
+        "[epistemic - 搜索 词典](https://global.bing.com/dict/search?q=epistemic&amp;FORM=BDVSP6&amp;cc=cn)",
+        "[epistemic是什么意思_epistemic的翻译_音标_读音_用法_例句 ...](https://www.iciba.com/word?w=epistemic)",
+        "[EPISTEMIC Definition &amp; Meaning - Merriam-Webster](https://www.merriam-webster.com/dictionary/epistemic)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "72fedefcc93b",
+          "claim": "More indirectly, these two stylistic dimensions mark different epistemic relations to the discourse, emphasizing and privileging different kinds of information.",
+          "source_url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/epistemic",
+          "source_type": "Bing CN",
+          "source_title": "EPISTEMIC中文 (简体)翻译：剑桥词典 - Cambridge Dictionary",
+          "accessed_at": "2026-06-03T15:20:19.897609",
+          "published_at": "",
+          "raw_snippet": "More indirectly, these two stylistic dimensions mark different epistemic relations to the discourse, emphasizing and privileging different kinds of information.",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "epistemic aleatoric uncertainty machine learning medical AI explanation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "d07e6da2c70d",
+          "claim": "2025年8月26日 · Epistemic是英语形容词，音标为英 [ˌepɪˈstiːmɪk]/美 [ˌɛpɪˈstimɪk]，译为“知识的”或“与认识相关的”，常作为哲学、语言学及认知科学领域的分析工具，用于描述人类认知机制及其与知识建 …",
+          "source_url": "https://baike.baidu.com/item/epistemic/50950644",
+          "source_type": "Bing CN",
+          "source_title": "epistemic_百度百科",
+          "accessed_at": "2026-06-03T15:20:19.897696",
+          "published_at": "",
+          "raw_snippet": "2025年8月26日 · Epistemic是英语形容词，音标为英 [ˌepɪˈstiːmɪk]/美 [ˌɛpɪˈstimɪk]，译为“知识的”或“与认识相关的”，常作为哲学、语言学及认知科学领域的分析工具，用于描述人类认知机制及其与知识建 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "epistemic aleatoric uncertainty machine learning medical AI explanation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "45d6fd9b17ef",
+          "claim": "必应词典为您提供epistemic的释义，美 [ˌepɪ'sti:mɪk]，英 [ˌepɪ'sti:mɪk]，adj. 知识的；认识的； 网络释义： 认知；认知价值；认知的；",
+          "source_url": "https://global.bing.com/dict/search?q=epistemic&amp;FORM=BDVSP6&amp;cc=cn",
+          "source_type": "Bing CN",
+          "source_title": "epistemic - 搜索 词典",
+          "accessed_at": "2026-06-03T15:20:19.897725",
+          "published_at": "",
+          "raw_snippet": "必应词典为您提供epistemic的释义，美 [ˌepɪ'sti:mɪk]，英 [ˌepɪ'sti:mɪk]，adj. 知识的；认识的； 网络释义： 认知；认知价值；认知的；",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "epistemic aleatoric uncertainty machine learning medical AI explanation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "1c1b58df6eb0",
+          "claim": "爱词霸权威在线词典,为您提供epistemic的中文意思,epistemic的用法讲解,epistemic的读音,epistemic的同义词,epistemic的反义词,epistemic的例句等英语服务。",
+          "source_url": "https://www.iciba.com/word?w=epistemic",
+          "source_type": "Bing CN",
+          "source_title": "epistemic是什么意思_epistemic的翻译_音标_读音_用法_例句 ...",
+          "accessed_at": "2026-06-03T15:20:19.897749",
+          "published_at": "",
+          "raw_snippet": "爱词霸权威在线词典,为您提供epistemic的中文意思,epistemic的用法讲解,epistemic的读音,epistemic的同义词,epistemic的反义词,epistemic的例句等英语服务。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "epistemic aleatoric uncertainty machine learning medical AI explanation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "9f439bfd3794",
+          "claim": "2 天之前 · The meaning of EPISTEMIC is of or relating to knowledge or knowing : cognitive. The Evolution of &lt;span class='mwtparahw'&gt;Epistemic&lt;/span&gt;",
+          "source_url": "https://www.merriam-webster.com/dictionary/epistemic",
+          "source_type": "Bing CN",
+          "source_title": "EPISTEMIC Definition &amp; Meaning - Merriam-Webster",
+          "accessed_at": "2026-06-03T15:20:19.897784",
+          "published_at": "",
+          "raw_snippet": "2 天之前 · The meaning of EPISTEMIC is of or relating to knowledge or knowing : cognitive. The Evolution of &lt;span class='mwtparahw'&gt;Epistemic&lt;/span&gt;",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "epistemic aleatoric uncertainty machine learning medical AI explanation",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[EPISTEMIC中文 (简体)翻译：剑桥词典 - Cambridge Dictionary](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/epistemic)",
+      "[epistemic_百度百科](https://baike.baidu.com/item/epistemic/50950644)",
+      "[epistemic - 搜索 词典](https://global.bing.com/dict/search?q=epistemic&amp;FORM=BDVSP6&amp;cc=cn)",
+      "[epistemic是什么意思_epistemic的翻译_音标_读音_用法_例句 ...](https://www.iciba.com/word?w=epistemic)",
+      "[EPISTEMIC Definition &amp; Meaning - Merriam-Webster](https://www.merriam-webster.com/dictionary/epistemic)"
+    ]
+  }
+}

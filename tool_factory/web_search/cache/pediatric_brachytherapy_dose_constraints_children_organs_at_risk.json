@@ -1,0 +1,238 @@
+{
+  "query": "pediatric brachytherapy dose constraints children organs at risk",
+  "timestamp": 1780466819.8027909,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Pediatrics | American Academy of Pediatrics",
+        "snippet": "The official journal of the American Academy of Pediatrics and the world's leading pediatrics resource Pediatrics is the most-cited journal in pediatric medicine and among the top 100 most-cited journals in …",
+        "url": "https://publications.aap.org/pediatrics",
+        "source": "Bing CN"
+      },
+      {
+        "title": "PEDIATRIC中文 (简体)翻译：剑桥词典",
+        "snippet": "Now that closure methods using a catheter, like balloon angioplasty, are confronting common anomalies, they are occupying more of the energies of the pediatric cardiologist. This article builds on …",
+        "url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/pediatric",
+        "source": "Bing CN"
+      },
+      {
+        "title": "pediatric是什么意思_pediatric的翻译_音标_读音_用法_例句 ...",
+        "snippet": "爱词霸权威在线词典,为您提供pediatric的中文意思,pediatric的用法讲解,pediatric的读音,pediatric的同义词,pediatric的反义词,pediatric的例句等英语服务。",
+        "url": "https://www.iciba.com/word?w=pediatric",
+        "source": "Bing CN"
+      },
+      {
+        "title": "Pediatric Discovery",
+        "snippet": "Pediatric Discovery is an open access and a peer-reviewed international journal. The journal aims to advance the health and well-being of infants, children, and adolescents by disseminating the cutting …",
+        "url": "https://journal.hep.com.cn/pd/EN/guidelines",
+        "source": "Bing CN"
+      },
+      {
+        "title": "Pediatric Research - Nature",
+        "snippet": "2025年4月26日 · Pediatric Research publishes original research papers, reviews, and commentaries on the etiologies and treatment of diseases of children and disorders of development, extending from …",
+        "url": "https://www.nature.com/pr/",
+        "source": "Bing CN"
+      },
+      {
+        "title": "Children's Hospital of Chongqing Medical University",
+        "snippet": "The Chongqing Pediatric Development Union which is led by it, shares high-quality medical resources among 61 pediatric medical units in 39 districts and counties, making positive contributions to the …",
+        "url": "https://subsites.chinadaily.com.cn/cqmhc/2019-09/09/c_406173.htm",
+        "source": "Bing CN"
+      },
+      {
+        "title": "Pediatrics &amp; Neonatology | Journal | ScienceDirect.com by Elsevier",
+        "snippet": "Pediatrics and Neonatology (PEDN, previously Acta Pediatrica Taiwanica) is the official peer-reviewed publication of the Taiwan Pediatric Association and Taiwan Society of Neonatology. The fundamental …",
+        "url": "https://www.sciencedirect.com/journal/pediatrics-and-neonatology",
+        "source": "Bing CN"
+      },
+      {
+        "title": "JAMA Pediatrics – The Science of Child and Adolescent Health",
+        "snippet": "2 天之前 · Explore the latest in child health including food and nutrition, Kawasaki disease and C difficile, effects of media, and more. Formerly Archives of.",
+        "url": "https://jamanetwork.com/journals/jamapediatrics",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- The official journal of the American Academy of Pediatrics and the world's leading pediatrics resource Pediatrics is the most-cited journal in pediatr\n- Now that closure methods using a catheter, like balloon angioplasty, are confronting common anomalies, they are occupying more of the energies of the ",
+    "sources": [
+      "https://publications.aap.org/pediatrics",
+      "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/pediatric",
+      "https://www.iciba.com/word?w=pediatric",
+      "https://journal.hep.com.cn/pd/EN/guidelines",
+      "https://www.nature.com/pr/",
+      "https://subsites.chinadaily.com.cn/cqmhc/2019-09/09/c_406173.htm",
+      "https://www.sciencedirect.com/journal/pediatrics-and-neonatology",
+      "https://jamanetwork.com/journals/jamapediatrics"
+    ],
+    "evidence_chain_id": "20260603_140657_446359",
+    "evidence_summary": {
+      "response_id": "20260603_140657_446359",
+      "query": "pediatric brachytherapy dose constraints children organs at risk",
+      "created_at": "2026-06-03T14:06:57.446389",
+      "num_sources": 8,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[Pediatrics | American Academy of Pediatrics](https://publications.aap.org/pediatrics)",
+        "[PEDIATRIC中文 (简体)翻译：剑桥词典](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/pediatric)",
+        "[pediatric是什么意思_pediatric的翻译_音标_读音_用法_例句 ...](https://www.iciba.com/word?w=pediatric)",
+        "[Pediatric Discovery](https://journal.hep.com.cn/pd/EN/guidelines)",
+        "[Pediatric Research - Nature](https://www.nature.com/pr/)",
+        "[Children's Hospital of Chongqing Medical University](https://subsites.chinadaily.com.cn/cqmhc/2019-09/09/c_406173.htm)",
+        "[Pediatrics &amp; Neonatology | Journal | ScienceDirect.com by Elsevier](https://www.sciencedirect.com/journal/pediatrics-and-neonatology)",
+        "[JAMA Pediatrics – The Science of Child and Adolescent Health](https://jamanetwork.com/journals/jamapediatrics)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "ec487d1a3907",
+          "claim": "The official journal of the American Academy of Pediatrics and the world's leading pediatrics resource Pediatrics is the most-cited journal in pediatric medicine and among the top 100 most-cited journ",
+          "source_url": "https://publications.aap.org/pediatrics",
+          "source_type": "Bing CN",
+          "source_title": "Pediatrics | American Academy of Pediatrics",
+          "accessed_at": "2026-06-03T14:06:59.802288",
+          "published_at": "",
+          "raw_snippet": "The official journal of the American Academy of Pediatrics and the world's leading pediatrics resource Pediatrics is the most-cited journal in pediatric medicine and among the top 100 most-cited journals in …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric brachytherapy dose constraints children organs at risk",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "cda838ce31a2",
+          "claim": "Now that closure methods using a catheter, like balloon angioplasty, are confronting common anomalies, they are occupying more of the energies of the pediatric cardiologist. This article builds on …",
+          "source_url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/pediatric",
+          "source_type": "Bing CN",
+          "source_title": "PEDIATRIC中文 (简体)翻译：剑桥词典",
+          "accessed_at": "2026-06-03T14:06:59.802391",
+          "published_at": "",
+          "raw_snippet": "Now that closure methods using a catheter, like balloon angioplasty, are confronting common anomalies, they are occupying more of the energies of the pediatric cardiologist. This article builds on …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric brachytherapy dose constraints children organs at risk",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "fa99218a763a",
+          "claim": "爱词霸权威在线词典,为您提供pediatric的中文意思,pediatric的用法讲解,pediatric的读音,pediatric的同义词,pediatric的反义词,pediatric的例句等英语服务。",
+          "source_url": "https://www.iciba.com/word?w=pediatric",
+          "source_type": "Bing CN",
+          "source_title": "pediatric是什么意思_pediatric的翻译_音标_读音_用法_例句 ...",
+          "accessed_at": "2026-06-03T14:06:59.802437",
+          "published_at": "",
+          "raw_snippet": "爱词霸权威在线词典,为您提供pediatric的中文意思,pediatric的用法讲解,pediatric的读音,pediatric的同义词,pediatric的反义词,pediatric的例句等英语服务。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric brachytherapy dose constraints children organs at risk",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f138c5c8e446",
+          "claim": "Pediatric Discovery is an open access and a peer-reviewed international journal. The journal aims to advance the health and well-being of infants, children, and adolescents by disseminating the cuttin",
+          "source_url": "https://journal.hep.com.cn/pd/EN/guidelines",
+          "source_type": "Bing CN",
+          "source_title": "Pediatric Discovery",
+          "accessed_at": "2026-06-03T14:06:59.802470",
+          "published_at": "",
+          "raw_snippet": "Pediatric Discovery is an open access and a peer-reviewed international journal. The journal aims to advance the health and well-being of infants, children, and adolescents by disseminating the cutting …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric brachytherapy dose constraints children organs at risk",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "9773066a493c",
+          "claim": "2025年4月26日 · Pediatric Research publishes original research papers, reviews, and commentaries on the etiologies and treatment of diseases of children and disorders of development, extending from …",
+          "source_url": "https://www.nature.com/pr/",
+          "source_type": "Bing CN",
+          "source_title": "Pediatric Research - Nature",
+          "accessed_at": "2026-06-03T14:06:59.802497",
+          "published_at": "",
+          "raw_snippet": "2025年4月26日 · Pediatric Research publishes original research papers, reviews, and commentaries on the etiologies and treatment of diseases of children and disorders of development, extending from …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric brachytherapy dose constraints children organs at risk",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8d4323ba60af",
+          "claim": "The Chongqing Pediatric Development Union which is led by it, shares high-quality medical resources among 61 pediatric medical units in 39 districts and counties, making positive contributions to the ",
+          "source_url": "https://subsites.chinadaily.com.cn/cqmhc/2019-09/09/c_406173.htm",
+          "source_type": "Bing CN",
+          "source_title": "Children's Hospital of Chongqing Medical University",
+          "accessed_at": "2026-06-03T14:06:59.802522",
+          "published_at": "",
+          "raw_snippet": "The Chongqing Pediatric Development Union which is led by it, shares high-quality medical resources among 61 pediatric medical units in 39 districts and counties, making positive contributions to the …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric brachytherapy dose constraints children organs at risk",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "1ff091d55575",
+          "claim": "Pediatrics and Neonatology (PEDN, previously Acta Pediatrica Taiwanica) is the official peer-reviewed publication of the Taiwan Pediatric Association and Taiwan Society of Neonatology. The fundamental",
+          "source_url": "https://www.sciencedirect.com/journal/pediatrics-and-neonatology",
+          "source_type": "Bing CN",
+          "source_title": "Pediatrics &amp; Neonatology | Journal | ScienceDirect.com by Elsevier",
+          "accessed_at": "2026-06-03T14:06:59.802544",
+          "published_at": "",
+          "raw_snippet": "Pediatrics and Neonatology (PEDN, previously Acta Pediatrica Taiwanica) is the official peer-reviewed publication of the Taiwan Pediatric Association and Taiwan Society of Neonatology. The fundamental …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric brachytherapy dose constraints children organs at risk",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "bf84d7c0eae7",
+          "claim": "2 天之前 · Explore the latest in child health including food and nutrition, Kawasaki disease and C difficile, effects of media, and more. Formerly Archives of.",
+          "source_url": "https://jamanetwork.com/journals/jamapediatrics",
+          "source_type": "Bing CN",
+          "source_title": "JAMA Pediatrics – The Science of Child and Adolescent Health",
+          "accessed_at": "2026-06-03T14:06:59.802567",
+          "published_at": "",
+          "raw_snippet": "2 天之前 · Explore the latest in child health including food and nutrition, Kawasaki disease and C difficile, effects of media, and more. Formerly Archives of.",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "pediatric brachytherapy dose constraints children organs at risk",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Pediatrics | American Academy of Pediatrics](https://publications.aap.org/pediatrics)",
+      "[PEDIATRIC中文 (简体)翻译：剑桥词典](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/pediatric)",
+      "[pediatric是什么意思_pediatric的翻译_音标_读音_用法_例句 ...](https://www.iciba.com/word?w=pediatric)",
+      "[Pediatric Discovery](https://journal.hep.com.cn/pd/EN/guidelines)",
+      "[Pediatric Research - Nature](https://www.nature.com/pr/)",
+      "[Children's Hospital of Chongqing Medical University](https://subsites.chinadaily.com.cn/cqmhc/2019-09/09/c_406173.htm)",
+      "[Pediatrics &amp; Neonatology | Journal | ScienceDirect.com by Elsevier](https://www.sciencedirect.com/journal/pediatrics-and-neonatology)",
+      "[JAMA Pediatrics – The Science of Child and Adolescent Health](https://jamanetwork.com/journals/jamapediatrics)"
+    ]
+  }
+}

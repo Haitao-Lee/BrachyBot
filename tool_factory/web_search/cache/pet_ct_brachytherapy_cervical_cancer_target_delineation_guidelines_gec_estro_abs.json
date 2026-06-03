@@ -1,0 +1,160 @@
+{
+  "query": "PET-CT brachytherapy cervical cancer target delineation guidelines GEC-ESTRO ABS",
+  "timestamp": 1780415994.9482505,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "PSMA PET/CT patterns of recurrence after mono-brachytherapy in men with low and intermediate prostate cancer and subsequent management.",
+        "snippet": "PubMed ID: 39358179. 2024/11/01 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to \nidentify. This study investigated PSMA PET/CT for recurrence after \nbrachytherapy, as well as their subsequent management when recurrence occurred \nonly within the prostate.\nMETHODS: We performed a retrospective single-center analysis for patients who \nwere treated with brachytherapy as monotherapy",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39358179/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Insulinoma.",
+        "snippet": "PubMed ID: 25905215. 2023/04/04 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to \nidentify. This study investigated PSMA PET/CT for recurrence after \nbrachytherapy, as well as their subsequent management when recurrence occurred \nonly within the prostate.\nMETHODS: We performed a retrospective single-center analysis for patients who \nwere treated with brachytherapy as monotherapy",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/25905215/",
+        "source": "PubMed"
+      },
+      {
+        "title": "CT-ultrasound deformable registration for PET-determined prostate brachytherapy.",
+        "snippet": "PubMed ID: 41069789. 2018/02/01 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to \nidentify. This study investigated PSMA PET/CT for recurrence after \nbrachytherapy, as well as their subsequent management when recurrence occurred \nonly within the prostate.\nMETHODS: We performed a retrospective single-center analysis for patients who \nwere treated with brachytherapy as monotherapy",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/41069789/",
+        "source": "PubMed"
+      },
+      {
+        "title": "PET/CT in brachytherapy early response evaluation of pancreatic ductal adenocarcinoma xenografts: comparison with apparent diffusion coefficient from diffusion-weighted MR imaging.",
+        "snippet": "PubMed ID: 30315322. 2019/03/01 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to \nidentify. This study investigated PSMA PET/CT for recurrence after \nbrachytherapy, as well as their subsequent management when recurrence occurred \nonly within the prostate.\nMETHODS: We performed a retrospective single-center analysis for patients who \nwere treated with brachytherapy as monotherapy",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30315322/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Evaluating [(68)Ga]-Ga PSMA PET/CT for Detecting Prostate Cancer Recurrence Post-High-Intensity Focused Ultrasound and Brachytherapy: A Single-Center Retrospective Study.",
+        "snippet": "PubMed ID: 39851925. 2024/12/26 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to \nidentify. This study investigated PSMA PET/CT for recurrence after \nbrachytherapy, as well as their subsequent management when recurrence occurred \nonly within the prostate.\nMETHODS: We performed a retrospective single-center analysis for patients who \nwere treated with brachytherapy as monotherapy",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39851925/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 39358179. 2024/11/01 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to \n2. PubMed ID: 25905215. 2023/04/04 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to \n3. PubMed ID: 41069789. 2018/02/01 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to ",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/39358179/",
+      "https://pubmed.ncbi.nlm.nih.gov/25905215/",
+      "https://pubmed.ncbi.nlm.nih.gov/41069789/",
+      "https://pubmed.ncbi.nlm.nih.gov/30315322/",
+      "https://pubmed.ncbi.nlm.nih.gov/39851925/"
+    ],
+    "evidence_chain_id": "20260602_235953_228275",
+    "evidence_summary": {
+      "response_id": "20260602_235953_228275",
+      "query": "PET-CT brachytherapy cervical cancer target delineation guidelines GEC-ESTRO ABS",
+      "created_at": "2026-06-02T23:59:53.228299",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[PSMA PET/CT patterns of recurrence after mono-brachytherapy in men with low and intermediate prostate cancer and subsequent management.](https://pubmed.ncbi.nlm.nih.gov/39358179/)",
+        "[Insulinoma.](https://pubmed.ncbi.nlm.nih.gov/25905215/)",
+        "[CT-ultrasound deformable registration for PET-determined prostate brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/41069789/)",
+        "[PET/CT in brachytherapy early response evaluation of pancreatic ductal adenocarcinoma xenografts: comparison with apparent diffusion coefficient from diffusion-weighted MR imaging.](https://pubmed.ncbi.nlm.nih.gov/30315322/)",
+        "[Evaluating [(68)Ga]-Ga PSMA PET/CT for Detecting Prostate Cancer Recurrence Post-High-Intensity Focused Ultrasound and Brachytherapy: A Single-Center Retrospective Study.](https://pubmed.ncbi.nlm.nih.gov/39851925/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "fbe1becb1ae7",
+          "claim": "PubMed ID: 39358179. 2024/11/01 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to ",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39358179/",
+          "source_type": "PubMed",
+          "source_title": "PSMA PET/CT patterns of recurrence after mono-brachytherapy in men with low and intermediate prostate cancer and subsequent management.",
+          "accessed_at": "2026-06-02T23:59:54.947734",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39358179. 2024/11/01 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to \nidentify. This study investigated PSMA PET/CT for recurrence after \nbrachytherapy, as well as their subsequent management when recurrence occurred \nonly within the prostate.\nMETHODS: We performed a retrospective single-center analysis for patients who \nwere treated with brachytherapy as monotherapy",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PET-CT brachytherapy cervical cancer target delineation guidelines GEC-ESTRO ABS",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "b15b7024ad26",
+          "claim": "PubMed ID: 25905215. 2023/04/04 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to ",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/25905215/",
+          "source_type": "PubMed",
+          "source_title": "Insulinoma.",
+          "accessed_at": "2026-06-02T23:59:54.947870",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 25905215. 2023/04/04 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to \nidentify. This study investigated PSMA PET/CT for recurrence after \nbrachytherapy, as well as their subsequent management when recurrence occurred \nonly within the prostate.\nMETHODS: We performed a retrospective single-center analysis for patients who \nwere treated with brachytherapy as monotherapy",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PET-CT brachytherapy cervical cancer target delineation guidelines GEC-ESTRO ABS",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f26816c68689",
+          "claim": "PubMed ID: 41069789. 2018/02/01 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to ",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/41069789/",
+          "source_type": "PubMed",
+          "source_title": "CT-ultrasound deformable registration for PET-determined prostate brachytherapy.",
+          "accessed_at": "2026-06-02T23:59:54.947913",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 41069789. 2018/02/01 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to \nidentify. This study investigated PSMA PET/CT for recurrence after \nbrachytherapy, as well as their subsequent management when recurrence occurred \nonly within the prostate.\nMETHODS: We performed a retrospective single-center analysis for patients who \nwere treated with brachytherapy as monotherapy",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PET-CT brachytherapy cervical cancer target delineation guidelines GEC-ESTRO ABS",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "9b1164515e17",
+          "claim": "PubMed ID: 30315322. 2019/03/01 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to ",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/30315322/",
+          "source_type": "PubMed",
+          "source_title": "PET/CT in brachytherapy early response evaluation of pancreatic ductal adenocarcinoma xenografts: comparison with apparent diffusion coefficient from diffusion-weighted MR imaging.",
+          "accessed_at": "2026-06-02T23:59:54.947946",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 30315322. 2019/03/01 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to \nidentify. This study investigated PSMA PET/CT for recurrence after \nbrachytherapy, as well as their subsequent management when recurrence occurred \nonly within the prostate.\nMETHODS: We performed a retrospective single-center analysis for patients who \nwere treated with brachytherapy as monotherapy",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PET-CT brachytherapy cervical cancer target delineation guidelines GEC-ESTRO ABS",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8bd5ffd4361c",
+          "claim": "PubMed ID: 39851925. 2024/12/26 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to ",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39851925/",
+          "source_type": "PubMed",
+          "source_title": "Evaluating [(68)Ga]-Ga PSMA PET/CT for Detecting Prostate Cancer Recurrence Post-High-Intensity Focused Ultrasound and Brachytherapy: A Single-Center Retrospective Study.",
+          "accessed_at": "2026-06-02T23:59:54.947974",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39851925. 2024/12/26 00:00. PURPOSE: Brachytherapy as monotherapy is a recommended treatment option for men \nwith low to intermediate risk prostate cancer. Local recurrence is difficult to \nidentify. This study investigated PSMA PET/CT for recurrence after \nbrachytherapy, as well as their subsequent management when recurrence occurred \nonly within the prostate.\nMETHODS: We performed a retrospective single-center analysis for patients who \nwere treated with brachytherapy as monotherapy",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "PET-CT brachytherapy cervical cancer target delineation guidelines GEC-ESTRO ABS",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[PSMA PET/CT patterns of recurrence after mono-brachytherapy in men with low and intermediate prostate cancer and subsequent management.](https://pubmed.ncbi.nlm.nih.gov/39358179/)",
+      "[Insulinoma.](https://pubmed.ncbi.nlm.nih.gov/25905215/)",
+      "[CT-ultrasound deformable registration for PET-determined prostate brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/41069789/)",
+      "[PET/CT in brachytherapy early response evaluation of pancreatic ductal adenocarcinoma xenografts: comparison with apparent diffusion coefficient from diffusion-weighted MR imaging.](https://pubmed.ncbi.nlm.nih.gov/30315322/)",
+      "[Evaluating [(68)Ga]-Ga PSMA PET/CT for Detecting Prostate Cancer Recurrence Post-High-Intensity Focused Ultrasound and Brachytherapy: A Single-Center Retrospective Study.](https://pubmed.ncbi.nlm.nih.gov/39851925/)"
+    ]
+  }
+}

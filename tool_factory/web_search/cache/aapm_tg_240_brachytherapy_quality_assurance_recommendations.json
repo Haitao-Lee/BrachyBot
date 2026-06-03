@@ -1,0 +1,160 @@
+{
+  "query": "AAPM TG-240 brachytherapy quality assurance recommendations",
+  "timestamp": 1780468720.6759088,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "GEC-ESTRO/ACROP recommendations for quality assurance of ultrasound imaging in brachytherapy.",
+        "snippet": "PubMed ID: 32335363. 2020/07/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntreatment planning for a community-based hospital with a Bravos afterloader. \nBased on published AAPM recommendations, this work details a practical approach \nfor community-based clinics to complete initial validation of Acuros BV, in \norder to add a MBDCA to a TG-43 based brachytherapy treatment plann",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32335363/",
+        "source": "PubMed"
+      },
+      {
+        "title": "AAPM Task Group 128: quality assurance tests for prostate brachytherapy ultrasound systems.",
+        "snippet": "PubMed ID: 19175107. 2008/12/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntreatment planning for a community-based hospital with a Bravos afterloader. \nBased on published AAPM recommendations, this work details a practical approach \nfor community-based clinics to complete initial validation of Acuros BV, in \norder to add a MBDCA to a TG-43 based brachytherapy treatment plann",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/19175107/",
+        "source": "PubMed"
+      },
+      {
+        "title": "AAPM recommendations on medical physics practices for ocular plaque brachytherapy: Report of task group 221.",
+        "snippet": "PubMed ID: 31883269. 2020/06/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntreatment planning for a community-based hospital with a Bravos afterloader. \nBased on published AAPM recommendations, this work details a practical approach \nfor community-based clinics to complete initial validation of Acuros BV, in \norder to add a MBDCA to a TG-43 based brachytherapy treatment plann",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/31883269/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Practical experience with initial quality assurance of a high dose rate brachytherapy grid-based Boltzmann solver algorithm.",
+        "snippet": "PubMed ID: 38742858. 2024/08/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntreatment planning for a community-based hospital with a Bravos afterloader. \nBased on published AAPM recommendations, this work details a practical approach \nfor community-based clinics to complete initial validation of Acuros BV, in \norder to add a MBDCA to a TG-43 based brachytherapy treatment plann",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38742858/",
+        "source": "PubMed"
+      },
+      {
+        "title": "American Brachytherapy Society (ABS) recommendations for transperineal permanent brachytherapy of prostate cancer.",
+        "snippet": "PubMed ID: 10386635. 1999/07/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntreatment planning for a community-based hospital with a Bravos afterloader. \nBased on published AAPM recommendations, this work details a practical approach \nfor community-based clinics to complete initial validation of Acuros BV, in \norder to add a MBDCA to a TG-43 based brachytherapy treatment plann",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/10386635/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 32335363. 2020/07/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntre\n2. PubMed ID: 19175107. 2008/12/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntre\n3. PubMed ID: 31883269. 2020/06/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntre",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/32335363/",
+      "https://pubmed.ncbi.nlm.nih.gov/19175107/",
+      "https://pubmed.ncbi.nlm.nih.gov/31883269/",
+      "https://pubmed.ncbi.nlm.nih.gov/38742858/",
+      "https://pubmed.ncbi.nlm.nih.gov/10386635/"
+    ],
+    "evidence_chain_id": "20260603_143838_887699",
+    "evidence_summary": {
+      "response_id": "20260603_143838_887699",
+      "query": "AAPM TG-240 brachytherapy quality assurance recommendations",
+      "created_at": "2026-06-03T14:38:38.887726",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[GEC-ESTRO/ACROP recommendations for quality assurance of ultrasound imaging in brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/32335363/)",
+        "[AAPM Task Group 128: quality assurance tests for prostate brachytherapy ultrasound systems.](https://pubmed.ncbi.nlm.nih.gov/19175107/)",
+        "[AAPM recommendations on medical physics practices for ocular plaque brachytherapy: Report of task group 221.](https://pubmed.ncbi.nlm.nih.gov/31883269/)",
+        "[Practical experience with initial quality assurance of a high dose rate brachytherapy grid-based Boltzmann solver algorithm.](https://pubmed.ncbi.nlm.nih.gov/38742858/)",
+        "[American Brachytherapy Society (ABS) recommendations for transperineal permanent brachytherapy of prostate cancer.](https://pubmed.ncbi.nlm.nih.gov/10386635/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "b2c692307f16",
+          "claim": "PubMed ID: 32335363. 2020/07/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntre",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32335363/",
+          "source_type": "PubMed",
+          "source_title": "GEC-ESTRO/ACROP recommendations for quality assurance of ultrasound imaging in brachytherapy.",
+          "accessed_at": "2026-06-03T14:38:40.672304",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32335363. 2020/07/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntreatment planning for a community-based hospital with a Bravos afterloader. \nBased on published AAPM recommendations, this work details a practical approach \nfor community-based clinics to complete initial validation of Acuros BV, in \norder to add a MBDCA to a TG-43 based brachytherapy treatment plann",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-240 brachytherapy quality assurance recommendations",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3bc02dc04122",
+          "claim": "PubMed ID: 19175107. 2008/12/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntre",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/19175107/",
+          "source_type": "PubMed",
+          "source_title": "AAPM Task Group 128: quality assurance tests for prostate brachytherapy ultrasound systems.",
+          "accessed_at": "2026-06-03T14:38:40.672400",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 19175107. 2008/12/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntreatment planning for a community-based hospital with a Bravos afterloader. \nBased on published AAPM recommendations, this work details a practical approach \nfor community-based clinics to complete initial validation of Acuros BV, in \norder to add a MBDCA to a TG-43 based brachytherapy treatment plann",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-240 brachytherapy quality assurance recommendations",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "8bacf3805ee8",
+          "claim": "PubMed ID: 31883269. 2020/06/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntre",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/31883269/",
+          "source_type": "PubMed",
+          "source_title": "AAPM recommendations on medical physics practices for ocular plaque brachytherapy: Report of task group 221.",
+          "accessed_at": "2026-06-03T14:38:40.672439",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 31883269. 2020/06/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntreatment planning for a community-based hospital with a Bravos afterloader. \nBased on published AAPM recommendations, this work details a practical approach \nfor community-based clinics to complete initial validation of Acuros BV, in \norder to add a MBDCA to a TG-43 based brachytherapy treatment plann",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-240 brachytherapy quality assurance recommendations",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "83d1ea226809",
+          "claim": "PubMed ID: 38742858. 2024/08/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntre",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38742858/",
+          "source_type": "PubMed",
+          "source_title": "Practical experience with initial quality assurance of a high dose rate brachytherapy grid-based Boltzmann solver algorithm.",
+          "accessed_at": "2026-06-03T14:38:40.672468",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38742858. 2024/08/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntreatment planning for a community-based hospital with a Bravos afterloader. \nBased on published AAPM recommendations, this work details a practical approach \nfor community-based clinics to complete initial validation of Acuros BV, in \norder to add a MBDCA to a TG-43 based brachytherapy treatment plann",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-240 brachytherapy quality assurance recommendations",
+          "search_type": "clinical",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "16dabf3c69ec",
+          "claim": "PubMed ID: 10386635. 1999/07/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntre",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/10386635/",
+          "source_type": "PubMed",
+          "source_title": "American Brachytherapy Society (ABS) recommendations for transperineal permanent brachytherapy of prostate cancer.",
+          "accessed_at": "2026-06-03T14:38:40.672491",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 10386635. 1999/07/01 00:00. PURPOSE: The purpose of this study was to validate the use of a model-based dose \ncalculation algorithm (MBDCA), Acuros BV, for high dose rate brachytherapy \ntreatment planning for a community-based hospital with a Bravos afterloader. \nBased on published AAPM recommendations, this work details a practical approach \nfor community-based clinics to complete initial validation of Acuros BV, in \norder to add a MBDCA to a TG-43 based brachytherapy treatment plann",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "AAPM TG-240 brachytherapy quality assurance recommendations",
+          "search_type": "clinical",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[GEC-ESTRO/ACROP recommendations for quality assurance of ultrasound imaging in brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/32335363/)",
+      "[AAPM Task Group 128: quality assurance tests for prostate brachytherapy ultrasound systems.](https://pubmed.ncbi.nlm.nih.gov/19175107/)",
+      "[AAPM recommendations on medical physics practices for ocular plaque brachytherapy: Report of task group 221.](https://pubmed.ncbi.nlm.nih.gov/31883269/)",
+      "[Practical experience with initial quality assurance of a high dose rate brachytherapy grid-based Boltzmann solver algorithm.](https://pubmed.ncbi.nlm.nih.gov/38742858/)",
+      "[American Brachytherapy Society (ABS) recommendations for transperineal permanent brachytherapy of prostate cancer.](https://pubmed.ncbi.nlm.nih.gov/10386635/)"
+    ]
+  }
+}

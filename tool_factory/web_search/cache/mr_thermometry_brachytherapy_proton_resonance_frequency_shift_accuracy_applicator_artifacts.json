@@ -1,0 +1,160 @@
+{
+  "query": "MR thermometry brachytherapy proton resonance frequency shift accuracy applicator artifacts",
+  "timestamp": 1780422012.904925,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Technical advances in motion-robust MR thermometry.",
+        "snippet": "PubMed ID: 38501903. 2024/07/01 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry for practical use in clinics.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38501903/",
+        "source": "PubMed"
+      },
+      {
+        "title": "MR Thermometry during Transcranial MR Imaging-Guided Focused Ultrasound Procedures: A Review.",
+        "snippet": "PubMed ID: 38123912. 2023/12/29 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry for practical use in clinics.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38123912/",
+        "source": "PubMed"
+      },
+      {
+        "title": "MR thermometry for monitoring tumor ablation.",
+        "snippet": "PubMed ID: 17701184. 2007/09/01 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry for practical use in clinics.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/17701184/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Image-guided thermal ablation with MR-based thermometry.",
+        "snippet": "PubMed ID: 28812002. 2017/06/01 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry for practical use in clinics.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28812002/",
+        "source": "PubMed"
+      },
+      {
+        "title": "MR Thermometry in Cerebrovascular Disease: Physiologic Basis, Hemodynamic Dependence, and a New Frontier in Stroke Imaging.",
+        "snippet": "PubMed ID: 32139425. 2020/04/01 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry for practical use in clinics.",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32139425/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 38501903. 2024/07/01 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry fo\n2. PubMed ID: 38123912. 2023/12/29 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry fo\n3. PubMed ID: 17701184. 2007/09/01 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry fo",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/38501903/",
+      "https://pubmed.ncbi.nlm.nih.gov/38123912/",
+      "https://pubmed.ncbi.nlm.nih.gov/17701184/",
+      "https://pubmed.ncbi.nlm.nih.gov/28812002/",
+      "https://pubmed.ncbi.nlm.nih.gov/32139425/"
+    ],
+    "evidence_chain_id": "20260603_014010_966662",
+    "evidence_summary": {
+      "response_id": "20260603_014010_966662",
+      "query": "MR thermometry brachytherapy proton resonance frequency shift accuracy applicator artifacts",
+      "created_at": "2026-06-03T01:40:10.966686",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Technical advances in motion-robust MR thermometry.](https://pubmed.ncbi.nlm.nih.gov/38501903/)",
+        "[MR Thermometry during Transcranial MR Imaging-Guided Focused Ultrasound Procedures: A Review.](https://pubmed.ncbi.nlm.nih.gov/38123912/)",
+        "[MR thermometry for monitoring tumor ablation.](https://pubmed.ncbi.nlm.nih.gov/17701184/)",
+        "[Image-guided thermal ablation with MR-based thermometry.](https://pubmed.ncbi.nlm.nih.gov/28812002/)",
+        "[MR Thermometry in Cerebrovascular Disease: Physiologic Basis, Hemodynamic Dependence, and a New Frontier in Stroke Imaging.](https://pubmed.ncbi.nlm.nih.gov/32139425/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "d987c41ed418",
+          "claim": "PubMed ID: 38501903. 2024/07/01 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry fo",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38501903/",
+          "source_type": "PubMed",
+          "source_title": "Technical advances in motion-robust MR thermometry.",
+          "accessed_at": "2026-06-03T01:40:12.904388",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38501903. 2024/07/01 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry for practical use in clinics.",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MR thermometry brachytherapy proton resonance frequency shift accuracy applicator artifacts",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "86582c9b00cb",
+          "claim": "PubMed ID: 38123912. 2023/12/29 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry fo",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38123912/",
+          "source_type": "PubMed",
+          "source_title": "MR Thermometry during Transcranial MR Imaging-Guided Focused Ultrasound Procedures: A Review.",
+          "accessed_at": "2026-06-03T01:40:12.904539",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38123912. 2023/12/29 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry for practical use in clinics.",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MR thermometry brachytherapy proton resonance frequency shift accuracy applicator artifacts",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c75d085d9deb",
+          "claim": "PubMed ID: 17701184. 2007/09/01 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry fo",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/17701184/",
+          "source_type": "PubMed",
+          "source_title": "MR thermometry for monitoring tumor ablation.",
+          "accessed_at": "2026-06-03T01:40:12.904586",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 17701184. 2007/09/01 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry for practical use in clinics.",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MR thermometry brachytherapy proton resonance frequency shift accuracy applicator artifacts",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "62af163c3146",
+          "claim": "PubMed ID: 28812002. 2017/06/01 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry fo",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/28812002/",
+          "source_type": "PubMed",
+          "source_title": "Image-guided thermal ablation with MR-based thermometry.",
+          "accessed_at": "2026-06-03T01:40:12.904630",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 28812002. 2017/06/01 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry for practical use in clinics.",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MR thermometry brachytherapy proton resonance frequency shift accuracy applicator artifacts",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "3744d5f5eb89",
+          "claim": "PubMed ID: 32139425. 2020/04/01 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry fo",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32139425/",
+          "source_type": "PubMed",
+          "source_title": "MR Thermometry in Cerebrovascular Disease: Physiologic Basis, Hemodynamic Dependence, and a New Frontier in Stroke Imaging.",
+          "accessed_at": "2026-06-03T01:40:12.904667",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32139425. 2020/04/01 00:00. this study will help discern the \nselection of motion-robust MR thermometry strategies and inspire the development \nof motion-robust volumetric MR thermometry for practical use in clinics.",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "MR thermometry brachytherapy proton resonance frequency shift accuracy applicator artifacts",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Technical advances in motion-robust MR thermometry.](https://pubmed.ncbi.nlm.nih.gov/38501903/)",
+      "[MR Thermometry during Transcranial MR Imaging-Guided Focused Ultrasound Procedures: A Review.](https://pubmed.ncbi.nlm.nih.gov/38123912/)",
+      "[MR thermometry for monitoring tumor ablation.](https://pubmed.ncbi.nlm.nih.gov/17701184/)",
+      "[Image-guided thermal ablation with MR-based thermometry.](https://pubmed.ncbi.nlm.nih.gov/28812002/)",
+      "[MR Thermometry in Cerebrovascular Disease: Physiologic Basis, Hemodynamic Dependence, and a New Frontier in Stroke Imaging.](https://pubmed.ncbi.nlm.nih.gov/32139425/)"
+    ]
+  }
+}

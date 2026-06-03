@@ -1,0 +1,160 @@
+{
+  "query": "radiation oncology QA equipment cost comparison Delta4 ArcCheck m3QA MOSAIQ",
+  "timestamp": 1780421813.5532568,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Radiation（英语单词）_百度百科",
+        "snippet": "播报 编辑 electromagnetic radiation 电磁辐射 ultraviolet radiation 紫外线；紫外线照射 solar radiation 太阳辐射；日光照射 radiation therapy 放射治疗 infrared radiation 红外线照射 microwave radiation 微 …",
+        "url": "https://baike.baidu.com/item/Radiation/19658511",
+        "source": "Bing CN"
+      },
+      {
+        "title": "辐射（能量在空间中的传播方式）_百度百科",
+        "snippet": "辐射相关的技术广泛应用于通信、医疗、材料、天文、考古等领域。 在日常生活中，电子产品和通信基站的电磁辐射无处不在。 大理石或其它存在少量放射性元素的岩石会发出微量粒子辐射。 中文名 辐射  …",
+        "url": "https://baike.baidu.com/item/%E8%BE%90%E5%B0%84/5676",
+        "source": "Bing CN"
+      },
+      {
+        "title": "radiation是什么意思_radiation的翻译_音标_读音_用法_例句 ...",
+        "snippet": "爱词霸权威在线词典,为您提供radiation的中文意思,radiation的用法讲解,radiation的读音,radiation的同义词,radiation的反义词,radiation的例句等英语服务。",
+        "url": "https://www.iciba.com/word?w=radiation",
+        "source": "Bing CN"
+      },
+      {
+        "title": "Radiation | Definition, Types, Effects, &amp; Facts | Britannica",
+        "snippet": "2026年5月15日 · Radiation, flow of atomic and subatomic particles and of waves, such as those that characterize heat rays, light rays, and X rays. All matter is constantly bombarded with radiation of …",
+        "url": "https://www.britannica.com/science/radiation",
+        "source": "Bing CN"
+      },
+      {
+        "title": "RADIATION中文 (简体)翻译：剑桥词典",
+        "snippet": "It is feared that people living near the power station may have been exposed to radiation. Wearing the correct type of clothing will reduce the risk from radiation.",
+        "url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/radiation",
+        "source": "Bing CN"
+      }
+    ],
+    "answer": "\nOther sources:\n- 播报 编辑 electromagnetic radiation 电磁辐射 ultraviolet radiation 紫外线；紫外线照射 solar radiation 太阳辐射；日光照射 radiation therapy 放射治疗 infrared radiation 红外线照射 microwa\n- 辐射相关的技术广泛应用于通信、医疗、材料、天文、考古等领域。 在日常生活中，电子产品和通信基站的电磁辐射无处不在。 大理石或其它存在少量放射性元素的岩石会发出微量粒子辐射。 中文名 辐射  …",
+    "sources": [
+      "https://baike.baidu.com/item/Radiation/19658511",
+      "https://baike.baidu.com/item/%E8%BE%90%E5%B0%84/5676",
+      "https://www.iciba.com/word?w=radiation",
+      "https://www.britannica.com/science/radiation",
+      "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/radiation"
+    ],
+    "evidence_chain_id": "20260603_013652_360132",
+    "evidence_summary": {
+      "response_id": "20260603_013652_360132",
+      "query": "radiation oncology QA equipment cost comparison Delta4 ArcCheck m3QA MOSAIQ",
+      "created_at": "2026-06-03T01:36:52.360150",
+      "num_sources": 5,
+      "source_types": [
+        "Bing CN"
+      ],
+      "avg_confidence": 0.4,
+      "verification_status": "unverified",
+      "citations": [
+        "[Radiation（英语单词）_百度百科](https://baike.baidu.com/item/Radiation/19658511)",
+        "[辐射（能量在空间中的传播方式）_百度百科](https://baike.baidu.com/item/%E8%BE%90%E5%B0%84/5676)",
+        "[radiation是什么意思_radiation的翻译_音标_读音_用法_例句 ...](https://www.iciba.com/word?w=radiation)",
+        "[Radiation | Definition, Types, Effects, &amp; Facts | Britannica](https://www.britannica.com/science/radiation)",
+        "[RADIATION中文 (简体)翻译：剑桥词典](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/radiation)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "bcf877c85de3",
+          "claim": "播报 编辑 electromagnetic radiation 电磁辐射 ultraviolet radiation 紫外线；紫外线照射 solar radiation 太阳辐射；日光照射 radiation therapy 放射治疗 infrared radiation 红外线照射 microwave radiation 微 …",
+          "source_url": "https://baike.baidu.com/item/Radiation/19658511",
+          "source_type": "Bing CN",
+          "source_title": "Radiation（英语单词）_百度百科",
+          "accessed_at": "2026-06-03T01:36:53.552899",
+          "published_at": "",
+          "raw_snippet": "播报 编辑 electromagnetic radiation 电磁辐射 ultraviolet radiation 紫外线；紫外线照射 solar radiation 太阳辐射；日光照射 radiation therapy 放射治疗 infrared radiation 红外线照射 microwave radiation 微 …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiation oncology QA equipment cost comparison Delta4 ArcCheck m3QA MOSAIQ",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "31d4d2e4f49d",
+          "claim": "辐射相关的技术广泛应用于通信、医疗、材料、天文、考古等领域。 在日常生活中，电子产品和通信基站的电磁辐射无处不在。 大理石或其它存在少量放射性元素的岩石会发出微量粒子辐射。 中文名 辐射  …",
+          "source_url": "https://baike.baidu.com/item/%E8%BE%90%E5%B0%84/5676",
+          "source_type": "Bing CN",
+          "source_title": "辐射（能量在空间中的传播方式）_百度百科",
+          "accessed_at": "2026-06-03T01:36:53.552991",
+          "published_at": "",
+          "raw_snippet": "辐射相关的技术广泛应用于通信、医疗、材料、天文、考古等领域。 在日常生活中，电子产品和通信基站的电磁辐射无处不在。 大理石或其它存在少量放射性元素的岩石会发出微量粒子辐射。 中文名 辐射  …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiation oncology QA equipment cost comparison Delta4 ArcCheck m3QA MOSAIQ",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f86691efb02d",
+          "claim": "爱词霸权威在线词典,为您提供radiation的中文意思,radiation的用法讲解,radiation的读音,radiation的同义词,radiation的反义词,radiation的例句等英语服务。",
+          "source_url": "https://www.iciba.com/word?w=radiation",
+          "source_type": "Bing CN",
+          "source_title": "radiation是什么意思_radiation的翻译_音标_读音_用法_例句 ...",
+          "accessed_at": "2026-06-03T01:36:53.553024",
+          "published_at": "",
+          "raw_snippet": "爱词霸权威在线词典,为您提供radiation的中文意思,radiation的用法讲解,radiation的读音,radiation的同义词,radiation的反义词,radiation的例句等英语服务。",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiation oncology QA equipment cost comparison Delta4 ArcCheck m3QA MOSAIQ",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "c604e36f1c00",
+          "claim": "2026年5月15日 · Radiation, flow of atomic and subatomic particles and of waves, such as those that characterize heat rays, light rays, and X rays. All matter is constantly bombarded with radiation of …",
+          "source_url": "https://www.britannica.com/science/radiation",
+          "source_type": "Bing CN",
+          "source_title": "Radiation | Definition, Types, Effects, &amp; Facts | Britannica",
+          "accessed_at": "2026-06-03T01:36:53.553051",
+          "published_at": "",
+          "raw_snippet": "2026年5月15日 · Radiation, flow of atomic and subatomic particles and of waves, such as those that characterize heat rays, light rays, and X rays. All matter is constantly bombarded with radiation of …",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiation oncology QA equipment cost comparison Delta4 ArcCheck m3QA MOSAIQ",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "9efc5ccb24e3",
+          "claim": "It is feared that people living near the power station may have been exposed to radiation. Wearing the correct type of clothing will reduce the risk from radiation.",
+          "source_url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/radiation",
+          "source_type": "Bing CN",
+          "source_title": "RADIATION中文 (简体)翻译：剑桥词典",
+          "accessed_at": "2026-06-03T01:36:53.553075",
+          "published_at": "",
+          "raw_snippet": "It is feared that people living near the power station may have been exposed to radiation. Wearing the correct type of clothing will reduce the risk from radiation.",
+          "extracted_data": {},
+          "confidence": 0.4,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "radiation oncology QA equipment cost comparison Delta4 ArcCheck m3QA MOSAIQ",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Radiation（英语单词）_百度百科](https://baike.baidu.com/item/Radiation/19658511)",
+      "[辐射（能量在空间中的传播方式）_百度百科](https://baike.baidu.com/item/%E8%BE%90%E5%B0%84/5676)",
+      "[radiation是什么意思_radiation的翻译_音标_读音_用法_例句 ...](https://www.iciba.com/word?w=radiation)",
+      "[Radiation | Definition, Types, Effects, &amp; Facts | Britannica](https://www.britannica.com/science/radiation)",
+      "[RADIATION中文 (简体)翻译：剑桥词典](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/radiation)"
+    ]
+  }
+}

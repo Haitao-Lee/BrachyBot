@@ -1,0 +1,160 @@
+{
+  "query": "NCCN 2024 IA2 cervical cancer fertility preservation observation vaginal brachytherapy",
+  "timestamp": 1780416069.2680025,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Breast Cancer, Version 3.2024, NCCN Clinical Practice Guidelines in Oncology.",
+        "snippet": "PubMed ID: 39019058. 2024/07/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39019058/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Non-Small Cell Lung Cancer, Version 4.2024, NCCN Clinical Practice Guidelines in Oncology.",
+        "snippet": "PubMed ID: 38754467. 2024/05/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38754467/",
+        "source": "PubMed"
+      },
+      {
+        "title": "NCCN Guidelines® Insights: Melanoma: Cutaneous, Version 2.2024.",
+        "snippet": "PubMed ID: 39019054. 2024/07/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39019054/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Colon Cancer, Version 3.2024, NCCN Clinical Practice Guidelines in Oncology.",
+        "snippet": "PubMed ID: 38862008. 2024/06/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/38862008/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Acute Lymphoblastic Leukemia, Version 2.2024, NCCN Clinical Practice Guidelines in Oncology.",
+        "snippet": "PubMed ID: 39413812. 2024/10/01 00:00",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/39413812/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 39019058. 2024/07/01 00:00\n2. PubMed ID: 38754467. 2024/05/01 00:00\n3. PubMed ID: 39019054. 2024/07/01 00:00",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/39019058/",
+      "https://pubmed.ncbi.nlm.nih.gov/38754467/",
+      "https://pubmed.ncbi.nlm.nih.gov/39019054/",
+      "https://pubmed.ncbi.nlm.nih.gov/38862008/",
+      "https://pubmed.ncbi.nlm.nih.gov/39413812/"
+    ],
+    "evidence_chain_id": "20260603_000107_551883",
+    "evidence_summary": {
+      "response_id": "20260603_000107_551883",
+      "query": "NCCN 2024 IA2 cervical cancer fertility preservation observation vaginal brachytherapy",
+      "created_at": "2026-06-03T00:01:07.551905",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Breast Cancer, Version 3.2024, NCCN Clinical Practice Guidelines in Oncology.](https://pubmed.ncbi.nlm.nih.gov/39019058/)",
+        "[Non-Small Cell Lung Cancer, Version 4.2024, NCCN Clinical Practice Guidelines in Oncology.](https://pubmed.ncbi.nlm.nih.gov/38754467/)",
+        "[NCCN Guidelines® Insights: Melanoma: Cutaneous, Version 2.2024.](https://pubmed.ncbi.nlm.nih.gov/39019054/)",
+        "[Colon Cancer, Version 3.2024, NCCN Clinical Practice Guidelines in Oncology.](https://pubmed.ncbi.nlm.nih.gov/38862008/)",
+        "[Acute Lymphoblastic Leukemia, Version 2.2024, NCCN Clinical Practice Guidelines in Oncology.](https://pubmed.ncbi.nlm.nih.gov/39413812/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "72a3cf00d820",
+          "claim": "PubMed ID: 39019058. 2024/07/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39019058/",
+          "source_type": "PubMed",
+          "source_title": "Breast Cancer, Version 3.2024, NCCN Clinical Practice Guidelines in Oncology.",
+          "accessed_at": "2026-06-03T00:01:09.267629",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39019058. 2024/07/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "NCCN 2024 IA2 cervical cancer fertility preservation observation vaginal brachytherapy",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "e2ec0c2ddff8",
+          "claim": "PubMed ID: 38754467. 2024/05/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38754467/",
+          "source_type": "PubMed",
+          "source_title": "Non-Small Cell Lung Cancer, Version 4.2024, NCCN Clinical Practice Guidelines in Oncology.",
+          "accessed_at": "2026-06-03T00:01:09.267735",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38754467. 2024/05/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "NCCN 2024 IA2 cervical cancer fertility preservation observation vaginal brachytherapy",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "7b1551e9bbfc",
+          "claim": "PubMed ID: 39019054. 2024/07/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39019054/",
+          "source_type": "PubMed",
+          "source_title": "NCCN Guidelines® Insights: Melanoma: Cutaneous, Version 2.2024.",
+          "accessed_at": "2026-06-03T00:01:09.267765",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39019054. 2024/07/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "NCCN 2024 IA2 cervical cancer fertility preservation observation vaginal brachytherapy",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "331d31d7f39e",
+          "claim": "PubMed ID: 38862008. 2024/06/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/38862008/",
+          "source_type": "PubMed",
+          "source_title": "Colon Cancer, Version 3.2024, NCCN Clinical Practice Guidelines in Oncology.",
+          "accessed_at": "2026-06-03T00:01:09.267789",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 38862008. 2024/06/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "NCCN 2024 IA2 cervical cancer fertility preservation observation vaginal brachytherapy",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "1e69b5fee997",
+          "claim": "PubMed ID: 39413812. 2024/10/01 00:00",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/39413812/",
+          "source_type": "PubMed",
+          "source_title": "Acute Lymphoblastic Leukemia, Version 2.2024, NCCN Clinical Practice Guidelines in Oncology.",
+          "accessed_at": "2026-06-03T00:01:09.267810",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 39413812. 2024/10/01 00:00",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "NCCN 2024 IA2 cervical cancer fertility preservation observation vaginal brachytherapy",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Breast Cancer, Version 3.2024, NCCN Clinical Practice Guidelines in Oncology.](https://pubmed.ncbi.nlm.nih.gov/39019058/)",
+      "[Non-Small Cell Lung Cancer, Version 4.2024, NCCN Clinical Practice Guidelines in Oncology.](https://pubmed.ncbi.nlm.nih.gov/38754467/)",
+      "[NCCN Guidelines® Insights: Melanoma: Cutaneous, Version 2.2024.](https://pubmed.ncbi.nlm.nih.gov/39019054/)",
+      "[Colon Cancer, Version 3.2024, NCCN Clinical Practice Guidelines in Oncology.](https://pubmed.ncbi.nlm.nih.gov/38862008/)",
+      "[Acute Lymphoblastic Leukemia, Version 2.2024, NCCN Clinical Practice Guidelines in Oncology.](https://pubmed.ncbi.nlm.nih.gov/39413812/)"
+    ]
+  }
+}

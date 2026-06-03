@@ -1,0 +1,108 @@
+{
+  "query": "GEC-ESTRO anal canal brachytherapy recommendations",
+  "timestamp": 1780433353.7237766,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Brachytherapy boost in anal canal cancer - A GEC ESTRO PDR task force meta-analysis.",
+        "snippet": "PubMed ID: 36785565. 2023/01/30 00:00. BACKGROUND: In February 2021, the Brachytherapy department of the Lorraine \nCancer Institute began a transition away from pulsed dose rate (PDR) towards \nhigh dose rate (HDR) brachytherapy, for gynaecological cancer, cancers of the \noral cavity, oropharynx and anal canal, penile cancer and sarcoma. We describe \nour experience here; for the benefit of other brachytherapy departments that may \nbe envisaging a similar transition in care.\nMEDICAL VIEWPOINT: Fra",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/36785565/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Transition from pulsed dose rate to high dose rate brachytherapy: Experience of a single centre.",
+        "snippet": "PubMed ID: 40544065. 2025/09/01 00:00. BACKGROUND: In February 2021, the Brachytherapy department of the Lorraine \nCancer Institute began a transition away from pulsed dose rate (PDR) towards \nhigh dose rate (HDR) brachytherapy, for gynaecological cancer, cancers of the \noral cavity, oropharynx and anal canal, penile cancer and sarcoma. We describe \nour experience here; for the benefit of other brachytherapy departments that may \nbe envisaging a similar transition in care.\nMEDICAL VIEWPOINT: Fra",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/40544065/",
+        "source": "PubMed"
+      },
+      {
+        "title": "GEC-ESTRO/ACROP recommendations for quality assurance of ultrasound imaging in brachytherapy.",
+        "snippet": "PubMed ID: 32335363. 2020/07/01 00:00. BACKGROUND: In February 2021, the Brachytherapy department of the Lorraine \nCancer Institute began a transition away from pulsed dose rate (PDR) towards \nhigh dose rate (HDR) brachytherapy, for gynaecological cancer, cancers of the \noral cavity, oropharynx and anal canal, penile cancer and sarcoma. We describe \nour experience here; for the benefit of other brachytherapy departments that may \nbe envisaging a similar transition in care.\nMEDICAL VIEWPOINT: Fra",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32335363/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 36785565. 2023/01/30 00:00. BACKGROUND: In February 2021, the Brachytherapy department of the Lorraine \nCancer Institute began a transition away from pulsed dose rate (PDR) towards \nhigh do\n2. PubMed ID: 40544065. 2025/09/01 00:00. BACKGROUND: In February 2021, the Brachytherapy department of the Lorraine \nCancer Institute began a transition away from pulsed dose rate (PDR) towards \nhigh do\n3. PubMed ID: 32335363. 2020/07/01 00:00. BACKGROUND: In February 2021, the Brachytherapy department of the Lorraine \nCancer Institute began a transition away from pulsed dose rate (PDR) towards \nhigh do",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/36785565/",
+      "https://pubmed.ncbi.nlm.nih.gov/40544065/",
+      "https://pubmed.ncbi.nlm.nih.gov/32335363/"
+    ],
+    "evidence_chain_id": "20260603_044911_229966",
+    "evidence_summary": {
+      "response_id": "20260603_044911_229966",
+      "query": "GEC-ESTRO anal canal brachytherapy recommendations",
+      "created_at": "2026-06-03T04:49:11.229985",
+      "num_sources": 3,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Brachytherapy boost in anal canal cancer - A GEC ESTRO PDR task force meta-analysis.](https://pubmed.ncbi.nlm.nih.gov/36785565/)",
+        "[Transition from pulsed dose rate to high dose rate brachytherapy: Experience of a single centre.](https://pubmed.ncbi.nlm.nih.gov/40544065/)",
+        "[GEC-ESTRO/ACROP recommendations for quality assurance of ultrasound imaging in brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/32335363/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "1e9e0e114a54",
+          "claim": "PubMed ID: 36785565. 2023/01/30 00:00. BACKGROUND: In February 2021, the Brachytherapy department of the Lorraine \nCancer Institute began a transition away from pulsed dose rate (PDR) towards \nhigh do",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/36785565/",
+          "source_type": "PubMed",
+          "source_title": "Brachytherapy boost in anal canal cancer - A GEC ESTRO PDR task force meta-analysis.",
+          "accessed_at": "2026-06-03T04:49:13.723473",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 36785565. 2023/01/30 00:00. BACKGROUND: In February 2021, the Brachytherapy department of the Lorraine \nCancer Institute began a transition away from pulsed dose rate (PDR) towards \nhigh dose rate (HDR) brachytherapy, for gynaecological cancer, cancers of the \noral cavity, oropharynx and anal canal, penile cancer and sarcoma. We describe \nour experience here; for the benefit of other brachytherapy departments that may \nbe envisaging a similar transition in care.\nMEDICAL VIEWPOINT: Fra",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "GEC-ESTRO anal canal brachytherapy recommendations",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "f69f11ea028e",
+          "claim": "PubMed ID: 40544065. 2025/09/01 00:00. BACKGROUND: In February 2021, the Brachytherapy department of the Lorraine \nCancer Institute began a transition away from pulsed dose rate (PDR) towards \nhigh do",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/40544065/",
+          "source_type": "PubMed",
+          "source_title": "Transition from pulsed dose rate to high dose rate brachytherapy: Experience of a single centre.",
+          "accessed_at": "2026-06-03T04:49:13.723567",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 40544065. 2025/09/01 00:00. BACKGROUND: In February 2021, the Brachytherapy department of the Lorraine \nCancer Institute began a transition away from pulsed dose rate (PDR) towards \nhigh dose rate (HDR) brachytherapy, for gynaecological cancer, cancers of the \noral cavity, oropharynx and anal canal, penile cancer and sarcoma. We describe \nour experience here; for the benefit of other brachytherapy departments that may \nbe envisaging a similar transition in care.\nMEDICAL VIEWPOINT: Fra",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "GEC-ESTRO anal canal brachytherapy recommendations",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "82797d7783c8",
+          "claim": "PubMed ID: 32335363. 2020/07/01 00:00. BACKGROUND: In February 2021, the Brachytherapy department of the Lorraine \nCancer Institute began a transition away from pulsed dose rate (PDR) towards \nhigh do",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32335363/",
+          "source_type": "PubMed",
+          "source_title": "GEC-ESTRO/ACROP recommendations for quality assurance of ultrasound imaging in brachytherapy.",
+          "accessed_at": "2026-06-03T04:49:13.723599",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32335363. 2020/07/01 00:00. BACKGROUND: In February 2021, the Brachytherapy department of the Lorraine \nCancer Institute began a transition away from pulsed dose rate (PDR) towards \nhigh dose rate (HDR) brachytherapy, for gynaecological cancer, cancers of the \noral cavity, oropharynx and anal canal, penile cancer and sarcoma. We describe \nour experience here; for the benefit of other brachytherapy departments that may \nbe envisaging a similar transition in care.\nMEDICAL VIEWPOINT: Fra",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "GEC-ESTRO anal canal brachytherapy recommendations",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Brachytherapy boost in anal canal cancer - A GEC ESTRO PDR task force meta-analysis.](https://pubmed.ncbi.nlm.nih.gov/36785565/)",
+      "[Transition from pulsed dose rate to high dose rate brachytherapy: Experience of a single centre.](https://pubmed.ncbi.nlm.nih.gov/40544065/)",
+      "[GEC-ESTRO/ACROP recommendations for quality assurance of ultrasound imaging in brachytherapy.](https://pubmed.ncbi.nlm.nih.gov/32335363/)"
+    ]
+  }
+}

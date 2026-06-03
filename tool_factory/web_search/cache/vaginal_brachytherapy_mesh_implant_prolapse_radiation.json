@@ -1,0 +1,160 @@
+{
+  "query": "vaginal brachytherapy mesh implant prolapse radiation",
+  "timestamp": 1780431006.1437914,
+  "result": {
+    "success": true,
+    "results": [
+      {
+        "title": "Phase III Trial: Adjuvant Pelvic Radiation Therapy Versus Vaginal Brachytherapy Plus Paclitaxel/Carboplatin in High-Intermediate and High-Risk Early Stage Endometrial Cancer.",
+        "snippet": "PubMed ID: 30995174. 2019/07/20 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvaginal brachytherapy (VBT) is as effective as pelvic external beam radiotherapy \n(EBRT) in prevention of vaginal recurrence, with fewer adverse effects and \nimproved quality of life.\nMETHODS: In this open-label, non-inferiority, randomised trial undertaken in 19 \nDutch radiation oncology centres, 427 pa",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30995174/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Vaginal brachytherapy versus pelvic external beam radiotherapy for patients with endometrial cancer of high-intermediate risk (PORTEC-2): an open-label, non-inferiority, randomised trial.",
+        "snippet": "PubMed ID: 20206777. 2010/03/06 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvaginal brachytherapy (VBT) is as effective as pelvic external beam radiotherapy \n(EBRT) in prevention of vaginal recurrence, with fewer adverse effects and \nimproved quality of life.\nMETHODS: In this open-label, non-inferiority, randomised trial undertaken in 19 \nDutch radiation oncology centres, 427 pa",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/20206777/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Vaginal cuff brachytherapy for endometrial cancer: a review of major clinical trials with a focus on fractionation.",
+        "snippet": "PubMed ID: 35256417. 2022/03/01 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvaginal brachytherapy (VBT) is as effective as pelvic external beam radiotherapy \n(EBRT) in prevention of vaginal recurrence, with fewer adverse effects and \nimproved quality of life.\nMETHODS: In this open-label, non-inferiority, randomised trial undertaken in 19 \nDutch radiation oncology centres, 427 pa",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35256417/",
+        "source": "PubMed"
+      },
+      {
+        "title": "Interventions Preventing Vaginitis, Vaginal Atrophy after Brachytherapy or Radiotherapy Due to Malignant Tumors of the Female Reproductive Organs-A Systematic Review.",
+        "snippet": "PubMed ID: 33918070. 2021/04/08 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvaginal brachytherapy (VBT) is as effective as pelvic external beam radiotherapy \n(EBRT) in prevention of vaginal recurrence, with fewer adverse effects and \nimproved quality of life.\nMETHODS: In this open-label, non-inferiority, randomised trial undertaken in 19 \nDutch radiation oncology centres, 427 pa",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33918070/",
+        "source": "PubMed"
+      },
+      {
+        "title": "External beam radiotherapy versus vaginal brachytherapy in patients with stage II endometrial cancer: a systematic review and meta-analysis.",
+        "snippet": "PubMed ID: 32221021. 2020/06/01 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvaginal brachytherapy (VBT) is as effective as pelvic external beam radiotherapy \n(EBRT) in prevention of vaginal recurrence, with fewer adverse effects and \nimproved quality of life.\nMETHODS: In this open-label, non-inferiority, randomised trial undertaken in 19 \nDutch radiation oncology centres, 427 pa",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32221021/",
+        "source": "PubMed"
+      }
+    ],
+    "answer": "PubMed results:\n1. PubMed ID: 30995174. 2019/07/20 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvagin\n2. PubMed ID: 20206777. 2010/03/06 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvagin\n3. PubMed ID: 35256417. 2022/03/01 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvagin",
+    "sources": [
+      "https://pubmed.ncbi.nlm.nih.gov/30995174/",
+      "https://pubmed.ncbi.nlm.nih.gov/20206777/",
+      "https://pubmed.ncbi.nlm.nih.gov/35256417/",
+      "https://pubmed.ncbi.nlm.nih.gov/33918070/",
+      "https://pubmed.ncbi.nlm.nih.gov/32221021/"
+    ],
+    "evidence_chain_id": "20260603_041003_669966",
+    "evidence_summary": {
+      "response_id": "20260603_041003_669966",
+      "query": "vaginal brachytherapy mesh implant prolapse radiation",
+      "created_at": "2026-06-03T04:10:03.669986",
+      "num_sources": 5,
+      "source_types": [
+        "PubMed"
+      ],
+      "avg_confidence": 0.85,
+      "verification_status": "unverified",
+      "citations": [
+        "[Phase III Trial: Adjuvant Pelvic Radiation Therapy Versus Vaginal Brachytherapy Plus Paclitaxel/Carboplatin in High-Intermediate and High-Risk Early Stage Endometrial Cancer.](https://pubmed.ncbi.nlm.nih.gov/30995174/)",
+        "[Vaginal brachytherapy versus pelvic external beam radiotherapy for patients with endometrial cancer of high-intermediate risk (PORTEC-2): an open-label, non-inferiority, randomised trial.](https://pubmed.ncbi.nlm.nih.gov/20206777/)",
+        "[Vaginal cuff brachytherapy for endometrial cancer: a review of major clinical trials with a focus on fractionation.](https://pubmed.ncbi.nlm.nih.gov/35256417/)",
+        "[Interventions Preventing Vaginitis, Vaginal Atrophy after Brachytherapy or Radiotherapy Due to Malignant Tumors of the Female Reproductive Organs-A Systematic Review.](https://pubmed.ncbi.nlm.nih.gov/33918070/)",
+        "[External beam radiotherapy versus vaginal brachytherapy in patients with stage II endometrial cancer: a systematic review and meta-analysis.](https://pubmed.ncbi.nlm.nih.gov/32221021/)"
+      ],
+      "evidence": [
+        {
+          "evidence_id": "2e8fe21e6954",
+          "claim": "PubMed ID: 30995174. 2019/07/20 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvagin",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/30995174/",
+          "source_type": "PubMed",
+          "source_title": "Phase III Trial: Adjuvant Pelvic Radiation Therapy Versus Vaginal Brachytherapy Plus Paclitaxel/Carboplatin in High-Intermediate and High-Risk Early Stage Endometrial Cancer.",
+          "accessed_at": "2026-06-03T04:10:06.143393",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 30995174. 2019/07/20 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvaginal brachytherapy (VBT) is as effective as pelvic external beam radiotherapy \n(EBRT) in prevention of vaginal recurrence, with fewer adverse effects and \nimproved quality of life.\nMETHODS: In this open-label, non-inferiority, randomised trial undertaken in 19 \nDutch radiation oncology centres, 427 pa",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "vaginal brachytherapy mesh implant prolapse radiation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "1803a6dd10c1",
+          "claim": "PubMed ID: 20206777. 2010/03/06 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvagin",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/20206777/",
+          "source_type": "PubMed",
+          "source_title": "Vaginal brachytherapy versus pelvic external beam radiotherapy for patients with endometrial cancer of high-intermediate risk (PORTEC-2): an open-label, non-inferiority, randomised trial.",
+          "accessed_at": "2026-06-03T04:10:06.143507",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 20206777. 2010/03/06 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvaginal brachytherapy (VBT) is as effective as pelvic external beam radiotherapy \n(EBRT) in prevention of vaginal recurrence, with fewer adverse effects and \nimproved quality of life.\nMETHODS: In this open-label, non-inferiority, randomised trial undertaken in 19 \nDutch radiation oncology centres, 427 pa",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "vaginal brachytherapy mesh implant prolapse radiation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "2f78e2438ef9",
+          "claim": "PubMed ID: 35256417. 2022/03/01 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvagin",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/35256417/",
+          "source_type": "PubMed",
+          "source_title": "Vaginal cuff brachytherapy for endometrial cancer: a review of major clinical trials with a focus on fractionation.",
+          "accessed_at": "2026-06-03T04:10:06.143538",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 35256417. 2022/03/01 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvaginal brachytherapy (VBT) is as effective as pelvic external beam radiotherapy \n(EBRT) in prevention of vaginal recurrence, with fewer adverse effects and \nimproved quality of life.\nMETHODS: In this open-label, non-inferiority, randomised trial undertaken in 19 \nDutch radiation oncology centres, 427 pa",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "vaginal brachytherapy mesh implant prolapse radiation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "74606049f42e",
+          "claim": "PubMed ID: 33918070. 2021/04/08 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvagin",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/33918070/",
+          "source_type": "PubMed",
+          "source_title": "Interventions Preventing Vaginitis, Vaginal Atrophy after Brachytherapy or Radiotherapy Due to Malignant Tumors of the Female Reproductive Organs-A Systematic Review.",
+          "accessed_at": "2026-06-03T04:10:06.143563",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 33918070. 2021/04/08 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvaginal brachytherapy (VBT) is as effective as pelvic external beam radiotherapy \n(EBRT) in prevention of vaginal recurrence, with fewer adverse effects and \nimproved quality of life.\nMETHODS: In this open-label, non-inferiority, randomised trial undertaken in 19 \nDutch radiation oncology centres, 427 pa",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "vaginal brachytherapy mesh implant prolapse radiation",
+          "search_type": "general",
+          "cache_hit": false
+        },
+        {
+          "evidence_id": "ef7b7bba3727",
+          "claim": "PubMed ID: 32221021. 2020/06/01 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvagin",
+          "source_url": "https://pubmed.ncbi.nlm.nih.gov/32221021/",
+          "source_type": "PubMed",
+          "source_title": "External beam radiotherapy versus vaginal brachytherapy in patients with stage II endometrial cancer: a systematic review and meta-analysis.",
+          "accessed_at": "2026-06-03T04:10:06.143586",
+          "published_at": "",
+          "raw_snippet": "PubMed ID: 32221021. 2020/06/01 00:00. BACKGROUND: After surgery for intermediate-risk endometrial carcinoma, the \nvagina is the most frequent site of recurrence. This study established whether \nvaginal brachytherapy (VBT) is as effective as pelvic external beam radiotherapy \n(EBRT) in prevention of vaginal recurrence, with fewer adverse effects and \nimproved quality of life.\nMETHODS: In this open-label, non-inferiority, randomised trial undertaken in 19 \nDutch radiation oncology centres, 427 pa",
+          "extracted_data": {},
+          "confidence": 0.85,
+          "verification_status": "unverified",
+          "cross_references": [],
+          "search_query": "vaginal brachytherapy mesh implant prolapse radiation",
+          "search_type": "general",
+          "cache_hit": false
+        }
+      ]
+    },
+    "citations": [
+      "[Phase III Trial: Adjuvant Pelvic Radiation Therapy Versus Vaginal Brachytherapy Plus Paclitaxel/Carboplatin in High-Intermediate and High-Risk Early Stage Endometrial Cancer.](https://pubmed.ncbi.nlm.nih.gov/30995174/)",
+      "[Vaginal brachytherapy versus pelvic external beam radiotherapy for patients with endometrial cancer of high-intermediate risk (PORTEC-2): an open-label, non-inferiority, randomised trial.](https://pubmed.ncbi.nlm.nih.gov/20206777/)",
+      "[Vaginal cuff brachytherapy for endometrial cancer: a review of major clinical trials with a focus on fractionation.](https://pubmed.ncbi.nlm.nih.gov/35256417/)",
+      "[Interventions Preventing Vaginitis, Vaginal Atrophy after Brachytherapy or Radiotherapy Due to Malignant Tumors of the Female Reproductive Organs-A Systematic Review.](https://pubmed.ncbi.nlm.nih.gov/33918070/)",
+      "[External beam radiotherapy versus vaginal brachytherapy in patients with stage II endometrial cancer: a systematic review and meta-analysis.](https://pubmed.ncbi.nlm.nih.gov/32221021/)"
+    ]
+  }
+}
