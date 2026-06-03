@@ -1087,6 +1087,13 @@
         }
         .tree-item .recon3d-btn:hover { opacity: 1; color: var(--primary); }
         .tree-item .recon3d-btn.active { opacity: 1; color: var(--accent); }
+        /* Context menu */
+        .ctx-menu { position: fixed; z-index: 9999; background: var(--bg-3); border: 1px solid var(--card-border); border-radius: 6px; padding: 4px 0; min-width: 180px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
+        .ctx-menu-item { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 0.7rem; color: var(--text); cursor: pointer; white-space: nowrap; }
+        .ctx-menu-item:hover { background: var(--primary); color: white; border-radius: 4px; margin: 0 2px; }
+        .ctx-menu-item .ctx-icon { width: 16px; text-align: center; font-size: 0.75rem; }
+        .ctx-menu-sep { height: 1px; background: var(--card-border); margin: 4px 8px; }
+        .ctx-menu-item.danger { color: var(--danger); }
         .tree-item .opacity-slider::-webkit-slider-thumb {
             -webkit-appearance: none; width: 8px; height: 8px;
             border-radius: 50%; background: var(--primary); cursor: pointer;
@@ -3508,10 +3515,42 @@ const dataTreeState = {
     ct:       { visible: true, opacity: 1.0, color: '#888', loaded: false, label: 'CT Image' },
     ctv:      { visible: true, opacity: 0.7, color: '#ef4444', loaded: false, label: 'CTV Mask' },
     oar:      { visible: true, opacity: 0.5, color: '#22c55e', loaded: false, label: 'All OARs' },
-    organs:   [],  // Individual organs: [{id, label, color, visible, opacity, voxelCount}]
+    organs:   [],  // Individual organs: [{id, label, color, visible, opacity, voxelCount, category}]
     dose:     { visible: true, opacity: 0.4, color: '#f59e0b', loaded: false, label: 'Dose Distribution' },
     seeds:    { visible: true, opacity: 1.0, color: '#3b82f6', loaded: false, label: 'Seed Positions' },
 };
+
+// Organ categories for constraint-based planning
+const ORGAN_CATEGORIES = {
+    ctv:              { label: 'CTV', icon: '🎯', color: '#ef4444' },
+    non_traversable:  { label: 'Non-traversable', icon: '🚫', color: '#f97316' },
+    traversable:      { label: 'Traversable', icon: '✅', color: '#22c55e' },
+};
+
+// Default category classification by organ name keywords
+const CATEGORY_RULES = [
+    // Non-traversable: bones, cartilage, major vessels, nerves
+    { pattern: /bone|rib|spine|vertebra|sacrum|pelvis|femur|ilium|ischium|pubis/i, category: 'non_traversable' },
+    { pattern: /cartilage|disc|meniscus/i, category: 'non_traversable' },
+    { pattern: /aorta|vena\s*cava|iliac\s*(artery|vein)|femoral\s*(artery|vein)|carotid|jugular/i, category: 'non_traversable' },
+    { pattern: /nerve|plexus|sciatic|spinal\s*cord|brachial/i, category: 'non_traversable' },
+    // Traversable: soft tissue organs
+    { pattern: /bladder|rectum|sigmoid|colon|small\s*bowel|intestine|stomach/i, category: 'traversable' },
+    { pattern: /prostate|uterus|cervix|vagina|seminal|vesicle/i, category: 'traversable' },
+    { pattern: /liver|kidney|spleen|pancreas|adrenal/i, category: 'traversable' },
+    { pattern: /lung|heart|esophagus|trachea|bronchus/i, category: 'traversable' },
+    { pattern: /muscle|fat|skin|connective/i, category: 'traversable' },
+];
+
+function classifyOrgan(organName) {
+    for (const rule of CATEGORY_RULES) {
+        if (rule.pattern.test(organName)) return rule.category;
+    }
+    return 'traversable'; // Default: traversable
+}
+
+// Context menu state
+let activeContextMenu = null;
 
 // Predefined colors for organs
 const ORGAN_COLORS = [
@@ -3527,14 +3566,16 @@ function updateOrganList(organData) {
     dataTreeState.organs = [];
     let i = 0;
     for (const [labelId, info] of Object.entries(organData)) {
+        const name = info.name || `Organ ${labelId}`;
         dataTreeState.organs.push({
             id: `organ_${labelId}`,
             labelId: parseInt(labelId),
-            label: info.name || `Organ ${labelId}`,
+            label: name,
             color: info.color || ORGAN_COLORS[i % ORGAN_COLORS.length],
             visible: true,
             opacity: 0.5,
             voxelCount: info.voxel_count || 0,
+            category: classifyOrgan(name),
         });
         i++;
     }
@@ -3553,7 +3594,7 @@ function renderDataTree() {
 
     let html = '';
 
-    // Image group
+    // === Image group ===
     html += `<div class="tree-group">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)">
             <span class="arrow">&#9660;</span>
@@ -3563,41 +3604,59 @@ function renderDataTree() {
     html += renderTreeItem('ct', dataTreeState.ct, state.ctShape ? `${state.ctShape[2]}×${state.ctShape[1]}×${state.ctShape[0]}` : '');
     html += `</div></div>`;
 
-    // CTV group
+    // === Label Image group (CTV + OAR with categories) ===
+    const hasLabels = dataTreeState.ctv.loaded || dataTreeState.organs.length > 0;
     html += `<div class="tree-group">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)">
             <span class="arrow">&#9660;</span>
-            <span>Target</span>
-        </div>
-        <div class="tree-group-items">`;
-    const ctvVolume = state.ctvVolume || null;
-    const ctvInfo = ctvVolume ? `${ctvVolume.toFixed(1)} mm³` : (dataTreeState.ctv.loaded ? 'loaded' : '');
-    html += renderTreeItem('ctv', dataTreeState.ctv, ctvInfo);
-    html += `</div></div>`;
-
-    // OAR group with individual organs
-    html += `<div class="tree-group">
-        <div class="tree-group-header" onclick="toggleTreeGroup(this)">
-            <span class="arrow">&#9660;</span>
-            <span>Organs at Risk (${dataTreeState.organs.length})</span>
+            <span>Label Image ${hasLabels ? `(${dataTreeState.organs.length + (dataTreeState.ctv.loaded ? 1 : 0)})` : ''}</span>
         </div>
         <div class="tree-group-items">`;
 
-    // Master OAR toggle
-    html += renderTreeItem('oar', dataTreeState.oar, dataTreeState.organs.length > 0 ? `${dataTreeState.organs.length} organs` : '');
+    // CTV sub-group
+    if (dataTreeState.ctv.loaded) {
+        const ctvVolume = state.ctvVolume || null;
+        const ctvInfo = ctvVolume ? `${ctvVolume.toFixed(1)} mm³` : 'loaded';
+        html += renderTreeItem('ctv', dataTreeState.ctv, ctvInfo);
+    }
 
-    // Individual organs
-    if (dataTreeState.organs.length > 0) {
-        for (const organ of dataTreeState.organs) {
+    // OAR sub-groups by category
+    const nonTrav = dataTreeState.organs.filter(o => o.category === 'non_traversable');
+    const trav = dataTreeState.organs.filter(o => o.category === 'traversable');
+
+    if (nonTrav.length > 0) {
+        html += `<div class="tree-group" style="margin-left:0.5rem;">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+                <span class="arrow">&#9660;</span>
+                <span style="color:#f97316;">🚫 Non-traversable (${nonTrav.length})</span>
+            </div>
+            <div class="tree-group-items">`;
+        for (const organ of nonTrav) {
             const organState = { visible: organ.visible, opacity: organ.opacity, color: organ.color, loaded: true, label: organ.label };
             const info = organ.voxelCount > 0 ? `${(organ.voxelCount * 0.6836 * 0.6836 * 5 / 1000).toFixed(1)} cm³` : '';
             html += renderTreeItem(organ.id, organState, info);
         }
+        html += `</div></div>`;
+    }
+
+    if (trav.length > 0) {
+        html += `<div class="tree-group" style="margin-left:0.5rem;">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+                <span class="arrow">&#9660;</span>
+                <span style="color:#22c55e;">✅ Traversable (${trav.length})</span>
+            </div>
+            <div class="tree-group-items">`;
+        for (const organ of trav) {
+            const organState = { visible: organ.visible, opacity: organ.opacity, color: organ.color, loaded: true, label: organ.label };
+            const info = organ.voxelCount > 0 ? `${(organ.voxelCount * 0.6836 * 0.6836 * 5 / 1000).toFixed(1)} cm³` : '';
+            html += renderTreeItem(organ.id, organState, info);
+        }
+        html += `</div></div>`;
     }
 
     html += `</div></div>`;
 
-    // Dose group
+    // === Dose group ===
     html += `<div class="tree-group">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)">
             <span class="arrow">&#9660;</span>
@@ -3609,6 +3668,15 @@ function renderDataTree() {
     html += `</div></div>`;
 
     body.innerHTML = html;
+
+    // Attach right-click handlers to organ items
+    document.querySelectorAll('.tree-item[data-organ-id]').forEach(el => {
+        el.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            showContextMenu(e.clientX, e.clientY, el.dataset.organId);
+        });
+    });
 }
 
 function renderTreeItem(id, itemState, info) {
@@ -3621,7 +3689,9 @@ function renderTreeItem(id, itemState, info) {
     const canRecon3d = id === 'ctv' || id.startsWith('organ_');
     const recon3dBtn = canRecon3d ? `<button class="recon3d-btn" title="3D Reconstruct" onclick="event.stopPropagation();reconstructOrgan3D('${id}')">&#9638;</button>` : '';
 
-    return `<div class="tree-item" ${loadedClass} ${indent} onclick="selectDataItem('${id}')">
+    const dataAttr = (id === 'ctv' || id.startsWith('organ_')) ? `data-organ-id="${id}"` : '';
+
+    return `<div class="tree-item" ${loadedClass} ${indent} ${dataAttr} onclick="selectDataItem('${id}')">
         <button class="eye-btn ${eyeClass}" onclick="event.stopPropagation();toggleDataVisibility('${id}')" ${disabledAttr}>${eyeIcon}</button>
         <span class="color-swatch" style="background:${itemState.color};"></span>
         <span class="item-label">${itemState.label}</span>
@@ -3632,6 +3702,99 @@ function renderTreeItem(id, itemState, info) {
             onclick="event.stopPropagation()"
             oninput="setDataOpacity('${id}', this.value)">
     </div>`;
+}
+
+function showContextMenu(x, y, organId) {
+    // Remove existing context menu
+    hideContextMenu();
+
+    const organ = organId === 'ctv' ? null : dataTreeState.organs.find(o => o.id === organId);
+    const isCTV = organId === 'ctv';
+    const label = isCTV ? 'CTV' : (organ ? organ.label : organId);
+    const currentCat = isCTV ? 'ctv' : (organ ? organ.category : 'traversable');
+
+    const menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    menu.id = 'ctxMenu';
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+
+    let items = '';
+
+    // 3D Reconstruct
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();reconstructOrgan3D('${organId}')">
+        <span class="ctx-icon">&#9638;</span> 3D Reconstruct</div>`;
+    items += `<div class="ctx-menu-sep"></div>`;
+
+    // Move to category
+    if (!isCTV) {
+        for (const [catKey, catInfo] of Object.entries(ORGAN_CATEGORIES)) {
+            const isActive = currentCat === catKey;
+            items += `<div class="ctx-menu-item${isActive ? '' : ''}" onclick="hideContextMenu();moveOrganToCategory('${organId}','${catKey}')">
+                <span class="ctx-icon">${catInfo.icon}</span> ${isActive ? '● ' : ''}Move to ${catInfo.label}</div>`;
+        }
+        items += `<div class="ctx-menu-sep"></div>`;
+    }
+
+    // Toggle visibility
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();toggleDataVisibility('${organId}')">
+        <span class="ctx-icon">${(isCTV ? dataTreeState.ctv.visible : organ?.visible) ? '&#128065;' : '&#128064;'}</span> Toggle Visibility</div>`;
+
+    // Solo (hide all others)
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();soloOrgan('${organId}')">
+        <span class="ctx-icon">&#128269;</span> Solo (hide others)</div>`;
+
+    // Show all
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();showAllOrgans()">
+        <span class="ctx-icon">&#128065;</span> Show All</div>`;
+
+    menu.innerHTML = items;
+    document.body.appendChild(menu);
+
+    // Adjust position if menu goes off-screen
+    const rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) menu.style.left = (x - rect.width) + 'px';
+    if (rect.bottom > window.innerHeight) menu.style.top = (y - rect.height) + 'px';
+
+    // Close on click outside
+    setTimeout(() => {
+        document.addEventListener('click', hideContextMenu, { once: true });
+        document.addEventListener('contextmenu', hideContextMenu, { once: true });
+    }, 0);
+
+    activeContextMenu = menu;
+}
+
+function hideContextMenu() {
+    if (activeContextMenu) {
+        activeContextMenu.remove();
+        activeContextMenu = null;
+    }
+}
+
+function moveOrganToCategory(organId, newCategory) {
+    const organ = dataTreeState.organs.find(o => o.id === organId);
+    if (organ) {
+        organ.category = newCategory;
+        renderDataTree();
+        if (state.ctLoaded) loadAllSlices();
+    }
+}
+
+function soloOrgan(organId) {
+    // Hide all except the selected organ
+    dataTreeState.organs.forEach(o => { o.visible = (o.id === organId); });
+    if (organId === 'ctv') { dataTreeState.ctv.visible = true; }
+    else { dataTreeState.ctv.visible = false; }
+    renderDataTree();
+    if (state.ctLoaded) loadAllSlices();
+}
+
+function showAllOrgans() {
+    dataTreeState.organs.forEach(o => { o.visible = true; });
+    dataTreeState.ctv.visible = true;
+    renderDataTree();
+    if (state.ctLoaded) loadAllSlices();
 }
 
 function toggleTreeGroup(header) {
