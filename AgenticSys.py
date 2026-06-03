@@ -919,12 +919,16 @@ class BrachyAgent:
         elif tool_name == "code_executor":
             output = ""
             if isinstance(result.data, dict):
-                output = result.data.get("stdout", str(result.data))
+                stdout = result.data.get("stdout", "").strip()
+                output = stdout if stdout else str(result.data)
             else:
                 output = str(result.data) if result.data else ""
+            # Format output nicely
+            lines = [l.strip() for l in output.split('\n') if l.strip()]
+            formatted = '\n'.join(lines)
             if lang == "zh":
-                return f"图像分析完成。\n{output.strip()}"
-            return f"Image analysis completed.\n{output.strip()}"
+                return f"图像分析完成：\n{formatted}"
+            return f"Image analysis completed:\n{formatted}"
         elif tool_name == "dose_engine":
             return f"{'剂量计算完成' if lang == 'zh' else 'Dose calculation completed'}. {str(result.data)[:200]}"
         else:
@@ -1211,7 +1215,7 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
             summary_parts = []
             for s in steps:
                 if s.get("type") == "tool" and s.get("result"):
-                    summary_parts.append(f"**{s['tool']}**: {s['result'][:200]}")
+                    summary_parts.append(f"**{s['tool']}**:\n{s['result']}")
             return "\n\n".join(summary_parts) if summary_parts else "Tools executed."
 
         # Force web search for real-time queries (weather, time, news, sports, etc.)
@@ -2644,7 +2648,7 @@ for name, lo, hi in [("Air", -9999, -900), ("Fat", -900, -30), ("Soft tissue", -
             summary_parts = []
             for s in steps:
                 if s.get("type") == "tool" and s.get("result"):
-                    summary_parts.append(f"**{s.get('tool', 'tool')}**: {s['result'][:300]}")
+                    summary_parts.append(f"**{s.get('tool', 'tool')}**:\n{s['result']}")
             response = "\n\n".join(summary_parts) if summary_parts else "Tools executed."
             self.memory.add_message("assistant", response)
             yield yield_event("response", {"response": response})
