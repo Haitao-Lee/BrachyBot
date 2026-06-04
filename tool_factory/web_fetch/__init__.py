@@ -179,6 +179,11 @@ The tool will:
             if status_code != 200:
                 return ToolResult(success=False, message=f"HTTP {status_code}")
 
+            # Fix encoding: requests defaults to ISO-8859-1 when charset not specified
+            # which garbles CJK characters. Use apparent_encoding as fallback.
+            if response.encoding and response.encoding.lower() in ('iso-8859-1', 'latin-1', 'ascii'):
+                response.encoding = response.apparent_encoding or 'utf-8'
+
             content_type = response.headers.get('content-type', '')
 
             # Handle different content types

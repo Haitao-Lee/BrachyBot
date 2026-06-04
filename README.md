@@ -76,6 +76,7 @@ Supporting:
 | Core code lines | ~60,000+ |
 | LLM providers | 15 |
 | Medical AI tools | 24 packages (50+ tools) |
+| Search engines | 28 specialized + 3 general |
 | Skill templates | 28+ |
 | VoCo model weights | 18 datasets |
 | Benchmark test cases | 889 (32 categories) |
@@ -462,51 +463,54 @@ Task: "Generate prostate plan"
 - **query_metrics**: Query dose metrics, plan quality, organ volumes via conversation
 - **Smart Commands**: "Go to the tumor", "Show me slice 50", "What is the V100?"
 
-### 🌐 Internet Search Capability (NEW)
-BrachyBot now has intelligent internet search with **adaptive search strategy**:
+### 🌐 Internet Search Capability (28 Specialized Engines)
 
-**Search Strategy (auto-selected based on query type):**
+BrachyBot has a **multi-engine search system** with 28 specialized data sources and intelligent fallback:
 
-| Query Type | Primary Source | Secondary Source | Example |
-|-----------|---------------|-----------------|---------|
-| Clinical/Medical | PubMed API | Bing CN | "EMBRACE II results", "prostate dose constraints" |
-| Technical/AI | Bing CN + GitHub | PubMed | "DeepRare", "SAM 3", "nnU-Net" |
-| Equipment | Bing CN + Baidu | — | "Varian VariSource", "Elekta applicator" |
-| General | Bing CN | PubMed → Baidu | "brachytherapy history", "Ir-192 suppliers" |
-| Real-time | Bing CN + Baidu | Page fetch | "今天天气", "北京时间", "NBA总决赛" |
+**Architecture:**
+```
+Query → Specialized Engine (direct API) → Quality Check → General Search (Bing/Sogou) → Merge
+```
 
-**When to Search:**
-- Specific equipment specifications (Varian, Elekta, Nucletron devices)
-- Recent clinical trials or publications (EMBRACE, PORTEC, ASCENDE-RT)
-- AI/ML tools and models (DeepRare, SAM 3, nnU-Net, VoCo)
-- Drug pricing, availability, or manufacturer information
-- Historical details about specific procedures
-- Any fact the system is uncertain about
+**Specialized Engines (28):**
 
-**When NOT to Search:**
-- Basic clinical facts (145 Gy for I-125, 73.83 days for Ir-192 half-life)
-- Standard dose constraints and protocols
-- Information already in clinical_kb
-- Fictional/hypothetical scenarios
+| Category | Engines | Source |
+|----------|---------|--------|
+| Real-time | Weather (wttr.in), Exchange Rate | Direct API |
+| Medical Guidelines | NCCN, Radiopaedia, ICD-11 (WHO), OMIM, AAPM, MeSH | API + Scraping |
+| Clinical Research | ClinicalTrials.gov, FDA, PubMed, Europe PMC, Semantic Scholar | API |
+| Academic Publishing | CrossRef, OpenAlex, arXiv, bioRxiv, Springer Nature, IEEE Xplore, Lens.org, IOP | API |
+| Patents | Google Patents, CNIPA | Scraping |
+| Chinese Academic | CNKI, Wanfang | Scraping |
+| Technical | Stack Overflow, Papers With Code, GitHub | API |
 
-**Search Behavior:**
-1. **Answer from knowledge** if confident → direct answer
-2. **Search the web** if uncertain → cite source if found
-3. **Admit ignorance** if search fails → recommend specific resource
+**Information Reliability Hierarchy:**
+```
+1. 🔍 Search results (latest) → Use directly, cite source + year
+2. 📚 Search results (older)  → Use with warning "⚠️ 数据可能已过时"
+3. 🧠 AI knowledge (verified) → Use with attribution "基于AI知识库"
+4. ❌ Unknown                 → Say honestly "未找到相关数据"
+```
+
+**Query Processing:**
+- Intent detection (factual, research, realtime, navigational)
+- Query variant generation (short names, cross-language, simplified)
+- Auto year injection for time-sensitive queries
+- Auto page content fetching when snippets are insufficient
 
 **Example Responses:**
 ```
-# AI/Technical query (Bing + GitHub)
-"你知道DeepRare吗？"
-→ "DeepRare 是 Nature 2026 发表的罕见病诊断AI系统，采用中央主机+专科Agent架构..."
+# Impact factor query (specialized engine + page fetch)
+"IEEE TMI最新的影响因子是多少"
+→ "IEEE TMI 2025年影响因子为 9.8/Q1，5年平均 11.3 [来源: iikx.com]"
 
-# Equipment query (Bing)
-"What is the dose rate constant for IsoAid Advantage?"
-→ "Based on manufacturer specifications [source], the TG-43 dose rate constant is..."
+# Weather (wttr.in API)
+"今日上海天气"
+→ "上海: 25°C, 多云, 湿度 83%, 风速 6 km/h [来源: wttr.in]"
 
-# Recent trial (PubMed)
-"What were the EMBRACE II results?"
-→ "According to published literature [PubMed], the local control rate was..."
+# Clinical trial (ClinicalTrials.gov API)
+"brachytherapy clinical trial"
+→ "[NCT06413992] Status: RECRUITING, Phase: ..."
 
 # Basic knowledge (no search)
 "What is the I-125 prescription dose?"
@@ -1055,7 +1059,7 @@ class BaseTool(ABC):
     description: str
     input_schema: dict
     output_schema: dict
-    
+
     def validate_input(self, **kwargs) -> bool
     def execute(self, **kwargs) -> ToolResult  # Wrapper with timing
     def _execute(self, **kwargs) -> ToolResult  # Abstract, implemented by subclass
@@ -1063,11 +1067,17 @@ class BaseTool(ABC):
 class ToolResult:
     success: bool
     data: Any
-    message: str
+    message: str      # Machine-readable (for LLM context, logging)
+    display: str       # Human-readable markdown (for user-facing response)
     metadata: dict
     error: str
     execution_time: float
 ```
+
+**Unified Result Pipeline (`ToolResultPipeline`):**
+- `format(tool_name, result, lang)` — single entry point, uses `result.display` first, auto-generates from metadata
+- `synthesize(formatted_results, user_message, brain_router, lang)` — LLM synthesis for coherent narrative
+- All tool execution paths (direct, LLM function calling, streaming) use the same pipeline
 
 ---
 
@@ -1341,10 +1351,14 @@ Single-page HTML interface at `web/app/index.html`:
 **CT Viewer**
 - Volume-based client-side rendering (instant response)
 - Axial, Sagittal, Coronal views
-- Window/Level adjustment
-- Threshold overlay
-- CTV/OAR overlay toggle
-- 3D mesh reconstruction
+- Window/Level adjustment (presets: soft tissue, bone, lung, brain)
+- CTV/OAR overlay toggle with per-organ opacity control
+- 3D mesh reconstruction (marching cubes + Laplacian smoothing)
+- 5 layout modes: Vertical, Horizontal, Grid, 3D-top, 3D-bottom
+- Fullscreen mode with proper layout restoration
+- Syntax-highlighted code blocks (Prism.js, Catppuccin Mocha theme)
+- Markdown rendering via marked.js (headers, tables, code, links)
+- Data tree with organ classification and right-click context menu
 
 ---
 
@@ -1554,6 +1568,12 @@ BrachyBot's architecture is inspired by and builds upon the following open-sourc
 - **[web-access](https://github.com/eze-is/web-access)** — CDP browser automation, site experience accumulation
 - **[bb-browser](https://github.com/epiral/bb-browser)** — Real browser integration with login state preservation
 - **[Higress ai-search](https://github.com/higress-group/higress)** — Intelligent search query optimization and multi-engine support
+- **[wttr.in](https://github.com/chubin/wttr.in)** — Weather API for real-time weather data
+- **[CrossRef](https://www.crossref.org/)** — Universal DOI metadata for all academic publishers
+- **[OpenAlex](https://openalex.org/)** — Open academic database with citation data
+- **[Semantic Scholar](https://www.semanticscholar.org/)** — AI-powered academic paper search
+- **[Europe PMC](https://europepmc.org/)** — Open access biomedical literature
+- **[ClinicalTrials.gov](https://clinicaltrials.gov/)** — Clinical trial registry API
 
 ### Infrastructure
 - **[MCP Protocol](https://modelcontextprotocol.io)** — Model Context Protocol for standardized tool integration
