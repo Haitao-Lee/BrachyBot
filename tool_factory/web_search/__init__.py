@@ -182,23 +182,36 @@ class QueryProcessor:
 # To add a new source: add an entry to SPECIALIZED_ENGINES.
 
 class SpecializedEngine:
-    """A specialized search engine for a specific domain."""
+    """A specialized search engine for a specific domain.
 
-    def __init__(self, name: str, triggers: List[str], search_fn, description: str = ""):
+    Each engine can optionally provide:
+    - triggers: keywords that activate this engine
+    - search_fn: the search function(query, max_results) -> List[Dict]
+    - optimize_fn: query optimizer(query) -> optimized_query (optional)
+    """
+
+    def __init__(self, name: str, triggers: List[str], search_fn, description: str = "", optimize_fn=None):
         self.name = name
-        self.triggers = triggers  # Keywords that activate this engine
-        self.search_fn = search_fn  # Callable(query, max_results) -> List[Dict]
+        self.triggers = triggers
+        self.search_fn = search_fn
         self.description = description
+        self.optimize_fn = optimize_fn
 
     def matches(self, query: str) -> bool:
-        """Check if this engine should handle the query."""
         q = query.lower()
         return any(t in q for t in self.triggers)
 
+    def optimize_query(self, query: str) -> str:
+        """Optimize query for this specific engine. Default: pass through."""
+        if self.optimize_fn:
+            return self.optimize_fn(query)
+        return query
+
     def search(self, query: str, max_results: int = 5) -> List[Dict]:
-        """Execute the specialized search."""
+        """Optimize query then search."""
         try:
-            return self.search_fn(query, max_results)
+            optimized = self.optimize_query(query)
+            return self.search_fn(optimized, max_results)
         except Exception as e:
             logger.warning(f"Specialized engine {self.name} error: {e}")
             return []
@@ -410,6 +423,52 @@ def _search_github_repos(query: str, max_results: int = 5) -> List[Dict]:
     except Exception as e:
         logger.warning(f"GitHub error: {e}")
     return results
+
+
+# ============================================================
+# Query Optimizers (per-engine)
+# ============================================================
+# Each optimizer transforms the user's natural language query into
+# the format that works best for that specific engine.
+
+def _optimize_github(query: str) -> str:
+    """GitHub API works best with 1-3 keywords (project name)."""
+    words = query.strip().split()
+    if len(words) <= 3:
+        return query
+    # Remove common filler words
+    stop = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has',
+            'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may',
+            'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by', 'from', 'as',
+            'and', 'or', 'but', 'not', 'no', 'what', 'how', 'why', 'when', 'where',
+            'this', 'that', 'these', 'those', 'it', 'its', 'my', 'your', 'his', 'her',
+            'about', 'latest', 'research', 'code', 'implementation', 'system', 'technical',
+            '请', '帮我', '查', '搜索', '一下'}
+    key = [w for w in words if w.lower() not in stop and len(w) > 1]
+    if key:
+        return ' '.join(key[:3])
+    return ' '.join(words[:2])
+
+
+def _optimize_pubmed(query: str) -> str:
+    """PubMed works best with medical terms, no natural language filler."""
+    # Remove common question patterns
+    noise = ['what is', 'what are', 'how to', 'tell me about', 'please', 'can you',
+             '什么是', '介绍一下', '告诉我', '请问', '帮我查']
+    q = query
+    for n in noise:
+        q = re.sub(re.escape(n), '', q, flags=re.IGNORECASE)
+    return q.strip() or query
+
+
+def _optimize_arxiv(query: str) -> str:
+    """arXiv works best with technical terms."""
+    noise = ['what is', 'tell me about', 'find papers on', 'search for',
+             '介绍一下', '查找', '搜索']
+    q = query
+    for n in noise:
+        q = re.sub(re.escape(n), '', q, flags=re.IGNORECASE)
+    return q.strip() or query
 
 
 def _search_crossref(query: str, max_results: int = 5) -> List[Dict]:
@@ -860,7 +919,8 @@ SPECIALIZED_ENGINES = [
     SpecializedEngine("FDA Drugs", ["fda", "药物批准", "drug approval", "药物安全"],
                       _search_fda, "FDA drug labels and approvals"),
     SpecializedEngine("PubMed", ["pubmed", "医学文献", "临床研究", "clinical study"],
-                      _search_pubmed_direct, "Clinical literature via PubMed E-utilities"),
+                      _search_pubmed_direct, "Clinical literature via PubMed E-utilities",
+                      optimize_fn=_optimize_pubmed),
     SpecializedEngine("Semantic Scholar", ["论文", "paper", "publication", "引用", "citation"],
                       _search_semantic_scholar, "Academic papers via Semantic Scholar API"),
     SpecializedEngine("CrossRef", ["doi", "crossref", "期刊论文", "journal article"],
@@ -868,7 +928,7 @@ SPECIALIZED_ENGINES = [
     SpecializedEngine("OpenAlex", ["openalex", "学术数据库", "citation count", "被引"],
                       _search_openalex, "Open academic database with full-text links"),
     SpecializedEngine("arXiv", ["arxiv", "预印本", "preprint"],
-                      _search_arxiv, "arXiv preprints"),
+                      _search_arxiv, "arXiv preprints", optimize_fn=_optimize_arxiv),
     SpecializedEngine("bioRxiv", ["biorxiv", "medrxiv", "生物学预印本", "医学预印本"],
                       _search_biorxiv, "bioRxiv/medRxiv preprints"),
     SpecializedEngine("Springer Nature", ["springer", "nature", "springer nature", "施普林格"],
@@ -904,7 +964,8 @@ SPECIALIZED_ENGINES = [
     SpecializedEngine("Papers With Code", ["代码实现", "implementation", "papers with code", "benchmark"],
                       _search_papers_with_code, "ML papers with code implementations"),
     SpecializedEngine("GitHub", ["github", "代码库", "repository", "开源项目"],
-                      _search_github_repos, "GitHub repository search"),
+                      _search_github_repos, "GitHub repository search",
+                      optimize_fn=_optimize_github),
 ]
 
 
