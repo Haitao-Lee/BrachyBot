@@ -234,9 +234,13 @@ class UIControllerTool(BaseTool):
             "executed": len(validated),
         }
 
+        # Build human-readable descriptions for each action
+        display_parts = []
         summary_parts = []
         for a in validated:
             t, c, v = a["target"], a["command"], a.get("value", "")
+            desc = self._describe_action(t, c, v)
+            display_parts.append(desc)
             if v:
                 summary_parts.append(f"{t}: {c} → {v}")
             else:
@@ -249,5 +253,86 @@ class UIControllerTool(BaseTool):
         return ToolResult(
             success=True,
             message=summary,
-            data=result_data,
+            metadata={
+                **result_data,
+                "display_message": " | ".join(display_parts),
+            },
         )
+
+    @staticmethod
+    def _describe_action(target: str, command: str, value: Any = None) -> str:
+        """Generate a human-readable description for a single UI action."""
+        # Panel switching
+        if target == "panel":
+            names = {"input": "Input", "metrics": "Metrics", "seeds": "Seeds", "viewers": "Viewers"}
+            return f"Switched to {names.get(value, value)} panel"
+
+        # Viewer settings
+        if target == "viewer.window":
+            if command == "set":
+                return f"Window width set to {value}"
+            return f"Window width {command}d by {value or 50}"
+        if target == "viewer.level":
+            if command == "set":
+                return f"Window level set to {value}"
+            return f"Window level {command}d by {value or 20}"
+        if target == "viewer.zoom":
+            if command == "fit":
+                return "Zoom reset to fit view"
+            if command == "set":
+                return f"Zoom set to {value}%"
+            return f"Zoom {command}d by {value or 20}%"
+        if target == "viewer.threshold":
+            return f"HU threshold set to {value}"
+
+        # Overlay controls
+        if target == "overlay.ctv":
+            return f"CTV overlay {'shown' if command == 'show' else 'hidden' if command == 'hide' else 'toggled'}"
+        if target == "overlay.oar":
+            return f"OAR overlay {'shown' if command == 'show' else 'hidden' if command == 'hide' else 'toggled'}"
+        if target == "overlay.ctv.opacity":
+            return f"CTV overlay opacity set to {value}%"
+        if target == "overlay.oar.opacity":
+            return f"OAR overlay opacity set to {value}%"
+        if target == "overlay.display_mode":
+            mode_names = {"ct": "CT only", "overlay": "CT + overlay", "label": "Label only"}
+            return f"Display mode changed to {mode_names.get(value, value)}"
+
+        # Slice navigation
+        if target.startswith("slice."):
+            axis = target.split(".")[1]
+            if command == "set":
+                return f"Navigated to {axis} slice {value}"
+            if command in ("next", "prev"):
+                return f"Moved to {command} {axis} slice"
+            if command in ("first", "last"):
+                return f"Navigated to {command} {axis} slice"
+            return f"{axis} slice: {command}"
+
+        # Layout
+        if target == "layout":
+            return f"Viewer layout changed to {value}"
+
+        # Presets
+        if target == "preset":
+            return f"Applied {value} window preset"
+
+        # Data tree
+        if target == "data_tree":
+            return f"Data tree '{value}' group {command}ed"
+
+        # Tools
+        if target == "tool":
+            tool_names = {
+                "crosshair": "crosshair", "measure": "measurement",
+                "angle": "angle measurement", "rect": "rectangle ROI",
+                "zoombox": "zoom box", "annotate": "annotation", "eraser": "eraser",
+            }
+            return f"Activated {tool_names.get(value, value)} tool"
+
+        # 3D
+        if target == "3d.reconstruct":
+            return f"3D reconstruction started for '{value}'"
+
+        # Fallback
+        return f"{target}: {command}" + (f" → {value}" if value else "")

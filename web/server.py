@@ -798,6 +798,30 @@ def create_app(config: Optional[Dict] = None):
             logger.error(f"Viewer HU failed: {e}")
             return jsonify({"error": str(e)}), 500
 
+    def _laplacian_smooth(vertices, faces, iterations=3, factor=0.3):
+        """Lightweight Laplacian mesh smoothing using numpy.
+        Moves each vertex toward the centroid of its neighbors."""
+        import numpy as np
+        from collections import defaultdict
+
+        # Build vertex adjacency from faces
+        adj = defaultdict(set)
+        for f in faces:
+            adj[f[0]].add(f[1]); adj[f[0]].add(f[2])
+            adj[f[1]].add(f[0]); adj[f[1]].add(f[2])
+            adj[f[2]].add(f[0]); adj[f[2]].add(f[1])
+
+        verts = vertices.copy().astype(np.float64)
+        for _ in range(iterations):
+            new_verts = verts.copy()
+            for vi, neighbors in adj.items():
+                if not neighbors:
+                    continue
+                centroid = verts[list(neighbors)].mean(axis=0)
+                new_verts[vi] += factor * (centroid - verts[vi])
+            verts = new_verts
+        return verts
+
     @app.route("/api/viewer/3d", methods=["POST"])
     def api_viewer_3d():
         """Generate 3D mesh from CTV or OAR mask."""
@@ -837,11 +861,17 @@ def create_app(config: Optional[Dict] = None):
             mask = binary_fill_holes(mask).astype(np.uint8)
 
             spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
-            spacing = tuple(float(s) for s in spacing[:3])
+            # SimpleITK spacing is (X, Y, Z), numpy array is (Z, Y, X)
+            # marching_cubes expects spacing in array axis order (sz, sy, sx)
+            spacing_xyz = tuple(float(s) for s in spacing[:3])
+            spacing_zyx = spacing_xyz[::-1]
 
             vertices, faces, normals, values = measure.marching_cubes(
-                mask, level=0.5, spacing=spacing, allow_degenerate=False
+                mask, level=0.5, spacing=spacing_zyx, allow_degenerate=False
             )
+
+            # Smooth jagged marching-cubes surface
+            vertices = _laplacian_smooth(vertices, faces, iterations=3, factor=0.3)
 
             return jsonify({
                 "success": True,
@@ -897,11 +927,12 @@ def create_app(config: Optional[Dict] = None):
 
             # Get spacing from CT data
             spacing = agent.memory.retrieve("ct_spacing") or (1.0, 1.0, 1.0)
-            # Ensure spacing is tuple of 3 floats
+            # SimpleITK spacing is (X, Y, Z), numpy array is (Z, Y, X)
+            # marching_cubes expects spacing in array axis order (sz, sy, sx)
             if isinstance(spacing, (list, tuple)) and len(spacing) >= 3:
-                spacing = tuple(float(s) for s in spacing[:3])
+                spacing_zyx = tuple(float(s) for s in spacing[:3])[::-1]
             else:
-                spacing = (1.0, 1.0, 1.0)
+                spacing_zyx = (1.0, 1.0, 1.0)
 
             # Generate mesh with marching cubes
             # Ensure level is within data range
@@ -912,8 +943,11 @@ def create_app(config: Optional[Dict] = None):
             if data_min == data_max:
                 return jsonify({"error": "Mask is uniform, cannot generate mesh"}), 400
             vertices, faces, normals, values = measure.marching_cubes(
-                binary_mask, level=level, spacing=spacing, allow_degenerate=False
+                binary_mask, level=level, spacing=spacing_zyx, allow_degenerate=False
             )
+
+            # Smooth jagged marching-cubes surface
+            vertices = _laplacian_smooth(vertices, faces, iterations=3, factor=0.3)
 
             # Simple decimation: if too many faces, use quadric decimation
             if len(faces) > 50000:
@@ -964,16 +998,19 @@ def create_app(config: Optional[Dict] = None):
             from skimage import measure
 
             spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
-            spacing = tuple(float(s) for s in spacing[:3])
+            # SimpleITK spacing is (X, Y, Z), numpy array is (Z, Y, X)
+            # marching_cubes expects spacing in array axis order (sz, sy, sx)
+            spacing_xyz = tuple(float(s) for s in spacing[:3])
+            spacing_zyx = spacing_xyz[::-1]
 
             # Subsample for faster mesh generation if volume is large
             if ct_data.shape[0] > 64:
                 step = max(1, ct_data.shape[0] // 64)
                 ct_sub = ct_data[::step, ::step, ::step]
-                sub_spacing = (spacing[0] * step, spacing[1] * step, spacing[2] * step)
+                sub_spacing = (spacing_zyx[0] * step, spacing_zyx[1] * step, spacing_zyx[2] * step)
             else:
                 ct_sub = ct_data
-                sub_spacing = spacing
+                sub_spacing = spacing_zyx
 
             data_min, data_max = float(ct_sub.min()), float(ct_sub.max())
             level = float(threshold)
@@ -981,6 +1018,9 @@ def create_app(config: Optional[Dict] = None):
                 level = (data_min + data_max) / 2.0
 
             vertices, faces, _, _ = measure.marching_cubes(ct_sub, level=level, spacing=sub_spacing, allow_degenerate=False)
+
+            # Smooth jagged marching-cubes surface
+            vertices = _laplacian_smooth(vertices, faces, iterations=2, factor=0.2)
 
             # Decimate if too many faces
             if len(faces) > 100000:
