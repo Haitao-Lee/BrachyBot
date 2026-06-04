@@ -2103,6 +2103,9 @@ print(json.dumps(result))
 
     def _clean_response_text(self, content: str) -> str:
         """Remove tool call blocks from LLM response, keep only user-facing text."""
+        # Strip internal context labels that LLM might echo back
+        content = re.sub(r'\[Historical reference[^\]]*\]\s*', '', content)
+        content = re.sub(r'\[MANDATORY:[^\]]*\]\s*', '', content)
         stripped = content.strip()
 
         # If content is purely a JSON tool call object, return empty
