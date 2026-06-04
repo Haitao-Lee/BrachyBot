@@ -1179,88 +1179,92 @@
         .viewers-panel {
             padding: 0.5rem;
             display: flex; flex-direction: column; gap: 0.5rem;
-            overflow: hidden;
+            overflow-y: auto;  /* Allow scrolling when cards stretch beyond view */
+            overflow-x: hidden;
             position: relative;
             flex: 1;
             min-height: 0;
         }
-        /* Default vertical: cards share space equally */
+        /* Default vertical: each card gets equal share, can stretch freely */
         .viewers-panel > .viewer-card {
             flex: 1 1 0;
-            min-height: 0;
-            height: 0;
+            min-height: 200px;  /* Minimum usable height */
         }
         .viewers-panel > .viewer-card.viewer-card-3d {
             flex: 1.15 1 0;
         }
 
-        /* Grid: 2×2 */
+        /* Grid: 2×2 — equal cells */
         .viewers-panel.layout-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             grid-template-rows: 1fr 1fr;
             gap: 0.5rem;
+            overflow-y: auto;
         }
         .viewers-panel.layout-grid > .viewer-card {
             height: auto;
-            min-height: 0;
+            min-height: 200px;
         }
 
-        /* Horizontal: 4 cards side by side */
+        /* Horizontal: 4 cards side by side — equal width, scrollable */
         .viewers-panel.layout-horizontal {
             flex-direction: row;
             flex-wrap: nowrap;
-            overflow: hidden;
+            overflow-x: auto;
+            overflow-y: hidden;
             align-items: stretch;
         }
         .viewers-panel.layout-horizontal > .viewer-card {
             flex: 1 1 0;
-            min-width: 0;
+            min-width: 200px;
             height: auto;
         }
 
         /* 3D-top: 3D on top, 3 viewers in row below */
         .viewers-panel.layout-3d-top {
             flex-direction: column;
+            overflow-y: auto;
         }
         .viewers-panel.layout-3d-top > .viewer-card-3d {
             flex: none;
-            height: 35%;
-            min-height: 150px;
+            height: 300px;
+            min-height: 200px;
         }
         .viewers-panel.layout-3d-top .viewers-row {
             display: flex;
             gap: 0.5rem;
             flex: 1 1 0;
-            min-height: 0;
+            min-height: 200px;
         }
         .viewers-panel.layout-3d-top .viewers-row > .viewer-card {
             flex: 1 1 0;
             min-width: 0;
-            min-height: 0;
+            min-height: 200px;
             height: auto;
         }
 
         /* 3D-bottom: 3 viewers in row on top, 3D below */
         .viewers-panel.layout-3d-bottom {
             flex-direction: column;
+            overflow-y: auto;
         }
         .viewers-panel.layout-3d-bottom .viewers-row {
             display: flex;
             gap: 0.5rem;
             flex: 1 1 0;
-            min-height: 0;
+            min-height: 200px;
         }
         .viewers-panel.layout-3d-bottom .viewers-row > .viewer-card {
             flex: 1 1 0;
             min-width: 0;
-            min-height: 0;
+            min-height: 200px;
             height: auto;
         }
         .viewers-panel.layout-3d-bottom > .viewer-card-3d {
             flex: none;
-            height: 35%;
-            min-height: 150px;
+            height: 300px;
+            min-height: 200px;
         }
         .layout-btn.active {
             background: var(--primary) !important;
@@ -1280,11 +1284,13 @@
         .viewer-card:hover { z-index: 5; }
         /* Fullscreen: card takes all remaining space in the flex column (other cards hidden) */
         .viewer-card.fullscreen {
-            position: absolute !important;
-            top: 0; left: 0; right: 0; bottom: 0;
+            position: sticky !important;
+            top: 0;
             z-index: 200;
             border-radius: 0;
             height: auto !important;
+            flex: 1 1 auto !important;
+            min-height: 100vh;
         }
         .viewer-card.fullscreen .viewer-card-body {
             position: absolute;
@@ -2581,16 +2587,13 @@ function toggleViewerFullscreen(view) {
         // Restore from fullscreen
         card.classList.remove('fullscreen');
         document.body.classList.remove('viewer-fullscreen');
-        // Restore all cards and clear inline overrides
         allCards.forEach(c => {
             c.style.display = '';
             c.style.height = '';
             c.style.flex = '';
         });
-        viewersPanel.style.display = '';
-        // Update button icon
+        viewersPanel.style.overflowY = '';
         card.querySelector('.viewer-card-expand-btn').innerHTML = '&#9974;';
-        // Re-render all canvases after layout settles
         setTimeout(() => {
             ['axial', 'sagittal', 'coronal'].forEach(axis => {
                 resizeCanvas(axis);
@@ -2602,13 +2605,11 @@ function toggleViewerFullscreen(view) {
         // Enter fullscreen
         card.classList.add('fullscreen');
         document.body.classList.add('viewer-fullscreen');
-        // Hide other cards
         allCards.forEach(c => {
             if (c !== card) c.style.display = 'none';
         });
-        // Update button icon to collapse
+        viewersPanel.style.overflowY = 'hidden';
         card.querySelector('.viewer-card-expand-btn').innerHTML = '&#10006;';
-        // Re-render canvas after layout settles
         setTimeout(() => {
             const axis = card.id.replace('viewer', '').toLowerCase();
             if (axis !== '3d') {
@@ -2620,50 +2621,35 @@ function toggleViewerFullscreen(view) {
     }
 }
 
-/******** PER-VIEWER VERTICAL RESIZE (redistributes space between adjacent cards) ********/
+/******** VIEWER RESIZE — free stretching with scroll overflow ********/
 function setupViewerResizers() {
     document.querySelectorAll('.viewer-resize-h').forEach(handle => {
         let resizing = false;
         let startY = 0;
-        let startHCard = 0;
-        let startHNext = 0;
+        let startH = 0;
         let card = null;
-        let nextCard = null;
 
         handle.addEventListener('mousedown', e => {
             const view = handle.dataset.view;
             card = document.getElementById('viewer' + capitalize(view));
             if (!card || card.classList.contains('fullscreen')) return;
-            // Find the next visible sibling card
-            nextCard = card.nextElementSibling;
-            while (nextCard && (!nextCard.classList.contains('viewer-card') || nextCard.style.display === 'none')) {
-                nextCard = nextCard.nextElementSibling;
-            }
-            if (!nextCard) return; // no sibling to redistribute to
             resizing = true;
             startY = e.clientY;
-            startHCard = card.offsetHeight;
-            startHNext = nextCard.offsetHeight;
+            startH = card.offsetHeight;
+            card.style.flex = 'none';  // Switch to fixed height
             document.body.style.cursor = 'row-resize';
             document.body.style.userSelect = 'none';
             e.preventDefault();
         });
 
         document.addEventListener('mousemove', e => {
-            if (!resizing || !card || !nextCard) return;
+            if (!resizing || !card) return;
             const dy = e.clientY - startY;
-            const totalH = startHCard + startHNext;
-            const newHCard = Math.max(120, Math.min(totalH - 120, startHCard + dy));
-            const newHNext = totalH - newHCard;
-            card.style.flex = 'none';
-            card.style.height = newHCard + 'px';
-            nextCard.style.flex = 'none';
-            nextCard.style.height = newHNext + 'px';
-            // Trigger canvas resize for both
-            const axis1 = card.id.replace('viewer', '').toLowerCase();
-            const axis2 = nextCard.id.replace('viewer', '').toLowerCase();
-            if (axis1 !== '3d') requestAnimationFrame(() => resizeCanvas(axis1));
-            if (axis2 !== '3d') requestAnimationFrame(() => resizeCanvas(axis2));
+            const newH = Math.max(150, startH + dy);  // Min 150px, no max
+            card.style.height = newH + 'px';
+            // Trigger canvas resize
+            const axis = card.id.replace('viewer', '').toLowerCase();
+            if (axis !== '3d') requestAnimationFrame(() => resizeCanvas(axis));
         });
 
         document.addEventListener('mouseup', () => {
