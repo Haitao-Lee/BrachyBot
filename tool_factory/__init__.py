@@ -15,13 +15,24 @@ logger = logging.getLogger(__name__)
 
 
 class ToolResult:
-    """Standardized result object returned by all tools."""
-    
+    """Standardized result object returned by all tools.
+
+    Fields:
+        success: Whether the tool executed successfully
+        data: Raw data (for programmatic use)
+        message: Machine-readable summary (for LLM context, logging)
+        display: Human-readable markdown (for user-facing response)
+        metadata: Additional structured data
+        error: Error message if failed
+        execution_time: Time taken in seconds
+    """
+
     def __init__(
         self,
         success: bool,
         data: Any = None,
         message: str = "",
+        display: str = "",
         metadata: Optional[Dict] = None,
         error: Optional[str] = None,
         execution_time: float = 0.0,
@@ -29,19 +40,21 @@ class ToolResult:
         self.success = success
         self.data = data
         self.message = message
+        self.display = display
         self.metadata = metadata or {}
         self.error = error
         self.execution_time = execution_time
-    
+
     def to_dict(self) -> Dict:
         return {
             "success": self.success,
             "message": self.message,
+            "display": self.display,
             "metadata": self.metadata,
             "error": self.error,
             "execution_time": self.execution_time,
         }
-    
+
     def __repr__(self):
         status = "SUCCESS" if self.success else "FAILED"
         return f"ToolResult({status}: {self.message})"
@@ -124,3 +137,44 @@ class BaseTool(ABC):
     
     def __repr__(self):
         return f"Tool({self.name}: {self.description})"
+
+
+class SegmentationTool(BaseTool):
+    """Base class for segmentation tools. Provides standard display format."""
+
+    def _make_segmentation_display(self, result: ToolResult, title: str, **metrics) -> None:
+        """Set result.display with standard segmentation table format.
+
+        Args:
+            result: The ToolResult to set display on
+            title: Display title (e.g., "CTV Segmentation", "OAR Segmentation")
+            **metrics: Key-value pairs for the metrics table
+        """
+        lines = [f"## 🎯 {title}"]
+        lines.append("")
+        lines.append("| Metric | Value |")
+        lines.append("|--------|-------|")
+        for k, v in metrics.items():
+            if isinstance(v, float):
+                lines.append(f"| {k} | {v:.1f} |")
+            elif isinstance(v, int):
+                lines.append(f"| {k} | {v:,} |")
+            else:
+                lines.append(f"| {k} | {v} |")
+        lines.append("")
+        lines.append("✅ Results displayed in the Viewer panel.")
+        result.display = "\n".join(lines)
+
+
+class AnalysisTool(BaseTool):
+    """Base class for analysis tools. Provides standard display format."""
+
+    def _make_analysis_display(self, result: ToolResult, title: str, params: dict) -> None:
+        """Set result.display with standard analysis table format."""
+        lines = [f"## 🔍 {title}"]
+        lines.append("")
+        lines.append("| Parameter | Value |")
+        lines.append("|-----------|-------|")
+        for k, v in params.items():
+            lines.append(f"| {k} | {v} |")
+        result.display = "\n".join(lines)

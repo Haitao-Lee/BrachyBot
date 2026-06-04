@@ -408,6 +408,221 @@ class AgentMemory:
         logger.info(f"Agent state exported to {path}")
 
 
+class ToolResultPipeline:
+    """Unified tool result formatting and synthesis pipeline.
+
+    Replaces scattered _format_tool_result, _build_direct_response, _synthesize_with_llm.
+    Single entry point for all tool result processing.
+
+    Flow:
+        ToolResult → format() → synthesize() → Response
+    """
+
+    # Tool name → display category mapping
+    _SEGMENTATION_TOOLS = {"ctv_segmentation", "oar_segmentation", "seed_segmentation"}
+    _ANALYSIS_TOOLS = {"code_executor"}
+    _UI_TOOLS = {"ui_controller"}
+
+    @staticmethod
+    def format(tool_name: str, result, lang: str = "en") -> str:
+        """Single entry point for formatting tool results.
+
+        Priority: result.display > auto-generated from metadata > result.message > generic
+        """
+        if not result.success:
+            return f"Error: {result.error}" if lang == "en" else f"错误: {result.error}"
+
+        # 1. Use tool's own display if set
+        if result.display:
+            return result.display
+
+        meta = result.metadata or {}
+
+        # 2. Auto-generate based on tool category
+        if tool_name in ToolResultPipeline._SEGMENTATION_TOOLS:
+            return ToolResultPipeline._format_segmentation(tool_name, result, meta, lang)
+        if tool_name in ToolResultPipeline._ANALYSIS_TOOLS:
+            return ToolResultPipeline._format_analysis(tool_name, result, meta, lang)
+        if tool_name in ToolResultPipeline._UI_TOOLS:
+            return ToolResultPipeline._format_ui(tool_name, result, meta, lang)
+
+        # 3. Use display_message from metadata (legacy support)
+        display_msg = meta.get("display_message")
+        if display_msg:
+            return display_msg
+
+        # 4. Fallback to message
+        return result.message or f"{tool_name} completed."
+
+    @staticmethod
+    def _format_segmentation(tool_name: str, result, meta: dict, lang: str) -> str:
+        """Format segmentation tool results."""
+        if tool_name == "ctv_segmentation":
+            vol = meta.get("ctv_volume_mm3", 0)
+            vox = meta.get("ctv_voxel_count", 0)
+            lines = [
+                "## 🎯 CTV Segmentation",
+                "",
+                "| Metric | Value |",
+                "|--------|-------|",
+                f"| Volume | {vol:.1f} mm³ ({vol/1000:.1f} cm³) |",
+                f"| Voxels | {vox:,} |",
+                "",
+                "✅ Results displayed in the Viewer panel.",
+            ]
+            return "\n".join(lines)
+        elif tool_name == "oar_segmentation":
+            organ_names = meta.get("organ_names", {})
+            count = len(organ_names) if organ_names else 0
+            lines = [
+                "## 🎯 OAR Segmentation",
+                "",
+                "| Metric | Value |",
+                "|--------|-------|",
+                f"| Organs segmented | {count} |",
+                "",
+                "✅ Results displayed in the Viewer panel.",
+            ]
+            return "\n".join(lines)
+        return result.message or f"{tool_name} completed."
+
+    @staticmethod
+    def _format_analysis(tool_name: str, result, meta: dict, lang: str) -> str:
+        """Format analysis tool results (code_executor with CT stats)."""
+        if tool_name == "code_executor" and isinstance(result.data, dict):
+            stdout = result.data.get("stdout", "").strip()
+            if stdout:
+                try:
+                    import json as _json
+                    d = _json.loads(stdout)
+                    if isinstance(d, dict) and "dimensions" in d:
+                        dims = d["dimensions"]
+                        vs = d["voxel_size"]
+                        sr = d["scan_range_cm"]
+                        hu = d["hu_range"]
+                        lines = [
+                            "## 🔍 CT Analysis",
+                            "",
+                            "| Parameter | Value |",
+                            "|-----------|-------|",
+                            f"| Dimensions | {dims[0]} × {dims[1]} × {dims[2]} voxels |",
+                            f"| Voxel size | {vs[0]} × {vs[1]} × {vs[2]} mm |",
+                            f"| Scan range | {sr[0]} × {sr[1]} × {sr[2]} cm |",
+                            f"| HU range | {hu[0]} ~ {hu[1]} |",
+                            f"| Mean HU | {d.get('mean_hu', 'N/A')} |",
+                        ]
+                        tissues = d.get("tissues", [])
+                        if tissues:
+                            lines.append("")
+                            lines.append("| Tissue | HU Range | Share |")
+                            lines.append("|--------|----------|-------|")
+                            for t in tissues:
+                                lines.append(f"| {t['name']} | {t['range']} | {t['pct']}% |")
+                        return "\n".join(lines)
+                except (ValueError, KeyError, TypeError):
+                    pass
+                return "\n".join(l.strip() for l in stdout.split('\n') if l.strip())
+        return result.message or f"{tool_name} completed."
+
+    @staticmethod
+    def _format_ui(tool_name: str, result, meta: dict, lang: str) -> str:
+        """Format UI controller results."""
+        display_msg = meta.get("display_message")
+        if display_msg:
+            return display_msg
+        return result.message or f"{tool_name} completed."
+
+    @staticmethod
+    def format_steps(steps: List[dict], lang: str = "en") -> str:
+        """Format all tool steps into a raw concatenated response (no LLM synthesis)."""
+        parts = []
+        errors = []
+        for s in steps:
+            if s.get("type") != "tool":
+                continue
+            tool = s.get("tool", "")
+            status = s.get("status", "")
+            result = s.get("result", "")
+            if status == "error":
+                errors.append(f"❌ {tool}: {result}")
+                continue
+            if result:
+                parts.append(result)
+        if errors:
+            parts.append(("## ⚠️ " + ("问题" if lang == "zh" else "Issues")) + "\n" + "\n".join(errors))
+        return "\n\n".join(parts) or ("工具已执行。" if lang == "zh" else "Tools executed.")
+
+    @staticmethod
+    def synthesize(formatted_results: List[dict], user_message: str, brain_router, lang: str) -> str:
+        """Call LLM once to synthesize all tool results into coherent narrative.
+
+        Args:
+            formatted_results: List of {"tool": str, "display": str}
+            user_message: Original user question
+            brain_router: LLM router for synthesis call
+            lang: "zh" or "en"
+
+        Returns:
+            Synthesized response string, or concatenated results if LLM fails.
+        """
+        if not formatted_results:
+            return ""
+
+        # Build raw concatenation as fallback
+        raw_parts = [r["display"] for r in formatted_results if r.get("display")]
+        raw_fallback = "\n\n".join(raw_parts)
+
+        if not brain_router:
+            return raw_fallback
+
+        # Build synthesis prompt
+        tool_summary = []
+        for r in formatted_results:
+            name = r.get("tool", "")
+            display = r.get("display", "")
+            if display:
+                tool_summary.append(f"[{name}]\n{display[:500]}")
+
+        if not tool_summary:
+            return raw_fallback
+
+        if lang == "zh":
+            synth_prompt = (
+                f"用户问题: {user_message}\n\n"
+                "你刚刚自动执行了以下工具来回答用户问题。"
+                "请基于结果生成一个连贯的中文回复。要求：\n"
+                "1. **全部用中文回复**——包括搜索结果的摘要、文献介绍、所有内容必须翻译成中文\n"
+                "2. 先用一句话说明做了什么（如：已完成CT分析、CTV分割和OAR分割）\n"
+                "3. 总结各工具的关键结果\n"
+                "4. 对关键数据给出简要解读\n"
+                "5. 如有异常（如分割体积为0），明确指出并建议\n"
+                "6. 不要重复原始表格，用自然语言概括\n"
+                "7. 如有URL，保持可点击格式\n\n"
+                "工具执行结果：\n" + "\n\n".join(tool_summary)
+            )
+        else:
+            synth_prompt = (
+                f"User question: {user_message}\n\n"
+                "You just executed the following tools. Generate a coherent English response.\n"
+                "Requirements:\n"
+                "1. **Respond entirely in English** — translate any non-English content\n"
+                "2. Summarize what was done and the results of each tool\n"
+                "3. Briefly interpret key data points\n"
+                "4. Note any anomalies (e.g., zero volume) and suggest next steps\n"
+                "5. Don't repeat raw tables — summarize in natural language\n"
+                "6. Keep URLs clickable\n\n"
+                "Tool results:\n" + "\n\n".join(tool_summary)
+            )
+
+        try:
+            resp = brain_router.chat(synth_prompt)
+            synthesized = resp.content if hasattr(resp, 'content') else str(resp)
+            return synthesized.strip() if synthesized.strip() else raw_fallback
+        except Exception as e:
+            logger.warning(f"LLM synthesis failed, using raw results: {e}")
+            return raw_fallback
+
+
 class BrachyAgent:
     """
     LLM-driven brachytherapy planning agent with self-evolution.
@@ -1042,66 +1257,8 @@ class BrachyAgent:
 
     @staticmethod
     def _format_tool_result(tool_name: str, result, lang: str = "en") -> str:
-        """Format tool result for display with structured markdown output."""
-        if not result.success:
-            return f"Error: {result.error}" if lang == "en" else f"错误: {result.error}"
-
-        # code_executor: parse JSON output and format as table
-        if tool_name == "code_executor" and isinstance(result.data, dict):
-            stdout = result.data.get("stdout", "").strip()
-            if not stdout:
-                return str(result.data)[:500]
-            # Try to parse as JSON for structured output
-            try:
-                import json as _json
-                d = _json.loads(stdout)
-                if isinstance(d, dict) and "dimensions" in d:
-                    # CT analysis result — format as table
-                    dims = d["dimensions"]
-                    vs = d["voxel_size"]
-                    sr = d["scan_range_cm"]
-                    hu = d["hu_range"]
-                    lines = [
-                        f"| Parameter | Value |",
-                        f"|-----------|-------|",
-                        f"| Dimensions | {dims[0]} × {dims[1]} × {dims[2]} voxels |",
-                        f"| Voxel size | {vs[0]} × {vs[1]} × {vs[2]} mm |",
-                        f"| Scan range | {sr[0]} × {sr[1]} × {sr[2]} cm |",
-                        f"| HU range | {hu[0]} ~ {hu[1]} |",
-                        f"| Mean HU | {d.get('mean_hu', 'N/A')} |",
-                    ]
-                    tissues = d.get("tissues", [])
-                    if tissues:
-                        lines.append("")
-                        lines.append("| Tissue | HU Range | Share |")
-                        lines.append("|--------|----------|-------|")
-                        for t in tissues:
-                            lines.append(f"| {t['name']} | {t['range']} | {t['pct']}% |")
-                    return "\n".join(lines)
-            except (ValueError, KeyError, TypeError):
-                pass
-            # Fallback: plain text
-            return "\n".join(l.strip() for l in stdout.split('\n') if l.strip())
-
-        # Segmentation tools: format as compact table
-        if tool_name == "ctv_segmentation" and result.message:
-            meta = result.metadata or {}
-            vol = meta.get("ctv_volume_mm3", 0)
-            vox = meta.get("ctv_voxel_count", 0)
-            return (
-                f"| Metric | Value |\n|--------|-------|\n"
-                f"| Volume | {vol:.1f} mm³ ({vol/1000:.1f} cm³) |\n"
-                f"| Voxels | {vox:,} |"
-            )
-
-        if tool_name == "oar_segmentation" and result.message:
-            meta = result.metadata or {}
-            organ_names = meta.get("organ_names", {})
-            count = len(organ_names) if organ_names else 0
-            return f"| Metric | Value |\n|--------|-------|\n| Organs segmented | {count} |"
-
-        # All other tools: use result.message directly
-        return result.message or f"{tool_name} completed."
+        """Format tool result for display. Uses result.display, then auto-generates from metadata."""
+        return ToolResultPipeline.format(tool_name, result, lang)
 
     # --- Analysis code template (used by direct execution) ---
     _ANALYSIS_CODE_TEMPLATE = """
@@ -1213,48 +1370,27 @@ print(json.dumps(result))
                 tool_step["result"] = str(e)
                 logger.error(f"Direct tool failed: {tc['tool']}: {e}")
 
-        return self._build_direct_response(steps, _lang)
+        # Build raw results summary, then synthesize with LLM
+        raw_results = self._build_direct_response(steps, _lang)
+        # Get the original user message from conversation history
+        user_msg = ""
+        for msg in reversed(self.memory.conversation):
+            if msg.get("role") == "user":
+                user_msg = msg.get("content", "")
+                break
+        return self._synthesize_with_llm(raw_results, steps, _lang, user_msg)
 
     def _build_direct_response(self, steps: List, lang: str) -> str:
-        """Build structured response grouped by category, with task checklist."""
-        analysis = []
-        segmentation = []
-        other = []
-        errors = []
-        for s in steps:
-            if s.get("type") != "tool":
-                continue
-            tool = s.get("tool", "")
-            status = s.get("status", "")
-            result = s.get("result", "")
-            if status == "error":
-                errors.append(f"❌ {tool}: {result}")
-                continue
-            if not result:
-                continue
-            if tool == "code_executor":
-                analysis.append(result)
-            elif "segmentation" in tool:
-                segmentation.append(result)
-            else:
-                other.append(result)
+        """Build structured response. Delegates to ToolResultPipeline."""
+        return ToolResultPipeline.format_steps(steps, lang)
 
-        parts = []
-        if lang == "zh":
-            if analysis: parts.append(f"## 🔍 分析结果\n" + "\n".join(analysis))
-            if segmentation: parts.append(f"## 🎯 分割结果\n" + "\n".join(segmentation))
-            if other: parts.append("\n\n".join(other))
-            if errors: parts.append(f"## ⚠️ 问题\n" + "\n".join(errors))
-            if segmentation and not errors:
-                parts.append("✅ 分割结果已自动显示在 Viewer 面板中。")
-        else:
-            if analysis: parts.append(f"## 🔍 Analysis\n" + "\n".join(analysis))
-            if segmentation: parts.append(f"## 🎯 Segmentation\n" + "\n".join(segmentation))
-            if other: parts.append("\n\n".join(other))
-            if errors: parts.append(f"## ⚠️ Issues\n" + "\n".join(errors))
-            if segmentation and not errors:
-                parts.append("✅ Segmentation results are displayed in the Viewer panel.")
-        return "\n\n".join(parts) or "Tools executed."
+    def _synthesize_with_llm(self, raw_results: str, steps: List, lang: str, user_message: str = "") -> str:
+        """Synthesize tool results. Delegates to ToolResultPipeline."""
+        formatted = []
+        for s in steps:
+            if s.get("type") == "tool" and s.get("status") == "done":
+                formatted.append({"tool": s.get("tool", ""), "display": s.get("result", "")})
+        return ToolResultPipeline.synthesize(formatted, user_message, self.brain_router, lang)
 
     def _detect_realtime_query(self, message: str) -> Optional[str]:
         """Detect if the message requires a real-time web search.
@@ -1546,6 +1682,7 @@ print(json.dumps(result))
         tools_executed = False
         accumulated_text = ""  # Preserve text across LLM iterations
         _failed_tools = set()  # Track tools that returned 0/empty results
+        _lang = self.memory.user_lang
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         total_latency_ms = 0.0
         llm_calls = 0
@@ -1668,27 +1805,7 @@ print(json.dumps(result))
                 elif tool_name in self.registry.tool_names:
                     try:
                         result = self._execute_tool_with_memory(tool_name, params)
-                        if result.success:
-                            result_text = result.message
-                            # Include actual output for code_executor so LLM can summarize
-                            if tool_name == "code_executor" and hasattr(result, "data") and result.data:
-                                stdout = result.data.get("stdout", "").strip()
-                                if stdout:
-                                    result_text = stdout[:1000]
-                            if result.success and hasattr(result, "metadata") and result.metadata:
-                                metrics_summary = {}
-                                for k, v in result.metadata.items():
-                                    if isinstance(v, (int, float)) and not isinstance(v, bool):
-                                        metrics_summary[k] = v
-                                if metrics_summary:
-                                    result_text += f" | Metrics: {metrics_summary}"
-                        else:
-                            # Include data.stderr if available (for code_executor)
-                            error_msg = result.error or ""
-                            if hasattr(result, "data") and result.data and "stderr" in result.data:
-                                stderr = result.data["stderr"][:300]
-                                error_msg = f"{error_msg}: {stderr}" if error_msg else stderr
-                            result_text = f"Error: {error_msg}" if error_msg else "Error: execution failed"
+                        result_text = ToolResultPipeline.format(tool_name, result, lang=_lang)
                     except Exception as e:
                         result_text = f"Exception: {str(e)}"
                         logger.error(f"Tool {tool_name} failed: {e}")
@@ -1728,7 +1845,9 @@ print(json.dumps(result))
                     "Based on the tool results above, present the findings directly. "
                     "Do NOT search again. Do NOT say 'let me fetch more'. "
                     "Summarize and present what was found. "
-                    "Respond in the SAME language as the user's original question."
+                    "CRITICAL: Your ENTIRE response must be in the SAME language as the user's original question. "
+                    "If the user wrote in Chinese, ALL content must be in Chinese — translate any English snippets. "
+                    "If the user wrote in English, ALL content must be in English."
                 )
                 messages.append({"role": "user", "content": _present_instruction})
 
@@ -2469,7 +2588,9 @@ print(json.dumps(result))
                     "Based on the tool results above, present the findings directly. "
                     "Do NOT search again. Do NOT say 'let me fetch more'. "
                     "Summarize and present what was found. "
-                    "Respond in the SAME language as the user's original question."
+                    "CRITICAL: Your ENTIRE response must be in the SAME language as the user's original question. "
+                    "If the user wrote in Chinese, ALL content must be in Chinese — translate any English snippets. "
+                    "If the user wrote in English, ALL content must be in English."
                 )
                 messages.append({"role": "user", "content": _present_instruction})
 
@@ -2880,7 +3001,10 @@ print(json.dumps(result))
                     yield yield_event("step", step)
                     logger.error(f"Direct tool failed: {tc['tool']}: {e}")
 
-            response = self._build_direct_response(steps, _lang)
+            raw_response = self._build_direct_response(steps, _lang)
+            # Synthesize with LLM for coherent narrative
+            user_msg = message
+            response = self._synthesize_with_llm(raw_response, steps, _lang, user_msg)
             self.memory.add_message("assistant", response)
             yield yield_event("response", {"response": response})
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})

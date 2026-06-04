@@ -8,7 +8,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-javascript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-json.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <style>
@@ -346,17 +352,64 @@
 
         /* Markdown styles */
         .md-code-block {
-            background: var(--bg-4);
-            border: 1px solid var(--card-border);
-            border-radius: 6px;
-            padding: 0.4rem 0.6rem;
-            margin: 0.3rem 0;
-            font-family: 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace;
+            background: #1e1e2e;
+            border: 1px solid #313244;
+            border-radius: 8px;
+            padding: 0.6rem 0.8rem;
+            margin: 0.4rem 0;
+            font-family: 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Courier New', monospace;
             font-size: 0.72rem;
             overflow-x: auto;
             white-space: pre;
-            line-height: 1.3;
+            line-height: 1.5;
             position: relative;
+            color: #cdd6f4;
+            tab-size: 4;
+        }
+        .md-code-block code {
+            background: none;
+            padding: 0;
+            font-size: inherit;
+            color: inherit;
+        }
+        /* Prism.js token colors (Catppuccin Mocha inspired) */
+        .md-code-block .token.comment,
+        .md-code-block .token.prolog,
+        .md-code-block .token.doctype,
+        .md-code-block .token.cdata { color: #6c7086; font-style: italic; }
+        .md-code-block .token.punctuation { color: #bac2de; }
+        .md-code-block .token.property,
+        .md-code-block .token.tag,
+        .md-code-block .token.boolean,
+        .md-code-block .token.number,
+        .md-code-block .token.constant,
+        .md-code-block .token.symbol { color: #fab387; }
+        .md-code-block .token.selector,
+        .md-code-block .token.attr-name,
+        .md-code-block .token.string,
+        .md-code-block .token.char,
+        .md-code-block .token.builtin { color: #a6e3a1; }
+        .md-code-block .token.operator,
+        .md-code-block .token.entity,
+        .md-code-block .token.url { color: #89dceb; }
+        .md-code-block .token.atrule,
+        .md-code-block .token.attr-value,
+        .md-code-block .token.keyword { color: #cba6f7; }
+        .md-code-block .token.function,
+        .md-code-block .token.class-name { color: #89b4fa; }
+        .md-code-block .token.regex,
+        .md-code-block .token.important,
+        .md-code-block .token.variable { color: #f9e2af; }
+        .md-code-block .token.decorator,
+        .md-code-block .token.annotation { color: #f5c2e7; }
+        /* Inline code */
+        .md-inline-code, code:not([class*="language-"]) {
+            background: rgba(139,92,246,0.12);
+            color: #cba6f7;
+            padding: 0.1rem 0.35rem;
+            border-radius: 4px;
+            font-family: 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace;
+            font-size: 0.7rem;
         }
         .code-copy-btn {
             position: absolute;
@@ -416,7 +469,7 @@
             border-top: 1px solid var(--card-border);
             margin: 0.4rem 0;
         }
-        .md-h1, .md-h2, .md-h3 {
+        .md-h1, .md-h2, .md-h3, .md-h4, .md-h5 {
             margin: 0.4rem 0 0.15rem 0;
             font-weight: 600;
             line-height: 1.2;
@@ -424,8 +477,10 @@
         .md-h1 { font-size: 1.1rem; margin-top: 0.8rem; }
         .md-h2 { font-size: 0.95rem; margin-top: 0.6rem; }
         .md-h3 { font-size: 0.85rem; margin-top: 0.4rem; }
+        .md-h4 { font-size: 0.8rem; margin-top: 0.3rem; }
+        .md-h5 { font-size: 0.78rem; margin-top: 0.25rem; }
         /* First heading should not have top margin */
-        .md-h1:first-child, .md-h2:first-child, .md-h3:first-child {
+        .md-h1:first-child, .md-h2:first-child, .md-h3:first-child, .md-h4:first-child, .md-h5:first-child {
             margin-top: 0;
         }
 
@@ -1130,14 +1185,14 @@
             flex: 1;
             min-height: 0;
         }
-        /* Default vertical: cards have fixed height, can be resized freely */
+        /* Default vertical: cards share space equally via flex, resize adjusts ratios */
         .viewers-panel > .viewer-card {
-            flex: none;
-            height: 260px;
+            flex: 1 1 0;
             min-height: 120px;
+            height: 0; /* let flex distribute */
         }
         .viewers-panel > .viewer-card.viewer-card-3d {
-            height: 300px;
+            flex: 1.15 1 0; /* 3D viewer gets slightly more space */
         }
 
         /* Grid: 2x2 with fixed row heights */
@@ -2523,56 +2578,92 @@ function toggleViewerFullscreen(view) {
     if (!card) return;
 
     if (card.classList.contains('fullscreen')) {
-        // Restore
+        // Restore from fullscreen
         card.classList.remove('fullscreen');
         document.body.classList.remove('viewer-fullscreen');
-        card.style.height = card.dataset.prevHeight || '220px';
-        // Restore all cards
-        allCards.forEach(c => c.style.display = '');
+        // Restore all cards and clear inline overrides
+        allCards.forEach(c => {
+            c.style.display = '';
+            c.style.height = '';
+            c.style.flex = '';
+        });
         viewersPanel.style.display = '';
         // Update button icon
         card.querySelector('.viewer-card-expand-btn').innerHTML = '&#9974;';
+        // Re-render all canvases after layout settles
+        setTimeout(() => {
+            ['axial', 'sagittal', 'coronal'].forEach(axis => {
+                resizeCanvas(axis);
+                const slider = document.getElementById('slider' + capitalize(axis));
+                if (slider && state.ctLoaded) updateSlice(axis, slider.value);
+            });
+        }, 50);
     } else {
-        // Fullscreen: save current height and maximize
-        card.dataset.prevHeight = card.style.height || '220px';
+        // Enter fullscreen
         card.classList.add('fullscreen');
         document.body.classList.add('viewer-fullscreen');
         // Hide other cards
         allCards.forEach(c => {
             if (c !== card) c.style.display = 'none';
         });
-        viewersPanel.style.display = '';
         // Update button icon to collapse
         card.querySelector('.viewer-card-expand-btn').innerHTML = '&#10006;';
+        // Re-render canvas after layout settles
+        setTimeout(() => {
+            const axis = card.id.replace('viewer', '').toLowerCase();
+            if (axis !== '3d') {
+                resizeCanvas(axis);
+                const slider = document.getElementById('slider' + capitalize(axis));
+                if (slider && state.ctLoaded) updateSlice(axis, slider.value);
+            }
+        }, 50);
     }
 }
 
-/******** PER-VIEWER VERTICAL RESIZE ********/
+/******** PER-VIEWER VERTICAL RESIZE (redistributes space between adjacent cards) ********/
 function setupViewerResizers() {
     document.querySelectorAll('.viewer-resize-h').forEach(handle => {
         let resizing = false;
         let startY = 0;
-        let startH = 0;
-        let view = handle.dataset.view;
-        let card = document.getElementById('viewer' + capitalize(view));
-        if (!card) return;
+        let startHCard = 0;
+        let startHNext = 0;
+        let card = null;
+        let nextCard = null;
 
         handle.addEventListener('mousedown', e => {
-            if (card.classList.contains('fullscreen')) return;
+            const view = handle.dataset.view;
+            card = document.getElementById('viewer' + capitalize(view));
+            if (!card || card.classList.contains('fullscreen')) return;
+            // Find the next visible sibling card
+            nextCard = card.nextElementSibling;
+            while (nextCard && (!nextCard.classList.contains('viewer-card') || nextCard.style.display === 'none')) {
+                nextCard = nextCard.nextElementSibling;
+            }
+            if (!nextCard) return; // no sibling to redistribute to
             resizing = true;
             startY = e.clientY;
-            startH = card.offsetHeight;
+            startHCard = card.offsetHeight;
+            startHNext = nextCard.offsetHeight;
             document.body.style.cursor = 'row-resize';
             document.body.style.userSelect = 'none';
             e.preventDefault();
         });
 
         document.addEventListener('mousemove', e => {
-            if (!resizing) return;
+            if (!resizing || !card || !nextCard) return;
             const dy = e.clientY - startY;
-            const newH = Math.max(120, startH + dy);
-            card.style.height = newH + 'px';
+            const totalH = startHCard + startHNext;
+            const newHCard = Math.max(120, Math.min(totalH - 120, startHCard + dy));
+            const newHNext = totalH - newHCard;
             card.style.flex = 'none';
+            card.style.height = newHCard + 'px';
+            nextCard.style.flex = 'none';
+            nextCard.style.height = newHNext + 'px';
+            // Trigger canvas resize for both
+            const axis1 = card.id.replace('viewer', '').toLowerCase();
+            const axis2 = nextCard.id.replace('viewer', '').toLowerCase();
+            if (axis1 !== '3d') requestAnimationFrame(() => resizeCanvas(axis1));
+            if (axis2 !== '3d') requestAnimationFrame(() => resizeCanvas(axis2));
         });
 
         document.addEventListener('mouseup', () => {
@@ -3374,6 +3465,15 @@ async function preloadAxis(axis) {
 async function preloadAllSlices() {
     await preloadAxis('axial');
     console.log('Axial preloaded, sagittal/coronal will load on demand');
+}
+
+function resizeCanvas(axis) {
+    // Trigger re-render of the current slice to fit new container size
+    if (!state.ctLoaded) return;
+    const slider = document.getElementById('slider' + capitalize(axis));
+    if (slider) {
+        renderSliceFromVolume(axis, parseInt(slider.value));
+    }
 }
 
 function updateSlice(view, val) {
@@ -6047,7 +6147,8 @@ function showLoading(show) {
 function copyCodeBlock(btn) {
     const code = btn.parentElement.querySelector('code');
     if (!code) return;
-    const text = code.textContent;
+    // Prefer raw data attribute (for syntax-highlighted code)
+    const text = code.dataset.raw ? code.dataset.raw.replace(/&quot;/g, '"').replace(/&#39;/g, "'") : code.textContent;
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(() => {
             btn.innerHTML = '&#9989;';
@@ -6057,93 +6158,49 @@ function copyCodeBlock(btn) {
     }
 }
 
-/******** MARKDOWN RENDERER ********/
+/******** MARKDOWN RENDERER (using marked.js) ********/
+// Configure marked library (v4.x API)
+marked.setOptions({
+    breaks: true,
+    gfm: true,
+    headerIds: false,
+    mangle: false,
+});
+
+// Custom renderer for styled output
+const mdRenderer = new marked.Renderer();
+mdRenderer.heading = function(text, level) {
+    return `<h${level} class="md-h${level}">${text}</h${level}>`;
+};
+mdRenderer.link = function(href, title, text) {
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);text-decoration:underline;cursor:pointer;">${text}</a>`;
+};
+mdRenderer.table = function(header, body) {
+    return `<table class="md-table"><thead>${header}</thead><tbody>${body}</tbody></table>`;
+};
+mdRenderer.code = function(code, lang) {
+    // Use Prism.js for syntax highlighting if available
+    let highlighted = code;
+    if (typeof Prism !== 'undefined' && lang && Prism.languages[lang]) {
+        try {
+            highlighted = Prism.highlight(code, Prism.languages[lang], lang);
+        } catch (e) { /* fallback to plain text */ }
+    }
+    const escaped = code.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return `<pre class="md-code-block"><button class="code-copy-btn" onclick="copyCodeBlock(this)" title="Copy code">&#128203;</button><code class="language-${lang || ''}" data-raw="${escaped}">${highlighted}</code></pre>`;
+};
+mdRenderer.hr = function() {
+    return '<hr class="md-hr">';
+};
+
 function renderMarkdown(text) {
     if (!text) return '';
-    
-    // Escape HTML first
-    let html = text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-    
-    // Code blocks (```...```)
-    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-        const escaped = code.trim().replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-        return `<pre class="md-code-block"><button class="code-copy-btn" onclick="copyCodeBlock(this)" title="Copy code">&#128203;</button><code class="language-${lang}">${code.trim()}</code></pre>`;
-    });
-    
-    // Inline code (`...`)
-    html = html.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
-    
-    // Tables — support standard pipe tables with flexible separator
-    html = html.replace(/\|(.+)\|\n\|[-| :]+\|\n((?:\|.+\|\n?)+)/g, (match, header, body) => {
-        const headers = header.split('|').filter(h => h.trim()).map(h => `<th>${h.trim()}</th>`).join('');
-        const rows = body.trim().split('\n').map(row => {
-            const cells = row.split('|').filter(c => c.trim()).map(c => `<td>${c.trim()}</td>`).join('');
-            return `<tr>${cells}</tr>`;
-        }).join('');
-        return `<table class="md-table"><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
-    });
-    
-    // Bold (**...**)
-    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    
-    // Italic (*...*)
-    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-
-    // Links [text](url) — must come before other replacements
-    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--primary);text-decoration:underline;cursor:pointer;">$1</a>');
-    // Also auto-link bare URLs (that aren't already in links)
-    html = html.replace(/(?<!href="|">)(https?:\/\/[^\s<\)"\]]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:var(--primary);text-decoration:underline;cursor:pointer;">$1</a>');
-
-    // Headers (### ... , ## ... , # ...)
-    html = html.replace(/^### (.+)$/gm, '<h4 class="md-h3">$1</h4>');
-    html = html.replace(/^## (.+)$/gm, '<h3 class="md-h2">$1</h3>');
-    html = html.replace(/^# (.+)$/gm, '<h2 class="md-h1">$1</h2>');
-
-    // Unordered lists - capture the whole block at once
-    html = html.replace(/(^- .+$\n?)+/gm, (match) => {
-        const items = match.trim().split('\n')
-            .filter(line => line.startsWith('- '))
-            .map(line => `<li class="md-list-item">${line.substring(2)}</li>`)
-            .join('');
-        return `<ul class="md-list">${items}</ul>`;
-    });
-
-    // Ordered lists - capture the whole block at once
-    html = html.replace(/(^\d+\. .+$\n?)+/gm, (match) => {
-        const items = match.trim().split('\n')
-            .filter(line => /^\d+\./.test(line))
-            .map(line => `<li class="md-ordered-item">${line.replace(/^\d+\.\s*/, '')}</li>`)
-            .join('');
-        return `<ol class="md-ordered-list">${items}</ol>`;
-    });
-
-    // Horizontal rule (---)
-    html = html.replace(/^---$/gm, '<hr class="md-hr">');
-
-    // Line breaks - wrap non-block text in <p> tags
-    // First normalize newlines, then handle double newlines as paragraph breaks
-    html = html.replace(/\n\n+/g, '</p><p>');
-    // Don't convert single newlines to <br> inside lists (already handled above)
-    html = html.replace(/\n/g, '<br>');
-
-    // Clean up extra <br> after/before block elements
-    html = html.replace(/<\/(pre|h[2-4]|table|ul|ol|hr)><br>/g, '</$1>');
-    html = html.replace(/<br><(pre|h[2-4]|table|ul|ol|hr)/g, '<$1');
-    html = html.replace(/<\/p><br>/g, '</p>');
-    html = html.replace(/<br><p>/g, '<p>');
-    // Remove <br> inside list items
-    html = html.replace(/<li([^>]*)><br>/g, '<li$1>');
-    html = html.replace(/<br><\/li>/g, '</li>');
-
-    // Wrap in paragraph if not already wrapped
-    if (!html.startsWith('<p>') && !html.startsWith('<pre>') && !html.startsWith('<h') && !html.startsWith('<table>') && !html.startsWith('<ul>') && !html.startsWith('<ol>') && !html.startsWith('<hr')) {
-        html = '<p>' + html + '</p>';
+    try {
+        let processed = text.replace(/(?<!\[|\()(www\.[^\s<\)"\]]+)/g, 'https://$1');
+        return marked.parse(processed, { renderer: mdRenderer });
+    } catch (e) {
+        return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
     }
-
-    return html;
 }
 
 /******** CHAT ********/
