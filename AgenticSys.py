@@ -1365,10 +1365,16 @@ print(json.dumps(result))
                 tool_step["metadata"] = result.metadata if result.success else {}
                 if result.success:
                     self._store_tool_result(tc['tool'], result)
+                # Store tool call + result in conversation for context persistence
+                self.memory.add_message("assistant", f"[Called {tc['tool']}]")
+                result_summary = result.message[:500] if result.success else f"Error: {result.error}"
+                self.memory.add_message("user", f"[Tool result: {result_summary}]")
             except Exception as e:
                 tool_step["status"] = "error"
                 tool_step["result"] = str(e)
                 logger.error(f"Direct tool failed: {tc['tool']}: {e}")
+                self.memory.add_message("assistant", f"[Called {tc['tool']}]")
+                self.memory.add_message("user", f"[Tool result: Error: {str(e)[:200]}]")
 
         # Build raw results summary, then synthesize with LLM
         raw_results = self._build_direct_response(steps, _lang)
@@ -1535,10 +1541,12 @@ print(json.dumps(result))
 
         ui_state_summary = self.memory.get_ui_state_summary()
 
+        import datetime
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
             ui_state_summary=ui_state_summary,
             enhanced_context=enhanced_context,
             clean_context=self.memory.get_clean_context(),
+            current_date=datetime.datetime.now().strftime("%Y-%m-%d"),
         )
 
         # Inject relevant prompt modules based on message content
@@ -1660,10 +1668,12 @@ print(json.dumps(result))
                 logger.warning(f"Forced search failed: {e}")
 
         # Rebuild system prompt in case enhanced_context was updated by forced search
+        import datetime
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
             ui_state_summary=ui_state_summary,
             enhanced_context=enhanced_context,
             clean_context=self.memory.get_clean_context(),
+            current_date=datetime.datetime.now().strftime("%Y-%m-%d"),
         )
 
         # Inject relevant prompt modules based on message content
@@ -2133,10 +2143,12 @@ print(json.dumps(result))
 
         ui_state_summary = self.memory.get_ui_state_summary()
 
+        import datetime
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
             ui_state_summary=ui_state_summary,
             enhanced_context=enhanced_context,
             clean_context=self.memory.get_clean_context(),
+            current_date=datetime.datetime.now().strftime("%Y-%m-%d"),
         )
 
         # Inject relevant prompt modules based on message content
@@ -2254,10 +2266,12 @@ print(json.dumps(result))
                 logger.warning(f"Forced search failed: {e}")
 
         # Rebuild system prompt in case enhanced_context was updated by forced search
+        import datetime
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
             ui_state_summary=ui_state_summary,
             enhanced_context=enhanced_context,
             clean_context=self.memory.get_clean_context(),
+            current_date=datetime.datetime.now().strftime("%Y-%m-%d"),
         )
 
         # Inject relevant prompt modules based on message content
@@ -2995,11 +3009,17 @@ print(json.dumps(result))
                         yield yield_event("step", step)
                         if result.success:
                             self._store_tool_result(tc['tool'], result)
+                        # Store in conversation for context persistence
+                        self.memory.add_message("assistant", f"[Called {tc['tool']}]")
+                        result_summary = result.message[:500] if result.success else f"Error: {result.error}"
+                        self.memory.add_message("user", f"[Tool result: {result_summary}]")
                 except Exception as e:
                     step["status"] = "error"
                     step["result"] = str(e)
                     yield yield_event("step", step)
                     logger.error(f"Direct tool failed: {tc['tool']}: {e}")
+                    self.memory.add_message("assistant", f"[Called {tc['tool']}]")
+                    self.memory.add_message("user", f"[Tool result: Error: {str(e)[:200]}]")
 
             raw_response = self._build_direct_response(steps, _lang)
             # Synthesize with LLM for coherent narrative
