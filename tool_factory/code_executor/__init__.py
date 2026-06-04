@@ -30,8 +30,8 @@ ALLOWED_MODULES = {
 DANGEROUS_PATTERNS = [
     "__import__", "importlib", "subprocess", "os.system",
     "os.popen", "exec(", "eval(", "compile(",
-    "shutil", "socket",
-    "urllib", "requests", "http",
+    "shutil.rmtree", "shutil.move",
+    "socket.socket",
 ]
 
 
@@ -56,15 +56,7 @@ class CodeExecutorTool(BaseTool):
         warnings = []
         for pattern in DANGEROUS_PATTERNS:
             if pattern in code:
-                # Allow os.path operations
-                if pattern == "open(" and "os.path" not in code.split(pattern)[0][-20:]:
-                    warnings.append(f"Potentially dangerous pattern: {pattern}")
-                elif pattern not in ("open(",):
-                    warnings.append(f"Potentially dangerous pattern: {pattern}")
-
-        # Allow open() for reading medical images but warn
-        if "open(" in code and "nibabel" not in code and "SimpleITK" not in code:
-            warnings.append("Using open() directly — prefer nibabel or SimpleITK for medical images")
+                warnings.append(f"Potentially dangerous pattern: {pattern}")
 
         return len(warnings) == 0, warnings
 

@@ -1175,93 +1175,92 @@
             border-radius: 50%; background: var(--primary); cursor: pointer;
         }
 
-        /* ============ VIEWERS (scrollable vertical stack) ============ */
+        /* ============ VIEWERS ============ */
         .viewers-panel {
             padding: 0.5rem;
             display: flex; flex-direction: column; gap: 0.5rem;
-            overflow-y: auto;
-            overflow-x: hidden;
+            overflow: hidden;
             position: relative;
             flex: 1;
             min-height: 0;
         }
-        /* Default vertical: cards share space equally via flex, resize adjusts ratios */
+        /* Default vertical: cards share space equally */
         .viewers-panel > .viewer-card {
             flex: 1 1 0;
-            min-height: 120px;
-            height: 0; /* let flex distribute */
+            min-height: 0;
+            height: 0;
         }
         .viewers-panel > .viewer-card.viewer-card-3d {
-            flex: 1.15 1 0; /* 3D viewer gets slightly more space */
+            flex: 1.15 1 0;
         }
 
-        /* Grid: 2x2 with fixed row heights */
+        /* Grid: 2×2 */
         .viewers-panel.layout-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            grid-template-rows: minmax(200px, 1fr) minmax(200px, 1fr);
-            gap: 0.75rem;
+            grid-template-rows: 1fr 1fr;
+            gap: 0.5rem;
         }
         .viewers-panel.layout-grid > .viewer-card {
             height: auto;
             min-height: 0;
         }
 
-        /* Horizontal: cards share space equally, resize adjusts proportions */
+        /* Horizontal: 4 cards side by side */
         .viewers-panel.layout-horizontal {
             flex-direction: row;
             flex-wrap: nowrap;
-            overflow-x: auto;
+            overflow: hidden;
             align-items: stretch;
         }
         .viewers-panel.layout-horizontal > .viewer-card {
             flex: 1 1 0;
-            min-width: 150px;
+            min-width: 0;
             height: auto;
         }
 
-        /* 3D-top: 3D fixed height on top, 3 viewers below in a row */
+        /* 3D-top: 3D on top, 3 viewers in row below */
         .viewers-panel.layout-3d-top {
-            display: flex;
             flex-direction: column;
-            gap: 0.5rem;
         }
         .viewers-panel.layout-3d-top > .viewer-card-3d {
             flex: none;
-            height: 300px;
-            min-height: 180px;
+            height: 35%;
+            min-height: 150px;
         }
         .viewers-panel.layout-3d-top .viewers-row {
             display: flex;
             gap: 0.5rem;
-            flex: none;
+            flex: 1 1 0;
+            min-height: 0;
         }
         .viewers-panel.layout-3d-top .viewers-row > .viewer-card {
             flex: 1 1 0;
             min-width: 0;
-            height: 260px;
+            min-height: 0;
+            height: auto;
         }
 
-        /* 3D-bottom: 3 viewers on top, 3D fixed height below */
+        /* 3D-bottom: 3 viewers in row on top, 3D below */
         .viewers-panel.layout-3d-bottom {
-            display: flex;
             flex-direction: column;
-            gap: 0.5rem;
         }
         .viewers-panel.layout-3d-bottom .viewers-row {
             display: flex;
             gap: 0.5rem;
-            flex: none;
+            flex: 1 1 0;
+            min-height: 0;
         }
         .viewers-panel.layout-3d-bottom .viewers-row > .viewer-card {
             flex: 1 1 0;
             min-width: 0;
-            height: 260px;
+            min-height: 0;
+            height: auto;
         }
         .viewers-panel.layout-3d-bottom > .viewer-card-3d {
             flex: none;
-            height: 300px;
-            min-height: 180px;
+            height: 35%;
+            min-height: 150px;
         }
         .layout-btn.active {
             background: var(--primary) !important;
@@ -1351,7 +1350,8 @@
             justify-content: center;
             color: var(--text-dim); font-size: 0.72rem;
             position: relative;
-            min-height: 120px;
+            min-height: 0;
+            overflow: hidden;
         }
 
         /* Vertical resize handle at bottom of card */
@@ -4430,10 +4430,10 @@ function setViewerLayout(layout) {
     // Remove vertical resize handles from all cards
     panel.querySelectorAll('.viewer-resize-v').forEach(h => h.remove());
 
-    // Reset all viewer card heights/widths
+    // Reset all viewer card inline styles (height, width, flex)
     ['viewerAxial', 'viewerSagittal', 'viewerCoronal', 'viewer3d'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) { el.style.height = ''; el.style.width = ''; }
+        if (el) { el.style.height = ''; el.style.width = ''; el.style.flex = ''; }
     });
 
     if (layout === 'grid') {

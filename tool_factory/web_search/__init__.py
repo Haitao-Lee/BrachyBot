@@ -934,6 +934,18 @@ GitHub Integration:
                 message="No search query provided"
             )
 
+        # Auto-inject current year for queries about latest data
+        import datetime
+        current_year = str(datetime.datetime.now().year)
+        year_keywords = ["impact factor", "影响因子", "最新", "latest", "current", "new"]
+        if any(kw in query.lower() for kw in year_keywords):
+            # Remove old years (2020-2025) and add current year
+            import re
+            query_cleaned = re.sub(r'\b20[2-3]\d\b', '', query).strip()
+            if current_year not in query_cleaned:
+                query = f"{query_cleaned} {current_year}".strip()
+                logger.info(f"Auto-injected year: query now '{query}'")
+
         logger.info(f"Web search: {query} (type: {search_type})")
 
         # Check cache first (don't cache GitHub searches)
