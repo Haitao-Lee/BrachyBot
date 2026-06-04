@@ -486,35 +486,41 @@ Query → Specialized Engine (direct API) → Quality Check → General Search (
 
 **Information Reliability Hierarchy:**
 ```
-1. 🔍 Search results (latest) → Use directly, cite source + year
-2. 📚 Search results (older)  → Use with warning "⚠️ 数据可能已过时"
-3. 🧠 AI knowledge (verified) → Use with attribution "基于AI知识库"
-4. ❌ Unknown                 → Say honestly "未找到相关数据"
+1. 🔍 Search results (latest)    → Use directly, cite source + year
+2. 📚 Search results (older)     → Use with staleness warning
+3. 🧠 AI knowledge (verified)    → Use with attribution
+4. ❌ Unknown                    → Honestly state: "Data not found"
 ```
 
 **Query Processing:**
 - Intent detection (factual, research, realtime, navigational)
+- Per-engine query optimization (GitHub: extract keywords, PubMed: remove filler)
 - Query variant generation (short names, cross-language, simplified)
 - Auto year injection for time-sensitive queries
 - Auto page content fetching when snippets are insufficient
 
-**Example Responses:**
+**Example Interactions:**
 ```
-# Impact factor query (specialized engine + page fetch)
-"IEEE TMI最新的影响因子是多少"
-→ "IEEE TMI 2025年影响因子为 9.8/Q1，5年平均 11.3 [来源: iikx.com]"
+# Medical knowledge — direct answer from clinical knowledge base
+"What is the ABS recommended D90 for prostate monotherapy?"
+→ "145 Gy per ABS consensus guidelines (Davis et al., Brachytherapy 2017)."
 
-# Weather (wttr.in API)
-"今日上海天气"
-→ "上海: 25°C, 多云, 湿度 83%, 风速 6 km/h [来源: wttr.in]"
+# Journal metrics — specialized engine + page content extraction
+"What is the current impact factor of IEEE TMI?"
+→ "IEEE TMI 2025 IF: 9.8/Q1, 5-year average: 11.3 [Source: iikx.com/JCR]"
 
-# Clinical trial (ClinicalTrials.gov API)
-"brachytherapy clinical trial"
-→ "[NCT06413992] Status: RECRUITING, Phase: ..."
+# Clinical trial search — ClinicalTrials.gov API
+"Active HDR brachytherapy trials for cervical cancer"
+→ "[NCT06413992] Status: RECRUITING, Phase: II, Institution: ..."
 
-# Basic knowledge (no search)
-"What is the I-125 prescription dose?"
-→ "145 Gy for low-risk prostate cancer monotherapy per AAPM/ABS guidelines."
+# Dose calculation — tool execution + synthesis
+"Segment OAR and evaluate dose for the current plan"
+→ "OAR segmentation complete (57 organs). Dose evaluation: D90=112%, V100=94%,
+    Rectum D2cc=68 Gy (limit: 75 Gy). Plan quality: ACCEPTABLE."
+
+# Real-time data — wttr.in API (no search engine needed)
+"What is the weather today?"
+→ "Shanghai: 25°C, Partly Cloudy, Humidity: 83%, Wind: 6 km/h [Source: wttr.in]"
 ```
 
 ### 🌐 Web Interface
