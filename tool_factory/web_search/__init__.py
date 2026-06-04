@@ -205,20 +205,24 @@ class SpecializedEngine:
 
 
 def _search_weather(query: str, max_results: int = 5) -> List[Dict]:
-    """Weather via wttr.in API."""
-    city_map = {
-        '上海': 'Shanghai', '北京': 'Beijing', '广州': 'Guangzhou', '深圳': 'Shenzhen',
-        '杭州': 'Hangzhou', '成都': 'Chengdu', '武汉': 'Wuhan', '南京': 'Nanjing',
-        '西安': 'Xian', '重庆': 'Chongqing', '天津': 'Tianjin', '苏州': 'Suzhou',
-        '长沙': 'Changsha', '青岛': 'Qingdao', '大连': 'Dalian', '厦门': 'Xiamen',
-        'shanghai': 'Shanghai', 'beijing': 'Beijing', 'guangzhou': 'Guangzhou',
-    }
-    city = "Shanghai"
-    q_lower = query.lower()
-    for cn, en in city_map.items():
-        if cn in q_lower:
-            city = en
-            break
+    """Weather via wttr.in API. Supports any city name — no hardcoded mapping."""
+    # Extract city name: remove weather-related keywords, keep the city
+    weather_noise = [
+        '天气', 'weather', '气温', '温度', 'temperature', 'forecast',
+        '今日', '今天', '明天', 'yesterday', 'today', 'tomorrow',
+        '怎么样', '如何', '查询', '帮我查询', '帮我', '请',
+    ]
+    # English noise words — use word-boundary regex to avoid breaking "Beijing" (contains "in")
+    en_noise = ['how', 'what', 'the', 'in', 'at', 'for', 'is', 'of']
+    city = query.strip()
+    for noise in weather_noise:
+        city = city.replace(noise, '')
+    for noise in en_noise:
+        city = re.sub(r'\b' + noise + r'\b', '', city, flags=re.IGNORECASE)
+    # Remove common punctuation and extra spaces
+    city = re.sub(r'[?？!！。，,\s]+', ' ', city).strip()
+    if not city:
+        city = "Shanghai"
 
     resp = requests.get(f"https://wttr.in/{city}?format=j1", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
     if resp.status_code == 200:
@@ -1429,17 +1433,8 @@ class WebSearchTool(BaseTool):
 
     def _search_weather(self, query: str) -> List[Dict]:
         """Direct weather API query using wttr.in — returns structured weather data."""
-        # Extract city name from query — match known city names
-        city_map = {'上海': 'Shanghai', '北京': 'Beijing', '广州': 'Guangzhou', '深圳': 'Shenzhen',
-                    '杭州': 'Hangzhou', '成都': 'Chengdu', '武汉': 'Wuhan', '南京': 'Nanjing',
-                    '西安': 'Xian', '重庆': 'Chongqing', '天津': 'Tianjin', '苏州': 'Suzhou',
-                    'shanghai': 'Shanghai', 'beijing': 'Beijing', 'guangzhou': 'Guangzhou'}
-        city = "Shanghai"  # Default
-        q_lower = query.lower()
-        for cn, en in city_map.items():
-            if cn in q_lower:
-                city = en
-                break
+        # This method is kept for backward compatibility but delegates to standalone function
+        return _search_weather(query)
 
         try:
             resp = requests.get(f"https://wttr.in/{city}?format=j1", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)

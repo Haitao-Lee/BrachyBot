@@ -1552,28 +1552,29 @@ print(json.dumps(result))
         Returns a search query string if detected, None otherwise.
         The query is optimized for Bing/Baidu (not PubMed)."""
         msg = message.strip().lower()
-        # Patterns that require real-time search — queries are optimized for web search engines
+        # Patterns that require real-time search
+        # Weather queries are handled by specialized engine — just detect the intent
         realtime_patterns = [
-            (r'(今天|今日|明天|昨天|本周|目前|当前|现在).*(天气|气温|温度|下雨|晴)', '{city} 今天天气'),
-            (r'(天气|气温|温度).*(如何|怎么样|怎样|多少|预报)', '{city} 今天天气'),
-            (r'(weather|temperature|forecast)', 'today weather {city}'),
-            (r'(现在|当前|今天|几点|时间|日期)', '现在北京时间'),
-            (r'(what time|current time|what date)', 'current time Beijing'),
-            (r'(最新|最近|今日|今天的).*(新闻|消息|头条)', '今日新闻'),
-            (r'(news|headline|latest news)', 'latest news today'),
-            (r'(nba|NBA|篮球).*(总决赛|季后赛|比赛|赛事|结果)', 'NBA 2026 总决赛'),
-            (r'(足球|世界杯|欧冠|英超|中超).*(比赛|赛事|结果|比分)', '最新足球赛事结果'),
-            (r'(股价|股票|市值|行情)', '今日股市行情'),
-            (r'(汇率|美元|欧元|人民币)', '今日汇率'),
-            (r'(疫情|新冠|病例)', '最新疫情数据'),
+            (r'(今天|今日|明天|昨天|本周|目前|当前|现在).*(天气|气温|温度|下雨|晴)', True),
+            (r'(天气|气温|温度).*(如何|怎么样|怎样|多少|预报)', True),
+            (r'(weather|temperature|forecast)', True),
+            (r'(现在|当前|今天|几点|时间|日期)', False),
+            (r'(what time|current time|what date)', False),
+            (r'(最新|最近|今日|今天的).*(新闻|消息|头条)', False),
+            (r'(news|headline|latest news)', False),
+            (r'(nba|NBA|篮球).*(总决赛|季后赛|比赛|赛事|结果)', False),
+            (r'(足球|世界杯|欧冠|英超|中超).*(比赛|赛事|结果|比分)', False),
+            (r'(股价|股票|市值|行情)', False),
+            (r'(汇率|美元|欧元|人民币)', False),
+            (r'(疫情|新冠|病例)', False),
         ]
-        for pattern, query_template in realtime_patterns:
+        for pattern, is_weather in realtime_patterns:
             if re.search(pattern, msg, re.IGNORECASE):
-                # Extract city name if present
-                city_match = re.search(r'(北京|上海|广州|深圳|杭州|成都|武汉|南京|西安|重庆|天津|苏州|郑州|长沙|青岛|大连|厦门|昆明|贵阳|南宁|哈尔滨|沈阳|长春|济南|太原|石家庄|合肥|福州|南昌|兰州|银川|西宁|拉萨|乌鲁木齐|呼和浩特|海口|三亚|珠海|佛山|东莞|无锡|常州|徐州|温州|宁波|嘉兴|绍兴|金华|台州|泉州|漳州|龙岩|三明|南平|宁德|莆田|晋江|石狮|南安|惠安|安溪|永春|德化|金门|连江|罗源|闽清|永泰|平潭|长乐|福清|闽侯)', msg)
-                city = city_match.group(1) if city_match else ''
-                query = query_template.replace('{city}', city).strip()
-                return query
+                if is_weather:
+                    # Weather: pass original message, specialized engine extracts city
+                    return message.strip()
+                # Non-weather: generate a search query from the message
+                return message.strip()
         return None
 
     def _normalize_tool_params(self, tool_calls: List[Dict]) -> List[Dict]:
