@@ -1,1096 +1,1557 @@
 """
-Web Search Tool with Evidence Chain
+Web Search Tool — Systemic Redesign
 ====================================
-Provides internet search capability for BrachyBot with full evidence traceability.
+Multi-engine search with intelligent query processing, result validation,
+language-aware fallback, and proper caching.
 
-CRITICAL: Every piece of information from the internet MUST have:
-1. Source URL (permanent link when possible)
-2. Access timestamp
-3. Source type and confidence level
-4. Evidence chain for audit trail
+Architecture:
+    User query → QueryProcessor → SearchEngine(s) → ResultValidator → Response
+                   │                    │                  │
+              expand/translate    parallel backends    score/filter
+              detect intent       fallback chain       deduplicate
+              add context         language routing      quality label
 
-Use cases:
-- Recent clinical guidelines or publications
-- Specific equipment specifications
-- Institutional data not available locally
-- Drug pricing or availability
-- Historical details about specific procedures
-- Code and repository search (GitHub)
+Search Engines (priority order):
+    1. Bing API (if API key set) — best quality
+    2. cn.bing.com — accessible from China, good for English queries
+    3. Sogou — good for Chinese queries
+    4. PubMed — clinical literature
+    5. GitHub — code/repositories
 
-Search strategy:
-1. First try to answer from knowledge
-2. If uncertain, search the web
-3. ALWAYS cite sources when using web-sourced information
-4. If search doesn't find answer, honestly say "I don't know"
+Query Processing:
+    - Detect query intent (factual, navigational, research, realtime)
+    - Generate language variants (English + Chinese)
+    - Preserve key terms (names, numbers, specific terms)
+    - Add temporal context for time-sensitive queries
 
-Evidence chain ensures:
-- Complete traceability of all sourced information
-- Audit trail for compliance
-- Cross-referencing for verification
-- Confidence scoring for reliability assessment
+Result Validation:
+    - Relevance scoring (key term matching)
+    - Source quality weighting (academic > news > blog)
+    - Deduplication across engines
+    - Quality label: good / partial / poor
 """
 
-import os
 import json
-import logging
+import os
 import re
 import time
-from typing import Dict, Any, Optional, List
-from urllib.parse import quote_plus
-
+import hashlib
+import logging
 import requests
+from typing import Dict, List, Optional, Any, Tuple
+from urllib.parse import quote_plus
+from datetime import datetime, timedelta
 
 from tool_factory import BaseTool, ToolResult
-from tool_factory.web_search.evidence_chain import (
-    EvidenceChain, EvidenceRecord, EvidenceTracker,
-    get_evidence_tracker, start_evidence_chain
-)
 
 logger = logging.getLogger(__name__)
 
-# Cache directory for search results
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
-os.makedirs(CACHE_DIR, exist_ok=True)
 
-# Search cache TTL (2 hours for freshness, was 24h causing stale weather results)
-CACHE_TTL = 7200
+# ============================================================
+# Query Processor
+# ============================================================
 
+class QueryProcessor:
+    """Intelligent query preprocessing with intent detection and language handling."""
 
-class WebSearchTool(BaseTool):
-    """Search the internet for clinical and technical information."""
-
-    name = "web_search"
-    description = """Search the internet for information not available in local knowledge.
-Use this when:
-- User asks about specific equipment specifications (e.g., Varian, Elekta, Nucletron)
-- User asks about recent clinical trials or publications
-- User asks about drug pricing or availability
-- User asks about institutional-specific data
-- User asks about historical details you're not certain about
-- You need to verify a fact you're unsure about
-
-Do NOT use this when:
-- Answering basic clinical questions you know well (dose constraints, protocols)
-- The information is in the clinical_kb tool
-- User is asking about system capabilities
-
-Search sources:
-- PubMed for clinical literature
-- AAPM/ESTRO guidelines
-- Manufacturer websites for equipment specs
-- General medical information sites
-- GitHub for code, repositories, and documentation
-
-GitHub Integration:
-- Search repositories, code, and issues
-- Clone repositories for local analysis
-- Search within cloned repositories
-- Useful for finding implementation examples, tools, and libraries"""
-
-    input_schema = {
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": "Search query - be specific and include relevant keywords"
-            },
-            "search_type": {
-                "type": "string",
-                "description": "Type of search: clinical, equipment, general, github_repos, github_code, github_issues",
-                "enum": ["clinical", "equipment", "general", "github_repos", "github_code", "github_issues"],
-                "default": "general"
-            },
-            "max_results": {
-                "type": "integer",
-                "description": "Maximum number of results to return (1-10)",
-                "default": 5
-            },
-            "clone_repo": {
-                "type": "string",
-                "description": "GitHub URL to clone (e.g., https://github.com/user/repo)"
-            },
-            "search_local_repo": {
-                "type": "string",
-                "description": "Path to local repository to search within"
-            }
-        },
-        "required": ["query"]
+    # Intent patterns
+    INTENT_PATTERNS = {
+        'factual': [
+            r'(what|who|when|where|是什么|什么是|哪个|谁|什么时候|在哪里)',
+            r'(define|definition|定义|含义)',
+        ],
+        'research': [
+            r'(paper|publication|journal|论文|期刊|研究)',
+            r'(impact factor|影响因子|cite score|JCR)',
+            r'(review|survey|综述)',
+        ],
+        'realtime': [
+            r'(latest|recent|new|最新|最近|新闻)',
+            r'(today|yesterday|this week|今天|昨天|本周)',
+            r'(weather|temperature|天气|气温)',
+            r'(stock|price|股价|价格)',
+        ],
+        'navigational': [
+            r'(official website|官网|官方网站)',
+            r'(download|下载|login|登录)',
+        ],
     }
 
-    output_schema = {
-        "type": "object",
-        "properties": {
-            "success": {"type": "boolean"},
-            "results": {"type": "array", "items": {"type": "object"}},
-            "answer": {"type": "string"},
-            "sources": {"type": "array", "items": {"type": "string"}}
-        }
+    # Time-sensitive keywords that need current year
+    TIME_KEYWORDS = [
+        'impact factor', '影响因子', 'cite score', 'JCR',
+        'latest', '最新', 'recent', '最近',
+        'price', '价格', 'stock', '股价',
+        'weather', '天气', 'temperature', '气温',
+        'version', '版本', 'release', '发布',
+        'ranking', '排名', 'score', '分数',
+    ]
+
+    # English → Chinese keyword mapping for better Chinese search results
+    EN_TO_ZH = {
+        'impact factor': '影响因子',
+        'ranking': '排名',
+        'journal': '期刊',
+        'publication': '论文',
+        'guideline': '指南',
+        'protocol': '规范',
+        'dose': '剂量',
+        'treatment': '治疗',
+        'diagnosis': '诊断',
     }
 
-    def _get_cache_path(self, query: str) -> str:
-        """Get cache file path for a query."""
-        # Create safe filename from query
-        safe_name = re.sub(r'[^\w\s-]', '', query.lower())
-        safe_name = re.sub(r'[-\s]+', '_', safe_name)[:100]
-        return os.path.join(CACHE_DIR, f"{safe_name}.json")
+    @staticmethod
+    def detect_intent(query: str) -> str:
+        """Detect query intent: factual, research, realtime, navigational."""
+        q = query.lower()
+        for intent, patterns in QueryProcessor.INTENT_PATTERNS.items():
+            for pattern in patterns:
+                if re.search(pattern, q, re.IGNORECASE):
+                    return intent
+        return 'factual'
 
-    def _get_cached_result(self, query: str) -> Optional[Dict]:
-        """Get cached search result if available and not expired."""
-        cache_path = self._get_cache_path(query)
-        if os.path.exists(cache_path):
-            try:
-                with open(cache_path, 'r', encoding='utf-8') as f:
-                    cached = json.load(f)
-                # Check if cache is still valid
-                if time.time() - cached.get("timestamp", 0) < CACHE_TTL:
-                    logger.info(f"Cache hit for query: {query[:50]}...")
-                    return cached.get("result")
-            except Exception as e:
-                logger.warning(f"Cache read error: {e}")
-        return None
+    # Common long name → short name mappings
+    SHORT_NAMES = {
+        'ieee transactions on medical imaging': 'IEEE TMI',
+        'medical image analysis': 'Medical Image Analysis',
+        'international journal of radiation oncology biology physics': 'Int J Radiat Oncol',
+        'journal of clinical oncology': 'JCO',
+    }
 
-    def _save_to_cache(self, query: str, result: Dict):
-        """Save search result to cache."""
-        cache_path = self._get_cache_path(query)
+    @staticmethod
+    def generate_variants(query: str) -> List[str]:
+        """Generate query variants for better coverage.
+
+        Returns list of queries to try, in priority order.
+        """
+        variants = [query]  # Original query first
+        q_lower = query.lower()
+
+        # Add current year for time-sensitive queries
+        current_year = str(datetime.now().year)
+        if any(kw in q_lower for kw in QueryProcessor.TIME_KEYWORDS):
+            cleaned = re.sub(r'\b20\d{2}\b', '', query).strip()
+            if current_year not in cleaned:
+                variants.append(f"{cleaned} {current_year}")
+
+        # Generate short name variant (e.g., "IEEE Transactions on Medical Imaging" → "IEEE TMI")
+        for long_name, short_name in QueryProcessor.SHORT_NAMES.items():
+            if long_name in q_lower:
+                short_query = re.sub(re.escape(long_name), short_name, query, flags=re.IGNORECASE)
+                if short_query != query:
+                    variants.append(short_query)
+                # Also short + Chinese
+                for en_kw, zh_kw in QueryProcessor.EN_TO_ZH.items():
+                    if en_kw in q_lower:
+                        variants.append(f"{short_name} {zh_kw}")
+                break
+
+        # Generate Chinese variant if query has English keywords
+        zh_parts = []
+        for en_kw, zh_kw in QueryProcessor.EN_TO_ZH.items():
+            if en_kw in q_lower and zh_kw not in query:
+                main = re.sub(re.escape(en_kw), '', query, flags=re.IGNORECASE).strip()
+                main = re.sub(r'\b20\d{2}\b', '', main).strip()
+                zh_parts.append(f"{main} {zh_kw}")
+
+        if zh_parts:
+            variants.extend(zh_parts)
+
+        # Generate simplified variant (remove years, extra terms)
+        simplified = re.sub(r'\b20\d{2}\b', '', query).strip()
+        if simplified != query and simplified:
+            variants.append(simplified)
+
+        # Deduplicate while preserving order
+        seen = set()
+        unique = []
+        for v in variants:
+            v_lower = v.lower().strip()
+            if v_lower and v_lower not in seen:
+                seen.add(v_lower)
+                unique.append(v)
+
+        return unique
+
+
+# ============================================================
+# Specialized Search Engines
+# ============================================================
+# Each engine handles a specific domain with direct API access.
+# The search tool checks these BEFORE falling back to general web search.
+# To add a new source: add an entry to SPECIALIZED_ENGINES.
+
+class SpecializedEngine:
+    """A specialized search engine for a specific domain."""
+
+    def __init__(self, name: str, triggers: List[str], search_fn, description: str = ""):
+        self.name = name
+        self.triggers = triggers  # Keywords that activate this engine
+        self.search_fn = search_fn  # Callable(query, max_results) -> List[Dict]
+        self.description = description
+
+    def matches(self, query: str) -> bool:
+        """Check if this engine should handle the query."""
+        q = query.lower()
+        return any(t in q for t in self.triggers)
+
+    def search(self, query: str, max_results: int = 5) -> List[Dict]:
+        """Execute the specialized search."""
         try:
-            with open(cache_path, 'w', encoding='utf-8') as f:
-                json.dump({
-                    "query": query,
-                    "timestamp": time.time(),
-                    "result": result
-                }, f, ensure_ascii=False, indent=2)
+            return self.search_fn(query, max_results)
         except Exception as e:
-            logger.warning(f"Cache write error: {e}")
+            logger.warning(f"Specialized engine {self.name} error: {e}")
+            return []
 
-    def _search_duckduckgo(self, query: str, max_results: int = 5) -> List[Dict]:
-        """
-        Search using DuckDuckGo Instant Answer API.
-        Falls back to Wikipedia API if DuckDuckGo fails.
-        Uses shorter timeouts for faster failure.
-        """
-        results = []
 
-        # Try DuckDuckGo API first
+def _search_weather(query: str, max_results: int = 5) -> List[Dict]:
+    """Weather via wttr.in API."""
+    city_map = {
+        '上海': 'Shanghai', '北京': 'Beijing', '广州': 'Guangzhou', '深圳': 'Shenzhen',
+        '杭州': 'Hangzhou', '成都': 'Chengdu', '武汉': 'Wuhan', '南京': 'Nanjing',
+        '西安': 'Xian', '重庆': 'Chongqing', '天津': 'Tianjin', '苏州': 'Suzhou',
+        '长沙': 'Changsha', '青岛': 'Qingdao', '大连': 'Dalian', '厦门': 'Xiamen',
+        'shanghai': 'Shanghai', 'beijing': 'Beijing', 'guangzhou': 'Guangzhou',
+    }
+    city = "Shanghai"
+    q_lower = query.lower()
+    for cn, en in city_map.items():
+        if cn in q_lower:
+            city = en
+            break
+
+    resp = requests.get(f"https://wttr.in/{city}?format=j1", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+    if resp.status_code == 200:
+        data = resp.json()
+        current = data.get("current_condition", [{}])[0]
+        temp = current.get("temp_C", "?")
+        desc = current.get("weatherDesc", [{}])[0].get("value", "")
+        humidity = current.get("humidity", "?")
+        wind = current.get("windspeedKmph", "?")
+        feels = current.get("FeelsLikeC", "?")
+        snippet = f"{city}: {temp}°C, {desc}, Humidity: {humidity}%, Wind: {wind} km/h, Feels like: {feels}°C"
+        return [{"title": f"{city} Weather", "snippet": snippet, "url": f"https://wttr.in/{city}", "source": "wttr.in", "page_content": snippet}]
+    return []
+
+
+def _search_exchange_rate(query: str, max_results: int = 5) -> List[Dict]:
+    """Exchange rates via exchangerate-api.com."""
+    # Extract currency codes
+    currencies = re.findall(r'(USD|EUR|GBP|JPY|CNY|HKD|KRW|CAD|AUD|CHF)', query.upper())
+    if len(currencies) >= 2:
+        base, target = currencies[0], currencies[1]
+    elif any(kw in query for kw in ['美元', 'dollar', 'usd']):
+        base, target = 'USD', 'CNY'
+    elif any(kw in query for kw in ['欧元', 'euro', 'eur']):
+        base, target = 'EUR', 'CNY'
+    elif any(kw in query for kw in ['日元', 'yen', 'jpy']):
+        base, target = 'JPY', 'CNY'
+    elif any(kw in query for kw in ['英镑', 'pound', 'gbp']):
+        base, target = 'GBP', 'CNY'
+    else:
+        base, target = 'USD', 'CNY'
+
+    resp = requests.get(f"https://open.er-api.com/v6/latest/{base}", timeout=10)
+    if resp.status_code == 200:
+        data = resp.json()
+        rate = data.get("rates", {}).get(target)
+        if rate:
+            snippet = f"1 {base} = {rate} {target} (source: open.er-api.com)"
+            return [{"title": f"{base}/{target} Exchange Rate", "snippet": snippet, "url": f"https://open.er-api.com/v6/latest/{base}", "source": "ExchangeRate API", "page_content": snippet}]
+    return []
+
+
+def _search_pubmed_direct(query: str, max_results: int = 5) -> List[Dict]:
+    """PubMed search for clinical literature."""
+    results = []
+    try:
+        search_resp = requests.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+            params={"db": "pubmed", "term": query, "retmax": max_results, "retmode": "json"}, timeout=10)
+        if search_resp.status_code != 200:
+            return results
+        ids = search_resp.json().get("esearchresult", {}).get("idlist", [])
+        if not ids:
+            return results
+        fetch_resp = requests.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi",
+            params={"db": "pubmed", "id": ",".join(ids), "retmode": "json"}, timeout=10)
+        if fetch_resp.status_code == 200:
+            for uid in ids:
+                article = fetch_resp.json().get("result", {}).get(uid, {})
+                if article:
+                    title = article.get("title", "")
+                    authors = ", ".join(a.get("name", "") for a in article.get("authors", [])[:3])
+                    source = article.get("fulljournalname", article.get("source", ""))
+                    pub_date = article.get("pubdate", "")
+                    results.append({"title": title[:200], "snippet": f"{authors}. {source}. {pub_date}".strip(),
+                                    "url": f"https://pubmed.ncbi.nlm.nih.gov/{uid}/", "source": "PubMed"})
+    except Exception as e:
+        logger.warning(f"PubMed error: {e}")
+    return results
+
+
+def _search_semantic_scholar(query: str, max_results: int = 5) -> List[Dict]:
+    """Semantic Scholar API for academic papers."""
+    results = []
+    try:
+        resp = requests.get("https://api.semanticscholar.org/graph/v1/paper/search",
+            params={"query": query, "limit": max_results, "fields": "title,abstract,year,url,citationCount"},
+            timeout=10)
+        if resp.status_code == 200:
+            for paper in resp.json().get("data", [])[:max_results]:
+                title = paper.get("title", "")
+                abstract = (paper.get("abstract") or "")[:200]
+                year = paper.get("year", "")
+                citations = paper.get("citationCount", 0)
+                url = paper.get("url", "")
+                snippet = f"({year}) {abstract} [Citations: {citations}]"
+                results.append({"title": title, "snippet": snippet, "url": url, "source": "Semantic Scholar"})
+    except Exception as e:
+        logger.warning(f"Semantic Scholar error: {e}")
+    return results
+
+
+def _search_clinical_trials(query: str, max_results: int = 5) -> List[Dict]:
+    """ClinicalTrials.gov API for clinical trial data."""
+    results = []
+    try:
+        resp = requests.get("https://clinicaltrials.gov/api/v2/studies",
+            params={"query.term": query, "pageSize": max_results, "format": "json"}, timeout=15)
+        if resp.status_code == 200:
+            for study in resp.json().get("studies", [])[:max_results]:
+                proto = study.get("protocolSection", {})
+                ident = proto.get("identificationModule", {})
+                status = proto.get("statusModule", {})
+                title = ident.get("briefTitle", "")
+                nct = ident.get("nctId", "")
+                phase = ", ".join(status.get("phases", []))
+                study_status = status.get("overallStatus", "")
+                snippet = f"[{nct}] Status: {study_status}, Phase: {phase}"
+                results.append({"title": title[:200], "snippet": snippet,
+                                "url": f"https://clinicaltrials.gov/study/{nct}", "source": "ClinicalTrials.gov"})
+    except Exception as e:
+        logger.warning(f"ClinicalTrials.gov error: {e}")
+    return results
+
+
+def _search_fda(query: str, max_results: int = 5) -> List[Dict]:
+    """FDA API for drug approvals and safety alerts."""
+    results = []
+    try:
+        resp = requests.get("https://api.fda.gov/drug/label.json",
+            params={"search": f"openfda.brand_name:{query}", "limit": max_results}, timeout=10)
+        if resp.status_code == 200:
+            for item in resp.json().get("results", [])[:max_results]:
+                brand = ", ".join(item.get("openfda", {}).get("brand_name", [""]))
+                generic = ", ".join(item.get("openfda", {}).get("generic_name", [""]))
+                purpose = item.get("purpose", [""])[0] if item.get("purpose") else ""
+                snippet = f"{brand} ({generic}): {purpose[:200]}"
+                results.append({"title": f"{brand} - {generic}", "snippet": snippet, "url": "https://www.fda.gov/", "source": "FDA"})
+    except Exception as e:
+        logger.warning(f"FDA error: {e}")
+    return results
+
+
+def _search_stackoverflow(query: str, max_results: int = 5) -> List[Dict]:
+    """Stack Overflow API for programming Q&A."""
+    results = []
+    try:
+        resp = requests.get("https://api.stackexchange.com/2.3/search/advanced",
+            params={"q": query, "order": "desc", "sort": "relevance", "site": "stackoverflow",
+                    "pagesize": max_results, "filter": "default"}, timeout=10)
+        if resp.status_code == 200:
+            for item in resp.json().get("items", [])[:max_results]:
+                title = item.get("title", "")
+                score = item.get("score", 0)
+                answers = item.get("answer_count", 0)
+                link = item.get("link", "")
+                snippet = f"Score: {score}, Answers: {answers}"
+                results.append({"title": title, "snippet": snippet, "url": link, "source": "Stack Overflow"})
+    except Exception as e:
+        logger.warning(f"Stack Overflow error: {e}")
+    return results
+
+
+def _search_papers_with_code(query: str, max_results: int = 5) -> List[Dict]:
+    """Papers With Code for ML papers with implementations."""
+    results = []
+    try:
+        resp = requests.get("https://paperswithcode.com/api/v1/search/",
+            params={"q": query, "page": 1}, timeout=10)
+        if resp.status_code == 200:
+            for item in resp.json().get("results", [])[:max_results]:
+                paper = item.get("paper", {})
+                title = paper.get("title", "")
+                abstract = (paper.get("abstract") or "")[:200]
+                url = f"https://paperswithcode.com{paper.get('url_abs', '')}"
+                results.append({"title": title, "snippet": abstract, "url": url, "source": "Papers With Code"})
+    except Exception as e:
+        logger.warning(f"Papers With Code error: {e}")
+    return results
+
+
+def _search_github_repos(query: str, max_results: int = 5) -> List[Dict]:
+    """GitHub repository search."""
+    results = []
+    try:
+        headers = {"Accept": "application/vnd.github.v3+json"}
+        token = os.environ.get("GITHUB_TOKEN")
+        if token:
+            headers["Authorization"] = f"token {token}"
+        resp = requests.get("https://api.github.com/search/repositories",
+            headers=headers, params={"q": query, "per_page": max_results}, timeout=10)
+        if resp.status_code == 200:
+            for item in resp.json().get("items", [])[:max_results]:
+                results.append({"title": item.get("full_name", ""), "snippet": (item.get("description") or "")[:200],
+                                "url": item.get("html_url", ""), "source": "GitHub"})
+    except Exception as e:
+        logger.warning(f"GitHub error: {e}")
+    return results
+
+
+def _search_crossref(query: str, max_results: int = 5) -> List[Dict]:
+    """CrossRef API — universal DOI metadata for all academic publishers."""
+    results = []
+    try:
+        resp = requests.get("https://api.crossref.org/works",
+            params={"query": query, "rows": max_results, "sort": "relevance"}, timeout=15)
+        if resp.status_code == 200:
+            for item in resp.json().get("message", {}).get("items", [])[:max_results]:
+                title = item.get("title", [""])[0]
+                doi = item.get("DOI", "")
+                year = item.get("published-print", item.get("published-online", {})).get("date-parts", [[None]])[0][0]
+                journal = item.get("container-title", [""])[0]
+                citations = item.get("is-referenced-by-count", 0)
+                authors = ", ".join(a.get("family", "") for a in item.get("author", [])[:3])
+                snippet = f"({year}) {authors}. {journal}. Citations: {citations}"
+                url = f"https://doi.org/{doi}" if doi else ""
+                results.append({"title": title, "snippet": snippet, "url": url, "source": f"CrossRef ({journal})"})
+    except Exception as e:
+        logger.warning(f"CrossRef error: {e}")
+    return results
+
+
+def _search_openalex(query: str, max_results: int = 5) -> List[Dict]:
+    """OpenAlex — open academic database with citation data and full-text links."""
+    results = []
+    try:
+        resp = requests.get("https://api.openalex.org/works",
+            params={"search": query, "per_page": max_results, "sort": "relevance_score:desc"},
+            headers={"User-Agent": "BrachyBot/1.0 (mailto:brachybot@example.com)"}, timeout=15)
+        if resp.status_code == 200:
+            for work in resp.json().get("results", [])[:max_results]:
+                title = work.get("title", "")
+                year = work.get("publication_year", "")
+                doi = work.get("doi", "")
+                cited = work.get("cited_by_count", 0)
+                source = work.get("primary_location", {}).get("source", {}).get("display_name", "")
+                oa_url = work.get("open_access", {}).get("oa_url", "")
+                snippet = f"({year}) {source}. Citations: {cited}"
+                url = oa_url or doi or ""
+                results.append({"title": title, "snippet": snippet, "url": url, "source": f"OpenAlex ({source})"})
+    except Exception as e:
+        logger.warning(f"OpenAlex error: {e}")
+    return results
+
+
+def _search_arxiv(query: str, max_results: int = 5) -> List[Dict]:
+    """arXiv API for preprints."""
+    results = []
+    try:
+        resp = requests.get("http://export.arxiv.org/api/query",
+            params={"search_query": f"all:{query}", "max_results": max_results, "sortBy": "relevance"},
+            timeout=15)
+        if resp.status_code == 200:
+            entries = re.findall(r'<entry>(.*?)</entry>', resp.text, re.DOTALL)
+            for entry in entries[:max_results]:
+                title = re.search(r'<title>(.*?)</title>', entry, re.DOTALL)
+                summary = re.search(r'<summary>(.*?)</summary>', entry, re.DOTALL)
+                link = re.search(r'<id>(.*?)</id>', entry)
+                published = re.search(r'<published>(.*?)</published>', entry)
+                if title:
+                    t = re.sub(r'\s+', ' ', title.group(1)).strip()
+                    s = re.sub(r'\s+', ' ', summary.group(1)).strip()[:200] if summary else ""
+                    year = published.group(1)[:4] if published else ""
+                    url = link.group(1) if link else ""
+                    results.append({"title": t, "snippet": f"({year}) {s}", "url": url, "source": "arXiv"})
+    except Exception as e:
+        logger.warning(f"arXiv error: {e}")
+    return results
+
+
+def _search_biorxiv(query: str, max_results: int = 5) -> List[Dict]:
+    """bioRxiv/medRxiv API for biology/medicine preprints."""
+    results = []
+    try:
+        resp = requests.get(f"https://api.biorxiv.org/details/biorxiv/2024-01-01/2026-12-31/0",
+                            timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            for item in data.get("collection", [])[:max_results]:
+                title = item.get("title", "")
+                doi = item.get("doi", "")
+                date = item.get("date", "")
+                category = item.get("category", "")
+                snippet = f"({date}) Category: {category}"
+                url = f"https://doi.org/{doi}" if doi else ""
+                results.append({"title": title, "snippet": snippet, "url": url, "source": "bioRxiv"})
+    except Exception as e:
+        logger.warning(f"bioRxiv error: {e}")
+    return results
+
+
+def _search_springer(query: str, max_results: int = 5) -> List[Dict]:
+    """Springer Nature web scraping for journal articles."""
+    results = []
+    try:
+        resp = requests.get(f"https://link.springer.com/search?query={requests.utils.quote(query)}&showAll=false",
+                            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+                            timeout=15)
+        if resp.status_code == 200:
+            # Extract search results
+            items = re.findall(r'<li class="c-list-group__item"[^>]*>(.*?)</li>', resp.text, re.DOTALL)
+            if not items:
+                items = re.findall(r'<a[^>]*class="title"[^>]*>(.*?)</a>', resp.text, re.DOTALL)
+            for item in items[:max_results]:
+                title = re.sub(r'<[^>]+>', '', item).strip()
+                if title and len(title) > 10:
+                    results.append({"title": title[:200], "snippet": "", "url": f"https://link.springer.com/search?query={requests.utils.quote(query)}", "source": "Springer Nature"})
+    except Exception as e:
+        logger.warning(f"Springer error: {e}")
+    return results
+
+
+def _search_ieee_xplore(query: str, max_results: int = 5) -> List[Dict]:
+    """IEEE Xplore web scraping for engineering/medical imaging papers."""
+    results = []
+    try:
+        resp = requests.get(f"https://ieeexplore.ieee.org/search/searchresult.jsp?queryText={requests.utils.quote(query)}",
+                            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+                            timeout=15)
+        if resp.status_code == 200:
+            # IEEE Xplore loads results via JS, but we can extract some from meta tags
+            titles = re.findall(r'<meta name="citation_title" content="([^"]*)"', resp.text)
+            for title in titles[:max_results]:
+                results.append({"title": title, "snippet": "", "url": f"https://ieeexplore.ieee.org/search/searchresult.jsp?queryText={requests.utils.quote(query)}", "source": "IEEE Xplore"})
+    except Exception as e:
+        logger.warning(f"IEEE Xplore error: {e}")
+    return results
+
+
+def _search_google_patents(query: str, max_results: int = 5) -> List[Dict]:
+    """Google Patents search for patent information."""
+    results = []
+    try:
+        url = f"https://patents.google.com/xhr/query?url=q%3D{requests.utils.quote(query)}"
+        headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            for item in data.get("results", {}).get("patents", [])[:max_results]:
+                title = item.get("title", "")
+                snippet = item.get("abstract", "")[:200]
+                patent_id = item.get("patent_number", "")
+                pub_date = item.get("publication_date", "")
+                results.append({"title": f"[{patent_id}] {title}", "snippet": f"({pub_date}) {snippet}",
+                                "url": f"https://patents.google.com/patent/{patent_id}", "source": "Google Patents"})
+    except Exception as e:
+        logger.warning(f"Google Patents error: {e}")
+    # Fallback: scrape Google Patents HTML
+    if not results:
         try:
-            api_url = "https://api.duckduckgo.com/"
-            params = {
-                "q": query,
-                "format": "json",
-                "no_html": 1,
-                "skip_disambig": 1
-            }
-
-            response = requests.get(api_url, params=params, timeout=5)  # 5s timeout
-            if response.status_code == 200:
-                data = response.json()
-
-                # Check for abstract
-                if data.get("Abstract"):
-                    results.append({
-                        "title": data.get("Heading", "DuckDuckGo Result"),
-                        "snippet": data["Abstract"],
-                        "url": data.get("AbstractURL", ""),
-                        "source": data.get("AbstractSource", "DuckDuckGo")
-                    })
-
-                # Check for related topics
-                for topic in data.get("RelatedTopics", [])[:max_results]:
-                    if isinstance(topic, dict) and topic.get("Text"):
-                        results.append({
-                            "title": topic.get("Text", "")[:100],
-                            "snippet": topic.get("Text", ""),
-                            "url": topic.get("FirstURL", ""),
-                            "source": "DuckDuckGo"
-                        })
-
+            resp = requests.get(f"https://patents.google.com/?q={requests.utils.quote(query)}",
+                                headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            if resp.status_code == 200:
+                titles = re.findall(r'<h3[^>]*>(.*?)</h3>', resp.text)
+                for t in titles[:max_results]:
+                    clean = re.sub(r'<[^>]+>', '', t).strip()
+                    if clean:
+                        results.append({"title": clean, "snippet": "", "url": f"https://patents.google.com/?q={requests.utils.quote(query)}", "source": "Google Patents"})
         except Exception as e:
-            logger.warning(f"DuckDuckGo API error: {e}")
+            logger.warning(f"Google Patents fallback error: {e}")
+    return results
 
-        # If no results from API, try a simple web search
-        if not results:
-            try:
-                # Use a simple search approach
-                search_url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                }
-                response = requests.get(search_url, headers=headers, timeout=8)  # 8s timeout
-                if response.status_code == 200:
-                    # Simple extraction of results
-                    text = response.text
-                    # Look for result snippets
-                    snippet_pattern = r'class="result__snippet">(.*?)</a>'
-                    snippets = re.findall(snippet_pattern, text, re.DOTALL)
 
-                    for i, snippet in enumerate(snippets[:max_results]):
-                        # Clean HTML tags
-                        clean_snippet = re.sub(r'<[^>]+>', '', snippet).strip()
-                        if clean_snippet:
-                            results.append({
-                                "title": f"Search Result {i+1}",
-                                "snippet": clean_snippet,
-                                "url": "",
-                                "source": "Web Search"
-                            })
+def _search_nccn(query: str, max_results: int = 5) -> List[Dict]:
+    """NCCN Guidelines search."""
+    results = []
+    try:
+        resp = requests.get(f"https://www.nccn.org/search?query={requests.utils.quote(query)}",
+                            headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        if resp.status_code == 200:
+            blocks = re.findall(r'<div class="search-result"[^>]*>(.*?)</div>', resp.text, re.DOTALL)
+            for block in blocks[:max_results]:
+                title_m = re.search(r'<a[^>]*>(.*?)</a>', block)
+                snippet_m = re.search(r'<p[^>]*>(.*?)</p>', block)
+                if title_m:
+                    title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip()
+                    snippet = re.sub(r'<[^>]+>', '', snippet_m.group(1)).strip() if snippet_m else ""
+                    results.append({"title": title, "snippet": snippet[:200], "url": "https://www.nccn.org/guidelines", "source": "NCCN"})
+    except Exception as e:
+        logger.warning(f"NCCN search error: {e}")
+    return results
 
-            except Exception as e:
-                logger.warning(f"Web search fallback error: {e}")
 
-        # If still no results, try Wikipedia API (very reliable, fast)
-        if not results:
-            try:
-                wiki_url = "https://en.wikipedia.org/api/rest_v1/page/summary/" + quote_plus(query)
-                response = requests.get(wiki_url, timeout=3)  # 3s timeout
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("extract"):
-                        results.append({
-                            "title": data.get("title", query),
-                            "snippet": data["extract"][:500],
-                            "url": data.get("content_urls", {}).get("desktop", {}).get("page", ""),
-                            "source": "Wikipedia"
-                        })
-            except Exception as e:
-                logger.warning(f"Wikipedia API error: {e}")
+def _search_radiopaedia(query: str, max_results: int = 5) -> List[Dict]:
+    """Radiopaedia — radiology knowledge base with case-based learning."""
+    results = []
+    try:
+        resp = requests.get(f"https://radiopaedia.org/search?q={requests.utils.quote(query)}&scope=articles",
+                            headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        if resp.status_code == 200:
+            articles = re.findall(r'<article[^>]*>(.*?)</article>', resp.text, re.DOTALL)
+            for article in articles[:max_results]:
+                title_m = re.search(r'<h2[^>]*><a[^>]*>(.*?)</a>', article, re.DOTALL)
+                snippet_m = re.search(r'<p class="article-body"[^>]*>(.*?)</p>', article, re.DOTALL)
+                url_m = re.search(r'<a[^>]*href="([^"]*)"', article)
+                if title_m:
+                    title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip()
+                    snippet = re.sub(r'<[^>]+>', '', snippet_m.group(1)).strip() if snippet_m else ""
+                    url = f"https://radiopaedia.org{url_m.group(1)}" if url_m else ""
+                    results.append({"title": title, "snippet": snippet[:200], "url": url, "source": "Radiopaedia"})
+    except Exception as e:
+        logger.warning(f"Radiopaedia error: {e}")
+    return results
 
-        return results[:max_results]
 
-    def _search_bing(self, query: str, max_results: int = 5) -> List[Dict]:
-        """
-        Search using Bing.
-        Uses official API if BING_SEARCH_API_KEY is set, otherwise tries cn.bing.com.
-        """
+def _search_omim(query: str, max_results: int = 5) -> List[Dict]:
+    """OMIM — Online Mendelian Inheritance in Man (genetic disorders)."""
+    results = []
+    try:
+        resp = requests.get(f"https://omim.org/search/?search={requests.utils.quote(query)}&start=0&limit={max_results}",
+                            headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        if resp.status_code == 200:
+            entries = re.findall(r'<div class="search-result"[^>]*>(.*?)</div>', resp.text, re.DOTALL)
+            for entry in entries[:max_results]:
+                title_m = re.search(r'<a[^>]*>(.*?)</a>', entry)
+                snippet_m = re.search(r'<p[^>]*>(.*?)</p>', entry)
+                if title_m:
+                    title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip()
+                    snippet = re.sub(r'<[^>]+>', '', snippet_m.group(1)).strip() if snippet_m else ""
+                    results.append({"title": title, "snippet": snippet[:200], "url": f"https://omim.org/search/?search={requests.utils.quote(query)}", "source": "OMIM"})
+    except Exception as e:
+        logger.warning(f"OMIM error: {e}")
+    return results
+
+
+def _search_icd(query: str, max_results: int = 5) -> List[Dict]:
+    """ICD-11 API search for disease classification codes."""
+    results = []
+    try:
+        resp = requests.get("https://id.who.int/icd/entity/search",
+                            params={"q": query, "flatResults": "true", "maxResults": max_results},
+                            headers={"Accept": "application/json", "Accept-Language": "en"}, timeout=10)
+        if resp.status_code == 200:
+            for entity in resp.json().get("destinationEntities", [])[:max_results]:
+                title = entity.get("title", "")
+                code = entity.get("theCode", "")
+                definition = entity.get("definition", "")[:200]
+                entity_id = entity.get("id", "")
+                snippet = f"[{code}] {definition}" if code else definition
+                results.append({"title": title, "snippet": snippet, "url": f"https://icd.who.int/browse{entity_id}", "source": "ICD-11 (WHO)"})
+    except Exception as e:
+        logger.warning(f"ICD-11 error: {e}")
+    return results
+
+
+def _search_cnipa(query: str, max_results: int = 5) -> List[Dict]:
+    """CNIPA (China National Intellectual Property Administration) patent search."""
+    results = []
+    try:
+        resp = requests.get(f"https://pss-system.cponline.cnipa.gov.cn/conventionalSearch",
+                            params={"searchWord": query}, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        if resp.status_code == 200:
+            # Extract patent entries from HTML
+            entries = re.findall(r'<div class="result-item"[^>]*>(.*?)</div>', resp.text, re.DOTALL)
+            for entry in entries[:max_results]:
+                title_m = re.search(r'<a[^>]*>(.*?)</a>', entry)
+                if title_m:
+                    title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip()
+                    results.append({"title": title, "snippet": "", "url": "https://pss-system.cponline.cnipa.gov.cn/", "source": "CNIPA"})
+    except Exception as e:
+        logger.warning(f"CNIPA error: {e}")
+    return results
+
+
+def _search_cnki(query: str, max_results: int = 5) -> List[Dict]:
+    """CNKI (China National Knowledge Infrastructure) — Chinese academic database."""
+    results = []
+    try:
+        resp = requests.get(f"https://kns.cnki.net/kns8s/defaultresult/index",
+                            params={"kw": query, "korder": "SU"},
+                            headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        if resp.status_code == 200:
+            entries = re.findall(r'<div class="result-table-list"[^>]*>(.*?)</div>', resp.text, re.DOTALL)
+            for entry in entries[:max_results]:
+                title_m = re.search(r'<a[^>]*>(.*?)</a>', entry)
+                if title_m:
+                    title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip()
+                    results.append({"title": title, "snippet": "", "url": f"https://kns.cnki.net/kns8s/defaultresult/index?kw={requests.utils.quote(query)}", "source": "CNKI"})
+    except Exception as e:
+        logger.warning(f"CNKI error: {e}")
+    return results
+
+
+def _search_wanfang(query: str, max_results: int = 5) -> List[Dict]:
+    """Wanfang Data — Chinese academic database."""
+    results = []
+    try:
+        resp = requests.get(f"https://s.wanfangdata.com.cn/paper",
+                            params={"q": query}, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        if resp.status_code == 200:
+            entries = re.findall(r'<div class="normal-list"[^>]*>(.*?)</div>', resp.text, re.DOTALL)
+            for entry in entries[:max_results]:
+                title_m = re.search(r'<a[^>]*>(.*?)</a>', entry)
+                if title_m:
+                    title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip()
+                    results.append({"title": title, "snippet": "", "url": f"https://s.wanfangdata.com.cn/paper?q={requests.utils.quote(query)}", "source": "Wanfang"})
+    except Exception as e:
+        logger.warning(f"Wanfang error: {e}")
+    return results
+
+
+def _search_europepmc(query: str, max_results: int = 5) -> List[Dict]:
+    """Europe PMC — open access biomedical literature."""
+    results = []
+    try:
+        resp = requests.get("https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+            params={"query": query, "format": "json", "pageSize": max_results},
+            timeout=15)
+        if resp.status_code == 200:
+            for item in resp.json().get("resultList", {}).get("result", [])[:max_results]:
+                title = item.get("title", "")
+                authors = item.get("authorString", "")
+                journal = item.get("journalTitle", "")
+                year = item.get("pubYear", "")
+                pmid = item.get("pmid", "")
+                doi = item.get("doi", "")
+                snippet = f"({year}) {authors[:80]}. {journal}"
+                url = f"https://europepmc.org/article/PMID/{pmid}" if pmid else f"https://doi.org/{doi}"
+                results.append({"title": title, "snippet": snippet, "url": url, "source": "Europe PMC"})
+    except Exception as e:
+        logger.warning(f"Europe PMC error: {e}")
+    return results
+
+
+def _search_lens(query: str, max_results: int = 5) -> List[Dict]:
+    """Lens.org — scholarly search covering patents and literature."""
+    results = []
+    try:
+        resp = requests.get("https://www.lens.org/lens/search/scholar/list",
+            params={"q": query, "p": 0, "n": max_results},
+            headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        if resp.status_code == 200:
+            # Extract from HTML
+            entries = re.findall(r'<div class="scholar-result[^"]*"[^>]*>(.*?)</div>', resp.text, re.DOTALL)
+            for entry in entries[:max_results]:
+                title_m = re.search(r'<a[^>]*>(.*?)</a>', entry)
+                if title_m:
+                    title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip()
+                    results.append({"title": title[:200], "snippet": "", "url": f"https://www.lens.org/lens/search/scholar/list?q={requests.utils.quote(query)}", "source": "Lens.org"})
+    except Exception as e:
+        logger.warning(f"Lens.org error: {e}")
+    return results
+
+
+def _search_mesh(query: str, max_results: int = 5) -> List[Dict]:
+    """MeSH (Medical Subject Headings) — NCBI controlled vocabulary."""
+    results = []
+    try:
+        resp = requests.get("https://id.nlm.nih.gov/mesh/lookup/descriptor",
+            params={"label": query, "match": "contains", "limit": max_results},
+            timeout=10)
+        if resp.status_code == 200:
+            for item in resp.json()[:max_results]:
+                label = item.get("label", "")
+                resource = item.get("resource", "")
+                mesh_id = resource.split("/")[-1] if resource else ""
+                results.append({"title": f"MeSH: {label}", "snippet": f"MeSH ID: {mesh_id}",
+                                "url": f"https://meshb.nlm.nih.gov/record/ui?ui={mesh_id}", "source": "MeSH"})
+    except Exception as e:
+        logger.warning(f"MeSH error: {e}")
+    return results
+
+
+def _search_aapm(query: str, max_results: int = 5) -> List[Dict]:
+    """AAPM reports and task group guidelines."""
+    results = []
+    try:
+        resp = requests.get("https://www.aapm.org/pubs/reports/",
+                            headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        if resp.status_code == 200:
+            # Extract report entries
+            entries = re.findall(r'<tr[^>]*>(.*?)</tr>', resp.text, re.DOTALL)
+            for entry in entries[:max_results * 3]:  # Search more to filter
+                cells = re.findall(r'<td[^>]*>(.*?)</td>', entry, re.DOTALL)
+                if len(cells) >= 2:
+                    title = re.sub(r'<[^>]+>', '', cells[0]).strip()
+                    desc = re.sub(r'<[^>]+>', '', cells[1]).strip()
+                    if any(kw in title.lower() or kw in desc.lower() for kw in query.lower().split()):
+                        results.append({"title": title[:200], "snippet": desc[:200],
+                                        "url": "https://www.aapm.org/pubs/reports/", "source": "AAPM"})
+                        if len(results) >= max_results:
+                            break
+    except Exception as e:
+        logger.warning(f"AAPM error: {e}")
+    return results
+
+
+def _search_iop(query: str, max_results: int = 5) -> List[Dict]:
+    """IOP Publishing — Physics in Medicine & Biology."""
+    results = []
+    try:
+        resp = requests.get(f"https://iopscience.iop.org/search",
+            params={"value": query, "searchType": "journalSearch"},
+            headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        if resp.status_code == 200:
+            entries = re.findall(r'<div class="search-result"[^>]*>(.*?)</div>', resp.text, re.DOTALL)
+            for entry in entries[:max_results]:
+                title_m = re.search(r'<a[^>]*>(.*?)</a>', entry)
+                if title_m:
+                    title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip()
+                    results.append({"title": title[:200], "snippet": "", "url": f"https://iopscience.iop.org/search?value={requests.utils.quote(query)}", "source": "IOP (Phys Med Biol)"})
+    except Exception as e:
+        logger.warning(f"IOP error: {e}")
+    return results
+
+
+# Registry of specialized engines
+    """Wanfang Data — Chinese academic database."""
+    results = []
+    try:
+        resp = requests.get(f"https://s.wanfangdata.com.cn/paper",
+                            params={"q": query}, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        if resp.status_code == 200:
+            entries = re.findall(r'<div class="normal-list"[^>]*>(.*?)</div>', resp.text, re.DOTALL)
+            for entry in entries[:max_results]:
+                title_m = re.search(r'<a[^>]*>(.*?)</a>', entry)
+                if title_m:
+                    title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip()
+                    results.append({"title": title, "snippet": "", "url": f"https://s.wanfangdata.com.cn/paper?q={requests.utils.quote(query)}", "source": "Wanfang"})
+    except Exception as e:
+        logger.warning(f"Wanfang error: {e}")
+    return results
+
+
+# Registry of specialized engines
+SPECIALIZED_ENGINES = [
+    # Real-time data
+    SpecializedEngine("Weather", ["天气", "weather", "气温", "temperature", "forecast"],
+                      _search_weather, "Real-time weather via wttr.in API"),
+    SpecializedEngine("Exchange Rate", ["汇率", "exchange rate", "美元", "欧元", "日元", "英镑", "usd", "eur"],
+                      _search_exchange_rate, "Live exchange rates via open.er-api.com"),
+
+    # Medical guidelines & knowledge
+    SpecializedEngine("NCCN Guidelines", ["nccn", "指南", "guideline", "治疗规范"],
+                      _search_nccn, "NCCN clinical practice guidelines"),
+    SpecializedEngine("Radiopaedia", ["radiopaedia", "影像学", "radiology", "影像诊断"],
+                      _search_radiopaedia, "Radiology knowledge base with cases"),
+    SpecializedEngine("ICD Codes", ["icd", "疾病编码", "诊断编码", "disease code"],
+                      _search_icd, "ICD-11 disease classification codes (WHO)"),
+    SpecializedEngine("OMIM", ["omim", "遗传病", "genetic disorder", "基因突变"],
+                      _search_omim, "Online Mendelian Inheritance in Man (genetic disorders)"),
+
+    # Clinical research
+    SpecializedEngine("Clinical Trials", ["临床试验", "clinical trial", "clinicaltrials.gov"],
+                      _search_clinical_trials, "Clinical trial data from ClinicalTrials.gov API"),
+    SpecializedEngine("FDA Drugs", ["fda", "药物批准", "drug approval", "药物安全"],
+                      _search_fda, "FDA drug labels and approvals"),
+    SpecializedEngine("PubMed", ["pubmed", "医学文献", "临床研究", "clinical study"],
+                      _search_pubmed_direct, "Clinical literature via PubMed E-utilities"),
+    SpecializedEngine("Semantic Scholar", ["论文", "paper", "publication", "引用", "citation"],
+                      _search_semantic_scholar, "Academic papers via Semantic Scholar API"),
+    SpecializedEngine("CrossRef", ["doi", "crossref", "期刊论文", "journal article"],
+                      _search_crossref, "Universal DOI metadata for all publishers"),
+    SpecializedEngine("OpenAlex", ["openalex", "学术数据库", "citation count", "被引"],
+                      _search_openalex, "Open academic database with full-text links"),
+    SpecializedEngine("arXiv", ["arxiv", "预印本", "preprint"],
+                      _search_arxiv, "arXiv preprints"),
+    SpecializedEngine("bioRxiv", ["biorxiv", "medrxiv", "生物学预印本", "医学预印本"],
+                      _search_biorxiv, "bioRxiv/medRxiv preprints"),
+    SpecializedEngine("Springer Nature", ["springer", "nature", "springer nature", "施普林格"],
+                      _search_springer, "Springer Nature journal articles"),
+    SpecializedEngine("IEEE Xplore", ["ieee xplore", "ieee论文", "ieee transactions"],
+                      _search_ieee_xplore, "IEEE engineering and medical imaging papers"),
+    SpecializedEngine("Europe PMC", ["europepmc", "欧洲pmc", "europe pubmed"],
+                      _search_europepmc, "European PubMed Central — open access biomedical literature"),
+    SpecializedEngine("Lens.org", ["lens.org", "scholarly search", "学术搜索"],
+                      _search_lens, "Lens.org — scholarly patents and literature"),
+    SpecializedEngine("MeSH", ["mesh", "医学主题词", "medical subject heading"],
+                      _search_mesh, "Medical Subject Headings (NCBI controlled vocabulary)"),
+    SpecializedEngine("AAPM Reports", ["aapm", "tg-43", "tg-186", "tg-229", "medical physics report"],
+                      _search_aapm, "AAPM task group reports and guidelines"),
+    SpecializedEngine("IOP Physics Med Biol", ["physics in medicine", "phys med biol", "物理学与医学"],
+                      _search_iop, "IOP Publishing — Physics in Medicine & Biology"),
+
+    # Patents
+    SpecializedEngine("Google Patents", ["专利", "patent", "发明专利", "实用新型"],
+                      _search_google_patents, "Google Patents search"),
+    SpecializedEngine("CNIPA", ["cnipa", "中国专利", "国家知识产权局"],
+                      _search_cnipa, "China National Intellectual Property Administration"),
+
+    # Chinese academic
+    SpecializedEngine("CNKI", ["cnki", "知网", "中国知网", "中文文献"],
+                      _search_cnki, "China National Knowledge Infrastructure"),
+    SpecializedEngine("Wanfang", ["万方", "wanfang", "万方数据"],
+                      _search_wanfang, "Wanfang Chinese academic database"),
+
+    # Technical
+    SpecializedEngine("Stack Overflow", ["stackoverflow", "编程", "programming", "代码问题"],
+                      _search_stackoverflow, "Programming Q&A via Stack Overflow API"),
+    SpecializedEngine("Papers With Code", ["代码实现", "implementation", "papers with code", "benchmark"],
+                      _search_papers_with_code, "ML papers with code implementations"),
+    SpecializedEngine("GitHub", ["github", "代码库", "repository", "开源项目"],
+                      _search_github_repos, "GitHub repository search"),
+]
+
+
+# ============================================================
+# Search Engines
+# ============================================================
+
+class SearchEngine:
+    """Base class for search engines."""
+
+    def search(self, query: str, max_results: int = 5) -> List[Dict]:
+        """Search and return list of {title, snippet, url, source}."""
+        raise NotImplementedError
+
+
+class BingSearch(SearchEngine):
+    """Bing search (API or cn.bing.com scraping)."""
+
+    def search(self, query: str, max_results: int = 5) -> List[Dict]:
         results = []
         api_key = os.environ.get("BING_SEARCH_API_KEY")
 
         if api_key:
-            # Use official Bing API
-            try:
-                endpoint = "https://api.bing.microsoft.com/v7.0/search"
-                headers = {"Ocp-Apim-Subscription-Key": api_key}
-                params = {
-                    "q": query,
-                    "count": max_results,
-                    "mkt": "en-US"
-                }
-                response = requests.get(endpoint, headers=headers, params=params, timeout=5)
-                if response.status_code == 200:
-                    data = response.json()
-                    for item in data.get("webPages", {}).get("value", [])[:max_results]:
-                        results.append({
-                            "title": item.get("name", ""),
-                            "snippet": item.get("snippet", ""),
-                            "url": item.get("url", ""),
-                            "source": "Bing"
-                        })
-            except Exception as e:
-                logger.warning(f"Bing API error: {e}")
-        else:
-            # Try cn.bing.com (accessible from China)
-            try:
-                search_url = f"https://cn.bing.com/search?q={quote_plus(query)}"
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                }
-                response = requests.get(search_url, headers=headers, timeout=10)
-                if response.status_code == 200:
-                    text = response.text
-                    # Extract results from cn.bing.com
-                    # Note: b_algo li tags have extra attributes like data-id, so use flexible pattern
-                    result_pattern = r'<li\s+class="b_algo"[^>]*>(.*?)</li>'
-                    result_blocks = re.findall(result_pattern, text, re.DOTALL)
-                    logger.info(f"Bing CN: found {len(result_blocks)} result blocks")
+            return self._search_api(query, max_results, api_key)
+        return self._search_scrape(query, max_results)
 
-                    for block in result_blocks[:max_results]:
-                        # Extract URL from <a> tag inside <h2>
-                        url_match = re.search(r'<h2[^>]*>\s*<a[^>]*href="([^"]*)"[^>]*>', block, re.DOTALL)
-                        if not url_match:
-                            url_match = re.search(r'<a[^>]*href="([^"]*)"[^>]*>[^<]*<strong>', block, re.DOTALL)
-                        url = url_match.group(1) if url_match else ""
-
-                        # Extract title text (strip HTML tags including <strong>)
-                        title_match = re.search(r'<h2[^>]*>(.*?)</h2>', block, re.DOTALL)
-                        if title_match:
-                            title = re.sub(r'<[^>]+>', '', title_match.group(1)).strip()
-                        else:
-                            title = ""
-
-                        # Extract snippet from <p> or <div class="b_caption">
-                        snippet_match = re.search(r'<p[^>]*>(.*?)</p>', block, re.DOTALL)
-                        if not snippet_match:
-                            snippet_match = re.search(r'<div[^>]*class="b_caption"[^>]*>(.*?)</div>', block, re.DOTALL)
-                        snippet = re.sub(r'<[^>]+>', '', snippet_match.group(1)).strip() if snippet_match else ""
-                        # Clean up HTML entities
-                        snippet = snippet.replace('&ensp;', ' ').replace('&#0183;', '·').replace('&nbsp;', ' ')
-
-                        if title and url:
-                            results.append({
-                                "title": title[:200],
-                                "snippet": snippet[:300] if snippet else "",
-                                "url": url,
-                                "source": "Bing CN"
-                            })
-                    logger.info(f"Bing CN: extracted {len(results)} results")
-            except Exception as e:
-                logger.warning(f"Bing CN error: {e}")
-
-        return results[:max_results]
-
-    def _search_baidu(self, query: str, max_results: int = 5) -> List[Dict]:
-        """
-        Search using Baidu.
-        Accessible from China without API key.
-        """
-        results = []
-
+    def _search_api(self, query: str, max_results: int, api_key: str) -> List[Dict]:
         try:
-            search_url = f"https://www.baidu.com/s?wd={quote_plus(query)}"
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-            response = requests.get(search_url, headers=headers, timeout=5)
-            if response.status_code == 200:
-                text = response.text
-                # Extract results from Baidu
-                # Baidu uses <div class="result"> for each result
-                result_pattern = r'<div class="result[^"]*"[^>]*>(.*?)</div>\s*</div>'
-                result_blocks = re.findall(result_pattern, text, re.DOTALL)
-
-                for block in result_blocks[:max_results]:
-                    # Extract title
-                    title_match = re.search(r'<h3[^>]*><a[^>]*>(.*?)</a></h3>', block, re.DOTALL)
-                    if title_match:
-                        title = re.sub(r'<[^>]+>', '', title_match.group(1)).strip()
-
-                        # Extract URL
-                        url_match = re.search(r'<h3[^>]*><a[^>]*href="([^"]*)"', block)
-                        url = url_match.group(1) if url_match else ""
-
-                        # Extract snippet
-                        snippet_match = re.search(r'<span class="content-right_[^"]*">(.*?)</span>', block, re.DOTALL)
-                        if not snippet_match:
-                            snippet_match = re.search(r'<div class="c-abstract">(.*?)</div>', block, re.DOTALL)
-                        snippet = re.sub(r'<[^>]+>', '', snippet_match.group(1)).strip() if snippet_match else ""
-
-                        if title:
-                            results.append({
-                                "title": title[:200],
-                                "snippet": snippet[:300] if snippet else "",
-                                "url": url,
-                                "source": "Baidu"
-                            })
+            resp = requests.get(
+                "https://api.bing.microsoft.com/v7.0/search",
+                headers={"Ocp-Apim-Subscription-Key": api_key},
+                params={"q": query, "count": max_results, "mkt": "en-US"},
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                for item in resp.json().get("webPages", {}).get("value", [])[:max_results]:
+                    return [{
+                        "title": item.get("name", ""),
+                        "snippet": item.get("snippet", ""),
+                        "url": item.get("url", ""),
+                        "source": "Bing API",
+                    }]
         except Exception as e:
-            logger.warning(f"Baidu search error: {e}")
+            logger.warning(f"Bing API error: {e}")
+        return []
 
-        return results[:max_results]
-
-    def _search_pubmed(self, query: str, max_results: int = 3) -> List[Dict]:
-        """Search PubMed for clinical literature with abstracts."""
+    def _search_scrape(self, query: str, max_results: int) -> List[Dict]:
         results = []
-
         try:
-            # Use PubMed E-utilities to search
-            search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-            params = {
-                "db": "pubmed",
-                "term": query,
-                "retmax": max_results,
-                "retmode": "json",
-                "sort": "relevance"
-            }
+            url = f"https://cn.bing.com/search?q={quote_plus(query)}"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+            resp = requests.get(url, headers=headers, timeout=10)
+            if resp.status_code != 200:
+                return results
 
-            response = requests.get(search_url, params=params, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                ids = data.get("esearchresult", {}).get("idlist", [])
+            text = resp.text
+            # Multiple patterns for result blocks (Bing HTML varies)
+            blocks = re.findall(r'<li class="b_algo"[^>]*>(.*?)</li>', text, re.DOTALL)
+            if not blocks:
+                blocks = re.findall(r'<div class="b_algo"[^>]*>(.*?)</div>\s*</div>', text, re.DOTALL)
 
-                if ids:
-                    # Fetch article details including abstract
-                    fetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
-                    fetch_params = {
-                        "db": "pubmed",
-                        "id": ",".join(ids),
-                        "retmode": "json"
-                    }
+            for block in blocks[:max_results]:
+                # Extract title
+                title_m = re.search(r'<h2[^>]*>(.*?)</h2>', block, re.DOTALL)
+                if not title_m:
+                    continue
+                title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip()
 
-                    fetch_response = requests.get(fetch_url, params=fetch_params, timeout=5)
-                    if fetch_response.status_code == 200:
-                        summaries = fetch_response.json().get("result", {})
+                # Extract URL
+                url_m = re.search(r'<a[^>]*href="(https?://[^"]*)"', block)
+                result_url = url_m.group(1) if url_m else ""
 
-                        # Also fetch abstracts using efetch
-                        efetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-                        efetch_params = {
-                            "db": "pubmed",
-                            "id": ",".join(ids),
-                            "rettype": "abstract",
-                            "retmode": "text"
-                        }
-                        abstract_response = requests.get(efetch_url, params=efetch_params, timeout=5)
-                        abstracts = {}
-                        if abstract_response.status_code == 200:
-                            # Parse abstracts from plain text response
-                            abstract_text = abstract_response.text
-                            # Look for abstract content using common patterns
-                            # Abstracts typically start with background/purpose statements
-                            abstract_patterns = [
-                                r'Rare diseases affect',
-                                r'BACKGROUND:',
-                                r'PURPOSE:',
-                                r'OBJECTIVE:',
-                                r'METHODS:',
-                                r'RESULTS:',
-                                r'CONCLUSIONS:',
-                                r'Here we present',
-                                r'We present',
-                                r'This study',
-                            ]
+                # Extract snippet — multiple patterns
+                snippet = ""
+                for pattern in [
+                    r'<p[^>]*>(.*?)</p>',
+                    r'<div class="b_caption"[^>]*>(.*?)</div>',
+                    r'<span class="c_.*?">(.*?)</span>',
+                ]:
+                    snippet_m = re.search(pattern, block, re.DOTALL)
+                    if snippet_m:
+                        snippet = re.sub(r'<[^>]+>', '', snippet_m.group(1)).strip()
+                        if snippet and len(snippet) > 20:
+                            break
 
-                            for pmid in ids:
-                                for pattern in abstract_patterns:
-                                    match = re.search(pattern, abstract_text, re.IGNORECASE)
-                                    if match:
-                                        # Get text from this match to the copyright/DOI
-                                        start = match.start()
-                                        end = abstract_text.find('©', start)
-                                        if end == -1:
-                                            end = abstract_text.find('DOI:', start)
-                                        if end == -1:
-                                            end = len(abstract_text)
-                                        abstract = abstract_text[start:end].strip()
-                                        # Clean up citation numbers
-                                        abstract = re.sub(r'\d+[-–]\d+', '', abstract)
-                                        abstract = re.sub(r'\d+,\d+', '', abstract)
-                                        abstracts[pmid] = abstract[:500]
-                                        break
+                # Fallback: extract all text from block
+                if not snippet:
+                    snippet = re.sub(r'<[^>]+>', ' ', block)
+                    snippet = re.sub(r'\s+', ' ', snippet).strip()[:200]
 
-                        for pmid in ids:
-                            article = summaries.get(pmid, {})
-                            if article:
-                                title = article.get("title", "Unknown")
-                                abstract = abstracts.get(pmid, "")
-                                snippet = f"PubMed ID: {pmid}. {article.get('sortpubdate', '')}"
-                                if abstract:
-                                    snippet += f". {abstract}"
-
-                                results.append({
-                                    "title": title,
-                                    "snippet": snippet[:500],
-                                    "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
-                                    "source": "PubMed"
-                                })
-
+                if title:
+                    results.append({
+                        "title": title[:200],
+                        "snippet": snippet[:300],
+                        "url": result_url,
+                        "source": "Bing",
+                    })
         except Exception as e:
-            logger.warning(f"PubMed search error: {e}")
-
+            logger.warning(f"Bing scrape error: {e}")
         return results
 
-    def _search_github(self, query: str, max_results: int = 5, search_type: str = "repositories") -> List[Dict]:
-        """
-        Search GitHub for code, repositories, and documentation.
 
-        Args:
-            query: Search query
-            max_results: Maximum results to return
-            search_type: 'repositories', 'code', or 'issues'
-        """
+class SogouSearch(SearchEngine):
+    """Sogou search (www.sogou.com) — good for Chinese queries."""
+
+    def search(self, query: str, max_results: int = 5) -> List[Dict]:
         results = []
-
         try:
-            # GitHub Search API (no auth required for basic search)
-            api_url = "https://api.github.com/search"
+            url = f"https://www.sogou.com/web?query={quote_plus(query)}"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            resp = requests.get(url, headers=headers, timeout=10)
+            if resp.status_code != 200:
+                return results
 
-            if search_type == "repositories":
-                url = f"{api_url}/repositories"
-                params = {
-                    "q": query,
-                    "sort": "stars",
-                    "order": "desc",
-                    "per_page": max_results
-                }
-            elif search_type == "code":
-                url = f"{api_url}/code"
-                params = {
-                    "q": query,
-                    "per_page": max_results
-                }
-            else:  # issues
-                url = f"{api_url}/issues"
-                params = {
-                    "q": query,
-                    "sort": "relevance",
-                    "per_page": max_results
-                }
+            text = resp.text
+            # Extract from <div class="vrwrap"> or <div class="rb">
+            blocks = re.findall(r'<h3[^>]*>(.*?)</h3>', text, re.DOTALL)
+            snippets = re.findall(r'<p[^>]*class="[^"]*str[^"]*"[^>]*>(.*?)</p>', text, re.DOTALL)
 
-            headers = {
-                "Accept": "application/vnd.github.v3+json",
-                "User-Agent": "BrachyBot-Agent"
-            }
+            for i, title_html in enumerate(blocks[:max_results]):
+                title = re.sub(r'<[^>]+>', '', title_html).strip()
+                snippet = re.sub(r'<[^>]+>', '', snippets[i]).strip() if i < len(snippets) else ""
+                if title and len(title) > 5:
+                    results.append({
+                        "title": title[:200],
+                        "snippet": snippet[:300],
+                        "url": "",
+                        "source": "Sogou",
+                    })
+        except Exception as e:
+            logger.warning(f"Sogou search error: {e}")
+        return results
 
-            # Check for GitHub token in environment
-            github_token = os.environ.get("GITHUB_TOKEN")
-            if github_token:
-                headers["Authorization"] = f"token {github_token}"
 
-            response = requests.get(url, params=params, headers=headers, timeout=15)
+class PubMedSearch(SearchEngine):
+    """PubMed search for clinical literature."""
 
-            if response.status_code == 200:
-                data = response.json()
-                items = data.get("items", [])
+    def search(self, query: str, max_results: int = 3) -> List[Dict]:
+        results = []
+        try:
+            # Search PubMed
+            search_resp = requests.get(
+                "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+                params={"db": "pubmed", "term": query, "retmax": max_results, "retmode": "json"},
+                timeout=10,
+            )
+            if search_resp.status_code != 200:
+                return results
 
+            ids = search_resp.json().get("esearchresult", {}).get("idlist", [])
+            if not ids:
+                return results
+
+            # Fetch abstracts
+            fetch_resp = requests.get(
+                "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi",
+                params={"db": "pubmed", "id": ",".join(ids), "retmode": "json"},
+                timeout=10,
+            )
+            if fetch_resp.status_code == 200:
+                for uid in ids:
+                    article = fetch_resp.json().get("result", {}).get(uid, {})
+                    if article:
+                        title = article.get("title", "")
+                        authors = ", ".join(a.get("name", "") for a in article.get("authors", [])[:3])
+                        source = article.get("fulljournalname", article.get("source", ""))
+                        pub_date = article.get("pubdate", "")
+                        results.append({
+                            "title": title[:200],
+                            "snippet": f"{authors}. {source}. {pub_date}".strip(),
+                            "url": f"https://pubmed.ncbi.nlm.nih.gov/{uid}/",
+                            "source": "PubMed",
+                        })
+        except Exception as e:
+            logger.warning(f"PubMed search error: {e}")
+        return results
+
+
+class GitHubSearch(SearchEngine):
+    """GitHub search for code and repositories."""
+
+    def search(self, query: str, max_results: int = 5, search_type: str = "repositories") -> List[Dict]:
+        results = []
+        try:
+            url = f"https://api.github.com/search/{search_type}"
+            headers = {"Accept": "application/vnd.github.v3+json"}
+            token = os.environ.get("GITHUB_TOKEN")
+            if token:
+                headers["Authorization"] = f"token {token}"
+
+            resp = requests.get(url, headers=headers, params={"q": query, "per_page": max_results}, timeout=10)
+            if resp.status_code == 200:
+                items = resp.json().get("items", [])
                 for item in items[:max_results]:
                     if search_type == "repositories":
                         results.append({
                             "title": item.get("full_name", ""),
-                            "snippet": item.get("description", "No description"),
+                            "snippet": (item.get("description") or "")[:200],
                             "url": item.get("html_url", ""),
                             "source": "GitHub",
-                            "metadata": {
-                                "stars": item.get("stargazers_count", 0),
-                                "language": item.get("language", ""),
-                                "forks": item.get("forks_count", 0),
-                                "updated": item.get("updated_at", "")
-                            }
                         })
-                    elif search_type == "code":
-                        repo = item.get("repository", {})
+                    else:
                         results.append({
-                            "title": f"{repo.get('full_name', '')}/{item.get('name', '')}",
-                            "snippet": item.get("path", ""),
+                            "title": item.get("name", ""),
+                            "snippet": (item.get("description") or item.get("path", ""))[:200],
                             "url": item.get("html_url", ""),
-                            "source": "GitHub Code"
+                            "source": "GitHub",
                         })
-                    else:  # issues
-                        results.append({
-                            "title": item.get("title", ""),
-                            "snippet": f"#{item.get('number', '')} in {item.get('repository', {}).get('full_name', '')}",
-                            "url": item.get("html_url", ""),
-                            "source": "GitHub Issue"
-                        })
-            else:
-                logger.warning(f"GitHub API returned status {response.status_code}")
-
         except Exception as e:
             logger.warning(f"GitHub search error: {e}")
-
         return results
 
-    def _clone_github_repo(self, repo_url: str, target_dir: str = None) -> Dict:
+
+# ============================================================
+# Result Validator
+# ============================================================
+
+class ResultValidator:
+    """Multi-signal result validation and scoring.
+
+    Scoring combines:
+    1. Keyword matching (with cross-language support)
+    2. Source quality weighting
+    3. Content richness signals
+    4. N-gram matching for phrase-level relevance
+    """
+
+    STOP_WORDS = frozenset({
+        'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+        'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+        'should', 'may', 'might', 'shall', 'can', 'of', 'in', 'on', 'at',
+        'to', 'for', 'with', 'by', 'from', 'as', 'into', 'through', 'during',
+        'before', 'after', 'above', 'below', 'between', 'out', 'off', 'over',
+        'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when',
+        'where', 'why', 'how', 'all', 'each', 'every', 'both', 'few', 'more',
+        'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own',
+        'same', 'so', 'than', 'too', 'very', 'just', 'about', 'what', 'which',
+        'who', 'whom', 'this', 'that', 'these', 'those', 'i', 'me', 'my',
+        'we', 'our', 'you', 'your', 'he', 'him', 'his', 'she', 'her', 'it',
+        'its', 'they', 'them', 'their', 'and', 'or', 'but', 'if', 'while',
+        '最新', '查询', '搜索', '查',
+    })
+
+    # Cross-language term mapping
+    CROSS_LANG = {
+        'impact factor': '影响因子',
+        'ranking': '排名',
+        'journal': '期刊',
+        'publication': '论文',
+        'guideline': '指南',
+        'dose': '剂量',
+        'treatment': '治疗',
+        'weather': '天气',
+        'temperature': '温度',
+        'diagnosis': '诊断',
+        'algorithm': '算法',
+        'medical image analysis': '医学图像分析',
+    }
+
+    # Source quality weights (higher = more trustworthy)
+    SOURCE_WEIGHTS = {
+        'PubMed': 1.0,
+        'GitHub': 0.8,
+        'Bing': 0.6,
+        'Sogou': 0.6,
+        'Baidu': 0.5,
+    }
+
+    @staticmethod
+    def _extract_key_terms(query: str) -> List[str]:
+        """Extract meaningful terms from query, removing noise."""
+        terms = re.findall(r'[\w一-鿿]+', query.lower())
+        key = []
+        for t in terms:
+            if t in ResultValidator.STOP_WORDS or len(t) <= 1:
+                continue
+            if re.match(r'^20\d{2}$', t):  # Skip years
+                continue
+            key.append(t)
+        return key
+
+    @staticmethod
+    def _build_search_terms(query: str, key_terms: List[str]) -> set:
+        """Build expanded term set with cross-language and n-gram support."""
+        search = set(key_terms)
+
+        # Add cross-language equivalents
+        q_lower = query.lower()
+        for en_term, zh_term in ResultValidator.CROSS_LANG.items():
+            if any(t in q_lower for t in en_term.split()):
+                search.add(zh_term)
+            if zh_term in query:
+                search.update(en_term.split())
+
+        # Add bigrams for phrase matching
+        for i in range(len(key_terms) - 1):
+            search.add(f"{key_terms[i]} {key_terms[i+1]}")
+
+        return search
+
+    @staticmethod
+    def score_relevance(query: str, results: List[Dict]) -> float:
+        """Score how relevant results are to the query (0-1).
+
+        Multi-signal approach:
+        - Keyword match ratio (primary signal)
+        - Cross-language matching
+        - N-gram phrase matching
+        - Source quality weighting
         """
-        Clone a GitHub repository.
-
-        Args:
-            repo_url: GitHub repository URL (e.g., https://github.com/user/repo)
-            target_dir: Target directory (optional, defaults to /tmp/brachybot_repos/)
-
-        Returns:
-            Dict with success status, path, and message
-        """
-        import subprocess
-
-        if target_dir is None:
-            target_dir = os.path.join("/tmp", "brachybot_repos")
-
-        os.makedirs(target_dir, exist_ok=True)
-
-        # Extract repo name from URL
-        repo_name = repo_url.split("/")[-1].replace(".git", "")
-        clone_path = os.path.join(target_dir, repo_name)
-
-        # Check if already cloned
-        if os.path.exists(clone_path):
-            # Pull latest changes
-            try:
-                subprocess.run(
-                    ["git", "-C", clone_path, "pull"],
-                    capture_output=True, text=True, timeout=60
-                )
-                return {
-                    "success": True,
-                    "path": clone_path,
-                    "message": f"Repository updated: {clone_path}"
-                }
-            except Exception as e:
-                logger.warning(f"Git pull failed: {e}")
-
-        # Clone the repository
-        try:
-            result = subprocess.run(
-                ["git", "clone", "--depth", "1", repo_url, clone_path],
-                capture_output=True, text=True, timeout=120
-            )
-
-            if result.returncode == 0:
-                return {
-                    "success": True,
-                    "path": clone_path,
-                    "message": f"Repository cloned to: {clone_path}"
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": result.stderr,
-                    "message": f"Failed to clone repository: {result.stderr}"
-                }
-
-        except subprocess.TimeoutExpired:
-            return {
-                "success": False,
-                "error": "Timeout",
-                "message": "Clone operation timed out (120s limit)"
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "message": f"Clone failed: {str(e)}"
-            }
-
-    def _search_local_repo(self, repo_path: str, query: str, max_results: int = 5) -> List[Dict]:
-        """
-        Search within a cloned repository for code and documentation.
-
-        Args:
-            repo_path: Path to the cloned repository
-            query: Search query (keywords)
-            max_results: Maximum results to return
-        """
-        results = []
-
-        if not os.path.exists(repo_path):
-            return results
-
-        try:
-            # Search in Python files
-            for root, dirs, files in os.walk(repo_path):
-                # Skip hidden directories and common non-essential dirs
-                dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['__pycache__', 'node_modules', '.git']]
-
-                for file in files:
-                    if file.endswith(('.py', '.md', '.txt', '.json', '.yaml', '.yml')):
-                        file_path = os.path.join(root, file)
-                        try:
-                            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                                content = f.read()
-
-                            # Simple keyword matching
-                            query_lower = query.lower()
-                            content_lower = content.lower()
-
-                            if query_lower in content_lower:
-                                # Find the matching context
-                                idx = content_lower.find(query_lower)
-                                start = max(0, idx - 100)
-                                end = min(len(content), idx + len(query) + 100)
-                                snippet = content[start:end].strip()
-
-                                # Get relative path
-                                rel_path = os.path.relpath(file_path, repo_path)
-
-                                results.append({
-                                    "title": f"{rel_path}",
-                                    "snippet": snippet[:200],
-                                    "url": f"file://{file_path}",
-                                    "source": "Local Repository"
-                                })
-
-                                if len(results) >= max_results:
-                                    return results
-
-                        except Exception:
-                            continue
-
-        except Exception as e:
-            logger.warning(f"Local repo search error: {e}")
-
-        return results
-
-    def _simplify_query(self, query: str) -> str:
-        """
-        Simplify search query for better results.
-        Only remove obvious noise - let LLM handle complex translation.
-        """
-        # Remove only the most basic noise
-        noise_patterns = [
-            r'^(你知道|告诉我|介绍一下|什么是|是什么)\s*',
-            r'\s*(吗|呢|啊|吧|呀)\??$',
-        ]
-
-        simplified = query
-        for pattern in noise_patterns:
-            simplified = re.sub(pattern, '', simplified, flags=re.IGNORECASE)
-
-        return simplified.strip() if simplified.strip() else query
-
-    def _optimize_search_query(self, query: str, search_type: str = "general") -> str:
-        """
-        Optimize search query for different search engines.
-        Inspired by Higress ai-search plugin.
-        """
-        # Simplify the query first
-        simplified = self._simplify_query(query)
-
-        # For PubMed, add medical context if not present
-        if search_type == "clinical":
-            medical_terms = ['brachytherapy', 'radiation', 'dose', 'treatment', 'cancer']
-            if not any(term in simplified.lower() for term in medical_terms):
-                simplified += " brachytherapy"
-
-        # For general search, try to make it more search-friendly
-        # Convert questions to keywords
-        question_words = ['what', 'who', 'when', 'where', 'why', 'how', 'which']
-        words = simplified.split()
-        filtered_words = [w for w in words if w.lower() not in question_words]
-        if filtered_words:
-            simplified = ' '.join(filtered_words)
-
-        return simplified
-
-    def _simplify_for_pubmed(self, query: str) -> str:
-        """
-        Simplify query specifically for PubMed search.
-        Keep only the most distinctive terms for better PubMed results.
-        """
-        # Very basic stop words for PubMed
-        stop_words = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-                      'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-                      'should', 'may', 'might', 'can', 'shall', 'to', 'of', 'in', 'for',
-                      'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during',
-                      'before', 'after', 'above', 'below', 'between', 'out', 'off', 'over',
-                      'under', 'again', 'further', 'then', 'once'}
-
-        # Extra words to remove for PubMed (these make queries too specific)
-        extra_noise = {'ai', 'system', 'tool', 'platform', 'model', 'software',
-                       'technology', 'method', 'approach', 'technique',
-                       'medical', 'clinical', 'health', 'healthcare',
-                       'meta', 'google', 'microsoft', 'openai', 'deepmind'}
-
-        words = query.split()
-        # Keep only non-stop, non-noise words (max 2)
-        main_keywords = [w for w in words if w.lower() not in stop_words and w.lower() not in extra_noise][:2]
-
-        return ' '.join(main_keywords) if main_keywords else query
-
-    def _contains_chinese(self, text: str) -> bool:
-        """Check if text contains Chinese characters."""
-        import re
-        return bool(re.search(r'[一-鿿]', text))
-
-    def _extract_search_query(self, user_message: str, llm_response: str = None) -> str:
-        """
-        Extract the actual search query from user message or LLM response.
-        This helps when the LLM translates the query before searching.
-        """
-        # If LLM provided a translated query, use it
-        if llm_response:
-            # Look for patterns like "search for '...'" or "query: ..."
-            import re
-            patterns = [
-                r"search for ['\"](.+?)['\"]",
-                r"query: ['\"](.+?)['\"]",
-                r"search_query: ['\"](.+?)['\"]",
-            ]
-            for pattern in patterns:
-                match = re.search(pattern, llm_response, re.IGNORECASE)
-                if match:
-                    return match.group(1)
-
-        # Otherwise, extract keywords from user message
-        # Remove common question patterns
-        cleaned = user_message
-        for prefix in ['你知道', '告诉我', '介绍一下', '什么是', '是什么']:
-            cleaned = cleaned.replace(prefix, '')
-
-        return cleaned.strip()
-
-    def _format_results(self, results: List[Dict], query: str) -> Dict:
-        """Format search results into a structured response."""
         if not results:
-            return {
-                "success": True,
-                "results": [],
-                "answer": f"I searched for '{query}' but couldn't find specific information. "
-                          "This may be a question that requires specialized knowledge or "
-                          "access to specific databases I don't have.",
-                "sources": []
-            }
+            return 0.0
 
-        # Extract key information
-        sources = []
-        pubmed_results = []
-        github_results = []
-        other_results = []
+        key_terms = ResultValidator._extract_key_terms(query)
+        if not key_terms:
+            return 0.5
 
+        search_terms = ResultValidator._build_search_terms(query, key_terms)
+
+        # Score each result and take the best
+        best_score = 0.0
         for r in results:
-            if r.get("url"):
-                sources.append(r["url"])
-            if r.get("snippet"):
-                if r.get("source") == "PubMed":
-                    pubmed_results.append(r)
-                elif r.get("source") in ["GitHub", "GitHub Repository"]:
-                    github_results.append(r)
-                else:
-                    other_results.append(r)
+            text = f"{r.get('title', '')} {r.get('snippet', '')} {r.get('page_content', '')}".lower()
 
-        # Create a comprehensive answer
-        answer_parts = []
+            # Count matched terms
+            matched = sum(1 for t in search_terms if t in text)
 
-        # Add PubMed results
-        if pubmed_results:
-            answer_parts.append("PubMed results:")
-            for i, r in enumerate(pubmed_results[:3], 1):
-                answer_parts.append(f"{i}. {r['snippet'][:200]}")
+            # Keyword match ratio (capped at 1.0)
+            keyword_score = min(1.0, matched / len(key_terms))
 
-        # Add GitHub results (important for technical topics)
-        if github_results:
-            answer_parts.append("\nGitHub repositories:")
-            for r in github_results[:3]:
-                title = r.get("title", "")
-                snippet = r.get("snippet", "")[:100]
-                answer_parts.append(f"- {title}: {snippet}")
+            # Source quality bonus
+            source = r.get('source', '')
+            source_weight = ResultValidator.SOURCE_WEIGHTS.get(source, 0.5)
 
-        # Add other results
-        if other_results:
-            answer_parts.append("\nOther sources:")
-            for r in other_results[:2]:
-                answer_parts.append(f"- {r['snippet'][:150]}")
+            # Content richness bonus (longer snippets = more informative)
+            snippet_len = len(r.get('snippet', ''))
+            has_page_content = bool(r.get('page_content', ''))
+            richness = min(1.0, snippet_len / 100) * 0.3
+            if has_page_content:
+                richness += 0.2
 
-        answer = "\n".join(answer_parts) if answer_parts else "Search completed but no clear answer found."
+            # Combined score: keyword match is primary, source and richness are modifiers
+            score = keyword_score * 0.7 + source_weight * 0.15 + richness * 0.15
+            best_score = max(best_score, score)
 
-        return {
-            "success": True,
-            "results": results,
-            "answer": answer,
-            "sources": sources
+        return min(1.0, best_score)
+
+    @staticmethod
+    def deduplicate(results: List[Dict]) -> List[Dict]:
+        """Remove duplicate results based on title similarity."""
+        seen = set()
+        unique = []
+        for r in results:
+            title_key = re.sub(r'\W+', '', r.get('title', '').lower())[:50]
+            if title_key and title_key not in seen:
+                seen.add(title_key)
+                unique.append(r)
+        return unique
+
+    @staticmethod
+    def get_quality_label(score: float) -> str:
+        """Convert relevance score to quality label."""
+        if score >= 0.5:
+            return "good"
+        elif score >= 0.2:
+            return "partial"
+        return "poor"
+
+
+# ============================================================
+# Search Cache
+# ============================================================
+
+class SearchCache:
+    """Simple file-based cache with TTL."""
+
+    CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache")
+    TTL_HOURS = 24  # Cache expires after 24 hours
+
+    def __init__(self):
+        os.makedirs(self.CACHE_DIR, exist_ok=True)
+
+    def _key(self, query: str) -> str:
+        return hashlib.md5(query.lower().strip().encode()).hexdigest()
+
+    def get(self, query: str) -> Optional[Dict]:
+        """Get cached result if not expired."""
+        path = os.path.join(self.CACHE_DIR, f"{self._key(query)}.json")
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            # Check TTL
+            cached_at = data.get('_cached_at', 0)
+            if time.time() - cached_at > self.TTL_HOURS * 3600:
+                os.remove(path)  # Expired
+                return None
+            return data
+        except Exception:
+            return None
+
+    def set(self, query: str, data: Dict):
+        """Cache search results."""
+        path = os.path.join(self.CACHE_DIR, f"{self._key(query)}.json")
+        data['_cached_at'] = time.time()
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning(f"Cache write error: {e}")
+
+
+# ============================================================
+# Main Search Tool
+# ============================================================
+
+class WebSearchTool(BaseTool):
+    """Multi-engine web search with intelligent query processing and result validation."""
+
+    name = "web_search"
+    description = "Search the web for information. Supports clinical literature (PubMed), general web search (Bing, Sogou), and code search (GitHub)."
+    input_schema = {
+        "query": {"type": "string", "description": "Search query"},
+        "search_type": {"type": "string", "enum": ["general", "clinical", "github_repos", "github_code"], "default": "general"},
+        "max_results": {"type": "integer", "default": 5},
+    }
+
+    def __init__(self):
+        self.engines = {
+            'bing': BingSearch(),
+            'sogou': SogouSearch(),
+            'pubmed': PubMedSearch(),
+            'github': GitHubSearch(),
         }
+        self.cache = SearchCache()
+        self.validator = ResultValidator()
+        self.processor = QueryProcessor()
 
     def _execute(self, **kwargs) -> ToolResult:
-        """Execute web search with evidence tracking."""
-        query = kwargs.get("query", "")
+        query = kwargs.get("query", "").strip()
         search_type = kwargs.get("search_type", "general")
         max_results = kwargs.get("max_results", 5)
-        clone_repo = kwargs.get("clone_repo", "")
-        search_local_repo = kwargs.get("search_local_repo", "")
-        claim = kwargs.get("claim", "")  # Specific claim being verified
-
-        # Start evidence chain for this search
-        evidence_chain = start_evidence_chain(query)
-
-        # Handle GitHub clone request
-        if clone_repo:
-            logger.info(f"Cloning GitHub repository: {clone_repo}")
-            clone_result = self._clone_github_repo(clone_repo)
-
-            # Track evidence for clone
-            if clone_result["success"]:
-                evidence_chain.create_evidence_from_search(
-                    {
-                        "title": f"Repository: {clone_repo}",
-                        "snippet": clone_result["message"],
-                        "url": clone_repo,
-                        "source": "GitHub Repository"
-                    },
-                    search_query=query,
-                    search_type="github_clone",
-                    claim=f"Repository cloned: {clone_repo}"
-                )
-
-            return ToolResult(
-                success=clone_result["success"],
-                data={
-                    **clone_result,
-                    "evidence_chain_id": evidence_chain.response_id,
-                    "evidence_summary": evidence_chain.get_evidence_summary()
-                },
-                message=clone_result["message"]
-            )
-
-        # Handle local repo search
-        if search_local_repo:
-            logger.info(f"Searching local repository: {search_local_repo}")
-            results = self._search_local_repo(search_local_repo, query, max_results)
-            formatted = self._format_results(results, query)
-
-            # Track evidence for local search
-            for result in results:
-                evidence_chain.create_evidence_from_search(
-                    result,
-                    search_query=query,
-                    search_type="local_repo",
-                    claim=(result.get("snippet") or "")[:200]
-                )
-
-            formatted["evidence_chain_id"] = evidence_chain.response_id
-            formatted["evidence_summary"] = evidence_chain.get_evidence_summary()
-
-            return ToolResult(
-                success=True,
-                data=formatted,
-                message=f"Found {len(results)} results in local repository"
-            )
 
         if not query:
-            return ToolResult(
-                success=False,
-                message="No search query provided"
-            )
+            return ToolResult(success=False, message="No search query provided")
 
-        # Auto-inject current year for queries about latest data
-        import datetime
-        current_year = str(datetime.datetime.now().year)
-        year_keywords = ["impact factor", "影响因子", "最新", "latest", "current", "new"]
-        if any(kw in query.lower() for kw in year_keywords):
-            # Remove old years (2020-2025) and add current year
-            import re
-            query_cleaned = re.sub(r'\b20[2-3]\d\b', '', query).strip()
-            if current_year not in query_cleaned:
-                query = f"{query_cleaned} {current_year}".strip()
-                logger.info(f"Auto-injected year: query now '{query}'")
+        # Check cache first
+        cache_key = f"{search_type}:{query}"
+        cached = self.cache.get(cache_key)
+        if cached:
+            logger.info(f"Cache hit for: {query[:50]}")
+            return ToolResult(success=True, data=cached, message=f"Found {len(cached.get('results', []))} results (cached)")
 
-        logger.info(f"Web search: {query} (type: {search_type})")
-
-        # Check cache first (don't cache GitHub searches)
-        if not search_type.startswith("github"):
-            cached = self._get_cached_result(query)
-            if cached:
-                # Still track evidence from cache
-                for result in cached.get("results", []):
-                    evidence_chain.create_evidence_from_search(
-                        result,
-                        search_query=query,
-                        search_type=search_type,
-                        claim=claim or (result.get("snippet") or "")[:200]
-                    )
-
-                cached["evidence_chain_id"] = evidence_chain.response_id
-                cached["evidence_summary"] = evidence_chain.get_evidence_summary()
-
-                return ToolResult(
-                    success=True,
-                    data=cached,
-                    message=f"Found {len(cached.get('results', []))} results (cached)"
-                )
-
-        # Perform search based on type
-        # Priority: PubMed (medical) > GitHub (code) > Bing CN > Baidu > DuckDuckGo
-        results = []
-
+        # Route to appropriate search strategy
         if search_type == "clinical":
-            # For clinical queries, search PubMed only (most reliable)
-            pubmed_results = self._search_pubmed(query, max_results=max_results)
-            results.extend(pubmed_results)
-            # Skip other sources for clinical queries
-
-        elif search_type == "equipment":
-            # For equipment queries, try Bing CN first, then Baidu
-            enhanced_query = f"{query} specifications datasheet"
-            results = self._search_bing(enhanced_query, max_results)
-            if not results:
-                results = self._search_baidu(enhanced_query, max_results)
-            # Skip DuckDuckGo - it always times out
-
-        elif search_type == "github_repos":
-            # Search GitHub repositories
-            results = self._search_github(query, max_results, search_type="repositories")
-
-        elif search_type == "github_code":
-            # Search GitHub code
-            results = self._search_github(query, max_results, search_type="code")
-
-        elif search_type == "github_issues":
-            # Search GitHub issues
-            results = self._search_github(query, max_results, search_type="issues")
-
+            results = self._search_clinical(query, max_results)
+        elif search_type.startswith("github"):
+            results = self._search_github(query, max_results, search_type)
         else:
-            # General search: determine if query is clinical or technical
-            optimized_query = self._optimize_search_query(query, search_type)
-            logger.info(f"Optimized query: '{query}' -> '{optimized_query}'")
+            results = self._search_general(query, max_results)
 
-            # Detect if query is about clinical/medical topics or technical/AI topics
-            clinical_keywords = ['brachytherapy', 'radiation', 'dose', 'treatment', 'cancer',
-                                 'tumor', 'therapy', 'clinical', 'patient', 'organ', 'prostate',
-                                 'pancreas', 'liver', 'lung', 'cervix', 'implant', 'seed']
-            tech_keywords = ['ai', 'model', 'tool', 'software', 'framework', 'library', 'github',
-                             'sam', 'segment', 'anything', 'deep', 'learning', 'neural', 'network',
-                             'algorithm', 'paper', 'code', 'repository', 'api', 'dataset']
-            is_clinical = any(kw in query.lower() for kw in clinical_keywords)
-            is_tech = any(kw in query.lower() for kw in tech_keywords)
+        # Deduplicate
+        results = self.validator.deduplicate(results)
 
-            if is_clinical and not is_tech:
-                # Clinical query: PubMed first
-                pubmed_query = self._simplify_for_pubmed(optimized_query)
-                logger.info(f"Clinical query, PubMed query: '{pubmed_query}'")
-                pubmed_results = self._search_pubmed(pubmed_query, max_results=max_results)
-                results.extend(pubmed_results)
-                # Also try Bing for broader context
-                if not results:
-                    results = self._search_bing(optimized_query, max_results)
-            elif is_tech:
-                # Technical query: Bing + GitHub first (PubMed usually useless for tech topics)
-                logger.info(f"Technical query, searching Bing + GitHub")
-                bing_results = self._search_bing(optimized_query, max_results)
-                results.extend(bing_results)
-                github_results = self._search_github(query, max_results=3, search_type="repositories")
-                results.extend(github_results)
-                # Only try PubMed if nothing found
-                if not results:
-                    pubmed_query = self._simplify_for_pubmed(optimized_query)
-                    pubmed_results = self._search_pubmed(pubmed_query, max_results=2)
-                    results.extend(pubmed_results)
-            else:
-                # Unknown type: try Bing first (most informative snippets), then PubMed
-                logger.info(f"General query, searching Bing first")
-                bing_results = self._search_bing(optimized_query, max_results)
-                results.extend(bing_results)
-                if not results:
-                    pubmed_query = self._simplify_for_pubmed(optimized_query)
-                    pubmed_results = self._search_pubmed(pubmed_query, max_results=max_results)
-                    results.extend(pubmed_results)
-                if not results:
-                    baidu_results = self._search_baidu(optimized_query, max_results)
-                    results.extend(baidu_results)
+        # Always fetch page content from top results (not just when relevance is low)
+        # The LLM will judge relevance semantically — we just need to give it enough data
+        if results:
+            fetched = 0
+            for r in results[:3]:
+                if fetched >= 2:
+                    break
+                url = r.get("url", "")
+                if not url or not url.startswith("http"):
+                    continue
+                if any(skip in url for skip in ["bing.com", "baidu.com", "google.com", "so.com"]):
+                    continue
+                try:
+                    from tool_factory.web_fetch import WebFetchTool
+                    fetch_tool = WebFetchTool()
+                    page = fetch_tool.execute(url=url, extract_text=True, max_length=3000)
+                    if page.success and page.data:
+                        page_text = page.data.get("text", "") or page.data.get("content", "")
+                        if page_text and len(page_text) > 100:
+                            r["page_content"] = page_text[:2000]
+                            fetched += 1
+                            logger.info(f"Fetched {len(page_text)} chars from {url[:60]}")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch {url[:60]}: {e}")
 
-            # Skip DuckDuckGo - it always times out from this network
+        # Score relevance (after fetching page content)
+        relevance = self.validator.score_relevance(query, results)
+        quality = self.validator.get_quality_label(relevance)
 
-        # Track evidence for all results
-        for result in results:
-            # Safely get snippet, handling None values
-            snippet = result.get("snippet") or ""
-            evidence_chain.create_evidence_from_search(
-                result,
-                search_query=query,
-                search_type=search_type,
-                claim=claim or snippet[:200]
+        # Build response
+        response = {
+            "success": True,
+            "results": results,
+            "quality": quality,
+            "relevance_score": round(relevance, 2),
+            "sources": [r.get("url", "") for r in results if r.get("url")],
+        }
+
+        if quality == "poor":
+            response["quality_warning"] = (
+                "Search results may not contain the requested information. "
+                "The LLM should use page_content if available, or honestly say the search failed."
             )
 
-        # Check for cross-references if multiple results
-        if len(results) >= 2:
-            evidence_chain.verify_consensus(min_sources=2)
+        # Cache the results
+        self.cache.set(cache_key, response)
 
-        # Format results
-        formatted = self._format_results(results, query)
-
-        # Add evidence chain information
-        formatted["evidence_chain_id"] = evidence_chain.response_id
-        formatted["evidence_summary"] = evidence_chain.get_evidence_summary()
-        formatted["citations"] = evidence_chain.get_citations("inline")
-
-        # Cache results (don't cache GitHub searches)
-        if not search_type.startswith("github"):
-            self._save_to_cache(query, formatted)
-
-        # Save evidence chain for audit trail
-        evidence_chain.save()
+        # Build message
+        msg = f"Found {len(results)} results"
+        if quality == "poor":
+            msg += " (low relevance — results may not answer the question)"
+        elif quality == "partial":
+            msg += " (partial match)"
 
         return ToolResult(
             success=True,
-            data=formatted,
-            message=f"Found {len(results)} results for '{query}'"
+            data=response,
+            message=msg,
+            metadata={"quality": quality, "relevance_score": relevance},
         )
 
+    def _search_weather(self, query: str) -> List[Dict]:
+        """Direct weather API query using wttr.in — returns structured weather data."""
+        # Extract city name from query — match known city names
+        city_map = {'上海': 'Shanghai', '北京': 'Beijing', '广州': 'Guangzhou', '深圳': 'Shenzhen',
+                    '杭州': 'Hangzhou', '成都': 'Chengdu', '武汉': 'Wuhan', '南京': 'Nanjing',
+                    '西安': 'Xian', '重庆': 'Chongqing', '天津': 'Tianjin', '苏州': 'Suzhou',
+                    'shanghai': 'Shanghai', 'beijing': 'Beijing', 'guangzhou': 'Guangzhou'}
+        city = "Shanghai"  # Default
+        q_lower = query.lower()
+        for cn, en in city_map.items():
+            if cn in q_lower:
+                city = en
+                break
 
-# Convenience function for direct use
+        try:
+            resp = requests.get(f"https://wttr.in/{city}?format=j1", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                current = data.get("current_condition", [{}])[0]
+                temp = current.get("temp_C", "?")
+                weather_desc = current.get("weatherDesc", [{}])[0].get("value", "")
+                humidity = current.get("humidity", "?")
+                wind = current.get("windspeedKmph", "?")
+                feels_like = current.get("FeelsLikeC", "?")
+
+                snippet = f"{city}: {temp}°C, {weather_desc}, Humidity: {humidity}%, Wind: {wind} km/h, Feels like: {feels_like}°C"
+                return [{
+                    "title": f"{city} Weather Today",
+                    "snippet": snippet,
+                    "url": f"https://wttr.in/{city}",
+                    "source": "wttr.in",
+                    "page_content": snippet,
+                }]
+        except Exception as e:
+            logger.warning(f"Weather API error: {e}")
+        return []
+
+    def _search_general(self, query: str, max_results: int) -> List[Dict]:
+        """General web search with specialized engine priority and multi-engine fallback."""
+        intent = self.processor.detect_intent(query)
+        variants = self.processor.generate_variants(query)
+        logger.info(f"Search intent: {intent}, variants: {len(variants)}")
+
+        # Check specialized engines first (direct API access, most reliable)
+        specialized_results = []
+        for engine in SPECIALIZED_ENGINES:
+            if engine.matches(query):
+                logger.info(f"Trying specialized engine: {engine.name}")
+                results = engine.search(query, max_results)
+                if results:
+                    score = self.validator.score_relevance(query, results)
+                    logger.info(f"Specialized engine {engine.name}: {len(results)} results, score {score:.2f}")
+                    if score >= 0.5:
+                        return results  # Good enough, use directly
+                    specialized_results = results  # Save as fallback
+                break  # Only try the first matching engine
+
+        all_results = []
+        best_score = 0.0
+        best_results = []
+
+        # Try each variant with Bing, use the best result set
+        for variant in variants[:4]:  # Max 4 variants
+            results = self.engines['bing'].search(variant, max_results)
+            if results:
+                score = self.validator.score_relevance(query, results)
+                logger.info(f"Variant '{variant[:50]}' → {len(results)} results, score {score:.2f}")
+                all_results.extend(results)
+                if score > best_score:
+                    best_score = score
+                    best_results = results
+                if score >= 0.8:
+                    break  # Very good, stop early
+
+        # If Bing results are poor, try Sogou (better for Chinese queries)
+        if best_score < 0.5:
+            for variant in variants[:2]:
+                sogou_results = self.engines['sogou'].search(variant, max_results)
+                if sogou_results:
+                    score = self.validator.score_relevance(query, sogou_results)
+                    if score > best_score:
+                        best_score = score
+                        best_results = sogou_results
+                    if score >= 0.5:
+                        break
+
+        # If still poor and query looks clinical, try PubMed
+        if best_score < 0.3 and intent == 'research':
+            pubmed_results = self.engines['pubmed'].search(query, max_results)
+            if pubmed_results:
+                all_results.extend(pubmed_results)
+
+        # Merge specialized results with general results for richer data
+        if specialized_results and best_results:
+            # Combine: specialized results first (authoritative), then general
+            combined = specialized_results + best_results
+            return self.validator.deduplicate(combined)[:max_results]
+
+        # Fall back: best general results, then specialized, then all
+        if best_results:
+            return best_results[:max_results]
+        if specialized_results:
+            return specialized_results[:max_results]
+        return all_results[:max_results]
+
+    def _search_clinical(self, query: str, max_results: int) -> List[Dict]:
+        """Clinical search: PubMed first, then Bing for broader context."""
+        results = self.engines['pubmed'].search(query, max_results)
+        if len(results) < max_results:
+            bing_results = self.engines['bing'].search(query, max_results - len(results))
+            results.extend(bing_results)
+        return results
+
+    def _search_github(self, query: str, max_results: int, search_type: str) -> List[Dict]:
+        """GitHub search for code/repos."""
+        gh_type = "code" if "code" in search_type else "repositories"
+        return self.engines['github'].search(query, max_results, gh_type)
+
+
+# ============================================================
+# Legacy compatibility
+# ============================================================
+
 def search_web(query: str, search_type: str = "general", max_results: int = 5) -> Dict:
-    """Convenience function to search the web."""
+    """Convenience function for backward compatibility."""
     tool = WebSearchTool()
     result = tool.execute(query=query, search_type=search_type, max_results=max_results)
     return result.data if result.success else {"success": False, "error": result.error}

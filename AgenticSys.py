@@ -553,7 +553,7 @@ class ToolResultPipeline:
         return "\n\n".join(parts) or ("工具已执行。" if lang == "zh" else "Tools executed.")
 
     @staticmethod
-    def synthesize(formatted_results: List[dict], user_message: str, brain_router, lang: str) -> str:
+    def synthesize(formatted_results: List[dict], user_message: str, brain_router, lang: str, query_type: str = "knowledge") -> str:
         """Call LLM once to synthesize all tool results into coherent narrative.
 
         Args:
@@ -561,6 +561,7 @@ class ToolResultPipeline:
             user_message: Original user question
             brain_router: LLM router for synthesis call
             lang: "zh" or "en"
+            query_type: realtime|knowledge|analysis|system
 
         Returns:
             Synthesized response string, or concatenated results if LLM fails.
@@ -586,6 +587,23 @@ class ToolResultPipeline:
         if not tool_summary:
             return raw_fallback
 
+        # Source attribution based on query type
+        if lang == "zh":
+            source_rules = {
+                'realtime': "标注数据来源和年份。如果搜索结果不包含所需数据，诚实说'未找到最新数据'，不要编造。",
+                'knowledge': "引用来源（如指南名称、文献DOI）。如果AI知识与搜索结果矛盾，以搜索结果为准。",
+                'analysis': "在回复末尾标注'💡 以上为AI分析，仅供参考'。",
+                'system': "直接引用系统内部数据，不需要搜索验证。",
+            }
+        else:
+            source_rules = {
+                'realtime': "Cite source and year. If search results don't contain the data, say 'Latest data not found' honestly. Do NOT fabricate.",
+                'knowledge': "Cite sources (e.g., guideline names, DOIs). If AI knowledge contradicts search results, prefer search results.",
+                'analysis': "Add '💡 AI analysis, for reference only' at the end.",
+                'system': "Quote internal system data directly. No search verification needed.",
+            }
+        source_rule = source_rules.get(query_type, source_rules['knowledge'])
+
         if lang == "zh":
             synth_prompt = (
                 f"用户问题: {user_message}\n\n"
@@ -595,9 +613,10 @@ class ToolResultPipeline:
                 "2. 先用一句话说明做了什么（如：已完成CT分析、CTV分割和OAR分割）\n"
                 "3. 总结各工具的关键结果\n"
                 "4. 对关键数据给出简要解读\n"
-                "5. 如有异常（如分割体积为0），明确指出并建议\n"
-                "6. 不要重复原始表格，用自然语言概括\n"
-                "7. 如有URL，保持可点击格式\n\n"
+                f"5. **信息溯源**: {source_rule}\n"
+                "6. 如有异常（如分割体积为0），明确指出并建议\n"
+                "7. 不要重复原始表格，用自然语言概括\n"
+                "8. 如有URL，保持可点击格式\n\n"
                 "工具执行结果：\n" + "\n\n".join(tool_summary)
             )
         else:
@@ -608,9 +627,10 @@ class ToolResultPipeline:
                 "1. **Respond entirely in English** — translate any non-English content\n"
                 "2. Summarize what was done and the results of each tool\n"
                 "3. Briefly interpret key data points\n"
-                "4. Note any anomalies (e.g., zero volume) and suggest next steps\n"
-                "5. Don't repeat raw tables — summarize in natural language\n"
-                "6. Keep URLs clickable\n\n"
+                f"4. **Source attribution**: {source_rule}\n"
+                "5. Note any anomalies (e.g., zero volume) and suggest next steps\n"
+                "6. Don't repeat raw tables — summarize in natural language\n"
+                "7. Keep URLs clickable\n\n"
                 "Tool results:\n" + "\n\n".join(tool_summary)
             )
 
@@ -1384,19 +1404,148 @@ print(json.dumps(result))
             if msg.get("role") == "user":
                 user_msg = msg.get("content", "")
                 break
-        return self._synthesize_with_llm(raw_results, steps, _lang, user_msg)
+        query_type = self._classify_query_type(user_msg)
+        return self._synthesize_with_llm(raw_results, steps, _lang, user_msg, query_type)
 
     def _build_direct_response(self, steps: List, lang: str) -> str:
         """Build structured response. Delegates to ToolResultPipeline."""
         return ToolResultPipeline.format_steps(steps, lang)
 
-    def _synthesize_with_llm(self, raw_results: str, steps: List, lang: str, user_message: str = "") -> str:
+    def _synthesize_with_llm(self, raw_results: str, steps: List, lang: str, user_message: str = "", query_type: str = "knowledge") -> str:
         """Synthesize tool results. Delegates to ToolResultPipeline."""
         formatted = []
         for s in steps:
             if s.get("type") == "tool" and s.get("status") == "done":
                 formatted.append({"tool": s.get("tool", ""), "display": s.get("result", "")})
-        return ToolResultPipeline.synthesize(formatted, user_message, self.brain_router, lang)
+        return ToolResultPipeline.synthesize(formatted, user_message, self.brain_router, lang, query_type)
+
+    # ============================================================
+    # Information Reliability Hierarchy
+    # ============================================================
+    # Query Type → Strategy → Source Attribution
+    #
+    # ┌──────────────┬──────────────────────────────────────┐
+    # │  Query Type  │  Strategy                            │
+    # ├──────────────┼──────────────────────────────────────┤
+    # │  realtime    │  MUST search. Use results + source.  │
+    # │  knowledge   │  LLM first, search to verify/suppl.  │
+    # │  analysis    │  LLM reasoning. Tag "AI analysis".   │
+    # │  system      │  Read memory/tool_results. No search.│
+    # └──────────────┴──────────────────────────────────────┘
+
+    # Patterns for each query type
+    _REALTIME_PATTERNS = [
+        # Impact factors, journal metrics
+        (r'(影响因子|impact\s*factor|cite\s*score|JCR|分区)', 'journal_metric'),
+        # Financial data
+        (r'(股价|市值|行情|汇率|利率|stock|price)', 'financial'),
+        # Weather
+        (r'(天气|气温|下雨|weather|temperature)', 'weather'),
+        # Time/date
+        (r'(今天|今日|现在|当前|几点|时间|日期|current.*time|current.*date)', 'datetime'),
+        # News
+        (r'(最新新闻|今日新闻|latest.*news|headline)', 'news'),
+        # Rankings, scores
+        (r'(排名|排行|ranking|score|得分)', 'ranking'),
+        # Version numbers, releases
+        (r'(最新版|最新版本|latest.*version|release)', 'version'),
+        # Statistics that change
+        (r'(发病率|患病率|死亡率|mortality|prevalence|incidence)', 'epidemiology'),
+    ]
+
+    _KNOWLEDGE_PATTERNS = [
+        # Medical knowledge
+        (r'(什么是|是什么|定义|definition|explain|介绍|原理|mechanism)', 'definition'),
+        # Guidelines, protocols
+        (r'(指南|规范|protocol|guideline|standard|TG-\d+|AAPM|ABS|ESTRO)', 'guideline'),
+        # Dose, technique
+        (r'(剂量|dose|technique|方法|method|procedure)', 'technique'),
+        # Anatomy
+        (r'(解剖|anatomy|organ|器官|structure)', 'anatomy'),
+        # Drug, treatment
+        (r'(药物|治疗|treatment|therapy|drug)', 'treatment'),
+    ]
+
+    _ANALYSIS_PATTERNS = [
+        # Comparison
+        (r'(比较|对比|compare|versus|vs|哪个好|which.*better)', 'comparison'),
+        # Opinion, recommendation
+        (r'(建议|推荐|recommend|opinion|观点|应该)', 'recommendation'),
+        # Pros/cons
+        (r'(优缺点|利弊|pros.*cons|advantage|disadvantage)', 'evaluation'),
+    ]
+
+    _SYSTEM_PATTERNS = [
+        # Internal state
+        (r'(刚才|之前|上一|已.*分割|已.*分析|当前.*状态|what.*done)', 'state'),
+        # List/show results
+        (r'(列.*表|显示.*结果|show.*result|list|display)', 'display'),
+        # File/system operations
+        (r'(保存|导出|加载|save|export|load|upload)', 'file_op'),
+        # Tool operations (analyze image, segment, etc.)
+        (r'(分析.*图像|分割.*图像|analyze.*image|segment.*image|计算.*剂量)', 'tool_op'),
+    ]
+
+    def _classify_query_type(self, message: str) -> str:
+        """Classify query into: realtime, knowledge, analysis, system.
+
+        Returns the query type string for strategy selection.
+        Priority: system > realtime > knowledge > analysis
+        """
+        msg = message.strip().lower()
+
+        # Check system patterns first (highest priority for internal queries)
+        for pattern, _ in self._SYSTEM_PATTERNS:
+            if re.search(pattern, msg, re.IGNORECASE):
+                return 'system'
+
+        # Check realtime patterns (must search, can't use training data)
+        for pattern, _ in self._REALTIME_PATTERNS:
+            if re.search(pattern, msg, re.IGNORECASE):
+                return 'realtime'
+
+        # Check knowledge patterns (LLM + search verification)
+        # BEFORE analysis — because "推荐" in guideline context is knowledge, not opinion
+        for pattern, _ in self._KNOWLEDGE_PATTERNS:
+            if re.search(pattern, msg, re.IGNORECASE):
+                return 'knowledge'
+
+        # Check analysis patterns (LLM reasoning)
+        for pattern, _ in self._ANALYSIS_PATTERNS:
+            if re.search(pattern, msg, re.IGNORECASE):
+                return 'analysis'
+
+        # Default: let LLM decide
+        return 'knowledge'
+
+    @staticmethod
+    def _get_source_attribution(query_type: str, has_search: bool, lang: str = "en", search_year: str = "") -> str:
+        """Generate source attribution text based on query type and data source."""
+        if lang == "zh":
+            if query_type == 'realtime':
+                if has_search:
+                    return f"📊 数据来源: 网络搜索 ({search_year})" if search_year else "📊 数据来源: 网络搜索"
+                else:
+                    return "⚠️ 注意: 未找到最新数据，以下信息可能已过时"
+            elif query_type == 'knowledge':
+                return "📚 数据来源: AI知识库 + 网络验证" if has_search else "📚 数据来源: AI知识库（未经实时验证）"
+            elif query_type == 'analysis':
+                return "💡 数据来源: AI分析（仅供参考）"
+            elif query_type == 'system':
+                return "📋 数据来源: 系统内部数据"
+        else:
+            if query_type == 'realtime':
+                if has_search:
+                    return f"📊 Source: Web search ({search_year})" if search_year else "📊 Source: Web search"
+                else:
+                    return "⚠️ Note: Latest data not found, information may be outdated"
+            elif query_type == 'knowledge':
+                return "📚 Source: AI knowledge + web verification" if has_search else "📚 Source: AI knowledge (not verified by search)"
+            elif query_type == 'analysis':
+                return "💡 Source: AI analysis (for reference only)"
+            elif query_type == 'system':
+                return "📋 Source: Internal system data"
+        return ""
 
     def _detect_realtime_query(self, message: str) -> Optional[str]:
         """Detect if the message requires a real-time web search.
@@ -1541,6 +1690,21 @@ print(json.dumps(result))
 
         ui_state_summary = self.memory.get_ui_state_summary()
 
+        # Classify query type for information reliability strategy
+        query_type = self._classify_query_type(message)
+        type_labels = {
+            'realtime': '⏱️ Real-time data (MUST search, do NOT use training data)',
+            'knowledge': '📚 Knowledge (LLM + search verification)',
+            'analysis': '💡 Analysis (AI reasoning, tag as "AI analysis")',
+            'system': '📋 System (read from memory/tool_results)',
+        }
+        query_strategy = type_labels.get(query_type, type_labels['knowledge'])
+        enhanced_context += f"\n### Query Type: {query_strategy}\n"
+        if query_type == 'realtime':
+            enhanced_context += "This query requires CURRENT data. You MUST use web_search. Do NOT answer from training data.\n"
+        elif query_type == 'system':
+            enhanced_context += "This query is about internal state. Read from conversation history or tool_results. Do NOT search.\n"
+
         import datetime
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
             ui_state_summary=ui_state_summary,
@@ -1615,42 +1779,31 @@ print(json.dumps(result))
                 }
                 steps.append(forced_step)
 
-                # Direct Bing/Baidu search for real-time info (bypass cache)
+                # Use the new search tool with full pipeline (query processing, multi-engine, validation)
                 search_tool = self.registry.get("web_search")
-                bing_results = []
+                search_result = None
                 if search_tool:
-                    bing_results = search_tool._search_bing(_forced_search_query, max_results=5)
-                    logger.info(f"Forced Bing search returned {len(bing_results)} results")
-                    if not bing_results:
-                        bing_results = search_tool._search_baidu(_forced_search_query, max_results=5)
-                        logger.info(f"Forced Baidu search returned {len(bing_results)} results")
+                    search_result = search_tool.execute(query=_forced_search_query, search_type="general", max_results=5)
 
-                # Build result text from fresh search results
+                # Build result text from search results
                 result_text = ""
                 first_url = ""
-                if bing_results:
-                    result_text = "Real-time search results:\n"
-                    for i, r in enumerate(bing_results[:5], 1):
+                if search_result and search_result.success:
+                    data = search_result.data or {}
+                    results = data.get("results", [])
+                    quality = data.get("quality", "unknown")
+                    result_text = f"Search quality: {quality}\n"
+                    for i, r in enumerate(results[:5], 1):
                         title = r.get("title", "")
                         snippet = r.get("snippet", "")[:300]
+                        page_content = r.get("page_content", "")
                         url = r.get("url", "")
-                        result_text += f"{i}. {title}\n   {snippet}\n   URL: {url}\n\n"
-                    first_url = bing_results[0].get("url", "")
+                        result_text += f"{i}. {title}\n   {snippet}\n"
+                        if page_content:
+                            result_text += f"   [Full page content]: {page_content[:1000]}\n"
+                        result_text += f"   URL: {url}\n\n"
                 else:
-                    result_text = "No real-time results found from Bing or Baidu."
-
-                # Fetch actual page content from the first result URL for richer data
-                page_content = ""
-                if first_url:
-                    try:
-                        fetch_tool = self.registry.get("web_fetch")
-                        if fetch_tool:
-                            fetch_result = fetch_tool.execute(url=first_url, extract_text=True, max_length=3000)
-                            if fetch_result.success and fetch_result.data:
-                                page_content = (fetch_result.data.get("content", "") or fetch_result.data.get("text", ""))[:2000]
-                                logger.info(f"Fetched page content from {first_url}: {len(page_content)} chars")
-                    except Exception as e:
-                        logger.warning(f"Failed to fetch page content: {e}")
+                    result_text = "No real-time results found."
 
                 # Record step
                 forced_step["status"] = "done"
@@ -2143,6 +2296,21 @@ print(json.dumps(result))
 
         ui_state_summary = self.memory.get_ui_state_summary()
 
+        # Classify query type for information reliability strategy
+        query_type = self._classify_query_type(message)
+        type_labels = {
+            'realtime': '⏱️ Real-time data (MUST search, do NOT use training data)',
+            'knowledge': '📚 Knowledge (LLM + search verification)',
+            'analysis': '💡 Analysis (AI reasoning, tag as "AI analysis")',
+            'system': '📋 System (read from memory/tool_results)',
+        }
+        query_strategy = type_labels.get(query_type, type_labels['knowledge'])
+        enhanced_context += f"\n### Query Type: {query_strategy}\n"
+        if query_type == 'realtime':
+            enhanced_context += "This query requires CURRENT data. You MUST use web_search. Do NOT answer from training data.\n"
+        elif query_type == 'system':
+            enhanced_context += "This query is about internal state. Read from conversation history or tool_results. Do NOT search.\n"
+
         import datetime
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
             ui_state_summary=ui_state_summary,
@@ -2213,55 +2381,41 @@ print(json.dumps(result))
                 steps.append(forced_step)
                 yield_event("step", forced_step)
 
-                # Direct Bing search for real-time info (bypass PubMed)
+                # Use the new search tool with full pipeline (query processing, multi-engine, validation)
                 search_tool = self.registry.get("web_search")
+                search_result = None
                 if search_tool:
-                    logger.info(f"Calling _search_bing with query: '{_forced_search_query}'")
-                    bing_results = search_tool._search_bing(_forced_search_query, max_results=5)
-                    logger.info(f"Bing returned {len(bing_results)} results")
-                    if not bing_results:
-                        logger.info("Bing returned 0, trying Baidu...")
-                        bing_results = search_tool._search_baidu(_forced_search_query, max_results=5)
-                        logger.info(f"Baidu returned {len(bing_results)} results")
+                    search_result = search_tool.execute(query=_forced_search_query, search_type="general", max_results=5)
 
-                    if bing_results:
-                        result_text = "Real-time search results:\n"
-                        for i, r in enumerate(bing_results[:5], 1):
-                            title = r.get("title", "")
-                            snippet = r.get("snippet", "")[:300]
-                            url = r.get("url", "")
-                            result_text += f"{i}. {title}\n   {snippet}\n   URL: {url}\n\n"
-
-                        # Fetch actual page content from the first result for richer data
-                        first_url = bing_results[0].get("url", "")
-                        page_content = ""
-                        if first_url:
-                            try:
-                                fetch_tool = self.registry.get("web_fetch")
-                                if fetch_tool:
-                                    fetch_result = fetch_tool.execute(url=first_url, extract_text=True, max_length=3000)
-                                    if fetch_result.success and fetch_result.data:
-                                        page_content = (fetch_result.data.get("content", "") or fetch_result.data.get("text", ""))[:2000]
-                                        logger.info(f"Fetched page content from {first_url}: {len(page_content)} chars")
-                            except Exception as e:
-                                logger.warning(f"Failed to fetch page content: {e}")
+                result_text = ""
+                first_url = ""
+                if search_result and search_result.success:
+                    data = search_result.data or {}
+                    results = data.get("results", [])
+                    quality = data.get("quality", "unknown")
+                    result_text = f"Search quality: {quality}\n"
+                    for i, r in enumerate(results[:5], 1):
+                        title = r.get("title", "")
+                        snippet = r.get("snippet", "")[:300]
+                        page_content = r.get("page_content", "")
+                        url = r.get("url", "")
+                        result_text += f"{i}. {title}\n   {snippet}\n"
                         if page_content:
-                            result_text += f"\n### Detailed page content:\n{page_content}"
-                    else:
-                        result_text = "No real-time results found."
+                            result_text += f"   [Full page content]: {page_content[:1000]}\n"
+                        result_text += f"   URL: {url}\n\n"
+                else:
+                    logger.warning(f"Forced search failed: {search_result.error if search_result else 'no tool'}")
+                    result_text = "No real-time results found."
 
                     forced_step["status"] = "done"
                     forced_step["result"] = result_text[:200]
                     yield_event("step", forced_step)
 
                     # Inject search results into messages so LLM uses them
-                    messages.append({"role": "user", "content": f"[MANDATORY: The following are real-time search results from Bing. You MUST use this information to answer the user's question directly. DO NOT search again, DO NOT say you cannot get real-time info. Just answer based on these results.]\n\nSearch results for '{_forced_search_query}':\n{result_text[:3000]}"})
-                    # Tell the LLM to answer directly after forced search
-                    enhanced_context += f"\n### ⚠️ OVERRIDE: REAL-TIME SEARCH COMPLETED\nSearch for '{_forced_search_query}' has already been executed using Bing. The results are in the conversation. You MUST answer the user's question directly using these results. DO NOT call web_search again. DO NOT say you cannot get real-time information."
+                    messages.append({"role": "user", "content": f"[MANDATORY: The following are real-time search results. You MUST use this information to answer the user's question directly. DO NOT search again. Just answer based on these results.]\n\nSearch results for '{_forced_search_query}':\n{result_text[:3000]}"})
+                    enhanced_context += f"\n### ⚠️ OVERRIDE: REAL-TIME SEARCH COMPLETED\nSearch for '{_forced_search_query}' has already been executed. The results are in the conversation. You MUST answer the user's question directly using these results. DO NOT call web_search again."
                     _had_forced_search = True
-                    logger.info(f"Forced Bing search for real-time query: {_forced_search_query}")
-                else:
-                    logger.warning("web_search tool not found in registry")
+                    logger.info(f"Forced search for real-time query: {_forced_search_query}")
             except Exception as e:
                 logger.warning(f"Forced search failed: {e}")
 
@@ -3024,7 +3178,8 @@ print(json.dumps(result))
             raw_response = self._build_direct_response(steps, _lang)
             # Synthesize with LLM for coherent narrative
             user_msg = message
-            response = self._synthesize_with_llm(raw_response, steps, _lang, user_msg)
+            query_type = self._classify_query_type(user_msg)
+            response = self._synthesize_with_llm(raw_response, steps, _lang, user_msg, query_type)
             self.memory.add_message("assistant", response)
             yield yield_event("response", {"response": response})
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
