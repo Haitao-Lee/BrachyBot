@@ -604,6 +604,14 @@ class ToolResultPipeline:
             }
         source_rule = source_rules.get(query_type, source_rules['knowledge'])
 
+        # Collect all source URLs from results
+        all_sources = []
+        for r in formatted_results:
+            src_url = r.get("source_url", "")
+            if src_url:
+                all_sources.append(src_url)
+        sources_text = "\n".join(f"- {u}" for u in all_sources) if all_sources else ""
+
         if lang == "zh":
             synth_prompt = (
                 f"用户问题: {user_message}\n\n"
@@ -616,8 +624,9 @@ class ToolResultPipeline:
                 f"5. **信息溯源**: {source_rule}\n"
                 "6. 如有异常（如分割体积为0），明确指出并建议\n"
                 "7. 不要重复原始表格，用自然语言概括\n"
-                "8. 如有URL，保持可点击格式\n\n"
-                "工具执行结果：\n" + "\n\n".join(tool_summary)
+                "8. **在回复最末尾，以'---'分隔，添加'📎 参考来源'部分，列出所有使用的URL链接**\n\n"
+                f"工具执行结果：\n" + "\n\n".join(tool_summary)
+                + (f"\n\n可用来源URL：\n{sources_text}" if sources_text else "")
             )
         else:
             synth_prompt = (
@@ -630,7 +639,7 @@ class ToolResultPipeline:
                 f"4. **Source attribution**: {source_rule}\n"
                 "5. Note any anomalies (e.g., zero volume) and suggest next steps\n"
                 "6. Don't repeat raw tables — summarize in natural language\n"
-                "7. Keep URLs clickable\n\n"
+                "7. **At the end, add a '📎 Sources' section with all URL links used**\n\n"
                 "Tool results:\n" + "\n\n".join(tool_summary)
             )
 
@@ -1416,7 +1425,18 @@ print(json.dumps(result))
         formatted = []
         for s in steps:
             if s.get("type") == "tool" and s.get("status") == "done":
-                formatted.append({"tool": s.get("tool", ""), "display": s.get("result", "")})
+                meta = s.get("metadata", {})
+                # Extract source URLs from metadata or result text
+                source_url = ""
+                if meta and isinstance(meta, dict):
+                    sources = meta.get("sources", [])
+                    if sources:
+                        source_url = sources[0] if isinstance(sources, list) else str(sources)
+                formatted.append({
+                    "tool": s.get("tool", ""),
+                    "display": s.get("result", ""),
+                    "source_url": source_url,
+                })
         return ToolResultPipeline.synthesize(formatted, user_message, self.brain_router, lang, query_type)
 
     # ============================================================
