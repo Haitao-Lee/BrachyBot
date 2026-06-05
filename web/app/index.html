@@ -2724,10 +2724,19 @@ function setupSplitter() {
         if (!dragging) return;
         const container = document.querySelector('.app-body');
         const containerRect = container.getBoundingClientRect();
-        // Dragging splitter = resize right panel (sidebar stays fixed)
         const newWidth = containerRect.right - e.clientX;
         if (newWidth >= 300 && newWidth <= containerRect.width - 200) {
             rightPanel.style.width = newWidth + 'px';
+            // Force flex recalculation on viewers-panel
+            const panel = document.getElementById('viewersPanel');
+            if (panel) {
+                panel.style.display = 'none';
+                panel.offsetHeight; // force reflow
+                panel.style.display = '';
+            }
+            ['axial', 'sagittal', 'coronal'].forEach(axis => {
+                requestAnimationFrame(() => resizeCanvas(axis));
+            });
         }
     });
 
