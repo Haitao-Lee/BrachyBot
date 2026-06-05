@@ -1,0 +1,69 @@
+{
+  "response_id": "20260604_215616_105063",
+  "query": "Medical Image Analysis impact factor 2024 JCR",
+  "created_at": "2026-06-04T21:56:16.105080",
+  "num_sources": 3,
+  "source_types": [
+    "Bing CN"
+  ],
+  "avg_confidence": 0.4000000000000001,
+  "verification_status": "unverified",
+  "citations": [
+    "[medical是什么意思_medical的翻译_音标_读音_用法_例句 ...](https://www.iciba.com/word?w=medical)",
+    "[MEDICAL中文 (简体)翻译：剑桥词典](https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/medical)",
+    "[medical_百度百科](https://baike.baidu.com/item/medical/10774482)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "2aaaed404377",
+      "claim": "Medical breakthroughs in care and research have significantly improved patient outcomes. 医疗在护理和研究方面的突破显著改善了患者的治疗效果。 Her medical background/examination/report was …",
+      "source_url": "https://www.iciba.com/word?w=medical",
+      "source_type": "Bing CN",
+      "source_title": "medical是什么意思_medical的翻译_音标_读音_用法_例句 ...",
+      "accessed_at": "2026-06-04T21:56:16.352738",
+      "published_at": "",
+      "raw_snippet": "Medical breakthroughs in care and research have significantly improved patient outcomes. 医疗在护理和研究方面的突破显著改善了患者的治疗效果。 Her medical background/examination/report was …",
+      "extracted_data": {},
+      "confidence": 0.4,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "Medical Image Analysis impact factor 2024 JCR",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "93658a8ead61",
+      "claim": "MEDICAL翻译：医学的;医疗的;医用的, 体格检查，健康检查。 了解更多。",
+      "source_url": "https://dictionary.cambridge.org/zhs/%E8%AF%8D%E5%85%B8/%E8%8B%B1%E8%AF%AD-%E6%B1%89%E8%AF%AD-%E7%AE%80%E4%BD%93/medical",
+      "source_type": "Bing CN",
+      "source_title": "MEDICAL中文 (简体)翻译：剑桥词典",
+      "accessed_at": "2026-06-04T21:56:16.352797",
+      "published_at": "",
+      "raw_snippet": "MEDICAL翻译：医学的;医疗的;医用的, 体格检查，健康检查。 了解更多。",
+      "extracted_data": {},
+      "confidence": 0.4,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "Medical Image Analysis impact factor 2024 JCR",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "48f5fe563c6a",
+      "claim": "“medical”是一个英文单词，主要用作形容词，意为“与疾病和损伤的治疗相关的”（related to the treatment of illness and injuries） [8]。 该词源自拉丁语“medicus”，意为“医生、外科医生”（名词）或“治疗的、 …",
+      "source_url": "https://baike.baidu.com/item/medical/10774482",
+      "source_type": "Bing CN",
+      "source_title": "medical_百度百科",
+      "accessed_at": "2026-06-04T21:56:16.352827",
+      "published_at": "",
+      "raw_snippet": "“medical”是一个英文单词，主要用作形容词，意为“与疾病和损伤的治疗相关的”（related to the treatment of illness and injuries） [8]。 该词源自拉丁语“medicus”，意为“医生、外科医生”（名词）或“治疗的、 …",
+      "extracted_data": {},
+      "confidence": 0.4,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "Medical Image Analysis impact factor 2024 JCR",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

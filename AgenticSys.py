@@ -607,14 +607,60 @@ class ToolResultPipeline:
         # Collect all source URLs from results
         all_sources = []
         for r in formatted_results:
-            src_url = r.get("source_url", "")
-            if src_url:
-                all_sources.append(src_url)
-        sources_text = "\n".join(f"- {u}" for u in all_sources) if all_sources else ""
+            urls = r.get("all_source_urls", [])
+            if urls:
+                all_sources.extend(urls)
+            elif r.get("source_url"):
+                all_sources.append(r["source_url"])
+        # Deduplicate
+        seen = set()
+        unique_sources = []
+        for u in all_sources:
+            if u not in seen:
+                seen.add(u)
+                unique_sources.append(u)
+        sources_text = "\n".join(f"- {u}" for u in unique_sources) if unique_sources else ""
+
+        # Detect search failures
+        search_failed = False
+        for r in formatted_results:
+            tool_name = r.get("tool", "")
+            display = r.get("display", "")
+            if tool_name in ("web_search", "web_fetch", "web_access"):
+                if "error" in display.lower() or "failed" in display.lower() or "network" in display.lower():
+                    search_failed = True
+                    break
+
+        # Build anti-hallucination constraints
+        if search_failed:
+            anti_halluc = (
+                "CRITICAL: Web search FAILED (network error). "
+                "You may use your own knowledge to help, but you MUST prefix any such content with '[From AI knowledge, not verified by search]'. "
+                "Suggest the user retry or provide the information directly."
+            ) if lang != "zh" else (
+                "严重警告：网络搜索失败（网络错误）。"
+                "你可以用自己的知识补充，但必须在相关内容前标注'[来自AI知识，未经搜索验证]'。"
+                "建议用户重试或直接提供信息。"
+            )
+        else:
+            anti_halluc = (
+                "IMPORTANT: Clearly distinguish information sources in your response:\n"
+                "- Information FROM search results: state normally\n"
+                "- Information from your OWN KNOWLEDGE (not in search results): add a brief note like '(based on AI knowledge)' at the end of the sentence\n"
+                "If results are insufficient, you may supplement with your knowledge but MUST label it. "
+                "Never present unverified information as if it came from search results."
+            ) if lang != "zh" else (
+                "重要规则：回复中必须区分信息来源：\n"
+                "- 来自搜索结果的信息：正常陈述\n"
+                "- 来自你自身知识（搜索结果中没有的）：在句末加简短标注如'（基于AI知识）'\n"
+                "如果搜索结果不足，可以用自身知识补充，但必须标注来源。"
+                "绝对不要把未经验证的信息当作搜索结果来呈现。"
+            )
 
         if lang == "zh":
             synth_prompt = (
                 f"用户问题: {user_message}\n\n"
+                f"{anti_halluc}\n\n"
                 "你刚刚自动执行了以下工具来回答用户问题。"
                 "请基于结果生成一个连贯的中文回复。要求：\n"
                 "1. **全部用中文回复**——包括搜索结果的摘要、文献介绍、所有内容必须翻译成中文\n"
@@ -624,13 +670,16 @@ class ToolResultPipeline:
                 f"5. **信息溯源**: {source_rule}\n"
                 "6. 如有异常（如分割体积为0），明确指出并建议\n"
                 "7. 不要重复原始表格，用自然语言概括\n"
-                "8. **在回复最末尾，以'---'分隔，添加'📎 参考来源'部分，列出所有使用的URL链接**\n\n"
+                "8. **在回复最末尾，以'---'分隔，添加'📎 参考来源'部分：**\n"
+                "   - 搜索结果有URL的：直接列出链接\n"
+                "   - 无URL的AI知识：简要标注即可，不要逐条罗列\n\n"
                 f"工具执行结果：\n" + "\n\n".join(tool_summary)
                 + (f"\n\n可用来源URL：\n{sources_text}" if sources_text else "")
             )
         else:
             synth_prompt = (
                 f"User question: {user_message}\n\n"
+                f"{anti_halluc}\n\n"
                 "You just executed the following tools. Generate a coherent English response.\n"
                 "Requirements:\n"
                 "1. **Respond entirely in English** — translate any non-English content\n"
@@ -639,7 +688,9 @@ class ToolResultPipeline:
                 f"4. **Source attribution**: {source_rule}\n"
                 "5. Note any anomalies (e.g., zero volume) and suggest next steps\n"
                 "6. Don't repeat raw tables — summarize in natural language\n"
-                "7. **At the end, add a '📎 Sources' section with all URL links used**\n\n"
+                "7. **At the end, add a '📎 Sources' section, split into two tiers:**\n"
+                "   - '✅ Verified (from search results)' with URL links\n"
+                "   - '⚠️ Unverified (from AI knowledge)' marked as [AI knowledge]\n\n"
                 "Tool results:\n" + "\n\n".join(tool_summary)
             )
 
@@ -1031,11 +1082,9 @@ class BrachyAgent:
         if tool_name == "ctv_segmentation" and "image" not in params:
             if ct_image is not None:
                 params["image"] = ct_image
-            # Force VoCo model since nnU-Net models are not installed
-            if "tumor_type" in params and params["tumor_type"] in ("pancreatic_tumor", "liver_tumor", "kidney_tumor", "prostate_tumor", "lung_tumor", "head_neck_tumor"):
-                params["tumor_type"] = "voco_pancreatic"
-            elif "tumor_type" not in params:
-                params["tumor_type"] = "voco_pancreatic"
+            # Map tumor_type to VoCo tool name if needed
+            if "tumor_type" in params:
+                params["tumor_type"] = self._map_tumor_type(params["tumor_type"])
         elif tool_name == "oar_segmentation" and "image" not in params:
             if ct_image is not None:
                 import SimpleITK as sitk
@@ -1106,6 +1155,8 @@ class BrachyAgent:
             logger.info(f"Tool {tool_name} succeeded. Metadata keys: {list(result.metadata.keys()) if result.metadata else 'None'}")
             if tool_name == "ctv_segmentation" and "ctv_array" in result.metadata:
                 self.memory.store("ctv_array", result.metadata["ctv_array"])
+                if "ctv_mask" in result.metadata:
+                    self.memory.store("ctv_mask", result.metadata["ctv_mask"])
             elif tool_name == "oar_segmentation":
                 logger.info(f"OAR segmentation result: oar_array={'oar_array' in result.metadata}, organ_names={'organ_names' in result.metadata}")
                 if "oar_array" in result.metadata:
@@ -1137,7 +1188,7 @@ class BrachyAgent:
 
     # --- Tool Validation & Recovery ---
     # Validates tool results and automatically recovers from failures.
-    # This is the core mechanism for reducing "掉链子" (dropping the ball).
+    # This is the core mechanism for reducing tool execution failures.
 
     _VALIDATORS = {
         "ctv_segmentation": lambda r, m: (
@@ -1328,16 +1379,24 @@ print(json.dumps(result))
         # Find action keywords and their positions to preserve user's intended order
         ACTION_PATTERNS = [
             (r'(分析|analyze)', 'analyze'),
-            (r'(分割|segment|再分)', 'segment'),
+            (r'(ctv|靶区|临床靶区|病灶|肿瘤|tumor|lesion).{0,8}(分割|segment)', 'segment_ctv'),
+            (r'(分割|segment).{0,8}(ctv|靶区|临床靶区|病灶|肿瘤|tumor|lesion)', 'segment_ctv'),
+            (r'(oar|危及器官|器官).{0,5}(分割|segment)', 'segment_oar'),
+            (r'(分割|segment).{0,5}(oar|危及器官|器官)', 'segment_oar'),
             (r'(剂量|dose|计算剂量)', 'dose'),
-            (r'(切换|switch).*(viewer|查看|浏览|视图)', 'ui:panel:viewers'),
-            (r'(切换|switch).*(input|输入)', 'ui:panel:input'),
-            (r'(切换|switch).*(metrics|指标)', 'ui:panel:metrics'),
+            (r'(切换|switch).{0,10}(viewer|查看|浏览|视图)', 'ui:panel:viewers'),
+            (r'(切换|switch).{0,10}(input|输入)', 'ui:panel:input'),
+            (r'(切换|switch).{0,10}(metrics|指标)', 'ui:panel:metrics'),
         ]
         action_positions = []
+        matched_spans = []
         for pattern, action in ACTION_PATTERNS:
             for match in re.finditer(pattern, msg, re.IGNORECASE):
-                action_positions.append((match.start(), action))
+                start, end = match.span()
+                overlaps = any(not (end <= s or start >= e) for s, e in matched_spans)
+                if not overlaps:
+                    action_positions.append((start, action))
+                    matched_spans.append((start, end))
 
         # Deduplicate, keeping first occurrence of each action
         seen = set()
@@ -1346,6 +1405,28 @@ print(json.dumps(result))
             if action not in seen:
                 seen.add(action)
                 ordered_actions.append(action)
+
+        # If no specific segment found but generic "segment" is present, add segment_all
+        has_specific_seg = 'segment_ctv' in seen or 'segment_oar' in seen
+        if not has_specific_seg:
+            for match in re.finditer(r'(分割|segment|再分)', msg, re.IGNORECASE):
+                start, end = match.span()
+                overlaps = any(not (end <= s or start >= e) for s, e in matched_spans)
+                if not overlaps:
+                    ordered_actions.append('segment_all')
+                    break
+
+        # Handle "分割CTV和OAR" / "分割靶区和器官" — detect both from a single "segment" action
+        if has_specific_seg:
+            has_ctv = 'segment_ctv' in seen
+            has_oar = 'segment_oar' in seen
+            # If we found CTV but not OAR, check if OAR keywords appear in the message
+            if has_ctv and not has_oar:
+                if re.search(r'(oar|危及器官|器官)', msg, re.IGNORECASE):
+                    ordered_actions.append('segment_oar')
+            elif has_oar and not has_ctv:
+                if re.search(r'(ctv|靶区|临床靶区)', msg, re.IGNORECASE):
+                    ordered_actions.append('segment_ctv')
 
         if not ordered_actions:
             return None
@@ -1364,15 +1445,15 @@ print(json.dumps(result))
                 code = self._ANALYSIS_CODE_TEMPLATE.format(ct_path=ct_path)
                 tools.append({"id": "tool_direct_analysis", "tool": "code_executor",
                               "params": {"code": code, "description": "Analyze CT image"}})
-            elif action == 'segment' and ct_path:
+            elif action == 'segment_ctv' and ct_path:
+                tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": {"image_path": ct_path}})
+            elif action == 'segment_oar' and ct_path:
+                tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": {"image_path": ct_path}})
+            elif action == 'segment_all' and ct_path:
                 tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": {"image_path": ct_path}})
                 tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": {"image_path": ct_path}})
             elif action == 'dose' and ct_path:
                 tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
-
-        # Pure analysis without other actions → let LLM handle (contextual)
-        if ordered_actions == ['analyze']:
-            return None
 
         return tools or None
 
@@ -1392,6 +1473,7 @@ print(json.dumps(result))
                 tool_step["status"] = "done"
                 tool_step["result"] = self._format_tool_result(tc['tool'], result, lang=_lang)
                 tool_step["metadata"] = result.metadata if result.success else {}
+                tool_step["data"] = result.data if result.success else {}
                 if result.success:
                     self._store_tool_result(tc['tool'], result)
                 # Store tool call + result in conversation for context persistence
@@ -1426,16 +1508,22 @@ print(json.dumps(result))
         for s in steps:
             if s.get("type") == "tool" and s.get("status") == "done":
                 meta = s.get("metadata", {})
-                # Extract source URLs from metadata or result text
-                source_url = ""
-                if meta and isinstance(meta, dict):
+                data = s.get("data", {})
+                # Extract source URLs from data or metadata
+                source_urls = []
+                if isinstance(data, dict):
+                    sources = data.get("sources", [])
+                    if isinstance(sources, list):
+                        source_urls = [u for u in sources if u]
+                if not source_urls and isinstance(meta, dict):
                     sources = meta.get("sources", [])
-                    if sources:
-                        source_url = sources[0] if isinstance(sources, list) else str(sources)
+                    if isinstance(sources, list):
+                        source_urls = [u for u in sources if u]
                 formatted.append({
                     "tool": s.get("tool", ""),
                     "display": s.get("result", ""),
-                    "source_url": source_url,
+                    "source_url": source_urls[0] if source_urls else "",
+                    "all_source_urls": source_urls,
                 })
         return ToolResultPipeline.synthesize(formatted, user_message, self.brain_router, lang, query_type)
 
@@ -1525,7 +1613,7 @@ print(json.dumps(result))
                 return 'realtime'
 
         # Check knowledge patterns (LLM + search verification)
-        # BEFORE analysis — because "推荐" in guideline context is knowledge, not opinion
+        # BEFORE analysis — because "recommendation" in guideline context is knowledge, not opinion
         for pattern, _ in self._KNOWLEDGE_PATTERNS:
             if re.search(pattern, msg, re.IGNORECASE):
                 return 'knowledge'
@@ -1566,6 +1654,80 @@ print(json.dumps(result))
             elif query_type == 'system':
                 return "📋 Source: Internal system data"
         return ""
+
+    # Tumor type → VoCo tool mapping
+    _TUMOR_TYPE_MAP = {
+        # English names
+        "pancreatic_tumor": "voco_pancreatic",
+        "pancreatic": "voco_pancreatic",
+        "pancreas": "voco_pancreatic",
+        "liver_tumor": "voco_liver",
+        "liver": "voco_liver",
+        "kidney_tumor": "voco_kidney",
+        "kidney": "voco_kidney",
+        "colon_tumor": "voco_colon",
+        "colon": "voco_colon",
+        "lung_tumor": "voco_lung",
+        "lung": "voco_lung",
+        "brain_tumor": "voco_brats21",
+        "brain": "voco_brats21",
+        "pulmonary_embolism": "voco_fumpe",
+        "covid": "voco_covid",
+        "aorta": "voco_aorta",
+        # Chinese names
+        "胰腺癌": "voco_pancreatic",
+        "胰腺肿瘤": "voco_pancreatic",
+        "胰腺": "voco_pancreatic",
+        "肝癌": "voco_liver",
+        "肝肿瘤": "voco_liver",
+        "肝脏": "voco_liver",
+        "肾癌": "voco_kidney",
+        "肾肿瘤": "voco_kidney",
+        "肾脏": "voco_kidney",
+        "结肠癌": "voco_colon",
+        "结肠": "voco_colon",
+        "肺癌": "voco_lung",
+        "肺部": "voco_lung",
+        "脑肿瘤": "voco_brats21",
+        "脑癌": "voco_brats21",
+        "肺栓塞": "voco_fumpe",
+        "新冠": "voco_covid",
+        "主动脉": "voco_aorta",
+        "胰腺癌患者": "voco_pancreatic",
+        "肝癌患者": "voco_liver",
+        "肾癌患者": "voco_kidney",
+        "肺癌患者": "voco_lung",
+        "结肠癌患者": "voco_colon",
+        "脑肿瘤患者": "voco_brats21",
+    }
+
+    def _map_tumor_type(self, tumor_type: str) -> str:
+        """Map user-provided tumor type to VoCo tool name."""
+        if tumor_type is None:
+            return "voco_pancreatic"
+        # Already a valid VoCo tool name
+        if tumor_type.startswith("voco_"):
+            return tumor_type
+        # Look up in mapping
+        mapped = self._TUMOR_TYPE_MAP.get(tumor_type.lower())
+        if mapped:
+            return mapped
+        # Partial match for Chinese
+        for key, val in self._TUMOR_TYPE_MAP.items():
+            if key in tumor_type or tumor_type in key:
+                return val
+        # Default to pancreatic
+        logger.warning(f"Unknown tumor_type '{tumor_type}', defaulting to voco_pancreatic")
+        return "voco_pancreatic"
+
+    def _detect_tumor_type_from_message(self, message: str) -> Optional[str]:
+        """Detect tumor type from user message for CTV segmentation routing."""
+        msg = message.lower()
+        # Check each keyword in the mapping
+        for keyword, tool_name in self._TUMOR_TYPE_MAP.items():
+            if keyword in msg:
+                return tool_name
+        return None
 
     def _detect_realtime_query(self, message: str) -> Optional[str]:
         """Detect if the message requires a real-time web search.
@@ -3480,10 +3642,16 @@ print(json.dumps(result))
         ctv_path = self.memory.retrieve("ctv_path")
         if ct_image is None:
             return "Please provide CT image path first. Use run_preoperative_plan(ct_path=...) to load CT."
-        result = self.registry.execute("ctv_segmentation", image=ct_image, label_path=ctv_path)
-        self.memory.log_tool_call("ctv_segmentation", {}, result)
+        # Detect tumor type from message
+        tumor_type = self._detect_tumor_type_from_message(message)
+        params = {"image": ct_image, "label_path": ctv_path}
+        if tumor_type:
+            params["tumor_type"] = tumor_type
+        result = self.registry.execute("ctv_segmentation", **params)
+        self.memory.log_tool_call("ctv_segmentation", params, result)
         if result.success:
             self.memory.store("ctv_array", result.metadata["ctv_array"])
+            self.memory.store("ctv_mask", result.metadata.get("ctv_mask"))
             return result.message
         return f"CTV segmentation failed: {result.error}"
     

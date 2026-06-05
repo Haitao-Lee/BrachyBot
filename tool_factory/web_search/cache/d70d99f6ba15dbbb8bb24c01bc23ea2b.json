@@ -1,0 +1,46 @@
+{
+  "success": true,
+  "results": [
+    {
+      "title": "DeepRare",
+      "snippet": "2026年5月28日&ensp;&#0183;&ensp;~1h 单次推理耗时 95.4% 致病评级一致率 进入 VCF 诊断 PRODUCT DEMO &#183; 产品演示 观看 DeepRare 的一次完整诊断流程 从主诉录入到循证报告 01",
+      "url": "https://deeprare.cn/",
+      "source": "Bing"
+    },
+    {
+      "title": "An agentic system for rare disease diagnosis with traceable …",
+      "snippet": "2026年2月18日&ensp;&#0183;&ensp;DeepRare—a multi-agent system for rare disease differential diagnosis decision support powered by large language models, integrating specialized tools and up-to-date knowledge …",
+      "url": "https://www.nature.com/articles/s41586-025-10097-9",
+      "source": "Bing",
+      "page_content": "An agentic system for rare disease diagnosis with traceable reasoning | Nature\n\n Skip to main content\n\nThank you for visiting nature.com. You are using a browser version with limited support for CSS. To obtain\n the best experience, we recommend you use a more up to date browser (or turn off compatibility mode in\n Internet Explorer). In the meantime, to ensure continued support, we are displaying the site without styles\n and JavaScript.\n\nAdvertisement\n\n View all journals\n\nSearch\n\n Log in\n\n Content\n Explore content\n\n About the journal\n\n Publish with us\n\n Sign up for alerts\n\n RSS feed\n\nnature\n\narticles\n\n article\n\n An agentic system for rare disease diagnosis with traceable reasoning\n\n Download PDF\n\n Download PDF\n\nArticle\n\n Open access\n\nPublished: 18 February 2026\n\nAn agentic system for rare disease diagnosis with traceable reasoning\n\nWeike Zhao \n ORCID: orcid.org/0009-0001-2954-17971,2,3 na1, \n\nChaoyi Wu1 na1, \n\nYanjie Fan4,5 na1, \n\nPengcheng Qiu1,2,3, \n\nXiaoman Zhang \n ORCID: orcid.org/0000-0002-7696-93666, \n\nYuze Sun1, \n\nXiao Zhou \n ORCID: orcid.org/0000-0001-5121-56403, \n\nShuju Zhang7, \n\nYu Peng7, \n\nYanfeng Wang \n ORCID: orcid.org/0000-0002-3196-23471, \n\nXin Sun4, \n\nYa Zhang \n ORCID: orcid.org/0000-0002-5390-90531,3,8, \n\nYongguo Yu \n ORCID: orcid.org/0000-0002-4472-09104, \n\nKun Sun \n ORCID: orcid.org/0000-0002-0504-73724,9 & \n\n…\n\nWeidi Xie \n ORCID: orcid.org/0009-0002-8609-68261,3 \nShow authors\n\n Nature\n\n volume 651, pages 775–784 (2026) Cite this article\n\n96k Accesses\n\n45 Citations\n\n287 Altmetric\n\nMetrics details\n\nSubjects\n\nDiagnosis\n\nDiseases\n\nHealth care\n\nAbstract\n\nRare diseases affect more than 300 million people worldwide1,2,3, yet timely and accurate diagnosis remains an urgent challenge1,3,4,5. Patients often endure a prolonged ‘diagnostic odyssey’ exceeding 5 years, marked by repeated referrals, misdiagnoses and unnecessary interventions, leading to delayed treatment and substantial emotional and economic burden4,5. Here we present DeepRare—a multi-agent sys"
+    },
+    {
+      "title": "DeepRare：具有可追溯推理能力的罕见病诊断Agentic系统 - 知乎",
+      "snippet": "2025年6月30日&ensp;&#0183;&ensp;DeepRare的诊断流程：信息收集与自我反思 DeepRare的诊断过程被精心设计为两个主要阶段，以确保诊断的全面性和准确性。 DeepRare 系统概述 （1）信息收集阶段： 当接收到患者数 …",
+      "url": "https://zhuanlan.zhihu.com/p/1923138193580069474",
+      "source": "Bing"
+    },
+    {
+      "title": "全球首个智能体式罕见病循证推理诊断系统DeepRare正式 ...",
+      "snippet": "2026年2月28日&ensp;&#0183;&ensp;余永国以“在‘盲区’中找寻光亮—DeepRare临床实战”为主旨，分享DeepRare确诊跨学科疑难病例的实战案例，发布全国多中心临床验证计划，样本量超两万例，将DeepRare嵌入临床流 …",
+      "url": "https://news.sjtu.edu.cn/jdyw/20260305/220083.html",
+      "source": "Bing"
+    },
+    {
+      "title": "DeepRare/README.md at main &#183; MAGIC-AI4Med/DeepRare &#183; …",
+      "snippet": "Here, we introduce DeepRare, the first rare disease diagnosis agentic system powered by a large language model (LLM), capable of processing heterogeneous clinical inputs.",
+      "url": "https://github.com/MAGIC-AI4Med/DeepRare/blob/main/README.md",
+      "source": "Bing"
+    }
+  ],
+  "quality": "good",
+  "relevance_score": 0.55,
+  "sources": [
+    "https://deeprare.cn/",
+    "https://www.nature.com/articles/s41586-025-10097-9",
+    "https://zhuanlan.zhihu.com/p/1923138193580069474",
+    "https://news.sjtu.edu.cn/jdyw/20260305/220083.html",
+    "https://github.com/MAGIC-AI4Med/DeepRare/blob/main/README.md"
+  ],
+  "_cached_at": 1780643588.0000207
+}

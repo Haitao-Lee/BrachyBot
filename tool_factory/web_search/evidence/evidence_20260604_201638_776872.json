@@ -1,0 +1,69 @@
+{
+  "response_id": "20260604_201638_776872",
+  "query": "IEEE TMI impact factor 2024",
+  "created_at": "2026-06-04T20:16:38.776901",
+  "num_sources": 3,
+  "source_types": [
+    "Bing CN"
+  ],
+  "avg_confidence": 0.4000000000000001,
+  "verification_status": "unverified",
+  "citations": [
+    "[IEEE Xplore](https://ieeexplore.ieee.org/Xplore/home.jsp)",
+    "[电气电子工程师学会_百度百科](https://baike.baidu.com/item/%E7%94%B5%E6%B0%94%E7%94%B5%E5%AD%90%E5%B7%A5%E7%A8%8B%E5%B8%88%E5%AD%A6%E4%BC%9A/6052645)",
+    "[IEEE - Home](https://ieee.secure-platform.com/a/organizations/main/home)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "a0c5959b293b",
+      "claim": "IEEE Xplore, delivering full text access to the world's highest quality technical literature in engineering and technology. | IEEE Xplore",
+      "source_url": "https://ieeexplore.ieee.org/Xplore/home.jsp",
+      "source_type": "Bing CN",
+      "source_title": "IEEE Xplore",
+      "accessed_at": "2026-06-04T20:16:39.036427",
+      "published_at": "",
+      "raw_snippet": "IEEE Xplore, delivering full text access to the world's highest quality technical literature in engineering and technology. | IEEE Xplore",
+      "extracted_data": {},
+      "confidence": 0.4,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "IEEE TMI impact factor 2024",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "60b2d69c1213",
+      "claim": "截至2025年12月，IEEE在190多个国家拥有超过50万名会员，其IEEEXplore数字图书馆文献已超过500万篇。 会员分为会士、高级会员、会员、准会员和学生会员。 其前身是成立于1884年的美国电气工程 …",
+      "source_url": "https://baike.baidu.com/item/%E7%94%B5%E6%B0%94%E7%94%B5%E5%AD%90%E5%B7%A5%E7%A8%8B%E5%B8%88%E5%AD%A6%E4%BC%9A/6052645",
+      "source_type": "Bing CN",
+      "source_title": "电气电子工程师学会_百度百科",
+      "accessed_at": "2026-06-04T20:16:39.036509",
+      "published_at": "",
+      "raw_snippet": "截至2025年12月，IEEE在190多个国家拥有超过50万名会员，其IEEEXplore数字图书馆文献已超过500万篇。 会员分为会士、高级会员、会员、准会员和学生会员。 其前身是成立于1884年的美国电气工程 …",
+      "extracted_data": {},
+      "confidence": 0.4,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "IEEE TMI impact factor 2024",
+      "search_type": "general",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "da5c9706df7b",
+      "claim": "Through its Awards Program, IEEE advances the interests of its members by recognizing their contributions in advancing the fields of interest to IEEE to the benefit of society.",
+      "source_url": "https://ieee.secure-platform.com/a/organizations/main/home",
+      "source_type": "Bing CN",
+      "source_title": "IEEE - Home",
+      "accessed_at": "2026-06-04T20:16:39.036557",
+      "published_at": "",
+      "raw_snippet": "Through its Awards Program, IEEE advances the interests of its members by recognizing their contributions in advancing the fields of interest to IEEE to the benefit of society.",
+      "extracted_data": {},
+      "confidence": 0.4,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "IEEE TMI impact factor 2024",
+      "search_type": "general",
+      "cache_hit": false
+    }
+  ]
+}

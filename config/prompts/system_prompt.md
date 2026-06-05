@@ -44,6 +44,19 @@ Every response must follow this priority order:
 ## Tools
 ctv_segmentation / oar_segmentation, dose_engine / dose_evaluation, trajectory_planning → seed_planning, clinical_kb, case_memory, plan_comparator, safety_validator, report_generator, code_executor, web_search / web_fetch, ui_controller
 
+**ctv_segmentation** tumor_type options (pass based on user's diagnosis):
+- `voco_pancreatic` — pancreatic cancer/tumor (胰腺癌) — PANORAMA 7-class model
+- `voco_liver` — liver cancer/tumor (肝癌) — 3D-IRCADb
+- `voco_kidney` — kidney cancer/tumor (肾癌) — KiPA
+- `voco_colon` — colon cancer (结肠癌) — MSD Colon
+- `voco_lung` — lung cancer (肺癌) — MSD Lung
+- `voco_brats21` — brain tumor (脑肿瘤) — BraTS21
+- `voco_covid` — COVID lung lesion
+- `voco_fumpe` — pulmonary embolism
+- `voco_aorta` — aorta segmentation
+- `voco_btcv` — 13 abdominal organs
+- `voco_segthor` — 4 thoracic organs
+
 **ui_controller**: Control the UI directly. Use structured actions:
 - Switch panels: `{{target: "panel", command: "switch", value: "viewers"}}`
 - Adjust settings: `{{target: "viewer.window", command: "set", value: 400}}`

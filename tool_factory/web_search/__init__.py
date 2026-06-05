@@ -980,6 +980,20 @@ class SearchEngine:
         """Search and return list of {title, snippet, url, source}."""
         raise NotImplementedError
 
+    def search_with_retry(self, query: str, max_results: int = 5, retries: int = 2, delay: float = 1.0) -> List[Dict]:
+        """Search with retry on failure."""
+        import time
+        for attempt in range(retries + 1):
+            try:
+                results = self.search(query, max_results)
+                if results:
+                    return results
+            except Exception as e:
+                logger.warning(f"Search attempt {attempt+1}/{retries+1} failed: {e}")
+            if attempt < retries:
+                time.sleep(delay * (attempt + 1))  # Exponential backoff
+        return []
+
 
 class BingSearch(SearchEngine):
     """Bing search (API or cn.bing.com scraping)."""
@@ -1460,6 +1474,15 @@ class WebSearchTool(BaseTool):
         relevance = self.validator.score_relevance(query, results)
         quality = self.validator.get_quality_label(relevance)
 
+        # Handle no results explicitly
+        if not results:
+            return ToolResult(
+                success=False,
+                message=f"Search failed: no results found for '{query}'. Network may be unavailable.",
+                data={"results": [], "quality": "failed", "sources": []},
+                metadata={"quality": "failed", "relevance_score": 0},
+            )
+
         # Build response
         response = {
             "success": True,
@@ -1481,7 +1504,7 @@ class WebSearchTool(BaseTool):
         # Build message
         msg = f"Found {len(results)} results"
         if quality == "poor":
-            msg += " (low relevance — results may not answer the question)"
+            msg += " (low relevance - results may not answer the question)"
         elif quality == "partial":
             msg += " (partial match)"
 
@@ -1546,10 +1569,10 @@ class WebSearchTool(BaseTool):
 
         # Try each variant with Bing, use the best result set
         for variant in variants[:4]:  # Max 4 variants
-            results = self.engines['bing'].search(variant, max_results)
+            results = self.engines['bing'].search_with_retry(variant, max_results, retries=2)
             if results:
                 score = self.validator.score_relevance(query, results)
-                logger.info(f"Variant '{variant[:50]}' → {len(results)} results, score {score:.2f}")
+                logger.info(f"Variant '{variant[:50]}' -> {len(results)} results, score {score:.2f}")
                 all_results.extend(results)
                 if score > best_score:
                     best_score = score
@@ -1560,7 +1583,7 @@ class WebSearchTool(BaseTool):
         # If Bing results are poor, try Sogou (better for Chinese queries)
         if best_score < 0.5:
             for variant in variants[:2]:
-                sogou_results = self.engines['sogou'].search(variant, max_results)
+                sogou_results = self.engines['sogou'].search_with_retry(variant, max_results, retries=2)
                 if sogou_results:
                     score = self.validator.score_relevance(query, sogou_results)
                     if score > best_score:
@@ -1571,7 +1594,7 @@ class WebSearchTool(BaseTool):
 
         # If still poor and query looks clinical, try PubMed
         if best_score < 0.3 and intent == 'research':
-            pubmed_results = self.engines['pubmed'].search(query, max_results)
+            pubmed_results = self.engines['pubmed'].search_with_retry(query, max_results, retries=2)
             if pubmed_results:
                 all_results.extend(pubmed_results)
 
