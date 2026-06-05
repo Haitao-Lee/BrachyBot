@@ -25,26 +25,38 @@ from .liver_tumor_voco import VoCoLiverTumorTool
 from .colon_tumor_voco import VoCoColonTumorTool
 from .kidney_tumor_voco import VoCoKidneyTumorTool
 from .lung_tumor_voco import VoCoLungTumorTool
-from .prostate_tumor_voco import VoCoProstateTool
 from .btcv_tumor_voco import VoCoBTCVTumorTool
 from .segthor_tumor_voco import VoCoSegThorTumorTool
+from .fumpe_voco import VoCoFUMPESegTool
+from .covid_voco import VoCoCOVIDSegTool
+from .aorta_voco import VoCoAortaSegTool
+from .brats21_voco import VoCoBRATS21SegTool
+
+# Removed VoCoProstateTool (was using wrong Amos-MR weights)
+# Removed VoCoPancSegTool (was pointing to PANORAMA weights with wrong out_channels)
 
 
 TOOL_REGISTRY = {
+    # nnU-Net based tools
     "pancreatic_tumor": PancreaticTumorSegmentationTool,
     "liver_tumor": LiverTumorSegmentationTool,
     "kidney_tumor": KidneyTumorSegmentationTool,
     "prostate_tumor": ProstateTumorSegmentationTool,
     "lung_tumor": LungTumorSegmentationTool,
     "head_neck_tumor": HeadNeckTumorSegmentationTool,
+    # VoCo pre-trained tools (tumor-focused)
     "voco_pancreatic": VoCoPancreaticTumorTool,
     "voco_liver": VoCoLiverTumorTool,
     "voco_colon": VoCoColonTumorTool,
     "voco_kidney": VoCoKidneyTumorTool,
     "voco_lung": VoCoLungTumorTool,
-    "voco_prostate": VoCoProstateTool,
+    # VoCo pre-trained tools (organ/structure segmentation)
     "voco_btcv": VoCoBTCVTumorTool,
     "voco_segthor": VoCoSegThorTumorTool,
+    "voco_fumpe": VoCoFUMPESegTool,
+    "voco_covid": VoCoCOVIDSegTool,
+    "voco_aorta": VoCoAortaSegTool,
+    "voco_brats21": VoCoBRATS21SegTool,
 }
 
 
@@ -80,7 +92,8 @@ class CTVSegmentationTool(BaseTool):
     def description(self) -> str:
         return (
             "Segment Clinical Target Volume (CTV/tumor) from CT images. "
-            "Supports: pancreatic, liver, kidney, prostate, lung, colon, head_neck, btcv, segthor. "
+            "Supports: pancreatic, liver, kidney, prostate, lung, colon, head_neck, btcv, segthor, "
+            "fumpe, covid, aorta, brats21, panc. "
             "Uses nnU-Net or VoCo pre-trained models. "
             "Input: CT image (SimpleITK) or path, optional tumor_type. "
             "Output: CTV binary mask and volume metrics."
@@ -112,7 +125,7 @@ class CTVSegmentationTool(BaseTool):
             "properties": {
                 "ctv_mask": {"type": "object", "description": "SimpleITK binary mask of CTV"},
                 "ctv_array": {"type": "array", "description": "NumPy array of CTV mask"},
-                "ctv_volume_mm3": {"type": "number", "description": "CTV volume in mm³"},
+                "ctv_volume_mm3": {"type": "number", "description": "CTV volume in mm3"},
                 "ctv_voxel_count": {"type": "integer", "description": "Number of CTV voxels"},
                 "tumor_type_used": {"type": "string", "description": "Tumor segmentation model used"},
             },
@@ -142,13 +155,13 @@ class CTVSegmentationTool(BaseTool):
             if tumor_type and tumor_type in TOOL_REGISTRY:
                 tool = TOOL_REGISTRY[tumor_type]()
             else:
-                # Default to VoCo pancreatic tumor tool (no external model weights needed)
+                # Default to VoCo pancreatic tumor tool
                 tool = VoCoPancreaticTumorTool()
 
             result = tool._execute(image=image, target_value=target_value, fast_mode=fast_mode)
             if result.success:
-                ctv_array = result.metadata.get("ctv_array", result.data)
-                ctv_mask = result.metadata.get("ctv_mask", image)
+                ctv_array = result.metadata.get("mask_array", result.data)
+                ctv_mask = result.metadata.get("mask", image)
             else:
                 return result
 
@@ -160,7 +173,7 @@ class CTVSegmentationTool(BaseTool):
         return ToolResult(
             success=True,
             data=ctv_array,
-            message=f"CTV segmentation completed. Volume: {volume_mm3:.1f} mm³",
+            message=f"CTV segmentation completed. Volume: {volume_mm3:.1f} mm3",
             metadata={
                 "ctv_mask": ctv_mask,
                 "ctv_array": ctv_array,
@@ -185,9 +198,12 @@ __all__ = [
     "VoCoColonTumorTool",
     "VoCoKidneyTumorTool",
     "VoCoLungTumorTool",
-    "VoCoProstateTool",
     "VoCoBTCVTumorTool",
     "VoCoSegThorTumorTool",
+    "VoCoFUMPESegTool",
+    "VoCoCOVIDSegTool",
+    "VoCoAortaSegTool",
+    "VoCoBRATS21SegTool",
     "CTVSegmentationTool",
     "get_tool",
     "list_tools",

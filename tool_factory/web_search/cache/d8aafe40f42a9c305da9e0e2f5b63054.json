@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "results": [],
+  "quality": "poor",
+  "relevance_score": 0.0,
+  "sources": [],
+  "quality_warning": "Search results may not contain the requested information. The LLM should use page_content if available, or honestly say the search failed.",
+  "_cached_at": 1780643495.8483486
+}

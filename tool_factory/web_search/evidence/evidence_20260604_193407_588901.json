@@ -1,0 +1,51 @@
+{
+  "response_id": "20260604_193407_588901",
+  "query": "Predicting categorical and continuous Alzheimer disease outcomes from single MRI scan",
+  "created_at": "2026-06-04T19:34:07.588913",
+  "num_sources": 2,
+  "source_types": [
+    "PubMed"
+  ],
+  "avg_confidence": 0.85,
+  "verification_status": "unverified",
+  "citations": [
+    "[Predicting categorical and continuous Alzheimer's disease outcomes from a single MRI scan.](https://pubmed.ncbi.nlm.nih.gov/42151377/)",
+    "[Recent publications from the Alzheimer's Disease Neuroimaging Initiative: Reviewing progress toward improved AD clinical trials.](https://pubmed.ncbi.nlm.nih.gov/28342697/)"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "cd623b75a48f",
+      "claim": "PubMed ID: 42151377. 2026/05/01 00:00. METHODS: We used standard searches to find publications using ADNI data.\nRESULTS: (1) Structural and functional changes, including subtle changes to \nhippocampal",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/42151377/",
+      "source_type": "PubMed",
+      "source_title": "Predicting categorical and continuous Alzheimer's disease outcomes from a single MRI scan.",
+      "accessed_at": "2026-06-04T19:34:09.579381",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 42151377. 2026/05/01 00:00. METHODS: We used standard searches to find publications using ADNI data.\nRESULTS: (1) Structural and functional changes, including subtle changes to \nhippocampal shape and texture, atrophy in areas outside of hippocampus, and \ndisruption to functional networks, are detectable in presymptomatic subjects \nbefore hippocampal atrophy; (2) In subjects with abnormal β-amyloid deposition \n(Aβ+), biomarkers become abnormal in the order predicted by the amyloid casc",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "Predicting categorical and continuous Alzheimer disease outcomes from single MRI scan",
+      "search_type": "clinical",
+      "cache_hit": false
+    },
+    {
+      "evidence_id": "f528140666af",
+      "claim": "PubMed ID: 28342697. 2017/04/01 00:00. METHODS: We used standard searches to find publications using ADNI data.\nRESULTS: (1) Structural and functional changes, including subtle changes to \nhippocampal",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/28342697/",
+      "source_type": "PubMed",
+      "source_title": "Recent publications from the Alzheimer's Disease Neuroimaging Initiative: Reviewing progress toward improved AD clinical trials.",
+      "accessed_at": "2026-06-04T19:34:09.579513",
+      "published_at": "",
+      "raw_snippet": "PubMed ID: 28342697. 2017/04/01 00:00. METHODS: We used standard searches to find publications using ADNI data.\nRESULTS: (1) Structural and functional changes, including subtle changes to \nhippocampal shape and texture, atrophy in areas outside of hippocampus, and \ndisruption to functional networks, are detectable in presymptomatic subjects \nbefore hippocampal atrophy; (2) In subjects with abnormal β-amyloid deposition \n(Aβ+), biomarkers become abnormal in the order predicted by the amyloid casc",
+      "extracted_data": {},
+      "confidence": 0.85,
+      "verification_status": "unverified",
+      "cross_references": [],
+      "search_query": "Predicting categorical and continuous Alzheimer disease outcomes from single MRI scan",
+      "search_type": "clinical",
+      "cache_hit": false
+    }
+  ]
+}

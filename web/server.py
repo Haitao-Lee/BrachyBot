@@ -252,7 +252,9 @@ def create_app(config: Optional[Dict] = None):
 
     @app.route("/")
     def index():
-        return send_from_directory(APP_DIR, "index.html")
+        resp = send_from_directory(APP_DIR, "index.html")
+        resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        return resp
 
     @app.route("/api/upload", methods=["POST"])
     def api_upload():
@@ -522,7 +524,7 @@ def create_app(config: Optional[Dict] = None):
             # Build color LUT for all labels
             color_lut = {}
             if ctv_array is not None:
-                color_lut[1] = list(_label_color(1))  # CTV uses label 1
+                color_lut[1] = [255, 50, 50]  # CTV: fixed red
             if oar_array is not None:
                 for lid in np.unique(oar_array):
                     if lid > 0:
