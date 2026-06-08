@@ -1598,6 +1598,19 @@ class WebSearchTool(BaseTool):
             if pubmed_results:
                 all_results.extend(pubmed_results)
 
+        # Fallback: if still poor results, try with simplified query (strip domain context)
+        if best_score < 0.3 and len(query) > 20:
+            simplified = self._simplify_query(query)
+            if simplified != query:
+                logger.info(f"Fallback: trying simplified query '{simplified}'")
+                fallback_results = self.engines['bing'].search_with_retry(simplified, max_results, retries=1)
+                if fallback_results:
+                    score = self.validator.score_relevance(simplified, fallback_results)
+                    if score > best_score:
+                        best_score = score
+                        best_results = fallback_results
+                        all_results.extend(fallback_results)
+
         # Merge specialized results with general results for richer data
         if specialized_results and best_results:
             # Combine: specialized results first (authoritative), then general
@@ -1610,6 +1623,25 @@ class WebSearchTool(BaseTool):
         if specialized_results:
             return specialized_results[:max_results]
         return all_results[:max_results]
+
+    @staticmethod
+    def _simplify_query(query: str) -> str:
+        """Strip domain-specific context from query for fallback search.
+        E.g., 'ZygoPlanner brachytherapy treatment planning' -> 'ZygoPlanner'"""
+        # Common domain keywords to strip when they're not the main topic
+        domain_keywords = [
+            'brachytherapy', 'radiotherapy', 'radiation therapy', 'treatment planning',
+            'dose calculation', 'seed implant', '近距离', '放疗', '放射治疗',
+            'treatment plan', 'medical', 'clinical', 'healthcare',
+        ]
+        q = query
+        for kw in domain_keywords:
+            # Only strip if the keyword is not the main subject (not the first word)
+            pattern = r'(?<!\w)' + re.escape(kw) + r'(?!\w)'
+            q = re.sub(pattern, '', q, flags=re.IGNORECASE)
+        # Clean up extra spaces
+        q = re.sub(r'\s+', ' ', q).strip()
+        return q if q else query
 
     def _search_clinical(self, query: str, max_results: int) -> List[Dict]:
         """Clinical search: PubMed first, then Bing for broader context."""
