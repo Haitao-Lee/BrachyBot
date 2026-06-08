@@ -1,15 +1,15 @@
 """
 Query Metrics Tool
 ==================
-Query and display various medical metrics, dose statistics, and plan quality indicators.
+Query dose metrics, plan quality, organ volumes.
+Accepts data via kwargs (agent passes from memory).
 """
 
 import os
 import sys
 import json
 import logging
-import requests
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -17,11 +17,9 @@ from tool_factory import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
 
-API_BASE = "http://localhost:8080/api"
-
 
 class QueryMetricsTool(BaseTool):
-    """Query medical metrics and plan quality indicators."""
+    """Query medical metrics from treatment plan data."""
 
     @property
     def name(self) -> str:
@@ -30,10 +28,9 @@ class QueryMetricsTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Query various medical metrics and plan quality indicators. "
-            "Metrics: dose_metrics (V100, D90, etc.), oar_constraints, plan_score, "
-            "ctv_volume, oar_volumes, seed_count, dvh_data, hu_statistics, spacing_info. "
-            "Use this when the user asks about plan quality, dose coverage, organ doses, etc."
+            "Query dose metrics (V100, D90, V150, V200), plan quality, CTV/OAR volumes, "
+            "seed count, HU statistics. The agent passes data from memory via kwargs. "
+            "Use when user asks about plan quality, dose coverage, organ doses, etc."
         )
 
     @property
@@ -43,280 +40,111 @@ class QueryMetricsTool(BaseTool):
             "properties": {
                 "metric_type": {
                     "type": "string",
-                    "description": "Type of metric to query",
-                    "enum": [
-                        "dose_metrics",
-                        "oar_constraints",
-                        "plan_score",
-                        "ctv_volume",
-                        "oar_volumes",
-                        "seed_count",
-                        "dvh_data",
-                        "hu_statistics",
-                        "spacing_info",
-                        "all_metrics"
-                    ]
+                    "enum": ["dose_metrics", "ctv_volume", "oar_volumes", "seed_count",
+                             "hu_statistics", "spacing_info", "plan_score", "all_metrics"],
+                    "description": "Type of metric to query"
                 },
-                "organ_name": {
-                    "type": "string",
-                    "description": "For OAR metrics: specific organ name"
-                }
+                "metrics": {"type": "object", "description": "Dose metrics dict from memory"},
+                "ctv_array": {"type": "object", "description": "CTV segmentation array"},
+                "oar_array": {"type": "object", "description": "OAR segmentation array"},
+                "organ_names": {"type": "object", "description": "Organ name mapping"},
+                "ct_spacing": {"type": "array", "description": "CT voxel spacing"},
+                "ct_data": {"type": "object", "description": "CT image data"},
+                "seed_positions": {"type": "array", "description": "Seed positions"},
+                "total_seeds": {"type": "integer", "description": "Total seed count"},
             },
             "required": ["metric_type"]
         }
 
-    @property
-    def output_schema(self) -> Dict:
-        return {
-            "type": "object",
-            "properties": {
-                "success": {"type": "boolean"},
-                "metrics": {"type": "object"},
-                "message": {"type": "string"}
-            }
-        }
-
     def _execute(self, **kwargs) -> ToolResult:
-        """Query metrics."""
         metric_type = kwargs.get("metric_type", "all_metrics")
-        organ_name = kwargs.get("organ_name")
 
         try:
             if metric_type == "dose_metrics":
-                return self._get_dose_metrics()
-            elif metric_type == "oar_constraints":
-                return self._get_oar_constraints(organ_name)
-            elif metric_type == "plan_score":
-                return self._get_plan_score()
+                return self._get_dose_metrics(kwargs)
             elif metric_type == "ctv_volume":
-                return self._get_ctv_volume()
+                return self._get_ctv_volume(kwargs)
             elif metric_type == "oar_volumes":
-                return self._get_oar_volumes()
+                return self._get_oar_volumes(kwargs)
             elif metric_type == "seed_count":
-                return self._get_seed_count()
-            elif metric_type == "dvh_data":
-                return self._get_dvh_data()
+                return self._get_seed_count(kwargs)
             elif metric_type == "hu_statistics":
-                return self._get_hu_statistics()
+                return self._get_hu_statistics(kwargs)
             elif metric_type == "spacing_info":
-                return self._get_spacing_info()
+                return self._get_spacing_info(kwargs)
             elif metric_type == "all_metrics":
-                return self._get_all_metrics()
+                return self._get_all_metrics(kwargs)
             else:
-                return ToolResult(
-                    success=False,
-                    error=f"Unknown metric type: {metric_type}",
-                    message=f"Unknown metric type: {metric_type}"
-                )
+                return self._get_all_metrics(kwargs)
         except Exception as e:
-            logger.error(f"Query metrics failed: {e}")
-            return ToolResult(
-                success=False,
-                error=str(e),
-                message=f"Query metrics failed: {e}"
-            )
+            return ToolResult(success=False, error=str(e), message=f"Query failed: {e}")
 
-    def _get_dose_metrics(self) -> ToolResult:
-        """Get dose metrics (V100, V150, V200, D90, D95)."""
-        res = requests.post(f"{API_BASE}/viewer/control", json={"action": "get_state"})
-        if not res.ok:
-            return ToolResult(success=False, error="Failed to get state", message="Failed to get state")
-
-        state = res.json()
-        metrics = state.get("metrics", {})
-
-        dose_metrics = {
-            "V100": metrics.get("V100", "N/A"),
-            "V150": metrics.get("V150", "N/A"),
-            "V200": metrics.get("V200", "N/A"),
-            "D90": metrics.get("D90", "N/A"),
-            "D95": metrics.get("D95", "N/A"),
-            "D100": metrics.get("D100", "N/A")
+    def _get_dose_metrics(self, kw) -> ToolResult:
+        metrics = kw.get("metrics", {})
+        if not metrics:
+            return ToolResult(success=False, error="No metrics",
+                            message="No dose metrics available. Run dose evaluation first.")
+        dose = {
+            "V100": metrics.get("v100", "N/A"),
+            "V150": metrics.get("v150", "N/A"),
+            "V200": metrics.get("v200", "N/A"),
+            "D90": metrics.get("d90", "N/A"),
         }
+        return ToolResult(success=True, message=json.dumps(dose, indent=2), metadata=dose)
 
-        return ToolResult(
-            success=True,
-            message=json.dumps(dose_metrics, indent=2),
-            metadata=dose_metrics
-        )
+    def _get_ctv_volume(self, kw) -> ToolResult:
+        import numpy as np
+        ctv = kw.get("ctv_array")
+        if ctv is None:
+            return ToolResult(success=False, error="No CTV", message="No CTV segmentation found.")
+        spacing = kw.get("ct_spacing", [1, 1, 1])
+        vol = int(np.sum(ctv > 0)) * float(np.prod(spacing)) / 1000
+        return ToolResult(success=True, message=f"CTV volume: {vol:.1f} cm³",
+                        metadata={"volume_cm3": round(vol, 1)})
 
-    def _get_oar_constraints(self, organ_name: Optional[str] = None) -> ToolResult:
-        """Get OAR dose constraints."""
-        # This would need to query the actual plan data
-        # For now, return placeholder
-        constraints = {
-            "rectum": {"D2cc": "N/A", "V75": "N/A"},
-            "bladder": {"D2cc": "N/A", "V80": "N/A"},
-            "urethra": {"D10": "N/A", "V150": "N/A"}
-        }
+    def _get_oar_volumes(self, kw) -> ToolResult:
+        import numpy as np
+        oar = kw.get("oar_array")
+        names = kw.get("organ_names", {})
+        if oar is None:
+            return ToolResult(success=False, error="No OAR", message="No OAR segmentation found.")
+        spacing = kw.get("ct_spacing", [1, 1, 1])
+        voxel_vol = float(np.prod(spacing))
+        volumes = {}
+        for lid in np.unique(oar):
+            if lid > 0:
+                name = names.get(int(lid), names.get(str(int(lid)), f"organ_{int(lid)}"))
+                volumes[name] = round(int(np.sum(oar == lid)) * voxel_vol / 1000, 2)
+        return ToolResult(success=True, message=json.dumps(volumes, indent=2), metadata=volumes)
 
-        if organ_name:
-            result = constraints.get(organ_name.lower(), {})
-            return ToolResult(
-                success=True,
-                message=json.dumps({organ_name: result}, indent=2),
-                metadata={organ_name: result}
-            )
+    def _get_seed_count(self, kw) -> ToolResult:
+        seeds = kw.get("seed_positions", [])
+        total = kw.get("total_seeds", 0)
+        count = len(seeds) if seeds else total
+        return ToolResult(success=True, message=f"Total seeds: {count}", metadata={"seed_count": count})
 
-        return ToolResult(
-            success=True,
-            message=json.dumps(constraints, indent=2),
-            metadata=constraints
-        )
+    def _get_hu_statistics(self, kw) -> ToolResult:
+        import numpy as np
+        ct = kw.get("ct_data")
+        if ct is None:
+            return ToolResult(success=False, error="No CT", message="No CT image loaded.")
+        stats = {"hu_min": int(ct.min()), "hu_max": int(ct.max()),
+                 "hu_mean": round(float(ct.mean()), 1), "shape": list(ct.shape)}
+        return ToolResult(success=True, message=json.dumps(stats, indent=2), metadata=stats)
 
-    def _get_plan_score(self) -> ToolResult:
-        """Get overall plan quality score."""
-        res = requests.post(f"{API_BASE}/viewer/control", json={"action": "get_state"})
-        if not res.ok:
-            return ToolResult(success=False, error="Failed to get state", message="Failed to get state")
+    def _get_spacing_info(self, kw) -> ToolResult:
+        sp = kw.get("ct_spacing", [1, 1, 1])
+        info = {"spacing_x": round(sp[0], 2), "spacing_y": round(sp[1], 2), "spacing_z": round(sp[2], 2)}
+        return ToolResult(success=True, message=json.dumps(info, indent=2), metadata=info)
 
-        state = res.json()
-        score = state.get("plan_score", "N/A")
-
-        return ToolResult(
-            success=True,
-            message=f"Plan quality score: {score}",
-            metadata={"plan_score": score}
-        )
-
-    def _get_ctv_volume(self) -> ToolResult:
-        """Get CTV volume."""
-        res = requests.post(f"{API_BASE}/viewer/control", json={"action": "get_state"})
-        if not res.ok:
-            return ToolResult(success=False, error="Failed to get state", message="Failed to get state")
-
-        state = res.json()
-        volume = state.get("ctv_volume", "N/A")
-
-        return ToolResult(
-            success=True,
-            message=f"CTV volume: {volume} cc",
-            metadata={"ctv_volume": volume}
-        )
-
-    def _get_oar_volumes(self) -> ToolResult:
-        """Get OAR volumes."""
-        res = requests.post(f"{API_BASE}/viewer/control", json={"action": "get_state"})
-        if not res.ok:
-            return ToolResult(success=False, error="Failed to get state", message="Failed to get state")
-
-        state = res.json()
-        volumes = state.get("oar_volumes", {})
-
-        return ToolResult(
-            success=True,
-            message=json.dumps(volumes, indent=2),
-            metadata=volumes
-        )
-
-    def _get_seed_count(self) -> ToolResult:
-        """Get seed count."""
-        res = requests.post(f"{API_BASE}/viewer/control", json={"action": "get_state"})
-        if not res.ok:
-            return ToolResult(success=False, error="Failed to get state", message="Failed to get state")
-
-        state = res.json()
-        count = state.get("seed_count", "N/A")
-
-        return ToolResult(
-            success=True,
-            message=f"Total seeds: {count}",
-            metadata={"seed_count": count}
-        )
-
-    def _get_dvh_data(self) -> ToolResult:
-        """Get DVH data."""
-        res = requests.post(f"{API_BASE}/viewer/control", json={"action": "get_state"})
-        if not res.ok:
-            return ToolResult(success=False, error="Failed to get state", message="Failed to get state")
-
-        state = res.json()
-        dvh = state.get("dvh_data", {})
-
-        return ToolResult(
-            success=True,
-            message=json.dumps(dvh, indent=2),
-            metadata=dvh
-        )
-
-    def _get_hu_statistics(self) -> ToolResult:
-        """Get HU statistics of loaded CT."""
-        res = requests.post(f"{API_BASE}/viewer/control", json={"action": "get_state"})
-        if not res.ok:
-            return ToolResult(success=False, error="Failed to get state", message="Failed to get state")
-
-        state = res.json()
-        hu_range = state.get("hu_range", [])
-        spacing = state.get("spacing", [])
-        shape = state.get("shape", [])
-
-        stats = {
-            "hu_min": hu_range[0] if len(hu_range) > 0 else "N/A",
-            "hu_max": hu_range[1] if len(hu_range) > 1 else "N/A",
-            "shape": shape,
-            "spacing": spacing
-        }
-
-        return ToolResult(
-            success=True,
-            message=json.dumps(stats, indent=2),
-            metadata=stats
-        )
-
-    def _get_spacing_info(self) -> ToolResult:
-        """Get CT spacing information."""
-        res = requests.post(f"{API_BASE}/viewer/control", json={"action": "get_state"})
-        if not res.ok:
-            return ToolResult(success=False, error="Failed to get state", message="Failed to get state")
-
-        state = res.json()
-        spacing = state.get("spacing", [])
-
-        info = {
-            "spacing_x": spacing[0] if len(spacing) > 0 else "N/A",
-            "spacing_y": spacing[1] if len(spacing) > 1 else "N/A",
-            "spacing_z": spacing[2] if len(spacing) > 2 else "N/A",
-            "isotropic_xy": abs(spacing[0] - spacing[1]) < 0.01 if len(spacing) > 1 else False
-        }
-
-        return ToolResult(
-            success=True,
-            message=json.dumps(info, indent=2),
-            metadata=info
-        )
-
-    def _get_all_metrics(self) -> ToolResult:
-        """Get all available metrics."""
-        res = requests.post(f"{API_BASE}/viewer/control", json={"action": "get_state"})
-        if not res.ok:
-            return ToolResult(success=False, error="Failed to get state", message="Failed to get state")
-
-        state = res.json()
-
-        all_metrics = {
-            "dose_metrics": {
-                "V100": state.get("metrics", {}).get("V100", "N/A"),
-                "V150": state.get("metrics", {}).get("V150", "N/A"),
-                "V200": state.get("metrics", {}).get("V200", "N/A"),
-                "D90": state.get("metrics", {}).get("D90", "N/A"),
-                "D95": state.get("metrics", {}).get("D95", "N/A")
-            },
-            "plan_score": state.get("plan_score", "N/A"),
-            "ctv_volume": state.get("ctv_volume", "N/A"),
-            "seed_count": state.get("seed_count", "N/A"),
-            "hu_range": state.get("hu_range", []),
-            "spacing": state.get("spacing", []),
-            "shape": state.get("shape", [])
-        }
-
-        return ToolResult(
-            success=True,
-            message=json.dumps(all_metrics, indent=2),
-            metadata=all_metrics
-        )
-
-
-if __name__ == "__main__":
-    tool = QueryMetricsTool()
-    print(f"Tool: {tool.name}")
-    print(f"Description: {tool.description}")
+    def _get_all_metrics(self, kw) -> ToolResult:
+        result = {}
+        for getter in [self._get_dose_metrics, self._get_ctv_volume, self._get_seed_count,
+                       self._get_hu_statistics, self._get_spacing_info]:
+            try:
+                r = getter(kw)
+                if r.success and r.metadata:
+                    result.update(r.metadata)
+            except:
+                pass
+        return ToolResult(success=True, message=json.dumps(result, indent=2), metadata=result)
