@@ -1136,24 +1136,6 @@ class BrachyAgent:
         except ImportError as e:
             logger.warning(f"UIAnnotateTool not available: {e}")
 
-        # Plan quality tools
-        try:
-            from tool_factory.plan_quality import PlanQualityScorerTool, OARConstraintCheckerTool, PlanRefinementTool
-            self.registry.register(PlanQualityScorerTool())
-            self.registry.register(OARConstraintCheckerTool())
-            self.registry.register(PlanRefinementTool())
-        except ImportError as e:
-            logger.warning(f"Plan quality tools not available: {e}")
-
-        # Viewer command tools
-        try:
-            from tool_factory.viewer_command import ViewerCommandTool, AutoNavigateTool, QueryMetricsTool
-            self.registry.register(ViewerCommandTool())
-            self.registry.register(AutoNavigateTool())
-            self.registry.register(QueryMetricsTool())
-        except ImportError as e:
-            logger.warning(f"Viewer command tools not available: {e}")
-
         self.registry.register(CTVSegmentationTool())
         self.registry.register(OARSegmentationTool())
         self.registry.register(DoseEngineTool())
@@ -1200,11 +1182,6 @@ class BrachyAgent:
         except ImportError as e:
             logger.warning(f"ReportGeneratorTool not available: {e}")
 
-        try:
-            from tool_factory.performance_tracker import PerformanceTrackerTool
-            self.registry.register(PerformanceTrackerTool())
-        except ImportError as e:
-            logger.warning(f"PerformanceTrackerTool not available: {e}")
 
         # Web search tool for internet connectivity
         try:
@@ -2939,7 +2916,7 @@ print(json.dumps(result))
                         "tool_creator", "env_manager", "shell_executor", "code_executor",
                         "ui_inspector", "ui_controller", "ui_screenshot", "ui_annotate",
                         "filesystem_browser", "safety_validator",
-                        "plan_comparator", "performance_tracker", "dicom_rt_exporter",
+                        "plan_comparator", "dicom_rt_exporter",
                         "web_search", "web_fetch"  # Allow web tools (no CT dependency)
                     }
                     tools_for_llm = [t for t in tools_for_llm
