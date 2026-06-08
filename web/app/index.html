@@ -2702,6 +2702,67 @@ async function handleFileSelect(input, targetId) {
     input.value = '';
 }
 
+/**
+ * Reset all segmentation, planning, and data tree state when loading a new CT.
+ * Must be called before loading new CT to clear stale data.
+ */
+function resetAllState() {
+    // Clear segmentation data arrays
+    ctvLabelData = null;
+    oarLabelData = null;
+    labelColorLUT = {};
+    organMetaFromServer = {};
+    window._ctvLabelMap = {};
+
+    // Reset data tree state
+    dataTreeState.ctv.loaded = false;
+    dataTreeState.ctv.visible = true;
+    dataTreeState.oar.loaded = false;
+    dataTreeState.oar.visible = true;
+    dataTreeState.organs = [];
+    dataTreeState.ctvLabels = {};
+    dataTreeState.dose.loaded = false;
+    dataTreeState.seeds.loaded = false;
+    dataTreeState.needles.loaded = false;
+    dataTreeState.planning.seeds = [];
+    dataTreeState.planning.needles = [];
+    dataTreeState.planning.doseLevels = [];
+
+    // Clear 3D meshes
+    if (typeof scene3D !== 'undefined' && scene3D.meshes) {
+        Object.keys(scene3D.meshes).forEach(id => {
+            const mesh = scene3D.meshes[id];
+            if (mesh && mesh.parent) mesh.parent.remove(mesh);
+            if (mesh && mesh.geometry) mesh.geometry.dispose();
+            if (mesh && mesh.material) mesh.material.dispose();
+        });
+        scene3D.meshes = {};
+    }
+
+    // Clear slice caches
+    if (typeof sliceCache !== 'undefined') {
+        sliceCache.axial = {};
+        sliceCache.sagittal = {};
+        sliceCache.coronal = {};
+    }
+    if (typeof overlayCache !== 'undefined') {
+        overlayCache.axial = {};
+        overlayCache.sagittal = {};
+        overlayCache.coronal = {};
+    }
+
+    // Clear volume data
+    if (typeof volumeData !== 'undefined') volumeData = null;
+
+    // Reset image analysis data
+    imageAnalysisData.ct = null;
+    imageAnalysisData.ctv = null;
+    imageAnalysisData.oar = null;
+
+    // Re-render data tree
+    renderDataTree();
+}
+
 async function loadCTToViewers(ctPath) {
     if (!ctPath) return;
 
@@ -2712,6 +2773,9 @@ async function loadCTToViewers(ctPath) {
     progressText.textContent = 'Loading CT to viewers...';
 
     addChat('system', 'Loading CT image to viewers...');
+
+    // Reset all segmentation and planning state for new CT
+    resetAllState();
 
     try {
         const res = await fetch(API + '/viewer/load', {
@@ -2815,8 +2879,13 @@ async function init() {
             const statusData = await statusResp.json();
             // Check if CT is actually loaded in the agent's memory
             if (statusData.ct_loaded) {
+                state.ctLoaded = true;
                 // Try to load label volumes for client-side overlay rendering
                 await loadLabelVolumes();
+                // Update data tree state based on loaded data
+                if (ctvLabelData) dataTreeState.ctv.loaded = true;
+                if (oarLabelData) dataTreeState.oar.loaded = true;
+                renderDataTree();
                 if (!ctvLabelData && !oarLabelData) {
                     // Fallback: fetch organ data the old way
                     const organResp = await fetch(API + '/viewer/organs');
