@@ -3100,6 +3100,7 @@ print(json.dumps(result))
                     }
                     yield yield_event("progress", progress_event)
 
+                tool_result = None  # Track result for metadata
                 if tool_name in ("self_evolve", "evolve", "进化", "总结经验"):
                     result_text = self._handle_self_evolution()
                 elif tool_name in ("code_writer", "write_tool", "create_tool", "写工具", "新工具"):
@@ -3107,6 +3108,7 @@ print(json.dumps(result))
                 elif tool_name in self.registry.tool_names:
                     try:
                         result = self._execute_tool_with_memory(tool_name, params, progress_callback=tool_progress_callback)
+                        tool_result = result
                         if result.success:
                             result_text = result.message
                             # Special handling for web_search - include actual results
@@ -3185,6 +3187,9 @@ print(json.dumps(result))
                 step_status = "done" if "Error" not in result_text and "Exception" not in result_text else "error"
                 tool_step["status"] = step_status
                 tool_step["result"] = result_text[:200]
+                # Include metadata for frontend actions (ui_screenshot, ui_controller, etc.)
+                if tool_result is not None and tool_result.success and hasattr(tool_result, 'metadata'):
+                    tool_step["metadata"] = tool_result.metadata
                 tools_executed = True
                 yield yield_event("step", tool_step)
 
