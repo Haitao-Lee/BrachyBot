@@ -224,7 +224,7 @@ class AgentMemory:
             parts.append(f"Deviation Threshold: {dev_threshold} mm")
 
         # Add CTV segmentation stats if available
-        ctv_label_stats = self.memory.retrieve("ctv_label_stats")
+        ctv_label_stats = self.retrieve("ctv_label_stats")
         if ctv_label_stats:
             parts.append("\n### CTV Segmentation Results (per-label):")
             for name, stats in ctv_label_stats.items():
@@ -235,8 +235,8 @@ class AgentMemory:
                 )
 
         # Add OAR organ names if available
-        organ_names = self.memory.retrieve("organ_names")
-        organ_counts = self.memory.retrieve("organ_counts")
+        organ_names = self.retrieve("organ_names")
+        organ_counts = self.retrieve("organ_counts")
         if organ_names:
             parts.append(f"\n### OAR Segmentation: {len(organ_names)} organs detected")
             # Show top 5 largest organs
