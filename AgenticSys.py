@@ -3049,9 +3049,31 @@ print(json.dumps(result))
 
             tool_calls = valid_tool_calls
 
+            # Prevent ui_screenshot from being called multiple times per conversation
+            _screenshot_called_this_turn = set()
+
             for tc in tool_calls:
                 tool_name = tc.get("tool", "")
                 params = tc.get("params", {})
+
+                # Skip duplicate ui_screenshot calls
+                if tool_name == "ui_screenshot":
+                    if tool_name in _screenshot_called_this_turn:
+                        logger.warning(f"Skipping duplicate ui_screenshot call")
+                        step_id_ref[0] += 1
+                        skip_step = {
+                            "id": step_id_ref[0],
+                            "type": "tool",
+                            "title": f"Skipped: {tool_name}",
+                            "content": "Screenshot already requested. Wait for the image.",
+                            "status": "done",
+                            "tool": tool_name,
+                            "params": params,
+                        }
+                        steps.append(skip_step)
+                        yield yield_event("step", skip_step)
+                        continue
+                    _screenshot_called_this_turn.add(tool_name)
                 tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
 
                 # Tool call step

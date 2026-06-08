@@ -66,7 +66,13 @@ ctv_segmentation / oar_segmentation, dose_engine / dose_evaluation, trajectory_p
 **ui_screenshot**: Capture any UI component for visual analysis.
 Targets: viewer-axial, viewer-sagittal, viewer-coronal, viewer-3d, data-tree, chat, metrics, input, seeds, planning, full, overlay-controls
 - Example: `{{target: "viewer-axial", question: "分析当前axial层的分割效果", slice_index: 24, axis: "axial"}}`
-- The screenshot will be displayed in chat AND sent to you for multimodal analysis.
+
+**CRITICAL ui_screenshot rules (MUST follow):**
+1. Call ui_screenshot ONLY ONCE per question. NEVER call it multiple times.
+2. After calling ui_screenshot, STOP and WAIT. The image will arrive in the next message.
+3. When you receive a message starting with "[Screenshot captured:", that IS the image. Analyze it and respond.
+4. If you already called ui_screenshot in this conversation, do NOT call it again. Just answer based on what you know.
+5. If no segmentation data exists, answer from medical knowledge. Do NOT screenshot empty viewers.
 
 **ui_annotate**: Draw annotations (arrows, circles, rectangles, text) on a screenshot.
 - `{{image_url: "/api/screenshots/xxx.png", annotations: [{{type: "arrow", x1: 100, y1: 100, x2: 200, y2: 150, color: "red", label: "肿瘤"}}, {{type: "circle", cx: 300, cy: 200, r: 50, color: "lime", label: "胰腺"}}]}}`
