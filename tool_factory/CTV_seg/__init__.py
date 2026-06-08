@@ -31,6 +31,7 @@ from .fumpe_voco import VoCoFUMPESegTool
 from .covid_voco import VoCoCOVIDSegTool
 from .aorta_voco import VoCoAortaSegTool
 from .brats21_voco import VoCoBRATS21SegTool
+from .pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
 
 # Removed VoCoProstateTool (was using wrong Amos-MR weights)
 # Removed VoCoPancSegTool (was pointing to PANORAMA weights with wrong out_channels)
@@ -46,6 +47,7 @@ TOOL_REGISTRY = {
     "head_neck_tumor": HeadNeckTumorSegmentationTool,
     # VoCo pre-trained tools (tumor-focused)
     "voco_pancreatic": VoCoPancreaticTumorTool,
+    "nnunet_pancreatic": NNUNetPancreaticTumorTool,
     "voco_liver": VoCoLiverTumorTool,
     "voco_colon": VoCoColonTumorTool,
     "voco_kidney": VoCoKidneyTumorTool,
@@ -158,7 +160,7 @@ class CTVSegmentationTool(BaseTool):
                 # Default to VoCo pancreatic tumor tool
                 tool = VoCoPancreaticTumorTool()
 
-            result = tool._execute(image=image, target_value=target_value, fast_mode=fast_mode)
+            result = tool._execute(image=image, target_value=target_value, fast_mode=fast_mode, return_all_labels=True)
             if result.success:
                 ctv_array = result.metadata.get("mask_array", result.data)
                 ctv_mask = result.metadata.get("mask", image)
@@ -180,6 +182,9 @@ class CTVSegmentationTool(BaseTool):
                 "ctv_volume_mm3": float(volume_mm3),
                 "ctv_voxel_count": voxel_count,
                 "tumor_type_used": tumor_type or "auto",
+                "label_counts": result.metadata.get("label_counts", {}),
+                "label_map": result.metadata.get("label_map", {}),
+                "label_stats": result.metadata.get("label_stats", {}),
             },
         )
 
@@ -204,6 +209,7 @@ __all__ = [
     "VoCoCOVIDSegTool",
     "VoCoAortaSegTool",
     "VoCoBRATS21SegTool",
+    "NNUNetPancreaticTumorTool",
     "CTVSegmentationTool",
     "get_tool",
     "list_tools",

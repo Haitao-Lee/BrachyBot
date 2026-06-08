@@ -457,11 +457,35 @@ Task: "Generate prostate plan"
   - Transparent search behavior (mentions when searching)
   - Graceful fallback when search fails
 
-### 🎮 Interactive Viewer Control (NEW)
-- **viewer_command**: Direct LLM control of CT viewer (navigate, window/level, presets, overlays)
-- **auto_navigate**: Automatic navigation to tumor/organ locations from segmentation
-- **query_metrics**: Query dose metrics, plan quality, organ volumes via conversation
-- **Smart Commands**: "Go to the tumor", "Show me slice 50", "What is the V100?"
+### 🎮 Interactive Viewer Control
+- **ui_controller**: Direct LLM control of CT viewer (navigate, window/level, presets, overlays)
+- **ui_screenshot**: LLM captures screenshots of any UI component for visual analysis
+- **ui_annotate**: LLM draws annotations (arrows, circles, text labels) on screenshots
+- **Multimodal LLM**: Screenshots sent as base64 images to LLM for visual understanding
+- **Auto Screenshots**: LLM proactively screenshots UI areas during `/help` and explanations
+- **Image Modal**: Click-to-enlarge fullscreen view of any chat image
+
+### 📸 Visual Interaction System (NEW)
+BrachyBot's LLM can **see and annotate** the UI in real-time:
+
+```
+User: "帮我看看当前分割效果"
+  → LLM calls ui_screenshot(target="viewer-axial")
+  → Frontend captures viewer via html2canvas
+  → Image uploaded to server, displayed in chat
+  → LLM calls ui_annotate to add arrows/labels
+  → Annotated image shown with explanation
+```
+
+**Screenshot Targets:** viewer-axial, viewer-sagittal, viewer-coronal, viewer-3d, data-tree, metrics, planning, full page
+
+**Annotation Types:** arrow, circle, ellipse, rectangle, text label, crosshair, line
+
+**Use Cases:**
+- `/help` — LLM screenshots each UI area with numbered annotations
+- "看看分割效果" — Navigate + screenshot + annotate key features
+- "3D重建怎么样" — Capture 3D view, mark issues
+- After any tool execution — Visual result display
 
 ### 🌐 Internet Search Capability (28 Specialized Engines)
 
@@ -957,7 +981,7 @@ Agent: Self-evolution cycle complete:
 
 ## 🔧 Tool Factory
 
-### Tool Categories (24 packages, 50+ tools)
+### Tool Categories (27 packages, 50+ tools)
 
 ```
 tool_factory/
@@ -1048,6 +1072,12 @@ tool_factory/
 │   └── __init__.py       # Session logging, feedback, trends, suggestions
 │
 ├── viewer_command/       # CT viewer control
+│
+├── ui_controller/        # UI element control (panels, overlays, slices)
+│
+├── ui_screenshot/        # Screenshot capture for visual analysis
+│
+├── ui_annotate/          # Image annotation (arrows, circles, text labels)
 │
 └── output/               # Export tools
     ├── dicom_rt_exporter.py

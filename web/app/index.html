@@ -17,6 +17,7 @@
     <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-json.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <style>
         :root {
             --primary: #0ea5e9;
@@ -540,6 +541,120 @@
             user-select: none;
         }
         .chat-row.user .chat-timestamp { text-align: right; }
+
+        /* Chat image display */
+        .chat-image-container {
+            margin: 0.5rem 0;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--card-border);
+            position: relative;
+            max-width: 400px;
+        }
+        .chat-image-container img {
+            display: block;
+            width: 100%;
+            height: auto;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+        .chat-image-container img:hover {
+            transform: scale(1.02);
+            opacity: 0.95;
+        }
+        .chat-image-caption {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            padding: 0.3rem 0.5rem;
+            background: var(--bg-3);
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .chat-image-caption .screenshot-badge {
+            background: var(--primary);
+            color: white;
+            padding: 0.1rem 0.35rem;
+            border-radius: 3px;
+            font-size: 0.6rem;
+            font-weight: 600;
+        }
+        .chat-image-zoom-icon {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            border-radius: 4px;
+            padding: 3px 6px;
+            font-size: 0.7rem;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .chat-image-container:hover .chat-image-zoom-icon {
+            opacity: 1;
+        }
+
+        /* Image modal (lightbox) */
+        .image-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: zoom-out;
+            animation: fadeIn 0.2s ease;
+        }
+        .image-modal-overlay img {
+            max-width: 92vw;
+            max-height: 92vh;
+            border-radius: 8px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            cursor: default;
+        }
+        .image-modal-close {
+            position: absolute;
+            top: 16px;
+            right: 20px;
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        .image-modal-close:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .image-modal-info {
+            position: absolute;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.6);
+            color: white;
+            padding: 0.4rem 1rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            max-width: 80vw;
+            text-align: center;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
 
         .chat-msg-actions {
             display: none;
@@ -1735,15 +1850,15 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">Seed Length (mm)</label>
-                        <input type="number" class="form-input" id="seedLength" value="3.7" step="0.1" min="1.0" max="20.0">
+                        <input type="number" class="form-input" id="seedLength" value="4.5" step="0.1" min="1.0" max="20.0">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Seed Margin Rate</label>
-                        <input type="number" class="form-input" id="seedMarginRate" value="1.5" step="0.1" min="0.5" max="5.0">
+                        <input type="number" class="form-input" id="seedMarginRate" value="1.0" step="0.1" min="0.5" max="5.0">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Seed Count Min</label>
-                        <input type="number" class="form-input" id="seedCountMin" value="1" step="1" min="0">
+                        <input type="number" class="form-input" id="seedCountMin" value="5" step="1" min="0">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Seed Count Max</label>
@@ -1757,11 +1872,11 @@
                     <!-- Radiation Array Params -->
                     <div class="form-group">
                         <label class="form-label">Target Value</label>
-                        <input type="number" class="form-input" id="targetValue" value="1" step="1">
+                        <input type="number" class="form-input" id="targetValue" value="2" step="1">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Obstacle Value</label>
-                        <input type="number" class="form-input" id="obstacleValue" value="2" step="1">
+                        <input type="number" class="form-input" id="obstacleValue" value="3" step="1">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Background Value</label>
@@ -1773,7 +1888,7 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">Max Candidate Trajectories</label>
-                        <input type="number" class="form-input" id="maxCandiTraj" value="200" step="10" min="10">
+                        <input type="number" class="form-input" id="maxCandiTraj" value="500" step="10" min="10">
                     </div>
 
                     <!-- Reference Direction -->
@@ -1804,6 +1919,78 @@
                         <input type="number" class="form-input" id="maxIter" value="4" step="1" min="1" max="20">
                     </div>
 
+                    <!-- Distance Filter -->
+                    <div class="form-group">
+                        <label class="form-label">Distance Lower Bound</label>
+                        <input type="number" class="form-input" id="distLowerBound" value="0.8" step="0.1" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Distance Upper Bound</label>
+                        <input type="number" class="form-input" id="distUpperBound" value="10" step="0.5" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Distance Rate</label>
+                        <input type="number" class="form-input" id="distRate" value="0.8" step="0.05" min="0" max="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Interval Rate</label>
+                        <input type="number" class="form-input" id="intervalRate" value="2" step="0.5" min="0.5">
+                    </div>
+
+                    <!-- Direction Resolution -->
+                    <div class="form-group">
+                        <label class="form-label">Direction Resolution (Cone, Step, Rings)</label>
+                        <div style="display:flex;gap:4px;">
+                            <input type="number" class="form-input" id="direcResCone" value="30" step="5" style="width:33%">
+                            <input type="number" class="form-input" id="direcResStep" value="3" step="1" style="width:33%">
+                            <input type="number" class="form-input" id="direcResRings" value="2" step="1" style="width:33%">
+                        </div>
+                    </div>
+
+                    <!-- DL Params -->
+                    <div class="form-group">
+                        <label class="form-label">DL Learning Rate</label>
+                        <input type="number" class="form-input" id="dlLR" value="0.0004" step="0.0001" min="0.00001">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">DL LR Decay</label>
+                        <input type="number" class="form-input" id="dlLRDecay" value="1.5" step="0.1" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">DL Epochs</label>
+                        <input type="number" class="form-input" id="dlEpochs" value="1000" step="100" min="100">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">DL Patience</label>
+                        <input type="number" class="form-input" id="dlPatience" value="200" step="50" min="50">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">DL Search Region</label>
+                        <input type="number" class="form-input" id="dlSearchRegion" value="0.5" step="0.1" min="0.1" max="2">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">DL DVH Margin</label>
+                        <input type="number" class="form-input" id="dlDVHMargin" value="0.05" step="0.01" min="0" max="0.5">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Inference Image Size</label>
+                        <div style="display:flex;gap:4px;">
+                            <input type="number" class="form-input" id="inferSizeX" value="32" step="8" style="width:33%">
+                            <input type="number" class="form-input" id="inferSizeY" value="32" step="8" style="width:33%">
+                            <input type="number" class="form-input" id="inferSizeZ" value="32" step="8" style="width:33%">
+                        </div>
+                    </div>
+
+                    <!-- Iteration & Replan -->
+                    <div class="form-group">
+                        <label class="form-label">Iteration Rate</label>
+                        <input type="number" class="form-input" id="iterRate" value="2" step="0.5" min="0.5">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Replan Rate</label>
+                        <input type="number" class="form-input" id="replanRate" value="0.6" step="0.1" min="0" max="1">
+                    </div>
+
                     <!-- RF Params -->
                     <div class="form-group">
                         <label class="form-label">RF Max Episodes</label>
@@ -1819,6 +2006,7 @@
                     </button>
                 </div>
 
+                <div class="form-section-title">Full Pipeline</div>
                 <div class="form-actions">
                     <button class="btn btn-primary" onclick="runPlanning()">
                         <span class="btn-icon">&#9654;</span> Start Plan
@@ -1829,6 +2017,54 @@
                     <button class="btn btn-outline" onclick="resetSession()">
                         &#8635; Reset
                     </button>
+                </div>
+
+                <div class="form-section-title" style="cursor:pointer" onclick="toggleStepButtons()">
+                    <span>Step-by-Step</span>
+                    <span id="stepToggle" style="font-size:0.6rem;color:var(--text-dim);">&#9654;</span>
+                </div>
+
+                <div id="stepButtonsSection" style="display:none;flex-direction:column;gap:0.5rem;">
+                    <div style="display:flex;gap:4px;">
+                        <button class="btn btn-outline" onclick="runPlanningStep('trajectory_init')" style="flex:1;font-size:0.65rem;padding:6px 4px;">
+                            <span class="btn-icon">&#127919;</span> 1. Trajectories
+                        </button>
+                        <button class="btn btn-outline" onclick="runPlanningStep('trajectory_refine')" style="flex:1;font-size:0.65rem;padding:6px 4px;">
+                            <span class="btn-icon">&#9986;</span> 2. Refine
+                        </button>
+                    </div>
+                    <div style="display:flex;gap:4px;">
+                        <button class="btn btn-outline" onclick="runPlanningStep('seed_planning')" style="flex:1;font-size:0.65rem;padding:6px 4px;">
+                            <span class="btn-icon">&#128167;</span> 3. Seeds
+                        </button>
+                        <button class="btn btn-outline" onclick="runPlanningStep('dose_calc')" style="flex:1;font-size:0.65rem;padding:6px 4px;">
+                            <span class="btn-icon">&#9889;</span> 4. Dose
+                        </button>
+                    </div>
+                    <div style="display:flex;gap:4px;">
+                        <button class="btn btn-outline" onclick="runPlanningStep('dose_eval')" style="flex:1;font-size:0.65rem;padding:6px 4px;">
+                            <span class="btn-icon">&#128202;</span> 5. Evaluate
+                        </button>
+                        <button class="btn btn-outline" onclick="showStepResults('all')" style="flex:1;font-size:0.65rem;padding:6px 4px;">
+                            <span class="btn-icon">&#128065;</span> Show All
+                        </button>
+                    </div>
+
+                    <div class="form-section-title" style="font-size:0.65rem;margin-top:4px;">View Results</div>
+                    <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                        <button class="btn btn-outline" onclick="showStepResults('trajectories')" style="font-size:0.6rem;padding:4px 8px;">&#127919; Trajectories</button>
+                        <button class="btn btn-outline" onclick="showStepResults('seeds')" style="font-size:0.6rem;padding:4px 8px;">&#128167; Seeds</button>
+                        <button class="btn btn-outline" onclick="showStepResults('dose')" style="font-size:0.6rem;padding:4px 8px;">&#9889; Dose</button>
+                        <button class="btn btn-outline" onclick="showStepResults('dvh')" style="font-size:0.6rem;padding:4px 8px;">&#128202; DVH</button>
+                        <button class="btn btn-outline" onclick="showStepResults('metrics')" style="font-size:0.6rem;padding:4px 8px;">&#128200; Metrics</button>
+                    </div>
+
+                    <div class="form-section-title" style="font-size:0.65rem;margin-top:4px;">Export</div>
+                    <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                        <button class="btn btn-outline" onclick="exportDicomRT()" style="font-size:0.6rem;padding:4px 8px;">&#128190; DICOM-RT</button>
+                        <button class="btn btn-outline" onclick="exportSTL()" style="font-size:0.6rem;padding:4px 8px;">&#128190; STL</button>
+                        <button class="btn btn-outline" onclick="exportReport()" style="font-size:0.6rem;padding:4px 8px;">&#128196; Report</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2596,8 +2832,103 @@ async function init() {
             }
         }
     } catch (e) {}
+    // Load default hyperparameters from config
+    await loadDefaultParams();
+
     // Apply default viewer layout
     setViewerLayout(state.viewerSettings.layout || 'grid');
+}
+
+// Load default hyperparameters from server config and populate UI
+async function loadDefaultParams() {
+    try {
+        const res = await fetch(API + '/config');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.success || !data.defaults) return;
+
+        const d = data.defaults;
+
+        // Seed info
+        if (d.seed_info) {
+            const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+            setVal('seedRadius', d.seed_info.radius);
+            setVal('seedLength', d.seed_info.length);
+            setVal('seedMarginRate', d.seed_info.margin_rate);
+            if (d.seed_info.num_of_seeds && d.seed_info.num_of_seeds.length >= 2) {
+                setVal('seedCountMin', d.seed_info.num_of_seeds[0]);
+                setVal('seedCountMax', d.seed_info.num_of_seeds[1]);
+            }
+            setVal('seedAvgDose', d.seed_info.seed_avr_dose);
+        }
+
+        // Radiation array params
+        if (d.radiation_array_params) {
+            const r = d.radiation_array_params;
+            const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+            setVal('targetValue', r.target_value);
+            setVal('obstacleValue', r.obstacle_value);
+            setVal('backgroundValue', r.background_value);
+            setVal('backlitAngle', r.backlit_angle);
+            setVal('maxCandiTraj', r.maximum_candidate_trajectories);
+            if (r.infer_img_size && r.infer_img_size.length >= 3) {
+                setVal('inferSizeX', r.infer_img_size[0]);
+                setVal('inferSizeY', r.infer_img_size[1]);
+                setVal('inferSizeZ', r.infer_img_size[2]);
+            }
+        }
+
+        // Planning params
+        if (d.planning) {
+            const p = d.planning;
+            const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+            setVal('inLowestEnergy', p.in_lowest_energy);
+            setVal('outHighestEnergy', p.out_highest_energy);
+            setVal('dvhRate', p.DVH_rate);
+            setVal('maxIter', p.max_iter);
+            setVal('iterRate', p.iter_rate);
+            setVal('replanRate', p.replan_rate);
+            if (p.direc_resolution && p.direc_resolution.length >= 3) {
+                setVal('direcResCone', p.direc_resolution[0]);
+                setVal('direcResStep', p.direc_resolution[1]);
+                setVal('direcResRings', p.direc_resolution[2]);
+            }
+        }
+
+        // Distance filter
+        if (d.distance_filter) {
+            const df = d.distance_filter;
+            const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+            setVal('distLowerBound', df.lower_bound);
+            setVal('distUpperBound', df.upper_bound);
+            setVal('distRate', df.distance_rate);
+            setVal('intervalRate', df.interval_rate);
+        }
+
+        // DL params
+        if (d.dl_params) {
+            const dl = d.dl_params;
+            const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+            setVal('dlLR', dl.lr);
+            setVal('dlLRDecay', dl.lr_decay);
+            setVal('dlEpochs', dl.epochs);
+            setVal('dlPatience', dl.patience);
+            setVal('dlSearchRegion', dl.search_region);
+            setVal('dlDVHMargin', dl.DVH_margin);
+        }
+
+        // RF params
+        if (d.rf_params) {
+            const rf = d.rf_params;
+            const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+            setVal('rfMaxEpisodes', rf.max_episodes);
+            setVal('rfBandwidth', rf.bandwidth);
+        }
+
+        console.log('Default parameters loaded from config');
+    } catch (e) {
+        console.error('Failed to load default params:', e);
+    }
 }
 
 /******** VIEWER FULLSCREEN & RESIZE ********/
@@ -2850,6 +3181,11 @@ async function loadLabelVolumes() {
         const oarSize = parseInt(res.headers.get('X-OAR-Size') || '0');
 
         labelColorLUT = JSON.parse(res.headers.get('X-Color-LUT') || '{}');
+        // Load CTV label names from backend (not hardcoded)
+        const ctvLabelMapRaw = res.headers.get('X-CTV-Label-Map');
+        if (ctvLabelMapRaw) {
+            try { window._ctvLabelMap = JSON.parse(ctvLabelMapRaw); } catch(e) { window._ctvLabelMap = {}; }
+        }
         organMetaFromServer = JSON.parse(res.headers.get('X-Organ-Meta') || '{}');
 
         const buffer = await res.arrayBuffer();
@@ -3028,7 +3364,8 @@ function renderOverlayFromVolume(axis, sliceIndex) {
             if (ctvVisible && a === 0 && ctvLabelData && ctvLabelData.length > flatIdx) {
                 const ctvVal = ctvLabelData[flatIdx];
                 if (ctvVal > 0) {
-                    const color = labelColorLUT[1] || [255, 0, 0];
+                    // Use per-label color from LUT (label 1=blue, 2=green, 3=pink, etc.)
+                    const color = labelColorLUT[ctvVal] || [255, 0, 0];
                     const opacity = dataTreeState.ctv.opacity || 0.7;
                     r = color[0];
                     g = color[1];
@@ -3198,7 +3535,8 @@ function renderSliceFromVolume(axis, sliceIndex) {
                 if (oA === 0 && dataTreeState.ctv.visible && state.viewerSettings.showCTV && ctvLabelData && ctvLabelData.length > flatIdx) {
                     const ctvVal = ctvLabelData[flatIdx];
                     if (ctvVal > 0) {
-                        const color = labelColorLUT[1] || [255, 0, 0];
+                        // Use per-label color from LUT
+                        const color = labelColorLUT[ctvVal] || [255, 0, 0];
                         const opacity = dataTreeState.ctv.opacity || 0.7;
                         oR = color[0]; oG = color[1]; oB = color[2]; oA = Math.round(opacity * 255);
                     }
@@ -3684,7 +4022,14 @@ const dataTreeState = {
     oar:      { visible: true, opacity: 0.5, color: '#22c55e', loaded: false, label: 'All OARs' },
     organs:   [],  // Individual organs: [{id, label, color, visible, opacity, voxelCount, category}]
     dose:     { visible: true, opacity: 0.4, color: '#f59e0b', loaded: false, label: 'Dose Distribution' },
-    seeds:    { visible: true, opacity: 1.0, color: '#3b82f6', loaded: false, label: 'Seed Positions' },
+    seeds:    { visible: true, opacity: 1.0, color: '#ffcc00', loaded: false, label: 'Seed Positions' },
+    needles:  { visible: true, opacity: 0.8, color: '#ff6644', loaded: false, label: 'Needle Paths' },
+    // Planning state
+    planning: {
+        seeds: [],       // [{id, position, direction, trajectory_id, visible, opacity, color}]
+        needles: [],     // [{id, points, trajectory_id, visible, opacity, color}]
+        doseLevels: [],  // [{threshold, visible, opacity, color}]
+    },
 };
 
 // Organ categories for constraint-based planning
@@ -3760,6 +4105,13 @@ function updateOrganList(organData) {
     }
 }
 
+// Debounced version to prevent excessive re-renders
+let _renderDataTreeTimer = null;
+function renderDataTreeDebounced() {
+    clearTimeout(_renderDataTreeTimer);
+    _renderDataTreeTimer = setTimeout(renderDataTree, 50);
+}
+
 function renderDataTree() {
     const body = document.getElementById('dataTreeBody');
     if (!body) return;
@@ -3784,19 +4136,81 @@ function renderDataTree() {
     html += `</div></div>`;
 
     // === Segmentation group (CTV + OAR parallel) ===
+    // Check if CTV has multiple labels
+    const ctvLabels = [];
+    if (ctvLabelData) {
+        const uniqueLabels = new Set(ctvLabelData);
+        uniqueLabels.forEach(l => { if (l > 0) ctvLabels.push(l); });
+        ctvLabels.sort((a, b) => a - b);
+    }
+    const hasMultiLabelCtv = ctvLabels.length > 1;
+
     const hasSeg = dataTreeState.ctv.loaded || dataTreeState.organs.length > 0;
+    const segCount = hasMultiLabelCtv ? ctvLabels.length : (dataTreeState.ctv.loaded ? 1 : 0);
     html += `<div class="tree-group">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)">
             <span class="arrow">&#9660;</span>
-            <span>Segmentation ${hasSeg ? `(${dataTreeState.organs.length + (dataTreeState.ctv.loaded ? 1 : 0)})` : ''}</span>
+            <span>Segmentation ${hasSeg ? `(${dataTreeState.organs.length + segCount})` : ''}</span>
         </div>
         <div class="tree-group-items">`;
 
-    // CTV — parallel to OAR
+    // CTV — show individual labels under CTV node if multi-label
     if (dataTreeState.ctv.loaded) {
-        const ctvVolume = state.ctvVolume || null;
-        const ctvInfo = ctvVolume ? `${ctvVolume.toFixed(1)} mm³` : 'loaded';
-        html += renderTreeItem('ctv', dataTreeState.ctv, ctvInfo);
+        if (hasMultiLabelCtv) {
+            // CTV parent node - use tumor color (label 2) as primary color
+            const totalVol = ctvLabels.reduce((sum, lid) => {
+                const count = ctvLabelData.filter(v => v === lid).length;
+                const spacing = state.ctSpacing || [0.6836, 0.6836, 5.0];
+                return sum + count * spacing[0] * spacing[1] * spacing[2];
+            }, 0);
+            // Use tumor color (label 2) as the CTV group color
+            const ctvGroupColor = labelColorLUT[2] ? `rgb(${labelColorLUT[2].join(',')})` : '#ef4444';
+            html += `<div class="tree-group" data-group="ctv">
+                <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('ctv', event)">
+                    <span class="arrow">&#9660;</span>
+                    <button class="eye-btn" onclick="event.stopPropagation();toggleDataVisibility('ctv')">${dataTreeState.ctv.visible ? '&#128065;' : '&#128064;'}</button>
+                    <span class="color-swatch" style="background:${ctvGroupColor};" onclick="event.stopPropagation();openColorPicker('ctv', this)"></span>
+                    <span>CTV (${ctvLabels.length} labels)</span>
+                    <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+                        <span style="font-size:0.6rem;color:var(--text-dim);">${totalVol.toFixed(0)} mm³</span>
+                        <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round((dataTreeState.ctv.opacity || 0.7) * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('ctv', this.value)" title="Opacity">
+                    </span>
+                </div>
+                <div class="tree-group-items">`;
+            // Individual label items - use backend label names if available
+            const labelNames = window._ctvLabelMap || {1: 'pancreas', 2: 'tumor', 3: 'artery', 4: 'vein', 5: 'bile_duct', 6: 'pancreatic_duct'};
+            const spacing = state.ctSpacing || [0.6836, 0.6836, 5.0];
+            const voxelVol = spacing[0] * spacing[1] * spacing[2];
+            ctvLabels.forEach(labelId => {
+                const count = ctvLabelData.filter(v => v === labelId).length;
+                const vol = count * voxelVol;
+                const name = labelNames[labelId] || `Label ${labelId}`;
+                const color = labelColorLUT[labelId] ? `rgb(${labelColorLUT[labelId].join(',')})` : '#ef4444';
+                // Use parent CTV opacity if child doesn't have its own
+                const childId = `ctv_${labelId}`;
+                if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
+                if (!dataTreeState.ctvLabels[childId]) {
+                    dataTreeState.ctvLabels[childId] = {
+                        visible: true,
+                        opacity: dataTreeState.ctv.opacity || 0.7,
+                        color: color,
+                    };
+                }
+                const itemState = {
+                    visible: dataTreeState.ctvLabels[childId].visible,
+                    opacity: dataTreeState.ctvLabels[childId].opacity,
+                    color: color,
+                    loaded: true,
+                    label: name,
+                };
+                html += renderTreeItem(childId, itemState, `${vol.toFixed(0)} mm³`);
+            });
+            html += `</div></div>`;
+        } else {
+            const ctvVolume = state.ctvVolume || null;
+            const ctvInfo = ctvVolume ? `${ctvVolume.toFixed(1)} mm³` : 'loaded';
+            html += renderTreeItem('ctv', dataTreeState.ctv, ctvInfo);
+        }
     }
 
     // OAR with sub-categories
@@ -3804,10 +4218,18 @@ function renderDataTree() {
     const trav = dataTreeState.organs.filter(o => o.category === 'traversable');
 
     // OAR master group
+    const oarVis = dataTreeState.organs.some(o => o.visible);
+    const oarOp = dataTreeState.organs.length > 0
+        ? dataTreeState.organs.reduce((sum, o) => sum + (o.opacity || 0.5), 0) / dataTreeState.organs.length
+        : 0.5;
     html += `<div class="tree-group" data-group="oar">
-        <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('oar', event)">
             <span class="arrow">&#9660;</span>
+            <button class="eye-btn ${oarVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('oar', ${!oarVis})" title="Toggle">${oarVis ? '&#128065;' : '&#128064;'}</button>
             <span>OAR (${dataTreeState.organs.length})</span>
+            <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+                <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(oarOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('oar', this.value)" title="Opacity">
+            </span>
         </div>
         <div class="tree-group-items">`;
 
@@ -3857,16 +4279,89 @@ function renderDataTree() {
     html += `</div></div>`; // close OAR group
     html += `</div></div>`; // close Segmentation group
 
-    // === Dose group ===
+    // === Planning group (Seeds, Needles, Dose) ===
+    const planningSeeds = dataTreeState.planning.seeds;
+    const planningNeedles = dataTreeState.planning.needles;
+    const doseLevels = dataTreeState.planning.doseLevels;
+    const hasPlanning = planningSeeds.length > 0 || planningNeedles.length > 0 || doseLevels.length > 0;
+
     html += `<div class="tree-group">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)">
             <span class="arrow">&#9660;</span>
-            <span>Dose</span>
+            <span>Planning ${hasPlanning ? `(${planningSeeds.length + planningNeedles.length + doseLevels.length})` : ''}</span>
         </div>
         <div class="tree-group-items">`;
-    html += renderTreeItem('dose', dataTreeState.dose, state.metrics && state.metrics.v100 !== undefined ? `V100: ${(state.metrics.v100 * 100).toFixed(1)}%` : '');
-    html += renderTreeItem('seeds', dataTreeState.seeds, state.seeds ? `${state.seeds.length} seeds` : '');
-    html += `</div></div>`;
+
+    // Seeds group
+    if (planningSeeds.length > 0) {
+        const seedsVis = planningSeeds.some(s => s.visible);
+        const seedsOp = planningSeeds[0]?.opacity ?? 1.0;
+        html += `<div class="tree-group" data-group="planning_seeds">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('planning_seeds', event)">
+                <span class="arrow">&#9660;</span>
+                <button class="eye-btn ${seedsVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_seeds', ${!seedsVis})" title="Toggle">${seedsVis ? '&#128065;' : '&#128064;'}</button>
+                <span>Seeds (${planningSeeds.length})</span>
+                <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+                    <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(seedsOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('planning_seeds', this.value)" title="Opacity">
+                </span>
+            </div>
+            <div class="tree-group-items">`;
+        planningSeeds.forEach(seed => {
+            const seedState = { visible: seed.visible, opacity: seed.opacity, color: seed.color, loaded: true, label: `Seed ${seed.id}` };
+            html += renderTreeItem(seed.id, seedState, `Traj ${seed.trajectory_id}`);
+        });
+        html += `</div></div>`;
+    }
+
+    // Needles group
+    if (planningNeedles.length > 0) {
+        const needlesVis = planningNeedles.some(n => n.visible);
+        const needlesOp = planningNeedles[0]?.opacity ?? 0.8;
+        html += `<div class="tree-group" data-group="planning_needles">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('planning_needles', event)">
+                <span class="arrow">&#9660;</span>
+                <button class="eye-btn ${needlesVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_needles', ${!needlesVis})" title="Toggle">${needlesVis ? '&#128065;' : '&#128064;'}</button>
+                <span>Needles (${planningNeedles.length})</span>
+                <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+                    <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(needlesOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('planning_needles', this.value)" title="Opacity">
+                </span>
+            </div>
+            <div class="tree-group-items">`;
+        planningNeedles.forEach(needle => {
+            const needleState = { visible: needle.visible, opacity: needle.opacity, color: needle.color, loaded: true, label: `Needle ${needle.id}` };
+            html += renderTreeItem(needle.id, needleState, `${needle.points.length} pts`);
+        });
+        html += `</div></div>`;
+    }
+
+    // Dose isosurfaces group
+    if (doseLevels.length > 0) {
+        const doseVis = doseLevels.some(d => d.visible);
+        const doseOp = doseLevels[0]?.opacity ?? 0.3;
+        html += `<div class="tree-group" data-group="dose_isosurfaces">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('dose_isosurfaces', event)">
+                <span class="arrow">&#9660;</span>
+                <button class="eye-btn ${doseVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('dose_isosurfaces', ${!doseVis})" title="Toggle">${doseVis ? '&#128065;' : '&#128064;'}</button>
+                <span>Dose Isosurfaces (${doseLevels.length})</span>
+                <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+                    <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(doseOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('dose_isosurfaces', this.value)" title="Opacity">
+                </span>
+            </div>
+            <div class="tree-group-items">`;
+        doseLevels.forEach(level => {
+            const levelState = { visible: level.visible, opacity: level.opacity, color: level.color, loaded: true, label: `Dose ${level.threshold} Gy` };
+            html += renderTreeItem(`dose_iso_${level.threshold}`, levelState, `${level.threshold} Gy`);
+        });
+        html += `</div></div>`;
+    }
+
+    // Legacy dose/seed items (if no planning data)
+    if (!hasPlanning) {
+        html += renderTreeItem('dose', dataTreeState.dose, state.metrics && state.metrics.v100 !== undefined ? `V100: ${(state.metrics.v100 * 100).toFixed(1)}%` : '');
+        html += renderTreeItem('seeds', dataTreeState.seeds, state.seeds ? `${state.seeds.length} seeds` : '');
+    }
+
+    html += `</div></div>`; // close Planning group
 
     body.innerHTML = html;
 }
@@ -3876,19 +4371,21 @@ function renderTreeItem(id, itemState, info) {
     const eyeClass = itemState.visible ? '' : 'hidden';
     const loadedClass = itemState.loaded ? '' : 'style="opacity:0.4;"';
     const disabledAttr = itemState.loaded ? '' : 'disabled';
-    const indent = id.startsWith('organ_') ? 'style="padding-left:1.6rem;"' : '';
-    // 3D button for organs and CTV
-    const canRecon3d = id === 'ctv' || id.startsWith('organ_');
+    // Indent for sub-items: organs, CTV labels, planning items
+    const isSubItem = id.startsWith('organ_') || id.startsWith('ctv_') || id.startsWith('seed_') || id.startsWith('needle_') || id.startsWith('dose_iso_');
+    const indent = isSubItem ? 'style="padding-left:1.6rem;"' : '';
+    // 3D button for organs, CTV, CTV sub-labels, and planning items
+    const canRecon3d = id === 'ctv' || id.startsWith('organ_') || id.startsWith('ctv_') || id.startsWith('seed_') || id.startsWith('needle_');
     const recon3dBtn = canRecon3d ? `<button class="recon3d-btn" title="3D Reconstruct" onclick="event.stopPropagation();reconstructOrgan3D('${id}')">&#9638;</button>` : '';
 
-    const dataAttr = (id === 'ctv' || id.startsWith('organ_')) ? `data-organ-id="${id}"` : '';
+    const dataAttr = (id === 'ctv' || id.startsWith('organ_') || id.startsWith('ctv_')) ? `data-organ-id="${id}"` : '';
     const selectedClass = selectedItems.has(id) ? 'selected' : '';
 
     return `<div class="tree-item ${selectedClass}" ${loadedClass} ${indent} ${dataAttr}
         onclick="handleTreeItemClick('${id}', event)"
         oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('${id}', event)">
         <button class="eye-btn ${eyeClass}" onclick="event.stopPropagation();toggleDataVisibility('${id}')" ${disabledAttr}>${eyeIcon}</button>
-        <span class="color-swatch" style="background:${itemState.color};"></span>
+        <span class="color-swatch" style="background:${itemState.color};" onclick="event.stopPropagation();openColorPicker('${id}', this)" title="Click to change color"></span>
         <span class="item-label">${itemState.label}</span>
         <span class="item-info">${info}</span>
         ${recon3dBtn}
@@ -3897,6 +4394,191 @@ function renderTreeItem(id, itemState, info) {
             onclick="event.stopPropagation()"
             oninput="setDataOpacity('${id}', this.value)">
     </div>`;
+}
+
+// Qt-style color dialog
+function openColorPicker(id, swatchEl) {
+    // Get current color
+    let itemState;
+    if (id === 'ctv') itemState = dataTreeState.ctv;
+    else if (id === 'oar') itemState = dataTreeState.oar;
+    else if (id === 'dose') itemState = dataTreeState.dose;
+    else if (id === 'seeds') itemState = dataTreeState.seeds;
+    else if (id === 'needles') itemState = dataTreeState.needles;
+    else if (id.startsWith('seed_')) {
+        itemState = dataTreeState.planning.seeds.find(s => s.id === id);
+    } else if (id.startsWith('needle_')) {
+        itemState = dataTreeState.planning.needles.find(n => n.id === id);
+    } else if (id.startsWith('dose_iso_')) {
+        const threshold = parseFloat(id.replace('dose_iso_', ''));
+        itemState = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
+    } else {
+        const organ = dataTreeState.organs.find(o => o.id === id);
+        if (organ) itemState = organ;
+    }
+    if (!itemState) return;
+
+    // Remove existing dialog if any
+    const existing = document.getElementById('colorDialog');
+    if (existing) existing.remove();
+
+    const currentColor = itemState.color || '#888888';
+
+    // Create dialog
+    const dialog = document.createElement('div');
+    dialog.id = 'colorDialog';
+    dialog.style.cssText = `
+        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        z-index: 10000; background: var(--bg-2); border: 1px solid var(--card-border);
+        border-radius: 12px; padding: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        min-width: 280px; font-size: 0.75rem;
+    `;
+
+    // Convert hex to HSV
+    function hexToHSV(hex) {
+        let r = parseInt(hex.slice(1,3), 16) / 255;
+        let g = parseInt(hex.slice(3,5), 16) / 255;
+        let b = parseInt(hex.slice(5,7), 16) / 255;
+        let max = Math.max(r, g, b), min = Math.min(r, g, b);
+        let h, s, v = max;
+        let d = max - min;
+        s = max === 0 ? 0 : d / max;
+        if (max === min) h = 0;
+        else {
+            switch (max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+            }
+            h /= 6;
+        }
+        return [h * 360, s * 100, v * 100];
+    }
+
+    function hsvToHex(h, s, v) {
+        h /= 360; s /= 100; v /= 100;
+        let r, g, b;
+        let i = Math.floor(h * 6);
+        let f = h * 6 - i;
+        let p = v * (1 - s);
+        let q = v * (1 - f * s);
+        let t = v * (1 - (1 - f) * s);
+        switch (i % 6) {
+            case 0: r = v; g = t; b = p; break;
+            case 1: r = q; g = v; b = p; break;
+            case 2: r = p; g = v; b = t; break;
+            case 3: r = p; g = q; b = v; break;
+            case 4: r = t; g = p; b = v; break;
+            case 5: r = v; g = p; b = q; break;
+        }
+        return '#' + [r, g, b].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+    }
+
+    let [h, s, v] = hexToHSV(currentColor);
+
+    dialog.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span style="font-weight:600;color:var(--text);">Color Picker</span>
+            <span id="colorDialogClose" style="cursor:pointer;font-size:1rem;color:var(--text-dim);">✕</span>
+        </div>
+        <div id="colorPreview" style="width:100%;height:40px;border-radius:8px;margin-bottom:12px;border:1px solid var(--card-border);background:${currentColor};"></div>
+        <div style="margin-bottom:8px;">
+            <label style="color:var(--text-dim);font-size:0.65rem;">Hue</label>
+            <input type="range" id="colorH" min="0" max="360" value="${h}" style="width:100%;accent-color:#ff4444;">
+        </div>
+        <div style="margin-bottom:8px;">
+            <label style="color:var(--text-dim);font-size:0.65rem;">Saturation</label>
+            <input type="range" id="colorS" min="0" max="100" value="${s}" style="width:100%;accent-color:#4488ff;">
+        </div>
+        <div style="margin-bottom:8px;">
+            <label style="color:var(--text-dim);font-size:0.65rem;">Value</label>
+            <input type="range" id="colorV" min="0" max="100" value="${v}" style="width:100%;accent-color:#44dd44;">
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+            ${['#ff4444','#ff8800','#ffcc00','#44dd44','#4488ff','#8844ff','#ff44aa','#ffffff','#888888','#000000'].map(c =>
+                `<div class="color-preset" data-color="${c}" style="width:24px;height:24px;border-radius:6px;background:${c};cursor:pointer;border:2px solid transparent;"></div>`
+            ).join('')}
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+            <button id="colorCancel" style="padding:6px 16px;border-radius:6px;border:1px solid var(--card-border);background:var(--bg-3);color:var(--text);cursor:pointer;font-size:0.7rem;">Cancel</button>
+            <button id="colorApply" style="padding:6px 16px;border-radius:6px;border:none;background:var(--primary);color:white;cursor:pointer;font-size:0.7rem;">Apply</button>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    // Backdrop
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.3);';
+    backdrop.id = 'colorBackdrop';
+    document.body.appendChild(backdrop);
+
+    const preview = dialog.querySelector('#colorPreview');
+    const hSlider = dialog.querySelector('#colorH');
+    const sSlider = dialog.querySelector('#colorS');
+    const vSlider = dialog.querySelector('#colorV');
+
+    let pendingColor = currentColor;
+
+    function updateFromSliders() {
+        pendingColor = hsvToHex(parseFloat(hSlider.value), parseFloat(sSlider.value), parseFloat(vSlider.value));
+        preview.style.background = pendingColor;
+    }
+
+    hSlider.addEventListener('input', updateFromSliders);
+    sSlider.addEventListener('input', updateFromSliders);
+    vSlider.addEventListener('input', updateFromSliders);
+
+    // Preset colors
+    dialog.querySelectorAll('.color-preset').forEach(el => {
+        el.addEventListener('click', () => {
+            pendingColor = el.dataset.color;
+            [h, s, v] = hexToHSV(pendingColor);
+            hSlider.value = h; sSlider.value = s; vSlider.value = v;
+            preview.style.background = pendingColor;
+        });
+    });
+
+    function applyColor() {
+        itemState.color = pendingColor;
+        if (swatchEl) swatchEl.style.background = pendingColor;
+        // Update labelColorLUT
+        if (id.startsWith('organ_')) {
+            const organ = dataTreeState.organs.find(o => o.id === id);
+            if (organ && organ.labelId !== undefined) {
+                const r = parseInt(pendingColor.slice(1,3), 16);
+                const g = parseInt(pendingColor.slice(3,5), 16);
+                const b = parseInt(pendingColor.slice(5,7), 16);
+                labelColorLUT[organ.labelId] = [r, g, b];
+            }
+        }
+        if (id.startsWith('ctv_')) {
+            const labelId = parseInt(id.replace('ctv_', ''));
+            const r = parseInt(pendingColor.slice(1,3), 16);
+            const g = parseInt(pendingColor.slice(3,5), 16);
+            const b = parseInt(pendingColor.slice(5,7), 16);
+            labelColorLUT[labelId] = [r, g, b];
+        }
+        // Redraw overlays (debounced)
+        clearTimeout(window._colorOverlayTimer);
+        window._colorOverlayTimer = setTimeout(() => {
+            if (state.ctLoaded) reloadOverlays();
+            renderDataTreeDebounced();
+        }, 100);
+        closeDialog();
+    }
+
+    function closeDialog() {
+        dialog.remove();
+        backdrop.remove();
+    }
+
+    dialog.querySelector('#colorApply').addEventListener('click', applyColor);
+    dialog.querySelector('#colorCancel').addEventListener('click', closeDialog);
+    dialog.querySelector('#colorDialogClose').addEventListener('click', closeDialog);
+    backdrop.addEventListener('click', closeDialog);
+
+    input.click();
 }
 
 function getItemGroup(id) {
@@ -3932,21 +4614,39 @@ function handleTreeItemClick(id, event) {
 }
 
 function handleTreeItemRightClick(id, event) {
+    event.preventDefault();
+    event.stopPropagation();
     // If right-clicking an unselected item, select only it
     if (!selectedItems.has(id)) {
         selectedItems.clear();
         selectedItems.add(id);
         lastClickedId = id;
-        renderDataTree();
     }
+    // Show menu immediately
     showContextMenu(event.clientX, event.clientY);
 }
 
 function showGroupContextMenu(x, y, category) {
     hideContextMenu();
-    const organs = dataTreeState.organs.filter(o => o.category === category);
-    if (organs.length === 0) return;
-    const catInfo = ORGAN_CATEGORIES[category];
+
+    // Determine group info based on category
+    let catInfo, count;
+    if (category === 'oar') {
+        catInfo = { label: 'All OARs', icon: '🏥' };
+        count = dataTreeState.organs.length;
+    } else if (category === 'planning_seeds') {
+        catInfo = { label: 'Planning Seeds', icon: '💊' };
+        count = dataTreeState.planning.seeds.length;
+    } else if (category === 'planning_needles') {
+        catInfo = { label: 'Planning Needles', icon: '📍' };
+        count = dataTreeState.planning.needles.length;
+    } else if (category === 'dose_isosurfaces') {
+        catInfo = { label: 'Dose Isosurfaces', icon: '🌈' };
+        count = dataTreeState.planning.doseLevels.length;
+    } else {
+        catInfo = ORGAN_CATEGORIES[category] || { label: category, icon: '📁' };
+        count = dataTreeState.organs.filter(o => o.category === category).length;
+    }
 
     const menu = document.createElement('div');
     menu.className = 'ctx-menu';
@@ -3955,13 +4655,15 @@ function showGroupContextMenu(x, y, category) {
     menu.style.top = y + 'px';
 
     let items = `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
-        <span class="ctx-icon">${catInfo.icon}</span> ${catInfo.label} (${organs.length})</div>`;
+        <span class="ctx-icon">${catInfo.icon}</span> ${catInfo.label} (${count})</div>`;
     items += `<div class="ctx-menu-sep"></div>`;
 
-    // 3D Reconstruct all in group
-    items += `<div class="ctx-menu-item" onclick="hideContextMenu();groupReconstruct3D('${category}')">
-        <span class="ctx-icon">&#9638;</span> 3D Reconstruct All (${organs.length})</div>`;
-    items += `<div class="ctx-menu-sep"></div>`;
+    // 3D Reconstruct all in group (only for OAR/organ groups)
+    if (category === 'oar' || ORGAN_CATEGORIES[category]) {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();groupReconstruct3D('${category}')">
+            <span class="ctx-icon">&#9638;</span> 3D Reconstruct All (${count})</div>`;
+        items += `<div class="ctx-menu-sep"></div>`;
+    }
 
     // Visibility
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility('${category}',true)">
@@ -3969,9 +4671,26 @@ function showGroupContextMenu(x, y, category) {
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility('${category}',false)">
         <span class="ctx-icon">&#128064;</span> Hide All</div>`;
 
-    // Solo this group
-    items += `<div class="ctx-menu-item" onclick="hideContextMenu();soloGroup('${category}')">
-        <span class="ctx-icon">&#128269;</span> Solo This Group</div>`;
+    // Solo this group (only for organ groups)
+    if (category === 'oar' || ORGAN_CATEGORIES[category]) {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();soloGroup('${category}')">
+            <span class="ctx-icon">&#128269;</span> Solo This Group</div>`;
+    }
+
+    // Clear planning visualization (only for planning groups)
+    if (category === 'planning_seeds' || category === 'planning_needles' || category === 'dose_isosurfaces') {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();clearPlanningVisualization()">
+            <span class="ctx-icon">&#128465;</span> Clear Planning</div>`;
+    }
+
+    // Opacity submenu
+    items += `<div class="ctx-menu-sep"></div>`;
+    items += `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
+        <span class="ctx-icon">&#127912;</span> Opacity</div>`;
+    for (const op of [100, 75, 50, 25]) {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupOpacityValue('${category}', ${op})">
+            <span class="ctx-icon" style="opacity:${op / 100}">&#9632;</span> ${op}%</div>`;
+    }
 
     items += `<div class="ctx-menu-sep"></div>`;
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();showAllOrgans()">
@@ -3994,20 +4713,37 @@ function showGroupContextMenu(x, y, category) {
 function soloGroup(category) {
     dataTreeState.organs.forEach(o => { o.visible = (o.category === category); });
     dataTreeState.ctv.visible = (category === 'ctv');
+    dataTreeState.planning.seeds.forEach(s => { s.visible = (category === 'planning_seeds'); });
+    dataTreeState.planning.needles.forEach(n => { n.visible = (category === 'planning_needles'); });
+    dataTreeState.planning.doseLevels.forEach(d => { d.visible = (category === 'dose_isosurfaces'); });
+    // Update 3D meshes
+    Object.entries(scene3D.meshes).forEach(([id, mesh]) => {
+        if (id.startsWith('seed_')) mesh.visible = dataTreeState.planning.seeds.find(s => s.id === id)?.visible ?? false;
+        else if (id.startsWith('needle_')) mesh.visible = dataTreeState.planning.needles.find(n => n.id === id)?.visible ?? false;
+        else if (id.startsWith('dose_iso_')) {
+            const threshold = parseFloat(id.replace('dose_iso_', ''));
+            mesh.visible = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold)?.visible ?? false;
+        }
+    });
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
 }
 
 async function groupReconstruct3D(category) {
-    const organs = dataTreeState.organs.filter(o => o.category === category);
+    const organs = category === 'oar' ? dataTreeState.organs : dataTreeState.organs.filter(o => o.category === category);
     for (const organ of organs) {
         await reconstructOrgan3D(organ.id);
     }
 }
 
 function getSelectedOrganIds() {
-    // Return selected IDs that are organs (not ct/dose/seeds)
-    return [...selectedItems].filter(id => id === 'ctv' || id.startsWith('organ_'));
+    // Return selected IDs that are organs, CTV, OAR group, planning items, or sub-labels
+    return [...selectedItems].filter(id =>
+        id === 'ctv' || id === 'oar' || id === 'needles' ||
+        id.startsWith('organ_') || id.startsWith('ctv_') ||
+        id.startsWith('seed_') || id.startsWith('needle_') || id.startsWith('dose_iso_') ||
+        id === 'planning_seeds' || id === 'planning_needles' || id === 'dose_isosurfaces'
+    );
 }
 
 function showContextMenu(x, y) {
@@ -4016,10 +4752,29 @@ function showContextMenu(x, y) {
     const selIds = getSelectedOrganIds();
     if (selIds.length === 0) return;
 
+    // Handle group selections - show group context menu
+    if (selIds.includes('oar')) {
+        showGroupContextMenu(x, y, 'oar');
+        return;
+    }
+    if (selIds.includes('planning_seeds')) {
+        showGroupContextMenu(x, y, 'planning_seeds');
+        return;
+    }
+    if (selIds.includes('planning_needles')) {
+        showGroupContextMenu(x, y, 'planning_needles');
+        return;
+    }
+    if (selIds.includes('dose_isosurfaces')) {
+        showGroupContextMenu(x, y, 'dose_isosurfaces');
+        return;
+    }
+
     const isSingle = selIds.length === 1;
     const firstId = selIds[0];
-    const isCTVOnly = selIds.every(id => id === 'ctv');
+    const isCTVOnly = selIds.every(id => id === 'ctv' || id.startsWith('ctv_'));
     const hasOrgans = selIds.some(id => id.startsWith('organ_'));
+    const isPlanningItem = firstId.startsWith('seed_') || firstId.startsWith('needle_') || firstId.startsWith('dose_iso_');
 
     const menu = document.createElement('div');
     menu.className = 'ctx-menu';
@@ -4036,15 +4791,24 @@ function showContextMenu(x, y) {
         items += `<div class="ctx-menu-sep"></div>`;
     }
 
-    // 3D Reconstruct (single or batch)
-    if (isSingle) {
-        items += `<div class="ctx-menu-item" onclick="hideContextMenu();reconstructOrgan3D('${firstId}')">
-            <span class="ctx-icon">&#9638;</span> 3D Reconstruct</div>`;
-    } else {
-        items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchReconstruct3D()">
-            <span class="ctx-icon">&#9638;</span> 3D Reconstruct All (${selIds.length})</div>`;
+    // 3D Reconstruct (only for organs/CTV, not planning items)
+    if (!isPlanningItem) {
+        if (isSingle) {
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();reconstructOrgan3D('${firstId}')">
+                <span class="ctx-icon">&#9638;</span> 3D Reconstruct</div>`;
+        } else {
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchReconstruct3D()">
+                <span class="ctx-icon">&#9638;</span> 3D Reconstruct All (${selIds.length})</div>`;
+        }
+        items += `<div class="ctx-menu-sep"></div>`;
     }
-    items += `<div class="ctx-menu-sep"></div>`;
+
+    // Change Color (for single item: organs, CTV labels, or planning items)
+    if (isSingle && (firstId.startsWith('organ_') || firstId.startsWith('ctv_') || isPlanningItem)) {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();openColorPicker('${firstId}')">
+            <span class="ctx-icon">&#127912;</span> Change Color</div>`;
+        items += `<div class="ctx-menu-sep"></div>`;
+    }
 
     // Move to category (only for organs, not CTV)
     if (hasOrgans) {
@@ -4064,6 +4828,15 @@ function showContextMenu(x, y) {
     // Solo
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchSolo()">
         <span class="ctx-icon">&#128269;</span> Solo Selected</div>`;
+
+    // Opacity submenu
+    items += `<div class="ctx-menu-sep"></div>`;
+    items += `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
+        <span class="ctx-icon">&#127912;</span> Opacity</div>`;
+    for (const op of [100, 75, 50, 25]) {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchSetOpacity(${op / 100})">
+            <span class="ctx-icon" style="opacity:${op / 100}">&#9632;</span> ${op}%</div>`;
+    }
 
     items += `<div class="ctx-menu-sep"></div>`;
 
@@ -4125,6 +4898,24 @@ function batchSolo() {
     if (state.ctLoaded) loadAllSlices();
 }
 
+function batchSetOpacity(opacity) {
+    getSelectedOrganIds().forEach(id => {
+        if (id === 'ctv') {
+            dataTreeState.ctv.opacity = opacity;
+        } else if (id.startsWith('ctv_')) {
+            // Individual CTV label
+            const labelId = parseInt(id.replace('ctv_', ''));
+            if (!dataTreeState.ctv.labelOpacities) dataTreeState.ctv.labelOpacities = {};
+            dataTreeState.ctv.labelOpacities[labelId] = opacity;
+        } else {
+            const o = dataTreeState.organs.find(o => o.id === id);
+            if (o) o.opacity = opacity;
+        }
+    });
+    renderDataTree();
+    if (state.ctLoaded) loadAllSlices();
+}
+
 async function batchReconstruct3D() {
     const ids = getSelectedOrganIds();
     for (const id of ids) {
@@ -4152,20 +4943,123 @@ function soloOrgan(organId) {
 function showAllOrgans() {
     dataTreeState.organs.forEach(o => { o.visible = true; });
     dataTreeState.ctv.visible = true;
+    dataTreeState.planning.seeds.forEach(s => { s.visible = true; });
+    dataTreeState.planning.needles.forEach(n => { n.visible = true; });
+    dataTreeState.planning.doseLevels.forEach(d => { d.visible = true; });
+    // Update 3D meshes visibility
+    Object.values(scene3D.meshes).forEach(mesh => { if (mesh) mesh.visible = true; });
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
 }
 
 function setGroupVisibility(category, visible) {
-    dataTreeState.organs.filter(o => o.category === category).forEach(o => { o.visible = visible; });
+    if (category === 'ctv') {
+        dataTreeState.ctv.visible = visible;
+        // Update all CTV child labels
+        if (dataTreeState.ctvLabels) {
+            Object.entries(dataTreeState.ctvLabels).forEach(([id, label]) => {
+                label.visible = visible;
+                // Update 3D mesh
+                const mesh = scene3D.meshes[id];
+                if (mesh) mesh.visible = visible;
+            });
+        }
+    } else if (category === 'oar') {
+        dataTreeState.organs.forEach(o => {
+            o.visible = visible;
+            // Update 3D mesh
+            const mesh = scene3D.meshes[o.id];
+            if (mesh) mesh.visible = visible;
+        });
+    } else if (category === 'planning_seeds') {
+        dataTreeState.planning.seeds.forEach(seed => {
+            seed.visible = visible;
+            const mesh = scene3D.meshes[seed.id];
+            if (mesh) mesh.visible = visible;
+        });
+    } else if (category === 'planning_needles') {
+        dataTreeState.planning.needles.forEach(needle => {
+            needle.visible = visible;
+            const mesh = scene3D.meshes[needle.id];
+            if (mesh) mesh.visible = visible;
+        });
+    } else if (category === 'dose_isosurfaces') {
+        dataTreeState.planning.doseLevels.forEach(level => {
+            level.visible = visible;
+            const mesh = scene3D.meshes[`dose_iso_${level.threshold}`];
+            if (mesh) mesh.visible = visible;
+        });
+    } else {
+        dataTreeState.organs.filter(o => o.category === category).forEach(o => {
+            o.visible = visible;
+            // Update 3D mesh
+            const mesh = scene3D.meshes[o.id];
+            if (mesh) mesh.visible = visible;
+        });
+    }
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
 }
 
+let _groupOpacityTimer = null;
 function setGroupOpacity(category, value) {
     const opacity = parseInt(value) / 100;
-    dataTreeState.organs.filter(o => o.category === category).forEach(o => { o.opacity = opacity; });
-    if (state.ctLoaded) loadAllSlices();
+    if (category === 'ctv') {
+        dataTreeState.ctv.opacity = opacity;
+        // Update all CTV child labels
+        if (dataTreeState.ctvLabels) {
+            Object.entries(dataTreeState.ctvLabels).forEach(([id, label]) => {
+                label.opacity = opacity;
+                // Update 3D mesh
+                const mesh = getMeshSurface(scene3D.meshes[id]);
+                if (mesh && mesh.material) mesh.material.opacity = opacity;
+            });
+        }
+    } else if (category === 'oar') {
+        dataTreeState.organs.forEach(o => {
+            o.opacity = opacity;
+            // Update 3D mesh
+            const mesh = getMeshSurface(scene3D.meshes[o.id]);
+            if (mesh && mesh.material) mesh.material.opacity = opacity;
+        });
+    } else if (category === 'planning_seeds') {
+        dataTreeState.planning.seeds.forEach(seed => {
+            seed.opacity = opacity;
+            const mesh = scene3D.meshes[seed.id];
+            if (mesh && mesh.material) mesh.material.opacity = opacity;
+        });
+    } else if (category === 'planning_needles') {
+        dataTreeState.planning.needles.forEach(needle => {
+            needle.opacity = opacity;
+            const mesh = scene3D.meshes[needle.id];
+            if (mesh && mesh.material) mesh.material.opacity = opacity;
+        });
+    } else if (category === 'dose_isosurfaces') {
+        dataTreeState.planning.doseLevels.forEach(level => {
+            level.opacity = opacity;
+            const mesh = scene3D.meshes[`dose_iso_${level.threshold}`];
+            if (mesh && mesh.material) mesh.material.opacity = opacity;
+        });
+    } else {
+        dataTreeState.organs.filter(o => o.category === category).forEach(o => {
+            o.opacity = opacity;
+            // Update 3D mesh
+            const mesh = getMeshSurface(scene3D.meshes[o.id]);
+            if (mesh && mesh.material) mesh.material.opacity = opacity;
+        });
+    }
+    // Debounce tree re-render and overlay reload
+    clearTimeout(_groupOpacityTimer);
+    _groupOpacityTimer = setTimeout(() => {
+        renderDataTree();
+        if (state.ctLoaded) loadAllSlices();
+    }, 150);
+}
+
+// Wrapper for context menu: takes percentage (0-100) directly
+function setGroupOpacityValue(category, percentValue) {
+    // setGroupOpacity expects value 0-100 (it divides by 100 internally)
+    setGroupOpacity(category, percentValue);
 }
 
 function toggleTreeGroup(header) {
@@ -4195,6 +5089,58 @@ function toggleDataVisibility(id) {
         return;
     }
 
+    // Handle individual CTV label toggles
+    if (id.startsWith('ctv_')) {
+        if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
+        if (!dataTreeState.ctvLabels[id]) {
+            dataTreeState.ctvLabels[id] = { visible: true, opacity: 0.7, color: '#ef4444' };
+        }
+        dataTreeState.ctvLabels[id].visible = !dataTreeState.ctvLabels[id].visible;
+        // Also toggle 3D mesh visibility
+        const mesh = scene3D.meshes[id];
+        if (mesh) mesh.visible = dataTreeState.ctvLabels[id].visible;
+        renderDataTree();
+        if (state.ctLoaded) reloadOverlays();
+        return;
+    }
+
+    // Handle planning seed toggles
+    if (id.startsWith('seed_')) {
+        const seed = dataTreeState.planning.seeds.find(s => s.id === id);
+        if (seed) {
+            seed.visible = !seed.visible;
+            const mesh = scene3D.meshes[id];
+            if (mesh) mesh.visible = seed.visible;
+            renderDataTree();
+        }
+        return;
+    }
+
+    // Handle planning needle toggles
+    if (id.startsWith('needle_')) {
+        const needle = dataTreeState.planning.needles.find(n => n.id === id);
+        if (needle) {
+            needle.visible = !needle.visible;
+            const mesh = scene3D.meshes[id];
+            if (mesh) mesh.visible = needle.visible;
+            renderDataTree();
+        }
+        return;
+    }
+
+    // Handle dose isosurface toggles
+    if (id.startsWith('dose_iso_')) {
+        const threshold = parseFloat(id.replace('dose_iso_', ''));
+        const level = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
+        if (level) {
+            level.visible = !level.visible;
+            const mesh = scene3D.meshes[id];
+            if (mesh) mesh.visible = level.visible;
+            renderDataTree();
+        }
+        return;
+    }
+
     if (!dataTreeState[id]) return;
     dataTreeState[id].visible = !dataTreeState[id].visible;
     // Toggle 3D mesh for CTV
@@ -4220,6 +5166,7 @@ function toggleDataVisibility(id) {
     if (state.ctLoaded) reloadOverlays();
 }
 
+let _opacityTimer = null;
 function setDataOpacity(id, value) {
     const opacity = parseInt(value) / 100;
     // Handle individual organ opacity
@@ -4228,9 +5175,62 @@ function setDataOpacity(id, value) {
         if (organ) {
             organ.opacity = opacity;
             // Also update 3D mesh opacity
+            const mesh = getMeshSurface(scene3D.meshes[id]);
+            if (mesh && mesh.material) mesh.material.opacity = opacity;
+        }
+        // Debounce overlay reload
+        clearTimeout(_opacityTimer);
+        _opacityTimer = setTimeout(() => { if (state.ctLoaded) reloadOverlays(); }, 150);
+        return;
+    }
+
+    // Handle individual CTV label opacity
+    if (id.startsWith('ctv_')) {
+        if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
+        if (!dataTreeState.ctvLabels[id]) {
+            dataTreeState.ctvLabels[id] = { visible: true, opacity: opacity, color: '#ef4444' };
+        } else {
+            dataTreeState.ctvLabels[id].opacity = opacity;
+        }
+        // Also update 3D mesh opacity
+        const mesh = getMeshSurface(scene3D.meshes[id]);
+        if (mesh && mesh.material) mesh.material.opacity = opacity;
+        // Debounce overlay reload
+        clearTimeout(_opacityTimer);
+        _opacityTimer = setTimeout(() => { if (state.ctLoaded) reloadOverlays(); }, 150);
+        return;
+    }
+
+    // Handle planning seed opacity
+    if (id.startsWith('seed_')) {
+        const seed = dataTreeState.planning.seeds.find(s => s.id === id);
+        if (seed) {
+            seed.opacity = opacity;
             const mesh = scene3D.meshes[id];
             if (mesh && mesh.material) mesh.material.opacity = opacity;
-            if (state.ctLoaded) reloadOverlays();
+        }
+        return;
+    }
+
+    // Handle planning needle opacity
+    if (id.startsWith('needle_')) {
+        const needle = dataTreeState.planning.needles.find(n => n.id === id);
+        if (needle) {
+            needle.opacity = opacity;
+            const mesh = scene3D.meshes[id];
+            if (mesh && mesh.material) mesh.material.opacity = opacity;
+        }
+        return;
+    }
+
+    // Handle dose isosurface opacity
+    if (id.startsWith('dose_iso_')) {
+        const threshold = parseFloat(id.replace('dose_iso_', ''));
+        const level = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
+        if (level) {
+            level.opacity = opacity;
+            const mesh = scene3D.meshes[id];
+            if (mesh && mesh.material) mesh.material.opacity = opacity;
         }
         return;
     }
@@ -4493,15 +5493,16 @@ function setViewerLayout(layout) {
     } else if (layout === 'horizontal') {
         panel.classList.add('layout-horizontal');
         hHandles.forEach(h => h.style.display = 'none');
-        // Mouse wheel scrolls horizontally in this layout
+        // Mouse wheel scrolls horizontally ONLY when not over a viewer canvas
         if (!panel._hWheelHandler) {
             panel._hWheelHandler = e => {
-                if (panel.classList.contains('layout-horizontal')) {
-                    // Scroll horizontally with any wheel input
-                    panel.scrollLeft += (e.deltaY || e.deltaX);
-                    e.preventDefault();
-                    e.stopPropagation();
-                }
+                if (!panel.classList.contains('layout-horizontal')) return;
+                // If mouse is over a viewer canvas, let it handle slice scrolling
+                const overCanvas = e.target.closest('.viewer-card-canvas, .viewer-card-body, canvas');
+                if (overCanvas) return;
+                panel.scrollLeft += (e.deltaY || e.deltaX);
+                e.preventDefault();
+                e.stopPropagation();
             };
             panel.addEventListener('wheel', panel._hWheelHandler, { capture: true, passive: false });
         }
@@ -4826,17 +5827,50 @@ async function reconstructOrgan3D(id) {
     if (loading) loading.classList.add('active');
 
     try {
-        let label_id, source, color;
+        // CTV: reconstruct all labels (multi-label)
         if (id === 'ctv') {
-            label_id = 1;
+            const labelIds = [1, 2, 3, 4, 5, 6]; // All non-background labels
+            let successCount = 0;
+            for (let i = 0; i < labelIds.length; i++) {
+                try {
+                    const res = await fetch(API + '/viewer/3d_mask', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ label_id: labelIds[i], source: 'ctv', smoothing: 1 }),
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.success && data.vertex_count > 0) {
+                            // Use same color as data tree (from labelColorLUT)
+                            const c = labelColorLUT[labelIds[i]];
+                            data.color = c ? (c[0] << 16 | c[1] << 8 | c[2]) : 0xff6b6b;
+                            data.organ_id = `ctv_${labelIds[i]}`;  // Use same ID as data tree
+                            render3DMesh(data);
+                            successCount++;
+                        }
+                    }
+                    // Skip 400 errors (label not found in mask)
+                } catch (e) { /* skip failed labels */ }
+            }
+            if (successCount === 0) {
+                addChat('error', 'No CTV labels found for 3D reconstruction');
+            }
+            switchPanel('viewers', document.querySelectorAll('.panel-tab')[3]);
+            return;
+        }
+
+        let label_id, source, color;
+        if (id.startsWith('ctv_')) {
+            // Individual CTV label (e.g., ctv_2 = tumor)
+            label_id = parseInt(id.replace('ctv_', ''));
             source = 'ctv';
-            color = 0xff6b6b;
+            const c = labelColorLUT[label_id];
+            color = c ? (c[0] << 16 | c[1] << 8 | c[2]) : 0xff6b6b;
         } else if (id.startsWith('organ_')) {
             label_id = parseInt(id.replace('organ_', ''));
             source = 'oar';
             const organ = dataTreeState.organs.find(o => o.id === id);
             if (organ) {
-                // Parse color: supports #rrggbb and rgb(r,g,b)
                 const c = organ.color;
                 if (c.startsWith('#')) { color = parseInt(c.slice(1), 16); }
                 else { const m = c.match(/(\d+)/g); color = m ? (parseInt(m[0]) << 16 | parseInt(m[1]) << 8 | parseInt(m[2])) : 0x0ea5e9; }
@@ -4851,16 +5885,22 @@ async function reconstructOrgan3D(id) {
             body: JSON.stringify({ label_id, source, smoothing: 1 }),
         });
 
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            const errMsg = errData.error || `HTTP ${res.status}`;
+            // Don't show error for "label not found" - just skip silently
+            if (res.status === 400 && errMsg.includes('not found')) {
+                return;
+            }
+            throw new Error(errMsg);
+        }
 
         const data = await res.json();
         if (data.success) {
-            // Store with color info for rendering
             data.color = color;
             data.organ_id = id;
             state.mesh3D = data;
             render3DMesh(data);
-            // Switch to Viewers tab to show result
             switchPanel('viewers', document.querySelectorAll('.panel-tab')[3]);
         }
     } catch (e) {
@@ -4873,63 +5913,368 @@ async function reconstructOrgan3D(id) {
 // Persistent 3D scene manager
 const scene3D = {
     scene: null, camera: null, renderer: null, controls: null,
-    meshes: {},       // {organ_id: THREE.Mesh}
+    meshes: {},       // {organ_id: THREE.Group (with surfaceMesh + wireframe)}
     skinMesh: null,   // CT skin mesh
     initialized: false,
 };
+
+// Helper: get surface mesh from group or legacy mesh
+function getMeshSurface(mesh) {
+    if (!mesh) return null;
+    // If it's a group with surfaceMesh child, return that
+    if (mesh.surfaceMesh && mesh.surfaceMesh !== mesh) return mesh.surfaceMesh;
+    // Otherwise it's already a mesh
+    return mesh;
+}
 
 function init3DScene() {
     const canvas = document.getElementById('canvas3D');
     if (!canvas || scene3D.initialized) return;
 
-    scene3D.scene = new THREE.Scene();
-    scene3D.scene.background = new THREE.Color(0x1a1a2e);
+    // Hide placeholder
+    const placeholder = canvas.querySelector('.viewer-no-data');
+    if (placeholder) placeholder.style.display = 'none';
 
-    scene3D.camera = new THREE.PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 2000);
+    scene3D.scene = new THREE.Scene();
+    // No background - use canvas CSS background (#000) for consistency with 2D viewers
+
+    scene3D.camera = new THREE.PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 5000);
     scene3D.camera.position.set(0, 0, 300);
 
-    scene3D.renderer = new THREE.WebGLRenderer({ antialias: true });
+    scene3D.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     scene3D.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
-    scene3D.renderer.setPixelRatio(window.devicePixelRatio);
+    scene3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     scene3D.renderer.shadowMap.enabled = false;
+    scene3D.renderer.setClearColor(0x000000, 0);
     canvas.appendChild(scene3D.renderer.domElement);
 
-    // OrbitControls: left=rotate, middle=pan, scroll=zoom
+    // OrbitControls: 3D Slicer style — left=rotate, right=pan, scroll=zoom
     scene3D.controls = new THREE.OrbitControls(scene3D.camera, scene3D.renderer.domElement);
     scene3D.controls.enableDamping = true;
-    scene3D.controls.dampingFactor = 0.1;
-    scene3D.controls.rotateSpeed = 0.8;
-    scene3D.controls.zoomSpeed = 1.2;
-    scene3D.controls.panSpeed = 0.8;
+    scene3D.controls.dampingFactor = 0.15;
+    scene3D.controls.rotateSpeed = 0.5;
+    scene3D.controls.zoomSpeed = 1.5;
+    scene3D.controls.panSpeed = 1.0;
+    scene3D.controls.screenSpacePanning = true;
+    scene3D.controls.enablePan = true;
+    scene3D.controls.enableZoom = true;
+    scene3D.controls.enableRotate = true;
+    scene3D.controls.minDistance = 10;
+    scene3D.controls.maxDistance = 2000;
+    scene3D.controls.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN
+    };
+    scene3D.controls.touches = {
+        ONE: THREE.TOUCH.ROTATE,
+        TWO: THREE.TOUCH.DOLLY_PAN
+    };
 
-    // Lighting
-    scene3D.scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-    const dir1 = new THREE.DirectionalLight(0xffffff, 0.7);
+    // Lighting — brighter for better visibility
+    scene3D.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dir1 = new THREE.DirectionalLight(0xffffff, 0.8);
     dir1.position.set(200, 200, 200);
     scene3D.scene.add(dir1);
-    const dir2 = new THREE.DirectionalLight(0xffffff, 0.3);
+    const dir2 = new THREE.DirectionalLight(0xffffff, 0.4);
     dir2.position.set(-200, -100, -200);
     scene3D.scene.add(dir2);
+    const dir3 = new THREE.DirectionalLight(0xffffff, 0.2);
+    dir3.position.set(0, -200, 100);
+    scene3D.scene.add(dir3);
 
     // Axis indicator
-    const axisLen = 40;
-    const axisMat = (color) => new THREE.LineBasicMaterial({ color, linewidth: 2 });
-    [['x', 0xff0000], ['y', 0x00ff00], ['z', 0x0000ff]].forEach(([axis, color]) => {
-        const geo = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(...(axis === 'x' ? [axisLen, 0, 0] : axis === 'y' ? [0, axisLen, 0] : [0, 0, axisLen]))
-        ]);
-        scene3D.scene.add(new THREE.Line(geo, axisMat(color)));
-    });
+    // Orientation axes (bottom-left corner, like 3D Slicer)
+    const axesScene = new THREE.Scene();
+    const axesCamera = new THREE.OrthographicCamera(-2.5, 2.5, 2.5, -2.5, 0.1, 100);
+    axesCamera.position.set(0, 0, 5);
+    axesCamera.lookAt(0, 0, 0);
+
+    // Create polished axes with cylinders + cones
+    const axesGroup = new THREE.Group();
+    const axisLen = 1.0;
+    const shaftRadius = 0.06;
+    const headRadius = 0.15;
+    const headLen = 0.3;
+
+    function makeAxis(direction, color) {
+        const group = new THREE.Group();
+        // Shaft (cylinder)
+        const shaftGeo = new THREE.CylinderGeometry(shaftRadius, shaftRadius, axisLen - headLen, 12);
+        const shaftMat = new THREE.MeshPhongMaterial({ color, shininess: 60 });
+        const shaft = new THREE.Mesh(shaftGeo, shaftMat);
+        shaft.position.y = (axisLen - headLen) / 2;
+        group.add(shaft);
+        // Head (cone)
+        const headGeo = new THREE.ConeGeometry(headRadius, headLen, 16);
+        const headMat = new THREE.MeshPhongMaterial({ color, shininess: 60 });
+        const head = new THREE.Mesh(headGeo, headMat);
+        head.position.y = axisLen - headLen / 2;
+        group.add(head);
+        // Rotate to point in correct direction
+        if (direction === 'x') group.rotation.z = -Math.PI / 2;
+        else if (direction === 'z') group.rotation.x = Math.PI / 2;
+        return group;
+    }
+
+    // X = Red (Right), Y = Green (Anterior), Z = Blue (Superior)
+    axesGroup.add(makeAxis('x', 0xff4444));
+    axesGroup.add(makeAxis('y', 0x44dd44));
+    axesGroup.add(makeAxis('z', 0x4488ff));
+
+    // Small sphere at origin
+    const originGeo = new THREE.SphereGeometry(0.1, 16, 16);
+    const originMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 80 });
+    axesGroup.add(new THREE.Mesh(originGeo, originMat));
+
+    // Text labels using sprites
+    function makeLabel(text, pos, color) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = color;
+        ctx.font = 'bold 40px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, 32, 32);
+        const tex = new THREE.CanvasTexture(canvas);
+        const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+        const sprite = new THREE.Sprite(mat);
+        sprite.position.copy(pos);
+        sprite.scale.set(0.5, 0.5, 1);
+        return sprite;
+    }
+
+    axesGroup.add(makeLabel('R', new THREE.Vector3(1.5, 0, 0), '#ff4444'));
+    axesGroup.add(makeLabel('A', new THREE.Vector3(0, 1.5, 0), '#44dd44'));
+    axesGroup.add(makeLabel('S', new THREE.Vector3(0, 0, 1.5), '#4488ff'));
+
+    axesScene.add(axesGroup);
+    axesScene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const axLight = new THREE.DirectionalLight(0xffffff, 0.6);
+    axLight.position.set(2, 3, 4);
+    axesScene.add(axLight);
 
     // Animation loop
     function animate() {
         requestAnimationFrame(animate);
         scene3D.controls.update();
+
+        // Sync axes orientation with main camera
+        axesGroup.rotation.copy(scene3D.camera.rotation);
+
+        // Render main scene
         scene3D.renderer.render(scene3D.scene, scene3D.camera);
+
+        // Render axes in bottom-left corner (transparent background)
+        const w = canvas.clientWidth, h = canvas.clientHeight;
+        const size = Math.min(100, Math.min(w, h) * 0.2);
+        scene3D.renderer.setViewport(8, 8, size, size);
+        scene3D.renderer.setScissor(8, 8, size, size);
+        scene3D.renderer.setScissorTest(true);
+        scene3D.renderer.autoClear = false;
+        scene3D.renderer.render(axesScene, axesCamera);
+        scene3D.renderer.autoClear = true;
+        scene3D.renderer.setScissorTest(false);
+        scene3D.renderer.setViewport(0, 0, w, h);
     }
     animate();
     scene3D.initialized = true;
+
+    // ==================== 3D PICKING / INTERACTION ====================
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let selectedObject = null;
+    let isDragging = false;
+    let dragPlane = new THREE.Plane();
+    let dragOffset = new THREE.Vector3();
+
+    // Mouse down - start drag or select
+    canvas.addEventListener('mousedown', (event) => {
+        if (event.button !== 0) return; // Only left click
+
+        const rect = canvas.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, scene3D.camera);
+        const intersects = raycaster.intersectObjects(Object.values(scene3D.meshes), true);
+
+        if (intersects.length > 0) {
+            let obj = intersects[0].object;
+            // Find parent group if it's a child
+            while (obj.parent && !obj.userData.type) {
+                obj = obj.parent;
+            }
+
+            if (obj.userData.type === 'seed' || obj.userData.type === 'needle') {
+                // Select this object
+                if (selectedObject) {
+                    // Deselect previous
+                    if (selectedObject.material && selectedObject.material.emissive) {
+                        selectedObject.material.emissive.setHex(selectedObject.userData.originalEmissive || 0x332200);
+                    }
+                }
+
+                selectedObject = obj;
+                obj.userData.originalEmissive = obj.userData.originalEmissive || obj.material?.emissive?.getHex() || 0x332200;
+                if (obj.material && obj.material.emissive) {
+                    obj.material.emissive.setHex(0xff0000);
+                }
+
+                // Highlight in data tree
+                highlightSeed(obj.userData.id);
+
+                // Start drag for seeds
+                if (obj.userData.type === 'seed') {
+                    isDragging = true;
+                    scene3D.controls.enabled = false;
+
+                    // Create drag plane perpendicular to camera
+                    const cameraDir = new THREE.Vector3();
+                    scene3D.camera.getWorldDirection(cameraDir);
+                    dragPlane.setFromNormalAndCoplanarPoint(cameraDir, obj.position);
+
+                    // Calculate offset
+                    const intersection = new THREE.Vector3();
+                    raycaster.ray.intersectPlane(dragPlane, intersection);
+                    dragOffset.copy(obj.position).sub(intersection);
+                }
+
+                // Show info
+                const info = obj.userData.type === 'seed'
+                    ? `Seed ${obj.userData.id} | Trajectory ${obj.userData.trajectoryId}`
+                    : `Needle ${obj.userData.id} | Trajectory ${obj.userData.trajectoryId}`;
+                addChat('system', `Selected: ${info}`);
+            }
+        } else {
+            // Deselect
+            if (selectedObject && selectedObject.material && selectedObject.material.emissive) {
+                selectedObject.material.emissive.setHex(selectedObject.userData.originalEmissive || 0x332200);
+            }
+            selectedObject = null;
+        }
+    });
+
+    // Mouse move - drag seed
+    canvas.addEventListener('mousemove', (event) => {
+        if (!isDragging || !selectedObject) return;
+
+        const rect = canvas.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, scene3D.camera);
+        const intersection = new THREE.Vector3();
+        raycaster.ray.intersectPlane(dragPlane, intersection);
+
+        selectedObject.position.copy(intersection.add(dragOffset));
+    });
+
+    // Mouse up - end drag
+    canvas.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            scene3D.controls.enabled = true;
+
+            if (selectedObject && selectedObject.userData.type === 'seed') {
+                // Update seed position in data tree state
+                const seedId = selectedObject.userData.id;
+                const seed = dataTreeState.planning.seeds.find(s => s.id === seedId);
+                if (seed) {
+                    seed.position = [selectedObject.position.x, selectedObject.position.y, selectedObject.position.z];
+                }
+                addChat('system', `Seed ${seedId} repositioned to [${selectedObject.position.x.toFixed(1)}, ${selectedObject.position.y.toFixed(1)}, ${selectedObject.position.z.toFixed(1)}]`);
+            }
+        }
+    });
+
+    // Right-click context menu for 3D objects
+    canvas.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+
+        const rect = canvas.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, scene3D.camera);
+        const intersects = raycaster.intersectObjects(Object.values(scene3D.meshes), true);
+
+        if (intersects.length > 0) {
+            let obj = intersects[0].object;
+            while (obj.parent && !obj.userData.type) {
+                obj = obj.parent;
+            }
+
+            if (obj.userData.type === 'seed' || obj.userData.type === 'needle') {
+                show3DContextMenu(event.clientX, event.clientY, obj);
+            }
+        }
+    });
+
+    function show3DContextMenu(x, y, obj) {
+        hideContextMenu();
+        const menu = document.createElement('div');
+        menu.className = 'ctx-menu';
+        menu.id = 'ctxMenu';
+        menu.style.left = x + 'px';
+        menu.style.top = y + 'px';
+
+        const type = obj.userData.type;
+        const id = obj.userData.id;
+
+        let items = `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
+            <span class="ctx-icon">${type === 'seed' ? '💊' : '📍'}</span> ${type}: ${id}</div>`;
+        items += `<div class="ctx-menu-sep"></div>`;
+
+        // Highlight
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();highlightSeed('${id}')">
+            <span class="ctx-icon">&#127912;</span> Highlight</div>`;
+
+        if (type === 'seed') {
+            // Show dose at seed position
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();showSeedDose('${id}')">
+                <span class="ctx-icon">&#9889;</span> Show Dose</div>`;
+
+            // Delete seed
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();deleteSeed3D('${id}')">
+                <span class="ctx-icon">&#128465;</span> Delete</div>`;
+        }
+
+        if (type === 'needle') {
+            // Show seeds on needle
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();showNeedleSeeds('${id}')">
+                <span class="ctx-icon">&#128167;</span> Show Seeds</div>`;
+
+            // Delete needle
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();deleteNeedle3D('${id}')">
+                <span class="ctx-icon">&#128465;</span> Delete</div>`;
+        }
+
+        items += `<div class="ctx-menu-sep"></div>`;
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();clearSelection()">
+            <span class="ctx-icon">&#10005;</span> Deselect</div>`;
+
+        menu.innerHTML = items;
+        document.body.appendChild(menu);
+
+        const menuRect = menu.getBoundingClientRect();
+        if (menuRect.right > window.innerWidth) menu.style.left = (x - menuRect.width) + 'px';
+        if (menuRect.bottom > window.innerHeight) menu.style.top = (y - menuRect.height) + 'px';
+
+        setTimeout(() => {
+            document.addEventListener('click', hideContextMenu, { once: true });
+            document.addEventListener('contextmenu', hideContextMenu, { once: true });
+        }, 0);
+    }
+
+    function clearSelection() {
+        if (selectedObject && selectedObject.material && selectedObject.material.emissive) {
+            selectedObject.material.emissive.setHex(selectedObject.userData.originalEmissive || 0x332200);
+        }
+        selectedObject = null;
+    }
 
     // Handle resize
     const observer = new ResizeObserver(() => {
@@ -4962,14 +6307,23 @@ function addMeshToScene(meshData) {
     geometry.computeVertexNormals();
 
     // Use physical coordinates directly (mm) — no scaling
-    // marching_cubes already returns vertices in mm with correct spacing
-    const mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({
-        color: meshData.color || 0x0ea5e9,
+    const color = meshData.color || 0x0ea5e9;
+    const opacity = parseFloat(document.getElementById('meshOpacity3D')?.value || 70) / 100;
+
+    // Clean surface rendering (like 3D Slicer polydata)
+    const surfaceMat = new THREE.MeshPhysicalMaterial({
+        color: color,
         transparent: true,
-        opacity: parseFloat(document.getElementById('meshOpacity3D')?.value || 70) / 100,
+        opacity: opacity,
         side: THREE.DoubleSide,
-        shininess: 30,
-    }));
+        roughness: 0.4,
+        metalness: 0.1,
+        clearcoat: 0.3,
+        clearcoatRoughness: 0.2,
+        depthWrite: true,
+        depthTest: true,
+    });
+    const mesh = new THREE.Mesh(geometry, surfaceMat);
 
     scene3D.scene.add(mesh);
     scene3D.meshes[id] = mesh;
@@ -4995,11 +6349,12 @@ function fitCameraToScene() {
     const size = new THREE.Vector3();
     box.getSize(size);
     const maxDim = Math.max(size.x, size.y, size.z) || 1;
-    const dist = maxDim * 1.5;
+    const dist = maxDim * 1.8;
+    // 3D Slicer-like default view angle (slightly from top-right)
     scene3D.controls.target.copy(center);
-    scene3D.camera.position.set(center.x + dist * 0.6, center.y + dist * 0.4, center.z + dist * 0.6);
-    scene3D.camera.near = dist * 0.01;
-    scene3D.camera.far = dist * 10;
+    scene3D.camera.position.set(center.x + dist * 0.5, center.y + dist * 0.5, center.z + dist * 0.5);
+    scene3D.camera.near = dist * 0.005;
+    scene3D.camera.far = dist * 20;
     scene3D.camera.updateProjectionMatrix();
     scene3D.controls.update();
 }
@@ -5016,13 +6371,30 @@ function reset3DView() {
 function update3DMeshOpacity(val) {
     const opacity = parseInt(val) / 100;
     Object.values(scene3D.meshes).forEach(mesh => {
-        if (mesh && mesh.material) mesh.material.opacity = opacity;
+        if (!mesh) return;
+        // Handle mesh with surfaceMesh property
+        if (mesh.surfaceMesh) {
+            mesh.surfaceMesh.material.opacity = opacity;
+        } else if (mesh.material) {
+            mesh.material.opacity = opacity;
+        }
     });
 }
 
 function toggle3DWireframe(on) {
     Object.values(scene3D.meshes).forEach(mesh => {
-        if (mesh && mesh.material) mesh.material.wireframe = on;
+        if (!mesh) return;
+        if (mesh.material) {
+            // Add wireframe effect by changing material
+            if (on) {
+                mesh.material.wireframe = true;
+                mesh.material.opacity = 0.8;
+            } else {
+                mesh.material.wireframe = false;
+                const opVal = document.getElementById('meshOpacity3D')?.value || 70;
+                mesh.material.opacity = parseInt(opVal) / 100;
+            }
+        }
     });
 }
 
@@ -5059,6 +6431,265 @@ async function toggle3DSkin(on) {
     }
 }
 
+// ==================== SEED & NEEDLE 3D VISUALIZATION ====================
+
+async function loadSeeds3D() {
+    try {
+        const res = await fetch(API + '/planning/seeds_3d');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Failed to load seeds');
+
+        init3DScene();
+
+        // Clear existing seed/needle meshes
+        Object.keys(scene3D.meshes).forEach(id => {
+            if (id.startsWith('seed_') || id.startsWith('needle_')) {
+                scene3D.scene.remove(scene3D.meshes[id]);
+                if (scene3D.meshes[id].geometry) scene3D.meshes[id].geometry.dispose();
+                if (scene3D.meshes[id].material) scene3D.meshes[id].material.dispose();
+                delete scene3D.meshes[id];
+            }
+        });
+
+        // Update dataTreeState with planning data
+        dataTreeState.planning.seeds = data.seeds.map(seed => ({
+            id: seed.id,
+            position: seed.position,
+            direction: seed.direction,
+            trajectory_id: seed.trajectory_id,
+            visible: true,
+            opacity: 1.0,
+            color: '#ffcc00',
+        }));
+
+        dataTreeState.planning.needles = data.needles.map(needle => ({
+            id: needle.id,
+            points: needle.points,
+            trajectory_id: needle.trajectory_id,
+            visible: true,
+            opacity: 0.8,
+            color: '#ff6644',
+        }));
+
+        dataTreeState.seeds.loaded = true;
+        dataTreeState.seeds.visible = true;
+        dataTreeState.needles.loaded = true;
+        dataTreeState.needles.visible = true;
+
+        // Render seeds as cylinders
+        const seedRadius = 0.4;
+        const seedLength = 4.5;
+        data.seeds.forEach(seed => {
+            const pos = new THREE.Vector3(...seed.position);
+            const dir = new THREE.Vector3(...seed.direction).normalize();
+
+            const geometry = new THREE.CylinderGeometry(seedRadius, seedRadius, seedLength, 8);
+            const material = new THREE.MeshPhysicalMaterial({
+                color: 0xffcc00,
+                metalness: 0.6,
+                roughness: 0.3,
+                emissive: 0x332200,
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+
+            // Orient cylinder along direction
+            const axis = new THREE.Vector3(0, 1, 0);
+            const quaternion = new THREE.Quaternion().setFromUnitVectors(axis, dir);
+            mesh.setRotationFromQuaternion(quaternion);
+            mesh.position.copy(pos);
+
+            mesh.userData = { type: 'seed', id: seed.id, trajectoryId: seed.trajectory_id };
+            scene3D.scene.add(mesh);
+            scene3D.meshes[seed.id] = mesh;
+        });
+
+        // Render needles as lines
+        data.needles.forEach(needle => {
+            if (needle.points.length < 2) return;
+            const points = needle.points.map(p => new THREE.Vector3(...p));
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({
+                color: 0xff6644,
+                linewidth: 2,
+                transparent: true,
+                opacity: 0.8,
+            });
+            const line = new THREE.Line(geometry, material);
+            line.userData = { type: 'needle', id: needle.id, trajectoryId: needle.trajectory_id };
+            scene3D.scene.add(line);
+            scene3D.meshes[needle.id] = line;
+        });
+
+        // Update data tree
+        renderDataTree();
+        fitCameraToScene();
+
+        return { seeds: data.seeds.length, needles: data.needles.length };
+    } catch (e) {
+        console.error('Load seeds 3D failed:', e);
+        return { error: e.message };
+    }
+}
+
+async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
+    try {
+        const res = await fetch(API + '/planning/dose_isosurface', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ threshold }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Failed to load dose isosurface');
+
+        init3DScene();
+
+        // Remove existing dose isosurface
+        const existingId = `dose_iso_${threshold}`;
+        if (scene3D.meshes[existingId]) {
+            scene3D.scene.remove(scene3D.meshes[existingId]);
+            scene3D.meshes[existingId].geometry.dispose();
+            scene3D.meshes[existingId].material.dispose();
+            delete scene3D.meshes[existingId];
+        }
+
+        if (data.vertex_count === 0) return { vertices: 0, message: 'No isosurface at this threshold' };
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(data.vertices.flat()), 3));
+        geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(data.faces.flat()), 1));
+        geometry.computeVertexNormals();
+
+        const material = new THREE.MeshPhysicalMaterial({
+            color: color,
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.DoubleSide,
+            metalness: 0.1,
+            roughness: 0.6,
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.userData = { type: 'dose_isosurface', threshold: threshold };
+        scene3D.scene.add(mesh);
+        scene3D.meshes[existingId] = mesh;
+
+        // Update dataTreeState
+        const existingLevel = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
+        if (!existingLevel) {
+            dataTreeState.planning.doseLevels.push({
+                threshold: threshold,
+                visible: true,
+                opacity: 0.3,
+                color: '#' + color.toString(16).padStart(6, '0'),
+            });
+        }
+        renderDataTree();
+        fitCameraToScene();
+
+        return { vertices: data.vertex_count, faces: data.face_count, threshold };
+    } catch (e) {
+        console.error('Dose isosurface failed:', e);
+        return { error: e.message };
+    }
+}
+
+function highlightSeed(seedId) {
+    // Reset all seeds to default color
+    Object.entries(scene3D.meshes).forEach(([id, mesh]) => {
+        if (id.startsWith('seed_') && mesh.material) {
+            mesh.material.emissive.setHex(0x332200);
+            mesh.material.emissiveIntensity = 1;
+        }
+    });
+    // Highlight selected seed
+    const mesh = scene3D.meshes[seedId];
+    if (mesh && mesh.material) {
+        mesh.material.emissive.setHex(0xff0000);
+        mesh.material.emissiveIntensity = 2;
+    }
+}
+
+function removeSeed3D(seedId) {
+    const mesh = scene3D.meshes[seedId];
+    if (mesh) {
+        scene3D.scene.remove(mesh);
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) mesh.material.dispose();
+        delete scene3D.meshes[seedId];
+    }
+}
+
+function clearPlanningVisualization() {
+    // Clear 3D meshes
+    Object.keys(scene3D.meshes).forEach(id => {
+        if (id.startsWith('seed_') || id.startsWith('needle_') || id.startsWith('dose_iso_')) {
+            scene3D.scene.remove(scene3D.meshes[id]);
+            if (scene3D.meshes[id].geometry) scene3D.meshes[id].geometry.dispose();
+            if (scene3D.meshes[id].material) scene3D.meshes[id].material.dispose();
+            delete scene3D.meshes[id];
+        }
+    });
+    // Clear dataTreeState
+    dataTreeState.planning.seeds = [];
+    dataTreeState.planning.needles = [];
+    dataTreeState.planning.doseLevels = [];
+    dataTreeState.seeds.loaded = false;
+    dataTreeState.needles.loaded = false;
+    renderDataTree();
+}
+
+// Delete a seed from 3D scene and data tree
+function deleteSeed3D(seedId) {
+    const mesh = scene3D.meshes[seedId];
+    if (mesh) {
+        scene3D.scene.remove(mesh);
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) mesh.material.dispose();
+        delete scene3D.meshes[seedId];
+    }
+    // Remove from dataTreeState
+    dataTreeState.planning.seeds = dataTreeState.planning.seeds.filter(s => s.id !== seedId);
+    renderDataTree();
+    addChat('system', `Deleted seed ${seedId}`);
+}
+
+// Delete a needle from 3D scene and data tree
+function deleteNeedle3D(needleId) {
+    const mesh = scene3D.meshes[needleId];
+    if (mesh) {
+        scene3D.scene.remove(mesh);
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) mesh.material.dispose();
+        delete scene3D.meshes[needleId];
+    }
+    // Remove from dataTreeState
+    dataTreeState.planning.needles = dataTreeState.planning.needles.filter(n => n.id !== needleId);
+    renderDataTree();
+    addChat('system', `Deleted needle ${needleId}`);
+}
+
+// Show dose at seed position
+function showSeedDose(seedId) {
+    const seed = dataTreeState.planning.seeds.find(s => s.id === seedId);
+    if (!seed) return;
+    addChat('system', `💊 **Seed ${seedId}**\n- Position: [${seed.position.map(v => v.toFixed(1)).join(', ')}]\n- Trajectory: ${seed.trajectory_id}`);
+}
+
+// Show seeds on a needle
+function showNeedleSeeds(needleId) {
+    const needle = dataTreeState.planning.needles.find(n => n.id === needleId);
+    if (!needle) return;
+    // Find all seeds on this trajectory
+    const trajId = needle.trajectory_id;
+    const seedsOnNeedle = dataTreeState.planning.seeds.filter(s => s.trajectory_id === trajId);
+    addChat('system', `📍 **Needle ${needleId}**\n- Points: ${needle.points.length}\n- Trajectory: ${trajId}\n- Seeds: ${seedsOnNeedle.length}`);
+
+    // Highlight all seeds on this needle
+    seedsOnNeedle.forEach(s => highlightSeed(s.id));
+}
+
 /******** VIEWER INTERACTIVE TOOLS (Slicer-like) ********/
 function setupViewerInteractions() {
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
@@ -5067,6 +6698,73 @@ function setupViewerInteractions() {
         syncAnnotationCanvasSize(axis);
         setupAnnotationTool(axis);
     });
+}
+
+// Export DICOM-RT
+async function exportDicomRT() {
+    addChat('system', 'Exporting DICOM-RT...');
+    try {
+        const ctPath = document.getElementById('ctPath').value.trim();
+        const res = await fetch(API + '/export/dicom_rt', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ct_path: ctPath }),
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+                addChat('system', `✅ DICOM-RT exported to: ${data.output_dir}`);
+            } else {
+                addChat('error', `Export failed: ${data.error}`);
+            }
+        }
+    } catch (e) {
+        addChat('error', `Export failed: ${e.message}`);
+    }
+}
+
+// Export STL
+async function exportSTL() {
+    addChat('system', 'Exporting STL files...');
+    try {
+        const res = await fetch(API + '/export/stl', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+                addChat('system', `✅ STL exported: ${data.count} files to ${data.output_dir}`);
+            } else {
+                addChat('error', `Export failed: ${data.error}`);
+            }
+        }
+    } catch (e) {
+        addChat('error', `Export failed: ${e.message}`);
+    }
+}
+
+// Export Report
+async function exportReport() {
+    addChat('system', 'Generating treatment plan report...');
+    try {
+        const res = await fetch(API + '/export/report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+                addChat('system', `✅ Report generated: ${data.report_path}`);
+            } else {
+                addChat('error', `Report generation failed: ${data.error}`);
+            }
+        }
+    } catch (e) {
+        addChat('error', `Report failed: ${e.message}`);
+    }
 }
 
 let huFetchTimeout = null;
@@ -6136,6 +7834,61 @@ function updateSeeds(seeds) {
     `).join('');
 }
 
+/******** STEP-BY-STEP PLANNING ********/
+function toggleStepButtons() {
+    const section = document.getElementById('stepButtonsSection');
+    const toggle = document.getElementById('stepToggle');
+    if (!section) return;
+    const isVisible = section.style.display !== 'none';
+    section.style.display = isVisible ? 'none' : 'flex';
+    if (toggle) toggle.innerHTML = isVisible ? '&#9654;' : '&#9660;';
+}
+
+async function runPlanningStep(step) {
+    const ctPath = document.getElementById('ctPath').value.trim();
+    if (!ctPath) { alert('Please enter CT image path first'); return; }
+
+    // Apply hyperparameters first
+    await applyHyperparams();
+
+    showLoading(true);
+    const stepNames = {
+        'trajectory_init': 'Trajectory Initialization',
+        'trajectory_refine': 'Trajectory Refinement',
+        'seed_planning': 'Seed Planning',
+        'dose_calc': 'Dose Calculation',
+        'dose_eval': 'Dose Evaluation',
+    };
+    addChat('system', `Running ${stepNames[step] || step}...`);
+
+    try {
+        const data = await api('/planning/run_step', {
+            ct_image_path: ctPath,
+            step: step,
+        });
+
+        if (data.success) {
+            addChat('system', `✅ ${stepNames[step]} completed: ${data.message || ''}`);
+
+            // Auto-refresh UI based on step
+            if (step === 'trajectory_init' || step === 'trajectory_refine') {
+                await showStepResults('trajectories');
+            } else if (step === 'seed_planning') {
+                await showStepResults('seeds');
+            } else if (step === 'dose_calc') {
+                await showStepResults('dose');
+            } else if (step === 'dose_eval') {
+                await showStepResults('dvh');
+            }
+        } else {
+            addChat('error', `❌ ${stepNames[step]} failed: ${data.error}`);
+        }
+    } catch (e) {
+        addChat('error', `Request failed: ${e.message}`);
+    }
+    showLoading(false);
+}
+
 /******** PLANNING ********/
 async function runPlanning() {
     const ctPath = document.getElementById('ctPath').value.trim();
@@ -6211,6 +7964,123 @@ function showLoading(show) {
     document.getElementById('loading3D').className = 'loading-overlay' + (show ? ' active' : '');
 }
 
+// Fetch latest planning results and update UI (called after LLM planning completes)
+async function refreshPlanningUI() {
+    try {
+        const res = await fetch(API + '/planning/results');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.success) return;
+
+        // Update metrics panel
+        if (data.metrics) {
+            updateMetrics(data.metrics);
+            if (data.metrics.oar_metrics) updateOARTable(data.metrics.oar_metrics);
+        }
+
+        // Update seeds list
+        if (data.seeds && data.seeds.length > 0) {
+            updateSeeds(data.seeds);
+        }
+
+        // Update DVH chart
+        if (data.dvh && Object.keys(data.dvh).length > 0) {
+            state.dvhData = data.dvh;
+            drawDVH();
+        }
+
+        // Load 3D visualization
+        if (data.total_seeds > 0) {
+            await loadSeeds3D();
+        }
+        if (data.has_dose) {
+            await loadDoseIsosurface(1.0, 0x00ff88);
+        }
+
+        return data;
+    } catch (e) {
+        console.error('Refresh planning UI failed:', e);
+        return null;
+    }
+}
+
+// Show specific step results and auto-switch to corresponding UI
+async function showStepResults(step) {
+    try {
+        const res = await fetch(API + '/planning/results');
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data.success) return null;
+
+        switch (step) {
+            case 'trajectories':
+            case 'trajectory_init':
+            case 'trajectory_refine':
+                // Switch to 3D viewer to show trajectories
+                const viewerTab1 = document.querySelectorAll('.panel-tab')[3];
+                if (viewerTab1) switchPanel('viewers', viewerTab1);
+                addChat('system', `📍 **Trajectory Results**\n- Total trajectories: ${data.trajectories?.length || 0}`);
+                break;
+
+            case 'seeds':
+            case 'seed_planning':
+                // Switch to seeds panel
+                const seedsTab = document.querySelectorAll('.panel-tab')[2];
+                if (seedsTab) switchPanel('seeds', seedsTab);
+                // Load 3D visualization
+                await loadSeeds3D();
+                const viewerTab2 = document.querySelectorAll('.panel-tab')[3];
+                if (viewerTab2) switchPanel('viewers', viewerTab2);
+                addChat('system', `💊 **Seed Planning Results**\n- Total seeds: ${data.total_seeds || 0}`);
+                break;
+
+            case 'dose':
+            case 'dose_calc':
+            case 'dose_distribution':
+                // Switch to 3D viewer and show dose isosurface
+                await loadDoseIsosurface(1.0, 0x00ff88);
+                await loadDoseIsosurface(1.5, 0xff8800);
+                const viewerTab3 = document.querySelectorAll('.panel-tab')[3];
+                if (viewerTab3) switchPanel('viewers', viewerTab3);
+                addChat('system', `🌈 **Dose Distribution**\n- Dose isosurfaces loaded (1.0 Gy, 1.5 Gy)`);
+                break;
+
+            case 'dvh':
+            case 'dose_eval':
+            case 'metrics':
+                // Switch to metrics panel and show DVH
+                if (data.metrics) {
+                    updateMetrics(data.metrics);
+                    if (data.metrics.oar_metrics) updateOARTable(data.metrics.oar_metrics);
+                }
+                if (data.dvh) {
+                    state.dvhData = data.dvh;
+                    drawDVH();
+                }
+                const metricsTab = document.querySelectorAll('.panel-tab')[1];
+                if (metricsTab) switchPanel('metrics', metricsTab);
+                const m = data.metrics || {};
+                addChat('system', `📊 **Dose Evaluation**\n- V100: ${((m.v100 || 0) * 100).toFixed(1)}%\n- D90: ${(m.d90 || 0).toFixed(2)} Gy\n- Plan Score: ${(m.plan_score || 0).toFixed(0)}/100`);
+                break;
+
+            case 'all':
+            case 'full':
+                // Show everything
+                await refreshPlanningUI();
+                const viewerTab4 = document.querySelectorAll('.panel-tab')[3];
+                if (viewerTab4) switchPanel('viewers', viewerTab4);
+                break;
+
+            default:
+                addChat('system', `Unknown step: ${step}. Valid steps: trajectories, seeds, dose, dvh, metrics, all`);
+        }
+        return data;
+    } catch (e) {
+        console.error('Show step results failed:', e);
+        return null;
+    }
+}
+
 function copyCodeBlock(btn) {
     const code = btn.parentElement.querySelector('code');
     if (!code) return;
@@ -6260,6 +8130,257 @@ mdRenderer.hr = function() {
     return '<hr class="md-hr">';
 };
 
+/******** SCREENSHOT & IMAGE TOOLS ********/
+
+// CSS selector mapping for screenshot targets
+const SCREENSHOT_SELECTORS = {
+    'viewer-axial': '#viewerAxial, .viewer-card:first-child',
+    'viewer-sagittal': '#viewerSagittal, .viewer-card:nth-child(2)',
+    'viewer-coronal': '#viewerCoronal, .viewer-card:nth-child(3)',
+    'viewer-3d': '#viewer3D, #threejs-container, .viewer-card-3d',
+    'data-tree': '#dataTree, .data-tree-panel',
+    'chat': '#chatMessages, .chat-panel',
+    'metrics': '#metricsPanel, .metrics-panel',
+    'input': '#inputPanel, .input-panel',
+    'seeds': '#seedsPanel, .seeds-panel',
+    'planning': '#planningPanel, .planning-panel',
+    'overlay-controls': '.viewer-controls, .overlay-controls',
+    'full': 'body',
+};
+
+/**
+ * Take a screenshot of a DOM element.
+ * @param {string} selector - CSS selector of the element to capture
+ * @param {object} options - html2canvas options
+ * @returns {Promise<string>} base64 data URL of the screenshot
+ */
+async function takeScreenshot(selector, options = {}) {
+    const el = document.querySelector(selector);
+    if (!el) {
+        throw new Error(`Element not found: ${selector}`);
+    }
+
+    const defaultOpts = {
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: null, // transparent
+        scale: 2, // high DPI
+        logging: false,
+        ...options,
+    };
+
+    const canvas = await html2canvas(el, defaultOpts);
+    return canvas.toDataURL('image/png');
+}
+
+/**
+ * Capture a UI target and upload to server.
+ * @param {string} target - target name from SCREENSHOT_SELECTORS
+ * @param {string} question - what the LLM wants to analyze
+ * @param {string} description - display description
+ * @returns {Promise<object>} upload result with URL
+ */
+async function captureAndUpload(target, question, description) {
+    // Find the best selector for this target
+    const selector = SCREENSHOT_SELECTORS[target];
+    if (!selector) {
+        throw new Error(`Unknown screenshot target: ${target}`);
+    }
+
+    // Try multiple selectors (comma-separated)
+    let dataUrl = null;
+    const selectors = selector.split(',').map(s => s.trim());
+    for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+            try {
+                dataUrl = await takeScreenshot(sel);
+                break;
+            } catch (e) {
+                console.warn(`Screenshot failed for ${sel}:`, e);
+            }
+        }
+    }
+
+    if (!dataUrl) {
+        throw new Error(`Could not capture any element for target: ${target}`);
+    }
+
+    // Upload to server
+    const res = await fetch(API + '/screenshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            image: dataUrl,
+            target: target,
+            description: description || target,
+        }),
+    });
+
+    if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+    return await res.json();
+}
+
+/**
+ * Execute a screenshot command from the LLM tool result.
+ * Called when the frontend intercepts a ui_screenshot tool result.
+ * @param {object} command - screenshot command from tool result
+ */
+async function executeScreenshotCommand(command) {
+    const target = command.target;
+    const question = command.question || 'Analyze this screenshot';
+    const description = command.description || target;
+    const sliceIndex = command.slice_index;
+    const axis = command.axis;
+
+    // Navigate to slice first if requested
+    if (sliceIndex !== undefined && axis) {
+        navigateToSlice(axis, sliceIndex);
+        // Wait for render
+        await new Promise(r => setTimeout(r, 500));
+    }
+
+    // Show progress in chat
+    addChat('system', `📸 正在截图: ${description}...`);
+
+    try {
+        const result = await captureAndUpload(target, question, description);
+
+        // Display image in chat
+        addChatImage(result.url, description, question);
+
+        // Send image URL back to LLM for multimodal analysis
+        const followUp = `[Screenshot captured: ${result.url}]\nTarget: ${target}\nQuestion: ${question}`;
+        setTimeout(() => {
+            sendChatMessage(followUp);
+        }, 300);
+
+    } catch (e) {
+        addChat('error', `截图失败: ${e.message}`);
+    }
+}
+
+/**
+ * Navigate viewer to a specific slice.
+ * @param {string} axis - 'axial', 'sagittal', or 'coronal'
+ * @param {number} sliceIndex - slice index to navigate to
+ */
+function navigateToSlice(axis, sliceIndex) {
+    // Update slice slider
+    const slider = document.getElementById(`sliceSlider${capitalize(axis)}`);
+    if (slider) {
+        slider.value = sliceIndex;
+        slider.dispatchEvent(new Event('input'));
+    }
+
+    // Also call the render function directly
+    if (typeof renderSliceFromVolume === 'function') {
+        renderSliceFromVolume(axis, sliceIndex);
+    }
+    if (typeof renderOverlayFromVolume === 'function') {
+        renderOverlayFromVolume(axis, sliceIndex);
+    }
+}
+
+/**
+ * Add an image to the chat display (like ChatGPT image messages).
+ * @param {string} url - image URL
+ * @param {string} caption - image caption
+ * @param {string} question - analysis question
+ */
+function addChatImage(url, caption, question) {
+    const container = document.getElementById('chatMessages');
+
+    const row = document.createElement('div');
+    row.className = 'chat-row bot';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'chat-avatar bot-avatar';
+    avatar.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chat-msg-wrapper bot';
+
+    const imgContainer = document.createElement('div');
+    imgContainer.className = 'chat-image-container';
+
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = caption || 'Screenshot';
+    img.loading = 'lazy';
+    img.onclick = () => openImageModal(url, caption, question);
+
+    const zoomIcon = document.createElement('div');
+    zoomIcon.className = 'chat-image-zoom-icon';
+    zoomIcon.innerHTML = '🔍 点击放大';
+
+    const captionDiv = document.createElement('div');
+    captionDiv.className = 'chat-image-caption';
+    captionDiv.innerHTML = `<span class="screenshot-badge">📸 截图</span> ${escHtml(caption || '')}`;
+
+    imgContainer.appendChild(img);
+    imgContainer.appendChild(zoomIcon);
+    imgContainer.appendChild(captionDiv);
+    wrapper.appendChild(imgContainer);
+    row.appendChild(avatar);
+    row.appendChild(wrapper);
+    container.appendChild(row);
+    container.scrollTop = container.scrollHeight;
+
+    // Save to session
+    saveSessionMessage('bot-image', url);
+}
+
+/**
+ * Open image in fullscreen modal.
+ * @param {string} src - image URL
+ * @param {string} caption - image caption
+ * @param {string} question - analysis question
+ */
+function openImageModal(src, caption, question) {
+    // Remove existing modal if any
+    closeImageModal();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'image-modal-overlay';
+    overlay.id = 'imageModal';
+    overlay.onclick = (e) => {
+        if (e.target === overlay) closeImageModal();
+    };
+
+    const img = document.createElement('img');
+    img.src = src;
+    img.onclick = (e) => e.stopPropagation();
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'image-modal-close';
+    closeBtn.innerHTML = '✕';
+    closeBtn.onclick = (e) => { e.stopPropagation(); closeImageModal(); };
+
+    const info = document.createElement('div');
+    info.className = 'image-modal-info';
+    info.textContent = caption || '';
+
+    overlay.appendChild(img);
+    overlay.appendChild(closeBtn);
+    overlay.appendChild(info);
+    document.body.appendChild(overlay);
+
+    // ESC to close
+    document.addEventListener('keydown', function _escHandler(e) {
+        if (e.key === 'Escape') {
+            closeImageModal();
+            document.removeEventListener('keydown', _escHandler);
+        }
+    });
+}
+
+/** Close the image modal. */
+function closeImageModal() {
+    const modal = document.getElementById('imageModal');
+    if (modal) modal.remove();
+}
+
 function renderMarkdown(text) {
     if (!text) return '';
     try {
@@ -6273,6 +8394,12 @@ function renderMarkdown(text) {
 /******** CHAT ********/
 function addChat(type, msg, save = true) {
     const container = document.getElementById('chatMessages');
+
+    // Handle image messages (from session restore or direct call)
+    if (type === 'bot-image') {
+        addChatImage(msg, '', '');
+        return;
+    }
 
     if (type === 'system' || type === 'error') {
         const div = document.createElement('div');
@@ -6574,7 +8701,7 @@ function insertSlashCommand(cmd) {
 function executeSlashCommand(cmd, args) {
     switch (cmd) {
         case '/help':
-            sendChatMessage('/help - 请详细介绍BrachyBot的所有功能、使用方法、支持的肿瘤类型、工作流程和快捷命令。用用户能理解的语言回答。');
+            sendChatMessage('/help - 请详细介绍BrachyBot的所有功能、使用方法、支持的肿瘤类型、工作流程和快捷命令。请截图并标注每个主要UI区域（Viewer、Data Tree、Planning面板等），用图文并茂的方式讲解。用用户能理解的语言回答。');
             break;
         case '/plan':
             sendChatMessage('Start treatment planning for the loaded CT image');
@@ -6926,6 +9053,22 @@ async function sendChat() {
                                         executeUIActions(actions);
                                     }
                                 }
+                                // Execute screenshot command from ui_screenshot tool
+                                if (data.tool === 'ui_screenshot' && data.status === 'done' && data.metadata) {
+                                    const cmd = data.metadata.screenshot_command;
+                                    if (cmd && cmd.command === 'screenshot') {
+                                        // Run async screenshot capture
+                                        executeScreenshotCommand(cmd);
+                                    }
+                                }
+                                // Display annotated image from ui_annotate tool
+                                if (data.tool === 'ui_annotate' && data.status === 'done' && data.metadata) {
+                                    const annotatedUrl = data.metadata.annotated_url;
+                                    if (annotatedUrl) {
+                                        const annCount = data.metadata.annotation_count || 0;
+                                        addChatImage(annotatedUrl, `标注图 (${annCount}个标记)`, '');
+                                    }
+                                }
                             }
 
                             scrollToBottom();
@@ -7054,12 +9197,26 @@ async function sendChat() {
             }
         }
 
+        // Auto-refresh planning UI after planning tools complete
+        if (steps && steps.length > 0) {
+            const planningToolNames = ['planning_pipeline', 'seed_planning', 'trajectory_planning', 'dose_engine', 'dose_evaluation'];
+            const hasPlanningTool = steps.some(s => s.type === 'tool' && s.status === 'done' && planningToolNames.some(t => (s.tool || '').toLowerCase().includes(t)));
+            if (hasPlanningTool) {
+                setTimeout(async () => {
+                    await refreshPlanningUI();
+                    // Switch to metrics tab to show planning results
+                    const metricsTab = document.querySelectorAll('.panel-tab')[1];
+                    if (metricsTab) switchPanel('metrics', metricsTab);
+                }, 500);
+            }
+        }
+
         // Sync viewer state after LLM response (in case LLM changed viewer settings via API)
         setTimeout(() => syncViewerState(), 300);
 
         // Capture analysis results ONLY when analysis/segmentation tools were actually executed
         if (steps && steps.length > 0) {
-            const analysisToolNames = ['ctv_segmentation', 'oar_segmentation', 'ui_inspector', 'dose_engine', 'dose_evaluation', 'seed_planning'];
+            const analysisToolNames = ['ctv_segmentation', 'oar_segmentation', 'ui_inspector', 'dose_engine', 'dose_evaluation', 'seed_planning', 'planning_pipeline', 'trajectory_planning'];
             const hasAnalysisTool = steps.some(s => s.type === 'tool' && s.status === 'done' && analysisToolNames.some(t => (s.tool || '').toLowerCase().includes(t)));
             if (hasAnalysisTool) {
                 captureAnalysis(finalResponse || responseText || '', steps);
@@ -7542,32 +9699,59 @@ function toggleHyperparams() {
 
 function collectHyperparams() {
     return {
+        mode: document.getElementById('planMode')?.value || 'rule_based',
         seed_info: {
             radius: parseFloat(document.getElementById('seedRadius')?.value) || 0.4,
-            length: parseFloat(document.getElementById('seedLength')?.value) || 3.7,
-            margin_rate: parseFloat(document.getElementById('seedMarginRate')?.value) || 1.5,
+            length: parseFloat(document.getElementById('seedLength')?.value) || 4.5,
+            margin_rate: parseFloat(document.getElementById('seedMarginRate')?.value) || 1.0,
             num_of_seeds: [
-                parseInt(document.getElementById('seedCountMin')?.value) || 1,
+                parseInt(document.getElementById('seedCountMin')?.value) || 5,
                 parseInt(document.getElementById('seedCountMax')?.value) || 200,
             ],
             seed_avr_dose: parseFloat(document.getElementById('seedAvgDose')?.value) || 50,
         },
         radiation_array_params: {
-            target_value: parseInt(document.getElementById('targetValue')?.value) || 1,
-            obstacle_value: parseInt(document.getElementById('obstacleValue')?.value) || 2,
+            target_value: parseInt(document.getElementById('targetValue')?.value) || 2,
+            obstacle_value: parseInt(document.getElementById('obstacleValue')?.value) || 3,
             background_value: parseInt(document.getElementById('backgroundValue')?.value) || 0,
             backlit_angle: parseFloat(document.getElementById('backlitAngle')?.value) || 0.5,
-            maximum_candidate_trajectories: parseInt(document.getElementById('maxCandiTraj')?.value) || 200,
+            maximum_candidate_trajectories: parseInt(document.getElementById('maxCandiTraj')?.value) || 500,
+            infer_img_size: [
+                parseInt(document.getElementById('inferSizeX')?.value) || 32,
+                parseInt(document.getElementById('inferSizeY')?.value) || 32,
+                parseInt(document.getElementById('inferSizeZ')?.value) || 32,
+            ],
+        },
+        distance_filter: {
+            lower_bound: parseFloat(document.getElementById('distLowerBound')?.value) || 0.8,
+            upper_bound: parseFloat(document.getElementById('distUpperBound')?.value) || 10,
+            distance_rate: parseFloat(document.getElementById('distRate')?.value) || 0.8,
+            interval_rate: parseFloat(document.getElementById('intervalRate')?.value) || 2,
         },
         reference_direc: [
             parseInt(document.getElementById('refDirecX')?.value) || 0,
             parseInt(document.getElementById('refDirecY')?.value) || 1,
             parseInt(document.getElementById('refDirecZ')?.value) || 0,
         ],
+        direc_resolution: [
+            parseInt(document.getElementById('direcResCone')?.value) || 30,
+            parseInt(document.getElementById('direcResStep')?.value) || 3,
+            parseInt(document.getElementById('direcResRings')?.value) || 2,
+        ],
         in_lowest_energy: parseInt(document.getElementById('inLowestEnergy')?.value) || 1,
         out_highest_energy: parseInt(document.getElementById('outHighestEnergy')?.value) || 1,
         DVH_rate: parseFloat(document.getElementById('dvhRate')?.value) || 0.9,
         max_iter: parseInt(document.getElementById('maxIter')?.value) || 4,
+        iter_rate: parseFloat(document.getElementById('iterRate')?.value) || 2,
+        replan_rate: parseFloat(document.getElementById('replanRate')?.value) || 0.6,
+        dl_params: {
+            lr: parseFloat(document.getElementById('dlLR')?.value) || 0.0004,
+            lr_decay: parseFloat(document.getElementById('dlLRDecay')?.value) || 1.5,
+            epochs: parseInt(document.getElementById('dlEpochs')?.value) || 1000,
+            patience: parseInt(document.getElementById('dlPatience')?.value) || 200,
+            search_region: parseFloat(document.getElementById('dlSearchRegion')?.value) || 0.5,
+            DVH_margin: parseFloat(document.getElementById('dlDVHMargin')?.value) || 0.05,
+        },
         rf_params: {
             max_episodes: parseInt(document.getElementById('rfMaxEpisodes')?.value) || 100,
             bandwidth: parseInt(document.getElementById('rfBandwidth')?.value) || 50,
@@ -8073,6 +10257,23 @@ function executeUIActions(actions) {
             if (actions && actions.length > 0) {
                 console.log('[UI Controller] Executing', actions.length, 'actions');
                 executeUIActions(actions);
+            }
+        }
+        // Handle screenshot tool results
+        if (step && step.tool === 'ui_screenshot' && step.status === 'done' && step.metadata) {
+            const cmd = step.metadata.screenshot_command;
+            if (cmd && cmd.command === 'screenshot') {
+                console.log('[UI Screenshot] Capturing:', cmd.target);
+                executeScreenshotCommand(cmd);
+            }
+        }
+        // Handle annotate tool results
+        if (step && step.tool === 'ui_annotate' && step.status === 'done' && step.metadata) {
+            const annotatedUrl = step.metadata.annotated_url;
+            if (annotatedUrl) {
+                console.log('[UI Annotate] Displaying:', annotatedUrl);
+                const annCount = step.metadata.annotation_count || 0;
+                addChatImage(annotatedUrl, `标注图 (${annCount}个标记)`, '');
             }
         }
         if (origHandleStep) origHandleStep(step);
