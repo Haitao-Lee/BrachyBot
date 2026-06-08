@@ -259,36 +259,41 @@ def create_app(config: Optional[Dict] = None):
     @app.route("/api/upload", methods=["POST"])
     def api_upload():
         """Upload a file to the server and return the server-side path."""
-        if "file" not in request.files:
-            return jsonify({"error": "No file provided"}), 400
+        try:
+            if "file" not in request.files:
+                return jsonify({"error": "No file provided"}), 400
 
-        file = request.files["file"]
-        if file.filename == "":
-            return jsonify({"error": "No file selected"}), 400
+            file = request.files["file"]
+            if file.filename == "":
+                return jsonify({"error": "No file selected"}), 400
 
-        upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")
-        os.makedirs(upload_dir, exist_ok=True)
+            upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")
+            os.makedirs(upload_dir, exist_ok=True)
 
-        # Sanitize filename
-        filename = "".join(c for c in file.filename if c.isalnum() or c in "._- ")
-        if not filename:
-            filename = "uploaded_file"
+            # Sanitize filename
+            filename = "".join(c for c in file.filename if c.isalnum() or c in "._- ")
+            if not filename:
+                filename = "uploaded_file"
 
-        # Avoid overwriting: add timestamp
-        base, ext = os.path.splitext(filename)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_name = f"{base}_{timestamp}{ext}"
-        save_path = os.path.join(upload_dir, save_name)
+            # Avoid overwriting: add timestamp
+            base, ext = os.path.splitext(filename)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_name = f"{base}_{timestamp}{ext}"
+            save_path = os.path.join(upload_dir, save_name)
 
-        file.save(save_path)
-        abs_path = os.path.abspath(save_path)
+            file.save(save_path)
+            abs_path = os.path.abspath(save_path)
 
-        return jsonify({
-            "success": True,
-            "path": abs_path,
-            "filename": save_name,
-            "size": os.path.getsize(abs_path),
-        })
+            return jsonify({
+                "success": True,
+                "path": abs_path,
+                "filename": save_name,
+                "size": os.path.getsize(abs_path),
+            })
+        except Exception as e:
+            import traceback
+            logger.error(f"Upload error: {e}\n{traceback.format_exc()}")
+            return jsonify({"error": str(e)}), 500
 
     @app.route("/api/viewer/image", methods=["GET"])
     def api_viewer_image():
@@ -338,6 +343,8 @@ def create_app(config: Optional[Dict] = None):
             
             ct_data = sitk.GetArrayFromImage(ct_oriented)  # Shape: (Z, Y, X) in LPI orientation
             spacing = ct_oriented.GetSpacing()  # (X, Y, Z)
+            origin = ct_oriented.GetOrigin()  # (X, Y, Z)
+            direction = ct_oriented.GetDirection()  # 9-element tuple
             shape = ct_data.shape
             logger.info(f"CT shape after orientation (ZYX): {shape}, spacing (XYZ): {spacing}")
 
@@ -346,6 +353,8 @@ def create_app(config: Optional[Dict] = None):
             agent.memory.store("ct_image_raw", ct_sitk)  # Pre-orientation, for label alignment
             agent.memory.store("ct_data", ct_data)
             agent.memory.store("ct_spacing", spacing)
+            agent.memory.store("ct_origin", origin)
+            agent.memory.store("ct_direction", direction)
             agent.memory.store("ct_shape", list(shape))
             agent.memory.store("ct_window_center", window_center)
             agent.memory.store("ct_window_width", window_width)
@@ -521,10 +530,38 @@ def create_app(config: Optional[Dict] = None):
 
             shape = ct_data.shape  # (Z, Y, X)
 
+            # Ensure label arrays have same shape as CT
+            if ctv_array is not None and ctv_array.shape != shape:
+                logger.warning(f"CTV shape mismatch: {ctv_array.shape} vs CT {shape}, resampling...")
+                import SimpleITK as sitk
+                ctv_sitk = sitk.GetImageFromArray(ctv_array.astype(np.uint8))
+                ct_ref = agent.memory.retrieve("ct_image")
+                if ct_ref is not None:
+                    resampler = sitk.ResampleImageFilter()
+                    resampler.SetReferenceImage(ct_ref)
+                    resampler.SetInterpolator(sitk.sitkNearestNeighbor)
+                    resampler.SetDefaultPixelValue(0)
+                    ctv_array = sitk.GetArrayFromImage(resampler.Execute(ctv_sitk))
+
+            if oar_array is not None and oar_array.shape != shape:
+                logger.warning(f"OAR shape mismatch: {oar_array.shape} vs CT {shape}, resampling...")
+                import SimpleITK as sitk
+                oar_sitk = sitk.GetImageFromArray(oar_array.astype(np.uint8))
+                ct_ref = agent.memory.retrieve("ct_image")
+                if ct_ref is not None:
+                    resampler = sitk.ResampleImageFilter()
+                    resampler.SetReferenceImage(ct_ref)
+                    resampler.SetInterpolator(sitk.sitkNearestNeighbor)
+                    resampler.SetDefaultPixelValue(0)
+                    oar_array = sitk.GetArrayFromImage(resampler.Execute(oar_sitk))
+
             # Build color LUT for all labels
             color_lut = {}
             if ctv_array is not None:
-                color_lut[1] = [255, 50, 50]  # CTV: fixed red
+                # Add all CTV labels with distinct colors
+                for lid in np.unique(ctv_array):
+                    if lid > 0:
+                        color_lut[int(lid)] = list(_label_color(int(lid)))
             if oar_array is not None:
                 for lid in np.unique(oar_array):
                     if lid > 0:
@@ -554,6 +591,11 @@ def create_app(config: Optional[Dict] = None):
             response.headers['X-Has-OAR'] = 'true' if oar_array is not None else 'false'
             response.headers['X-CTV-Size'] = str(ctv_offset)
             response.headers['X-OAR-Size'] = str(len(payload) - ctv_offset) if oar_array is not None else '0'
+
+            # Send CTV label names from model (not hardcoded in frontend)
+            ctv_label_map = agent.memory.retrieve("ctv_label_map", {})
+            if ctv_label_map:
+                response.headers['X-CTV-Label-Map'] = _json.dumps({str(k): v for k, v in ctv_label_map.items()})
 
             # Also return organ metadata for data tree
             organ_names = agent.memory.retrieve("organ_names", {})
@@ -650,7 +692,12 @@ def create_app(config: Optional[Dict] = None):
 
             if overlay_type == "ctv":
                 alpha = int(ctv_opacity * 255)
-                overlay[mask_slice > 0] = [255, 0, 0, alpha]
+                unique_ctv_labels = np.unique(mask_slice[mask_slice > 0])
+                # Always use per-label colors (consistent with data tree display)
+                for label in unique_ctv_labels:
+                    label_int = int(label)
+                    color = _label_color(label_int)
+                    overlay[mask_slice == label] = [*color, alpha]
             else:
                 # OAR: per-organ colors with visibility/opacity filtering
                 unique_labels = np.unique(mask_slice[mask_slice > 0])
@@ -838,7 +885,7 @@ def create_app(config: Optional[Dict] = None):
         try:
             import numpy as np
             from skimage import measure
-            from scipy.ndimage import binary_closing, binary_fill_holes
+            from scipy.ndimage import binary_closing, binary_fill_holes, binary_dilation
 
             # Get mask data
             if source == "ctv":
@@ -858,22 +905,45 @@ def create_app(config: Optional[Dict] = None):
             if mask.sum() == 0:
                 return jsonify({"error": "Empty mask"}), 400
 
-            # Clean up mask
-            mask = binary_closing(mask, iterations=1).astype(np.uint8)
-            mask = binary_fill_holes(mask).astype(np.uint8)
+            # Adaptive preprocessing based on mask density
+            density = mask.sum() / (mask.shape[0] * mask.shape[1] * mask.shape[2])
+            if density < 0.001:
+                struct = np.ones((3, 3, 3), dtype=np.uint8)
+                mask = binary_dilation(mask, structure=struct, iterations=2)
+                mask = binary_closing(mask, structure=struct, iterations=3)
+                mask = binary_fill_holes(mask).astype(np.uint8)
+            elif density < 0.01:
+                struct = np.ones((3, 3, 3), dtype=np.uint8)
+                mask = binary_dilation(mask, structure=struct, iterations=1)
+                mask = binary_closing(mask, structure=struct, iterations=2)
+                mask = binary_fill_holes(mask).astype(np.uint8)
+            else:
+                mask = binary_closing(mask, iterations=2).astype(np.uint8)
+                mask = binary_fill_holes(mask).astype(np.uint8)
+
+            # Use distance transform for smooth surface
+            from scipy.ndimage import distance_transform_edt
+            dist_out = distance_transform_edt(1 - mask)
+            dist_in = distance_transform_edt(mask)
+            smooth_field = dist_out - dist_in
 
             spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
-            # SimpleITK spacing is (X, Y, Z), numpy array is (Z, Y, X)
-            # marching_cubes expects spacing in array axis order (sz, sy, sx)
             spacing_xyz = tuple(float(s) for s in spacing[:3])
             spacing_zyx = spacing_xyz[::-1]
 
             vertices, faces, normals, values = measure.marching_cubes(
-                mask, level=0.5, spacing=spacing_zyx, allow_degenerate=False
+                smooth_field, level=0.0, spacing=spacing_zyx, allow_degenerate=False
             )
 
-            # Smooth jagged marching-cubes surface
-            vertices = _laplacian_smooth(vertices, faces, iterations=3, factor=0.3)
+            # Smooth mesh
+            vertices = _laplacian_smooth(vertices, faces, iterations=5, factor=0.4)
+
+            # Remove degenerate faces
+            v0 = vertices[faces[:, 0]]
+            v1 = vertices[faces[:, 1]]
+            v2 = vertices[faces[:, 2]]
+            face_areas = 0.5 * np.linalg.norm(np.cross(v1 - v0, v2 - v0), axis=1)
+            faces = faces[face_areas > 1e-10]
 
             return jsonify({
                 "success": True,
@@ -898,7 +968,6 @@ def create_app(config: Optional[Dict] = None):
         data = request.get_json() or {}
         label_id = data.get("label_id")
         source = data.get("source", "oar")  # "oar" or "ctv"
-        smoothing = data.get("smoothing", 1)
 
         if label_id is None:
             return jsonify({"error": "label_id required"}), 400
@@ -906,7 +975,7 @@ def create_app(config: Optional[Dict] = None):
         try:
             import numpy as np
             from skimage import measure
-            from scipy.ndimage import binary_closing, binary_fill_holes
+            from scipy.ndimage import binary_closing, binary_fill_holes, binary_dilation, gaussian_filter
 
             if source == "ctv":
                 mask_data = agent._get_label_array("ctv_array")
@@ -923,12 +992,41 @@ def create_app(config: Optional[Dict] = None):
             if binary_mask.sum() == 0:
                 return jsonify({"error": f"Label {label_id} not found in mask"}), 400
 
-            # Clean up mask
-            binary_mask = binary_closing(binary_mask, iterations=smoothing).astype(np.uint8)
-            binary_mask = binary_fill_holes(binary_mask).astype(np.uint8)
+            # Adaptive preprocessing based on mask density
+            total_voxels = binary_mask.sum()
+            mask_volume = binary_mask.shape[0] * binary_mask.shape[1] * binary_mask.shape[2]
+            density = total_voxels / mask_volume
 
-            # Get spacing from CT data
+            # More aggressive morphological ops for sparse/fragmented masks
+            if density < 0.001:
+                # Very sparse mask (e.g., small vessel): heavy closing + dilation
+                struct = np.ones((3, 3, 3), dtype=np.uint8)
+                binary_mask = binary_dilation(binary_mask, structure=struct, iterations=2)
+                binary_mask = binary_closing(binary_mask, structure=struct, iterations=3)
+                binary_mask = binary_fill_holes(binary_mask).astype(np.uint8)
+                binary_mask = binary_dilation(binary_mask, structure=struct, iterations=1)
+            elif density < 0.01:
+                # Sparse mask (e.g., bile duct, small organ): moderate closing
+                struct = np.ones((3, 3, 3), dtype=np.uint8)
+                binary_mask = binary_dilation(binary_mask, structure=struct, iterations=1)
+                binary_mask = binary_closing(binary_mask, structure=struct, iterations=2)
+                binary_mask = binary_fill_holes(binary_mask).astype(np.uint8)
+            else:
+                # Normal density mask: standard cleanup
+                binary_mask = binary_closing(binary_mask, iterations=2).astype(np.uint8)
+                binary_mask = binary_fill_holes(binary_mask).astype(np.uint8)
+
+            # Gaussian smoothing on distance transform for smoother surface
+            # This creates a continuous scalar field from the binary mask
+            from scipy.ndimage import distance_transform_edt
+            dist_out = distance_transform_edt(1 - binary_mask)
+            dist_in = distance_transform_edt(binary_mask)
+            smooth_field = dist_out - dist_in  # Positive inside, negative outside
+
+            # Get spacing, origin, direction from CT data
             spacing = agent.memory.retrieve("ct_spacing") or (1.0, 1.0, 1.0)
+            origin = agent.memory.retrieve("ct_origin") or (0.0, 0.0, 0.0)
+            direction = agent.memory.retrieve("ct_direction") or (1, 0, 0, 0, 1, 0, 0, 0, 1)
             # SimpleITK spacing is (X, Y, Z), numpy array is (Z, Y, X)
             # marching_cubes expects spacing in array axis order (sz, sy, sx)
             if isinstance(spacing, (list, tuple)) and len(spacing) >= 3:
@@ -936,25 +1034,35 @@ def create_app(config: Optional[Dict] = None):
             else:
                 spacing_zyx = (1.0, 1.0, 1.0)
 
-            # Generate mesh with marching cubes
-            # Ensure level is within data range
-            data_min, data_max = float(binary_mask.min()), float(binary_mask.max())
-            level = 0.5
-            if level <= data_min or level >= data_max:
-                level = (data_min + data_max) / 2.0
-            if data_min == data_max:
-                return jsonify({"error": "Mask is uniform, cannot generate mesh"}), 400
+            # Generate mesh from the smooth distance field (level=0 is the surface)
             vertices, faces, normals, values = measure.marching_cubes(
-                binary_mask, level=level, spacing=spacing_zyx, allow_degenerate=False
+                smooth_field, level=0.0, spacing=spacing_zyx, allow_degenerate=False
             )
 
-            # Smooth jagged marching-cubes surface
-            vertices = _laplacian_smooth(vertices, faces, iterations=3, factor=0.3)
+            # Smooth mesh vertices
+            vertices = _laplacian_smooth(vertices, faces, iterations=5, factor=0.4)
 
-            # Simple decimation: if too many faces, use quadric decimation
+            # Remove degenerate faces (faces with zero area or duplicate vertices)
+            v0 = vertices[faces[:, 0]]
+            v1 = vertices[faces[:, 1]]
+            v2 = vertices[faces[:, 2]]
+            face_areas = 0.5 * np.linalg.norm(np.cross(v1 - v0, v2 - v0), axis=1)
+            valid_faces = face_areas > 1e-10
+            faces = faces[valid_faces]
+
+            # Transform vertices from array coordinates to world coordinates
+            origin_xyz = np.array(origin[:3], dtype=np.float64)
+            direction_matrix = np.array(direction[:9], dtype=np.float64).reshape(3, 3)
+            # vertices are in (z, y, x) order with spacing already applied
+            # Convert to (x, y, z) order for world coordinate transform
+            vertices_xyz = vertices[:, ::-1]  # Reverse to (x, y, z)
+            # Apply direction and origin: world = origin + direction @ point
+            vertices_world = (direction_matrix @ vertices_xyz.T).T + origin_xyz
+            vertices = vertices_world
+
+            # Decimation: use Open3D if available, otherwise skip (no stride-based fallback)
             if len(faces) > 50000:
                 target = min(50000, len(faces))
-                # Use Open3D if available for proper decimation
                 try:
                     import open3d as o3d
                     mesh_o3d = o3d.geometry.TriangleMesh()
@@ -963,10 +1071,9 @@ def create_app(config: Optional[Dict] = None):
                     mesh_o3d = mesh_o3d.simplify_quadric_decimation(target_number_of_triangles=target)
                     vertices = np.asarray(mesh_o3d.vertices)
                     faces = np.asarray(mesh_o3d.triangles)
-                except ImportError:
-                    # Fallback: stride-based decimation
-                    stride = max(1, len(faces) // target)
-                    faces = faces[::stride]
+                except (ImportError, Exception):
+                    # No decimation - keep full mesh (stride-based creates holes)
+                    pass
 
             return jsonify({
                 "success": True,
@@ -1000,6 +1107,8 @@ def create_app(config: Optional[Dict] = None):
             from skimage import measure
 
             spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
+            origin = agent.memory.retrieve("ct_origin") or (0.0, 0.0, 0.0)
+            direction = agent.memory.retrieve("ct_direction") or (1, 0, 0, 0, 1, 0, 0, 0, 1)
             # SimpleITK spacing is (X, Y, Z), numpy array is (Z, Y, X)
             # marching_cubes expects spacing in array axis order (sz, sy, sx)
             spacing_xyz = tuple(float(s) for s in spacing[:3])
@@ -1024,6 +1133,13 @@ def create_app(config: Optional[Dict] = None):
             # Smooth jagged marching-cubes surface
             vertices = _laplacian_smooth(vertices, faces, iterations=2, factor=0.2)
 
+            # Transform vertices from array coordinates to world coordinates
+            origin_xyz = np.array(origin[:3], dtype=np.float64)
+            direction_matrix = np.array(direction[:9], dtype=np.float64).reshape(3, 3)
+            vertices_xyz = vertices[:, ::-1]  # Reverse to (x, y, z)
+            vertices_world = (direction_matrix @ vertices_xyz.T).T + origin_xyz
+            vertices = vertices_world
+
             # Decimate if too many faces
             if len(faces) > 100000:
                 stride = max(1, len(faces) // 100000)
@@ -1041,6 +1157,319 @@ def create_app(config: Optional[Dict] = None):
             logger.error(f"CT skin reconstruction failed: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/planning/seeds_3d", methods=["GET"])
+    def api_planning_seeds_3d():
+        """Get seed positions and directions for 3D visualization."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        try:
+            import numpy as np
+
+            # Get seed plan from memory
+            seed_plan = agent.memory.retrieve("seed_plan")
+            if seed_plan is None:
+                return jsonify({"success": True, "seeds": [], "needles": [], "message": "No seed plan available"})
+
+            spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
+            origin = agent.memory.retrieve("ct_origin") or (0.0, 0.0, 0.0)
+            direction = agent.memory.retrieve("ct_direction") or (1, 0, 0, 0, 1, 0, 0, 0, 1)
+
+            origin_xyz = np.array(origin[:3], dtype=np.float64)
+            direction_matrix = np.array(direction[:9], dtype=np.float64).reshape(3, 3)
+            spacing_xyz = np.array(spacing[:3], dtype=np.float64)
+
+            seeds = []
+            needles = []
+
+            for i, entry in enumerate(seed_plan):
+                if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+                    continue
+
+                trajectory_direc = entry[0] if len(entry) > 0 else None
+                seed_list = entry[1] if len(entry) > 1 else []
+
+                needle_seeds = []
+                for j, seed in enumerate(seed_list):
+                    if not isinstance(seed, (list, tuple)) or len(seed) < 2:
+                        continue
+
+                    pos_array = np.array(seed[0], dtype=np.float64)
+                    direc_array = np.array(seed[1], dtype=np.float64)
+
+                    # Transform to world coordinates
+                    pos_world = (direction_matrix @ (pos_array * spacing_xyz)) + origin_xyz
+                    direc_world = direction_matrix @ direc_array
+                    direc_world = direc_world / (np.linalg.norm(direc_world) + 1e-8)
+
+                    seed_data = {
+                        "id": f"seed_{i}_{j}",
+                        "position": pos_world.tolist(),
+                        "direction": direc_world.tolist(),
+                        "trajectory_id": i,
+                        "seed_index": j,
+                    }
+                    seeds.append(seed_data)
+                    needle_seeds.append(pos_world.tolist())
+
+                # Create needle path (line through seeds on same trajectory)
+                if len(needle_seeds) >= 2:
+                    needles.append({
+                        "id": f"needle_{i}",
+                        "points": needle_seeds,
+                        "trajectory_id": i,
+                    })
+
+            return jsonify({
+                "success": True,
+                "seeds": seeds,
+                "needles": needles,
+                "total_seeds": len(seeds),
+                "total_needles": len(needles),
+            })
+        except Exception as e:
+            logger.error(f"Seed 3D data failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/planning/results", methods=["GET"])
+    def api_planning_results():
+        """Get latest planning results including metrics, seeds, and DVH data for UI updates."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        try:
+            import numpy as np
+
+            # Get data from memory
+            dose_metrics = agent.memory.retrieve("dose_metrics") or {}
+            total_seeds = agent.memory.retrieve("total_seeds") or 0
+            seed_plan = agent.memory.retrieve("seed_plan")
+            dose_distribution = agent.memory.retrieve("dose_distribution")
+
+            # Build seeds list for UI
+            seeds = []
+            if seed_plan:
+                spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
+                origin = agent.memory.retrieve("ct_origin") or (0.0, 0.0, 0.0)
+                direction = agent.memory.retrieve("ct_direction") or (1, 0, 0, 0, 1, 0, 0, 0, 1)
+                origin_xyz = np.array(origin[:3], dtype=np.float64)
+                direction_matrix = np.array(direction[:9], dtype=np.float64).reshape(3, 3)
+                spacing_xyz = np.array(spacing[:3], dtype=np.float64)
+
+                for i, entry in enumerate(seed_plan):
+                    if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+                        continue
+                    seed_list = entry[1] if len(entry) > 1 else []
+                    for j, seed in enumerate(seed_list):
+                        if not isinstance(seed, (list, tuple)) or len(seed) < 2:
+                            continue
+                        pos_array = np.array(seed[0], dtype=np.float64)
+                        pos_world = (direction_matrix @ (pos_array * spacing_xyz)) + origin_xyz
+                        seeds.append({
+                            "pos": pos_world.tolist(),
+                            "dose": float(dose_metrics.get("d90", 0)) if j == 0 else 0,
+                        })
+
+            # Build DVH data
+            dvh_data = dose_metrics.get("dvh_data", {})
+
+            return jsonify({
+                "success": True,
+                "metrics": dose_metrics,
+                "seeds": seeds,
+                "total_seeds": total_seeds,
+                "dvh": dvh_data,
+                "has_dose": dose_distribution is not None,
+            })
+        except Exception as e:
+            logger.error(f"Get planning results failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/planning/show_step", methods=["POST"])
+    def api_planning_show_step():
+        """Show specific planning step results and return data for UI update."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        step = data.get("step", "all")
+
+        try:
+            import numpy as np
+
+            # Get all planning data
+            dose_metrics = agent.memory.retrieve("dose_metrics") or {}
+            total_seeds = agent.memory.retrieve("total_seeds") or 0
+            seed_plan = agent.memory.retrieve("seed_plan")
+            trajectories = agent.memory.retrieve("trajectories") or agent.memory.retrieve("refined_trajectories")
+            dose_distribution = agent.memory.retrieve("dose_distribution")
+
+            result = {"success": True, "step": step}
+
+            if step in ("trajectories", "trajectory_init", "trajectory_refine", "all"):
+                result["trajectories"] = trajectories or []
+                result["num_trajectories"] = len(trajectories) if trajectories else 0
+
+            if step in ("seeds", "seed_planning", "all"):
+                result["seed_plan"] = seed_plan or []
+                result["total_seeds"] = total_seeds
+
+            if step in ("dose", "dose_calc", "dose_distribution", "all"):
+                result["has_dose"] = dose_distribution is not None
+                if dose_distribution is not None:
+                    result["dose_range"] = [float(np.min(dose_distribution)), float(np.max(dose_distribution))]
+
+            if step in ("dvh", "dose_eval", "metrics", "all"):
+                result["metrics"] = dose_metrics
+                result["dvh"] = dose_metrics.get("dvh_data", {})
+
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"Show step results failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/planning/run_step", methods=["POST"])
+    def api_planning_run_step():
+        """Run a specific planning step."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        ct_image_path = data.get("ct_image_path")
+        step = data.get("step", "full")
+
+        if not ct_image_path:
+            return jsonify({"error": "ct_image_path is required"}), 400
+
+        try:
+            # Use planning pipeline tool
+            from tool_factory.seed_plan.planning_pipeline import PlanningPipelineTool
+            tool = PlanningPipelineTool()
+
+            # Get config from agent
+            config = getattr(agent, 'config', {})
+
+            result = tool._execute(
+                ct_image_path=ct_image_path,
+                step=step,
+                mode=config.get("mode", "rule_based"),
+                seed_info=config.get("seed_info"),
+                planning_params={
+                    "in_lowest_energy": config.get("in_lowest_energy"),
+                    "out_highest_energy": config.get("out_highest_energy"),
+                    "DVH_rate": config.get("DVH_rate"),
+                    "iter_rate": config.get("iter_rate"),
+                    "max_iter": config.get("max_iter"),
+                    "direc_resolution": config.get("direc_resolution"),
+                    "image_normalize": config.get("image_normalize", [-1000, 3000, 255]),
+                },
+                dl_params=config.get("dl_params"),
+                rf_params=config.get("rf_params"),
+                ref_direc=config.get("reference_direc"),
+            )
+
+            if result.success:
+                # Store results in memory
+                agent._store_tool_result("planning_pipeline", result)
+                return jsonify({
+                    "success": True,
+                    "step": step,
+                    "message": result.message,
+                    "metadata": result.metadata,
+                })
+            else:
+                return jsonify({"success": False, "error": result.error}), 400
+
+        except Exception as e:
+            logger.error(f"Run planning step failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/planning/dose_isosurface", methods=["POST"])
+    def api_planning_dose_isosurface():
+        """Generate dose isosurface mesh for 3D visualization."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        threshold = data.get("threshold", 1.0)
+
+        try:
+            import numpy as np
+            from skimage import measure
+
+            dose_array = agent.memory.retrieve("dose_distribution")
+            if dose_array is None:
+                return jsonify({"error": "No dose distribution available"}), 400
+
+            spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
+            origin = agent.memory.retrieve("ct_origin") or (0.0, 0.0, 0.0)
+            direction = agent.memory.retrieve("ct_direction") or (1, 0, 0, 0, 1, 0, 0, 0, 1)
+
+            spacing_xyz = tuple(float(s) for s in spacing[:3])
+            spacing_zyx = spacing_xyz[::-1]
+
+            dose_np = np.array(dose_array)
+            if dose_np.ndim != 3:
+                return jsonify({"error": "Invalid dose array dimensions"}), 400
+
+            # Subsample if large
+            if dose_np.shape[0] > 64:
+                step = max(1, dose_np.shape[0] // 64)
+                dose_sub = dose_np[::step, ::step, ::step]
+                sub_spacing = (spacing_zyx[0] * step, spacing_zyx[1] * step, spacing_zyx[2] * step)
+            else:
+                dose_sub = dose_np
+                sub_spacing = spacing_zyx
+
+            level = float(threshold)
+            data_min, data_max = float(dose_sub.min()), float(dose_sub.max())
+            if level <= data_min or level >= data_max:
+                return jsonify({"success": True, "vertices": [], "faces": [], "vertex_count": 0, "face_count": 0, "threshold": threshold})
+
+            vertices, faces, _, _ = measure.marching_cubes(dose_sub, level=level, spacing=sub_spacing, allow_degenerate=False)
+
+            # Transform to world coordinates
+            origin_xyz = np.array(origin[:3], dtype=np.float64)
+            direction_matrix = np.array(direction[:9], dtype=np.float64).reshape(3, 3)
+            vertices_xyz = vertices[:, ::-1]
+            vertices_world = (direction_matrix @ vertices_xyz.T).T + origin_xyz
+
+            # Decimate
+            if len(faces) > 80000:
+                stride = max(1, len(faces) // 80000)
+                faces = faces[::stride]
+
+            return jsonify({
+                "success": True,
+                "vertices": vertices_world.tolist(),
+                "faces": faces.tolist(),
+                "vertex_count": len(vertices_world),
+                "face_count": len(faces),
+                "threshold": threshold,
+                "dose_range": [float(data_min), float(data_max)],
+            })
+        except Exception as e:
+            logger.error(f"Dose isosurface failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/config", methods=["GET"])
+    def api_config_get():
+        """Get default hyperparameters from config file."""
+        try:
+            import json
+            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "default_params.json")
+            with open(config_path, 'r') as f:
+                defaults = json.load(f)
+            return jsonify({"success": True, "defaults": defaults})
+        except Exception as e:
+            logger.error(f"Get config failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/config", methods=["POST"])
     def api_config():
         """Update agent configuration (hyperparameters)."""
@@ -1051,22 +1480,17 @@ def create_app(config: Optional[Dict] = None):
         data = request.get_json() or {}
 
         try:
-            if "seed_info" in data:
-                agent.config["seed_info"] = data["seed_info"]
-            if "radiation_array_params" in data:
-                agent.config["radiation_array_params"] = data["radiation_array_params"]
-            if "reference_direc" in data:
-                agent.config["reference_direc"] = data["reference_direc"]
-            if "in_lowest_energy" in data:
-                agent.config["in_lowest_energy"] = data["in_lowest_energy"]
-            if "out_highest_energy" in data:
-                agent.config["out_highest_energy"] = data["out_highest_energy"]
-            if "DVH_rate" in data:
-                agent.config["DVH_rate"] = data["DVH_rate"]
-            if "max_iter" in data:
-                agent.config["max_iter"] = data["max_iter"]
-            if "rf_params" in data:
-                agent.config["rf_params"] = data["rf_params"]
+            # Store all parameter groups
+            param_keys = [
+                "seed_info", "radiation_array_params", "reference_direc",
+                "in_lowest_energy", "out_highest_energy", "DVH_rate",
+                "max_iter", "rf_params", "distance_filter",
+                "direc_resolution", "dl_params", "iter_rate", "replan_rate",
+                "mode",
+            ]
+            for key in param_keys:
+                if key in data:
+                    agent.config[key] = data[key]
 
             return jsonify({"success": True, "config": agent.config})
         except Exception as e:
@@ -1206,6 +1630,90 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"success": True})
         except Exception as e:
             logger.error(f"Chat abort cleanup failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/export/dicom_rt", methods=["POST"])
+    def api_export_dicom_rt():
+        """Export treatment plan to DICOM-RT format."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        ct_path = data.get("ct_path")
+        output_dir = data.get("output_dir", "./output/dicom_rt")
+
+        try:
+            import os
+            os.makedirs(output_dir, exist_ok=True)
+
+            # Get planning data
+            seed_plan = agent.memory.retrieve("seed_plan")
+            dose_distribution = agent.memory.retrieve("dose_distribution")
+            ct_image = agent.memory.retrieve("ct_image")
+
+            if seed_plan is None:
+                return jsonify({"error": "No plan available. Run planning first."}), 400
+
+            # Export using DicomRTExporterTool
+            from tool_factory.output.dicom_rt_exporter import DicomRTExporterTool
+            tool = DicomRTExporterTool()
+            result = tool._execute(
+                ct_image=ct_image,
+                seed_plan=seed_plan,
+                dose_distribution=dose_distribution,
+                output_dir=output_dir,
+            )
+
+            if result.success:
+                return jsonify({"success": True, "output_dir": output_dir, "message": result.message})
+            else:
+                return jsonify({"success": False, "error": result.error}), 400
+        except Exception as e:
+            logger.error(f"DICOM-RT export failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/export/stl", methods=["POST"])
+    def api_export_stl():
+        """Export seed positions as STL files."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        output_dir = data.get("output_dir", "./output/stl")
+
+        try:
+            import os
+            import numpy as np
+            os.makedirs(output_dir, exist_ok=True)
+
+            seed_plan = agent.memory.retrieve("seed_plan")
+            if seed_plan is None:
+                return jsonify({"error": "No plan available. Run planning first."}), 400
+
+            ct_image = agent.memory.retrieve("ct_image")
+            seed_info = getattr(agent, 'config', {}).get("seed_info", {"length": 4.5, "radius": 0.4})
+
+            # Export seeds as STL using visualizer
+            count = 0
+            for i, entry in enumerate(seed_plan):
+                if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+                    continue
+                seeds = entry[1]
+                for j, seed in enumerate(seeds):
+                    if not isinstance(seed, (list, tuple)) or len(seed) < 2:
+                        continue
+                    # Save position data as numpy (STL requires pyvista/vtk)
+                    pos = np.array(seed[0])
+                    direc = np.array(seed[1])
+                    np.save(os.path.join(output_dir, f"seed_{i}_{j}_pos.npy"), pos)
+                    np.save(os.path.join(output_dir, f"seed_{i}_{j}_dir.npy"), direc)
+                    count += 1
+
+            return jsonify({"success": True, "count": count, "output_dir": output_dir})
+        except Exception as e:
+            logger.error(f"STL export failed: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/chat", methods=["POST"])
@@ -1502,6 +2010,64 @@ def create_app(config: Optional[Dict] = None):
         except Exception as e:
             logger.error(f"Viewer control failed: {e}")
             return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/screenshot", methods=["POST"])
+    def api_screenshot():
+        """Receive a screenshot from the frontend and save it."""
+        data = request.get_json() or {}
+        image_data = data.get("image", "")  # base64 data URL
+        description = data.get("description", "screenshot")
+        target = data.get("target", "unknown")
+
+        if not image_data:
+            return jsonify({"error": "No image data provided"}), 400
+
+        try:
+            import base64
+            import uuid
+
+            # Strip data URL prefix if present
+            if "," in image_data:
+                header, b64 = image_data.split(",", 1)
+            else:
+                b64 = image_data
+
+            img_bytes = base64.b64decode(b64)
+
+            # Save to uploads/screenshots/
+            screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads", "screenshots")
+            screenshots_dir = os.path.normpath(screenshots_dir)
+            os.makedirs(screenshots_dir, exist_ok=True)
+
+            filename = f"screenshot_{uuid.uuid4().hex[:12]}.png"
+            filepath = os.path.join(screenshots_dir, filename)
+
+            with open(filepath, "wb") as f:
+                f.write(img_bytes)
+
+            url = f"/api/screenshots/{filename}"
+            logger.info(f"Screenshot saved: {filepath} ({len(img_bytes)} bytes)")
+
+            return jsonify({
+                "success": True,
+                "url": url,
+                "filename": filename,
+                "description": description,
+                "target": target,
+            })
+        except Exception as e:
+            logger.error(f"Screenshot save failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/screenshots/<filename>")
+    def api_serve_screenshot(filename):
+        """Serve a saved screenshot file."""
+        screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads", "screenshots")
+        screenshots_dir = os.path.normpath(screenshots_dir)
+        filepath = os.path.join(screenshots_dir, filename)
+        if not os.path.exists(filepath):
+            return jsonify({"error": "File not found"}), 404
+        return send_from_directory(screenshots_dir, filename, mimetype="image/png")
 
     @app.route("/api/reset", methods=["POST"])
     @require_api_key

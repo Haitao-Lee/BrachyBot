@@ -211,7 +211,7 @@ class AgentMemory:
         oar = self._ui_state.get("oar_path", "")
         plan_mode = self._ui_state.get("plan_mode", "")
         dev_threshold = self._ui_state.get("dev_threshold", "")
-        
+
         if ct:
             parts.append(f"CT Image loaded: `{ct}`")
         if ctv:
@@ -222,10 +222,33 @@ class AgentMemory:
             parts.append(f"Planning Mode: {plan_mode}")
         if dev_threshold:
             parts.append(f"Deviation Threshold: {dev_threshold} mm")
-        
+
+        # Add CTV segmentation stats if available
+        ctv_label_stats = self.memory.retrieve("ctv_label_stats")
+        if ctv_label_stats:
+            parts.append("\n### CTV Segmentation Results (per-label):")
+            for name, stats in ctv_label_stats.items():
+                parts.append(
+                    f"  - {name}: {stats['volume_cm3']} cm³ "
+                    f"({stats['voxel_count']} voxels), "
+                    f"center=[{', '.join(str(c) for c in stats['centroid_world'])}] mm"
+                )
+
+        # Add OAR organ names if available
+        organ_names = self.memory.retrieve("organ_names")
+        organ_counts = self.memory.retrieve("organ_counts")
+        if organ_names:
+            parts.append(f"\n### OAR Segmentation: {len(organ_names)} organs detected")
+            # Show top 5 largest organs
+            if organ_counts:
+                sorted_organs = sorted(organ_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+                for oid, count in sorted_organs:
+                    name = organ_names.get(oid, organ_names.get(str(oid), f"organ_{oid}"))
+                    parts.append(f"  - {name}: {count} voxels")
+
         if not parts:
             return "No files loaded in the UI yet. The user has not selected any CT/CTV/OAR files."
-        
+
         return "Current UI state:\n" + "\n".join(parts)
     
     def needs_compaction(self, max_messages: int = 12) -> bool:
@@ -422,6 +445,7 @@ class ToolResultPipeline:
     _SEGMENTATION_TOOLS = {"ctv_segmentation", "oar_segmentation", "seed_segmentation"}
     _ANALYSIS_TOOLS = {"code_executor"}
     _UI_TOOLS = {"ui_controller"}
+    _PLANNING_TOOLS = {"planning_pipeline", "seed_planning", "trajectory_planning", "dose_engine", "dose_evaluation"}
 
     @staticmethod
     def format(tool_name: str, result, lang: str = "en") -> str:
@@ -445,6 +469,8 @@ class ToolResultPipeline:
             return ToolResultPipeline._format_analysis(tool_name, result, meta, lang)
         if tool_name in ToolResultPipeline._UI_TOOLS:
             return ToolResultPipeline._format_ui(tool_name, result, meta, lang)
+        if tool_name in ToolResultPipeline._PLANNING_TOOLS:
+            return ToolResultPipeline._format_planning(tool_name, result, meta, lang)
 
         # 3. Use display_message from metadata (legacy support)
         display_msg = meta.get("display_message")
@@ -460,16 +486,30 @@ class ToolResultPipeline:
         if tool_name == "ctv_segmentation":
             vol = meta.get("ctv_volume_mm3", 0)
             vox = meta.get("ctv_voxel_count", 0)
+            label_stats = meta.get("label_stats", {})
             lines = [
                 "## 🎯 CTV Segmentation",
                 "",
                 "| Metric | Value |",
                 "|--------|-------|",
-                f"| Volume | {vol:.1f} mm³ ({vol/1000:.1f} cm³) |",
-                f"| Voxels | {vox:,} |",
-                "",
-                "✅ Results displayed in the Viewer panel.",
+                f"| Total Volume | {vol:.1f} mm³ ({vol/1000:.1f} cm³) |",
+                f"| Total Voxels | {vox:,} |",
             ]
+            if label_stats:
+                lines.append("")
+                lines.append("### Per-Label Statistics:")
+                lines.append("")
+                lines.append("| Label | Volume | Voxels | Center (mm) |")
+                lines.append("|-------|--------|--------|-------------|")
+                for name, stats in label_stats.items():
+                    center = stats.get('centroid_world', [0,0,0])
+                    lines.append(
+                        f"| {name} | {stats['volume_cm3']} cm³ | "
+                        f"{stats['voxel_count']:,} | "
+                        f"({center[0]:.0f}, {center[1]:.0f}, {center[2]:.0f}) |"
+                    )
+            lines.append("")
+            lines.append("✅ Results displayed in the Viewer panel.")
             return "\n".join(lines)
         elif tool_name == "oar_segmentation":
             organ_names = meta.get("organ_names", {})
@@ -530,6 +570,99 @@ class ToolResultPipeline:
         display_msg = meta.get("display_message")
         if display_msg:
             return display_msg
+        return result.message or f"{tool_name} completed."
+
+    @staticmethod
+    def _format_planning(tool_name: str, result, meta: dict, lang: str) -> str:
+        """Format planning tool results."""
+        if tool_name == "planning_pipeline":
+            step = meta.get("step_executed", "full")
+            total_seeds = meta.get("total_seeds", 0)
+            num_traj = meta.get("num_trajectories", 0)
+            metrics = meta.get("dose_metrics", {})
+
+            if step == "full":
+                lines = [
+                    "## 📋 Brachytherapy Planning Complete",
+                    "",
+                    "| Metric | Value |",
+                    "|--------|-------|",
+                    f"| Total Seeds | {total_seeds} |",
+                    f"| Trajectories | {num_traj} |",
+                    f"| V100 | {metrics.get('v100', 0):.1%} |",
+                    f"| D90 | {metrics.get('d90', 0):.2f} Gy |",
+                    f"| Plan Score | {metrics.get('plan_score', 0):.0f}/100 |",
+                    "",
+                    "✅ Seeds, needles, and dose displayed in 3D viewer.",
+                ]
+                return "\n".join(lines)
+            else:
+                return result.message or f"Planning step '{step}' completed."
+
+        elif tool_name == "seed_planning":
+            total = meta.get("total_seeds", 0)
+            num_traj = meta.get("num_trajectories", 0)
+            mode = meta.get("mode", "rule_based")
+            lines = [
+                "## 🎯 Seed Planning",
+                "",
+                "| Metric | Value |",
+                "|--------|-------|",
+                f"| Seeds | {total} |",
+                f"| Trajectories | {num_traj} |",
+                f"| Mode | {mode} |",
+                "",
+                "✅ Results stored for dose calculation.",
+            ]
+            return "\n".join(lines)
+
+        elif tool_name == "trajectory_planning":
+            num = meta.get("num_trajectories", 0)
+            max_depth = meta.get("max_depth_mm", 0)
+            lines = [
+                "## 📍 Trajectory Planning",
+                "",
+                "| Metric | Value |",
+                "|--------|-------|",
+                f"| Candidate Trajectories | {num} |",
+                f"| Max Depth | {max_depth:.1f} mm |",
+                "",
+                "✅ Results stored for seed planning.",
+            ]
+            return "\n".join(lines)
+
+        elif tool_name == "dose_engine":
+            max_dose = meta.get("max_dose", 0)
+            mean_dose = meta.get("mean_dose", 0)
+            num_seeds = meta.get("num_seeds", 0)
+            engine = meta.get("engine", "gaussian")
+            lines = [
+                "## 💊 Dose Calculation",
+                "",
+                "| Metric | Value |",
+                "|--------|-------|",
+                f"| Max Dose | {max_dose:.2f} Gy |",
+                f"| Mean Dose | {mean_dose:.2f} Gy |",
+                f"| Seeds | {num_seeds} |",
+                f"| Engine | {engine} |",
+            ]
+            return "\n".join(lines)
+
+        elif tool_name == "dose_evaluation":
+            v100 = meta.get("v100", 0)
+            d90 = meta.get("d90", 0)
+            score = meta.get("plan_score", 0)
+            lines = [
+                "## 📊 Dose Evaluation",
+                "",
+                "| Metric | Value |",
+                "|--------|-------|",
+                f"| V100 | {v100:.1%} |",
+                f"| D90 | {d90:.2f} Gy |",
+                f"| Plan Score | {score:.0f}/100 |",
+            ]
+            return "\n".join(lines)
+
         return result.message or f"{tool_name} completed."
 
     @staticmethod
@@ -635,24 +768,24 @@ class ToolResultPipeline:
         if search_failed:
             anti_halluc = (
                 "CRITICAL: Web search FAILED (network error). "
-                "You may use your own knowledge to help, but you MUST prefix any such content with '[From AI knowledge, not verified by search]'. "
+                "You may use your own knowledge to help, but you MUST add '(personal inference)' or '(I think)' at the end. "
                 "Suggest the user retry or provide the information directly."
             ) if lang != "zh" else (
                 "严重警告：网络搜索失败（网络错误）。"
-                "你可以用自己的知识补充，但必须在相关内容前标注'[来自AI知识，未经搜索验证]'。"
+                "你可以用自己的知识补充，但必须在相关内容后加'（个人推断）'或'（我认为）'。"
                 "建议用户重试或直接提供信息。"
             )
         else:
             anti_halluc = (
                 "IMPORTANT: Clearly distinguish information sources in your response:\n"
                 "- Information FROM search results: state normally\n"
-                "- Information from your OWN KNOWLEDGE (not in search results): add a brief note like '(based on AI knowledge)' at the end of the sentence\n"
+                "- Information from your OWN KNOWLEDGE (not in search results): add '(personal inference)' or '(I think)' at the end\n"
                 "If results are insufficient, you may supplement with your knowledge but MUST label it. "
                 "Never present unverified information as if it came from search results."
             ) if lang != "zh" else (
                 "重要规则：回复中必须区分信息来源：\n"
                 "- 来自搜索结果的信息：正常陈述\n"
-                "- 来自你自身知识（搜索结果中没有的）：在句末加简短标注如'（基于AI知识）'\n"
+                "- 来自你自身知识（搜索结果中没有的）：在句末加'（个人推断）'或'（我认为）'\n"
                 "如果搜索结果不足，可以用自身知识补充，但必须标注来源。"
                 "绝对不要把未经验证的信息当作搜索结果来呈现。"
             )
@@ -665,14 +798,11 @@ class ToolResultPipeline:
                 "请基于结果生成一个连贯的中文回复。要求：\n"
                 "1. **全部用中文回复**——包括搜索结果的摘要、文献介绍、所有内容必须翻译成中文\n"
                 "2. 先用一句话说明做了什么（如：已完成CT分析、CTV分割和OAR分割）\n"
-                "3. 总结各工具的关键结果\n"
+                "3. **所有适合结构化的数据必须用表格或列表展示**（如：图像参数、分割结果、器官列表、剂量指标等）\n"
                 "4. 对关键数据给出简要解读\n"
                 f"5. **信息溯源**: {source_rule}\n"
                 "6. 如有异常（如分割体积为0），明确指出并建议\n"
-                "7. 不要重复原始表格，用自然语言概括\n"
-                "8. **在回复最末尾，以'---'分隔，添加'📎 参考来源'部分：**\n"
-                "   - 搜索结果有URL的：直接列出链接\n"
-                "   - 无URL的AI知识：简要标注即可，不要逐条罗列\n\n"
+                "7. 引用搜索结果时，将URL自然嵌入正文（如：[文献名](URL)），不要单独列出\n\n"
                 f"工具执行结果：\n" + "\n\n".join(tool_summary)
                 + (f"\n\n可用来源URL：\n{sources_text}" if sources_text else "")
             )
@@ -684,14 +814,13 @@ class ToolResultPipeline:
                 "Requirements:\n"
                 "1. **Respond entirely in English** — translate any non-English content\n"
                 "2. Summarize what was done and the results of each tool\n"
-                "3. Briefly interpret key data points\n"
-                f"4. **Source attribution**: {source_rule}\n"
-                "5. Note any anomalies (e.g., zero volume) and suggest next steps\n"
-                "6. Don't repeat raw tables — summarize in natural language\n"
-                "7. **At the end, add a '📎 Sources' section, split into two tiers:**\n"
-                "   - '✅ Verified (from search results)' with URL links\n"
-                "   - '⚠️ Unverified (from AI knowledge)' marked as [AI knowledge]\n\n"
+                "3. **All structured data must be presented in tables or lists** (e.g., image parameters, segmentation results, organ lists, dose metrics)\n"
+                "4. Briefly interpret key data points\n"
+                f"5. **Source attribution**: {source_rule}\n"
+                "6. Note any anomalies (e.g., zero volume) and suggest next steps\n"
+                "7. When citing search results, embed URLs naturally in text (e.g., [title](URL)), don't list them separately\n\n"
                 "Tool results:\n" + "\n\n".join(tool_summary)
+                + (f"\n\nAvailable source URLs:\n{sources_text}" if sources_text else "")
             )
 
         try:
@@ -995,6 +1124,18 @@ class BrachyAgent:
         except ImportError as e:
             logger.warning(f"UIControllerTool not available: {e}")
 
+        try:
+            from tool_factory.ui_screenshot import UIScreenshotTool
+            self.registry.register(UIScreenshotTool())
+        except ImportError as e:
+            logger.warning(f"UIScreenshotTool not available: {e}")
+
+        try:
+            from tool_factory.ui_annotate import UIAnnotateTool
+            self.registry.register(UIAnnotateTool())
+        except ImportError as e:
+            logger.warning(f"UIAnnotateTool not available: {e}")
+
         self.registry.register(CTVSegmentationTool())
         self.registry.register(OARSegmentationTool())
         self.registry.register(DoseEngineTool())
@@ -1002,6 +1143,13 @@ class BrachyAgent:
         self.registry.register(SeedPlanningTool())
         self.registry.register(SeedSegmentationTool())
         self.registry.register(TrajectoryPlanningTool())
+
+        # Planning pipeline (unified workflow)
+        try:
+            from tool_factory.seed_plan.planning_pipeline import PlanningPipelineTool
+            self.registry.register(PlanningPipelineTool())
+        except ImportError as e:
+            logger.warning(f"PlanningPipelineTool not available: {e}")
 
         # Advanced tools: knowledge, memory, safety, reporting
         try:
@@ -1157,6 +1305,10 @@ class BrachyAgent:
                 self.memory.store("ctv_array", result.metadata["ctv_array"])
                 if "ctv_mask" in result.metadata:
                     self.memory.store("ctv_mask", result.metadata["ctv_mask"])
+                if "label_stats" in result.metadata:
+                    self.memory.store("ctv_label_stats", result.metadata["label_stats"])
+                if "label_map" in result.metadata:
+                    self.memory.store("ctv_label_map", result.metadata["label_map"])
             elif tool_name == "oar_segmentation":
                 logger.info(f"OAR segmentation result: oar_array={'oar_array' in result.metadata}, organ_names={'organ_names' in result.metadata}")
                 if "oar_array" in result.metadata:
@@ -1322,6 +1474,10 @@ class BrachyAgent:
                 self._store_label_with_metadata(meta["ctv_array"], ct_image, "ctv_array")
             else:
                 self.memory.store("ctv_array", meta["ctv_array"])
+            if "label_stats" in meta:
+                self.memory.store("ctv_label_stats", meta["label_stats"])
+            if "label_map" in meta:
+                self.memory.store("ctv_label_map", meta["label_map"])
         elif tool_name == "oar_segmentation":
             if "oar_array" in meta:
                 if ct_image is not None:
@@ -1334,6 +1490,25 @@ class BrachyAgent:
                 self.memory.store("organ_counts", meta["organ_counts"])
         elif tool_name == "dose_engine" and result.data is not None:
             self.memory.store("dose_distribution", result.data)
+        elif tool_name == "planning_pipeline":
+            # Store all planning results
+            if "seed_plan" in meta:
+                self.memory.store("seed_plan", meta["seed_plan"])
+            if "trajectories" in meta:
+                self.memory.store("trajectories", meta["trajectories"])
+            if "dose_distribution" in meta and meta["dose_distribution"] is not None:
+                self.memory.store("dose_distribution", meta["dose_distribution"])
+            if "dose_metrics" in meta:
+                self.memory.store("dose_metrics", meta["dose_metrics"])
+            if "total_seeds" in meta:
+                self.memory.store("total_seeds", meta["total_seeds"])
+        elif tool_name == "seed_planning":
+            if "optimal_plan" in meta:
+                self.memory.store("seed_plan", meta["optimal_plan"])
+            if "dose_distribution" in meta:
+                self.memory.store("dose_distribution", meta["dose_distribution"])
+        elif tool_name == "trajectory_planning" and "trajectories" in meta:
+            self.memory.store("trajectories", meta["trajectories"])
 
     @staticmethod
     def _format_tool_result(tool_name: str, result, lang: str = "en") -> str:
@@ -1384,6 +1559,11 @@ print(json.dumps(result))
             (r'(oar|危及器官|器官).{0,5}(分割|segment)', 'segment_oar'),
             (r'(分割|segment).{0,5}(oar|危及器官|器官)', 'segment_oar'),
             (r'(剂量|dose|计算剂量)', 'dose'),
+            (r'(规划|计划|plan|planning).{0,5}(粒子|种子|seed)', 'plan_seeds'),
+            (r'(粒子|种子|seed).{0,5}(规划|计划|plan|planning)', 'plan_seeds'),
+            (r'(穿刺|针|needle|trajectory).{0,5}(规划|计划|plan)', 'plan_trajectory'),
+            (r'(完整|完整|全部|full).{0,5}(规划|计划|plan)', 'plan_full'),
+            (r'(一键|自动|auto).{0,5}(规划|计划|plan)', 'plan_full'),
             (r'(切换|switch).{0,10}(viewer|查看|浏览|视图)', 'ui:panel:viewers'),
             (r'(切换|switch).{0,10}(input|输入)', 'ui:panel:input'),
             (r'(切换|switch).{0,10}(metrics|指标)', 'ui:panel:metrics'),
@@ -1454,6 +1634,15 @@ print(json.dumps(result))
                 tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": {"image_path": ct_path}})
             elif action == 'dose' and ct_path:
                 tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
+            elif action == 'plan_seeds' and ct_path:
+                tools.append({"id": "tool_direct_plan_seeds", "tool": "planning_pipeline",
+                              "params": {"ct_image_path": ct_path, "step": "seed_planning"}})
+            elif action == 'plan_trajectory' and ct_path:
+                tools.append({"id": "tool_direct_plan_traj", "tool": "planning_pipeline",
+                              "params": {"ct_image_path": ct_path, "step": "trajectory_init"}})
+            elif action == 'plan_full' and ct_path:
+                tools.append({"id": "tool_direct_plan_full", "tool": "planning_pipeline",
+                              "params": {"ct_image_path": ct_path, "step": "full"}})
 
         return tools or None
 
@@ -1936,7 +2125,9 @@ print(json.dumps(result))
         # CRITICAL: Add the current user message if not already in history
         # This ensures the LLM always has the current query to respond to
         if not messages or messages[-1].get("content") != message:
-            messages.append({"role": "user", "content": message})
+            # Check if message contains screenshot URL for multimodal content
+            user_content = self._build_multimodal_content(message)
+            messages.append({"role": "user", "content": user_content})
 
         # Direct tool execution for explicit tool requests
         _direct_tool_calls = self._detect_tool_request(message)
@@ -2283,6 +2474,65 @@ print(json.dumps(result))
             "llm_calls": llm_calls,
         }
 
+    @staticmethod
+    def _build_multimodal_content(message: str):
+        """Build multimodal content array if message contains screenshot URLs.
+
+        OpenAI-compatible APIs support multimodal content:
+        content = [
+            {"type": "text", "text": "..."},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
+        ]
+
+        If no screenshot URL is found, returns the plain string message.
+        The image is read from disk and encoded as base64 data URL so the LLM API
+        can access it without needing to reach the local server.
+        """
+        import base64
+
+        # Detect screenshot URLs in message
+        screenshot_pattern = r'\[Screenshot captured:\s*(/api/screenshots/[^\]]+)\]'
+        match = re.search(screenshot_pattern, message)
+
+        if not match:
+            return message  # Plain text, no multimodal needed
+
+        screenshot_url = match.group(1)
+        filename = screenshot_url.split("/")[-1]
+
+        # Read image from disk and encode as base64
+        screenshots_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "uploads", "screenshots"
+        )
+        image_path = os.path.join(screenshots_dir, filename)
+
+        image_data_url = None
+        if os.path.exists(image_path):
+            try:
+                with open(image_path, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode()
+                image_data_url = f"data:image/png;base64,{b64}"
+                logger.info(f"Encoded screenshot as base64: {filename} ({len(b64)} chars)")
+            except Exception as e:
+                logger.warning(f"Failed to read screenshot for multimodal: {e}")
+
+        if not image_data_url:
+            # Fallback: use URL (may not work with remote LLM providers)
+            image_data_url = screenshot_url
+            logger.warning(f"Screenshot file not found, using URL: {screenshot_url}")
+
+        # Extract the question/description from the message
+        text_parts = re.sub(screenshot_pattern, '', message).strip()
+
+        # Build multimodal content
+        content = [
+            {"type": "text", "text": text_parts or "Please analyze this screenshot."},
+            {"type": "image_url", "image_url": {"url": image_data_url}},
+        ]
+
+        logger.info(f"Built multimodal content with screenshot: {filename}")
+        return content
+
     def _clean_response_text(self, content: str) -> str:
         """Remove tool call blocks from LLM response, keep only user-facing text."""
         # Strip internal context labels that LLM might echo back
@@ -2545,7 +2795,9 @@ print(json.dumps(result))
         # CRITICAL: Add the current user message if not already in history
         # This ensures the LLM always has the current query to respond to
         if not messages or messages[-1].get("content") != message:
-            messages.append({"role": "user", "content": message})
+            # Check if message contains screenshot URL for multimodal content
+            user_content = self._build_multimodal_content(message)
+            messages.append({"role": "user", "content": user_content})
 
         # Force web search for real-time queries (weather, time, news, sports, etc.)
         # Uses direct Bing/Baidu search instead of PubMed-based general search
@@ -2667,7 +2919,8 @@ print(json.dumps(result))
                     _allowed_without_ct = {
                         "report_generator", "clinical_kb", "doc_reader", "case_memory",
                         "tool_creator", "env_manager", "shell_executor", "code_executor",
-                        "ui_inspector", "filesystem_browser", "safety_validator",
+                        "ui_inspector", "ui_controller", "ui_screenshot", "ui_annotate",
+                        "filesystem_browser", "safety_validator",
                         "plan_comparator", "performance_tracker", "dicom_rt_exporter",
                         "web_search", "web_fetch"  # Allow web tools (no CT dependency)
                     }
@@ -3652,6 +3905,10 @@ print(json.dumps(result))
         if result.success:
             self.memory.store("ctv_array", result.metadata["ctv_array"])
             self.memory.store("ctv_mask", result.metadata.get("ctv_mask"))
+            if "label_stats" in result.metadata:
+                self.memory.store("ctv_label_stats", result.metadata["label_stats"])
+            if "label_map" in result.metadata:
+                self.memory.store("ctv_label_map", result.metadata["label_map"])
             return result.message
         return f"CTV segmentation failed: {result.error}"
     

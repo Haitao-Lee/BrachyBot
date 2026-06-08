@@ -9,12 +9,14 @@ from tool_factory import BaseTool, ToolResult
 from .seed_planning import SeedPlanningTool
 from .seed_planning_rule_based import RuleBasedSeedPlanningTool
 from .seed_planning_rl import RLSeedPlanningTool
+from .planning_pipeline import PlanningPipelineTool
 
 
 TOOL_REGISTRY = {
     "seed_planning": SeedPlanningTool,
     "seed_planning_rule_based": RuleBasedSeedPlanningTool,
     "seed_planning_rl": RLSeedPlanningTool,
+    "planning_pipeline": PlanningPipelineTool,
 }
 
 
@@ -37,6 +39,7 @@ __all__ = [
     "SeedPlanningTool",
     "RuleBasedSeedPlanningTool",
     "RLSeedPlanningTool",
+    "PlanningPipelineTool",
     "get_tool",
     "list_tools",
 ]

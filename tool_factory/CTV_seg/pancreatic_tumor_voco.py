@@ -2,7 +2,9 @@
 VoCo Pancreatic Tumor Segmentation
 ===================================
 Pancreatic tumor segmentation using VoCo pre-trained SwinUNETR.
-Fine-tuned on PANORAMA dataset (7 classes: pancreas, duct, bile_duct, tumor, arteries, veins).
+Fine-tuned on PANORAMA dataset (7 classes).
+Label mapping per PANORAMA challenge definition:
+  0=background, 1=pancreas, 2=tumor(PDAC), 3=artery, 4=vein, 5=bile_duct, 6=pancreatic_duct
 """
 
 import os
@@ -25,9 +27,9 @@ class VoCoPancreaticTumorTool(VoCoSegmentationBase):
     LABEL_MAP = {
         0: ("background", False),
         1: ("pancreas", False),
-        2: ("pancreatic_duct", False),
-        3: ("bile_duct", False),
-        4: ("tumor", True),
-        5: ("arteries", False),
-        6: ("veins", False),
+        2: ("tumor", True),
+        3: ("artery", False),
+        4: ("vein", False),
+        5: ("bile_duct", False),
+        6: ("pancreatic_duct", False),
     }
