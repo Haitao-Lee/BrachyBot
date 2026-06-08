@@ -117,7 +117,12 @@ class UIScreenshotTool(BaseTool):
 
         return ToolResult(
             success=True,
-            message=f"Screenshot requested: {target}",
+            message=(
+                f"Screenshot of '{target}' has been requested and is being captured. "
+                f"The image will appear in the chat shortly. "
+                f"DO NOT call ui_screenshot again. "
+                f"Wait for the image to arrive, then analyze it and respond to the user."
+            ),
             metadata={
                 "screenshot_command": command,
                 "target": target,
