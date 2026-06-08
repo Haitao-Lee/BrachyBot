@@ -168,34 +168,45 @@ class VoCoSegmentationBase(BaseTool):
     def _resample_prediction_to_original(self, pred_array: np.ndarray, original_image: sitk.Image, ras_image: sitk.Image) -> np.ndarray:
         """Resample prediction from model space back to original image space.
 
-        The prediction array is in the post-MONAI-transform space (after CropForegroundd + SpatialPadd).
-        We need to:
-        1. Map prediction back to RAS-resampled space (undo crop/pad)
-        2. Map from RAS back to original orientation
+        MONAI outputs prediction in (D1, D2, D3) order which corresponds to the input tensor order.
+        SimpleITK array order is (Z, Y, X) = (Size[2], Size[1], Size[0]).
+        We need to ensure the prediction array matches the RAS image's numpy shape.
         """
-        # Create prediction image with the same geometry as the RAS-resampled image
-        # But the pred_array might have different size due to CropForegroundd + SpatialPadd
-        # We need to resample it to match ras_image first
+        # Get RAS image numpy shape (Z, Y, X)
+        ras_size = ras_image.GetSize()  # (X, Y, Z)
+        ras_shape_np = (ras_size[2], ras_size[1], ras_size[0])  # (Z, Y, X)
 
-        # Get the RAS image (before MONAI transforms)
-        pred_sitk = sitk.GetImageFromArray(pred_array)
-        pred_sitk.SetSpacing(ras_image.GetSpacing())
-        pred_sitk.SetOrigin(ras_image.GetOrigin())
-        pred_sitk.SetDirection(ras_image.GetDirection())
+        # If shapes don't match, try transposing
+        # MONAI: (D1, D2, D3) = (X, Y, Z) for this model
+        # SimpleITK numpy: (Z, Y, X)
+        # Permutation (2, 1, 0) maps (X, Y, Z) → (Z, Y, X)
+        if pred_array.shape != ras_shape_np:
+            pred_array = np.transpose(pred_array, (2, 1, 0))
+            # If still doesn't match, try other permutations
+            if pred_array.shape != ras_shape_np:
+                for perm in [(0, 2, 1), (1, 0, 2), (1, 2, 0), (2, 0, 1)]:
+                    permuted = np.transpose(pred_array, perm)
+                    if permuted.shape == ras_shape_np:
+                        pred_array = permuted
+                        break
 
-        # Resample prediction to match RAS image geometry
+        # Crop to RAS size if SpatialPadded made it larger
+        result_array = pred_array
+        for i in range(3):
+            if result_array.shape[i] > ras_shape_np[i]:
+                start = (result_array.shape[i] - ras_shape_np[i]) // 2
+                result_array = np.take(result_array, range(start, start + ras_shape_np[i]), axis=i)
+
+        # Create SimpleITK image with RAS geometry
+        pred_sitk = sitk.GetImageFromArray(result_array)
+        pred_sitk.CopyInformation(ras_image)
+
+        # Map from RAS back to original image space
         resampler = sitk.ResampleImageFilter()
-        resampler.SetReferenceImage(ras_image)
+        resampler.SetReferenceImage(original_image)
         resampler.SetInterpolator(sitk.sitkNearestNeighbor)
         resampler.SetDefaultPixelValue(0)
-        pred_in_ras = resampler.Execute(pred_sitk)
-
-        # Now map from RAS back to original image space
-        resampler2 = sitk.ResampleImageFilter()
-        resampler2.SetReferenceImage(original_image)
-        resampler2.SetInterpolator(sitk.sitkNearestNeighbor)
-        resampler2.SetDefaultPixelValue(0)
-        result_sitk = resampler2.Execute(pred_in_ras)
+        result_sitk = resampler.Execute(pred_sitk)
 
         return sitk.GetArrayFromImage(result_sitk)
 
@@ -218,12 +229,13 @@ class VoCoSegmentationBase(BaseTool):
 
         try:
             # Step 3: Build MONAI transforms on the already-resampled image
-            from monai.transforms import Compose, LoadImaged, EnsureChannelFirstd, ScaleIntensityRanged, CropForegroundd, SpatialPadd
+            # NOTE: Do NOT use CropForegroundd - it changes array size and breaks coordinate mapping
+            # SpatialPadd is needed to ensure minimum size for sliding_window_inference
+            from monai.transforms import Compose, LoadImaged, EnsureChannelFirstd, ScaleIntensityRanged, SpatialPadd
             transforms = Compose([
                 LoadImaged(keys=["image"]),
                 EnsureChannelFirstd(keys=["image"]),
                 ScaleIntensityRanged(keys=["image"], a_min=self.A_MIN, a_max=self.A_MAX, b_min=0.0, b_max=1.0, clip=True),
-                CropForegroundd(keys=["image"], source_key="image"),
                 SpatialPadd(keys=["image"], spatial_size=self.ROI_SIZE, mode="constant"),
             ])
 
@@ -248,6 +260,13 @@ class VoCoSegmentationBase(BaseTool):
                         logits = model_inferer(data)
                     output = logits.argmax(1, keepdim=True)
                     pred_array = output.squeeze(0).squeeze(0).cpu().numpy()
+
+                    # MONAI outputs (Z, Y, X) but the axes may not match SimpleITK's (X, Y, Z)
+                    # The input was (B, C, D1, D2, D3) and output is (D1, D2, D3)
+                    # SimpleITK array order is (Z, Y, X) = (Size[2], Size[1], Size[0])
+                    # MONAI tensor order is (D1, D2, D3) which should match (Z, Y, X)
+                    # But the RAS image may have different axis ordering due to DICOMOrient
+                    # We need to ensure pred_array matches RAS image's numpy shape
 
                     # Step 4: Resample prediction back to original space
                     result = self._resample_prediction_to_original(pred_array, image, ras_image)
