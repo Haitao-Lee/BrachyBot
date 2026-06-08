@@ -1136,6 +1136,24 @@ class BrachyAgent:
         except ImportError as e:
             logger.warning(f"UIAnnotateTool not available: {e}")
 
+        # Plan quality tools
+        try:
+            from tool_factory.plan_quality import PlanQualityScorerTool, OARConstraintCheckerTool, PlanRefinementTool
+            self.registry.register(PlanQualityScorerTool())
+            self.registry.register(OARConstraintCheckerTool())
+            self.registry.register(PlanRefinementTool())
+        except ImportError as e:
+            logger.warning(f"Plan quality tools not available: {e}")
+
+        # Viewer command tools
+        try:
+            from tool_factory.viewer_command import ViewerCommandTool, AutoNavigateTool, QueryMetricsTool
+            self.registry.register(ViewerCommandTool())
+            self.registry.register(AutoNavigateTool())
+            self.registry.register(QueryMetricsTool())
+        except ImportError as e:
+            logger.warning(f"Viewer command tools not available: {e}")
+
         self.registry.register(CTVSegmentationTool())
         self.registry.register(OARSegmentationTool())
         self.registry.register(DoseEngineTool())
