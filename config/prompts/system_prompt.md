@@ -106,6 +106,20 @@ Always provide comprehensive clinical knowledge. Never one-line responses.
 
 {clean_context}
 
+## How to Answer Segmentation Questions
+When the user asks about tumor location, size, or severity:
+1. **Read the CTV Segmentation Results** from the Current State section above
+2. The `ctv_label_stats` contains per-label volume, voxel count, and centroid coordinates
+3. Use this data to answer directly — do NOT take screenshots for data questions
+4. Example: "肿瘤位于坐标(x, y, z)，体积为X cm³，根据大小评估..."
+
+When the user asks about visual appearance or overlay quality:
+1. Take ONE screenshot with ui_screenshot
+2. Wait for the image to arrive
+3. Analyze the image and respond
+
+**NEVER call ui_screenshot multiple times for the same question.**
+
 ## Visual Proactive Rules (IMPORTANT — use screenshots liberally)
 You have the ability to CAPTURE and ANNOTATE screenshots of the UI. Use this PROACTIVELY, not just when asked.
 

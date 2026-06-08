@@ -347,10 +347,33 @@ class VoCoSegmentationBase(BaseTool):
         # If return_all_labels, return the raw prediction (all labels)
         if return_all_labels:
             label_counts = {}
+            label_stats = {}
+            spacing = image.GetSpacing()
+            voxel_vol = spacing[0] * spacing[1] * spacing[2]
+
             for lid in np.unique(pred_array):
                 if lid > 0:
                     name = self.LABEL_MAP.get(lid, (f"label_{lid}", True))[0]
-                    label_counts[name] = int(np.sum(pred_array == lid))
+                    vox_count = int(np.sum(pred_array == lid))
+                    label_counts[name] = vox_count
+
+                    # Compute centroid in world coordinates
+                    z, y, x = np.where(pred_array == lid)
+                    centroid_arr = [float(z.mean()), float(y.mean()), float(x.mean())]
+                    origin = image.GetOrigin()
+                    direction = image.GetDirection()
+                    centroid_world = [
+                        origin[0] + direction[0]*centroid_arr[2]*spacing[0] + direction[1]*centroid_arr[1]*spacing[1] + direction[2]*centroid_arr[0]*spacing[2],
+                        origin[1] + direction[3]*centroid_arr[2]*spacing[0] + direction[4]*centroid_arr[1]*spacing[1] + direction[5]*centroid_arr[0]*spacing[2],
+                        origin[2] + direction[6]*centroid_arr[2]*spacing[0] + direction[7]*centroid_arr[1]*spacing[1] + direction[8]*centroid_arr[0]*spacing[2],
+                    ]
+                    label_stats[name] = {
+                        "label_id": int(lid),
+                        "voxel_count": vox_count,
+                        "volume_mm3": round(vox_count * voxel_vol, 1),
+                        "volume_cm3": round(vox_count * voxel_vol / 1000, 2),
+                        "centroid_world": [round(c, 1) for c in centroid_world],
+                    }
 
             mask_image = sitk.GetImageFromArray(pred_array)
             mask_image.CopyInformation(image)
@@ -364,6 +387,7 @@ class VoCoSegmentationBase(BaseTool):
                     "mask_array": pred_array,
                     "label_counts": label_counts,
                     "label_map": {lid: name for lid, (name, _) in self.LABEL_MAP.items()},
+                    "label_stats": label_stats,
                 },
             )
 
