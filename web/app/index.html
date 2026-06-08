@@ -4087,19 +4087,28 @@ const ORGAN_COLORS = [
 function updateOrganList(organData) {
     // organData: {label_id: {name, voxel_count, color?}}
     if (!organData) return;
+
+    // Preserve existing visibility/opacity state
+    const existingState = {};
+    dataTreeState.organs.forEach(o => {
+        existingState[o.id] = { visible: o.visible, opacity: o.opacity, category: o.category, color: o.color };
+    });
+
     dataTreeState.organs = [];
     let i = 0;
     for (const [labelId, info] of Object.entries(organData)) {
         const name = info.name || `Organ ${labelId}`;
+        const id = `organ_${labelId}`;
+        const existing = existingState[id];
         dataTreeState.organs.push({
-            id: `organ_${labelId}`,
+            id: id,
             labelId: parseInt(labelId),
             label: name,
-            color: info.color || ORGAN_COLORS[i % ORGAN_COLORS.length],
-            visible: true,
-            opacity: 0.5,
+            color: existing?.color || info.color || ORGAN_COLORS[i % ORGAN_COLORS.length],
+            visible: existing?.visible ?? true,
+            opacity: existing?.opacity ?? 0.5,
             voxelCount: info.voxel_count || 0,
-            category: classifyOrgan(name),
+            category: existing?.category || classifyOrgan(name),
         });
         i++;
     }
@@ -4872,11 +4881,68 @@ function hideContextMenu() {
 
 function batchToggleVisibility(visible) {
     getSelectedOrganIds().forEach(id => {
-        if (id === 'ctv') dataTreeState.ctv.visible = visible;
-        else { const o = dataTreeState.organs.find(o => o.id === id); if (o) o.visible = visible; }
+        // CTV group
+        if (id === 'ctv') {
+            dataTreeState.ctv.visible = visible;
+            const mesh = scene3D.meshes['ctv'];
+            if (mesh) mesh.visible = visible;
+        }
+        // CTV sub-labels
+        else if (id.startsWith('ctv_')) {
+            if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
+            if (!dataTreeState.ctvLabels[id]) dataTreeState.ctvLabels[id] = { visible: true, opacity: 0.7, color: '#ef4444' };
+            dataTreeState.ctvLabels[id].visible = visible;
+            const mesh = scene3D.meshes[id];
+            if (mesh) mesh.visible = visible;
+        }
+        // OAR group
+        else if (id === 'oar') {
+            dataTreeState.organs.forEach(o => {
+                o.visible = visible;
+                const mesh = scene3D.meshes[o.id];
+                if (mesh) mesh.visible = visible;
+            });
+        }
+        // Individual organs
+        else if (id.startsWith('organ_')) {
+            const o = dataTreeState.organs.find(o => o.id === id);
+            if (o) {
+                o.visible = visible;
+                const mesh = scene3D.meshes[id];
+                if (mesh) mesh.visible = visible;
+            }
+        }
+        // Planning seeds
+        else if (id.startsWith('seed_')) {
+            const s = dataTreeState.planning.seeds.find(s => s.id === id);
+            if (s) {
+                s.visible = visible;
+                const mesh = scene3D.meshes[id];
+                if (mesh) mesh.visible = visible;
+            }
+        }
+        // Planning needles
+        else if (id.startsWith('needle_')) {
+            const n = dataTreeState.planning.needles.find(n => n.id === id);
+            if (n) {
+                n.visible = visible;
+                const mesh = scene3D.meshes[id];
+                if (mesh) mesh.visible = visible;
+            }
+        }
+        // Dose isosurfaces
+        else if (id.startsWith('dose_iso_')) {
+            const threshold = parseFloat(id.replace('dose_iso_', ''));
+            const d = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
+            if (d) {
+                d.visible = visible;
+                const mesh = scene3D.meshes[id];
+                if (mesh) mesh.visible = visible;
+            }
+        }
     });
     renderDataTree();
-    if (state.ctLoaded) loadAllSlices();
+    if (state.ctLoaded) reloadOverlays();
 }
 
 function batchMoveToCategory(category) {
@@ -4998,7 +5064,7 @@ function setGroupVisibility(category, visible) {
         });
     }
     renderDataTree();
-    if (state.ctLoaded) loadAllSlices();
+    if (state.ctLoaded) reloadOverlays();
 }
 
 let _groupOpacityTimer = null;
