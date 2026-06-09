@@ -120,18 +120,12 @@ class NNUNetPancreaticTumorTool(BaseTool):
         except Exception as e:
             return ToolResult(success=False, error=f"nnUNet inference failed: {str(e)}")
 
-        # Extract tumor (label 2 in PDAC convention)
-        tumor_mask = (result_array == 2).astype(np.uint8)
-
         # Build label counts
         label_counts = {}
         for lid in np.unique(result_array):
             if lid > 0:
                 name = LABEL_MAP.get(lid, (f"label_{lid}", True))[0]
                 label_counts[name] = int(np.sum(result_array == lid))
-
-        mask_image = sitk.GetImageFromArray(result_array)
-        mask_image.CopyInformation(image)
 
         # Compute per-label volumes and centroids for LLM analysis
         spacing = image.GetSpacing()
@@ -142,10 +136,8 @@ class NNUNetPancreaticTumorTool(BaseTool):
                 name = LABEL_MAP.get(lid, (f"label_{lid}", True))[0]
                 vox_count = int(np.sum(result_array == lid))
                 vol_mm3 = vox_count * voxel_vol
-                # Compute centroid in array coordinates (z, y, x)
                 z, y, x = np.where(result_array == lid)
                 centroid_arr = [float(z.mean()), float(y.mean()), float(x.mean())]
-                # Convert to world coordinates
                 origin = image.GetOrigin()
                 direction = image.GetDirection()
                 centroid_world = [
@@ -161,16 +153,36 @@ class NNUNetPancreaticTumorTool(BaseTool):
                     "centroid_world": [round(c, 1) for c in centroid_world],
                 }
 
+        # CTV = only label 1 (tumor)
+        ctv_array = (result_array == 1).astype(np.uint8)
+        ctv_mask = sitk.GetImageFromArray(ctv_array)
+        ctv_mask.CopyInformation(image)
+
+        # OAR = label 2 (artery) + label 3 (vein) — non-traversable
+        oar_array = np.zeros_like(result_array, dtype=np.uint8)
+        oar_array[result_array == 2] = 1  # artery
+        oar_array[result_array == 3] = 2  # vein
+        oar_mask = sitk.GetImageFromArray(oar_array)
+        oar_mask.CopyInformation(image)
+
+        ctv_voxel_count = int(np.sum(ctv_array > 0))
+        ctv_volume = ctv_voxel_count * voxel_vol
+
         return ToolResult(
             success=True,
-            data=result_array,
-            message=f"nnUNet segmentation: {label_counts}",
+            data=ctv_array,
+            message=f"nnUNet done. CTV(tumor): {ctv_voxel_count} vox ({ctv_volume/1000:.1f}cm³). OAR: artery={int(np.sum(oar_array==1))}, vein={int(np.sum(oar_array==2))}",
             metadata={
-                "mask": mask_image,
-                "mask_array": result_array,
+                "ctv_mask": ctv_mask,
+                "ctv_array": ctv_array,
+                "ctv_volume_mm3": float(ctv_volume),
+                "ctv_voxel_count": ctv_voxel_count,
+                "oar_mask": oar_mask,
+                "oar_array": oar_array,
                 "label_counts": label_counts,
                 "label_map": {lid: name for lid, (name, _) in LABEL_MAP.items()},
                 "label_stats": label_stats,
+                "organ_names": {1: "artery", 2: "vein"},
             },
         )
 
