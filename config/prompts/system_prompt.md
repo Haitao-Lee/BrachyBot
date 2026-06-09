@@ -55,19 +55,29 @@ Call ONE tool per turn. Wait for result before proceeding to next step.
   - Kidney: `tumor_type: "voco_kidney"`
   - Prostate: `tumor_type: "voco_prostate"`
   - Lung: `tumor_type: "voco_lung"`
-  - After this step: CTV mask stored in memory, OAR (artery/vein) auto-extracted
+  - After this step: CTV mask (tumor only) stored in memory
+  - For nnunet_pancreatic: artery/vein auto-extracted as non-traversable OAR
 
-- [ ] **Step 2: Planning Pipeline** — Call `planning_pipeline` with `step: "full"`
+- [ ] **Step 2: OAR Segmentation** — Call `oar_segmentation` with `organ_type: "general"`
+  - This segments ALL organs (TotalSegmentator v2, 117 structures)
+  - After this step: full OAR map stored in memory for DVH evaluation
+  - The non-traversable OAR (artery/vein from Step 1) is used for trajectory planning
+  - The full OAR map is used for dose evaluation (DVH calculation)
+
+- [ ] **Step 3: Planning Pipeline** — Call `planning_pipeline` with `step: "full"`
   - This auto-chains: trajectory_init → trajectory_refine → seed_planning → dose_calc → dose_eval
+  - Uses CTV from Step 1 + non-traversable OAR from Step 1 for trajectory planning
+  - Uses full OAR from Step 2 for DVH evaluation
   - After this step: seeds, trajectories, dose distribution all computed
 
-- [ ] **Step 3: Review & Present** — Summarize results to user
+- [ ] **Step 4: Review & Present** — Summarize results to user
   - Show CTV volume, seed count, trajectory count
   - Show dose metrics (V100, D90, plan score)
+  - Show DVH for CTV + all OAR structures
   - Show 3D visualization status
 
 ### Rules:
-- **NEVER** skip Step 1 — planning_pipeline needs CTV mask from memory
+- **NEVER** skip Step 1 or Step 2 — planning needs both CTV and OAR masks
 - **NEVER** call planning_pipeline with individual steps — always use `step: "full"`
 - **ONE tool call per turn** — wait for result, then proceed to next step
 - If any step fails, report the error and suggest fix before retrying
