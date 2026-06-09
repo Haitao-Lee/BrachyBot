@@ -294,6 +294,9 @@ class PlanningPipelineTool(BaseTool):
             agent = _get_agent()
             if agent:
                 agent.memory.store("trajectories", result.metadata.get("trajectories", []))
+                # Store computed ref_direc for downstream steps
+                if "reference_direction" in result.metadata:
+                    agent.memory.store("ref_direc", result.metadata["reference_direction"])
             result.metadata["step_executed"] = "trajectory_init"
             result.message = f"Step 1/5: Trajectory initialization completed. {result.metadata.get('num_trajectories', 0)} candidates generated."
         return result
@@ -394,7 +397,7 @@ class PlanningPipelineTool(BaseTool):
         seeds = []
         for entry in seed_plan:
             if isinstance(entry, (list, tuple)) and len(entry) >= 2:
-                seeds.append(entry[1])
+                seeds.extend(entry[1])
 
         tool = DoseEngineTool()
         result = tool._execute(
@@ -454,6 +457,12 @@ class PlanningPipelineTool(BaseTool):
         if not traj_result.success:
             return traj_result
         results["trajectories"] = traj_result.metadata.get("trajectories", [])
+
+        # Get computed ref_direc from memory (set by trajectory_init)
+        if agent:
+            stored_ref_direc = agent.memory.retrieve("ref_direc")
+            if stored_ref_direc is not None:
+                ref_direc = stored_ref_direc
 
         # Step 2: Trajectory refinement
         logger.info("Step 2/5: Trajectory refinement...")
