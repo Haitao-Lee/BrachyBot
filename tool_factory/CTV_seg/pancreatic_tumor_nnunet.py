@@ -27,16 +27,17 @@ from tool_factory import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
 
-# Label mapping for PDAC (Pancreatic Ductal Adenocarcinoma) 7-class segmentation
-# Matches VoCo PANORAMA convention: 0=bg, 1=pancreas, 2=tumor(PDAC), 3=artery, 4=vein, 5=bile_duct, 6=pancreatic_duct
+# Label mapping for PDAC (Pancreatic Ductal Adenocarcinoma) segmentation
+# Matches Zhiyuan/BrachyPlan.py nnUNet Dataset005_Pancreas convention:
+# 0=bg, 1=tumor(PDAC), 2=artery, 3=vein, 4=pancreas, 5=unknown, 6=unknown
 LABEL_MAP = {
     0: ("background", False),
-    1: ("pancreas", False),
-    2: ("tumor", True),
-    3: ("artery", False),
-    4: ("vein", False),
-    5: ("bile_duct", False),
-    6: ("pancreatic_duct", False),
+    1: ("tumor", True),
+    2: ("artery", False),
+    3: ("vein", False),
+    4: ("pancreas", False),
+    5: ("unknown_5", False),
+    6: ("unknown_6", False),
 }
 
 

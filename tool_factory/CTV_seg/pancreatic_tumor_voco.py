@@ -24,12 +24,13 @@ class VoCoPancreaticTumorTool(VoCoSegmentationBase):
     SPACING = (1.5, 1.5, 1.5)
     A_MIN = -175.0
     A_MAX = 250.0
+    # Matches Zhiyuan/BrachyPlan.py convention: 1=tumor, 2=artery, 3=vein, 4=pancreas
     LABEL_MAP = {
         0: ("background", False),
-        1: ("pancreas", False),
-        2: ("tumor", True),
-        3: ("artery", False),
-        4: ("vein", False),
-        5: ("bile_duct", False),
-        6: ("pancreatic_duct", False),
+        1: ("tumor", True),
+        2: ("artery", False),
+        3: ("vein", False),
+        4: ("pancreas", False),
+        5: ("unknown_5", False),
+        6: ("unknown_6", False),
     }
