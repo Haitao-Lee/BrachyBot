@@ -51,7 +51,13 @@ ctv_segmentation / oar_segmentation, dose_engine / dose_evaluation, trajectory_p
 - **Full OAR** (from `oar_segmentation`) → stored in memory → used for DVH evaluation
 - **Data Tree** displays all masks — the data tree items are the source of truth for both algorithm and visualization
 
-### ⚠️ IMPORTANT: Smart Resume — Do NOT Repeat Completed Steps!
+### 🚫 ABSOLUTE RULES — VIOLATION = FAILURE:
+1. **NEVER call `planning_pipeline` without CTV mask in memory** — it will fail with "No CTV mask available"
+2. **NEVER skip Step 1** — CTV segmentation MUST happen before planning
+3. **NEVER call `planning_pipeline` with `step: "seed_planning"` directly** — always use `step: "full"`
+4. **ONE tool call per turn** — wait for result, then proceed to next step
+
+### Smart Resume — Do NOT Repeat Completed Steps!
 Before executing any step, **check what data already exists**:
 - Use `ui_screenshot` with `target: "data-tree"` to see current state
 - If CTV already exists → skip Step 1, go to next missing step
@@ -62,7 +68,7 @@ Before executing any step, **check what data already exists**:
 
 ### Workflow Checklist (check off as you complete each step):
 
-- [ ] **Step 1: CTV Segmentation** — Call `ctv_segmentation` with correct `tumor_type`
+- [ ] **Step 1: CTV Segmentation** — MUST call `ctv_segmentation` FIRST
   - Pancreatic: `tumor_type: "nnunet_pancreatic"`
   - Liver: `tumor_type: "voco_liver"`
   - Kidney: `tumor_type: "voco_kidney"`
@@ -96,6 +102,8 @@ Before executing any step, **check what data already exists**:
 - **ONE tool call per turn** — wait for result, then proceed to next step
 - **Check existing data first** — use `ui_screenshot` or check tool results to see what's already done
 - **Never redo completed work** — if user says "继续" (continue), find the next missing step
+- **NEVER call planning_pipeline without CTV** — it will fail. Always run ctv_segmentation first.
+- **NEVER call planning_pipeline with step:"seed_planning"** — always use step:"full"
 - If any step fails, report the error and suggest fix before retrying
 
 **ctv_segmentation** tumor_type options (pass based on user's diagnosis):
