@@ -51,8 +51,11 @@ def _get_agent():
         import AgenticSys
         agent = getattr(AgenticSys, '_global_agent', None)
         if agent is None:
-            from web.server import get_agent
-            agent = get_agent()
+            try:
+                from web.server import get_agent
+                agent = get_agent()
+            except Exception:
+                pass
         return agent
     except Exception:
         return None

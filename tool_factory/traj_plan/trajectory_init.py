@@ -118,8 +118,8 @@ class TrajectoryInitTool(BaseTool):
         }
 
     def _execute(self, **kwargs) -> ToolResult:
-        import core
-        import utilizations
+        from plans import core
+        from plans import utilizations
 
         dose_image = kwargs["dose_image"]
         radiation_volume = kwargs["radiation_volume"]
