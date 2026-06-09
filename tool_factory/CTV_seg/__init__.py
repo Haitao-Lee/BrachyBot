@@ -172,20 +172,29 @@ class CTVSegmentationTool(BaseTool):
         voxel_size = spacing[0] * spacing[1] * spacing[2]
         volume_mm3 = voxel_count * voxel_size
 
+        meta = {
+            "ctv_mask": ctv_mask,
+            "ctv_array": ctv_array,
+            "ctv_volume_mm3": float(volume_mm3),
+            "ctv_voxel_count": voxel_count,
+            "tumor_type_used": tumor_type or "auto",
+            "label_counts": result.metadata.get("label_counts", {}),
+            "label_map": result.metadata.get("label_map", {}),
+            "label_stats": result.metadata.get("label_stats", {}),
+        }
+        # Pass through OAR data if present (e.g. artery/vein from nnUNet pancreatic)
+        if "oar_array" in result.metadata:
+            meta["oar_array"] = result.metadata["oar_array"]
+        if "oar_mask" in result.metadata:
+            meta["oar_mask"] = result.metadata["oar_mask"]
+        if "organ_names" in result.metadata:
+            meta["organ_names"] = result.metadata["organ_names"]
+
         return ToolResult(
             success=True,
             data=ctv_array,
             message=f"CTV segmentation completed. Volume: {volume_mm3:.1f} mm3",
-            metadata={
-                "ctv_mask": ctv_mask,
-                "ctv_array": ctv_array,
-                "ctv_volume_mm3": float(volume_mm3),
-                "ctv_voxel_count": voxel_count,
-                "tumor_type_used": tumor_type or "auto",
-                "label_counts": result.metadata.get("label_counts", {}),
-                "label_map": result.metadata.get("label_map", {}),
-                "label_stats": result.metadata.get("label_stats", {}),
-            },
+            metadata=meta,
         )
 
 

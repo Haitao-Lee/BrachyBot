@@ -1301,6 +1301,11 @@ class BrachyAgent:
                     self.memory.store("ctv_label_stats", result.metadata["label_stats"])
                 if "label_map" in result.metadata:
                     self.memory.store("ctv_label_map", result.metadata["label_map"])
+                # Store OAR from CTV (artery/vein as non-traversable)
+                if "oar_array" in result.metadata:
+                    self.memory.store("oar_array", result.metadata["oar_array"])
+                if "organ_names" in result.metadata:
+                    self.memory.store("organ_names", result.metadata["organ_names"])
             elif tool_name == "oar_segmentation":
                 logger.info(f"OAR segmentation result: oar_array={'oar_array' in result.metadata}, organ_names={'organ_names' in result.metadata}")
                 if "oar_array" in result.metadata:
