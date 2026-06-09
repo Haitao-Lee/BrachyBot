@@ -324,13 +324,12 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
     
     final_res = []
     for res in opti_res:
-        for seeds in res[1]:
-            final_seeds = []
-            for seed in seeds:
-                pos = utilizations.position_transform(dose_image, seed[0]).reshape(-1) 
-                direction = utilizations.direction_transform(dose_image, seed[1]).reshape(-1)
-                final_seeds.append((pos, direction))
-        final_res.append([res[0], final_seeds, res[2]])    
+        final_seeds = []
+        for seed in res[1]:
+            pos = utilizations.position_transform(dose_image, seed[0]).reshape(-1)
+            direction = utilizations.direction_transform(dose_image, seed[1]).reshape(-1)
+            final_seeds.append((pos, direction))
+        final_res.append([res[0], final_seeds, res[2]])
     return final_res
 
 

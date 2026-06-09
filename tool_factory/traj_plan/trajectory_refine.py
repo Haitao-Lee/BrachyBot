@@ -123,9 +123,10 @@ class TrajectoryRefineTool(BaseTool):
             if len(traj) < 3:
                 continue
 
-            origin = np.array(traj[0])
-            direction = np.array(traj[1])
-            depth = traj[2]
+            origin = np.array(traj[0]).flatten()
+            direction = np.array(traj[1]).flatten()
+            # t[4] = scalar total depth, t[2] = list of target segment lengths
+            depth = traj[4] if len(traj) > 4 else (sum(traj[2]) if len(traj) > 2 else 0)
 
             angle = np.arccos(np.clip(np.dot(direction, ref_direc), -1, 1))
             if angle > max_angle_rad:
@@ -134,14 +135,17 @@ class TrajectoryRefineTool(BaseTool):
             target_mask = radiation_volume == target_value
             obstacle_mask = radiation_volume == obstacle_value
 
-            max_depth_idx = min(int(depth), radiation_volume.shape[0] - 1)
+            max_depth_idx = min(int(depth), max(radiation_volume.shape) - 1)
             trajectory_points = origin + np.outer(np.arange(max_depth_idx), direction)
 
+            # Check bounds for each point
             in_bounds = np.all((trajectory_points >= 0) & (trajectory_points < np.array(radiation_volume.shape)), axis=1)
-            trajectory_mask = np.all(in_bounds.reshape(-1, 1), axis=1)
+            valid_points = trajectory_points[in_bounds]
 
-            if np.any(trajectory_mask):
-                target_coverage = np.sum(target_mask[trajectory_points[trajectory_mask].astype(int).T]) / np.sum(trajectory_mask)
+            if len(valid_points) > 0:
+                # Index into target_mask using valid points
+                indices = valid_points.astype(int)
+                target_coverage = np.sum(target_mask[indices[:, 0], indices[:, 1], indices[:, 2]]) / len(valid_points)
             else:
                 target_coverage = 0
 

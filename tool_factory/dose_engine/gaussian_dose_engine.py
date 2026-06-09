@@ -94,7 +94,7 @@ class GaussianDoseEngineTool(BaseTool):
         }
 
     def _execute(self, **kwargs) -> ToolResult:
-        import utilizations_promax as utilizations
+        from plans import utilizations
 
         dose_image = kwargs["dose_image"]
         seeds = kwargs["seeds"]

@@ -153,15 +153,18 @@ class TrajectoryInitTool(BaseTool):
 
         max_depth = 0
         for t in trajectories:
-            if len(t) > 2 and t[2] > max_depth:
-                max_depth = t[2]
+            # t[4] = scalar total depth, t[2] = list of target segment lengths
+            depth = t[4] if len(t) > 4 else (sum(t[2]) if len(t) > 2 else 0)
+            if depth > max_depth:
+                max_depth = depth
 
         traj_info = []
         for t in trajectories:
+            depth = t[4] if len(t) > 4 else (sum(t[2]) if len(t) > 2 else 0)
             traj_info.append({
                 "origin": t[0].tolist() if hasattr(t[0], "tolist") else list(t[0]),
                 "direction": t[1].tolist() if hasattr(t[1], "tolist") else list(t[1]),
-                "depth": float(t[2]) if len(t) > 2 else 0,
+                "depth": float(depth),
             })
 
         return ToolResult(
