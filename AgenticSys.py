@@ -1635,15 +1635,17 @@ print(json.dumps(result))
                 tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": {"image_path": ct_path}})
             elif action == 'dose' and ct_path:
                 tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
-            elif action == 'plan_seeds' and ct_path:
-                tools.append({"id": "tool_direct_plan_seeds", "tool": "planning_pipeline",
-                              "params": {"ct_image_path": ct_path, "step": "seed_planning"}})
-            elif action == 'plan_trajectory' and ct_path:
-                tools.append({"id": "tool_direct_plan_traj", "tool": "planning_pipeline",
-                              "params": {"ct_image_path": ct_path, "step": "trajectory_init"}})
-            elif action == 'plan_full' and ct_path:
+            elif action in ('plan_seeds', 'plan_trajectory', 'plan_full') and ct_path:
+                # Planning requires CTV — auto-prepend CTV segmentation if missing
+                has_ctv = self.memory.retrieve("ctv_array") is not None
+                if not has_ctv:
+                    # Detect tumor type from user message
+                    tumor_type = self._detect_tumor_type_from_message(msg)
+                    tools.append({"id": "tool_direct_ctv_for_plan", "tool": "ctv_segmentation",
+                                  "params": {"image_path": ct_path, "tumor_type": tumor_type}})
+                # Always use step: "full" for planning (not individual steps)
                 tools.append({"id": "tool_direct_plan_full", "tool": "planning_pipeline",
-                              "params": {"ct_image_path": ct_path, "step": "full"}})
+                              "params": {"ct_image_path": ct_path, "step": "full", "mode": "rl" if "强化" in msg or "rl" in msg.lower() else "rule_based"}})
 
         return tools or None
 
