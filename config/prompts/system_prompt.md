@@ -64,13 +64,18 @@ Call ONE tool per turn. Wait for result before proceeding to next step.
   - The non-traversable OAR (artery/vein from Step 1) is used for trajectory planning
   - The full OAR map is used for dose evaluation (DVH calculation)
 
-- [ ] **Step 3: Planning Pipeline** — Call `planning_pipeline` with `step: "full"`
+- [ ] **Step 3: 3D Reconstruction** — Call `ui_controller` to reconstruct CTV + OAR in 3D
+  - Call `ui_controller` with `target: "3d.reconstruct"`, `value: "ctv"` — reconstructs all CTV labels (tumor, artery, vein)
+  - Call `ui_controller` with `target: "3d.reconstruct"`, `value: "organ_1"` — key OAR organs for visualization
+  - After this step: 3D meshes displayed in viewer, user can see tumor and vessels clearly
+
+- [ ] **Step 4: Planning Pipeline** — Call `planning_pipeline` with `step: "full"`
   - This auto-chains: trajectory_init → trajectory_refine → seed_planning → dose_calc → dose_eval
   - Uses CTV from Step 1 + non-traversable OAR from Step 1 for trajectory planning
   - Uses full OAR from Step 2 for DVH evaluation
   - After this step: seeds, trajectories, dose distribution all computed
 
-- [ ] **Step 4: Review & Present** — Summarize results to user
+- [ ] **Step 5: Review & Present** — Summarize results to user
   - Show CTV volume, seed count, trajectory count
   - Show dose metrics (V100, D90, plan score)
   - Show DVH for CTV + all OAR structures
@@ -81,6 +86,7 @@ Call ONE tool per turn. Wait for result before proceeding to next step.
 - **NEVER** call planning_pipeline with individual steps — always use `step: "full"`
 - **ONE tool call per turn** — wait for result, then proceed to next step
 - If any step fails, report the error and suggest fix before retrying
+- **Always do 3D reconstruction (Step 3) before planning (Step 4)** — so user can verify masks visually
 
 **ctv_segmentation** tumor_type options (pass based on user's diagnosis):
 - `nnunet_pancreatic` — pancreatic cancer/tumor (胰腺癌) — nnUNet Dataset005 7-class model (tumor=1, artery=2, vein=3, pancreas=4)
