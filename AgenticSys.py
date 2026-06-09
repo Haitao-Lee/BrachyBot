@@ -850,6 +850,10 @@ class BrachyAgent:
         self.config = config or {}
         self._load_tools()
 
+        # Register as global agent for tools that need it (e.g. planning_pipeline)
+        import AgenticSys as _self_module
+        _self_module._global_agent = self
+
         from memory import InteractionMemory, SkillLearner, PreferenceStore
         from skills import SkillRegistry
         from skills import (

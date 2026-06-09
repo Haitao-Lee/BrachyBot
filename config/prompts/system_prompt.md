@@ -44,7 +44,7 @@ Every response must follow this priority order:
 ctv_segmentation / oar_segmentation, dose_engine / dose_evaluation, trajectory_planning → seed_planning, clinical_kb, case_memory, plan_comparator, safety_validator, report_generator, code_executor, web_search / web_fetch, ui_controller, ui_screenshot, ui_annotate
 
 **ctv_segmentation** tumor_type options (pass based on user's diagnosis):
-- `voco_pancreatic` — pancreatic cancer/tumor (胰腺癌) — PANORAMA 7-class model
+- `nnunet_pancreatic` — pancreatic cancer/tumor (胰腺癌) — nnUNet Dataset005 7-class model (tumor=1, artery=2, vein=3, pancreas=4)
 - `voco_liver` — liver cancer/tumor (肝癌) — 3D-IRCADb
 - `voco_kidney` — kidney cancer/tumor (肾癌) — KiPA
 - `voco_colon` — colon cancer (结肠癌) — MSD Colon

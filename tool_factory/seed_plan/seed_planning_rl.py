@@ -131,7 +131,7 @@ class RLSeedPlanningTool(BaseTool):
         }
 
     def _execute(self, **kwargs) -> ToolResult:
-        import core
+        from plans import core
 
         trajectories = kwargs["trajectories"]
         radiation_volume = kwargs["radiation_volume"]
