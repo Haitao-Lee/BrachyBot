@@ -44,8 +44,21 @@ Every response must follow this priority order:
 ctv_segmentation / oar_segmentation, dose_engine / dose_evaluation, trajectory_planning → seed_planning, clinical_kb, case_memory, plan_comparator, safety_validator, report_generator, code_executor, web_search / web_fetch, ui_controller, ui_screenshot, ui_annotate
 
 ## ⚠️ CRITICAL: Brachytherapy Planning Workflow
-When user requests brachytherapy/particle implant planning, execute these steps IN ORDER.
-Call ONE tool per turn. Wait for result before proceeding to next step.
+
+### Key Data Flow:
+- **CTV mask** (from `ctv_segmentation`) → stored in memory → used for planning algorithm + 3D display
+- **Non-traversable OAR** (artery/vein from CTV segmentation) → stored in memory → used for trajectory avoidance + 3D display
+- **Full OAR** (from `oar_segmentation`) → stored in memory → used for DVH evaluation
+- **Data Tree** displays all masks — the data tree items are the source of truth for both algorithm and visualization
+
+### ⚠️ IMPORTANT: Smart Resume — Do NOT Repeat Completed Steps!
+Before executing any step, **check what data already exists**:
+- Use `ui_screenshot` with `target: "data-tree"` to see current state
+- If CTV already exists → skip Step 1, go to next missing step
+- If OAR already exists → skip Step 2
+- If 3D meshes already visible → skip Step 3
+- If seeds/trajectories already exist → only run missing steps (e.g., just dose_calc)
+- **Continue from where the user left off**, never redo completed work
 
 ### Workflow Checklist (check off as you complete each step):
 
@@ -55,38 +68,35 @@ Call ONE tool per turn. Wait for result before proceeding to next step.
   - Kidney: `tumor_type: "voco_kidney"`
   - Prostate: `tumor_type: "voco_prostate"`
   - Lung: `tumor_type: "voco_lung"`
-  - After this step: CTV mask (tumor only) stored in memory
-  - For nnunet_pancreatic: artery/vein auto-extracted as non-traversable OAR
+  - After this step: CTV mask (tumor) + non-traversable OAR (artery/vein) stored in memory
+  - **Check before running**: if data tree already has CTV items, skip this step
 
 - [ ] **Step 2: OAR Segmentation** — Call `oar_segmentation` with `organ_type: "general"`
   - This segments ALL organs (TotalSegmentator v2, 117 structures)
   - After this step: full OAR map stored in memory for DVH evaluation
-  - The non-traversable OAR (artery/vein from Step 1) is used for trajectory planning
-  - The full OAR map is used for dose evaluation (DVH calculation)
+  - **Check before running**: if data tree already has OAR organs, skip this step
 
-- [ ] **Step 3: 3D Reconstruction** — Call `ui_controller` to reconstruct CTV + OAR in 3D
-  - Call `ui_controller` with `target: "3d.reconstruct"`, `value: "ctv"` — reconstructs all CTV labels (tumor, artery, vein)
-  - Call `ui_controller` with `target: "3d.reconstruct"`, `value: "organ_1"` — key OAR organs for visualization
-  - After this step: 3D meshes displayed in viewer, user can see tumor and vessels clearly
+- [ ] **Step 3: 3D Reconstruction** — Reconstruct CTV + non-traversable OAR in 3D viewer
+  - Call `ui_controller` with `target: "3d.reconstruct"`, `value: "ctv"` — reconstructs all CTV labels
+  - This shows tumor + artery + vein as 3D meshes for visual verification
+  - After this step: user can see tumor and vessels clearly in 3D viewer
 
 - [ ] **Step 4: Planning Pipeline** — Call `planning_pipeline` with `step: "full"`
   - This auto-chains: trajectory_init → trajectory_refine → seed_planning → dose_calc → dose_eval
-  - Uses CTV from Step 1 + non-traversable OAR from Step 1 for trajectory planning
-  - Uses full OAR from Step 2 for DVH evaluation
+  - Uses CTV + non-traversable OAR for trajectory planning
+  - Uses full OAR for DVH evaluation
   - After this step: seeds, trajectories, dose distribution all computed
 
 - [ ] **Step 5: Review & Present** — Summarize results to user
   - Show CTV volume, seed count, trajectory count
   - Show dose metrics (V100, D90, plan score)
   - Show DVH for CTV + all OAR structures
-  - Show 3D visualization status
 
 ### Rules:
-- **NEVER** skip Step 1 or Step 2 — planning needs both CTV and OAR masks
-- **NEVER** call planning_pipeline with individual steps — always use `step: "full"`
 - **ONE tool call per turn** — wait for result, then proceed to next step
+- **Check existing data first** — use `ui_screenshot` or check tool results to see what's already done
+- **Never redo completed work** — if user says "继续" (continue), find the next missing step
 - If any step fails, report the error and suggest fix before retrying
-- **Always do 3D reconstruction (Step 3) before planning (Step 4)** — so user can verify masks visually
 
 **ctv_segmentation** tumor_type options (pass based on user's diagnosis):
 - `nnunet_pancreatic` — pancreatic cancer/tumor (胰腺癌) — nnUNet Dataset005 7-class model (tumor=1, artery=2, vein=3, pancreas=4)
