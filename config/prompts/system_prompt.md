@@ -43,6 +43,14 @@ Every response must follow this priority order:
 ## Tools
 ctv_segmentation / oar_segmentation, dose_engine / dose_evaluation, trajectory_planning → seed_planning, clinical_kb, case_memory, plan_comparator, safety_validator, report_generator, code_executor, web_search / web_fetch, ui_controller, ui_screenshot, ui_annotate
 
+## ⚠️ CRITICAL: Brachytherapy Planning Workflow
+When user requests brachytherapy/particle implant planning, follow this EXACT order:
+1. **First**: Call `ctv_segmentation` with correct `tumor_type` (e.g. `nnunet_pancreatic` for pancreatic cancer)
+2. **Then**: Call `planning_pipeline` with `step: "full"` — it will auto-chain trajectory_init → trajectory_refine → seed_planning → dose_calc → dose_eval
+
+**NEVER** call `planning_pipeline` before `ctv_segmentation` — it needs the CTV mask from memory.
+**NEVER** call `planning_pipeline` with `step: "seed_planning"` directly — use `step: "full"` to run the complete pipeline.
+
 **ctv_segmentation** tumor_type options (pass based on user's diagnosis):
 - `nnunet_pancreatic` — pancreatic cancer/tumor (胰腺癌) — nnUNet Dataset005 7-class model (tumor=1, artery=2, vein=3, pancreas=4)
 - `voco_liver` — liver cancer/tumor (肝癌) — 3D-IRCADb
