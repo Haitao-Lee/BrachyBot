@@ -1636,16 +1636,36 @@ print(json.dumps(result))
             elif action == 'dose' and ct_path:
                 tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
             elif action in ('plan_seeds', 'plan_trajectory', 'plan_full') and ct_path:
-                # Planning requires CTV — auto-prepend CTV segmentation if missing
+                # Full planning workflow: CTV → OAR → 3D recon → Planning
                 has_ctv = self.memory.retrieve("ctv_array") is not None
+                has_oar = self.memory.retrieve("oar_array") is not None
+
+                # Step 1: CTV segmentation (if missing)
                 if not has_ctv:
-                    # Detect tumor type from user message
                     tumor_type = self._detect_tumor_type_from_message(msg)
-                    tools.append({"id": "tool_direct_ctv_for_plan", "tool": "ctv_segmentation",
+                    tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation",
                                   "params": {"image_path": ct_path, "tumor_type": tumor_type}})
-                # Always use step: "full" for planning (not individual steps)
+                    # Auto-switch to viewers panel after CTV
+                    tools.append({"id": "tool_ui_viewers", "tool": "ui_controller",
+                                  "params": {"actions": [{"target": "panel", "command": "switch", "value": "viewers"}]}})
+
+                # Step 2: OAR segmentation (if missing)
+                if not has_oar:
+                    tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation",
+                                  "params": {"image_path": ct_path, "organ_type": "general"}})
+
+                # Step 3: 3D reconstruction of CTV
+                tools.append({"id": "tool_ui_3d_ctv", "tool": "ui_controller",
+                              "params": {"actions": [{"target": "3d.reconstruct", "command": "set", "value": "ctv"}]}})
+
+                # Step 4: Planning pipeline
+                mode = "rl" if "强化" in msg or "rl" in msg.lower() else "rule_based"
                 tools.append({"id": "tool_direct_plan_full", "tool": "planning_pipeline",
-                              "params": {"ct_image_path": ct_path, "step": "full", "mode": "rl" if "强化" in msg or "rl" in msg.lower() else "rule_based"}})
+                              "params": {"ct_image_path": ct_path, "step": "full", "mode": mode}})
+
+                # Step 5: Auto-switch to metrics panel to show results
+                tools.append({"id": "tool_ui_metrics", "tool": "ui_controller",
+                              "params": {"actions": [{"target": "panel", "command": "switch", "value": "metrics"}]}})
 
         return tools or None
 
