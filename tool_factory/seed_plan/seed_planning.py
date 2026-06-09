@@ -145,6 +145,7 @@ class SeedPlanningTool(BaseTool):
         trajectories = kwargs["trajectories"]
         radiation_volume = kwargs["radiation_volume"]
         dose_image = kwargs["dose_image"]
+        dose_cal_model = kwargs.get("dose_cal_model")
         mode = kwargs.get("mode", "rule_based")
         dl_params = kwargs.get("dl_params", {})
         seed_info = kwargs.get("seed_info", {"radius": 0.4, "length": 4.5, "seed_avr_dose": 50})
@@ -189,6 +190,7 @@ class SeedPlanningTool(BaseTool):
                 init_trajectories=trajectories,
                 radiation_volume=radiation_volume,
                 dose_image=dose_image,
+                dose_cal_model=dose_cal_model,
                 dl_params=dl_params,
                 lower_bound=lower_bound,
                 upper_bound=upper_bound,

@@ -12,8 +12,15 @@ except ImportError:
 
 
 
+class _MockProgressDialog:
+    """No-op progress dialog for headless mode."""
+    def setValue(self, v): pass
+    def setLabelText(self, t): pass
+
+_mock_progress = _MockProgressDialog()
+
 def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract_angle,
-              target_value, background_value, obstacle_value, maximum_candidate_trajectories, progressDialog,
+              target_value, background_value, obstacle_value, maximum_candidate_trajectories, progressDialog=None,
               min_depth=2):
     """
     Generate an initial set of candidate needle/catheter trajectories within a 3-D radiation volume.
@@ -54,6 +61,8 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
         (origin_voxel, direction_vector, depth, ...metadata...)
         Ready for downstream optimisation or refinement.
     """
+    if progressDialog is None:
+        progressDialog = _mock_progress
     # ---- 1.  Build conical direction grid ----
     candidate_dirs = utilizations.get_cone(
         ref_direc, direc_resolution[0], direc_resolution[1], direc_resolution[2]
@@ -107,9 +116,9 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
 
 
 
-def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model, dl_params, lower_bound, upper_bound, distance_rate, 
-                 target_value, background_value, obstacle_value, infer_img_size, in_lowest_dose, out_highest_dose, 
-                 DVH_rate, seed_info, iter_rate, image_normalize_min, image_normalize_max, image_normalize_scale, progressDialog):
+def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model=None, dl_params=None, lower_bound=0.8, upper_bound=10, distance_rate=0.8,
+                 target_value=1, background_value=0, obstacle_value=3, infer_img_size=(32,32,32), in_lowest_dose=1, out_highest_dose=1,
+                 DVH_rate=0.9, seed_info=None, iter_rate=2, image_normalize_min=-1000, image_normalize_max=3000, image_normalize_scale=255, progressDialog=None):
     """
     Generate an optimized radiation treatment plan by selecting seed trajectories, placing seeds, and refining the plan 
     to ensure effective tumor coverage while minimizing radiation exposure to healthy tissues.
@@ -143,6 +152,8 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
         2. **Plan Refinement**: Remove ineffective seeds, refine trajectory placements, and ensure adequate radiation coverage.
         3. **Fine-tuning for Safety**: Adjust seed placements iteratively to minimize excessive radiation exposure to healthy tissue regions.
     """
+    if progressDialog is None:
+        progressDialog = _mock_progress
 
     # --- Initialize Variables ---
     candidate_trajectories = copy.deepcopy(init_trajectories)
@@ -340,7 +351,7 @@ def optimal_plan_rf(
     image_normalize_min,
     image_normalize_max,
     image_normalize_scale,
-    progressDialog
+    progressDialog=None
 ):
     """
     Hierarchical reinforcement-learning pipeline for prostate/LDR brachytherapy.
@@ -393,6 +404,8 @@ def optimal_plan_rf(
         (high_action, planned_positions, dose, DVH_rate) produced by
         hierarchical REINFORCE.
     """
+    if progressDialog is None:
+        progressDialog = _mock_progress
     distance_map = distance_transform_edt(radiation_volume == target_value)
     
     progressDialog.setValue(50)

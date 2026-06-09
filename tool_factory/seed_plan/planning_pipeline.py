@@ -326,6 +326,7 @@ class PlanningPipelineTool(BaseTool):
     def _step_seed_planning(self, ct_image, radiation_volume, seed_info, planning_params, dl_params, rf_params, mode):
         """Step 3: Optimize seed placement."""
         from tool_factory.seed_plan import SeedPlanningTool
+        import torch
 
         agent = _get_agent()
         trajectories = None
@@ -334,11 +335,29 @@ class PlanningPipelineTool(BaseTool):
         if not trajectories:
             return ToolResult(success=False, error="No trajectories available. Run trajectory_init and refine first.")
 
+        # Load dose prediction model
+        dose_cal_model = None
+        model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "dose_pre", "dose_model.pth")
+        if not os.path.exists(model_path):
+            model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "plans", "dose_pre", "dose_model.pth")
+        if os.path.exists(model_path):
+            try:
+                from plans.dose_pre.myDoseNet import myDoseNet
+                dose_cal_model = myDoseNet(spatial_dims=3, in_channels=3, out_channels=1, features=(16, 32, 64, 128, 256, 32))
+                dose_cal_model.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=True))
+                dose_cal_model.eval()
+                logger.info(f"Dose model loaded from {model_path}")
+            except Exception as e:
+                logger.warning(f"Failed to load dose model: {e}")
+        else:
+            logger.warning(f"Dose model not found at {model_path}")
+
         tool = SeedPlanningTool()
         result = tool._execute(
             trajectories=trajectories,
             radiation_volume=radiation_volume,
             dose_image=ct_image,
+            dose_cal_model=dose_cal_model,
             mode=mode,
             dl_params=dl_params,
             rf_params=rf_params,
