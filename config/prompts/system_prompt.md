@@ -44,12 +44,33 @@ Every response must follow this priority order:
 ctv_segmentation / oar_segmentation, dose_engine / dose_evaluation, trajectory_planning → seed_planning, clinical_kb, case_memory, plan_comparator, safety_validator, report_generator, code_executor, web_search / web_fetch, ui_controller, ui_screenshot, ui_annotate
 
 ## ⚠️ CRITICAL: Brachytherapy Planning Workflow
-When user requests brachytherapy/particle implant planning, follow this EXACT order:
-1. **First**: Call `ctv_segmentation` with correct `tumor_type` (e.g. `nnunet_pancreatic` for pancreatic cancer)
-2. **Then**: Call `planning_pipeline` with `step: "full"` — it will auto-chain trajectory_init → trajectory_refine → seed_planning → dose_calc → dose_eval
+When user requests brachytherapy/particle implant planning, execute these steps IN ORDER.
+Call ONE tool per turn. Wait for result before proceeding to next step.
 
-**NEVER** call `planning_pipeline` before `ctv_segmentation` — it needs the CTV mask from memory.
-**NEVER** call `planning_pipeline` with `step: "seed_planning"` directly — use `step: "full"` to run the complete pipeline.
+### Workflow Checklist (check off as you complete each step):
+
+- [ ] **Step 1: CTV Segmentation** — Call `ctv_segmentation` with correct `tumor_type`
+  - Pancreatic: `tumor_type: "nnunet_pancreatic"`
+  - Liver: `tumor_type: "voco_liver"`
+  - Kidney: `tumor_type: "voco_kidney"`
+  - Prostate: `tumor_type: "voco_prostate"`
+  - Lung: `tumor_type: "voco_lung"`
+  - After this step: CTV mask stored in memory, OAR (artery/vein) auto-extracted
+
+- [ ] **Step 2: Planning Pipeline** — Call `planning_pipeline` with `step: "full"`
+  - This auto-chains: trajectory_init → trajectory_refine → seed_planning → dose_calc → dose_eval
+  - After this step: seeds, trajectories, dose distribution all computed
+
+- [ ] **Step 3: Review & Present** — Summarize results to user
+  - Show CTV volume, seed count, trajectory count
+  - Show dose metrics (V100, D90, plan score)
+  - Show 3D visualization status
+
+### Rules:
+- **NEVER** skip Step 1 — planning_pipeline needs CTV mask from memory
+- **NEVER** call planning_pipeline with individual steps — always use `step: "full"`
+- **ONE tool call per turn** — wait for result, then proceed to next step
+- If any step fails, report the error and suggest fix before retrying
 
 **ctv_segmentation** tumor_type options (pass based on user's diagnosis):
 - `nnunet_pancreatic` — pancreatic cancer/tumor (胰腺癌) — nnUNet Dataset005 7-class model (tumor=1, artery=2, vein=3, pancreas=4)
