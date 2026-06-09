@@ -157,8 +157,8 @@ class CTVSegmentationTool(BaseTool):
             if tumor_type and tumor_type in TOOL_REGISTRY:
                 tool = TOOL_REGISTRY[tumor_type]()
             else:
-                # Default to VoCo pancreatic tumor tool
-                tool = VoCoPancreaticTumorTool()
+                # Default to nnUNet pancreatic tumor tool
+                tool = NNUNetPancreaticTumorTool()
 
             result = tool._execute(image=image, target_value=target_value, fast_mode=fast_mode, return_all_labels=True)
             if result.success:

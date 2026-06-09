@@ -1242,9 +1242,6 @@ class BrachyAgent:
                     sitk_image.SetSpacing(tuple(float(x) for x in ct_image.header.get_zooms()[:3]))
                     sitk_image.SetOrigin(tuple(float(x) for x in ct_image.affine[:3, 3]))
                     params["image"] = sitk_image
-                # Force TotalSegmentator since nnU-Net pancreatic model is not installed
-                if params.get("organ_type") == "pancreatic":
-                    params["organ_type"] = "general"
         elif tool_name == "trajectory_planning":
             if "dose_image" not in params and ct_image is not None:
                 params["dose_image"] = ct_image
@@ -1839,12 +1836,12 @@ print(json.dumps(result))
                 return "📋 Source: Internal system data"
         return ""
 
-    # Tumor type → VoCo tool mapping
+    # Tumor type → CTV tool mapping
     _TUMOR_TYPE_MAP = {
-        # English names
-        "pancreatic_tumor": "voco_pancreatic",
-        "pancreatic": "voco_pancreatic",
-        "pancreas": "voco_pancreatic",
+        # English names — pancreatic uses nnUNet (more accurate)
+        "pancreatic_tumor": "nnunet_pancreatic",
+        "pancreatic": "nnunet_pancreatic",
+        "pancreas": "nnunet_pancreatic",
         "liver_tumor": "voco_liver",
         "liver": "voco_liver",
         "kidney_tumor": "voco_kidney",
@@ -1858,10 +1855,10 @@ print(json.dumps(result))
         "pulmonary_embolism": "voco_fumpe",
         "covid": "voco_covid",
         "aorta": "voco_aorta",
-        # Chinese names
-        "胰腺癌": "voco_pancreatic",
-        "胰腺肿瘤": "voco_pancreatic",
-        "胰腺": "voco_pancreatic",
+        # Chinese names — pancreatic uses nnUNet
+        "胰腺癌": "nnunet_pancreatic",
+        "胰腺肿瘤": "nnunet_pancreatic",
+        "胰腺": "nnunet_pancreatic",
         "肝癌": "voco_liver",
         "肝肿瘤": "voco_liver",
         "肝脏": "voco_liver",

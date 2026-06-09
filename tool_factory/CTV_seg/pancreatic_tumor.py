@@ -142,7 +142,7 @@ class PancreaticTumorSegmentationTool(BaseTool):
 
     def _nnunet_segmentation(self, image: sitk.Image, target_value: float, fast_mode: bool):
         module_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        base_results_dir = os.path.join(module_dir, "plans", "seg", "pancreatic_tumor")
+        base_results_dir = os.path.join(module_dir, "VoCo", "pancreatic_tumor")
 
         if not os.path.exists(base_results_dir):
             raise RuntimeError(f"nnU-Net model not found at {base_results_dir}")
