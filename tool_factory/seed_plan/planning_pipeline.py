@@ -754,6 +754,17 @@ class PlanningPipelineTool(BaseTool):
             agent.memory.store("dose_distribution", sum_image)
             agent.memory.store("total_seeds", total_seeds)
             agent.memory.store("num_trajectories", num_trajectories)
+            # Store actual config used — so reviewer agents can read real thresholds
+            agent.memory.store("plan_config", {
+                "in_lowest_energy": float(args.in_lowest_energy),
+                "out_highest_energy": float(args.out_highest_energy),
+                "DVH_rate": float(args.DVH_rate),
+                "seed_info": {
+                    "radius": float(args.seed_info.get("radius", 0.4)),
+                    "length": float(args.seed_info.get("length", 3.7)),
+                    "margin_rate": float(args.seed_info.get("margin_rate", 1.5)),
+                },
+            })
             logger.info(f"[seed_planning] Stored in agent id={id(agent)}: seed_plan={len(plan_res)} entries, total_seeds={total_seeds}")
 
         summary = (

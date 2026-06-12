@@ -3770,6 +3770,7 @@ print(json.dumps(result))
                                     "total_seeds": self.memory.retrieve("total_seeds", 0),
                                     "num_trajectories": self.memory.retrieve("num_trajectories", 0),
                                 },
+                                "plan_config": self.memory.retrieve("plan_config", {}),
                             })
                         )
                         loop.close()
@@ -3841,6 +3842,7 @@ print(json.dumps(result))
                                 "total_seeds": self.memory.retrieve("total_seeds", 0),
                                 "num_trajectories": self.memory.retrieve("num_trajectories", 0),
                             },
+                            "plan_config": self.memory.retrieve("plan_config", {}),
                         }
                         break
 

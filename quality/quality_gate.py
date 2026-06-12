@@ -162,12 +162,11 @@ class QualityGate:
 
         return selected
 
-    # Standard context injected into every agent call so reviewers never
-    # misinterpret normalized dose values as Gy.
-    _DOSE_UNIT_CONTEXT = {
+    # Minimal static context — only unit metadata that never changes.
+    # Dynamic config (in_lowest_energy, seed_info, etc.) comes from plan_config
+    # stored in agent memory at planning time.
+    _STATIC_CONTEXT = {
         "dose_units": "NORMALIZED (0-255 range), NOT Gy",
-        "prescription_threshold": 1.0,
-        "typical_max_dose": "1.5-2.5 normalized",
         "planning_grid": [128, 128, 64],
     }
 
@@ -178,18 +177,20 @@ class QualityGate:
         # The review_content has: {"output_type": ..., "content": actual_data, "context": ...}
         actual_data = content.get("content", content)
         context = content.get("context", {})
-        # Always include dose unit context for clinical reviewers
+
+        # Merge static context with any dynamic context
         if isinstance(context, dict):
-            context = {**self._DOSE_UNIT_CONTEXT, **context}
+            context = {**self._STATIC_CONTEXT, **context}
         else:
-            context = self._DOSE_UNIT_CONTEXT
+            context = self._STATIC_CONTEXT
 
         # If content already has the right structure, pass it through
         if "dose_metrics" in actual_data or "claims" in actual_data:
-            # Ensure plan_info is included for plan_reviewer and safety_guardian
+            # Ensure plan_config is included for plan_reviewer and safety_guardian
             if agent_name in ["plan_reviewer", "safety_guardian"]:
                 return {
                     "dose_metrics": actual_data.get("dose_metrics", {}),
+                    "plan_config": actual_data.get("plan_config", {}),
                     "plan_info": actual_data.get("plan_info", context),
                     "context": context,
                     "output_type": output_type,
@@ -207,6 +208,7 @@ class QualityGate:
         if agent_name == "plan_reviewer":
             return {
                 "dose_metrics": actual_data if isinstance(actual_data, dict) else {},
+                "plan_config": actual_data.get("plan_config", {}) if isinstance(actual_data, dict) else {},
                 "plan_info": context if isinstance(context, dict) else {},
                 "context": str(context),
             }
@@ -219,6 +221,7 @@ class QualityGate:
         elif agent_name == "safety_guardian":
             return {
                 "dose_metrics": actual_data if isinstance(actual_data, dict) else {},
+                "plan_config": actual_data.get("plan_config", {}) if isinstance(actual_data, dict) else {},
                 "plan_info": context if isinstance(context, dict) else {},
                 "output_type": output_type,
             }
