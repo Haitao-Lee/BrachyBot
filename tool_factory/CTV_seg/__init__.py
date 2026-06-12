@@ -144,6 +144,7 @@ class CTVSegmentationTool(BaseTool):
         target_value = kwargs.get("target_value", 1)
         fast_mode = kwargs.get("fast_mode", False)
 
+        result = None
         if label_path and os.path.exists(label_path):
             label_img = sitk.ReadImage(label_path)
             ctv_array = sitk.GetArrayFromImage(label_img)
@@ -172,23 +173,38 @@ class CTVSegmentationTool(BaseTool):
         voxel_size = spacing[0] * spacing[1] * spacing[2]
         volume_mm3 = voxel_count * voxel_size
 
+        # Update label map with tumor type name (e.g., "pancreatic tumor" instead of just "tumor")
+        label_map = result.metadata.get("label_map", {}) if result is not None else {}
+        tumor_type_name = (tumor_type or "tumor").replace("_", " ").replace("nnunet ", "").replace("voco ", "")
+        if 1 in label_map:
+            if tumor_type_name == "tumor":
+                # Default tool is nnUNet pancreatic — use "pancreatic tumor"
+                label_map[1] = "pancreatic tumor"
+            else:
+                label_map[1] = f"{tumor_type_name} tumor"
+        import logging
+        logging.getLogger(__name__).info(f"CTV label_map updated: {label_map}, tumor_type={tumor_type}, tumor_type_name={tumor_type_name}")
+
+        res_meta = result.metadata if result is not None else {}
         meta = {
             "ctv_mask": ctv_mask,
             "ctv_array": ctv_array,
             "ctv_volume_mm3": float(volume_mm3),
+            # Full multi-label array for data tree display (if available from nnUNet)
+            "full_label_array": res_meta.get("full_label_array"),
             "ctv_voxel_count": voxel_count,
             "tumor_type_used": tumor_type or "auto",
-            "label_counts": result.metadata.get("label_counts", {}),
-            "label_map": result.metadata.get("label_map", {}),
-            "label_stats": result.metadata.get("label_stats", {}),
+            "label_counts": res_meta.get("label_counts", {}),
+            "label_map": label_map,
+            "label_stats": res_meta.get("label_stats", {}),
         }
         # Pass through OAR data if present (e.g. artery/vein from nnUNet pancreatic)
-        if "oar_array" in result.metadata:
-            meta["oar_array"] = result.metadata["oar_array"]
-        if "oar_mask" in result.metadata:
-            meta["oar_mask"] = result.metadata["oar_mask"]
-        if "organ_names" in result.metadata:
-            meta["organ_names"] = result.metadata["organ_names"]
+        if "oar_array" in res_meta:
+            meta["oar_array"] = res_meta["oar_array"]
+        if "oar_mask" in res_meta:
+            meta["oar_mask"] = res_meta["oar_mask"]
+        if "organ_names" in res_meta:
+            meta["organ_names"] = res_meta["organ_names"]
 
         return ToolResult(
             success=True,

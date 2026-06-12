@@ -2,6 +2,7 @@
 import copy
 import math
 import os
+import time
 from typing import Any, Dict, List, Tuple
 
 # ===== Third-party libraries =====
@@ -10,25 +11,88 @@ import numpy as np
 import scipy
 import torch
 import torch.optim as optim
-import vtk
-from sklearn.cluster import DBSCAN
+# import vtk  # not needed for headless mode
+# from sklearn.cluster import DBSCAN  # not needed for headless mode
 from sklearn.decomposition import PCA
-from tqdm import tqdm
+# from tqdm import tqdm  # not needed for headless mode
 import SimpleITK as sitk
 try:
     import slicer
 except ImportError:
     from . import slicer_mock as slicer
+import traceback as _tb
+
 
 # ===== Local modules =====
-from . import fitting_model
+# from . import fitting_model  # not needed for headless mode
 from . import geometry
-try:
-    from . import reinforcement
-except ImportError:
-    reinforcement = None
+# from . import reinforcement  # not needed for headless mode
 from . import visualizer
 
+
+_last_process_events_time = 0.0
+_PROCESS_EVENTS_INTERVAL_MS = 300.0
+
+
+def throttled_process_events():
+    """Call slicer.app.processEvents() with throttling.
+
+    Only processes Qt events if at least _PROCESS_EVENTS_INTERVAL_MS
+    milliseconds have elapsed since the last call. This prevents
+    excessive UI refresh overhead in tight computation loops.
+
+    Returns:
+        None
+    """
+    global _last_process_events_time
+    now = time.time() * 1000.0
+    if now - _last_process_events_time >= _PROCESS_EVENTS_INTERVAL_MS:
+        slicer.app.processEvents()
+        _last_process_events_time = now
+
+
+class DoseImageContext:
+    """Cache for dose image preprocessing results.
+
+    Caches the normalized dose image and its numpy array to avoid
+    redundant normalization and SimpleITK-to-numpy conversions
+    across multiple single_seed_dose_calculation_dl calls.
+
+    Attributes:
+        dose_image: Original SimpleITK dose image.
+        norm_dose_image: Normalized SimpleITK dose image.
+        norm_dose_np: Normalized dose image as numpy array.
+        image_direction: Image direction cosine matrix.
+        image_spacing: Image voxel spacing.
+        image_origin: Image origin coordinates.
+        image_shape: Shape of the image array.
+        device: Torch device of the dose calculation model.
+    """
+
+    def __init__(self, dose_image, image_normalize_min, image_normalize_max, dose_cal_model):
+        """Initialize the dose image context with cached preprocessing.
+
+        Args:
+            dose_image: SimpleITK dose image.
+            image_normalize_min: Minimum value for intensity windowing.
+            image_normalize_max: Maximum value for intensity windowing.
+            dose_cal_model: Dose prediction model (used to determine device).
+        """
+        self.dose_image = dose_image
+        self.image_direction = dose_image.GetDirection()
+        self.image_spacing = dose_image.GetSpacing()
+        self.image_origin = dose_image.GetOrigin()
+        self.image_shape = sitk.GetArrayFromImage(dose_image).shape
+        self.device = next(dose_cal_model.parameters()).device
+
+        self.norm_dose_image = normalize_dose_image(
+            dose_image,
+            image_normalize_min,
+            image_normalize_max,
+            image_normalize_min,
+            image_normalize_max
+        )
+        self.norm_dose_np = sitk.GetArrayFromImage(self.norm_dose_image)
 
 
 def create_folder_if_not_exists(folder_path):
@@ -204,6 +268,223 @@ def get_reference_direction(radiation_array, target_value):
     return direction_vector / np.linalg.norm(direction_vector)
 
 
+def compute_body_shell_and_ref_direction(ct_array, ctv_mask, spacing, target_value=1, direction_matrix=None):
+    """Compute body surface shell and reference direction from CT and CTV data.
+
+    Extracts a thin shell from the body surface using thresholding and
+    morphological operations, removes truncated regions by detecting
+    near-planar surfaces at volume boundaries, finds the shell region
+    closest to the CTV, and computes the inward surface normal via PCA
+    as the reference direction for needle planning.
+
+    Truncation detection uses surface normal analysis: truncated surfaces
+    are cross-sections of the body and are nearly perfect planes with
+    normals aligned with the volume boundary normal. Natural body surfaces
+    are curved and their normals point in various directions.
+
+    Args:
+        ct_array: 3D numpy array of CT HU values, shape (Z, Y, X).
+        ctv_mask: 3D numpy array of segmentation labels, same shape as ct_array.
+        spacing: 3-element array-like of voxel spacing in mm [z, y, x] order.
+        target_value: Label value identifying the CTV in ctv_mask.
+        direction_matrix: 3x3 numpy array, pure direction cosines D
+            (IJK to RAS without spacing). Defaults to identity.
+
+    Returns:
+        tuple: (ref_direction_ras, body_shell, closest_point_voxel, ctv_centroid_voxel) where:
+            ref_direction_ras: 3-element unit vector in RAS physical space
+                pointing outward from the body surface (away from body center),
+                matching the convention used by the planning algorithm where
+                ref_direc points from CTV toward the entry surface,
+                or None if computation fails.
+            body_shell: 3D uint8 array of the body surface shell,
+                or None if computation fails.
+            closest_point_voxel: 3-element array [k, j, i] of the shell point
+                closest to CTV in voxel space, or None.
+            ctv_centroid_voxel: 3-element array [k, j, i] of the CTV centroid
+                in voxel space, or None.
+    """
+    from scipy.ndimage import binary_erosion, binary_fill_holes, distance_transform_edt, label, sobel
+
+    try:
+        spacing = np.array(spacing, dtype=np.float64)
+        if ct_array.size == 0:
+            return None, None, None, None
+
+        body_mask = ct_array > -500
+        body_mask = body_mask.astype(np.uint8)
+        if not np.any(body_mask):
+            return None, None, None, None
+
+        labeled_array, num_features = label(body_mask)
+        if num_features == 0:
+            return None, None, None, None
+        component_sizes = np.bincount(labeled_array.ravel())
+        component_sizes[0] = 0
+        largest_component = np.argmax(component_sizes)
+        body_mask = (labeled_array == largest_component).astype(np.uint8)
+
+        for z_idx in range(body_mask.shape[0]):
+            body_mask[z_idx] = binary_fill_holes(body_mask[z_idx])
+        for y_idx in range(body_mask.shape[1]):
+            body_mask[:, y_idx, :] = binary_fill_holes(body_mask[:, y_idx, :])
+        for x_idx in range(body_mask.shape[2]):
+            body_mask[:, :, x_idx] = binary_fill_holes(body_mask[:, :, x_idx])
+        body_mask = body_mask.astype(np.uint8)
+
+        min_spacing = max(float(np.min(spacing)), 0.1)
+        erosion_iterations = max(1, int(round(3.0 / min_spacing)))
+        eroded = binary_erosion(body_mask, iterations=erosion_iterations).astype(np.uint8)
+        shell = body_mask - eroded
+
+        if not np.any(shell):
+            return None, None, None, None
+
+        truncation_mask = np.zeros_like(shell, dtype=np.uint8)
+        sz, sy, sx = shell.shape
+        boundary_margin = erosion_iterations + 3
+
+        padded_mask = np.pad(body_mask, pad_width=1, mode='constant', constant_values=0)
+        dist_inside = distance_transform_edt(padded_mask, sampling=spacing)
+        dist_inside = dist_inside[1:-1, 1:-1, 1:-1]
+
+        grad_z = sobel(dist_inside, axis=0) * spacing[0]
+        grad_y = sobel(dist_inside, axis=1) * spacing[1]
+        grad_x = sobel(dist_inside, axis=2) * spacing[2]
+        grad_mag = np.sqrt(grad_z ** 2 + grad_y ** 2 + grad_x ** 2)
+        grad_mag[grad_mag < 1e-10] = 1.0
+        normal_z = -grad_z / grad_mag
+        normal_y = -grad_y / grad_mag
+        normal_x = -grad_x / grad_mag
+
+        normal_alignment_threshold = 0.85
+
+        z_has_body = np.any(body_mask, axis=(1, 2))
+        if z_has_body[0]:
+            near_boundary = np.zeros_like(shell, dtype=bool)
+            near_boundary[:boundary_margin, :, :] = True
+            z_aligned = np.abs(normal_z) > normal_alignment_threshold
+            truncation_mask[near_boundary & z_aligned & (shell > 0)] = 1
+
+        if z_has_body[-1]:
+            near_boundary = np.zeros_like(shell, dtype=bool)
+            near_boundary[sz - boundary_margin:, :, :] = True
+            z_aligned = np.abs(normal_z) > normal_alignment_threshold
+            truncation_mask[near_boundary & z_aligned & (shell > 0)] = 1
+
+        y_has_body = np.any(body_mask, axis=(0, 2))
+        if y_has_body[0]:
+            near_boundary = np.zeros_like(shell, dtype=bool)
+            near_boundary[:, :boundary_margin, :] = True
+            y_aligned = np.abs(normal_y) > normal_alignment_threshold
+            truncation_mask[near_boundary & y_aligned & (shell > 0)] = 1
+
+        if y_has_body[-1]:
+            near_boundary = np.zeros_like(shell, dtype=bool)
+            near_boundary[:, sy - boundary_margin:, :] = True
+            y_aligned = np.abs(normal_y) > normal_alignment_threshold
+            truncation_mask[near_boundary & y_aligned & (shell > 0)] = 1
+
+        x_has_body = np.any(body_mask, axis=(0, 1))
+        if x_has_body[0]:
+            near_boundary = np.zeros_like(shell, dtype=bool)
+            near_boundary[:, :, :boundary_margin] = True
+            x_aligned = np.abs(normal_x) > normal_alignment_threshold
+            truncation_mask[near_boundary & x_aligned & (shell > 0)] = 1
+
+        if x_has_body[-1]:
+            near_boundary = np.zeros_like(shell, dtype=bool)
+            near_boundary[:, :, sx - boundary_margin:] = True
+            x_aligned = np.abs(normal_x) > normal_alignment_threshold
+            truncation_mask[near_boundary & x_aligned & (shell > 0)] = 1
+
+        clean_shell = (shell > 0) & (truncation_mask == 0)
+        clean_shell = clean_shell.astype(np.uint8)
+
+        if not np.any(clean_shell):
+            clean_shell = shell
+
+        # Accept all non-zero values as CTV (handles multiple visible segments with different values)
+        ctv_binary = (ctv_mask > 0).astype(np.uint8)
+        if not np.any(ctv_binary):
+            return None, clean_shell, None, None
+
+        dist_map = distance_transform_edt(1 - ctv_binary, sampling=spacing)
+
+        shell_distances = dist_map.copy()
+        shell_distances[clean_shell == 0] = np.inf
+        shell_flat = shell_distances.ravel()
+        if np.all(np.isinf(shell_flat)):
+            return None, clean_shell, None, None
+
+        min_idx = np.argmin(shell_flat)
+        closest_point_voxel = np.array(np.unravel_index(min_idx, clean_shell.shape), dtype=np.float64)
+
+        ctv_centroid_voxel = np.mean(np.argwhere(ctv_binary > 0), axis=0).astype(np.float64)
+
+        R_mm = 20.0
+        coords = np.argwhere(clean_shell > 0)
+        if len(coords) == 0:
+            return None, clean_shell, None, None
+
+        dists_from_closest = np.sqrt(np.sum(((coords - closest_point_voxel) * spacing) ** 2, axis=1))
+        region_coords = coords[dists_from_closest <= R_mm]
+        if len(region_coords) < 10:
+            region_coords = coords[dists_from_closest <= R_mm * 2]
+        if len(region_coords) < 10:
+            return None, clean_shell, None, None
+
+        region_coords_float = region_coords.astype(np.float64) * spacing
+        pca = PCA()
+        pca.fit(region_coords_float)
+
+        eigenvalues = pca.explained_variance_
+        if eigenvalues[2] / (eigenvalues[0] + 1e-10) > 0.5:
+            return None, clean_shell, None, None
+
+        normal_phys = pca.components_[2]
+
+        body_centroid_phys = np.mean(np.argwhere(body_mask > 0), axis=0).astype(np.float64) * spacing
+        region_centroid_phys = np.mean(region_coords_float, axis=0)
+        inward_phys = body_centroid_phys - region_centroid_phys
+
+        if np.dot(normal_phys, inward_phys) < 0:
+            normal_phys = -normal_phys
+
+        normal_phys = normal_phys / np.linalg.norm(normal_phys)
+
+        if direction_matrix is None:
+            direction_matrix = np.eye(3)
+        normal_phys_xyz = normal_phys[::-1]
+        ras_direction = normal_phys_xyz @ direction_matrix.T
+        norm = np.linalg.norm(ras_direction)
+        if norm < 1e-10:
+            return None, clean_shell, None, None
+        ref_direction_ras = ras_direction / norm
+
+        return ref_direction_ras, clean_shell, closest_point_voxel, ctv_centroid_voxel
+
+    except Exception:
+        return None, None, None, None
+
+
+def ras_direction_to_voxel(ras_direc, image):
+    """Convert a RAS physical direction vector to voxel space.
+
+    Args:
+        ras_direc: 3-element unit vector in RAS physical space.
+        image: SimpleITK.Image with direction/spacing metadata.
+
+    Returns:
+        np.ndarray: 3-element unit vector in voxel space [k, j, i] order.
+    """
+    spacing = np.array(image.GetSpacing())
+    direction = np.array(image.GetDirection()).reshape(3, 3)
+    v = (np.array(ras_direc) @ direction) / spacing
+    voxel_direc = v[::-1]
+    return voxel_direc / np.linalg.norm(voxel_direc)
+
+
 def volume2array(path):
     """
     Converts a medical image volume to a NumPy array.
@@ -217,51 +498,54 @@ def volume2array(path):
     return sitk.GetArrayFromImage(ImageResample_size(read_nii_image(path), is_label=True))  # Converts the volume to a NumPy array
 
 
-def get_planning_volume_array(target_volume, target_value, obstacle_value, background_value, risk_volume_path=None, risk_value=None):
+def get_planning_volume_array(ctv_volume, oar_volume=None, target_value=1, obstacle_value=2, background_value=0):
     """
-    Generate a radiation planning volume array by processing the target volume.
+    Generate a radiation planning volume array from CTV and optional OAR volumes.
 
-    This function loads a target volume, applies thresholding, and assigns specific values to 
-    target, obstacle, and background regions based on predefined criteria. The final array 
-    represents the radiation planning volume.
+    This function loads CTV volume (required) and OAR volume (optional), and assigns
+    specific values to target, obstacle, and background regions. CTV non-zero voxels
+    are marked as target, OAR non-zero voxels are marked as obstacles.
 
     Args:
-        target_volume : 
-            the target volume file (e.g., NIfTI or other supported formats).
-        target_value (int or float): 
-            Value assigned to voxels identified as target regions.
-        obstacle_value (int or float): 
-            Value assigned to voxels identified as obstacle regions.
-        background_value (int or float): 
-            Value assigned to voxels identified as background regions.
+        ctv_volume (SimpleITK.Image or numpy.ndarray):
+            CTV volume image (single mask, non-zero values indicate CTV region).
+        oar_volume (SimpleITK.Image or numpy.ndarray, optional):
+            OAR volume image (multi-mask or single mask, non-zero values indicate OAR regions).
+            If None, no OAR regions will be marked.
+        target_value (int or float):
+            Value assigned to voxels identified as target (CTV) regions. Default: 1
+        obstacle_value (int or float):
+            Value assigned to voxels identified as obstacle (OAR) regions. Default: 2
+        background_value (int or float):
+            Value assigned to voxels identified as background regions. Default: 0
 
     Returns:
-        ndarray: 
-            A NumPy array representing the radiation planning volume, with target, obstacle, 
+        ndarray:
+            A NumPy array representing the radiation planning volume, with target, obstacle,
             and background regions labeled according to the specified values.
     """
-    
-    # Step 1: Load the target volume into a NumPy array
-    original_tv_array = sitk.GetArrayFromImage(target_volume)
-    tv_array = original_tv_array.copy()
-    
-    # commented out for official use
-    # tv_array[tv_array>0.5] = target_value
-    # tv_array[tv_array<0.5] = background_value
-    
-    # Step 2: Classify regions in the target volume based on their values:
-    # - Voxels matching the target value are kept as target regions.
-    # - Voxels matching the obstacle value are kept as obstacle regions.
-    # - All other voxels are classified as background regions.
-    tv_array[(original_tv_array >= obstacle_value)] = obstacle_value
-    tv_array[(tv_array != target_value) & (tv_array != obstacle_value)] = background_value
-    tv_array[(original_tv_array == target_value)] = target_value
 
-    if risk_volume_path is not None:
-        risk_array = volume2array(risk_volume_path)
-        tv_array[(risk_array > 0)] = obstacle_value
+    # Step 1: Load the CTV volume into a NumPy array (handle both SimpleITK and numpy)
+    if isinstance(ctv_volume, sitk.Image):
+        ctv_array = sitk.GetArrayFromImage(ctv_volume)
+    else:
+        ctv_array = np.asarray(ctv_volume)
+    tv_array = np.full_like(ctv_array, background_value, dtype=ctv_array.dtype)
+    
+    # Step 2: Mark CTV non-zero regions as target
+    tv_array[ctv_array > 0] = target_value
+    
+    # Step 3: If OAR volume is provided, mark OAR non-zero regions as obstacle
+    # But ensure CTV regions are NOT overwritten (CTV takes priority)
+    if oar_volume is not None:
+        if isinstance(oar_volume, sitk.Image):
+            oar_array = sitk.GetArrayFromImage(oar_volume)
+        else:
+            oar_array = np.asarray(oar_volume)
+        # Only mark OAR where it's NOT CTV (background regions only)
+        tv_array[(oar_array > 0) & (ctv_array == 0)] = obstacle_value
         
-    # Step 3: Return the processed radiation planning volume array
+    # Step 4: Return the processed radiation planning volume array
     return tv_array
 
 
@@ -624,66 +908,51 @@ def single_dose_calculation_v2(pos, direc, dose_image, dose_cal_model):
     return pred_labels.squeeze(0).squeeze(0).detach().cpu().numpy()
 
 
-def single_seed_dose_calculation_dl(pos, direc, dose_image, dose_cal_model, infer_image_size, seed_info, image_normalize_min, image_normalize_max, image_normalize_scale):
-    """
-    Calculate the radiation dose distribution for a single seed using a deep learning model.
+def single_seed_dose_calculation_dl(pos, direc, dose_image, dose_cal_model, infer_image_size, seed_info, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None):
+    """Calculate the radiation dose distribution for a single seed using a deep learning model.
 
-    This function predicts the radiation dose distribution based on the seed's spatial position, orientation,
-    and physical properties. It prepares the input tensors, processes them using a deep learning model,
-    and returns the resulting dose map.
+    This function predicts the radiation dose distribution based on the seed's
+    spatial position, orientation, and physical properties. When a DoseImageContext
+    is provided, it reuses cached normalization results to avoid redundant
+    SimpleITK operations.
 
-    Parameters:
-        pos (tuple):
-            The (z, y, x) coordinates of the seed position in voxel space.
-        direc (tuple):
-            A direction vector (dx, dy, dz) indicating the orientation of the radiation seed.
-        dose_image (SimpleITK.Image):
-            A medical image representing the dose grid, containing spatial metadata (size, spacing, origin).
-        dose_cal_model (torch.nn.Module):
-            A pre-trained deep learning model for predicting radiation dose distributions.
-        infer_image_size (tuple):
-            The size of the cropped region used for dose inference.
-        seed_info (dict):
-            Dictionary containing seed-specific parameters:
-                - 'length' (float): Effective length of the radiation seed.
-        image_normalize_min (float):
-            Minimum value for image normalization.
-        image_normalize_max (float):
-            Maximum value for image normalization.
-        image_normalize_scale (float):
-            Scaling factor applied during image normalization.
+    Args:
+        pos: The (z, y, x) coordinates of the seed position in voxel space.
+        direc: A direction vector (dx, dy, dz) indicating the orientation.
+        dose_image: A SimpleITK.Image representing the dose grid.
+        dose_cal_model: A pre-trained deep learning model for dose prediction.
+        infer_image_size: The size of the cropped region used for inference.
+        seed_info: Dictionary containing seed-specific parameters ('length').
+        image_normalize_min: Minimum value for image normalization.
+        image_normalize_max: Maximum value for image normalization.
+        image_normalize_scale: Scaling factor applied during normalization.
+        dose_context: Optional DoseImageContext with cached preprocessing.
+            When provided, avoids redundant normalize_dose_image calls.
 
     Returns:
-        numpy.ndarray:
-            A 3D NumPy array representing the predicted radiation dose distribution.
-
-    Workflow:
-        1. Normalize and crop the dose image around the seed position.
-        2. Transform the seed position into physical coordinates.
-        3. Generate a spatial dose map (soft_treatment_plan) based on seed position.
-        4. Create a line source map using seed position, orientation, and length.
-        5. Prepare input tensors for the deep learning model.
-        6. Pass tensors through the model to predict the dose distribution.
-        7. Convert the model output into a SimpleITK image and restore metadata.
-        8. Return the predicted dose map as a NumPy array.
+        A 3D NumPy array representing the predicted radiation dose distribution.
     """
 
-    # Disable gradient computations during inference
     with torch.no_grad():
-        # Extract image metadata
-        image_direction, image_spacing, image_origin = dose_image.GetDirection(), dose_image.GetSpacing(), dose_image.GetOrigin()
-        norm_dose_image = normalize_dose_image(
-            dose_image,
-            image_normalize_min,
-            image_normalize_max,
-            image_normalize_min,
-            image_normalize_max
-        )
+        if dose_context is not None:
+            image_direction = dose_context.image_direction
+            image_spacing = dose_context.image_spacing
+            image_origin = dose_context.image_origin
+            norm_dose_image = dose_context.norm_dose_image
+            device = dose_context.device
+        else:
+            image_direction = dose_image.GetDirection()
+            image_spacing = dose_image.GetSpacing()
+            image_origin = dose_image.GetOrigin()
+            norm_dose_image = normalize_dose_image(
+                dose_image,
+                image_normalize_min,
+                image_normalize_max,
+                image_normalize_min,
+                image_normalize_max
+            )
+            device = next(dose_cal_model.parameters()).device
 
-        # Crop and normalize the dose image
-        # crop_img = crop_from_pos(pos[::-1], normalize_dose_image(dose_image, image_normalize_min, image_normalize_max, image_normalize_min, image_normalize_max), infer_image_size)
-
-        # --- modified implementation ---
         crop_np, crop_info = crop_from_pos(
             pos[::-1],
             norm_dose_image,
@@ -694,10 +963,8 @@ def single_seed_dose_calculation_dl(pos, direc, dose_image, dose_cal_model, infe
         crop_img.SetOrigin(image_origin)
         crop_img.SetDirection(image_direction)
 
-        # Transform seed position to physical space
         physical_pos = position_transform(dose_image, pos)[0]
 
-        # Generate spatial dose map
         soft_treatment_plan = position_soft_method(
             physical_pos,
             image_origin,
@@ -705,7 +972,6 @@ def single_seed_dose_calculation_dl(pos, direc, dose_image, dose_cal_model, infe
             image_spacing
         )
 
-        # Create line source map based on seed orientation and length
         line_map = line_source_map(
             physical_pos,
             direction_transform(dose_image, direc)[0],
@@ -714,9 +980,6 @@ def single_seed_dose_calculation_dl(pos, direc, dose_image, dose_cal_model, infe
             image_spacing,
             seed_info['length']
         )
-
-        # Prepare model input tensors
-        device = next(dose_cal_model.parameters()).device
 
         train_image = torch.FloatTensor(
             normalize_dose_array(
@@ -730,28 +993,21 @@ def single_seed_dose_calculation_dl(pos, direc, dose_image, dose_cal_model, infe
         train_label = torch.FloatTensor(soft_treatment_plan).unsqueeze(0).unsqueeze(0).to(device)
         train_map = torch.FloatTensor(line_map).unsqueeze(0).unsqueeze(0).to(device)
 
-        # Concatenate tensors into model input
         train_input = torch.cat((train_image, train_label, train_map), dim=1).to(device)
 
-        # Predict dose distribution
         pred_label = dose_cal_model(train_input)
         output = pred_label.squeeze(0).squeeze(0).detach().cpu().numpy()
 
-    # Convert output to SimpleITK image and restore metadata
     pred_label_image = sitk.GetImageFromArray(output)
     pred_label_image.CopyInformation(crop_img)
 
-    # pred_label_image = pad_to_original_size(pred_label_image, dose_image)
-
-    # --- modified implementation ---
     pred_label_image = pad_to_original_size_np(
         pred_label_image,
         dose_image,
         crop_info
     )
 
-    # Return dose map as NumPy array
-    return sitk.GetArrayFromImage(pred_label_image)  # .transpose(2, 1, 0)
+    return sitk.GetArrayFromImage(pred_label_image)
 
 
 
@@ -795,7 +1051,7 @@ def batch_seed_dose_calculation_dl(seeds, dose_image, dose_cal_model, infer_imag
             #     normalize_img,
             #     infer_image_size
             # )
-            slicer.app.processEvents()  
+            throttled_process_events()  
             crop_np, crop_info = crop_from_pos(
                 pos[::-1],
                 normalize_img,
@@ -854,7 +1110,7 @@ def batch_seed_dose_calculation_dl(seeds, dose_image, dose_cal_model, infer_imag
     # ---- Restore metadata for each seed ----
     dose_maps = []
     for i, output in enumerate(outputs):
-        slicer.app.processEvents()  
+        throttled_process_events()  
         pred_label_image = sitk.GetImageFromArray(output)
         pred_label_image.CopyInformation(crop_imgs[i])
         # pred_label_image = pad_to_original_size(pred_label_image, dose_image)
@@ -2588,6 +2844,7 @@ def get_candidate_traj_distance(planned_trajectories, candidate_trajectories, do
     Returns:
     A list of minimum distances from each candidate trajectory to the set of planned trajectories.
     """
+    
     # Scale the first element of each sublist in planned_trajectories by spacing.
     # Transform each trajectory's first element (point) by the scaling factor.
     # planned_lines stores the scaled version of planned_trajectories
@@ -2597,20 +2854,26 @@ def get_candidate_traj_distance(planned_trajectories, candidate_trajectories, do
     for (start_point, direction, _, _, _) in planned_trajectories:
         # Reshape start_point to a 1D array and multiply by spacing, then append the result with direction
         planned_lines.append([position_transform(dose_image, np.array(start_point).reshape(-1))[0], direction_transform(dose_image, np.array(direction).reshape(-1))[0]])
-    
+
     # Initialize distances with zeros; one for each candidate trajectory.
     distance = [0] * len(candidate_trajectories)
-    
+
     # Iterate over each candidate trajectory
     for i, candidate_trajectory in enumerate(candidate_trajectories):
+        
         # Calculate and append the minimum distance for each candidate trajectory to the planned lines.
         # The candidate's point is scaled by the spacing factor before calculation.
-        distance[i] = geometry.min_distance_to_lines(
-            position_transform(dose_image, candidate_trajectory[0])[0],
-            direction_transform(dose_image, candidate_trajectory[1])[0],
-            planned_lines
-        )
-        slicer.app.processEvents()  
+        try:
+            distance[i] = geometry.min_distance_to_lines(
+                position_transform(dose_image, candidate_trajectory[0])[0],
+                direction_transform(dose_image, candidate_trajectory[1])[0],
+                planned_lines
+            )
+        except Exception as e:
+            
+            raise
+        # throttled_process_events()  # Moved outside to reduce thread issues
+
     
     # Return the list of minimum distances
     return distance
@@ -3019,7 +3282,7 @@ def select_optimal_trajectory(candidate_trajectories, planned_trajectories, radi
                     return None, None
     
     for i, candidate_trajectory in enumerate(candidate_trajectories):
-        slicer.app.processEvents()
+        throttled_process_events()
         if len(get_available_position(candidate_trajectory, [], seed_info, dose_image, distance_map)) == 0 or i in selected_indices:
             candidate_traj_scores[i] = 0 
 
@@ -3088,6 +3351,7 @@ def generate_hierarchical_state_spaces(
     Preserves original output format and numerical logic (float accumulation then threshold).
     """
 
+    
     # Level-0 is the provided per-trajectory results (keep original structure)
     hierarchical = [traj_with_seeds]
 
@@ -3095,54 +3359,73 @@ def generate_hierarchical_state_spaces(
     DVH_sign = False
 
     n_traj = len(traj_with_seeds)
+    
     if n_traj == 0:
         return hierarchical, 1, False
 
     # Precompute mask indices (target voxels) once
+    
     mask_idx = np.where(mask_volume > 0)
+    
 
     # Extract inner elements consistently:
     # each traj_with_seeds[i] is: [ [[idx, traj, seeds, radiations, acc_radiation]], DVH_rate ]
     # inner = traj_with_seeds[i][0][0]
+    
     traj_elems = [traj_with_seeds[i][0][0] for i in range(n_traj)]
+    
     # Build mapping from idx value to position index (robust in case idx != position)
     idx_to_pos = {int(traj_elems[i][0]): i for i in range(n_traj)}
+    
 
     # Precompute per-trajectory target vectors: acc_radiation restricted to mask_idx (1D arrays)
     # Keep dtype same as original acc_radiation to preserve numeric behavior
+    
     target_vectors = []
     for i in range(n_traj):
         acc_rad = traj_elems[i][4]  # 3D float array
+        
         # extract values inside target mask — this yields 1D array of length target_v
         vec = np.asarray(acc_rad[mask_idx])
         target_vectors.append(vec)
+    
 
     # Precompute valid_pairs using original update_available_traj (preserves exact behavior)
+    
     valid_pairs = np.zeros((n_traj, n_traj), dtype=bool)
     # print("Checking trajectory pairs...")
     # for i in tqdm(range(n_traj), total=n_traj):
     for i in range(n_traj):
         progressDialog.setValue(55)
         progressDialog.setLabelText("Initial Planning...")
-        slicer.app.processEvents()  
+        throttled_process_events()
         traj_i = traj_elems[i][1]  # trajectory object as in original code
+        
         for j in range(i + 1, n_traj):
             traj_j = traj_elems[j][1]
             # Use original update_available_traj call: pass lists [traj_i], [traj_j]
-            _, is_valid = update_available_traj([traj_i], [traj_j], seed_info, dose_image, interval_rate)
-            valid_pairs[i, j] = valid_pairs[j, i] = is_valid
-            slicer.app.processEvents()  
+            try:
+                _, is_valid = update_available_traj([traj_i], [traj_j], seed_info, dose_image, interval_rate)
+                valid_pairs[i, j] = valid_pairs[j, i] = is_valid
+            except Exception as e:
+                
+                raise
+            throttled_process_events()
+      
 
     # Initialize prev_items for level-1 (single trajectories)
     # Each item: (selected_list, DVH_rate, combined_target_vector)
+    
     prev_items = []
     for i in range(n_traj):
         selected_list = traj_with_seeds[i][0]  # e.g. [[idx, traj, seeds, radiations, acc_radiation]]
         dvh_rate = traj_with_seeds[i][1]
         combined_vec = target_vectors[i]  # 1D array of length target_v
         prev_items.append((selected_list, dvh_rate, combined_vec))
+    
 
     # Hierarchical expansion loop
+    
     while True:
         # print(f"Generating hierarchical level {n}...")
         new_triplets = []  # will collect tuples (new_selected_list, DVH_rate, combined_target_vec)
@@ -3158,7 +3441,7 @@ def generate_hierarchical_state_spaces(
             for pos in range(n_traj):
                 progressDialog.setValue(55)
                 progressDialog.setLabelText("Initial Planning...")
-                slicer.app.processEvents() 
+                throttled_process_events() 
                 cand_idx = int(traj_elems[pos][0])
                 # skip if candidate already included or violates ordering (idx <= last_idx)
                 if cand_idx in base_idxs or cand_idx <= last_idx:
@@ -3208,6 +3491,7 @@ def generate_hierarchical_state_spaces(
             break
         n += 1
 
+    
     return hierarchical, n, DVH_sign
 
 
@@ -3265,103 +3549,123 @@ def hierarchical_planning_rf(
     optimal_reward : float
         Best cumulative return achieved.
     """
+    
+    
+    
+    
+    
 
     # ---- binary target mask & voxel count ----
     mask_volume = (radiation_volume == target_value).astype(float)
     target_v = int(mask_volume.sum())
+    
 
     # ---- 1.  Dense seed evaluation on every candidate trajectory ----
     traj_with_seeds = []  # [[trajectory_entry, DVH_rate], ...]
     target_level = 0      # 0 = coarse layer, 1 = fine layer
+
+    
     
     # print(f"Putting seeds...")
     # for idx, traj in tqdm(
     #     enumerate(candidate_trajectories),
     #     total=len(candidate_trajectories),
     # ):
-    for idx, traj in enumerate(candidate_trajectories):        
-        radiation = np.zeros_like(radiation_volume, dtype=float)
-        point = np.array(traj[0]).reshape(-1) 
-        direction = np.array(traj[1]).reshape(-1)  
-        max_index = np.argmax(np.abs(direction))
-        update_direction = direction / np.abs(direction[max_index])
-        dense_seeds = []
-        slicer.app.processEvents()  
-        effective_range = get_available_position(traj, dense_seeds, seed_info, dose_image, distance_map)
-        slicer.app.processEvents()  
-        target_v = np.sum(mask_volume)
-        while len(effective_range) > 0:
-            progressDialog.setValue(55)
-            progressDialog.setLabelText("Initial Planning...")
-            slicer.app.processEvents()   
+    for idx, traj in enumerate(candidate_trajectories):
+        try:
             
-            cur_point = copy.deepcopy(point)
-            cur_radiation = copy.deepcopy(radiation)
-            updated_point = np.array(point + effective_range[0] * update_direction)
-            cur_point = copy.deepcopy(updated_point)
-            dense_seeds.append((cur_point, direction))
-            radiation = cur_radiation
+            radiation = np.zeros_like(radiation_volume, dtype=float)
+            point = np.array(traj[0]).reshape(-1) 
+            direction = np.array(traj[1]).reshape(-1)  
+            max_index = np.argmax(np.abs(direction))
+            update_direction = direction / np.abs(direction[max_index])
+            dense_seeds = []
+            throttled_process_events()  
             effective_range = get_available_position(traj, dense_seeds, seed_info, dose_image, distance_map)
-            slicer.app.processEvents()  
-        if len(dense_seeds) > 0:
-            cur_single_seed_radiations = batch_seed_dose_calculation_dl(dense_seeds, 
-                                                                        dose_image, 
-                                                                        dose_cal_model, 
-                                                                        infer_img_size, 
-                                                                        seed_info,
-                                                                        image_normalize_min, 
-                                                                        image_normalize_max, 
-                                                                        image_normalize_scale)
-            cur_seeds_radiations = sum(cur_single_seed_radiations)
-            cur_DVH_rate = np.sum(cur_seeds_radiations*mask_volume > in_lowest_dose) / target_v
-                # dense_seeds, cur_DVH_rate, cur_single_seed_radiations = put_seeds(
-                #     radiation_volume, dose_image, dose_cal_model, infer_img_size,
-                #     np.zeros_like(radiation_volume, dtype=float),  # zero initial dose
-                #     target_value, in_lowest_dose, traj, seed_info,
-                #     DVH_rate, distance_map,
-                #     image_normalize_min, image_normalize_max, image_normalize_scale
-                # )
+            throttled_process_events()  
+            target_v = np.sum(mask_volume)
+            while len(effective_range) > 0:
+                progressDialog.setValue(55)
+                progressDialog.setLabelText("Initial Planning...")
+                throttled_process_events()   
+                
+                cur_point = np.copy(point)
+                cur_radiation = np.copy(radiation)
+                updated_point = np.array(point + effective_range[0] * update_direction)
+                cur_point = np.copy(updated_point)
+                dense_seeds.append((cur_point, direction))
+                radiation = cur_radiation
+                effective_range = get_available_position(traj, dense_seeds, seed_info, dose_image, distance_map)
+                throttled_process_events()  
+            if len(dense_seeds) > 0:
+                cur_single_seed_radiations = batch_seed_dose_calculation_dl(dense_seeds, 
+                                                                            dose_image, 
+                                                                            dose_cal_model, 
+                                                                            infer_img_size, 
+                                                                            seed_info,
+                                                                            image_normalize_min, 
+                                                                            image_normalize_max, 
+                                                                            image_normalize_scale)
+                cur_seeds_radiations = sum(cur_single_seed_radiations)
+                cur_DVH_rate = np.sum(cur_seeds_radiations*mask_volume > in_lowest_dose) / target_v
 
-            if cur_DVH_rate > DVH_rate:
-                target_level = 1
+                if cur_DVH_rate > DVH_rate:
+                    target_level = 1
 
-            traj_with_seeds.append([[[idx, traj, dense_seeds, cur_single_seed_radiations, cur_seeds_radiations]], cur_DVH_rate])
+                traj_with_seeds.append([[[idx, traj, dense_seeds, cur_single_seed_radiations, cur_seeds_radiations]], cur_DVH_rate])
+                del radiation, cur_radiation
+        except Exception as e:
+            
+            print(f"hierarchical_planning_rf trajectory {idx} error: {str(e)}")
+            continue
+
+    
 
     # ---- 2.  Build hierarchical state spaces when needed ----
+    
     if target_level == 0:
+        
         hierarchical_available_traj_with_seeds, target_level, DVH_res = generate_hierarchical_state_spaces(
             traj_with_seeds, seed_info, dose_image, interval_rate,
             mask_volume, target_v, in_lowest_dose, DVH_rate, rf_params['bandwidth'], progressDialog
         )
+        
         # if not DVH_res:
-        #    return [], None 
+        #    return [], None
     else:
         hierarchical_available_traj_with_seeds = traj_with_seeds
 
+    
     target_available_traj_seeds = hierarchical_available_traj_with_seeds[- 1]
+    
     target_level = len(target_available_traj_seeds[0][0])
+    
 
     # ---- 3.  Convert to REINFORCE format ----
+    
     target_level_traj = []
     high_level_state_spaces = []
     low_level_state_spaces = []
     range_length = []
 
-    for elem, elem_DVH_rate in target_available_traj_seeds:
-        # if elem_DVH_rate >= DVH_rate:
-            progressDialog.setValue(60)
-            progressDialog.setLabelText("Initial Planning...")
-            slicer.app.processEvents()
-            effective_ranges = []
-            for _, traj, _, _, _ in elem:
-                ranges = get_available_position(traj, [], seed_info, dose_image, distance_map)
-                effective_ranges.append(ranges)
-                range_length.append(len(ranges))
-                high_level_state_spaces.extend(ranges)
-            low_level_state_spaces.append(effective_ranges)
-            target_level_traj.append(elem)
+    for elem_idx, (elem, elem_DVH_rate) in enumerate(target_available_traj_seeds):
+        
+        progressDialog.setValue(60)
+        progressDialog.setLabelText("Initial Planning...")
+        throttled_process_events()
+        effective_ranges = []
+        for _, traj, _, _, _ in elem:
+            ranges = get_available_position(traj, [], seed_info, dose_image, distance_map)
+            effective_ranges.append(ranges)
+            range_length.append(len(ranges))
+            high_level_state_spaces.extend(ranges)
+        low_level_state_spaces.append(effective_ranges)
+        target_level_traj.append(elem)
+
+    
 
     # ---- 4.  Hierarchical REINFORCE ----
+    
     optimal_plan, optimal_reward = reinforcement.reinforcement_planning(
         rf_params,
         dose_cal_model,
@@ -3387,162 +3691,62 @@ def hierarchical_planning_rf(
     return optimal_plan, optimal_reward
     
     
-def put_seeds(radiation_volume, dose_image, dose_cal_model, infer_img_size, radiation, target_value, in_lowest_dose, trajectory, seed_info, DVH_rate, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale):
-    """
-    Optimize and place radioactive seeds along a predefined trajectory to achieve a target Dose Volume Histogram (DVH) rate.
+def put_seeds(radiation_volume, dose_image, dose_cal_model, infer_img_size, radiation, target_value, in_lowest_dose, trajectory, seed_info, DVH_rate, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None):
+    """Optimize and place radioactive seeds along a predefined trajectory.
 
-    This function strategically places radioactive seeds within a treatment volume to ensure a desired dose distribution, 
-    leveraging a deep learning model for dose calculation. It iteratively evaluates seed placement positions 
-    to maximize radiation coverage while adhering to constraints.
+    Places seeds within a treatment volume to ensure a desired dose
+    distribution, leveraging a deep learning model for dose calculation.
+    When a dose_context is provided, reuses cached normalization results.
 
-    Parameters:
-    ----------
-    radiation_volume : numpy.ndarray
-        A 3D array representing the treatment area, where specific voxel values mark target regions.
-
-    dose_image : SimpleITK.Image
-        A SimpleITK image object containing dose distribution data, including metadata like spacing and origin.
-
-    dose_cal_model : torch.nn.Module
-        A pre-trained deep learning model used to predict radiation dose distributions.
-
-    infer_img_size : tuple
-        The size of the image to be passed into the deep learning model for inference.
-
-    radiation : numpy.ndarray
-        A 3D array representing the current accumulated radiation dose distribution in the treatment area.
-
-    target_value : float
-        Voxel intensity value identifying target regions within the `radiation_volume`.
-
-    in_lowest_dose : float
-        Minimum acceptable radiation dose threshold for voxels in the target region.
-
-    trajectory : list
-        A two-element list defining the seed placement trajectory:
-            - trajectory[0]: Starting point (3D coordinates).
-            - trajectory[1]: Direction vector for seed placement.
-
-    seed_info : dict
-        Dictionary containing parameters of the radiation seed:
-            - 'radius' (float): Effective radius of radiation influence for each seed.
-            - 'length' (float): Length of the radiation source in the seed.
-
-    DVH_rate : float
-        Target Dose Volume Histogram (DVH) rate, representing the fraction of target voxels receiving at least `in_lowest_dose`.
-
-    distance_map : numpy.ndarray
-        A 3D array defining spatial constraints, indicating valid regions for seed placement.
-
-    image_normalize_min : float
-        Minimum value used for normalizing the dose image before model input.
-
-    image_normalize_max : float
-        Maximum value used for normalizing the dose image before model input.
-
-    image_normalize_scale : float
-        Scaling factor applied during normalization.
+    Args:
+        radiation_volume: 3D array where voxel values mark target regions.
+        dose_image: SimpleITK image with dose distribution data.
+        dose_cal_model: Pre-trained deep learning model for dose prediction.
+        infer_img_size: Image size for model inference.
+        radiation: Current accumulated radiation dose distribution.
+        target_value: Voxel intensity identifying target regions.
+        in_lowest_dose: Minimum acceptable radiation dose threshold.
+        trajectory: Two-element list [starting_point, direction_vector].
+        seed_info: Dictionary with seed parameters ('radius', 'length').
+        DVH_rate: Target Dose Volume Histogram coverage rate.
+        distance_map: 3D array defining spatial constraints.
+        image_normalize_min: Minimum value for dose image normalization.
+        image_normalize_max: Maximum value for dose image normalization.
+        image_normalize_scale: Scaling factor during normalization.
+        dose_context: Optional DoseImageContext with cached preprocessing.
 
     Returns:
-    -------
-    tuple:
-        seeds : list
-            A list of placed seeds, where each seed is represented as a tuple:
-            - Position (3D coordinates) of the seed.
-            - Direction vector of the seed.
-
-        cur_DVH_rate : float
-            The final achieved DVH rate after placing all seeds.
-
-        single_seed_radiations : list
-            A list of 3D arrays, each representing the radiation dose contribution from an individual seed.
-
-    Workflow:
-    --------
-        1. Normalize the trajectory direction.
-        2. Create a binary mask for the target region.
-        3. Identify valid seed placement positions.
-        4. Iterate through valid positions and evaluate DVH improvement.
-        5. Select optimal seed positions and update radiation distribution.
-        6. Repeat until the target DVH rate is achieved or valid positions are exhausted.
-        7. Return seed positions, final DVH rate, and individual seed radiation maps.
-
-    Example:
-    --------
-        >>> seeds, final_dvh, seed_radiations = put_seeds(
-                radiation_volume=volume,
-                dose_image=dose_img,
-                dose_cal_model=model,
-                infer_img_size=(128, 128, 128),
-                radiation=current_radiation,
-                target_value=1.0,
-                in_lowest_dose=0.8,
-                trajectory=[(0, 0, 0), (1, 0, 0)],
-                seed_info={'radius': 2.0, 'length': 10.0},
-                DVH_rate=0.95,
-                distance_map=distance_constraints,
-                image_normalize_min=0,
-                image_normalize_max=255,
-                image_normalize_scale=1.0
-            )
-        >>> print(len(seeds), final_dvh)
-        5, 0.96
+        A tuple of (seeds, cur_DVH_rate, single_seed_radiations).
     """
-    # Step 1: Normalize the trajectory direction
-    point = np.array(trajectory[0]).reshape(-1)  # Starting point of the trajectory
-    direction = np.array(trajectory[1]).reshape(-1)  # Direction vector of the trajectory
-    # spacing = dose_image.GetSpacing()
+    
+    
+    
 
-    # Identify the axis with the largest direction component
+    point = np.array(trajectory[0]).reshape(-1)
+    direction = np.array(trajectory[1]).reshape(-1)
+
     max_index = np.argmax(np.abs(direction))
     update_direction = direction / np.abs(direction[max_index])
+    
 
-    # Step 2: Create a binary mask for the target region
     mask_volume = (radiation_volume == target_value).astype(float)
 
-    # Step 3: Initialize storage for seed placements and dose contributions
     seeds = []
     single_seed_radiations = []
 
-    # Step 4: Get valid positions for seed placement
     effective_range = get_available_position(trajectory, seeds, seed_info, dose_image, distance_map)
     target_v = np.sum(mask_volume)
     cur_DVH_rate = np.sum(radiation * mask_volume > in_lowest_dose) / target_v
+    
 
-    # Step 5: Iteratively place seeds until the target DVH rate is met
     while len(effective_range) > 0 and cur_DVH_rate < DVH_rate:
-        cur_point = copy.deepcopy(point)
+        cur_point = np.copy(point)
         cur_seed_radiation = 0
-        cur_radiation = copy.deepcopy(radiation)
-        slicer.app.processEvents()
-        
-        # for length in effective_range:
-        #     updated_point = point + length * update_direction
-        #     tmp_seed_radiation = single_seed_dose_calculation_dl(
-        #         np.array(updated_point).astype(int).reshape(-1),
-        #         direction,
-        #         dose_image,
-        #         dose_cal_model,
-        #         infer_img_size,
-        #         seed_info,
-        #         image_normalize_min,
-        #         image_normalize_max,
-        #         image_normalize_scale
-        #     )
-        #     tmp_radiation = radiation + tmp_seed_radiation
-        #     tmp_DVH_rate = np.sum(tmp_radiation * mask_volume > in_lowest_dose) / target_v
+        cur_radiation = np.copy(radiation)
+        throttled_process_events()
 
-        #     if tmp_DVH_rate >= cur_DVH_rate:
-        #         cur_DVH_rate = tmp_DVH_rate
-        #         cur_seed_radiation = tmp_seed_radiation
-        #         cur_point = copy.deepcopy(updated_point)
-        #         cur_radiation = tmp_radiation
-
-        #         if cur_DVH_rate >= DVH_rate:
-        #             break
-
-        
         updated_point = np.array(point + effective_range[0] * update_direction)
+        
         cur_seed_radiation = single_seed_dose_calculation_dl(
             updated_point.astype(int).reshape(-1),
             direction,
@@ -3552,52 +3756,35 @@ def put_seeds(radiation_volume, dose_image, dose_cal_model, infer_img_size, radi
             seed_info,
             image_normalize_min,
             image_normalize_max,
-            image_normalize_scale
+            image_normalize_scale,
+            dose_context=dose_context
         )
         cur_radiation = radiation + cur_seed_radiation
         cur_DVH_rate = np.sum(cur_radiation * mask_volume > in_lowest_dose) / target_v
-        cur_point = copy.deepcopy(updated_point)
-        # if tmp_DVH_rate >= cur_DVH_rate:
-        #     cur_DVH_rate = tmp_DVH_rate
-        #     cur_seed_radiation = tmp_seed_radiation
-        #     cur_point = copy.deepcopy(updated_point)
-        #     cur_radiation = tmp_radiation
+        cur_point = np.copy(updated_point)
 
         seeds.append((cur_point, direction))
         single_seed_radiations.append(cur_seed_radiation)
         radiation = cur_radiation
+        
         if cur_DVH_rate >= DVH_rate:
             break
         effective_range = get_available_position(trajectory, seeds, seed_info, dose_image, distance_map)
 
+    
     return seeds, cur_DVH_rate, single_seed_radiations
 
 
 def get_available_position(trajectory, seeds, seed_info, dose_image, distance_map, distance_margin = 0):
     """
-    Compute the valid positions along a trajectory for seed placement, 
+    Compute the valid positions along a trajectory for seed placement,
     excluding positions within the influence zone of already-placed seeds.
-
-    Parameters:
-        trajectory (list): Information about the placement trajectory:
-            - trajectory[0]: The starting point of the trajectory (as a NumPy array).
-            - trajectory[1]: The direction vector of the trajectory (as a NumPy array).
-            - trajectory[2]: List of target depths (valid regions for seed placement).
-            - trajectory[3]: List of background depths (non-target regions between target depths).
-        seeds (list): A list of already-placed seeds, where each seed contains spatial position information.
-        seed_info (list or tuple): Information about the seed properties:
-            - seed_info['length']: The influence range of the seed (radius of the seed's radiation effect).
-            - seed_info['num_of_seeds']: Tuple indicating thresholds for adjusting exclusion rate.
-        dose_image (simplritk.Image): The dose image used for calculating seed radiation effects.
-        distance_map (ndarray): A map indicating distance constraints for valid placement.
-
-    Returns:
-        list: A list of valid positions along the trajectory (in the allowed range) 
-              with positions influenced by existing seeds excluded.
     """
+    
     spacing = np.array(dose_image.GetSpacing()).reshape(-1)
     # Convert the starting point of the trajectory into a flat NumPy array.
     point = np.array(trajectory[0]).reshape(-1)
+    
     world_p = position_transform(dose_image, point)[0]
     
     # Normalize the trajectory direction vector to obtain a unit vector.
@@ -3649,10 +3836,11 @@ def get_available_position(trajectory, seeds, seed_info, dose_image, distance_ma
         start = distance - seed_info['length']
         end = distance + seed_info['length']
         effective_range = [
-            x for x in effective_range 
+            x for x in effective_range
             if not (start < np.linalg.norm(position_transform(dose_image, np.array(update_direction * x + point))[0] - world_p) < end)
         ]
 
+    
     # Return the final list of valid positions in the effective range.
     return effective_range
 
@@ -3800,23 +3988,21 @@ def remove_unproper_seed(traj_seed_radiations, radiation_volume, radiation, out_
 
 
 def remove_seed_sequentially(traj_seed_radiations, all_seeds, itera, radiation):
-    """
-    Remove a specific seed from the trajectory sequentially.
+    """Remove a specific seed from the trajectory sequentially.
 
-    Parameters:
-        traj_seed_radiations (list): A list of tuples, each containing trajectory, seeds, and their radiations.
-        all_seeds (list): A list of all seeds.
-        itera (int): The index of the seed to be removed in the all_seeds list.
-        radiation (ndarray): The current radiation field in the volume.
+    Args:
+        traj_seed_radiations: List of tuples (trajectory, seeds, radiations).
+        all_seeds: List of all seeds.
+        itera: Index of the seed to remove in all_seeds.
+        radiation: Current radiation field.
 
     Returns:
-        tuple: Updated trajectory-seed-radiation list with the specified seed removed and the updated radiation field.
+        A tuple of (updated_traj_seed_radiations, updated_radiation).
     """
     seed = all_seeds[itera]
     chosen_i, chosen_j = 0, 0
     chosen_sign = False
-    
-    # Find the matching seed position
+
     for i, (_, seeds, _) in enumerate(traj_seed_radiations):
         for j, tmp_seed in enumerate(seeds):
             if np.array_equal(tmp_seed[0], seed[0]) and np.array_equal(tmp_seed[1], seed[1]):
@@ -3825,116 +4011,52 @@ def remove_seed_sequentially(traj_seed_radiations, all_seeds, itera, radiation):
                 break
         if chosen_sign:
             break
-    
-    # Remove the selected seed and update the radiation
-    rest_seeds = copy.deepcopy(traj_seed_radiations[chosen_i][1])
+
+    rest_seeds = list(traj_seed_radiations[chosen_i][1])
     del rest_seeds[chosen_j]
-    
+
     rest_radiation = radiation - traj_seed_radiations[chosen_i][2][chosen_j]
-    rest_single_seed_radiations = copy.deepcopy(traj_seed_radiations[chosen_i][2])
+    rest_single_seed_radiations = list(traj_seed_radiations[chosen_i][2])
     del rest_single_seed_radiations[chosen_j]
-    
-    rest_res = copy.deepcopy(traj_seed_radiations)
-    rest_res[chosen_i] = (traj_seed_radiations[chosen_i][0], rest_seeds, rest_single_seed_radiations)
-    
+
+    rest_res = list(traj_seed_radiations)
+    rest_res[chosen_i] = [traj_seed_radiations[chosen_i][0], rest_seeds, rest_single_seed_radiations]
+
     return rest_res, rest_radiation
 
                         
 def add_proper_seed(traj_seed_radiations, radiation_volume, radiation, dose_image, dose_cal_model, infer_img_size, 
                     in_lowest_dose, out_highest_dose, target_value, background_value, obstacle_value, 
-                    DVH_rate, seed_info, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale):
-    """
-    Strategically add a radioactive seed to improve dose coverage and minimize overexposure.
+                    DVH_rate, seed_info, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None):
+    """Strategically add a radioactive seed to improve dose coverage.
 
-    This function evaluates potential seed placements along predefined trajectories to select 
-    the optimal position, enhancing the Dose Volume Histogram (DVH) coverage for target regions 
-    while avoiding over-irradiation of non-target regions such as background or obstacles.
+    Evaluates potential seed placements along predefined trajectories to
+    select the optimal position, enhancing DVH coverage for target regions
+    while avoiding over-irradiation of non-target regions.
 
-    Parameters:
-    ----------
-    traj_seed_radiations : list
-        A list of trajectory records, each containing:
-            - trajectory (tuple): (start_point, direction_vector)
-            - seeds (list): List of current seed positions along the trajectory.
-            - seed_radiations (list): Radiation dose contributions from each seed.
-
-    radiation_volume : numpy.ndarray
-        A 3D array indicating voxel classification:
-            - target regions (target_value)
-            - background regions (background_value)
-            - obstacle regions (obstacle_value)
-
-    radiation : numpy.ndarray
-        A 3D array representing the current cumulative radiation dose distribution.
-
-    dose_image : SimpleITK.Image
-        A medical dose image with spatial metadata, including spacing and origin.
-
-    dose_cal_model : torch.nn.Module
-        A pre-trained deep learning model for predicting radiation dose distribution.
-
-    infer_img_size : tuple
-        Input size required by the dose calculation model.
-
-    in_lowest_dose : float
-        Minimum acceptable radiation dose for target voxels.
-
-    out_highest_dose : float
-        Maximum acceptable radiation dose for non-target voxels (e.g., background and obstacles).
-
-    target_value : float
-        Label indicating target regions in `radiation_volume`.
-
-    background_value : float
-        Label indicating background regions in `radiation_volume`.
-
-    obstacle_value : float
-        Label indicating obstacle regions in `radiation_volume`.
-
-    DVH_rate : float
-        Target Dose Volume Histogram (DVH) coverage rate, representing the fraction of target voxels 
-        receiving sufficient dose.
-
-    seed_info : dict
-        Dictionary containing seed parameters:
-            - 'radius' (float): Radiation influence radius.
-            - 'length' (float): Physical length of the radiation source.
-
-    distance_map : numpy.ndarray
-        A 3D array defining valid spatial regions for seed placement, ensuring constraints are followed.
-
-    image_normalize_min : float
-        Minimum intensity value used for dose image normalization.
-
-    image_normalize_max : float
-        Maximum intensity value used for dose image normalization.
-
-    image_normalize_scale : float
-        Scaling factor applied during normalization.
+    Args:
+        traj_seed_radiations: List of (trajectory, seeds, seed_radiations).
+        radiation_volume: 3D array with target/background/obstacle labels.
+        radiation: Current cumulative radiation dose distribution.
+        dose_image: SimpleITK dose image with spatial metadata.
+        dose_cal_model: Pre-trained deep learning model for dose prediction.
+        infer_img_size: Input size for the dose calculation model.
+        in_lowest_dose: Minimum acceptable radiation dose for target voxels.
+        out_highest_dose: Maximum acceptable radiation dose for non-target voxels.
+        target_value: Label for target regions in radiation_volume.
+        background_value: Label for background regions in radiation_volume.
+        obstacle_value: Label for obstacle regions in radiation_volume.
+        DVH_rate: Target DVH coverage rate.
+        seed_info: Dictionary with seed parameters ('radius', 'length').
+        distance_map: 3D array defining valid spatial regions.
+        image_normalize_min: Minimum intensity for normalization.
+        image_normalize_max: Maximum intensity for normalization.
+        image_normalize_scale: Scaling factor during normalization.
+        dose_context: Optional DoseImageContext with cached preprocessing.
 
     Returns:
-    -------
-    tuple:
-        traj_seed_radiations : list
-            Updated list of trajectory records with the newly added seed and its radiation contribution.
-
-        final_radiation : numpy.ndarray
-            Updated cumulative radiation dose distribution.
-
-        success : bool
-            `True` if a suitable seed placement was successfully found and added, `False` otherwise.
-
-    Workflow:
-    --------
-    1. Identify target, background, and obstacle regions based on voxel classification.
-    2. Determine valid seed placement ranges along each trajectory.
-    3. Evaluate potential seed placements:
-        - Calculate radiation contribution at each point.
-        - Assess DVH coverage and non-target overexposure.
-    4. Select the optimal seed placement minimizing non-target exposure.
-    5. Update the trajectory with the new seed and its radiation contribution.
+        A tuple of (traj_seed_radiations, final_radiation, success).
     """
-    # Step 1: Define target and dangerous regions
     target_volume = (radiation_volume == target_value).astype(float)
     target_v = np.sum(target_volume)
 
@@ -3942,19 +4064,24 @@ def add_proper_seed(traj_seed_radiations, radiation_volume, radiation, dose_imag
     obstacle_volume = (radiation_volume == obstacle_value).astype(float)
     dangerous_volume = background_volume + obstacle_volume
 
-    # Step 2: Calculate effective placement ranges for each trajectory
+    # Early return if no obstacle voxels exist (no OAR selected)
+    if np.sum(obstacle_volume) == 0:
+        # No OAR voxels - skip Stage 3 OAR optimization, return current state
+        
+        return traj_seed_radiations, radiation, False
+
+    
+
     effective_ranges = []
     for res in traj_seed_radiations:
         effective_ranges.append(get_available_position(res[0], res[1], seed_info, dose_image, distance_map, 2))
 
-    # Step 3: Initialize variables for optimal seed selection
     cur_dangerous_num = float('inf')
     chosen_index = 0
     chosen_seed_radiation = None
     chosen_seed = None
     final_radiation = radiation
 
-    # Step 4: Evaluate potential seed placements
     for i, effective_range in enumerate(effective_ranges):
         traj = traj_seed_radiations[i][0]
 
@@ -3964,21 +4091,24 @@ def add_proper_seed(traj_seed_radiations, radiation_volume, radiation, dose_imag
             max_index = np.argmax(np.abs(direction))
             update_direction = direction / np.abs(direction[max_index])
 
-            for length in effective_range:
+            
+            for length_idx, length in enumerate(effective_range):
                 updated_point = point + length * update_direction
+                
 
                 tmp_seed_radiation = single_seed_dose_calculation_dl(
-                    np.array(updated_point).astype(int).reshape(-1), 
-                    direction, 
+                    np.array(updated_point).astype(int).reshape(-1),
+                    direction,
                     dose_image,
                     dose_cal_model,
                     infer_img_size,
                     seed_info,
                     image_normalize_min,
                     image_normalize_max,
-                    image_normalize_scale
+                    image_normalize_scale,
+                    dose_context=dose_context
                 )
-                
+
                 tmp_radiation = radiation + tmp_seed_radiation
                 cur_DVH_rate = np.sum(tmp_radiation * target_volume > in_lowest_dose) / target_v
 
@@ -3991,9 +4121,10 @@ def add_proper_seed(traj_seed_radiations, radiation_volume, radiation, dose_imag
                         chosen_seed_radiation = tmp_seed_radiation
                         chosen_seed = [updated_point, direction]
                         final_radiation = tmp_radiation
-                slicer.app.processEvents()
+                        
+                throttled_process_events()
 
-    # Step 5: Update trajectory with the selected seed
+    
     if chosen_seed is not None:
         traj_seed_radiations[chosen_index][1].append(chosen_seed)  
         traj_seed_radiations[chosen_index][2].append(chosen_seed_radiation)  
@@ -4002,169 +4133,109 @@ def add_proper_seed(traj_seed_radiations, radiation_volume, radiation, dose_imag
         return traj_seed_radiations, final_radiation, False
 
 
-def replan(traj_seed_radiations, radiation_volume, radiation, dose_image, dose_cal_model, infer_img_size, in_lowest_dose, target_value, 
-           background_value, obstacle_value, seed_info, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale):
-    """
-    Optimize and replan radioactive seed placements along predefined trajectories to maximize radiation coverage 
-    in target regions while minimizing exposure in non-target (dangerous) regions.
+def replan(traj_seed_radiations, radiation_volume, radiation, dose_image, dose_cal_model, infer_img_size, in_lowest_dose, target_value,
+           background_value, obstacle_value, seed_info, distance_map, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None):
+    """Optimize and replan radioactive seed placements along trajectories.
 
-    This function evaluates potential seed placements along each trajectory, selects optimal positions based on Dose 
-    Volume Histogram (DVH) improvement, and updates the cumulative radiation distribution accordingly.
+    Evaluates potential seed placements along each trajectory, selects optimal
+    positions based on DVH improvement, and updates the cumulative radiation.
 
-    Parameters:
-    ----------
-    traj_seed_radiations : list
-        A list of tuples representing trajectories, associated seeds, and their radiation profiles.
-        Each tuple contains:
-            - trajectory (tuple): (start_point, direction_vector)
-            - seeds (list): List of seed positions along this trajectory.
-            - seed_radiations (list): Radiation dose distributions from the placed seeds.
-
-    radiation_volume : numpy.ndarray
-        A 3D array representing the anatomical region, where voxel values indicate target, background, or obstacles.
-
-    radiation : numpy.ndarray
-        A 3D array representing the current cumulative radiation dose distribution across the region.
-
-    dose_image : SimpleITK.Image
-        Image representing the dose distribution, used for precise radiation simulation.
-
-    dose_cal_model : torch.nn.Module
-        Deep learning model for predicting radiation dose distribution from seed placement parameters.
-
-    in_lowest_dose : float
-        Minimum acceptable radiation dose threshold for effective coverage in target regions.
-
-    target_value : float
-        Label value identifying target voxels in `radiation_volume`.
-
-    background_value : float
-        Label value identifying background voxels in `radiation_volume`.
-
-    obstacle_value : float
-        Label value identifying obstacle voxels in `radiation_volume`.
-
-    seed_info : dict
-        Dictionary describing the properties of the radioactive seeds:
-            - 'radius': Effective radiation influence radius per seed.
-            - 'length': Physical length of the radiation source.
-
-    distance_map : numpy.ndarray
-        A 3D array defining valid spatial regions for seed placement, used to enforce geometric constraints.
-
-    image_normalize_min : float
-        Minimum value for normalizing input dose image data.
-
-    image_normalize_max : float
-        Maximum value for normalizing input dose image data.
+    Args:
+        traj_seed_radiations: List of (trajectory, seeds, seed_radiations).
+        radiation_volume: 3D array with target/background/obstacle labels.
+        radiation: Current cumulative radiation dose distribution.
+        dose_image: SimpleITK dose image with spatial metadata.
+        dose_cal_model: Deep learning model for dose prediction.
+        infer_img_size: Input size for the dose calculation model.
+        in_lowest_dose: Minimum acceptable radiation dose threshold.
+        target_value: Label for target voxels in radiation_volume.
+        background_value: Label for background voxels in radiation_volume.
+        obstacle_value: Label for obstacle voxels in radiation_volume.
+        seed_info: Dictionary with seed parameters ('radius', 'length').
+        distance_map: 3D array defining valid spatial regions.
+        image_normalize_min: Minimum value for normalization.
+        image_normalize_max: Maximum value for normalization.
+        image_normalize_scale: Scaling factor during normalization.
+        dose_context: Optional DoseImageContext with cached preprocessing.
 
     Returns:
-    -------
-    tuple:
-        traj_seed_radiations : list
-            Updated list of trajectories with newly added seeds and their radiation contributions.
-
-        final_DVH_rate : float
-            The final Dose Volume Histogram (DVH) coverage rate, representing the proportion of target voxels 
-            receiving the minimum acceptable dose.
-
-        final_radiation : numpy.ndarray
-            Updated cumulative radiation dose distribution after optimizing seed placements.
-
-    Workflow:
-    --------
-        1. **Identify Key Regions:** Define target, background, and obstacle regions based on voxel labels.
-        2. **Evaluate Placement Ranges:** Calculate valid seed placement positions along each trajectory.
-        3. **Simulate Placements:** Evaluate potential seed placements along trajectories using dose simulation models.
-        4. **Optimize DVH Rate:** Identify seed placement that maximizes DVH rate while minimizing exposure to dangerous regions.
-        5. **Update Trajectories:** Update the selected trajectory with the optimal seed placement.
-        6. **Recalculate DVH:** Compute the final DVH coverage rate and cumulative radiation distribution.
-
-    Example:
-    --------
-        >>> updated_trajs, final_DVH, final_radiation = replan(
-                traj_seed_radiations=trajectories,
-                radiation_volume=volume,
-                radiation=current_radiation,
-                dose_image=dose_img,
-                dose_cal_model=model,
-                in_lowest_dose=0.8,
-                target_value=1.0,
-                background_value=0.0,
-                obstacle_value=-1.0,
-                seed_info={'radius': 2.0, 'length': 10.0},
-                spacing=(1.0, 1.0, 1.0),
-                distance_map=distance_constraints,
-                image_normalize_min=0,
-                image_normalize_max=255
-            )
-        >>> print(final_DVH)
-        0.95
+        A tuple of (traj_seed_radiations, final_DVH_rate, final_radiation, success).
     """
-    # --- Step 1: Identify Key Regions in the Radiation Volume ---
-    target_volume = (radiation_volume == target_value).astype(float)
-    target_v = np.sum(target_volume)  # Total number of target voxels
     
-    # background_volume = (radiation_volume == background_value).astype(float)
-    # obstacle_volume = (radiation_volume == obstacle_value).astype(float)
-    # dangerous_volume = background_volume + obstacle_volume  # Define dangerous regions
+    
+    
 
-    # --- Step 2: Calculate Effective Seed Placement Ranges for Each Trajectory ---
+    target_volume = (radiation_volume == target_value).astype(float)
+    target_v = np.sum(target_volume)
+
+    # Early return if no obstacle voxels exist (no OAR selected)
+    obstacle_volume = (radiation_volume == obstacle_value).astype(float)
+    if np.sum(obstacle_volume) == 0:
+        # No OAR voxels - skip Stage 2 optimization, return current state
+        final_DVH_rate = np.sum((radiation * target_volume) > in_lowest_dose) / target_v
+        
+        return traj_seed_radiations, final_DVH_rate, radiation, False
+
+    
+
     effective_ranges = []
-    for res in traj_seed_radiations:
+    for idx_res, res in enumerate(traj_seed_radiations):
+        
         effective_ranges.append(get_available_position(res[0], res[1], seed_info, dose_image, distance_map, 2))
+        
 
-    # --- Step 3: Search for the Optimal Seed Placement ---
-    chosen_index = 0  # Index of the selected trajectory
-    chosen_seed_radiation = None  # Selected seed radiation profile
-    chosen_seed = None  # Selected seed position and direction
-    final_DVH_rate = np.sum((radiation * target_volume) > in_lowest_dose) / target_v  # Track the achieved DVH rate
-    final_radiation = radiation  # Store the updated radiation distribution
+    chosen_index = 0
+    chosen_seed_radiation = None
+    chosen_seed = None
+    final_DVH_rate = np.sum((radiation * target_volume) > in_lowest_dose) / target_v
+    final_radiation = radiation
 
-    # Evaluate seed placement along each trajectory
     for i, effective_range in enumerate(effective_ranges):
-        traj = traj_seed_radiations[i][0]  # Current trajectory
+        traj = traj_seed_radiations[i][0]
+        throttled_process_events()
 
         if len(effective_range) != 0:
-            point = np.array(traj[0]).reshape(-1)  # Start point of the trajectory
-            direction = np.array(traj[1]).reshape(-1)  # Direction vector
+            point = np.array(traj[0]).reshape(-1)
+            direction = np.array(traj[1]).reshape(-1)
             max_index = np.argmax(np.abs(direction))
-            update_direction = direction / np.abs(direction[max_index])  # Normalize by the dominant axis
+            update_direction = direction / np.abs(direction[max_index])
 
-            # Evaluate potential seed placements along the trajectory
-            for length in effective_range:
+            
+            for length_idx, length in enumerate(effective_range):
                 updated_point = point + length * update_direction
                 
+
                 tmp_seed_radiation = single_seed_dose_calculation_dl(
-                    np.array(updated_point).astype(int).reshape(-1), 
-                    direction, 
+                    np.array(updated_point).astype(int).reshape(-1),
+                    direction,
                     dose_image,
                     dose_cal_model,
                     infer_img_size,
                     seed_info,
                     image_normalize_min,
                     image_normalize_max,
-                    image_normalize_scale
+                    image_normalize_scale,
+                    dose_context=dose_context
                 )
-                
+
                 tmp_radiation = radiation + tmp_seed_radiation
 
-                # Calculate DVH rate for the target region
                 cur_DVH_rate = np.sum((tmp_radiation * target_volume) > in_lowest_dose) / target_v
 
-                # Update optimal seed placement if DVH rate improves
                 if cur_DVH_rate >= final_DVH_rate:
                     chosen_index = i
                     chosen_seed_radiation = tmp_seed_radiation
                     chosen_seed = [updated_point, direction]
                     final_DVH_rate = cur_DVH_rate
                     final_radiation = tmp_radiation
-                slicer.app.processEvents()
+                    
+                throttled_process_events()
 
     # --- Step 4: Update Trajectory with the Chosen Seed Placement ---
+    
     if chosen_seed is not None:
-        traj_seed_radiations[chosen_index][1].append(chosen_seed)  
-        traj_seed_radiations[chosen_index][2].append(chosen_seed_radiation)  
+        traj_seed_radiations[chosen_index][1].append(chosen_seed)
+        traj_seed_radiations[chosen_index][2].append(chosen_seed_radiation)
         return traj_seed_radiations, final_DVH_rate, final_radiation, True
     else:
         return traj_seed_radiations, final_DVH_rate, final_radiation, False

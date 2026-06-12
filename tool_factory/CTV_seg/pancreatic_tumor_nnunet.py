@@ -183,6 +183,8 @@ class NNUNetPancreaticTumorTool(BaseTool):
                 "label_map": {lid: name for lid, (name, _) in LABEL_MAP.items()},
                 "label_stats": label_stats,
                 "organ_names": {1: "artery", 2: "vein"},
+                # Full multi-label array for data tree (0=bg, 1=tumor, 2=artery, 3=vein, 4=pancreas, 5=unknown_5, 6=unknown_6)
+                "full_label_array": result_array.astype(np.uint8),
             },
         )
 

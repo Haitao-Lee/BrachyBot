@@ -525,7 +525,11 @@ def create_app(config: Optional[Dict] = None):
             import numpy as np
             import json as _json
 
-            ctv_array = agent._get_label_array("ctv_array")
+            # Use full multi-label array for CTV (includes tumor, artery, vein, pancreas, etc.)
+            # Falls back to binary ctv_array if full labels not available
+            ctv_array = agent._get_label_array("ctv_full_labels")
+            if ctv_array is None:
+                ctv_array = agent._get_label_array("ctv_array")
             oar_array = agent._get_label_array("oar_array")
 
             shape = ct_data.shape  # (Z, Y, X)
@@ -574,6 +578,8 @@ def create_app(config: Optional[Dict] = None):
 
             if ctv_array is not None:
                 ctv_u8 = ctv_array.astype(np.uint8)
+                unique_labels = list(np.unique(ctv_u8))
+                logger.info(f"CTV array unique labels: {unique_labels}, shape: {ctv_u8.shape}")
                 payload.extend(ctv_u8.tobytes())
                 ctv_offset = len(payload)
 
@@ -594,8 +600,12 @@ def create_app(config: Optional[Dict] = None):
 
             # Send CTV label names from model (not hardcoded in frontend)
             ctv_label_map = agent.memory.retrieve("ctv_label_map", {})
+            logger.info(f"CTV label map from memory: {ctv_label_map}")
             if ctv_label_map:
                 response.headers['X-CTV-Label-Map'] = _json.dumps({str(k): v for k, v in ctv_label_map.items()})
+            else:
+                # Fallback: use default label names
+                response.headers['X-CTV-Label-Map'] = _json.dumps({"1": "pancreatic tumor", "2": "artery", "3": "vein", "4": "pancreas", "5": "unknown_5", "6": "unknown_6"})
 
             # Also return organ metadata for data tree
             organ_names = agent.memory.retrieve("organ_names", {})
@@ -1159,26 +1169,51 @@ def create_app(config: Optional[Dict] = None):
 
     @app.route("/api/planning/seeds_3d", methods=["GET"])
     def api_planning_seeds_3d():
-        """Get seed positions and directions for 3D visualization."""
-        agent = get_agent()
+        """Get seed positions and directions for 3D visualization.
+
+        Seeds from optimal_plan() are in PLANNING GRID VOXEL coordinates.
+        We must convert them to world coordinates using resampled_ct metadata.
+        """
+        import AgenticSys as _ag
+        agent = getattr(_ag, '_global_agent', None) or get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
         try:
             import numpy as np
 
-            # Get seed plan from memory
             seed_plan = agent.memory.retrieve("seed_plan")
             if seed_plan is None:
                 return jsonify({"success": True, "seeds": [], "needles": [], "message": "No seed plan available"})
 
-            spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
-            origin = agent.memory.retrieve("ct_origin") or (0.0, 0.0, 0.0)
-            direction = agent.memory.retrieve("ct_direction") or (1, 0, 0, 0, 1, 0, 0, 0, 1)
+            # Get resampled CT for coordinate transform
+            resampled_ct = agent.memory.retrieve("resampled_ct")
+            if resampled_ct is None:
+                logger.warning("[seeds_3d] No resampled_ct found, returning raw coordinates")
 
-            origin_xyz = np.array(origin[:3], dtype=np.float64)
-            direction_matrix = np.array(direction[:9], dtype=np.float64).reshape(3, 3)
-            spacing_xyz = np.array(spacing[:3], dtype=np.float64)
+            def _voxel_to_world(voxel_pos):
+                """Convert planning grid voxel coords to world coords."""
+                if resampled_ct is None:
+                    return voxel_pos.tolist()
+                from plans.utilizations import position_transform
+                try:
+                    world = position_transform(resampled_ct, np.array(voxel_pos).reshape(-1))
+                    return world[0].tolist() if len(world.shape) > 1 else world.tolist()
+                except Exception as e:
+                    logger.warning(f"[seeds_3d] position_transform failed: {e}")
+                    return voxel_pos.tolist()
+
+            def _voxel_dir_to_world(voxel_dir):
+                """Convert planning grid voxel direction to world direction."""
+                if resampled_ct is None:
+                    return voxel_dir.tolist()
+                from plans.utilizations import direction_transform
+                try:
+                    world_dir = direction_transform(resampled_ct, np.array(voxel_dir).reshape(-1))
+                    return world_dir.tolist()
+                except Exception as e:
+                    logger.warning(f"[seeds_3d] direction_transform failed: {e}")
+                    return voxel_dir.tolist()
 
             seeds = []
             needles = []
@@ -1187,7 +1222,7 @@ def create_app(config: Optional[Dict] = None):
                 if not isinstance(entry, (list, tuple)) or len(entry) < 2:
                     continue
 
-                trajectory_direc = entry[0] if len(entry) > 0 else None
+                trajectory = entry[0] if len(entry) > 0 else None
                 seed_list = entry[1] if len(entry) > 1 else []
 
                 needle_seeds = []
@@ -1195,32 +1230,54 @@ def create_app(config: Optional[Dict] = None):
                     if not isinstance(seed, (list, tuple)) or len(seed) < 2:
                         continue
 
-                    pos_array = np.array(seed[0], dtype=np.float64)
-                    direc_array = np.array(seed[1], dtype=np.float64)
+                    pos_voxel = np.array(seed[0], dtype=np.float64).flatten()[:3]
+                    direc_voxel = np.array(seed[1], dtype=np.float64).flatten()[:3]
 
-                    # Transform to world coordinates
-                    pos_world = (direction_matrix @ (pos_array * spacing_xyz)) + origin_xyz
-                    direc_world = direction_matrix @ direc_array
-                    direc_world = direc_world / (np.linalg.norm(direc_world) + 1e-8)
+                    # Convert from planning grid voxel coords to world coords
+                    pos_world = _voxel_to_world(pos_voxel)
+                    direc_world = _voxel_dir_to_world(direc_voxel)
+
+                    if i == 0 and j == 0:
+                        logger.info(f"[seeds_3d] first seed: voxel={pos_voxel.tolist()}, world={pos_world}")
 
                     seed_data = {
                         "id": f"seed_{i}_{j}",
-                        "position": pos_world.tolist(),
-                        "direction": direc_world.tolist(),
+                        "position": pos_world,
+                        "direction": direc_world,
                         "trajectory_id": i,
                         "seed_index": j,
                     }
                     seeds.append(seed_data)
-                    needle_seeds.append(pos_world.tolist())
+                    needle_seeds.append(pos_world)
 
-                # Create needle path (line through seeds on same trajectory)
-                if len(needle_seeds) >= 2:
+                # Create needle trajectory line (extended beyond seeds)
+                if trajectory is not None and len(trajectory) >= 2:
+                    traj_start = np.array(trajectory[0], dtype=np.float64).flatten()[:3]
+                    traj_dir = np.array(trajectory[1], dtype=np.float64).flatten()[:3]
+                    traj_start_world = _voxel_to_world(traj_start)
+                    traj_dir_world = _voxel_dir_to_world(traj_dir)
+
+                    # Extend trajectory line through and beyond seed positions
+                    all_points = [traj_start_world]
+                    all_points.extend(needle_seeds)
+                    # Add extension point beyond last seed
+                    if needle_seeds and traj_dir_world:
+                        last = np.array(needle_seeds[-1])
+                        ext = last + np.array(traj_dir_world) * 20  # 20mm extension
+                        all_points.append(ext.tolist())
+                    needles.append({
+                        "id": f"needle_{i}",
+                        "points": all_points,
+                        "trajectory_id": i,
+                    })
+                elif len(needle_seeds) >= 2:
                     needles.append({
                         "id": f"needle_{i}",
                         "points": needle_seeds,
                         "trajectory_id": i,
                     })
 
+            logger.info(f"[seeds_3d] returning {len(seeds)} seeds, {len(needles)} needles")
             return jsonify({
                 "success": True,
                 "seeds": seeds,
@@ -1230,12 +1287,15 @@ def create_app(config: Optional[Dict] = None):
             })
         except Exception as e:
             logger.error(f"Seed 3D data failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/planning/results", methods=["GET"])
     def api_planning_results():
         """Get latest planning results including metrics, seeds, and DVH data for UI updates."""
-        agent = get_agent()
+        import AgenticSys as _ag
+        agent = getattr(_ag, '_global_agent', None) or get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
@@ -1245,19 +1305,14 @@ def create_app(config: Optional[Dict] = None):
             # Get data from memory
             dose_metrics = agent.memory.retrieve("dose_metrics") or {}
             total_seeds = agent.memory.retrieve("total_seeds") or 0
+            num_trajectories = agent.memory.retrieve("num_trajectories") or 0
             seed_plan = agent.memory.retrieve("seed_plan")
             dose_distribution = agent.memory.retrieve("dose_distribution")
 
-            # Build seeds list for UI
+            # Build seeds list for UI (convert from planning grid voxel to world coords)
+            resampled_ct = agent.memory.retrieve("resampled_ct")
             seeds = []
             if seed_plan:
-                spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
-                origin = agent.memory.retrieve("ct_origin") or (0.0, 0.0, 0.0)
-                direction = agent.memory.retrieve("ct_direction") or (1, 0, 0, 0, 1, 0, 0, 0, 1)
-                origin_xyz = np.array(origin[:3], dtype=np.float64)
-                direction_matrix = np.array(direction[:9], dtype=np.float64).reshape(3, 3)
-                spacing_xyz = np.array(spacing[:3], dtype=np.float64)
-
                 for i, entry in enumerate(seed_plan):
                     if not isinstance(entry, (list, tuple)) or len(entry) < 2:
                         continue
@@ -1265,11 +1320,18 @@ def create_app(config: Optional[Dict] = None):
                     for j, seed in enumerate(seed_list):
                         if not isinstance(seed, (list, tuple)) or len(seed) < 2:
                             continue
-                        pos_array = np.array(seed[0], dtype=np.float64)
-                        pos_world = (direction_matrix @ (pos_array * spacing_xyz)) + origin_xyz
+                        pos_voxel = np.array(seed[0], dtype=np.float64).flatten()[:3]
+                        if resampled_ct is not None:
+                            try:
+                                from plans.utilizations import position_transform
+                                pos_world = position_transform(resampled_ct, pos_voxel)[0].tolist()
+                            except Exception:
+                                pos_world = pos_voxel.tolist()
+                        else:
+                            pos_world = pos_voxel.tolist()
                         seeds.append({
-                            "pos": pos_world.tolist(),
-                            "dose": float(dose_metrics.get("d90", 0)) if j == 0 else 0,
+                            "pos": pos_world,
+                            "dose": float(dose_metrics.get("d90", 0)),
                         })
 
             # Build DVH data
@@ -1280,6 +1342,7 @@ def create_app(config: Optional[Dict] = None):
                 "metrics": dose_metrics,
                 "seeds": seeds,
                 "total_seeds": total_seeds,
+                "num_trajectories": num_trajectories,
                 "dvh": dvh_data,
                 "has_dose": dose_distribution is not None,
             })
@@ -1390,8 +1453,13 @@ def create_app(config: Optional[Dict] = None):
 
     @app.route("/api/planning/dose_isosurface", methods=["POST"])
     def api_planning_dose_isosurface():
-        """Generate dose isosurface mesh for 3D visualization."""
-        agent = get_agent()
+        """Generate dose isosurface mesh for 3D visualization.
+
+        Threshold is in the SAME UNITS as the dose distribution (normalized).
+        The frontend should display the label accordingly.
+        """
+        import AgenticSys as _ag
+        agent = getattr(_ag, '_global_agent', None) or get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
@@ -1406,36 +1474,39 @@ def create_app(config: Optional[Dict] = None):
             if dose_array is None:
                 return jsonify({"error": "No dose distribution available"}), 400
 
-            spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
-            origin = agent.memory.retrieve("ct_origin") or (0.0, 0.0, 0.0)
-            direction = agent.memory.retrieve("ct_direction") or (1, 0, 0, 0, 1, 0, 0, 0, 1)
-
-            spacing_xyz = tuple(float(s) for s in spacing[:3])
-            spacing_zyx = spacing_xyz[::-1]
+            # Use resampled_ct for coordinate transforms
+            resampled_ct = agent.memory.retrieve("resampled_ct")
+            if resampled_ct is not None:
+                spacing = resampled_ct.GetSpacing()
+                origin = resampled_ct.GetOrigin()
+                direction = resampled_ct.GetDirection()
+            else:
+                spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
+                origin = agent.memory.retrieve("ct_origin") or (0.0, 0.0, 0.0)
+                direction = agent.memory.retrieve("ct_direction") or (1, 0, 0, 0, 1, 0, 0, 0, 1)
 
             dose_np = np.array(dose_array)
             if dose_np.ndim != 3:
                 return jsonify({"error": "Invalid dose array dimensions"}), 400
 
-            # Subsample if large
-            if dose_np.shape[0] > 64:
-                step = max(1, dose_np.shape[0] // 64)
-                dose_sub = dose_np[::step, ::step, ::step]
-                sub_spacing = (spacing_zyx[0] * step, spacing_zyx[1] * step, spacing_zyx[2] * step)
-            else:
-                dose_sub = dose_np
-                sub_spacing = spacing_zyx
+            data_min = float(dose_np.min())
+            data_max = float(dose_np.max())
+            logger.info(f"[dose_isosurface] threshold={threshold}, dose_range=[{data_min:.4f}, {data_max:.4f}]")
 
             level = float(threshold)
-            data_min, data_max = float(dose_sub.min()), float(dose_sub.max())
             if level <= data_min or level >= data_max:
-                return jsonify({"success": True, "vertices": [], "faces": [], "vertex_count": 0, "face_count": 0, "threshold": threshold})
+                return jsonify({"success": True, "vertices": [], "faces": [], "vertex_count": 0,
+                                "face_count": 0, "threshold": threshold, "dose_range": [data_min, data_max]})
 
-            vertices, faces, _, _ = measure.marching_cubes(dose_sub, level=level, spacing=sub_spacing, allow_degenerate=False)
+            # Use resampled_ct spacing (z,y,x -> x,y,z for marching cubes)
+            spacing_zyx = tuple(float(s) for s in spacing[::-1])
 
-            # Transform to world coordinates
+            vertices, faces, _, _ = measure.marching_cubes(dose_np, level=level, spacing=spacing_zyx, allow_degenerate=False)
+
+            # Transform from planning grid voxel coords to world coords
             origin_xyz = np.array(origin[:3], dtype=np.float64)
             direction_matrix = np.array(direction[:9], dtype=np.float64).reshape(3, 3)
+            # vertices are in (z,y,x) from marching_cubes with spacing_zyx, convert to (x,y,z)
             vertices_xyz = vertices[:, ::-1]
             vertices_world = (direction_matrix @ vertices_xyz.T).T + origin_xyz
 
@@ -1451,10 +1522,147 @@ def create_app(config: Optional[Dict] = None):
                 "vertex_count": len(vertices_world),
                 "face_count": len(faces),
                 "threshold": threshold,
-                "dose_range": [float(data_min), float(data_max)],
+                "dose_range": [data_min, data_max],
             })
         except Exception as e:
             logger.error(f"Dose isosurface failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/planning/dose_overlay", methods=["GET"])
+    def api_planning_dose_overlay():
+        """Get dose distribution resampled to original CT space for 2D overlay.
+
+        Returns metadata about the dose overlay. The actual slice data is fetched
+        via the dose_overlay_slice endpoint.
+        """
+        import AgenticSys as _ag
+        agent = getattr(_ag, '_global_agent', None) or get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        try:
+            import numpy as np
+            import SimpleITK as sitk
+
+            # Try dose_distribution_gy first (already resampled to original CT space)
+            dose_np = agent.memory.retrieve("dose_distribution_gy")
+            if dose_np is not None:
+                dose_np = np.array(dose_np, dtype=np.float32)
+                logger.info(f"[dose_overlay] Using dose_distribution_gy, shape={dose_np.shape}")
+            else:
+                # Fall back to dose_distribution (planning grid) and resample
+                dose_array = agent.memory.retrieve("dose_distribution")
+                if dose_array is None:
+                    return jsonify({"success": False, "error": "No dose distribution available"})
+                dose_np = np.array(dose_array, dtype=np.float32)
+                logger.info(f"[dose_overlay] Using dose_distribution (planning grid), shape={dose_np.shape}")
+
+                # Get resampled CT (planning grid) and original CT
+                resampled_ct = agent.memory.retrieve("resampled_ct")
+                ct_image = agent.memory.retrieve("ct_image")
+
+                if resampled_ct is not None and ct_image is not None:
+                    # Resample dose from planning grid to original CT space
+                    dose_sitk = sitk.GetImageFromArray(dose_np)
+                    dose_sitk.SetSpacing(resampled_ct.GetSpacing())
+                    dose_sitk.SetOrigin(resampled_ct.GetOrigin())
+                    dose_sitk.SetDirection(resampled_ct.GetDirection())
+
+                    resampler = sitk.ResampleImageFilter()
+                    resampler.SetReferenceImage(ct_image)
+                    resampler.SetInterpolator(sitk.sitkLinear)
+                    dose_original = resampler.Execute(dose_sitk)
+                    dose_np = sitk.GetArrayFromImage(dose_original)
+                    logger.info(f"[dose_overlay] Resampled to original CT space, shape={dose_np.shape}")
+
+            # Get CT metadata
+            ct_image = agent.memory.retrieve("ct_image")
+            if ct_image is not None:
+                ct_size = [int(s) for s in ct_image.GetSize()]
+                ct_spacing = [float(s) for s in ct_image.GetSpacing()]
+                ct_origin = [float(o) for o in ct_image.GetOrigin()]
+            else:
+                ct_size = list(dose_np.shape[::-1])
+                ct_spacing = [0.68, 0.68, 5.0]
+                ct_origin = [0.0, 0.0, 0.0]
+
+            return jsonify({
+                "success": True,
+                "dose_shape": list(dose_np.shape),
+                "dose_min": float(dose_np.min()),
+                "dose_max": float(dose_np.max()),
+                "ct_spacing": ct_spacing,
+                "ct_origin": ct_origin,
+                "ct_size": ct_size,
+            })
+        except Exception as e:
+            logger.error(f"Dose overlay data failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/planning/dose_overlay_slice", methods=["POST"])
+    def api_planning_dose_overlay_slice():
+        """Get a single dose overlay slice for a given axis and index.
+
+        Returns the 2D dose slice in the same space as the CT slice.
+        """
+        import AgenticSys as _ag
+        agent = getattr(_ag, '_global_agent', None) or get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        axis = data.get("axis", "axial")
+        slice_index = data.get("slice_index", 0)
+
+        try:
+            import numpy as np
+            import SimpleITK as sitk
+
+            # Try dose_distribution_gy first (already resampled)
+            dose_np = agent.memory.retrieve("dose_distribution_gy")
+            if dose_np is not None:
+                dose_np = np.array(dose_np, dtype=np.float32)
+            else:
+                # Fall back to dose_distribution and resample
+                dose_array = agent.memory.retrieve("dose_distribution")
+                if dose_array is None:
+                    return jsonify({"success": False, "error": "No dose distribution available"})
+                dose_np = np.array(dose_array, dtype=np.float32)
+
+                # Resample to original CT space
+                resampled_ct = agent.memory.retrieve("resampled_ct")
+                ct_image = agent.memory.retrieve("ct_image")
+
+                if resampled_ct is not None and ct_image is not None:
+                    dose_sitk = sitk.GetImageFromArray(dose_np)
+                    dose_sitk.SetSpacing(resampled_ct.GetSpacing())
+                    dose_sitk.SetOrigin(resampled_ct.GetOrigin())
+                    dose_sitk.SetDirection(resampled_ct.GetDirection())
+                    resampler = sitk.ResampleImageFilter()
+                    resampler.SetReferenceImage(ct_image)
+                    resampler.SetInterpolator(sitk.sitkLinear)
+                dose_original = resampler.Execute(dose_sitk)
+                dose_np = sitk.GetArrayFromImage(dose_original)
+
+            # Extract 2D slice (dose_np is in z,y,x order)
+            if axis == "axial":
+                z = min(slice_index, dose_np.shape[0] - 1)
+                slice_2d = dose_np[z].tolist()
+            elif axis == "coronal":
+                y = min(slice_index, dose_np.shape[1] - 1)
+                slice_2d = dose_np[:, y, :].tolist()
+            else:  # sagittal
+                x = min(slice_index, dose_np.shape[2] - 1)
+                slice_2d = dose_np[:, :, x].tolist()
+
+            return jsonify({
+                "success": True,
+                "slice": slice_2d,
+                "dose_min": float(dose_np.min()),
+                "dose_max": float(dose_np.max()),
+            })
+        except Exception as e:
+            logger.error(f"Dose overlay slice failed: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/config", methods=["GET"])
@@ -1630,6 +1838,20 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"success": True})
         except Exception as e:
             logger.error(f"Chat abort cleanup failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/clear_all", methods=["POST"])
+    def api_clear_all():
+        """Clear all loaded data (CT, CTV, OAR, planning results) for a fresh start."""
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+        try:
+            agent.memory.clear_all_data()
+            agent.memory.clear_conversation()
+            return jsonify({"success": True, "message": "All data cleared"})
+        except Exception as e:
+            logger.error(f"Clear all data failed: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/export/dicom_rt", methods=["POST"])
