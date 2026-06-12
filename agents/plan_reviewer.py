@@ -55,7 +55,7 @@ class PlanReviewer(LLMCapableAgent):
         prescription = plan_config.get("in_lowest_energy", 1.0)
 
         reviews = []
-        reviews.append(self._review_dosimetry(dose_metrics, prescription))
+        reviews.append(self._review_dosimetry(dose_metrics, prescription, plan_config))
         reviews.append(self._review_oar_constraints(dose_metrics, prescription, plan_config))
         reviews.append(self._review_clinical_protocol(plan_info, dose_metrics))
         reviews.append(self._assess_risks(dose_metrics, plan_info, prescription))
@@ -72,22 +72,23 @@ class PlanReviewer(LLMCapableAgent):
             warnings=[c for r in reviews for c in r.concerns],
         )
 
-    def _review_dosimetry(self, dose_metrics: Dict, prescription: float) -> ReviewResult:
+    def _review_dosimetry(self, dose_metrics: Dict, prescription: float,
+                          plan_config: Dict = None) -> ReviewResult:
         """Review dosimetry quality using actual prescription threshold."""
         concerns = []
         suggestions = []
         scores = []
+        cfg = plan_config or {}
 
-        # Thresholds derived from actual prescription, not hardcoded
-        checks = [
-            ("v100", prescription, "≥", "good"),       # V100: volume ≥ prescription, target ≥95%
-            ("v150", 1.5 * prescription, "≤", "good"),  # V150: volume ≥ 1.5x, target ≤50%
-            ("v200", 2.0 * prescription, "≤", "good"),  # V200: volume ≥ 2.0x, target ≤20%
-            ("d90", prescription, "≥", "good"),          # D90: dose covering 90%, target ≥ prescription
-            ("d95", 0.95 * prescription, "≥", "good"),   # D95: dose covering 95%, target ≥ 0.95x
-        ]
+        # Targets — configurable, with clinical-standard defaults
+        v100_target = cfg.get("v100_target", 0.95)
+        v100_warn = cfg.get("v100_warn", 0.90)
+        v150_limit = cfg.get("v150_limit", 0.50)
+        v150_warn = cfg.get("v150_warn", 0.60)
+        v200_limit = cfg.get("v200_limit", 0.20)
+        v200_warn = cfg.get("v200_warn", 0.30)
 
-        for metric, threshold, direction, level in checks:
+        for metric in ["v100", "v150", "v200", "d90", "d95"]:
             value = dose_metrics.get(metric)
             if value is None:
                 continue
@@ -96,25 +97,30 @@ class PlanReviewer(LLMCapableAgent):
             except (ValueError, TypeError):
                 continue
 
-            if metric in ["v100"]:
-                # Higher is better
-                if value >= 0.95:
+            if metric == "v100":
+                if value >= v100_target:
                     scores.append(10)
-                elif value >= 0.90:
+                elif value >= v100_warn:
                     scores.append(7)
-                    concerns.append(f"{metric.upper()}={value:.1%}, target ≥95%")
+                    concerns.append(f"{metric.upper()}={value:.1%}, target ≥{v100_target:.0%}")
                     suggestions.append(f"Add more seeds to improve {metric.upper()}")
                 else:
                     scores.append(4)
                     concerns.append(f"{metric.upper()}={value:.1%} critically low")
-                    suggestions.append(f"Plan revision: {metric.upper()} must be ≥90%")
-            elif metric in ["v150", "v200"]:
-                # Lower is better
-                limit_good = 0.50 if metric == "v150" else 0.20
-                limit_warn = 0.60 if metric == "v150" else 0.30
-                if value <= limit_good:
+                    suggestions.append(f"Plan revision: {metric.upper()} must be ≥{v100_warn:.0%}")
+            elif metric == "v150":
+                if value <= v150_limit:
                     scores.append(10)
-                elif value <= limit_warn:
+                elif value <= v150_warn:
+                    scores.append(7)
+                else:
+                    scores.append(5)
+                    concerns.append(f"{metric.upper()}={value:.1%} indicates hot spots")
+                    suggestions.append(f"Redistribute seeds to reduce {metric.upper()}")
+            elif metric == "v200":
+                if value <= v200_limit:
+                    scores.append(10)
+                elif value <= v200_warn:
                     scores.append(7)
                 else:
                     scores.append(5)

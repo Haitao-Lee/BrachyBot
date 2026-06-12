@@ -139,23 +139,40 @@ class MultiAgentOrchestrator:
         """
         return output_type in QualityGate.MANDATORY_REVIEWS
 
-    def format_review_for_display(self, gate_result: GateResult) -> str:
+    def format_review_for_display(self, gate_result: GateResult,
+                                  lang: str = "en") -> str:
         """
         Format review result for display to user.
 
         Args:
             gate_result: The gate result to format
+            lang: Language code ("en" or "zh")
 
         Returns:
             Formatted string
         """
         if gate_result.passed and gate_result.decision == "pass":
-            # Don't show review for passing results
             return ""
+
+        # Labels by language
+        all_labels = {
+            "en": {
+                "title": "Quality Review",
+                "concerns": "Concerns",
+                "suggestions": "Suggestions",
+                "human_review": "Requires Human Review",
+            },
+            "zh": {
+                "title": "质量审核",
+                "concerns": "关注点",
+                "suggestions": "建议",
+                "human_review": "需要人工审核",
+            },
+        }
+        labels = all_labels.get(lang, all_labels["en"])
 
         lines = []
 
-        # Header
         icon = {
             "pass": "✅",
             "conditional": "⚠️",
@@ -163,31 +180,28 @@ class MultiAgentOrchestrator:
             "escalate": "🔔",
         }.get(gate_result.decision, "❓")
 
-        lines.append(f"{icon} **Quality Review**: {gate_result.decision.upper()}")
+        lines.append(f"{icon} **{labels['title']}**: {gate_result.decision.upper()}")
 
-        # Add concerns if any
         all_concerns = []
         for review in gate_result.reviews:
             all_concerns.extend(review.concerns)
 
         if all_concerns:
-            lines.append("\n**Concerns:**")
+            lines.append(f"\n**{labels['concerns']}:**")
             for concern in list(set(all_concerns))[:5]:
                 lines.append(f"- {concern}")
 
-        # Add suggestions if any
         all_suggestions = []
         for review in gate_result.reviews:
             all_suggestions.extend(review.suggestions)
 
         if all_suggestions:
-            lines.append("\n**Suggestions:**")
+            lines.append(f"\n**{labels['suggestions']}:**")
             for suggestion in list(set(all_suggestions))[:3]:
                 lines.append(f"- {suggestion}")
 
-        # Add human review notice
         if gate_result.requires_human_review:
-            lines.append("\n🔔 **Requires Human Review**")
+            lines.append(f"\n🔔 **{labels['human_review']}**")
 
         return "\n".join(lines)
 

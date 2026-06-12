@@ -162,21 +162,14 @@ class RouterAgent(LLMCapableAgent):
         Returns:
             RoutingDecision
         """
-        system_prompt = """You are a task router for a brachytherapy treatment planning system.
-Analyze the user's input and determine:
-1. The primary intent (clinical_planning, segmentation, dose_evaluation, knowledge_query, optimization, status_check, general)
-2. The complexity (low, medium, high)
-3. Which agents are needed (clinical_executor, knowledge, planner, plan_reviewer, fact_checker, safety_guardian)
-4. Whether quality review is required
-
-Respond in JSON format:
-{
-    "intent": "...",
-    "complexity": "...",
-    "agents_needed": ["..."],
-    "requires_review": true/false,
-    "reasoning": "..."
-}"""
+        # Use the loaded system prompt from config (self._system_prompt),
+        # append JSON format instruction.
+        system_prompt = (
+            self._system_prompt
+            + "\n\nRespond in JSON format:\n"
+            + '{"intent":"...","complexity":"...","agents_needed":["..."],'
+            + '"requires_review":true,"reasoning":"..."}'
+        )
 
         try:
             response = await self.call_llm(user_input, system_prompt, temperature=0.1)

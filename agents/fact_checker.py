@@ -26,10 +26,13 @@ class FactChecker(LLMCapableAgent):
     2. Cross-validation (compare multiple sources)
     3. Temporal verification (check if information is current)
     4. Citation tracking (verify citations are real)
+
+    Trusted domains and hallucination patterns are configurable via
+    the constructor; defaults cover common medical sources.
     """
 
-    # Trusted medical domains
-    TRUSTED_DOMAINS = {
+    # Default trusted medical domains — can be overridden at init
+    _DEFAULT_TRUSTED_DOMAINS = {
         "pubmed.ncbi.nlm.nih.gov",
         "www.ncbi.nlm.nih.gov",
         "nccn.org",
@@ -48,19 +51,23 @@ class FactChecker(LLMCapableAgent):
         "www.uptodate.com",
     }
 
-    # Suspicious patterns that indicate potential hallucination
-    HALLUCINATION_PATTERNS = [
+    # Default hallucination patterns — can be overridden at init
+    _DEFAULT_HALLUCINATION_PATTERNS = [
         r"according to a study (I|we) conducted",
         r"(I|we) found that",
         r"my (research|data) shows",
         r"recently published in \[journal\]",
         r"Dr\. [A-Z][a-z]+ (from|at) \[institution\]",
         r"study (ID|number) \d+",
-        r"https?://\[.*\]",  # Placeholder URLs
+        r"https?://\[.*\]",
     ]
 
-    def __init__(self, llm_callback=None):
+    def __init__(self, llm_callback=None,
+                 trusted_domains: set = None,
+                 hallucination_patterns: list = None):
         super().__init__(AgentRole.FACT_CHECKER, llm_callback)
+        self.TRUSTED_DOMAINS = trusted_domains or self._DEFAULT_TRUSTED_DOMAINS
+        self.HALLUCINATION_PATTERNS = hallucination_patterns or self._DEFAULT_HALLUCINATION_PATTERNS
 
     async def process(self, message: AgentMessage) -> AgentResponse:
         """
@@ -223,21 +230,14 @@ class FactChecker(LLMCapableAgent):
     async def _llm_verify(self, claims: List[str], sources: List[str],
                          context: str) -> ReviewResult:
         """Use LLM to verify claims."""
-        system_prompt = """You are a medical fact-checker. Verify the following claims against the provided sources.
-For each claim, assess:
-1. Is the claim factually accurate?
-2. Is it supported by the sources?
-3. Are there any red flags or inaccuracies?
-
-Respond in JSON format:
-{
-    "verified_claims": ["claim1", ...],
-    "flagged_claims": [
-        {"claim": "...", "reason": "...", "severity": "high/medium/low"}
-    ],
-    "overall_accuracy": 0.0-1.0,
-    "confidence": 0.0-1.0
-}"""
+        # Use loaded config prompt + JSON format instruction
+        system_prompt = (
+            self._system_prompt
+            + "\n\nRespond in JSON format:\n"
+            + '{"verified_claims":["..."],"flagged_claims":['
+            + '{"claim":"...","reason":"...","severity":"high/medium/low"}],'
+            + '"overall_accuracy":0.0,"confidence":0.0}'
+        )
 
         prompt = f"Claims to verify:\n"
         for i, claim in enumerate(claims, 1):
