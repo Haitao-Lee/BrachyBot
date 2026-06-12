@@ -146,8 +146,9 @@ class QualityGate:
             if "plan_reviewer" in self.agents:
                 selected["plan_reviewer"] = self.agents["plan_reviewer"]
 
-        # Fact checker for knowledge/search outputs
-        if output_type in {"web_search_medical", "knowledge_response"}:
+        # Fact checker for knowledge/search AND clinical outputs (verify claims)
+        if output_type in {"web_search_medical", "knowledge_response",
+                           "treatment_plan", "clinical_recommendation"}:
             if "fact_checker" in self.agents:
                 selected["fact_checker"] = self.agents["fact_checker"]
 
@@ -186,7 +187,7 @@ class QualityGate:
 
         # If content already has the right structure, pass it through
         if "dose_metrics" in actual_data or "claims" in actual_data:
-            # Ensure plan_config is included for plan_reviewer and safety_guardian
+            # Ensure plan_config is included for all clinical reviewers
             if agent_name in ["plan_reviewer", "safety_guardian"]:
                 return {
                     "dose_metrics": actual_data.get("dose_metrics", {}),
@@ -199,6 +200,7 @@ class QualityGate:
                 return {
                     "claims": actual_data.get("claims", []),
                     "sources": actual_data.get("sources", []),
+                    "plan_config": actual_data.get("plan_config", {}),
                     "context": context,
                 }
             else:
@@ -254,6 +256,13 @@ class QualityGate:
 
         return valid_results
 
+    # Map agent names to their correct AgentRole
+    _AGENT_ROLE_MAP = {
+        "plan_reviewer": AgentRole.PLAN_REVIEWER,
+        "fact_checker": AgentRole.FACT_CHECKER,
+        "safety_guardian": AgentRole.SAFETY_GUARDIAN,
+    }
+
     async def _run_single_review(self, name: str, agent: Any,
                                 content: Dict, output_type: str = "unknown") -> ReviewResult:
         """Run a single review agent."""
@@ -262,8 +271,8 @@ class QualityGate:
             agent_content = self._prepare_content_for_agent(name, content, output_type)
 
             message = AgentMessage(
-                sender=AgentRole.ROUTER,  # Generic sender
-                receiver=AgentRole.PLAN_REVIEWER,  # Will be overridden
+                sender=AgentRole.ROUTER,
+                receiver=self._AGENT_ROLE_MAP.get(name, AgentRole.PLAN_REVIEWER),
                 message_type=MessageType.REVIEW,
                 content=agent_content,
                 priority=Priority.HIGH,

@@ -84,7 +84,8 @@ class BrachyAgentMultiAgentWrapper:
             return {"routing": None, "pre_context": None}
 
     async def review_output(self, output_type: str, content: Any,
-                           context: Dict = None) -> Optional[Dict[str, Any]]:
+                           context: Dict = None,
+                           lang: str = "en") -> Optional[Dict[str, Any]]:
         """
         Review an output through the quality gate.
 
@@ -92,6 +93,7 @@ class BrachyAgentMultiAgentWrapper:
             output_type: Type of output
             content: The content to review
             context: Additional context
+            lang: Language for display text ("en" or "zh")
 
         Returns:
             Dict with review result, or None if review not needed
@@ -110,8 +112,8 @@ class BrachyAgentMultiAgentWrapper:
                 context=context,
             )
 
-            # Format for display
-            display_text = self.orchestrator.format_review_for_display(gate_result)
+            # Format for display with correct language
+            display_text = self.orchestrator.format_review_for_display(gate_result, lang=lang)
 
             return {
                 "passed": gate_result.passed,

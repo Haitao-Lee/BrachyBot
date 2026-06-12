@@ -3771,7 +3771,7 @@ print(json.dumps(result))
                                     "num_trajectories": self.memory.retrieve("num_trajectories", 0),
                                 },
                                 "plan_config": self.memory.retrieve("plan_config", {}),
-                            })
+                            }, lang=self.memory.user_lang)
                         )
                         loop.close()
 
@@ -3850,7 +3850,9 @@ print(json.dumps(result))
                     import asyncio
                     loop = asyncio.new_event_loop()
                     review_result = loop.run_until_complete(
-                        self.multi_agent_wrapper.review_output(_review_type, _review_content)
+                        self.multi_agent_wrapper.review_output(
+                            _review_type, _review_content,
+                            lang=self.memory.user_lang)
                     )
                     loop.close()
 
