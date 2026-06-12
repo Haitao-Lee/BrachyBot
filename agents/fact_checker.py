@@ -84,6 +84,11 @@ class FactChecker(LLMCapableAgent):
         claims = content.get("claims", [])
         sources = content.get("sources", [])
         context = content.get("context", "")
+        plan_config = content.get("plan_config", {})
+
+        # Filter out claims that are just technical data (not factual claims)
+        # e.g., "max_dose=180" is a metric, not a claim to fact-check
+        claims = [c for c in claims if not self._is_technical_metric(c)]
 
         # Perform verification
         verification_results = []
@@ -288,6 +293,16 @@ class FactChecker(LLMCapableAgent):
             confidence=0.3,
         )
 
+    def _is_technical_metric(self, text: str) -> bool:
+        """Check if text is a technical metric (not a factual claim to verify)."""
+        # Patterns like "V100=0.95", "max_dose=180", "D2cc=0.9"
+        if re.match(r'^[A-Za-z_]+\d*[=<>]\d+\.?\d*$', text.strip()):
+            return True
+        # Patterns like "score: 85", "seeds: 25"
+        if re.match(r'^[a-z_]+:\s*\d+', text.strip()):
+            return True
+        return False
+
     def _extract_domain(self, url: str) -> Optional[str]:
         """Extract domain from URL."""
         match = re.search(r'https?://([^/]+)', url)
@@ -310,9 +325,13 @@ class FactChecker(LLMCapableAgent):
 
     def _claim_references_source(self, claim: str, source: str) -> bool:
         """Check if a claim references a source."""
-        # Simple heuristic: check if source keywords appear in claim
-        source_words = set(re.findall(r'\w+', source.lower()))
-        claim_words = set(re.findall(r'\w+', claim.lower()))
+        # Stop words that carry no semantic weight
+        _STOP = {"the", "a", "an", "is", "are", "of", "to", "in", "for",
+                 "and", "or", "on", "with", "by", "at", "from", "that", "this",
+                 "it", "be", "as", "not", "no", "https", "http", "www", "com", "org"}
+        source_words = set(re.findall(r'\w+', source.lower())) - _STOP
+        claim_words = set(re.findall(r'\w+', claim.lower())) - _STOP
+        # Require at least 2 meaningful overlapping words
         overlap = source_words & claim_words
         return len(overlap) >= 2
 

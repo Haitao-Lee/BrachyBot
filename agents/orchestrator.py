@@ -77,6 +77,8 @@ class MultiAgentOrchestrator:
         Returns:
             RoutingDecision with intent, complexity, and agents needed
         """
+        self._request_count += 1
+
         message = AgentMessage(
             sender=AgentRole.USER,
             receiver=AgentRole.ROUTER,
