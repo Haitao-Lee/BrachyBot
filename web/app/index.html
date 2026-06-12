@@ -789,12 +789,10 @@
 
         /* ============ PIPELINE PROGRESS ============ */
         .pipeline-progress {
-            background: var(--bg-3);
-            border: 1px solid var(--card-border);
-            border-radius: 8px;
-            padding: 0.75rem;
-            margin: 0.5rem 0;
-            max-width: 400px;
+            padding: 0;
+        }
+        .pipeline-step-block .step-body {
+            padding-top: 0.25rem;
         }
 
         .pipeline-header {
@@ -822,53 +820,53 @@
         .pipeline-step {
             display: flex;
             align-items: center;
-            gap: 0.6rem;
-            padding: 0.35rem 0.5rem;
-            border-radius: 6px;
-            transition: all 0.3s ease;
+            gap: 0.5rem;
+            padding: 0.25rem 0;
             font-size: 0.75rem;
-        }
-
-        .pipeline-step.completed {
             color: var(--text-dim);
         }
 
+        .pipeline-step.completed {
+            opacity: 0.6;
+        }
+
         .pipeline-step.active {
-            background: rgba(139, 92, 246, 0.1);
-            color: var(--primary);
+            color: var(--text);
             font-weight: 500;
         }
 
         .pipeline-step.pending {
-            color: var(--text-dim);
-            opacity: 0.6;
+            opacity: 0.35;
         }
 
         .pipeline-step.error {
             color: var(--danger);
-            background: rgba(239, 68, 68, 0.08);
         }
 
-        .pipeline-step-icon {
-            width: 20px;
-            height: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        .pipeline-step-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--text-dim);
             flex-shrink: 0;
-            font-size: 0.75rem;
         }
 
-        .pipeline-step.completed .pipeline-step-icon {
-            color: var(--success);
+        .pipeline-step.completed .pipeline-step-dot {
+            background: var(--success);
         }
 
-        .pipeline-step.active .pipeline-step-icon {
-            animation: spin 1.5s linear infinite;
+        .pipeline-step.active .pipeline-step-dot {
+            background: var(--primary);
+            animation: dot-pulse 1s ease-in-out infinite;
         }
 
-        .pipeline-step.error .pipeline-step-icon {
-            color: var(--danger);
+        .pipeline-step.error .pipeline-step-dot {
+            background: var(--danger);
+        }
+
+        @keyframes dot-pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(1.8); }
         }
 
         .pipeline-step-text {
@@ -877,11 +875,6 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-        }
-
-        .pipeline-step.completed .pipeline-step-text {
-            text-decoration: line-through;
-            opacity: 0.7;
         }
 
         .pipeline-step-time {
@@ -3031,6 +3024,8 @@ async function init() {
     state.plan3D = null;
     state.mesh3D = null;
     window._pipelineShown = false;
+    window._pipelineBlock = null;
+    if (window._pipelineObserver) { window._pipelineObserver.disconnect(); window._pipelineObserver = null; }
     pipelineState.steps = [];
     pipelineState.containerId = null;
     imageAnalysisData.ct = null;
@@ -9663,55 +9658,84 @@ const pipelineState = {
 };
 
 /**
- * Create a pipeline progress UI in the chat
- * @param {Array} steps - Array of {id, label} objects
- * @param {string} title - Pipeline title
- * @returns {string} - Container ID for later updates
+ * Create pipeline progress UI. Only ONE pipeline exists — subsequent calls just move it to bottom.
+ * Uses MutationObserver to keep it pinned at the very end of chat.
  */
-function addPipelineProgress(steps, title = '🔬 Planning Pipeline') {
+function addPipelineProgress(steps, title = '🔬 Brachytherapy Planning') {
     const container = document.getElementById('chatMessages');
-    const id = 'pipeline_' + Date.now();
+    const id = pipelineState.containerId || ('pipeline_' + Date.now());
+
+    // If pipeline already exists, just move it to the end
+    if (window._pipelineBlock && window._pipelineBlock.parentNode) {
+        container.appendChild(window._pipelineBlock);
+        container.scrollTop = container.scrollHeight;
+        return id;
+    }
 
     // Initialize state
     pipelineState.steps = steps.map((s, i) => ({
         ...s,
         index: i,
-        status: 'pending', // pending, active, completed, error
+        status: 'pending',
         startTime: null,
         endTime: null,
     }));
     pipelineState.startTime = Date.now();
     pipelineState.containerId = id;
 
-    // Build HTML
-    const html = `
-        <div class="pipeline-progress" id="${id}">
-            <div class="pipeline-header">
-                <span class="pipeline-header-icon">🔬</span>
-                <span>${title}</span>
-                <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);" id="${id}_time"></span>
-            </div>
-            <div class="pipeline-steps" id="${id}_steps">
-                ${pipelineState.steps.map((step, i) => `
-                    <div class="pipeline-step pending" id="${id}_step_${i}">
-                        <span class="pipeline-step-icon"></span>
-                        <span class="pipeline-step-text">${step.label}</span>
-                        <span class="pipeline-step-time" id="${id}_step_${i}_time"></span>
+    // Build steps HTML
+    const stepsHtml = pipelineState.steps.map((step, i) => `
+        <div class="pipeline-step pending" id="${id}_step_${i}">
+            <span class="pipeline-step-dot"></span>
+            <span class="pipeline-step-text">${step.label}</span>
+            <span class="pipeline-step-time" id="${id}_step_${i}_time"></span>
+        </div>
+    `).join('');
+
+    // Create pipeline element
+    const block = document.createElement('div');
+    block.className = 'chat-row bot';
+    block.id = 'pipeline_container';
+    block.innerHTML = `
+        <div class="chat-avatar bot-avatar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        </div>
+        <div class="thinking-chain">
+            <div class="step-block pipeline-step-block">
+                <div class="step-header" onclick="toggleStep('step_body_pipeline')">
+                    <span class="step-icon tool">🔬</span>
+                    <span class="step-title">${title}</span>
+                    <span class="step-status pending" id="${id}_status">0/${pipelineState.steps.length}</span>
+                    <span class="step-time" style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);" id="${id}_time"></span>
+                </div>
+                <div class="step-body expanded" id="step_body_pipeline">
+                    <div class="pipeline-progress" id="${id}">
+                        <div class="pipeline-steps" id="${id}_steps">
+                            ${stepsHtml}
+                        </div>
                     </div>
-                `).join('')}
+                </div>
             </div>
         </div>
     `;
+    container.appendChild(block);
+    window._pipelineBlock = block;
 
-    const div = document.createElement('div');
-    div.className = 'chat-msg system';
-    div.innerHTML = html;
-    container.appendChild(div);
+    // Observer: keep pipeline at the very bottom whenever new content is added
+    if (!window._pipelineObserver) {
+        window._pipelineObserver = new MutationObserver(() => {
+            if (window._pipelineBlock && window._pipelineBlock.parentNode === container) {
+                const lastChild = container.lastElementChild;
+                if (lastChild !== window._pipelineBlock) {
+                    container.appendChild(window._pipelineBlock);
+                }
+            }
+        });
+        window._pipelineObserver.observe(container, { childList: true });
+    }
+
     container.scrollTop = container.scrollHeight;
-
-    // Start timer
     updateTimeDisplay(id);
-
     return id;
 }
 
@@ -9758,6 +9782,14 @@ function updatePipelineStep(stepIndex, status, message = '') {
     // Update overall time
     updateTimeDisplay(id);
 
+    // Update status badge in step-block header (e.g., "3/7")
+    const statusBadge = document.getElementById(`${id}_status`);
+    if (statusBadge) {
+        const completed = pipelineState.steps.filter(s => s.status === 'completed').length;
+        const total = pipelineState.steps.length;
+        statusBadge.textContent = `${completed}/${total}`;
+    }
+
     // Scroll to bottom
     const container = document.getElementById('chatMessages');
     if (container) container.scrollTop = container.scrollHeight;
@@ -9773,7 +9805,13 @@ function updateTimeDisplay(id) {
     const elapsed = ((Date.now() - pipelineState.startTime) / 1000).toFixed(0);
     const completed = pipelineState.steps.filter(s => s.status === 'completed').length;
     const total = pipelineState.steps.length;
-    timeEl.textContent = `${completed}/${total} • ${elapsed}s`;
+    timeEl.textContent = `${elapsed}s`;
+
+    // Also update status badge
+    const statusBadge = document.getElementById(`${id}_status`);
+    if (statusBadge) {
+        statusBadge.textContent = `${completed}/${total}`;
+    }
 
     // Continue updating if pipeline is active
     if (completed < total) {
@@ -9796,10 +9834,17 @@ function completePipeline(success = true) {
         }
     });
 
-    // Update header
+    // Update header icon
     const headerEl = document.querySelector(`#${id} .pipeline-header-icon`);
     if (headerEl) {
         headerEl.textContent = success ? '✅' : '❌';
+    }
+
+    // Update status badge to show completion
+    const statusBadge = document.getElementById(`${id}_status`);
+    if (statusBadge) {
+        statusBadge.textContent = success ? '✅ Done' : '❌ Error';
+        statusBadge.className = `step-status ${success ? 'done' : 'error'}`;
     }
 
     // Final time update
@@ -10561,7 +10606,7 @@ async function sendChat() {
                                     stepIdx = PLANNING_STEP_MAP[data.metadata.step_executed] ?? -1;
                                 }
 
-                                // Show pipeline on first planning tool
+                                // Show pipeline on first planning tool (inside thinking chain)
                                 if (stepIdx >= 0 && !window._pipelineShown) {
                                     window._pipelineShown = true;
                                     const allSteps = [
