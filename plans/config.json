@@ -1,0 +1,98 @@
+{
+    "module_constants": {
+        "NEW_SLICES_ROUNDED": 64,
+        "SEED_LENGTH": 3.7,
+        "SEED_RADIUS": 0.4,
+        "SEED_RESOLUTION": 60,
+        "DIRECTION_EXTENSION": 100
+    },
+    "image_normalize": [-1000, 3000, 255],
+    "use_rf": true,
+    "seed_info": {
+        "radius": 0.4,
+        "length": 3.7,
+        "margin_rate": 1.5
+    },
+    "reference_direc": [0, 1, 0],
+    "radiation_array_params": {
+        "target_value": 1,
+        "obstacle_value": 2,
+        "background_value": 0,
+        "backlit_angle": 0.5,
+        "maximum_candidate_trajectories": 200,
+        "min_depth_rate": 5,
+        "smooth_sigma": 1,
+        "dose_img_dimention": [128, 128, 64],
+        "infer_img_size": [32, 32, 32]
+    },
+    "in_lowest_energy": 1,
+    "out_highest_energy": 1,
+    "distance_filtter": {
+        "lower_bound": 0.8,
+        "upper_bound": 10,
+        "distance_rate": 0.8,
+        "interval_rate": 2
+    },
+    "iter_rate": 2,
+    "rays_res": [10, 20],
+    "obstacle_res": [10, 20],
+    "DVH_rate": 0.9,
+    "max_iter": 4,
+    "replan_rate": 0.6,
+    "direc_resolution": [30, 3, 2],
+    "dl_params": {
+        "lr": 0.0004,
+        "lr_decay": 1.5,
+        "epochs": 1000,
+        "patience": 200,
+        "delta": 1e-6,
+        "verbose": false,
+        "search_region": 0.5,
+        "loss_weights": [1, 1, 1],
+        "DVH_margin": 0.05,
+        "dose_model_path": "./plans/dose_pre/dose_model.pth",
+        "dose_spatial_dims": 3,
+        "dose_in_channel": 3,
+        "dose_out_channel": 1,
+        "dose_cal_features": [16, 32, 64, 128, 256, 32],
+        "multi_GPU": false,
+        "device": "cuda"
+    },
+    "iso_dose_params": {
+        "iso_dose_values": [1.0, 1.5, 2.0, 4.0],
+        "iso_colors": [
+            [0, 1, 0],
+            [0, 1, 1],
+            [1, 1, 0],
+            [1, 0.5, 0],
+            [1, 0, 0],
+            [1, 0, 1],
+            [0.5, 0, 0.5],
+            [0, 0.5, 1]
+        ],
+        "iso_opacities": [0.3, 0.2, 0.1, 0.05],
+        "num_iterations": 50,
+        "rela_factor": 0.1,
+        "iso_opacity": 0.3
+    },
+    "rf_params": {
+        "lr": 0.001,
+        "gamma": 0.99,
+        "max_episodes": 100,
+        "print_every": 50,
+        "bandwidth": 50,
+        "hierarchical_optimization": true,
+        "segmented_rewards": true,
+        "flip_ratio": 1
+    },
+    "color": [
+        0.5019607843137255, 0.6823529411764706, 0.5019607843137255,
+        0.8470588235294118, 0.396078431372549, 0.30980392156862746,
+        0.9019607843137255, 0.8627450980392157, 0.27450980392156865,
+        0.7176470588235294, 0.611764705882353, 0.8627450980392157,
+        0.43529411764705883, 0.7215686274509804, 0.8235294117647058,
+        0.9450980392156862, 0.8392156862745098, 0.5686274509803921,
+        0.6509803921568628, 0.8470588235294118, 0.32941176470588235,
+        1.0, 0.4980392156862745, 0.15294117647058825
+    ]
+}

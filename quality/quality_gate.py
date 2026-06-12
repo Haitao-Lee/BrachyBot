@@ -162,6 +162,15 @@ class QualityGate:
 
         return selected
 
+    # Standard context injected into every agent call so reviewers never
+    # misinterpret normalized dose values as Gy.
+    _DOSE_UNIT_CONTEXT = {
+        "dose_units": "NORMALIZED (0-255 range), NOT Gy",
+        "prescription_threshold": 1.0,
+        "typical_max_dose": "1.5-2.5 normalized",
+        "planning_grid": [128, 128, 64],
+    }
+
     def _prepare_content_for_agent(self, agent_name: str, content: Dict,
                                    output_type: str) -> Dict:
         """Prepare content in the format expected by each agent."""
@@ -169,6 +178,11 @@ class QualityGate:
         # The review_content has: {"output_type": ..., "content": actual_data, "context": ...}
         actual_data = content.get("content", content)
         context = content.get("context", {})
+        # Always include dose unit context for clinical reviewers
+        if isinstance(context, dict):
+            context = {**self._DOSE_UNIT_CONTEXT, **context}
+        else:
+            context = self._DOSE_UNIT_CONTEXT
 
         # If content already has the right structure, pass it through
         if "dose_metrics" in actual_data or "claims" in actual_data:
