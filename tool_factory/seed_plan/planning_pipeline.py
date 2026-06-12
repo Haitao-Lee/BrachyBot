@@ -914,32 +914,65 @@ class PlanningPipelineTool(BaseTool):
         if oar_mask is not None:
             logger.info(f"[dose_eval] oar_mask shape: {oar_mask.shape}, unique labels: {np.unique(oar_mask).tolist()}")
 
-        # Compute DVH metrics in normalized units (matching Zhiyuan convention)
-        # in_lowest_energy=1.0 is the prescription dose threshold
+        # Compute DVH metrics (reference: Zhiyuan BrachyPlan.calculate_dvh)
+        # Dose values are normalized; multiply by DOSE_SCALE (120) to get Gy
+        DOSE_SCALE = 120.0
         target_mask = ctv_mask > 0
         target_doses = dose_distribution[target_mask]
 
         if len(target_doses) == 0:
             return ToolResult(success=False, error="[dose_eval] No target voxels found in CTV mask.")
 
-        # Compute metrics in normalized units
-        prescribed_dose = 1.0  # Normalized prescription dose
-        v100 = float(np.sum(target_doses >= prescribed_dose) / len(target_doses))
-        v150 = float(np.sum(target_doses >= 1.5 * prescribed_dose) / len(target_doses))
-        v200 = float(np.sum(target_doses >= 2.0 * prescribed_dose) / len(target_doses))
-        sorted_doses = np.sort(target_doses)
-        d90 = float(sorted_doses[int(0.10 * len(target_doses))])
-        d95 = float(sorted_doses[int(0.05 * len(target_doses))])
-        d50 = float(np.percentile(target_doses, 50))
-        max_dose = float(np.max(target_doses))
-        mean_dose = float(np.mean(target_doses))
+        # All dose metrics in Gy
+        target_doses_gy = target_doses * DOSE_SCALE
+        sorted_doses = np.sort(target_doses_gy)[::-1]  # Descending order
+        n = len(sorted_doses)
 
-        # OAR metrics in normalized units (use organ names if available)
+        def dose_at_volume(vol_pct):
+            idx = min(int(n * vol_pct / 100.0), n - 1)
+            return float(sorted_doses[idx])
+
+        def volume_at_dose(dose_threshold):
+            return float(np.sum(target_doses_gy >= dose_threshold) / n * 100.0)
+
+        prescribed_dose = 1.0  # Normalized prescription dose
+        prescription_gy = prescribed_dose * DOSE_SCALE  # 120 Gy
+
+        # D metrics in Gy (reference: dose_at_volume)
+        max_dose = float(np.max(target_doses_gy))
+        mean_dose = float(np.mean(target_doses_gy))
+        min_dose = float(np.min(target_doses_gy))
+        d98 = dose_at_volume(98)
+        d95 = dose_at_volume(95)
+        d90 = dose_at_volume(90)
+        d50 = dose_at_volume(50)
+        d2 = dose_at_volume(2)
+
+        # V metrics (percentage, reference: volume_at_dose)
+        v100 = volume_at_dose(prescription_gy) / 100.0  # As ratio
+        v150 = volume_at_dose(prescription_gy * 1.5) / 100.0
+        v200 = volume_at_dose(prescription_gy * 2.0) / 100.0
+        v50 = volume_at_dose(prescription_gy * 0.5) / 100.0
+
+        # Conformity Index, Homogeneity Index, Coverage (reference)
+        ci = (v100 ** 2) if v100 > 0 else 0.0
+        hi_n = (d2 - d98) / prescription_gy if prescription_gy > 0 else 0.0
+        hi = (max_dose - prescription_gy) / prescription_gy if prescription_gy > 0 else 0.0
+        cov = v100
+        gi = (v50 / v100) if v100 > 0 else 0.0
+
+        # OAR metrics in Gy (use organ names if available)
+        # Include Dxcc, Dx%, Vx metrics like Zhiyuan
+        DOSE_SCALE = 120.0
         oar_metrics = {}
         if oar_mask is not None:
+            # Calculate voxel volume in cm³ from spacing
+            spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
+            voxel_vol_cm3 = float(spacing[0] * spacing[1] * spacing[2]) / 1000.0  # mm³ → cm³
+
             for label_val in np.unique(oar_mask):
                 if label_val > 0:
-                    oar_doses = dose_distribution[oar_mask == label_val]
+                    oar_doses = dose_distribution[oar_mask == label_val] * DOSE_SCALE
                     if len(oar_doses) > 0:
                         # Get organ name
                         oar_name = None
@@ -947,30 +980,65 @@ class PlanningPipelineTool(BaseTool):
                             oar_name = organ_names.get(int(label_val)) or organ_names.get(str(int(label_val))) or organ_names.get(label_val)
                         if not oar_name:
                             oar_name = f"OAR_{int(label_val)}"
+
+                        sorted_doses_desc = np.sort(oar_doses)[::-1]
+                        sorted_doses_asc = np.sort(oar_doses)
+                        organ_vol_cm3 = len(oar_doses) * voxel_vol_cm3
+                        n = len(oar_doses)
+
+                        # Dxcc: minimum dose to hottest x cm³
+                        def dose_at_xcc(x_cc):
+                            if organ_vol_cm3 < x_cc:
+                                return float(np.min(oar_doses))
+                            n_voxels = int(x_cc / voxel_vol_cm3)
+                            n_voxels = max(1, min(n_voxels, n - 1))
+                            return float(sorted_doses_desc[n_voxels - 1])
+
+                        # Dx%: dose received by x% of organ volume
+                        def dose_at_pct(pct):
+                            idx = min(int(n * pct / 100.0), n - 1)
+                            return float(sorted_doses_asc[idx])
+
+                        # Vx Gy: volume (%) receiving at least x Gy
+                        def volume_pct_at_dose(dose_gy):
+                            return float(np.sum(oar_doses >= dose_gy) / n * 100.0)
+
                         oar_metrics[oar_name] = {
                             "max_dose": float(np.max(oar_doses)),
                             "mean_dose": float(np.mean(oar_doses)),
-                            "d2cc": float(np.percentile(oar_doses, 98)) if len(oar_doses) > 10 else 0,
-                            "volume_voxels": int(len(oar_doses)),
+                            "d0_1cc": dose_at_xcc(0.1),
+                            "d1cc": dose_at_xcc(1.0),
+                            "d2cc": dose_at_xcc(2.0),
+                            "d90": dose_at_pct(90),
+                            "d95": dose_at_pct(95),
+                            "v100": volume_pct_at_dose(prescription_gy),
+                            "v150": volume_pct_at_dose(prescription_gy * 1.5),
+                            "volume_cm3": round(organ_vol_cm3, 2),
+                            "volume_voxels": int(n),
                         }
 
         # Plan score (simple heuristic)
         plan_score = min(100, max(0, v100 * 100 - max(0, (1 - v100) * 200)))
 
         # Compute DVH curve data (cumulative dose-volume histogram)
-        # Format: {name: {dose_bins: [...], volume_pcts: [...]}} for drawDVH()
-        # Uses 300 bins like dvh_calculation.py
+        # Reference: Zhiyuan BrachyPlan.calculate_dvh
+        # DVH range: max(prescription*3, 250, dose_max*1.1) — ensures meaningful display
+        DOSE_SCALE = 120.0  # Gy normalization factor for dose model
+        prescription_gy = prescribed_dose * DOSE_SCALE  # e.g. 1.0 * 120 = 120 Gy
         dvh_data = {}
         if len(target_doses) > 0:
-            dose_max_val = float(np.max(target_doses)) * 1.1
+            dose_max_full = float(np.max(target_doses)) * DOSE_SCALE * 1.1
+            # Reference: dose_max_for_bins = max(prescription*3, 250, dose_max_full)
+            dose_max_val = max(prescription_gy * 3.0, 250.0, dose_max_full)
             num_bins = 300
             dose_bins = np.linspace(0, dose_max_val, num_bins + 1)
             dose_centers = (dose_bins[:-1] + dose_bins[1:]) / 2.0
 
             # CTV cumulative DVH
             ctv_pcts = []
+            target_doses_gy = target_doses * DOSE_SCALE
             for d in dose_centers:
-                pct = float(np.sum(target_doses >= d) / len(target_doses) * 100.0)
+                pct = float(np.sum(target_doses_gy >= d) / len(target_doses_gy) * 100.0)
                 ctv_pcts.append(pct)
             dvh_data["CTV"] = {
                 "dose_bins": dose_centers.tolist(),
@@ -985,7 +1053,7 @@ class PlanningPipelineTool(BaseTool):
                     reverse=True
                 )
                 for label_val in oar_labels:
-                    oar_doses_arr = dose_distribution[oar_mask == label_val]
+                    oar_doses_arr = dose_distribution[oar_mask == label_val] * DOSE_SCALE
                     if len(oar_doses_arr) > 0:
                         oar_pcts = []
                         for d in dose_centers:
@@ -1003,12 +1071,27 @@ class PlanningPipelineTool(BaseTool):
                         }
 
         metrics = {
+            # D metrics in Gy (reference: Zhiyuan calculate_dvh)
+            "dmax": max_dose,
+            "dmin": min_dose,
+            "dmean": mean_dose,
+            "d98": d98,
+            "d95": d95,
+            "d90": d90,
+            "d50": d50,
+            "d2": d2,
+            # V metrics as ratios
             "v100": v100,
             "v150": v150,
             "v200": v200,
-            "d90": d90,
-            "d95": d95,
-            "d50": d50,
+            "v50": v50,
+            # Indices (reference)
+            "ci": ci,           # Conformity Index
+            "hi": hi,           # Homogeneity Index
+            "hi_n": hi_n,       # Normalized HI
+            "cov": cov,         # Coverage
+            "gi": gi,           # Gradient Index
+            # Legacy keys for backward compatibility
             "max_dose": max_dose,
             "mean_dose": mean_dose,
             "prescribed_dose": prescribed_dose,

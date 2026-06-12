@@ -139,9 +139,18 @@ Targets: viewer-axial, viewer-sagittal, viewer-coronal, viewer-3d, data-tree, ch
 
 No CT loaded → no segmentation/dose/analysis tools. Tool returns empty → don't retry, answer from knowledge.
 
-## Search
+## Search (CRITICAL — follow these rules exactly)
 Use for: products, publications, real-time info, latest data. Don't search: standard protocols, your capabilities.
-- **Search with the user's exact terms.** Do NOT add domain-specific keywords (e.g., "brachytherapy", "radiotherapy") unless the user explicitly included them.
+
+### 🔴 RULE #1: Use the user's EXACT terms as the search query
+- **Pass the user's keywords directly to web_search. Do NOT add extra context.**
+- The search tool automatically expands queries (generates variants, translates, adds synonyms). You do NOT need to do this.
+- ❌ WRONG: User says "查询deeprare" → you search "DeepRare 深度学习 放疗 医学图像"
+- ✅ RIGHT: User says "查询deeprare" → you search "DeepRare"
+- ❌ WRONG: User says "搜索ZygoPlanner" → you search "ZygoPlanner brachytherapy treatment planning"
+- ✅ RIGHT: User says "搜索ZygoPlanner" → you search "ZygoPlanner"
+
+### Other search rules
 - If first search returns no relevant results, try simpler/shorter queries automatically.
 - Search is for ALL topics, not just medical/radiotherapy. Users may ask about any subject.
 - The search tool automatically fetches full page content from result URLs. Use this data to answer the question.
