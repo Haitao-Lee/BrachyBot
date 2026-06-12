@@ -118,14 +118,82 @@ class QueryProcessor:
         'journal of clinical oncology': 'JCO',
     }
 
+    # Domain keywords that LLMs often add to queries (dilutes search)
+    # These are stripped when they appear AFTER a core term
+    DOMAIN_NOISE = {
+        # Medical/radiotherapy
+        'brachytherapy', 'radiotherapy', 'radiation therapy', 'treatment planning',
+        'dose calculation', 'seed implant', '近距离', '放疗', '放射治疗',
+        'treatment plan', 'medical', 'clinical', 'healthcare', '医学', '医疗',
+        '深度学习', 'deep learning', 'machine learning', '机器学习',
+        '人工智能', 'artificial intelligence', 'ai',
+        '图像分析', 'image analysis', '医学图像', 'medical image',
+        '诊断', 'diagnosis', '治疗', 'treatment',
+        '研究', 'research', '论文', 'paper', 'publication',
+        '算法', 'algorithm', '模型', 'model', 'network', '网络',
+        'framework', '框架', 'library', '库', '工具', 'tool',
+        '软件', 'software', '平台', 'platform', '系统', 'system',
+        '技术', 'technology', '方法', 'method', 'approach',
+    }
+
+    @staticmethod
+    def _extract_core_term(query: str) -> Optional[str]:
+        """Extract the core search term from a query with domain noise.
+
+        Pattern: LLM adds domain context after the core term.
+        E.g., "DeepRare 深度学习 放疗 医学图像" → "DeepRare"
+        E.g., "ZygoPlanner brachytherapy treatment planning" → "ZygoPlanner"
+
+        Returns None if no domain noise detected (query is clean).
+        """
+        # Split by spaces and Chinese punctuation
+        parts = re.split(r'[\s,，、;；]+', query.strip())
+        if len(parts) <= 1:
+            return None  # Single term, nothing to strip
+
+        # Find where domain noise starts
+        core_parts = []
+        noise_started = False
+        for part in parts:
+            p_lower = part.lower().strip()
+            if not p_lower:
+                continue
+            # Check if this part is domain noise
+            if p_lower in QueryProcessor.DOMAIN_NOISE or any(
+                p_lower.startswith(noise) for noise in QueryProcessor.DOMAIN_NOISE
+            ):
+                noise_started = True
+                continue
+            if noise_started:
+                # Once noise starts, skip remaining parts
+                continue
+            core_parts.append(part)
+
+        if not core_parts or len(core_parts) == len(parts):
+            return None  # No noise detected
+
+        core = ' '.join(core_parts).strip()
+        # Sanity: core should be at least 2 chars and look like a name/term
+        if len(core) >= 2 and re.match(r'^[A-Za-z0-9一-鿿]', core):
+            return core
+        return None
+
     @staticmethod
     def generate_variants(query: str) -> List[str]:
         """Generate query variants for better coverage.
 
         Returns list of queries to try, in priority order.
         """
-        variants = [query]  # Original query first
+        variants = []  # Will add core term first, then original
         q_lower = query.lower()
+
+        # CRITICAL: Extract core term first (strip LLM-added domain noise)
+        # This ensures the clean query is tried FIRST
+        core_term = QueryProcessor._extract_core_term(query)
+        if core_term and core_term.lower() != q_lower:
+            variants.append(core_term)  # Core term gets highest priority
+
+        variants.append(query)  # Original query second
 
         # Add current year for time-sensitive queries
         current_year = str(datetime.now().year)
@@ -1221,6 +1289,15 @@ class ResultValidator:
         'we', 'our', 'you', 'your', 'he', 'him', 'his', 'she', 'her', 'it',
         'its', 'they', 'them', 'their', 'and', 'or', 'but', 'if', 'while',
         '最新', '查询', '搜索', '查',
+        # Domain noise that LLMs often add to queries (should not affect relevance)
+        '深度学习', '放疗', '放射治疗', '医学图像', '医学', '医疗',
+        '人工智能', '机器学习', '图像分析', '诊断', '治疗', '研究', '论文',
+        '算法', '模型', '框架', '工具', '软件', '平台', '系统', '技术', '方法',
+        'deep', 'learning', 'machine', 'medical', 'image', 'analysis',
+        'diagnosis', 'treatment', 'research', 'algorithm', 'model',
+        'framework', 'tool', 'software', 'platform', 'system', 'technology',
+        'method', 'approach', 'clinical', 'healthcare', 'radiotherapy',
+        'brachytherapy', 'radiation', 'therapy', 'dose', 'planning',
     })
 
     # Cross-language term mapping
@@ -1571,8 +1648,11 @@ class WebSearchTool(BaseTool):
         for variant in variants[:4]:  # Max 4 variants
             results = self.engines['bing'].search_with_retry(variant, max_results, retries=2)
             if results:
-                score = self.validator.score_relevance(query, results)
-                logger.info(f"Variant '{variant[:50]}' -> {len(results)} results, score {score:.2f}")
+                # Score against BOTH original query and variant (variant may be cleaner)
+                score_original = self.validator.score_relevance(query, results)
+                score_variant = self.validator.score_relevance(variant, results) if variant != query else 0.0
+                score = max(score_original, score_variant)
+                logger.info(f"Variant '{variant[:50]}' -> {len(results)} results, score {score:.2f} (orig={score_original:.2f}, var={score_variant:.2f})")
                 all_results.extend(results)
                 if score > best_score:
                     best_score = score
@@ -1585,7 +1665,9 @@ class WebSearchTool(BaseTool):
             for variant in variants[:2]:
                 sogou_results = self.engines['sogou'].search_with_retry(variant, max_results, retries=2)
                 if sogou_results:
-                    score = self.validator.score_relevance(query, sogou_results)
+                    score_original = self.validator.score_relevance(query, sogou_results)
+                    score_variant = self.validator.score_relevance(variant, sogou_results) if variant != query else 0.0
+                    score = max(score_original, score_variant)
                     if score > best_score:
                         best_score = score
                         best_results = sogou_results

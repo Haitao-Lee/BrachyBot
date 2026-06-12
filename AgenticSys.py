@@ -1414,6 +1414,9 @@ class BrachyAgent:
                 else:
                     from tool_factory import ToolResult
                     return ToolResult(success=False, error=f"File not found: {path}")
+            # Store ct_path in memory for 3D reconstruction and other tools
+            if tool_name in ("ctv_segmentation", "oar_segmentation"):
+                self.memory.store("ct_path", params["image_path"])
 
         # Execute
         result = self.registry.execute(tool_name, **params)
@@ -4467,6 +4470,7 @@ print(json.dumps(result))
             "messages": len(self.memory.conversation),
             "stored_keys": list(self.memory.planning_results.keys()),
             "ct_loaded": self.memory.retrieve("ct_data") is not None,
+            "ct_path": self.memory.retrieve("ct_path") or "",
         }
         try:
             status["skills_available"] = len(self.skill_registry.list_skills())

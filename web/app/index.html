@@ -787,6 +787,136 @@
             margin-left: auto;
         }
 
+        /* ============ PIPELINE PROGRESS ============ */
+        .pipeline-progress {
+            background: var(--bg-3);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 0.75rem;
+            margin: 0.5rem 0;
+            max-width: 400px;
+        }
+
+        .pipeline-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 600;
+            font-size: 0.8rem;
+            color: var(--text);
+            margin-bottom: 0.6rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .pipeline-header-icon {
+            font-size: 1rem;
+        }
+
+        .pipeline-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+
+        .pipeline-step {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.35rem 0.5rem;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            font-size: 0.75rem;
+        }
+
+        .pipeline-step.completed {
+            color: var(--text-dim);
+        }
+
+        .pipeline-step.active {
+            background: rgba(139, 92, 246, 0.1);
+            color: var(--primary);
+            font-weight: 500;
+        }
+
+        .pipeline-step.pending {
+            color: var(--text-dim);
+            opacity: 0.6;
+        }
+
+        .pipeline-step.error {
+            color: var(--danger);
+            background: rgba(239, 68, 68, 0.08);
+        }
+
+        .pipeline-step-icon {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 0.75rem;
+        }
+
+        .pipeline-step.completed .pipeline-step-icon {
+            color: var(--success);
+        }
+
+        .pipeline-step.active .pipeline-step-icon {
+            animation: spin 1.5s linear infinite;
+        }
+
+        .pipeline-step.error .pipeline-step-icon {
+            color: var(--danger);
+        }
+
+        .pipeline-step-text {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .pipeline-step.completed .pipeline-step-text {
+            text-decoration: line-through;
+            opacity: 0.7;
+        }
+
+        .pipeline-step-time {
+            font-size: 0.6rem;
+            color: var(--text-dim);
+            flex-shrink: 0;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 1; }
+            100% { transform: scale(1.5); opacity: 0; }
+        }
+
+        .pipeline-step.active .pipeline-step-icon::before {
+            content: '⚙️';
+            animation: spin 1.5s linear infinite;
+        }
+
+        .pipeline-step.completed .pipeline-step-icon::before {
+            content: '✅';
+        }
+
+        .pipeline-step.pending .pipeline-step-icon::before {
+            content: '⬜';
+        }
+
+        .pipeline-step.error .pipeline-step-icon::before {
+            content: '❌';
+        }
+
         /* ============ USAGE STATS BAR ============ */
         .usage-bar {
             display: flex;
@@ -1090,9 +1220,9 @@
         .btn-icon { font-size: 0.9rem; }
 
         /* ============ METRICS ============ */
-        .metrics-panel { padding: 0.75rem; flex: 1; }
+        .metrics-panel { padding: 0.75rem; flex: 1; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
 
-        .metrics-section { margin-bottom: 0.75rem; }
+        .metrics-section { margin-bottom: 0.5rem; flex-shrink: 1; }
 
         .metrics-title {
             font-size: 0.65rem; font-weight: 600; color: var(--text-dim);
@@ -1153,9 +1283,10 @@
         .dvh-panel { padding: 0.75rem; flex: 1; }
 
         .dvh-container {
-            height: 140px; position: relative;
+            flex: 1; min-height: 600px; position: relative;
             background: var(--bg-3); border-radius: 8px;
             overflow: hidden; margin-bottom: 0.25rem;
+            resize: vertical;
         }
 
         .dvh-placeholder {
@@ -2046,12 +2177,12 @@
                 <div class="metrics-section" id="analysisSection" style="display:none;">
                     <div class="metrics-title" style="display:flex;align-items:center;gap:0.4rem;">
                         <span>&#128269;</span> Image Analysis
-                        <span style="margin-left:auto;font-size:0.55rem;color:var(--text-dim);" id="analysisTime"></span>
+                        <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);" id="analysisTime"></span>
                     </div>
-                    <div id="analysisContent" style="background:var(--bg-2);border-radius:6px;padding:0.75rem;font-size:0.7rem;color:var(--text);line-height:1.6;max-height:400px;overflow-y:auto;"></div>
+                    <div id="analysisContent" style="max-height:500px;overflow-y:auto;padding:0.25rem;"></div>
                 </div>
 
-                <div class="metrics-section">
+                <div class="metrics-section" style="flex-shrink:2;">
                     <div class="metrics-title">Target Coverage</div>
                     <div class="metrics-grid">
                         <div class="metric-card" id="cardV100">
@@ -2087,7 +2218,7 @@
                     </div>
                 </div>
 
-                <div class="metrics-section">
+                <div class="metrics-section" style="flex:1;display:flex;flex-direction:column;min-height:0;">
                     <div class="metrics-title">Dose-Volume Histogram</div>
                     <div class="dvh-container" id="dvhChart">
                         <div class="dvh-placeholder" id="dvhPlaceholder">
@@ -2096,27 +2227,26 @@
                         </div>
                         <canvas id="dvhCanvas" style="display:none;"></canvas>
                     </div>
-                    <div class="dvh-legend" style="flex-direction:row;gap:0.75rem;margin-top:0.25rem;">
-                        <div class="dvh-legend-item">
-                            <div style="width:14px;height:2px;background:var(--primary);border-radius:1px;"></div>
-                            <span>CTV</span>
-                        </div>
-                        <div class="dvh-legend-item">
-                            <div style="width:14px;height:2px;background:var(--danger);border-radius:1px;"></div>
-                            <span>OAR</span>
-                        </div>
-                    </div>
                 </div>
 
-                <div class="metrics-section">
-                    <div class="metrics-title">OAR Constraints</div>
-                    <div style="max-height:180px;overflow-y:auto;border-radius:6px;">
-                        <table class="oar-table">
+                <div class="metrics-section" style="flex-shrink:2;">
+                    <div class="metrics-title">OAR Dose Metrics (Gy)</div>
+                    <div style="max-height:200px;overflow-y:auto;border-radius:6px;">
+                        <table class="oar-table" style="font-size:0.6rem;">
                             <thead>
-                                <tr><th>Organ</th><th>D0.1cc</th><th>D1cc</th><th>Status</th></tr>
+                                <tr>
+                                    <th style="position:sticky;top:0;background:var(--bg-2);z-index:1;">Organ</th>
+                                    <th style="position:sticky;top:0;background:var(--bg-2);z-index:1;">D0.1cc</th>
+                                    <th style="position:sticky;top:0;background:var(--bg-2);z-index:1;">D1cc</th>
+                                    <th style="position:sticky;top:0;background:var(--bg-2);z-index:1;">D2cc</th>
+                                    <th style="position:sticky;top:0;background:var(--bg-2);z-index:1;">D90</th>
+                                    <th style="position:sticky;top:0;background:var(--bg-2);z-index:1;">D95</th>
+                                    <th style="position:sticky;top:0;background:var(--bg-2);z-index:1;">V100%</th>
+                                    <th style="position:sticky;top:0;background:var(--bg-2);z-index:1;">Vol(cm³)</th>
+                                </tr>
                             </thead>
                             <tbody id="oarTableBody">
-                                <tr><td colspan="4" style="text-align:center;color:var(--text-dim);padding:0.75rem;font-size:0.7rem;">No OAR data</td></tr>
+                                <tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:0.75rem;">No OAR data</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -2197,6 +2327,15 @@
                     <input type="checkbox" id="overlayOAR" onchange="toggleOverlay()"> OAR
                 </label>
                 <div class="ctrl-sep" style="height:16px;"></div>
+                <!-- Dose Overlay Opacity -->
+                <label style="font-size:0.6rem;color:var(--text-dim);display:flex;align-items:center;gap:3px;">
+                    Dose
+                    <input type="range" min="0" max="100" value="50" id="doseOverlayOpacity"
+                        oninput="setDoseOverlayOpacity(this.value)"
+                        style="width:50px;height:12px;cursor:pointer;">
+                    <span id="doseOpacityVal" style="font-size:0.55rem;min-width:20px;">50%</span>
+                </label>
+                <div class="ctrl-sep" style="height:16px;"></div>
                 <!-- Tools -->
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;white-space:nowrap;" onclick="setViewerTool('crosshair')" id="toolCrosshair">&#10799; Crosshair</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('measure')" id="toolMeasure">&#128207; Line</button>
@@ -2260,10 +2399,23 @@
                             <canvas id="crosshairCanvasAxial" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
                             <canvas id="annotationCanvasAxial" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
                             <canvas id="labelOverlay_Axial" style="position:absolute;pointer-events:none;display:none;opacity:0.6;"></canvas>
-                            <!-- Dose overlay colorbar -->
-                            <div id="doseColorbar" style="display:none;position:absolute;right:8px;top:8px;bottom:8px;width:20px;background:linear-gradient(to bottom, white, yellow, red, black);border:1px solid #555;border-radius:3px;z-index:5;">
-                                <div style="position:absolute;top:-2px;right:24px;font-size:0.55rem;color:#fff;text-shadow:0 0 2px #000;" id="doseColorbarMax">max</div>
-                                <div style="position:absolute;bottom:-2px;right:24px;font-size:0.55rem;color:#fff;text-shadow:0 0 2px #000;" id="doseColorbarMin">0</div>
+                            <!-- Dose overlay colorbar (PETrainbow2, smooth gradient) -->
+                            <div id="doseColorbar" style="display:none;position:absolute;right:6px;top:6px;bottom:6px;width:42px;z-index:5;pointer-events:none;">
+                                <div style="position:relative;width:16px;height:100%;margin-left:auto;border-radius:3px;border:1px solid rgba(255,255,255,0.2);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.3);">
+                                    <canvas id="colorbarCanvas" width="16" height="512" style="width:100%;height:100%;image-rendering:auto;"></canvas>
+                                </div>
+                                <!-- Tick marks -->
+                                <div style="position:absolute;top:0;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.5);"></div>
+                                <div style="position:absolute;top:25%;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.3);"></div>
+                                <div style="position:absolute;top:50%;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.5);"></div>
+                                <div style="position:absolute;top:75%;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.3);"></div>
+                                <div style="position:absolute;bottom:0;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.5);"></div>
+                                <!-- Labels -->
+                                <div style="position:absolute;top:-2px;left:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:600;" id="doseColorbarMax">max</div>
+                                <div style="position:absolute;top:25%;left:0;transform:translateY(-50%);font-size:0.48rem;color:rgba(255,255,255,0.7);text-shadow:0 1px 2px #000;" id="doseColorbarQ1"></div>
+                                <div style="position:absolute;top:50%;left:0;transform:translateY(-50%);font-size:0.5rem;color:#fff;text-shadow:0 1px 2px #000;" id="doseColorbarMid"></div>
+                                <div style="position:absolute;top:75%;left:0;transform:translateY(-50%);font-size:0.48rem;color:rgba(255,255,255,0.7);text-shadow:0 1px 2px #000;" id="doseColorbarQ3"></div>
+                                <div style="position:absolute;bottom:-2px;left:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:600;" id="doseColorbarMin">0</div>
                             </div>
                         </div>
                     </div>
@@ -2829,13 +2981,10 @@ async function loadCTToViewers(ctPath) {
 
             addChat('system', `CT loaded: ${data.shape.join(' × ')} voxels, ${data.hu_range[0].toFixed(0)} to ${data.hu_range[1].toFixed(0)} HU`);
 
-            // Update Image Analysis panel with CT info (clears old segmentation data)
-            imageAnalysisData.ct = null; // Will be computed from volume data
-            imageAnalysisData.ctv = null;
-            imageAnalysisData.oar = null;
-            // Stats will be computed when volume data loads (in loadVolumeData)
-            setTimeout(() => {
-                imageAnalysisData.ct = computeCTStats() || {
+            // Image Analysis is updated in loadVolumeData() after volume data loads
+            // If volume data failed to load, set basic CT info from server response
+            if (!imageAnalysisData.ct) {
+                imageAnalysisData.ct = {
                     shape: data.shape,
                     spacing: data.spacing,
                     huRange: data.hu_range,
@@ -2844,7 +2993,7 @@ async function loadCTToViewers(ctPath) {
                     tissueDist: null,
                 };
                 updateImageAnalysis();
-            }, 600);
+            }
         }
     } catch (e) {
         overlay.classList.remove('active');
@@ -2867,6 +3016,54 @@ async function init() {
         document.getElementById('serverDot').className = 'dot red';
         document.getElementById('serverStatus').textContent = 'Offline';
     }
+
+    // Clear planning data on EVERY page load/refresh
+    // This ensures historical data doesn't persist across page refreshes
+    try {
+        await fetch(API + '/planning/clear', { method: 'POST' });
+        console.log('Cleared planning data on page load');
+    } catch (e) { console.warn('Clear planning failed:', e); }
+
+    // Clear ALL frontend state
+    state.seeds = [];
+    state.dvhData = null;
+    state.metrics = {};
+    state.plan3D = null;
+    state.mesh3D = null;
+    window._pipelineShown = false;
+    pipelineState.steps = [];
+    pipelineState.containerId = null;
+    imageAnalysisData.ct = null;
+    imageAnalysisData.ctv = null;
+    imageAnalysisData.oar = null;
+    // Clear data tree planning state
+    dataTreeState.planning.seeds = [];
+    dataTreeState.planning.needles = [];
+    dataTreeState.planning.doseLevels = [];
+    dataTreeState.seeds.loaded = false;
+    dataTreeState.needles.loaded = false;
+    // Clear 3D meshes
+    if (scene3D && scene3D.meshes) {
+        Object.keys(scene3D.meshes).forEach(id => {
+            const mesh = scene3D.meshes[id];
+            if (mesh && mesh.parent) mesh.parent.remove(mesh);
+            if (mesh && mesh.geometry) mesh.geometry.dispose();
+            if (mesh && mesh.material) mesh.material.dispose();
+        });
+        scene3D.meshes = {};
+    }
+    // Clear dose overlay
+    state.doseOverlay = null;
+    Object.keys(_doseContourCache).forEach(key => delete _doseContourCache[key]);
+    // Update UI
+    updateSeeds([]);
+    updateMetrics({});
+    updateOARTable({});
+    updateImageAnalysis();
+    renderDataTree();
+    // Hide colorbar
+    const colorbar = document.getElementById('doseColorbar');
+    if (colorbar) colorbar.style.display = 'none';
     // Fetch existing organ data for data tree (only if CT is loaded on server)
     try {
         const statusResp = await fetch(API + '/status');
@@ -2875,6 +3072,12 @@ async function init() {
             // Check if CT is actually loaded in the agent's memory
             if (statusData.ct_loaded) {
                 state.ctLoaded = true;
+                state.ctPath = statusData.ct_path || '';  // Set CT path for 3D reconstruction
+                // Reload CT volume data and render slices
+                await loadVolumeData();
+                ['axial', 'sagittal', 'coronal'].forEach(axis => {
+                    renderSliceFromVolume(axis, state.slices[axis]);
+                });
                 // Try to load label volumes for client-side overlay rendering
                 await loadLabelVolumes();
                 // Update data tree state based on loaded data
@@ -2902,10 +3105,8 @@ async function init() {
     // Apply default viewer layout
     setViewerLayout(state.viewerSettings.layout || 'grid');
 
-    // Try to load existing planning results (seeds, DVH, dose)
-    try {
-        await refreshPlanningUI();
-    } catch (e) { console.warn('refreshPlanningUI on init failed:', e); }
+    // NOTE: Do NOT call refreshPlanningUI() on init
+    // Planning data was just cleared — user should run planning manually
 }
 
 // Load default hyperparameters from server config and populate UI
@@ -3201,7 +3402,11 @@ function switchPanel(name, el) {
     // Hide summary bar when viewers panel is active
     const summaryBar = document.getElementById('summaryBar');
     if (summaryBar) summaryBar.style.display = name === 'viewers' ? 'none' : '';
-    if (name === 'viewers' && state.ctLoaded) loadAllSlices();
+    if (name === 'viewers' && state.ctLoaded) {
+        loadAllSlices();
+        // Delayed re-render to fix black screen when container size changes
+        setTimeout(() => loadAllSlices(), 100);
+    }
 }
 
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
@@ -3234,6 +3439,27 @@ async function loadVolumeData() {
     const buffer = await res.arrayBuffer();
     volumeData = new Int16Array(buffer);
     console.log(`Volume loaded: ${shapeZ}x${shapeY}x${shapeX}, ${volumeData.length} voxels`);
+
+    // Update Image Analysis now that volume data is available
+    if (!imageAnalysisData.ct) {
+        imageAnalysisData.ct = computeCTStats();
+    }
+    updateImageAnalysis();
+
+    // Setup resize observer for 2D viewers to fix black screen issue
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
+        if (canvas && canvas.parentElement) {
+            if (!canvas._resizeObserver) {
+                canvas._resizeObserver = new ResizeObserver(() => {
+                    if (volumeData && canvas.style.display !== 'none') {
+                        requestAnimationFrame(() => renderSliceFromVolume(axis, state.slices[axis]));
+                    }
+                });
+                canvas._resizeObserver.observe(canvas.parentElement);
+            }
+        }
+    });
 }
 
 async function loadLabelVolumes() {
@@ -3633,9 +3859,9 @@ function renderSliceFromVolume(axis, sliceIndex) {
     ctx.putImageData(imageData, 0, 0);
 
     const containerRect = container.getBoundingClientRect();
-    const containerW = containerRect.width;
-    const containerH = containerRect.height;
-    const displayScale = Math.min(containerW / width, containerH / height);
+    const containerW = containerRect.width || 400;  // Fallback if container not visible
+    const containerH = containerRect.height || 300;
+    const displayScale = Math.min(containerW / width, containerH / height) || 1;
     const displayW = width * displayScale;
     const displayH = height * displayScale;
 
@@ -3941,6 +4167,8 @@ function updateSlice(view, val) {
         fetchDoseOverlaySlice(view, parseInt(val)).then(sliceData => {
             if (sliceData) renderDoseOverlay(view, parseInt(val), sliceData);
         });
+        // Also render dose contour lines
+        triggerDoseContourRender(view, parseInt(val));
     }
 }
 
@@ -5978,6 +6206,21 @@ async function loadAllSlices() {
 }
 
 async function reconstruct3D() {
+    if (!state.ctPath || !state.ctLoaded) {
+        try {
+            const resp = await fetch(API + '/status');
+            if (resp.ok) {
+                const sd = await resp.json();
+                if (sd.ct_path) {
+                    state.ctPath = sd.ct_path;
+                    state.ctLoaded = true;
+                }
+                if (!volumeData && sd.ct_loaded) {
+                    await loadVolumeData();
+                }
+            }
+        } catch (e) {}
+    }
     if (!state.ctPath) {
         addChat('error', 'No CT image loaded');
         return;
@@ -6019,9 +6262,24 @@ async function reconstruct3D() {
 }
 
 // 3D reconstruction for individual organs from data tree
-async function reconstructOrgan3D(id) {
+async function reconstructOrgan3D(id, silent = false) {
+    if (!state.ctPath || !state.ctLoaded) {
+        try {
+            const resp = await fetch(API + '/status');
+            if (resp.ok) {
+                const sd = await resp.json();
+                if (sd.ct_path) {
+                    state.ctPath = sd.ct_path;
+                    state.ctLoaded = true;
+                }
+                if (!volumeData && sd.ct_loaded) {
+                    await loadVolumeData();
+                }
+            }
+        } catch (e) {}
+    }
     if (!state.ctPath) {
-        addChat('error', 'No CT image loaded');
+        if (!silent) addChat('error', 'No CT image loaded');
         return;
     }
 
@@ -6054,10 +6312,10 @@ async function reconstructOrgan3D(id) {
                     // Skip 400 errors (label not found in mask)
                 } catch (e) { /* skip failed labels */ }
             }
-            if (successCount === 0) {
+            if (successCount === 0 && !silent) {
                 addChat('error', 'No CTV labels found for 3D reconstruction');
             }
-            switchPanel('viewers', document.querySelectorAll('.panel-tab')[3]);
+            if (!silent) switchPanel('viewers', document.querySelectorAll('.panel-tab')[3]);
             return;
         }
 
@@ -6140,11 +6398,15 @@ function init3DScene() {
     scene3D.scene = new THREE.Scene();
     // No background - use canvas CSS background (#000) for consistency with 2D viewers
 
-    scene3D.camera = new THREE.PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 5000);
+    // Fallback size if canvas not visible
+    const w = canvas.clientWidth || 400;
+    const h = canvas.clientHeight || 300;
+
+    scene3D.camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 5000);
     scene3D.camera.position.set(0, 0, 300);
 
     scene3D.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    scene3D.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+    scene3D.renderer.setSize(w, h);
     scene3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     scene3D.renderer.shadowMap.enabled = false;
     scene3D.renderer.setClearColor(0x000000, 0);
@@ -6283,6 +6545,17 @@ function init3DScene() {
     }
     animate();
     scene3D.initialized = true;
+
+    // Resize handler for 3D viewer
+    const resizeObserver3D = new ResizeObserver(() => {
+        if (!scene3D.renderer || !scene3D.camera) return;
+        const newW = canvas.clientWidth || 400;
+        const newH = canvas.clientHeight || 300;
+        scene3D.camera.aspect = newW / newH;
+        scene3D.camera.updateProjectionMatrix();
+        scene3D.renderer.setSize(newW, newH);
+    });
+    resizeObserver3D.observe(canvas);
 
     // ==================== 3D PICKING / INTERACTION ====================
     const raycaster = new THREE.Raycaster();
@@ -6838,12 +7111,47 @@ async function loadDoseOverlay() {
 
         renderDataTree();
 
-        // Show colorbar
+        // Show colorbar with PETrainbow2 (adaptive range like Zhiyuan)
         const colorbar = document.getElementById('doseColorbar');
         if (colorbar) {
             colorbar.style.display = 'block';
-            document.getElementById('doseColorbarMax').textContent = data.dose_max?.toFixed(1) || 'max';
-            document.getElementById('doseColorbarMin').textContent = data.dose_min?.toFixed(1) || '0';
+            // Adaptive range: Window=600, Level=300 (reference: Zhiyuan)
+            // Range: [max(0, Level-Window/2), Level+Window/2] = [0, 600]
+            const dMax = Math.max(data.dose_max * 120, 600);
+            const dMin = 0;
+            document.getElementById('doseColorbarMax').textContent = dMax.toFixed(0) + ' Gy';
+            document.getElementById('doseColorbarMin').textContent = dMin.toFixed(0) + ' Gy';
+            document.getElementById('doseColorbarMid').textContent = ((dMin + dMax) / 2).toFixed(0) + ' Gy';
+            document.getElementById('doseColorbarQ1').textContent = (dMax * 0.25).toFixed(0);
+            document.getElementById('doseColorbarQ3').textContent = (dMax * 0.75).toFixed(0);
+            // Render PETrainbow2 colormap on canvas (512px for smooth gradient)
+            const cbCanvas = document.getElementById('colorbarCanvas');
+            if (cbCanvas) {
+                const ctx = cbCanvas.getContext('2d');
+                const h = cbCanvas.height;
+                const w = cbCanvas.width;
+                for (let y = 0; y < h; y++) {
+                    const val = 1 - y / h;  // Top = max, bottom = min
+                    let r, g, b;
+                    if (val < 0.1) {
+                        r = 0; g = 0; b = Math.floor(val * 10 * 128);
+                    } else if (val < 0.3) {
+                        r = 0; g = 0; b = 128 + Math.floor((val - 0.1) * 5 * 127);
+                    } else if (val < 0.45) {
+                        r = 0; g = Math.floor((val - 0.3) * 6.67 * 255); b = 255;
+                    } else if (val < 0.6) {
+                        r = 0; g = 255; b = Math.floor((1 - (val - 0.45) * 6.67) * 255);
+                    } else if (val < 0.75) {
+                        r = Math.floor((val - 0.6) * 6.67 * 255); g = 255; b = 0;
+                    } else if (val < 0.9) {
+                        r = 255; g = Math.floor((1 - (val - 0.75) * 6.67) * 255); b = 0;
+                    } else {
+                        r = 255; g = Math.floor((val - 0.9) * 10 * 255); b = Math.floor((val - 0.9) * 10 * 255);
+                    }
+                    ctx.fillStyle = `rgb(${r},${g},${b})`;
+                    ctx.fillRect(0, y, w, 1);
+                }
+            }
         }
         // Trigger re-render of current slices to show overlay
         updateSlice('axial', state.slices.axial);
@@ -6918,12 +7226,25 @@ function renderDoseOverlayOnCanvas(canvas, sliceIndex, axis) {
     const scaleX = w / cols;
     const scaleY = h / rows;
 
-    // Viridis-like colormap
+    // PETrainbow2 colormap (black→blue→cyan→green→yellow→red→white)
     const colormap = (val) => {
-        // val is 0-1
-        const r = Math.min(255, Math.max(0, Math.floor(val < 0.5 ? 68 : 68 + (val - 0.5) * 2 * (253 - 68))));
-        const g = Math.min(255, Math.max(0, Math.floor(val < 0.5 ? 1 + val * 2 * (120 - 1) : 120 + (val - 0.5) * 2 * (231 - 120))));
-        const b = Math.min(255, Math.max(0, Math.floor(val < 0.5 ? 84 + val * 2 * (182 - 84) : 182 + (val - 0.5) * 2 * (45 - 182))));
+        const v = Math.min(1, Math.max(0, val));
+        let r, g, b;
+        if (v < 0.1) {
+            r = 0; g = 0; b = Math.floor(v * 10 * 128);
+        } else if (v < 0.3) {
+            r = 0; g = 0; b = 128 + Math.floor((v - 0.1) * 5 * 127);
+        } else if (v < 0.45) {
+            r = 0; g = Math.floor((v - 0.3) * 6.67 * 255); b = 255;
+        } else if (v < 0.6) {
+            r = 0; g = 255; b = Math.floor((1 - (v - 0.45) * 6.67) * 255);
+        } else if (v < 0.75) {
+            r = Math.floor((v - 0.6) * 6.67 * 255); g = 255; b = 0;
+        } else if (v < 0.9) {
+            r = 255; g = Math.floor((1 - (v - 0.75) * 6.67) * 255); b = 0;
+        } else {
+            r = 255; g = Math.floor((v - 0.9) * 10 * 255); b = Math.floor((v - 0.9) * 10 * 255);
+        }
         return [r, g, b];
     };
 
@@ -6982,11 +7303,25 @@ function renderDoseOverlay(axis, sliceIndex, sliceData) {
     const scaleX = w / cols;
     const scaleY = h / rows;
 
-    // Hot colormap (black -> red -> yellow -> white)
+    // PETrainbow2 colormap (black→blue→cyan→green→yellow→red→white)
     const colormap = (val) => {
-        const r = Math.min(255, Math.floor(val < 0.33 ? val * 3 * 255 : 255));
-        const g = Math.min(255, Math.floor(val < 0.33 ? 0 : val < 0.66 ? (val - 0.33) * 3 * 255 : 255));
-        const b = Math.min(255, Math.floor(val < 0.66 ? 0 : (val - 0.66) * 3 * 255));
+        const v = Math.min(1, Math.max(0, val));
+        let r, g, b;
+        if (v < 0.1) {
+            r = 0; g = 0; b = Math.floor(v * 10 * 128);
+        } else if (v < 0.3) {
+            r = 0; g = 0; b = 128 + Math.floor((v - 0.1) * 5 * 127);
+        } else if (v < 0.45) {
+            r = 0; g = Math.floor((v - 0.3) * 6.67 * 255); b = 255;
+        } else if (v < 0.6) {
+            r = 0; g = 255; b = Math.floor((1 - (v - 0.45) * 6.67) * 255);
+        } else if (v < 0.75) {
+            r = Math.floor((v - 0.6) * 6.67 * 255); g = 255; b = 0;
+        } else if (v < 0.9) {
+            r = 255; g = Math.floor((1 - (v - 0.75) * 6.67) * 255); b = 0;
+        } else {
+            r = 255; g = Math.floor((v - 0.9) * 10 * 255); b = Math.floor((v - 0.9) * 10 * 255);
+        }
         return [r, g, b];
     };
 
@@ -7020,15 +7355,44 @@ function toggleDoseOverlayVisibility() {
     state.doseOverlay.visible = !state.doseOverlay.visible;
     renderDataTree();
 
-    // Show/hide colorbar
+    // Show/hide colorbar with Turbo colormap
     const colorbar = document.getElementById('doseColorbar');
     if (colorbar) {
         colorbar.style.display = state.doseOverlay.visible ? 'block' : 'none';
         if (state.doseOverlay.visible) {
-            document.getElementById('doseColorbarMax').textContent = state.doseOverlay.doseMax?.toFixed(1) || 'max';
-            document.getElementById('doseColorbarMin').textContent = state.doseOverlay.doseMin?.toFixed(1) || '0';
+            const dMax = state.doseOverlay.doseMax || 1;
+            const dMin = state.doseOverlay.doseMin || 0;
+            document.getElementById('doseColorbarMax').textContent = dMax.toFixed(1);
+            document.getElementById('doseColorbarMin').textContent = dMin.toFixed(1);
+            document.getElementById('doseColorbarMid').textContent = ((dMin + dMax) / 2).toFixed(1);
+            // Render Turbo colormap on canvas
+            const cbCanvas = document.getElementById('colorbarCanvas');
+            if (cbCanvas) {
+                const ctx = cbCanvas.getContext('2d');
+                const h = cbCanvas.height;
+                for (let y = 0; y < h; y++) {
+                    const val = 1 - y / h;
+                    const r = Math.min(255, Math.max(0, Math.floor(255 * (0.136 + val * (4.466 + val * (-22.16 + val * (34.37 + val * (-18.81 + val * 3.26))))))));
+                    const g = Math.min(255, Math.max(0, Math.floor(255 * (0.091 + val * (1.922 + val * (3.94 + val * (-16.87 + val * (17.45 + val * -5.6))))))));
+                    const b = Math.min(255, Math.max(0, Math.floor(255 * (0.345 + val * (2.37 + val * (-12.42 + val * (23.36 + val * (-15.87 + val * 3.66))))))));
+                    ctx.fillStyle = `rgb(${r},${g},${b})`;
+                    ctx.fillRect(0, y, cbCanvas.width, 1);
+                }
+            }
         }
     }
+
+    // Show/hide contour canvases
+    ['axial', 'coronal', 'sagittal'].forEach(axis => {
+        const contourCanvas = document.getElementById('contourCanvas' + capitalize(axis));
+        if (contourCanvas) {
+            contourCanvas.style.display = state.doseOverlay.visible ? 'block' : 'none';
+            if (!state.doseOverlay.visible) {
+                const ctx = contourCanvas.getContext('2d');
+                ctx.clearRect(0, 0, contourCanvas.width, contourCanvas.height);
+            }
+        }
+    });
 
     // Trigger re-render of current slices
     updateSlice('axial', state.slices.axial);
@@ -7039,10 +7403,151 @@ function toggleDoseOverlayVisibility() {
 function setDoseOverlayOpacity(val) {
     if (!state.doseOverlay) return;
     state.doseOverlay.opacity = val / 100;
+    // Update label
+    const label = document.getElementById('doseOpacityVal');
+    if (label) label.textContent = val + '%';
     // Re-render current slices
     updateSlice('axial', state.slices.axial);
     updateSlice('coronal', state.slices.coronal);
     updateSlice('sagittal', state.slices.sagittal);
+}
+
+// ============ DOSE CONTOUR LINES (iso-dose lines on 2D viewers) ============
+// Cache for contour data: { "axis_sliceIndex": contourData }
+const _doseContourCache = {};
+
+async function fetchDoseContourSlice(axis, sliceIndex) {
+    const cacheKey = `${axis}_${sliceIndex}`;
+    if (_doseContourCache[cacheKey]) return _doseContourCache[cacheKey];
+
+    try {
+        const res = await fetch(API + '/planning/dose_contour_slice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ axis, slice_index: sliceIndex }),
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data.success) return null;
+        _doseContourCache[cacheKey] = data;
+        return data;
+    } catch (e) {
+        return null;
+    }
+}
+
+function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
+    const cacheKey = `${axis}_${sliceIndex}`;
+    const data = _doseContourCache[cacheKey];
+    if (!data || !data.contours || data.contours.length === 0) return;
+
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // Get slice dimensions from the contour data
+    // Contour coordinates are in (row, col) format of the 2D slice
+    // We need to scale them to the canvas size
+    const sliceData = data.contours[0]?.lines[0];
+    if (!sliceData || sliceData.length === 0) return;
+
+    // Find the bounding box of all contours to determine slice dimensions
+    let maxRow = 0, maxCol = 0;
+    data.contours.forEach(c => {
+        c.lines.forEach(line => {
+            line.forEach(([row, col]) => {
+                if (row > maxRow) maxRow = row;
+                if (col > maxCol) maxCol = col;
+            });
+        });
+    });
+
+    if (maxRow === 0 || maxCol === 0) return;
+
+    const scaleX = w / (maxCol + 1);
+    const scaleY = h / (maxRow + 1);
+
+    // Draw contour lines
+    data.contours.forEach(contour => {
+        const color = contour.color;
+        const opacity = contour.opacity || 0.5;
+        const r = Math.round(color[0] * 255);
+        const g = Math.round(color[1] * 255);
+        const b = Math.round(color[2] * 255);
+
+        ctx.strokeStyle = `rgba(${r},${g},${b},${opacity + 0.3})`;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([]);
+
+        contour.lines.forEach(line => {
+            if (line.length < 2) return;
+            ctx.beginPath();
+            for (let i = 0; i < line.length; i++) {
+                const [row, col] = line[i];
+                const x = col * scaleX;
+                const y = row * scaleY;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        });
+
+        // Add label at the midpoint of the longest line
+        let longestLine = contour.lines[0];
+        contour.lines.forEach(line => {
+            if (line.length > longestLine.length) longestLine = line;
+        });
+        if (longestLine.length > 10) {
+            const midIdx = Math.floor(longestLine.length / 2);
+            const [row, col] = longestLine[midIdx];
+            const x = col * scaleX;
+            const y = row * scaleY;
+
+            ctx.font = '10px Inter, sans-serif';
+            ctx.fillStyle = `rgba(${r},${g},${b},0.9)`;
+            ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+            ctx.lineWidth = 2;
+            const label = contour.level.toFixed(1);
+            ctx.strokeText(label, x + 3, y - 3);
+            ctx.fillText(label, x + 3, y - 3);
+        }
+    });
+}
+
+// Trigger contour rendering when dose overlay is visible
+function triggerDoseContourRender(axis, sliceIndex) {
+    if (!state.doseOverlay || !state.doseOverlay.visible) return;
+
+    // Fetch contour data (async, non-blocking)
+    fetchDoseContourSlice(axis, sliceIndex).then(data => {
+        if (!data || !data.contours || data.contours.length === 0) return;
+
+        // Create or get contour canvas overlay
+        const canvasId = 'contourCanvas' + capitalize(axis);
+        let canvas = document.getElementById(canvasId);
+        if (!canvas) {
+            // Create contour canvas on top of the slice canvas
+            const sliceCanvas = document.getElementById('sliceCanvas' + capitalize(axis));
+            if (!sliceCanvas) return;
+            const parent = sliceCanvas.parentElement;
+            canvas = document.createElement('canvas');
+            canvas.id = canvasId;
+            canvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;display:block;';
+            parent.appendChild(canvas);
+        }
+
+        // Match canvas size to the slice canvas
+        const sliceCanvas = document.getElementById('sliceCanvas' + capitalize(axis));
+        if (sliceCanvas) {
+            canvas.width = sliceCanvas.width;
+            canvas.height = sliceCanvas.height;
+        }
+
+        // Clear and render
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        renderDoseContourOnCanvas(canvas, axis, sliceIndex);
+    });
 }
 
 function highlightSeed(seedId) {
@@ -7087,6 +7592,17 @@ function clearPlanningVisualization() {
     dataTreeState.planning.doseLevels = [];
     dataTreeState.seeds.loaded = false;
     dataTreeState.needles.loaded = false;
+
+    // Clear dose contour cache and canvases
+    Object.keys(_doseContourCache).forEach(key => delete _doseContourCache[key]);
+    ['axial', 'coronal', 'sagittal'].forEach(axis => {
+        const contourCanvas = document.getElementById('contourCanvas' + capitalize(axis));
+        if (contourCanvas) {
+            const ctx = contourCanvas.getContext('2d');
+            ctx.clearRect(0, 0, contourCanvas.width, contourCanvas.height);
+        }
+    });
+
     renderDataTree();
 }
 
@@ -8207,24 +8723,56 @@ function drawDVH() {
     }
 
     const dvhEl = document.getElementById('dvhChart');
+
+    // Compute auto-range for x-axis from data
+    let dMax = 0;
+    traces.forEach(t => {
+        if (t.x && t.x.length > 0) dMax = Math.max(dMax, Math.max(...t.x));
+    });
+    const xRange = [0, dMax * 1.1 || 1];
+
+    // Smart dtick based on data range
+    let xTick = 0.5;
+    if (dMax > 20) xTick = 5;
+    else if (dMax > 10) xTick = 2;
+    else if (dMax > 5) xTick = 1;
+
     Plotly.newPlot(dvhEl, traces, {
         paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
-        font: { color: '#94a3b8', size: 10, family: 'Inter, sans-serif' },
-        margin: { l: 45, r: 15, t: 10, b: 40 },
+        font: { color: '#94a3b8', size: 11, family: 'Inter, sans-serif' },
+        margin: { l: 55, r: 15, t: 10, b: 40 },
         xaxis: {
-            title: 'Dose (normalized)',
+            title: 'Dose (Gy)',
             gridcolor: '#334155', linecolor: '#334155', tickcolor: '#334155',
-            titlefont: { color: '#64748b', size: 9 },
+            titlefont: { color: '#94a3b8', size: 10 },
+            tickfont: { size: 9 },
             zeroline: false,
+            range: xRange,
+            dtick: xTick,
         },
         yaxis: {
             title: 'Volume (%)',
             gridcolor: '#334155', linecolor: '#334155', tickcolor: '#334155',
-            titlefont: { color: '#64748b', size: 9 },
+            titlefont: { color: '#94a3b8', size: 10 },
+            tickfont: { size: 9 },
             range: [0, 105],
+            dtick: 20,
             zeroline: false,
         },
-        legend: { orientation: 'h', y: -0.25, x: 0.5, xanchor: 'center', font: { size: 9 } },
+        legend: {
+            orientation: 'h',
+            y: 1.02,
+            x: 0.5,
+            xanchor: 'center',
+            yanchor: 'bottom',
+            font: { size: 7, color: '#94a3b8' },
+            bgcolor: 'transparent',
+            bordercolor: 'transparent',
+            borderwidth: 0,
+            itemsizing: 'constant',
+            itemwidth: 20,
+            tracegroupgap: 2,
+        },
         hovermode: 'x unified',
         dragmode: 'zoom',
     }, {
@@ -8257,6 +8805,13 @@ function drawDVH() {
     dvhEl.on('plotly_doubleclick', function() {
         Plotly.relayout(dvhEl, { annotations: [] });
     });
+
+    // Auto-resize when container size changes
+    if (window._dvhResizeObserver) window._dvhResizeObserver.disconnect();
+    window._dvhResizeObserver = new ResizeObserver(() => {
+        Plotly.Plots.resize(dvhEl);
+    });
+    window._dvhResizeObserver.observe(dvhEl);
 }
 
 /******** METRICS ********/
@@ -8279,31 +8834,46 @@ function updateMetrics(metrics) {
     };
 
     const m = state.metrics;
+    // Reference: Zhiyuan BrachyPlan metrics
     setMetric('V100', (m.v100 || 0) * 100, { max: 100, good: 90, warn: 80 }, '%');
     setMetric('V150', (m.v150 || 0) * 100, { max: 60, good: 50, warn: 35 }, '%');
     setMetric('V200', (m.v200 || 0) * 100, { max: 40, good: 20, warn: 35 }, '%');
-    setMetric('D90', m.d90, { max: 150, good: 100, warn: 80 }, '');
-    setMetric('D95', m.d95, { max: 150, good: 95, warn: 75 }, '');
+    setMetric('D90', m.d90, { max: 200, good: 120, warn: 100 }, ' Gy');
+    setMetric('D95', m.d95, { max: 200, good: 110, warn: 90 }, ' Gy');
     setMetric('Score', m.plan_score, { max: 100, good: 80, warn: 60 }, '');
 
     document.getElementById('sumSeeds').textContent = m.total_seeds || '--';
     document.getElementById('sumCTV').textContent = m.ctv_voxels ? (m.ctv_voxels * 0.001).toFixed(1) : '--';
-    document.getElementById('sumD90').textContent = m.d90 ? m.d90.toFixed(1) : '--';
+    document.getElementById('sumD90').textContent = m.d90 ? m.d90.toFixed(1) + ' Gy' : '--';
     document.getElementById('sumV100').textContent = m.v100 ? ((m.v100 || 0) * 100).toFixed(1) + '%' : '--';
 }
 
 function updateOARTable(oarMetrics) {
     const tbody = document.getElementById('oarTableBody');
     if (!oarMetrics || Object.keys(oarMetrics).length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-dim);padding:0.75rem;font-size:0.7rem;">No OAR data</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:0.75rem;">No OAR data</td></tr>';
         return;
     }
     tbody.innerHTML = Object.entries(oarMetrics).map(([name, m]) => {
-        const d01 = m.D0_1cc || m['D0.1cc'] || m.max_dose || 0;
-        const d1 = m.D1cc || m['D1cc'] || 0;
-        const status = d01 < 30 ? 'pass' : d01 < 50 ? 'warn' : 'fail';
-        const statusText = status === 'pass' ? 'Pass' : status === 'warn' ? 'Warn' : 'Fail';
-        return `<tr><td>${escHtml(name)}</td><td>${d01.toFixed(1)}</td><td>${d1.toFixed(1)}</td><td><span class="oar-status ${status}">${statusText}</span></td></tr>`;
+        const d01 = m.d0_1cc || 0;
+        const d1 = m.d1cc || 0;
+        const d2 = m.d2cc || 0;
+        const d90 = m.d90 || 0;
+        const d95 = m.d95 || 0;
+        const v100 = m.v100 || 0;
+        const vol = m.volume_cm3 || (m.volume_voxels ? (m.volume_voxels * 0.001).toFixed(1) : 0);
+        // Color code: highlight high dose values
+        const d2ccClass = d2 > 100 ? 'style="color:var(--danger);font-weight:600;"' : '';
+        return `<tr>
+            <td style="max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(name)}">${escHtml(name)}</td>
+            <td>${d01.toFixed(1)}</td>
+            <td>${d1.toFixed(1)}</td>
+            <td ${d2ccClass}>${d2.toFixed(1)}</td>
+            <td>${d90.toFixed(1)}</td>
+            <td>${d95.toFixed(1)}</td>
+            <td>${v100.toFixed(1)}</td>
+            <td style="color:var(--text-dim);">${typeof vol === 'number' ? vol.toFixed(1) : vol}</td>
+        </tr>`;
     }).join('');
 }
 
@@ -8346,15 +8916,28 @@ async function runPlanningStep(step) {
     // Apply hyperparameters first
     await applyHyperparams();
 
+    // Define all pipeline steps
+    const allSteps = [
+        { id: 'trajectory_init', label: 'Trajectory Initialization' },
+        { id: 'trajectory_refine', label: 'Trajectory Refinement' },
+        { id: 'seed_planning', label: 'Seed Planning' },
+        { id: 'dose_calc', label: 'Dose Calculation' },
+        { id: 'dose_eval', label: 'Dose Evaluation' },
+    ];
+
+    // Find current step index
+    const stepIndex = allSteps.findIndex(s => s.id === step);
+    if (stepIndex === -1) return;
+
+    // Show pipeline progress if not already shown
+    if (!pipelineState.containerId || pipelineState.steps.length === 0) {
+        addPipelineProgress(allSteps, '🔬 Brachytherapy Planning');
+    }
+
+    // Mark current step as active
+    updatePipelineStep(stepIndex, 'active');
+
     showLoading(true);
-    const stepNames = {
-        'trajectory_init': 'Trajectory Initialization',
-        'trajectory_refine': 'Trajectory Refinement',
-        'seed_planning': 'Seed Planning',
-        'dose_calc': 'Dose Calculation',
-        'dose_eval': 'Dose Evaluation',
-    };
-    addChat('system', `Running ${stepNames[step] || step}...`);
 
     try {
         const data = await api('/planning/run_step', {
@@ -8363,7 +8946,8 @@ async function runPlanningStep(step) {
         });
 
         if (data.success) {
-            addChat('system', `✅ ${stepNames[step]} completed: ${data.message || ''}`);
+            // Mark step as completed
+            updatePipelineStep(stepIndex, 'completed');
 
             // Auto-refresh UI based on step
             if (step === 'trajectory_init' || step === 'trajectory_refine') {
@@ -8374,11 +8958,16 @@ async function runPlanningStep(step) {
                 await showStepResults('dose');
             } else if (step === 'dose_eval') {
                 await showStepResults('dvh');
+                // Complete pipeline after last step
+                completePipeline(true);
             }
         } else {
-            addChat('error', `❌ ${stepNames[step]} failed: ${data.error}`);
+            // Mark step as error
+            updatePipelineStep(stepIndex, 'error');
+            addChat('error', `❌ ${allSteps[stepIndex].label} failed: ${data.error}`);
         }
     } catch (e) {
+        updatePipelineStep(stepIndex, 'error');
         addChat('error', `Request failed: ${e.message}`);
     }
     showLoading(false);
@@ -8392,8 +8981,24 @@ async function runPlanning() {
     const mode = document.getElementById('useRLToggle')?.checked ? 'rl' : 'rule_based';
     if (!ctPath) { alert('Please enter CT image path or browse to select a file'); return; }
 
+    // Show pipeline progress
+    const pipelineSteps = [
+        { id: 'ct_load', label: 'CT Image Loading' },
+        { id: 'ctv_seg', label: 'CTV Segmentation' },
+        { id: 'oar_seg', label: 'OAR Segmentation' },
+        { id: 'trajectory', label: 'Trajectory Planning' },
+        { id: 'seed_plan', label: 'Seed Planning' },
+        { id: 'dose_calc', label: 'Dose Calculation' },
+        { id: 'dose_eval', label: 'Dose Evaluation' },
+    ];
+    addPipelineProgress(pipelineSteps, '🔬 Radiation Seed Planning');
+
     showLoading(true);
+
+    // Step 1: CT Loading
+    updatePipelineStep(0, 'active');
     addChat('system', 'Starting preoperative planning...');
+
     try {
         const data = await api('/plan/preoperative', {
             ct_path: ctPath, ctv_path: ctvPath || null,
@@ -8401,9 +9006,15 @@ async function runPlanning() {
         });
 
         if (data.success) {
+            // Mark all steps as completed
+            for (let i = 0; i < pipelineSteps.length; i++) {
+                updatePipelineStep(i, 'completed');
+            }
+            completePipeline(true);
+
             updateMetrics(data.metrics);
             updateSeeds(data.seeds || []);
-            addChat('system', `Plan complete! V100: ${((data.metrics?.v100 || 0) * 100).toFixed(1)}%, D90: ${(data.metrics?.d90 || 0).toFixed(1)}, Score: ${data.metrics?.plan_score || '--'}`);
+            addChat('system', `✅ Plan complete! V100: ${((data.metrics?.v100 || 0) * 100).toFixed(1)}%, D90: ${(data.metrics?.d90 || 0).toFixed(1)} Gy, Score: ${data.metrics?.plan_score || '--'}`);
             if (data.metrics?.oar_metrics) updateOARTable(data.metrics.oar_metrics);
             state.plan3D = data;
             state.dvhData = data.dvh || null;
@@ -8411,9 +9022,11 @@ async function runPlanning() {
             drawDVH();
             switchPanel('metrics', document.querySelectorAll('.panel-tab')[1]);
         } else {
+            completePipeline(false);
             addChat('error', `Planning failed: ${data.error}`);
         }
     } catch (e) {
+        completePipeline(false);
         addChat('error', `Request failed: ${e.message}`);
     }
     showLoading(false);
@@ -8484,12 +9097,30 @@ async function refreshPlanningUI() {
             drawDVH();
         }
 
-        // Load 3D visualization
+        // Load 3D visualization — ensure scene is initialized first
+        init3DScene();
+
+        // Auto-reconstruct CTV in 3D for spatial context (silent - no chat messages)
+        try { await reconstructOrgan3D('ctv', true); } catch(e) { console.warn('CTV 3D auto-reconstruct failed:', e); }
+
         if (data.total_seeds > 0) {
             await loadSeeds3D();
         }
         if (data.has_dose) {
-            // First get dose range, then use meaningful thresholds
+            // Fetch config for iso-dose parameters
+            let isoParams = null;
+            try {
+                const configRes = await fetch(API + '/planning/config');
+                if (configRes.ok) {
+                    const configData = await configRes.json();
+                    isoParams = configData.iso_dose_params;
+                }
+            } catch (e) { console.warn('Config fetch failed:', e); }
+
+            // Dose model normalization factor: 120 Gy
+            const DOSE_NORM = 120.0;
+
+            // Get dose range and load isosurfaces using config values
             try {
                 const rangeRes = await fetch(API + '/planning/dose_isosurface', {
                     method: 'POST',
@@ -8499,16 +9130,44 @@ async function refreshPlanningUI() {
                 const rangeData = await rangeRes.json();
                 if (rangeData.dose_range) {
                     const [dMin, dMax] = rangeData.dose_range;
-                    // Use 50% and 80% of max dose as isosurface thresholds
-                    const t1 = dMax * 0.5;
-                    const t2 = dMax * 0.8;
-                    await loadDoseIsosurface(t1, 0x00ff88);
-                    await loadDoseIsosurface(t2, 0xff8800);
+
+                    // Use iso_dose_values from config if available
+                    // NOTE: iso_dose_values are RELATIVE (e.g. 1.0 = prescription)
+                    // Multiply by DOSE_NORM (120 Gy) to get normalized threshold
+                    if (isoParams && isoParams.iso_dose_values) {
+                        const values = isoParams.iso_dose_values;
+                        const colors = isoParams.iso_colors || [[0,1,0],[0,1,1],[1,1,0],[1,0.5,0],[1,0,0]];
+                        for (let i = 0; i < values.length; i++) {
+                            const t = values[i] * DOSE_NORM;
+                            if (t > dMin && t <= dMax * 1.1) {
+                                const c = colors[i % colors.length];
+                                const hexColor = (Math.round(c[0]*255) << 16) | (Math.round(c[1]*255) << 8) | Math.round(c[2]*255);
+                                await loadDoseIsosurface(t, hexColor);
+                            }
+                        }
+                    } else {
+                        // Fallback: use percentage-based levels
+                        const levels = [
+                            { pct: 0.30, color: 0x00ccff },
+                            { pct: 0.50, color: 0x00ff88 },
+                            { pct: 0.80, color: 0xffaa00 },
+                            { pct: 1.00, color: 0xff4444 },
+                        ];
+                        for (const level of levels) {
+                            const t = dMax * level.pct;
+                            if (t > dMin) {
+                                await loadDoseIsosurface(t, level.color);
+                            }
+                        }
+                    }
                 }
             } catch (e) { console.warn('Dose isosurface range fetch failed:', e); }
             // Load dose overlay
             try { await loadDoseOverlay(); } catch (e) { console.warn('Dose overlay failed:', e); }
         }
+
+        // Fit camera to show all loaded meshes
+        fitCameraToScene();
 
         return data;
     } catch (e) {
@@ -8551,6 +9210,15 @@ async function showStepResults(step) {
             case 'dose_calc':
             case 'dose_distribution':
                 // Switch to 3D viewer and show dose isosurface
+                init3DScene();
+                // Fetch config for iso-dose parameters
+                let isoCfg = null;
+                try {
+                    const cfgRes = await fetch(API + '/planning/config');
+                    if (cfgRes.ok) { const cd = await cfgRes.json(); isoCfg = cd.iso_dose_params; }
+                } catch (e) {}
+                // Dose model normalization: 120 Gy
+                const DOSE_NORM_STEP = 120.0;
                 try {
                     const dr = await fetch(API + '/planning/dose_isosurface', {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -8558,13 +9226,35 @@ async function showStepResults(step) {
                     });
                     const dd = await dr.json();
                     if (dd.dose_range) {
-                        const t1 = dd.dose_range[1] * 0.5;
-                        const t2 = dd.dose_range[1] * 0.8;
-                        await loadDoseIsosurface(t1, 0x00ff88);
-                        await loadDoseIsosurface(t2, 0xff8800);
+                        const dMax = dd.dose_range[1];
+                        const dMin = dd.dose_range[0];
+                        if (isoCfg && isoCfg.iso_dose_values) {
+                            const values = isoCfg.iso_dose_values;
+                            const colors = isoCfg.iso_colors || [[0,1,0],[0,1,1],[1,1,0],[1,0.5,0],[1,0,0]];
+                            for (let i = 0; i < values.length; i++) {
+                                const t = values[i] * DOSE_NORM_STEP;
+                                if (t > dMin && t <= dMax * 1.1) {
+                                    const c = colors[i % colors.length];
+                                    const hexColor = (Math.round(c[0]*255) << 16) | (Math.round(c[1]*255) << 8) | Math.round(c[2]*255);
+                                    await loadDoseIsosurface(t, hexColor);
+                                }
+                            }
+                        } else {
+                            const levels = [
+                                { pct: 0.30, color: 0x00ccff },
+                                { pct: 0.50, color: 0x00ff88 },
+                                { pct: 0.80, color: 0xffaa00 },
+                                { pct: 1.00, color: 0xff4444 },
+                            ];
+                            for (const level of levels) {
+                                const t = dMax * level.pct;
+                                if (t > dMin) { await loadDoseIsosurface(t, level.color); }
+                            }
+                        }
                     }
                 } catch (e) {}
                 await loadDoseOverlay();
+                fitCameraToScene();
                 const viewerTab3 = document.querySelectorAll('.panel-tab')[3];
                 if (viewerTab3) switchPanel('viewers', viewerTab3);
                 addChat('system', `🌈 **Dose Distribution**\n- Dose isosurfaces and overlay loaded`);
@@ -8962,6 +9652,167 @@ function renderMarkdown(text) {
     } catch (e) {
         return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
     }
+}
+
+/******** PIPELINE PROGRESS ********/
+// Pipeline state management
+const pipelineState = {
+    steps: [],
+    startTime: null,
+    containerId: null,
+};
+
+/**
+ * Create a pipeline progress UI in the chat
+ * @param {Array} steps - Array of {id, label} objects
+ * @param {string} title - Pipeline title
+ * @returns {string} - Container ID for later updates
+ */
+function addPipelineProgress(steps, title = '🔬 Planning Pipeline') {
+    const container = document.getElementById('chatMessages');
+    const id = 'pipeline_' + Date.now();
+
+    // Initialize state
+    pipelineState.steps = steps.map((s, i) => ({
+        ...s,
+        index: i,
+        status: 'pending', // pending, active, completed, error
+        startTime: null,
+        endTime: null,
+    }));
+    pipelineState.startTime = Date.now();
+    pipelineState.containerId = id;
+
+    // Build HTML
+    const html = `
+        <div class="pipeline-progress" id="${id}">
+            <div class="pipeline-header">
+                <span class="pipeline-header-icon">🔬</span>
+                <span>${title}</span>
+                <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);" id="${id}_time"></span>
+            </div>
+            <div class="pipeline-steps" id="${id}_steps">
+                ${pipelineState.steps.map((step, i) => `
+                    <div class="pipeline-step pending" id="${id}_step_${i}">
+                        <span class="pipeline-step-icon"></span>
+                        <span class="pipeline-step-text">${step.label}</span>
+                        <span class="pipeline-step-time" id="${id}_step_${i}_time"></span>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    const div = document.createElement('div');
+    div.className = 'chat-msg system';
+    div.innerHTML = html;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+
+    // Start timer
+    updateTimeDisplay(id);
+
+    return id;
+}
+
+/**
+ * Update a pipeline step's status
+ * @param {number} stepIndex - Index of the step
+ * @param {string} status - 'active', 'completed', 'error'
+ * @param {string} message - Optional message
+ */
+function updatePipelineStep(stepIndex, status, message = '') {
+    const id = pipelineState.containerId;
+    if (!id) return;
+
+    const step = pipelineState.steps[stepIndex];
+    if (!step) return;
+
+    const now = Date.now();
+
+    // Update state
+    if (status === 'active' && step.status !== 'active') {
+        step.startTime = now;
+    } else if (status === 'completed' || status === 'error') {
+        step.endTime = now;
+    }
+    step.status = status;
+
+    // Update DOM
+    const stepEl = document.getElementById(`${id}_step_${stepIndex}`);
+    if (stepEl) {
+        stepEl.className = `pipeline-step ${status}`;
+
+        // Update time display
+        const timeEl = document.getElementById(`${id}_step_${stepIndex}_time`);
+        if (timeEl) {
+            if (status === 'active') {
+                timeEl.textContent = 'running...';
+            } else if (step.endTime && step.startTime) {
+                const duration = ((step.endTime - step.startTime) / 1000).toFixed(1);
+                timeEl.textContent = `${duration}s`;
+            }
+        }
+    }
+
+    // Update overall time
+    updateTimeDisplay(id);
+
+    // Scroll to bottom
+    const container = document.getElementById('chatMessages');
+    if (container) container.scrollTop = container.scrollHeight;
+}
+
+/**
+ * Update the overall pipeline time display
+ */
+function updateTimeDisplay(id) {
+    const timeEl = document.getElementById(`${id}_time`);
+    if (!timeEl) return;
+
+    const elapsed = ((Date.now() - pipelineState.startTime) / 1000).toFixed(0);
+    const completed = pipelineState.steps.filter(s => s.status === 'completed').length;
+    const total = pipelineState.steps.length;
+    timeEl.textContent = `${completed}/${total} • ${elapsed}s`;
+
+    // Continue updating if pipeline is active
+    if (completed < total) {
+        setTimeout(() => updateTimeDisplay(id), 1000);
+    }
+}
+
+/**
+ * Complete the entire pipeline
+ * @param {boolean} success - Whether the pipeline completed successfully
+ */
+function completePipeline(success = true) {
+    const id = pipelineState.containerId;
+    if (!id) return;
+
+    // Mark all pending steps as completed or error
+    pipelineState.steps.forEach((step, i) => {
+        if (step.status === 'pending') {
+            updatePipelineStep(i, success ? 'completed' : 'error');
+        }
+    });
+
+    // Update header
+    const headerEl = document.querySelector(`#${id} .pipeline-header-icon`);
+    if (headerEl) {
+        headerEl.textContent = success ? '✅' : '❌';
+    }
+
+    // Final time update
+    updateTimeDisplay(id);
+}
+
+/**
+ * Get pipeline step index by ID
+ * @param {string} stepId - Step ID (e.g., 'trajectory_init')
+ * @returns {number} - Step index or -1
+ */
+function getPipelineStepIndex(stepId) {
+    return pipelineState.steps.findIndex(s => s.id === stepId);
 }
 
 /******** CHAT ********/
@@ -9643,25 +10494,42 @@ async function sendChat() {
                                 // Immediately refresh viewer after segmentation completes
                                 if (data.status === 'done' && data.tool) {
                                     const toolName = data.tool.toLowerCase();
-                                    if (toolName.includes('ctv_segmentation')) {
-                                        state.viewerSettings.showCTV = true;
-                                        dataTreeState.ctv.visible = true;
-                                        dataTreeState.ctv.loaded = true;
-                                        loadLabelVolumes().then(() => {
-                                            renderDataTree();
-                                            if (state.ctLoaded) reloadOverlays();
-                                        });
-                                    } else if (toolName.includes('oar_segmentation')) {
-                                        state.viewerSettings.showOAR = true;
-                                        dataTreeState.oar.visible = true;
-                                        dataTreeState.oar.loaded = true;
-                                        fetch(API + '/viewer/organs').then(r => r.json()).then(data => {
-                                            if (data.success && data.organs) {
-                                                updateOrganList(data.organs);
+                                    if (toolName.includes('ctv_segmentation') || toolName.includes('oar_segmentation')) {
+                                        // Ensure state.ctPath and CT volume are loaded
+                                        if (!state.ctPath || !volumeData) {
+                                            fetch(API + '/status').then(r => r.json()).then(async sd => {
+                                                if (sd.ct_path) {
+                                                    state.ctPath = sd.ct_path;
+                                                    state.ctLoaded = true;
+                                                }
+                                                if (!volumeData && sd.ct_loaded) {
+                                                    await loadVolumeData();
+                                                    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+                                                        renderSliceFromVolume(axis, state.slices[axis]);
+                                                    });
+                                                }
+                                            }).catch(() => {});
+                                        }
+                                        if (toolName.includes('ctv_segmentation')) {
+                                            state.viewerSettings.showCTV = true;
+                                            dataTreeState.ctv.visible = true;
+                                            dataTreeState.ctv.loaded = true;
+                                            loadLabelVolumes().then(() => {
                                                 renderDataTree();
-                                            }
-                                            if (state.ctLoaded) reloadOverlays();
-                                        }).catch(() => {});
+                                                if (state.ctLoaded) reloadOverlays();
+                                            });
+                                        } else {
+                                            state.viewerSettings.showOAR = true;
+                                            dataTreeState.oar.visible = true;
+                                            dataTreeState.oar.loaded = true;
+                                            fetch(API + '/viewer/organs').then(r => r.json()).then(data => {
+                                                if (data.success && data.organs) {
+                                                    updateOrganList(data.organs);
+                                                    renderDataTree();
+                                                }
+                                                if (state.ctLoaded) reloadOverlays();
+                                            }).catch(() => {});
+                                        }
                                     }
                                 }
                                 // Track planning steps for post-response UI update
@@ -9669,22 +10537,74 @@ async function sendChat() {
                                     const step = data.metadata?.step_executed;
                                     if (step) window._lastPlanningStep = step;
                                 }
-                                // Execute screenshot command from ui_screenshot tool
-                                if (data.tool === 'ui_screenshot' && data.status === 'done' && data.metadata) {
-                                    const cmd = data.metadata.screenshot_command;
-                                    if (cmd && cmd.command === 'screenshot') {
-                                        // Collect async screenshot promise for gallery
-                                        const p = executeScreenshotCommand(cmd);
-                                        if (window._screenshotPromises) window._screenshotPromises.push(p);
+                            }
+
+                            // === Pipeline Progress Tracking (runs for ALL tool statuses) ===
+                            if (data.type === 'tool' && data.tool) {
+                                const toolLower = data.tool.toLowerCase();
+                                const PIPELINE_MAP = {
+                                    'ctv_segmentation': 0,
+                                    'oar_segmentation': 1,
+                                };
+                                const PLANNING_STEP_MAP = {
+                                    'trajectory_init': 2,
+                                    'trajectory_refine': 3,
+                                    'seed_planning': 4,
+                                    'dose_calc': 5,
+                                    'dose_eval': 6,
+                                };
+
+                                let stepIdx = -1;
+                                if (PIPELINE_MAP[toolLower] !== undefined) {
+                                    stepIdx = PIPELINE_MAP[toolLower];
+                                } else if (toolLower === 'planning_pipeline' && data.metadata?.step_executed) {
+                                    stepIdx = PLANNING_STEP_MAP[data.metadata.step_executed] ?? -1;
+                                }
+
+                                // Show pipeline on first planning tool
+                                if (stepIdx >= 0 && !window._pipelineShown) {
+                                    window._pipelineShown = true;
+                                    const allSteps = [
+                                        { label: '🎯 CTV Segmentation' },
+                                        { label: '🫁 OAR Segmentation' },
+                                        { label: '📍 Trajectory Initialization' },
+                                        { label: '🔄 Trajectory Refinement' },
+                                        { label: '💎 Seed Planning' },
+                                        { label: '☢️ Dose Calculation' },
+                                        { label: '📊 Dose Evaluation' },
+                                    ];
+                                    addPipelineProgress(allSteps, '🔬 Brachytherapy Planning');
+                                }
+
+                                // Update pipeline step status
+                                if (stepIdx >= 0 && window._pipelineShown) {
+                                    if (data.status === 'pending') {
+                                        updatePipelineStep(stepIdx, 'active');
+                                    } else if (data.status === 'done') {
+                                        updatePipelineStep(stepIdx, 'completed');
+                                        if (stepIdx === 6) {
+                                            completePipeline(true);
+                                        }
+                                    } else if (data.status === 'error') {
+                                        updatePipelineStep(stepIdx, 'error');
                                     }
                                 }
-                                // Display annotated image from ui_annotate tool
-                                if (data.tool === 'ui_annotate' && data.status === 'done' && data.metadata) {
-                                    const annotatedUrl = data.metadata.annotated_url;
-                                    if (annotatedUrl) {
-                                        const annCount = data.metadata.annotation_count || 0;
-                                        addChatImage(annotatedUrl, `Annotated (${annCount} marks)`, '');
-                                    }
+                            }
+
+                            // Execute screenshot command from ui_screenshot tool
+                            if (data.type === 'tool' && data.tool === 'ui_screenshot' && data.status === 'done' && data.metadata) {
+                                const cmd = data.metadata.screenshot_command;
+                                if (cmd && cmd.command === 'screenshot') {
+                                    const p = executeScreenshotCommand(cmd);
+                                    if (window._screenshotPromises) window._screenshotPromises.push(p);
+                                }
+                            }
+                            // Display annotated image from ui_annotate tool
+                            if (data.type === 'tool' && data.tool === 'ui_annotate' && data.status === 'done' && data.metadata) {
+                                const annotatedUrl = data.metadata.annotated_url;
+                                if (annotatedUrl) {
+                                    const annCount = data.metadata.annotation_count || 0;
+                                    addChatImage(annotatedUrl, `Annotated (${annCount} marks)`, '');
                                 }
                             }
 
@@ -9873,7 +10793,7 @@ async function sendChat() {
             const analysisToolNames = ['ctv_segmentation', 'oar_segmentation', 'ui_inspector', 'dose_engine', 'dose_evaluation', 'seed_planning', 'planning_pipeline', 'trajectory_planning'];
             const hasAnalysisTool = steps.some(s => s.type === 'tool' && s.status === 'done' && analysisToolNames.some(t => (s.tool || '').toLowerCase().includes(t)));
             if (hasAnalysisTool) {
-                captureAnalysis(finalResponse || responseText || '', steps);
+                await captureAnalysis(finalResponse || responseText || '', steps);
             }
         }
 
@@ -10031,68 +10951,106 @@ function updateImageAnalysis() {
     const ct = imageAnalysisData.ct;
     const td = ct.tissueDist;
 
-    // CT Image Info
-    html += `<div style="margin-bottom:0.7rem;">
-        <div style="font-weight:600;margin-bottom:0.3rem;">📷 CT Image</div>
-        <table style="font-size:0.65rem;width:100%;border-collapse:collapse;">
-            <tr><td style="color:var(--text-dim);padding:2px 4px;white-space:nowrap;">Dimensions</td><td>${ct.shape.join(' × ')} voxels</td></tr>
-            <tr><td style="color:var(--text-dim);padding:2px 4px;">Spacing</td><td>${ct.spacing.map(v => v.toFixed(2)).join(' × ')} mm</td></tr>
-            <tr><td style="color:var(--text-dim);padding:2px 4px;">Scan Range</td><td>${ct.scanRange.join(' × ')} cm</td></tr>
-            <tr><td style="color:var(--text-dim);padding:2px 4px;">HU Range</td><td>${ct.huRange[0]} ~ ${ct.huRange[1]}</td></tr>
-            <tr><td style="color:var(--text-dim);padding:2px 4px;">Mean HU</td><td>${ct.meanHU.toFixed(1)}</td></tr>
-        </table>
-    </div>`;
-
-    // Tissue Distribution
-    if (td) {
-        html += `<div style="margin-bottom:0.7rem;">
-            <div style="font-weight:600;margin-bottom:0.3rem;">📊 Tissue Distribution</div>
-            <table style="font-size:0.65rem;width:100%;border-collapse:collapse;">
-                <tr><td style="color:var(--text-dim);padding:2px 4px;">Air / Gas</td><td style="padding:2px 4px;"><span style="color:#60a5fa;">${td.air}%</span> <span style="color:var(--text-dim);font-size:0.55rem;">(HU &lt; -900)</span></td></tr>
-                <tr><td style="color:var(--text-dim);padding:2px 4px;">Fat</td><td style="padding:2px 4px;"><span style="color:#fbbf24;">${td.fat}%</span> <span style="color:var(--text-dim);font-size:0.55rem;">(-900 ~ -30)</span></td></tr>
-                <tr><td style="color:var(--text-dim);padding:2px 4px;">Soft Tissue</td><td style="padding:2px 4px;"><span style="color:#34d399;">${td.soft}%</span> <span style="color:var(--text-dim);font-size:0.55rem;">(-30 ~ 100)</span></td></tr>
-                <tr><td style="color:var(--text-dim);padding:2px 4px;">Muscle / Organ</td><td style="padding:2px 4px;"><span style="color:#f472b6;">${td.muscle}%</span> <span style="color:var(--text-dim);font-size:0.55rem;">(100 ~ 400)</span></td></tr>
-                <tr><td style="color:var(--text-dim);padding:2px 4px;">Bone</td><td style="padding:2px 4px;"><span style="color:#a78bfa;">${td.bone}%</span> <span style="color:var(--text-dim);font-size:0.55rem;">(&gt; 400)</span></td></tr>
-            </table>
+    // Card-style helper with resize handle
+    const card = (icon, title, borderColor, body) =>
+        `<div style="background:var(--bg-3);border-radius:8px;padding:0.6rem 0.75rem;margin-bottom:0.5rem;border-left:3px solid ${borderColor};animation:fadeIn 0.3s ease;resize:vertical;overflow:auto;min-height:60px;">
+            <div style="font-weight:600;font-size:0.8rem;margin-bottom:0.4rem;color:${borderColor};cursor:grab;">${icon} ${title}</div>
+            ${body}
         </div>`;
+
+    const row = (label, value) =>
+        `<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:0.72rem;">
+            <span style="color:var(--text-dim);">${label}</span>
+            <span style="font-weight:500;">${value}</span>
+        </div>`;
+
+    // CT Image Info card
+    html += card('📷', 'CT Image', '#3b82f6', `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.2rem 0.8rem;">
+            ${row('Dimensions', ct.shape.join(' × ') + ' voxels')}
+            ${row('Spacing', ct.spacing.map(v => v.toFixed(2)).join(' × ') + ' mm')}
+            ${row('Scan Range', ct.scanRange.join(' × ') + ' cm')}
+            ${row('HU Range', ct.huRange[0] + ' ~ ' + ct.huRange[1])}
+            ${row('Mean HU', ct.meanHU.toFixed(1))}
+        </div>
+    `);
+
+    // Tissue Distribution card
+    if (td) {
+        const bar = (label, pct, color, huRange) =>
+            `<div style="display:flex;align-items:center;gap:0.4rem;padding:2px 0;">
+                <span style="width:70px;font-size:0.7rem;color:var(--text-dim);">${label}</span>
+                <div style="flex:1;height:6px;background:var(--bg-2);border-radius:3px;overflow:hidden;">
+                    <div style="width:${pct}%;height:100%;background:${color};border-radius:3px;transition:width 0.5s ease;"></div>
+                </div>
+                <span style="width:36px;text-align:right;font-size:0.7rem;font-weight:600;color:${color};">${pct}%</span>
+                <span style="width:80px;font-size:0.6rem;color:var(--text-dim);">${huRange}</span>
+            </div>`;
+
+        html += card('📊', 'Tissue Distribution', '#8b5cf6', `
+            ${bar('Air/Gas', td.air, '#60a5fa', 'HU < -900')}
+            ${bar('Fat', td.fat, '#fbbf24', '-900 ~ -30')}
+            ${bar('Soft Tissue', td.soft, '#34d399', '-30 ~ 100')}
+            ${bar('Muscle', td.muscle, '#f472b6', '100 ~ 400')}
+            ${bar('Bone', td.bone, '#a78bfa', '> 400')}
+        `);
     }
 
-    // CTV Segmentation
+    // CTV Segmentation card
     if (imageAnalysisData.ctv) {
         const ctv = imageAnalysisData.ctv;
-        html += `<div style="margin-bottom:0.7rem;">
-            <div style="font-weight:600;margin-bottom:0.3rem;">🎯 CTV Segmentation</div>
-            <table style="font-size:0.65rem;width:100%;border-collapse:collapse;">
-                <tr><td style="color:var(--text-dim);padding:2px 4px;">Volume</td><td>${(ctv.volume / 1000).toFixed(1)} cm³ (${ctv.volume.toFixed(0)} mm³)</td></tr>
-                <tr><td style="color:var(--text-dim);padding:2px 4px;">Voxels</td><td>${ctv.voxelCount.toLocaleString()}</td></tr>
-                ${ctv.tumorType ? `<tr><td style="color:var(--text-dim);padding:2px 4px;">Type</td><td>${ctv.tumorType}</td></tr>` : ''}
-            </table>
-        </div>`;
+        html += card('🎯', 'CTV Segmentation', '#ef4444', `
+            ${row('Volume', (ctv.volume / 1000).toFixed(1) + ' cm³ (' + ctv.volume.toFixed(0) + ' mm³)')}
+            ${row('Voxels', ctv.voxelCount.toLocaleString())}
+            ${ctv.tumorType ? row('Type', ctv.tumorType) : ''}
+        `);
     }
 
-    // OAR Segmentation
+    // OAR Segmentation card
     if (imageAnalysisData.oar) {
         const oar = imageAnalysisData.oar;
-        html += `<div style="margin-bottom:0.7rem;">
-            <div style="font-weight:600;margin-bottom:0.3rem;">🫁 OAR Segmentation</div>
-            <div style="font-size:0.65rem;margin-bottom:0.2rem;">${oar.organCount} organs segmented</div>`;
+        let organHtml = `<div style="font-size:0.72rem;margin-bottom:0.3rem;">${oar.organCount} organs segmented</div>`;
         if (oar.organList && oar.organList.length > 0) {
-            html += `<div style="font-size:0.6rem;max-height:120px;overflow-y:auto;background:var(--bg-2);border-radius:4px;padding:0.3rem;">`;
+            organHtml += `<div style="max-height:150px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:1px 0.5rem;">`;
             oar.organList.forEach(o => {
-                const colorDot = `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${o.color};margin-right:3px;vertical-align:middle;"></span>`;
-                html += `<div style="padding:1px 0;">${colorDot}${o.name} <span style="color:var(--text-dim);font-size:0.55rem;">(${o.voxels.toLocaleString()} vox)</span></div>`;
+                organHtml += `<div style="display:flex;align-items:center;gap:4px;padding:1px 0;font-size:0.68rem;">
+                    <span style="width:8px;height:8px;border-radius:50%;background:${o.color};flex-shrink:0;"></span>
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.name}</span>
+                    <span style="color:var(--text-dim);font-size:0.6rem;">${(o.voxels / 1000).toFixed(1)}k</span>
+                </div>`;
             });
-            html += `</div>`;
+            organHtml += `</div>`;
         }
-        html += `</div>`;
+        html += card('🫁', 'OAR Segmentation', '#10b981', organHtml);
     }
 
-    content.innerHTML = html || '<div style="color:var(--text-dim);font-size:0.65rem;">No image data available</div>';
+    content.innerHTML = html || '<div style="color:var(--text-dim);font-size:0.75rem;text-align:center;padding:1rem;">No image data available</div>';
     timeEl.textContent = new Date().toLocaleTimeString();
 }
 
-function captureAnalysis(text, steps) {
-    // Extract image analysis data from tool results
+async function captureAnalysis(text, steps) {
+    // Auto-load CT stats if not yet available
+    if (!imageAnalysisData.ct && !volumeData) {
+        try {
+            const resp = await fetch(API + '/status');
+            if (resp.ok) {
+                const sd = await resp.json();
+                if (sd.ct_loaded) {
+                    state.ctLoaded = true;
+                    state.ctPath = sd.ct_path || '';
+                    await loadVolumeData();
+                    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+                        renderSliceFromVolume(axis, state.slices[axis]);
+                    });
+                }
+            }
+        } catch (e) { console.warn('Auto-load CT failed:', e); }
+    }
+    if (!imageAnalysisData.ct && volumeData) {
+        imageAnalysisData.ct = computeCTStats();
+    }
+
+    // Extract CTV/OAR data from tool results
     if (steps && steps.length > 0) {
         for (const step of steps) {
             if (step.type !== 'tool' || step.status !== 'done' || !step.tool) continue;
@@ -10100,18 +11058,19 @@ function captureAnalysis(text, steps) {
             const result = step.result || '';
 
             if (toolName.includes('ctv_segmentation')) {
-                const volMatch = result.match(/([\d.]+)\s*mm/);
-                const voxMatch = result.match(/voxel.*?(\d[\d,]*)/i);
-                const vol = volMatch ? parseFloat(volMatch[1]) : 0;
+                const volMmMatch = result.match(/([\d,.]+)\s*mm[³3]/i);
+                const volCmMatch = result.match(/([\d,.]+)\s*cm[³3]/i);
+                const voxMatch = result.match(/([\d,]+)\s*(?:voxel|体素)/i);
+                const vol = volMmMatch ? parseFloat(volMmMatch[1].replace(/,/g, '')) :
+                            volCmMatch ? parseFloat(volCmMatch[1].replace(/,/g, '')) * 1000 : 0;
                 const voxels = voxMatch ? parseInt(voxMatch[1].replace(/,/g, '')) : 0;
                 const typeMatch = result.match(/tumor[_\s]*type[:\s]*(\w+)/i);
                 imageAnalysisData.ctv = { volume: vol, voxelCount: voxels, tumorType: typeMatch ? typeMatch[1] : null };
             } else if (toolName.includes('oar_segmentation')) {
-                const organMatch = result.match(/(\d+)\s*organ/);
-                // Build organ list from organMetaFromServer
+                const organMatch = result.match(/(\d+)\s*(?:organ|器官)/i);
                 const organList = Object.entries(organMetaFromServer).map(([id, meta]) => ({
                     name: meta.name || `Organ_${id}`,
-                    color: `rgb(${meta.color.join(',')})`,
+                    color: `rgb(${(meta.color || [128,128,128]).join(',')})`,
                     voxels: meta.voxels || 0,
                 })).sort((a, b) => b.voxels - a.voxels);
                 imageAnalysisData.oar = {
@@ -10120,8 +11079,8 @@ function captureAnalysis(text, steps) {
                 };
             }
         }
-        updateImageAnalysis();
     }
+    updateImageAnalysis();
 }
 
 function resetImageAnalysis() {
