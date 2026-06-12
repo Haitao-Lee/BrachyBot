@@ -134,13 +134,15 @@ class BrachyAgentMultiAgentWrapper:
             return None
 
     async def review_treatment_plan(self, dose_metrics: Dict,
-                                   plan_info: Dict) -> Optional[Dict[str, Any]]:
+                                   plan_info: Dict,
+                                   plan_config: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
         """
         Convenience method to review a treatment plan.
 
         Args:
             dose_metrics: Dose metrics dict
             plan_info: Plan information dict
+            plan_config: Actual planning config (in_lowest_energy, seed_info, etc.)
 
         Returns:
             Review result dict or None
@@ -150,6 +152,7 @@ class BrachyAgentMultiAgentWrapper:
             content={
                 "dose_metrics": dose_metrics,
                 "plan_info": plan_info,
+                "plan_config": plan_config or {},
             },
         )
 
