@@ -295,6 +295,18 @@ class AgentMemory:
             self.exp_memory.clear()
             logger.info("Experience memory cleared")
 
+    def clear_all_data(self):
+        """Clear all loaded data (CT, CTV, OAR, planning results) for a completely fresh start."""
+        # Clear planning results (stores CT, CTV, OAR, dose, seeds, etc.)
+        self.planning_results.clear()
+        # Clear patient data
+        self.patient_data.clear()
+        # Clear tool results
+        self.tool_results.clear()
+        # Reset planning phase
+        self.current_phase = PlanningPhase.IDLE
+        logger.info("All data cleared (CT, CTV, OAR, planning results)")
+
         # Clear all enhanced integration components
         if hasattr(self, 'enhanced') and self.enhanced:
             try:
@@ -590,7 +602,7 @@ class ToolResultPipeline:
                     f"| Total Seeds | {total_seeds} |",
                     f"| Trajectories | {num_traj} |",
                     f"| V100 | {metrics.get('v100', 0):.1%} |",
-                    f"| D90 | {metrics.get('d90', 0):.2f} Gy |",
+                    f"| D90 | {metrics.get('d90', 0):.2f} |",
                     f"| Plan Score | {metrics.get('plan_score', 0):.0f}/100 |",
                     "",
                     "✅ Seeds, needles, and dose displayed in 3D viewer.",
@@ -641,8 +653,8 @@ class ToolResultPipeline:
                 "",
                 "| Metric | Value |",
                 "|--------|-------|",
-                f"| Max Dose | {max_dose:.2f} Gy |",
-                f"| Mean Dose | {mean_dose:.2f} Gy |",
+                f"| Max Dose | {max_dose:.2f} |",
+                f"| Mean Dose | {mean_dose:.2f} |",
                 f"| Seeds | {num_seeds} |",
                 f"| Engine | {engine} |",
             ]
@@ -658,7 +670,7 @@ class ToolResultPipeline:
                 "| Metric | Value |",
                 "|--------|-------|",
                 f"| V100 | {v100:.1%} |",
-                f"| D90 | {d90:.2f} Gy |",
+                f"| D90 | {d90:.2f} |",
                 f"| Plan Score | {score:.0f}/100 |",
             ]
             return "\n".join(lines)
@@ -889,6 +901,7 @@ class BrachyAgent:
         self._init_brain_system()
         self._init_self_evolution()
         self._init_enhanced_integration()
+        self._init_multi_agent()
 
         logger.info(f"BrachyAgent initialized (session: {session_id})")
 
@@ -987,6 +1000,25 @@ class BrachyAgent:
             logger.info("Enhanced self-evolving integration initialized")
         except Exception as e:
             logger.warning(f"Enhanced integration not available: {e}")
+
+    def _init_multi_agent(self):
+        """Initialize multi-agent system for quality review."""
+        self.multi_agent_wrapper = None
+        try:
+            from agents import BrachyAgentMultiAgentWrapper
+
+            # Create LLM callback for multi-agent system
+            llm_callback = None
+            if self.brain_available and hasattr(self, "brain_router") and self.brain_router:
+                def _ma_llm_cb(prompt):
+                    resp = self.brain_router.chat(prompt)
+                    return resp.content if hasattr(resp, "content") else str(resp)
+                llm_callback = _ma_llm_cb
+
+            self.multi_agent_wrapper = BrachyAgentMultiAgentWrapper(llm_callback=llm_callback)
+            logger.info("Multi-agent system initialized")
+        except Exception as e:
+            logger.warning(f"Multi-agent system not available: {e}")
 
     @property
     def brain_available(self) -> bool:
@@ -1479,6 +1511,12 @@ class BrachyAgent:
                 self.memory.store("ctv_label_stats", meta["label_stats"])
             if "label_map" in meta:
                 self.memory.store("ctv_label_map", meta["label_map"])
+            # Store full multi-label array for data tree display
+            if "full_label_array" in meta and meta["full_label_array"] is not None:
+                if ct_image is not None:
+                    self._store_label_with_metadata(meta["full_label_array"], ct_image, "ctv_full_labels")
+                else:
+                    self.memory.store("ctv_full_labels", meta["full_label_array"])
         elif tool_name == "oar_segmentation":
             if "oar_array" in meta:
                 if ct_image is not None:
@@ -1492,13 +1530,14 @@ class BrachyAgent:
         elif tool_name == "dose_engine" and result.data is not None:
             self.memory.store("dose_distribution", result.data)
         elif tool_name == "planning_pipeline":
-            # Store all planning results
-            if "seed_plan" in meta:
-                self.memory.store("seed_plan", meta["seed_plan"])
+            # Note: planning_pipeline stores seed_plan/dose_distribution directly
+            # in _step_seed_planning. Do NOT overwrite dose_distribution here —
+            # _step_seed_planning stores planning grid dose (128,128,64),
+            # _step_dose_calc stores resampled dose (512,512,48) as dose_distribution_gy.
             if "trajectories" in meta:
                 self.memory.store("trajectories", meta["trajectories"])
-            if "dose_distribution" in meta and meta["dose_distribution"] is not None:
-                self.memory.store("dose_distribution", meta["dose_distribution"])
+            # Don't overwrite dose_distribution — preserve planning grid version
+            # The resampled version is stored as dose_distribution_gy by _step_dose_calc
             if "dose_metrics" in meta:
                 self.memory.store("dose_metrics", meta["dose_metrics"])
             if "total_seeds" in meta:
@@ -1645,32 +1684,48 @@ print(json.dumps(result))
                     tumor_type = self._detect_tumor_type_from_message(msg)
                     tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation",
                                   "params": {"image_path": ct_path, "tumor_type": tumor_type}})
-                    # Auto-switch to viewers panel after CTV
+                    # Immediately switch to viewers and reconstruct CTV in 3D
                     tools.append({"id": "tool_ui_viewers", "tool": "ui_controller",
                                   "params": {"actions": [{"target": "panel", "command": "switch", "value": "viewers"}]}})
+                    tools.append({"id": "tool_ui_3d_ctv", "tool": "ui_controller",
+                                  "params": {"actions": [{"target": "3d.reconstruct", "command": "run", "value": "ctv"}]}})
 
                 # Step 2: OAR segmentation (if missing)
                 if not has_oar:
                     tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation",
                                   "params": {"image_path": ct_path, "organ_type": "general"}})
 
-                # Step 3: 3D reconstruction of CTV
-                tools.append({"id": "tool_ui_3d_ctv", "tool": "ui_controller",
-                              "params": {"actions": [{"target": "3d.reconstruct", "command": "set", "value": "ctv"}]}})
-
-                # Step 4: Planning pipeline
+                # Step 4-8: Planning pipeline (individual steps for incremental UI updates)
                 mode = "rl" if "强化" in msg or "rl" in msg.lower() else "rule_based"
-                tools.append({"id": "tool_direct_plan_full", "tool": "planning_pipeline",
-                              "params": {"ct_image_path": ct_path, "step": "full", "mode": mode}})
+                # 4a. Trajectory initialization
+                tools.append({"id": "tool_direct_plan_traj_init", "tool": "planning_pipeline",
+                              "params": {"ct_image_path": ct_path, "step": "trajectory_init", "mode": mode}})
+                # 4b. Trajectory refinement
+                tools.append({"id": "tool_direct_plan_traj_refine", "tool": "planning_pipeline",
+                              "params": {"ct_image_path": ct_path, "step": "trajectory_refine", "mode": mode}})
+                # 4c. Seed planning
+                tools.append({"id": "tool_direct_plan_seed", "tool": "planning_pipeline",
+                              "params": {"ct_image_path": ct_path, "step": "seed_planning", "mode": mode}})
+                # 4d. Dose calculation
+                tools.append({"id": "tool_direct_plan_dose", "tool": "planning_pipeline",
+                              "params": {"ct_image_path": ct_path, "step": "dose_calc", "mode": mode}})
+                # 4e. Dose evaluation
+                tools.append({"id": "tool_direct_plan_eval", "tool": "planning_pipeline",
+                              "params": {"ct_image_path": ct_path, "step": "dose_eval", "mode": mode}})
 
-                # Step 5: Auto-switch to metrics panel to show results
+                # Step 9: Auto-switch to metrics panel to show results
                 tools.append({"id": "tool_ui_metrics", "tool": "ui_controller",
                               "params": {"actions": [{"target": "panel", "command": "switch", "value": "metrics"}]}})
 
         return tools or None
 
-    def _execute_direct_tools(self, tools: List[Dict], steps: List, step_id_ref: List[int]) -> str:
-        """Execute tools with validation and recovery. Shared by streaming and non-streaming paths."""
+    def _execute_direct_tools(self, tools: List[Dict], steps: List, step_id_ref: List[int], yield_event=None):
+        """Execute tools with validation and recovery. Shared by streaming and non-streaming paths.
+
+        Args:
+            yield_event: Optional callback(step_data) called after each tool completes,
+                         enabling incremental UI updates in streaming mode.
+        """
         _lang = self.memory.user_lang
         for tc in tools:
             step_id_ref[0] += 1
@@ -1680,6 +1735,9 @@ print(json.dumps(result))
                 "status": "pending", "tool": tc['tool'], "params": tc['params'],
             }
             steps.append(tool_step)
+            # Yield pending step for streaming UI
+            if yield_event:
+                yield_event(tool_step)
             try:
                 result = self._validate_and_execute(tc['tool'], tc['params'])
                 tool_step["status"] = "done"
@@ -1698,6 +1756,9 @@ print(json.dumps(result))
                 logger.error(f"Direct tool failed: {tc['tool']}: {e}")
                 self.memory.add_message("assistant", f"[Called {tc['tool']}]")
                 self.memory.add_message("user", f"[Tool result: Error: {str(e)[:200]}]")
+            # Yield completed step for streaming UI (enables incremental viewer updates)
+            if yield_event:
+                yield_event(tool_step)
 
         # Build raw results summary, then synthesize with LLM
         raw_results = self._build_direct_response(steps, _lang)
@@ -3633,6 +3694,23 @@ print(json.dumps(result))
         add_step("user", "User Input", message)
         yield yield_event("step", steps[-1])
 
+        # Multi-agent routing (if available)
+        _ma_routing = None
+        if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
+            try:
+                import asyncio
+                loop = asyncio.new_event_loop()
+                ma_result = loop.run_until_complete(self.multi_agent_wrapper.process_request(message))
+                loop.close()
+                _ma_routing = ma_result.get("routing")
+                if _ma_routing:
+                    step = add_step("thinking", "Multi-Agent Router",
+                                  f"Intent: {_ma_routing.intent}, Complexity: {_ma_routing.complexity}, "
+                                  f"Review: {'Required' if _ma_routing.requires_review else 'Optional'}")
+                    yield yield_event("step", step)
+            except Exception as e:
+                logger.debug(f"Multi-agent routing failed: {e}")
+
         # Direct tool execution for explicit tool requests
         _direct_tool_calls = self._detect_tool_request(message)
         if _direct_tool_calls:
@@ -3670,6 +3748,40 @@ print(json.dumps(result))
             query_type = self._classify_query_type(user_msg)
             response = self._synthesize_with_llm(raw_response, steps, _lang, user_msg, query_type)
             self.memory.add_message("assistant", response)
+
+            # Multi-agent review for direct tool execution
+            if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
+                try:
+                    _needs_review = False
+                    _review_type = "general_response"
+                    for tc in _direct_tool_calls:
+                        if tc['tool'] in ["planning_pipeline", "seed_planning", "dose_evaluation"]:
+                            _needs_review = True
+                            _review_type = "treatment_plan"
+                            break
+
+                    if _needs_review:
+                        import asyncio
+                        loop = asyncio.new_event_loop()
+                        review_result = loop.run_until_complete(
+                            self.multi_agent_wrapper.review_output(_review_type, {
+                                "dose_metrics": self.memory.retrieve("dose_metrics", {}),
+                                "plan_info": {
+                                    "total_seeds": self.memory.retrieve("total_seeds", 0),
+                                    "num_trajectories": self.memory.retrieve("num_trajectories", 0),
+                                },
+                            })
+                        )
+                        loop.close()
+
+                        if review_result and review_result.get("display_text"):
+                            step = add_step("review", "Quality Review",
+                                          review_result["display_text"],
+                                          status="done" if review_result["passed"] else "warning")
+                            yield yield_event("step", step)
+                except Exception as e:
+                    logger.debug(f"Multi-agent review failed: {e}")
+
             yield yield_event("response", {"response": response})
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
             return
@@ -3709,6 +3821,45 @@ print(json.dumps(result))
             llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
 
         self._record_experience(message, response, steps)
+
+        # Multi-agent review (if available and needed)
+        if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
+            try:
+                # Determine if review is needed based on steps
+                _needs_review = False
+                _review_type = "general_response"
+                _review_content = {"response": response, "steps": steps}
+
+                # Check if treatment plan was generated
+                for s in steps:
+                    if s.get("tool") in ["planning_pipeline", "seed_planning", "dose_evaluation"]:
+                        _needs_review = True
+                        _review_type = "treatment_plan"
+                        _review_content = {
+                            "dose_metrics": self.memory.retrieve("dose_metrics", {}),
+                            "plan_info": {
+                                "total_seeds": self.memory.retrieve("total_seeds", 0),
+                                "num_trajectories": self.memory.retrieve("num_trajectories", 0),
+                            },
+                        }
+                        break
+
+                if _needs_review:
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    review_result = loop.run_until_complete(
+                        self.multi_agent_wrapper.review_output(_review_type, _review_content)
+                    )
+                    loop.close()
+
+                    if review_result and review_result.get("display_text"):
+                        step = add_step("review", "Quality Review",
+                                      review_result["display_text"],
+                                      status="done" if review_result["passed"] else "warning",
+                                      review_decision=review_result["decision"])
+                        yield yield_event("step", step)
+            except Exception as e:
+                logger.debug(f"Multi-agent review failed: {e}")
 
         # Final response
         yield yield_event("response", {"response": response, "steps": steps, "llm_meta": llm_meta})

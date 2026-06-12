@@ -1559,6 +1559,30 @@
         .ctrl-toggle input[type="checkbox"] { accent-color: var(--primary); cursor: pointer; }
         .ctrl-toggle input[type="range"] { width: 50px; height: 2px; accent-color: var(--primary); }
 
+        /* iOS-style toggle switch */
+        .toggle-switch {
+            position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0;
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-switch .toggle-slider {
+            position: absolute; cursor: pointer; inset: 0;
+            background: var(--card-border); border-radius: 20px;
+            transition: background 0.25s ease;
+        }
+        .toggle-switch .toggle-slider::before {
+            content: ""; position: absolute;
+            height: 16px; width: 16px; left: 2px; bottom: 2px;
+            background: #fff; border-radius: 50%;
+            transition: transform 0.25s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background: var(--primary);
+        }
+        .toggle-switch input:checked + .toggle-slider::before {
+            transform: translateX(16px);
+        }
+
         .viewer-no-data {
             display: flex; flex-direction: column;
             align-items: center; justify-content: center;
@@ -1822,186 +1846,132 @@
                     <input type="file" id="fileOAR" accept=".nii,.nii.gz,.mha,.nrrd,image/*" onchange="handleFileSelect(this, 'oarPath')">
                 </div>
 
-                <div class="form-section-title">Planning Options</div>
-
-                <div class="form-group">
-                    <label class="form-label">Planning Mode</label>
-                    <select class="form-select" id="planMode">
-                        <option value="rule_based">Rule-Based</option>
-                        <option value="rl">Reinforcement Learning</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Deviation Threshold (mm)</label>
-                    <input type="number" class="form-input" id="devThreshold" value="2.0" step="0.1">
-                </div>
-
                 <div class="form-section-title" style="cursor:pointer" onclick="toggleHyperparams()">
-                    <span>Hyperparameters</span>
+                    <span>&#9881; Hyperparameters</span>
                     <span id="hyperparamToggle" style="font-size:0.6rem;color:var(--text-dim);">&#9654;</span>
                 </div>
 
-                <div id="hyperparamsSection" style="display:none;flex-direction:column;gap:0.5rem;max-height:calc(100vh - 300px);overflow-y:auto;padding-right:4px;">
-                    <!-- Seed Properties -->
-                    <div class="form-group">
-                        <label class="form-label">Seed Radius (mm)</label>
-                        <input type="number" class="form-input" id="seedRadius" value="0.4" step="0.05" min="0.1" max="2.0">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Seed Length (mm)</label>
-                        <input type="number" class="form-input" id="seedLength" value="4.5" step="0.1" min="1.0" max="20.0">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Seed Margin Rate</label>
-                        <input type="number" class="form-input" id="seedMarginRate" value="1.0" step="0.1" min="0.5" max="5.0">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Seed Count Min</label>
-                        <input type="number" class="form-input" id="seedCountMin" value="5" step="1" min="0">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Seed Count Max</label>
-                        <input type="number" class="form-input" id="seedCountMax" value="200" step="10" min="1">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Seed Avg Dose (Gy)</label>
-                        <input type="number" class="form-input" id="seedAvgDose" value="50" step="1" min="10" max="200">
-                    </div>
-
-                    <!-- Radiation Array Params -->
-                    <div class="form-group">
-                        <label class="form-label">Target Value</label>
-                        <input type="number" class="form-input" id="targetValue" value="2" step="1">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Obstacle Value</label>
-                        <input type="number" class="form-input" id="obstacleValue" value="3" step="1">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Background Value</label>
-                        <input type="number" class="form-input" id="backgroundValue" value="0" step="1">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Backlit Angle</label>
-                        <input type="number" class="form-input" id="backlitAngle" value="0.5" step="0.1" min="0" max="3.14">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Max Candidate Trajectories</label>
-                        <input type="number" class="form-input" id="maxCandiTraj" value="500" step="10" min="10">
-                    </div>
-
-                    <!-- Reference Direction -->
-                    <div class="form-group">
-                        <label class="form-label">Reference Direction (X, Y, Z)</label>
-                        <div class="form-row">
-                            <input type="number" class="form-input" id="refDirecX" value="0" step="1" style="width:33%">
-                            <input type="number" class="form-input" id="refDirecY" value="1" step="1" style="width:33%">
-                            <input type="number" class="form-input" id="refDirecZ" value="0" step="1" style="width:33%">
+                <div id="hyperparamsSection" style="display:none;flex-direction:column;gap:0.5rem;max-height:calc(100vh - 280px);overflow-y:auto;padding-right:4px;">
+                    <!-- General -->
+                    <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">General</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;">
+                        <div class="form-group"><label class="form-label">Deviation (mm)</label><input type="number" class="form-input" id="devThreshold" value="2.0" step="0.1"></div>
+                        <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px;">
+                            <label class="toggle-switch" title="Toggle reinforcement learning" style="margin-bottom:4px;">
+                                <input type="checkbox" id="useRLToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span style="font-size:0.65rem;color:var(--text-dim);margin-left:6px;">RL Mode</span>
                         </div>
                     </div>
 
-                    <!-- Energy & Iteration -->
-                    <div class="form-group">
-                        <label class="form-label">In Lowest Energy</label>
-                        <input type="number" class="form-input" id="inLowestEnergy" value="1" step="1">
+                    <div style="height:1px;background:var(--card-border);margin:2px 0;"></div>
+
+                    <!-- Seed Properties -->
+                    <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Seed</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;">
+                        <div class="form-group"><label class="form-label">Radius (mm)</label><input type="number" class="form-input" id="seedRadius" value="0.4" step="0.05" min="0.1" max="2.0"></div>
+                        <div class="form-group"><label class="form-label">Length (mm)</label><input type="number" class="form-input" id="seedLength" value="4.5" step="0.1" min="1.0" max="20.0"></div>
+                        <div class="form-group"><label class="form-label">Count Min</label><input type="number" class="form-input" id="seedCountMin" value="5" step="1" min="0"></div>
+                        <div class="form-group"><label class="form-label">Count Max</label><input type="number" class="form-input" id="seedCountMax" value="200" step="10" min="1"></div>
+                        <div class="form-group"><label class="form-label">Margin Rate</label><input type="number" class="form-input" id="seedMarginRate" value="1.0" step="0.1" min="0.5" max="5.0"></div>
+                        <div class="form-group"><label class="form-label">Avg Dose (Gy)</label><input type="number" class="form-input" id="seedAvgDose" value="50" step="1" min="10" max="200"></div>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">Out Highest Energy</label>
-                        <input type="number" class="form-input" id="outHighestEnergy" value="1" step="1">
+
+                    <div style="height:1px;background:var(--card-border);margin:2px 0;"></div>
+
+                    <!-- Volume Labels -->
+                    <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Volume Labels</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 8px;">
+                        <div class="form-group"><label class="form-label">Target</label><input type="number" class="form-input" id="targetValue" value="1" step="1"></div>
+                        <div class="form-group"><label class="form-label">Obstacle</label><input type="number" class="form-input" id="obstacleValue" value="2" step="1"></div>
+                        <div class="form-group"><label class="form-label">Background</label><input type="number" class="form-input" id="backgroundValue" value="0" step="1"></div>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">DVH Rate</label>
-                        <input type="number" class="form-input" id="dvhRate" value="0.9" step="0.05" min="0" max="1">
+
+                    <div style="height:1px;background:var(--card-border);margin:2px 0;"></div>
+
+                    <!-- Trajectory -->
+                    <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Trajectory</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;">
+                        <div class="form-group"><label class="form-label">Backlit Angle</label><input type="number" class="form-input" id="backlitAngle" value="0.5" step="0.1" min="0" max="3.14"></div>
+                        <div class="form-group"><label class="form-label">Max Candidates</label><input type="number" class="form-input" id="maxCandiTraj" value="500" step="10" min="10"></div>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">Max Iterations</label>
-                        <input type="number" class="form-input" id="maxIter" value="4" step="1" min="1" max="20">
+                    <div class="form-group"><label class="form-label">Ref Direction (RAS)</label>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;">
+                            <input type="number" class="form-input" id="refDirecX" value="0" step="1" placeholder="X">
+                            <input type="number" class="form-input" id="refDirecY" value="1" step="1" placeholder="Y">
+                            <input type="number" class="form-input" id="refDirecZ" value="0" step="1" placeholder="Z">
+                        </div>
                     </div>
+                    <div class="form-group"><label class="form-label">Direction Res (Cone / Step / Rings)</label>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;">
+                            <input type="number" class="form-input" id="direcResCone" value="30" step="5">
+                            <input type="number" class="form-input" id="direcResStep" value="3" step="1">
+                            <input type="number" class="form-input" id="direcResRings" value="2" step="1">
+                        </div>
+                    </div>
+
+                    <div style="height:1px;background:var(--card-border);margin:2px 0;"></div>
+
+                    <!-- Dose Constraints -->
+                    <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Dose Constraints</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;">
+                        <div class="form-group"><label class="form-label">In Lowest Dose</label><input type="number" class="form-input" id="inLowestEnergy" value="1" step="1"></div>
+                        <div class="form-group"><label class="form-label">Out Highest Dose</label><input type="number" class="form-input" id="outHighestEnergy" value="1" step="1"></div>
+                        <div class="form-group"><label class="form-label">DVH Rate</label><input type="number" class="form-input" id="dvhRate" value="0.9" step="0.05" min="0" max="1"></div>
+                        <div class="form-group"><label class="form-label">Max Iterations</label><input type="number" class="form-input" id="maxIter" value="4" step="1" min="1" max="20"></div>
+                    </div>
+
+                    <div style="height:1px;background:var(--card-border);margin:2px 0;"></div>
 
                     <!-- Distance Filter -->
-                    <div class="form-group">
-                        <label class="form-label">Distance Lower Bound</label>
-                        <input type="number" class="form-input" id="distLowerBound" value="0.8" step="0.1" min="0">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Distance Upper Bound</label>
-                        <input type="number" class="form-input" id="distUpperBound" value="10" step="0.5" min="1">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Distance Rate</label>
-                        <input type="number" class="form-input" id="distRate" value="0.8" step="0.05" min="0" max="1">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Interval Rate</label>
-                        <input type="number" class="form-input" id="intervalRate" value="2" step="0.5" min="0.5">
+                    <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Distance Filter</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;">
+                        <div class="form-group"><label class="form-label">Lower Bound</label><input type="number" class="form-input" id="distLowerBound" value="0.8" step="0.1" min="0"></div>
+                        <div class="form-group"><label class="form-label">Upper Bound</label><input type="number" class="form-input" id="distUpperBound" value="10" step="0.5" min="1"></div>
+                        <div class="form-group"><label class="form-label">Distance Rate</label><input type="number" class="form-input" id="distRate" value="0.8" step="0.05" min="0" max="1"></div>
+                        <div class="form-group"><label class="form-label">Interval Rate</label><input type="number" class="form-input" id="intervalRate" value="2" step="0.5" min="0.5"></div>
                     </div>
 
-                    <!-- Direction Resolution -->
-                    <div class="form-group">
-                        <label class="form-label">Direction Resolution (Cone, Step, Rings)</label>
-                        <div style="display:flex;gap:4px;">
-                            <input type="number" class="form-input" id="direcResCone" value="30" step="5" style="width:33%">
-                            <input type="number" class="form-input" id="direcResStep" value="3" step="1" style="width:33%">
-                            <input type="number" class="form-input" id="direcResRings" value="2" step="1" style="width:33%">
-                        </div>
+                    <div style="height:1px;background:var(--card-border);margin:2px 0;"></div>
+
+                    <!-- Optimization -->
+                    <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Optimization</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;">
+                        <div class="form-group"><label class="form-label">Iteration Rate</label><input type="number" class="form-input" id="iterRate" value="2" step="0.5" min="0.5"></div>
+                        <div class="form-group"><label class="form-label">Replan Rate</label><input type="number" class="form-input" id="replanRate" value="0.6" step="0.1" min="0" max="1"></div>
                     </div>
+
+                    <div style="height:1px;background:var(--card-border);margin:2px 0;"></div>
 
                     <!-- DL Params -->
-                    <div class="form-group">
-                        <label class="form-label">DL Learning Rate</label>
-                        <input type="number" class="form-input" id="dlLR" value="0.0004" step="0.0001" min="0.00001">
+                    <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Deep Learning</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;">
+                        <div class="form-group"><label class="form-label">Learning Rate</label><input type="number" class="form-input" id="dlLR" value="0.0004" step="0.0001" min="0.00001"></div>
+                        <div class="form-group"><label class="form-label">LR Decay</label><input type="number" class="form-input" id="dlLRDecay" value="1.5" step="0.1" min="1"></div>
+                        <div class="form-group"><label class="form-label">Epochs</label><input type="number" class="form-input" id="dlEpochs" value="1000" step="100" min="100"></div>
+                        <div class="form-group"><label class="form-label">Patience</label><input type="number" class="form-input" id="dlPatience" value="200" step="50" min="50"></div>
+                        <div class="form-group"><label class="form-label">Search Region</label><input type="number" class="form-input" id="dlSearchRegion" value="0.5" step="0.1" min="0.1" max="2"></div>
+                        <div class="form-group"><label class="form-label">DVH Margin</label><input type="number" class="form-input" id="dlDVHMargin" value="0.05" step="0.01" min="0" max="0.5"></div>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">DL LR Decay</label>
-                        <input type="number" class="form-input" id="dlLRDecay" value="1.5" step="0.1" min="1">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">DL Epochs</label>
-                        <input type="number" class="form-input" id="dlEpochs" value="1000" step="100" min="100">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">DL Patience</label>
-                        <input type="number" class="form-input" id="dlPatience" value="200" step="50" min="50">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">DL Search Region</label>
-                        <input type="number" class="form-input" id="dlSearchRegion" value="0.5" step="0.1" min="0.1" max="2">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">DL DVH Margin</label>
-                        <input type="number" class="form-input" id="dlDVHMargin" value="0.05" step="0.01" min="0" max="0.5">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Inference Image Size</label>
-                        <div style="display:flex;gap:4px;">
-                            <input type="number" class="form-input" id="inferSizeX" value="32" step="8" style="width:33%">
-                            <input type="number" class="form-input" id="inferSizeY" value="32" step="8" style="width:33%">
-                            <input type="number" class="form-input" id="inferSizeZ" value="32" step="8" style="width:33%">
+                    <div class="form-group"><label class="form-label">Inference Size (H / W / D)</label>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;">
+                            <input type="number" class="form-input" id="inferSizeX" value="32" step="8">
+                            <input type="number" class="form-input" id="inferSizeY" value="32" step="8">
+                            <input type="number" class="form-input" id="inferSizeZ" value="32" step="8">
                         </div>
                     </div>
 
-                    <!-- Iteration & Replan -->
-                    <div class="form-group">
-                        <label class="form-label">Iteration Rate</label>
-                        <input type="number" class="form-input" id="iterRate" value="2" step="0.5" min="0.5">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Replan Rate</label>
-                        <input type="number" class="form-input" id="replanRate" value="0.6" step="0.1" min="0" max="1">
-                    </div>
+                    <div style="height:1px;background:var(--card-border);margin:2px 0;"></div>
 
                     <!-- RF Params -->
-                    <div class="form-group">
-                        <label class="form-label">RF Max Episodes</label>
-                        <input type="number" class="form-input" id="rfMaxEpisodes" value="100" step="10" min="10">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">RF Bandwidth</label>
-                        <input type="number" class="form-input" id="rfBandwidth" value="50" step="5" min="1">
+                    <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Reinforcement Learning Params</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;">
+                        <div class="form-group"><label class="form-label">Max Episodes</label><input type="number" class="form-input" id="rfMaxEpisodes" value="100" step="10" min="10"></div>
+                        <div class="form-group"><label class="form-label">Bandwidth</label><input type="number" class="form-input" id="rfBandwidth" value="50" step="5" min="1"></div>
                     </div>
 
-                    <button class="btn btn-outline" onclick="applyHyperparams()" style="width:100%;justify-content:center;">
+                    <button class="btn btn-outline" onclick="applyHyperparams()" style="width:100%;justify-content:center;margin-top:4px;">
                         <span class="btn-icon">&#9989;</span> Apply Hyperparameters
                     </button>
                 </div>
@@ -2290,6 +2260,11 @@
                             <canvas id="crosshairCanvasAxial" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
                             <canvas id="annotationCanvasAxial" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
                             <canvas id="labelOverlay_Axial" style="position:absolute;pointer-events:none;display:none;opacity:0.6;"></canvas>
+                            <!-- Dose overlay colorbar -->
+                            <div id="doseColorbar" style="display:none;position:absolute;right:8px;top:8px;bottom:8px;width:20px;background:linear-gradient(to bottom, white, yellow, red, black);border:1px solid #555;border-radius:3px;z-index:5;">
+                                <div style="position:absolute;top:-2px;right:24px;font-size:0.55rem;color:#fff;text-shadow:0 0 2px #000;" id="doseColorbarMax">max</div>
+                                <div style="position:absolute;bottom:-2px;right:24px;font-size:0.55rem;color:#fff;text-shadow:0 0 2px #000;" id="doseColorbarMin">0</div>
+                            </div>
                         </div>
                     </div>
                     <div class="viewer-resize-h" data-view="axial"></div>
@@ -2482,6 +2457,26 @@ function newChat() {
     saveSessions();
     renderSessionList();
     loadSessionChat(id);
+
+    // Clear server-side data (CT, CTV, OAR, planning results)
+    fetch(API + '/clear_all', { method: 'POST' }).catch(() => {});
+
+    // Clear client-side data tree state
+    dataTreeState.ctv.loaded = false;
+    dataTreeState.oar.loaded = false;
+    dataTreeState.organs = [];
+    dataTreeState.dose.loaded = false;
+    dataTreeState.seeds.loaded = false;
+    dataTreeState.needles.loaded = false;
+    dataTreeState.planning.seeds = [];
+    dataTreeState.planning.needles = [];
+    dataTreeState.planning.doseLevels = [];
+    ctvLabelData = null;
+    oarLabelData = null;
+    state.ctLoaded = false;
+    state.seeds = [];
+    state.metrics = {};
+    renderDataTree();
 }
 
 function switchSession(id) {
@@ -2906,6 +2901,11 @@ async function init() {
 
     // Apply default viewer layout
     setViewerLayout(state.viewerSettings.layout || 'grid');
+
+    // Try to load existing planning results (seeds, DVH, dose)
+    try {
+        await refreshPlanningUI();
+    } catch (e) { console.warn('refreshPlanningUI on init failed:', e); }
 }
 
 // Load default hyperparameters from server config and populate UI
@@ -3935,6 +3935,13 @@ function updateSlice(view, val) {
         renderCachedSlice(view, parseInt(val));
         loadSlice(view, parseInt(val));
     }
+
+    // Fetch dose overlay slice if enabled (async, non-blocking)
+    if (state.doseOverlay && state.doseOverlay.visible) {
+        fetchDoseOverlaySlice(view, parseInt(val)).then(sliceData => {
+            if (sliceData) renderDoseOverlay(view, parseInt(val), sliceData);
+        });
+    }
 }
 
 function updateDoseOpacity(val) {
@@ -4232,63 +4239,109 @@ function renderDataTree() {
         </div>
         <div class="tree-group-items">`;
 
-    // CTV — show individual labels under CTV node if multi-label
+    // CTV — show as collapsible group with tumor label(s) as children
     if (dataTreeState.ctv.loaded) {
-        if (hasMultiLabelCtv) {
-            // CTV parent node - use tumor color (label 2) as primary color
-            const totalVol = ctvLabels.reduce((sum, lid) => {
-                const count = ctvLabelData.filter(v => v === lid).length;
-                const spacing = state.ctSpacing || [0.6836, 0.6836, 5.0];
-                return sum + count * spacing[0] * spacing[1] * spacing[2];
-            }, 0);
-            // Use tumor color (label 2) as the CTV group color
-            const ctvGroupColor = labelColorLUT[2] ? `rgb(${labelColorLUT[2].join(',')})` : '#ef4444';
-            html += `<div class="tree-group" data-group="ctv">
-                <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('ctv', event)">
-                    <span class="arrow">&#9660;</span>
-                    <button class="eye-btn" onclick="event.stopPropagation();toggleDataVisibility('ctv')">${dataTreeState.ctv.visible ? '&#128065;' : '&#128064;'}</button>
-                    <span class="color-swatch" style="background:${ctvGroupColor};" onclick="event.stopPropagation();openColorPicker('ctv', this)"></span>
-                    <span>CTV (${ctvLabels.length} labels)</span>
-                    <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
-                        <span style="font-size:0.6rem;color:var(--text-dim);">${totalVol.toFixed(0)} mm³</span>
-                        <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round((dataTreeState.ctv.opacity || 0.7) * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('ctv', this.value)" title="Opacity">
-                    </span>
-                </div>
-                <div class="tree-group-items">`;
-            // Individual label items - use backend label names if available
-            const labelNames = window._ctvLabelMap || {1: 'pancreas', 2: 'tumor', 3: 'artery', 4: 'vein', 5: 'bile_duct', 6: 'pancreatic_duct'};
-            const spacing = state.ctSpacing || [0.6836, 0.6836, 5.0];
-            const voxelVol = spacing[0] * spacing[1] * spacing[2];
-            ctvLabels.forEach(labelId => {
-                const count = ctvLabelData.filter(v => v === labelId).length;
+        const labelNames = window._ctvLabelMap || {1: 'pancreatic tumor', 2: 'artery', 3: 'vein', 4: 'pancreas', 5: 'unknown_5', 6: 'unknown_6'};
+        const spacing = state.ctSpacing || [0.6836, 0.6836, 5.0];
+        const voxelVol = spacing[0] * spacing[1] * spacing[2];
+
+        // Tumor labels (label 1) → CTV group
+        const tumorLabels = ctvLabels.filter(l => l === 1);
+        // Non-traversable labels (artery=2, vein=3) → OAR non-traversable
+        const nonTravLabels = ctvLabels.filter(l => l === 2 || l === 3);
+        // Other labels (unknown, pancreas, etc.) → OAR traversable
+        const otherLabels = ctvLabels.filter(l => l > 3);
+
+        // CTV group header (like OAR)
+        const ctvVis = dataTreeState.ctv.visible;
+        const ctvOp = dataTreeState.ctv.opacity || 0.7;
+        html += `<div class="tree-group" data-group="ctv">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('ctv', event)">
+                <span class="arrow">&#9660;</span>
+                <button class="eye-btn ${ctvVis ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('ctv')">${ctvVis ? '&#128065;' : '&#128064;'}</button>
+                <span>CTV</span>
+                <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+                    <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(ctvOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('ctv', this.value)" title="Opacity">
+                </span>
+            </div>
+            <div class="tree-group-items">`;
+
+        // Show tumor label(s) as children under CTV
+        if (tumorLabels.length > 0) {
+            tumorLabels.forEach(labelId => {
+                const count = ctvLabelData ? ctvLabelData.filter(v => v === labelId).length : 0;
                 const vol = count * voxelVol;
-                const name = labelNames[labelId] || `Label ${labelId}`;
+                const name = labelNames[labelId] || 'tumor';
                 const color = labelColorLUT[labelId] ? `rgb(${labelColorLUT[labelId].join(',')})` : '#ef4444';
-                // Use parent CTV opacity if child doesn't have its own
-                const childId = `ctv_${labelId}`;
-                if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
-                if (!dataTreeState.ctvLabels[childId]) {
-                    dataTreeState.ctvLabels[childId] = {
-                        visible: true,
-                        opacity: dataTreeState.ctv.opacity || 0.7,
-                        color: color,
-                    };
-                }
-                const itemState = {
-                    visible: dataTreeState.ctvLabels[childId].visible,
-                    opacity: dataTreeState.ctvLabels[childId].opacity,
-                    color: color,
-                    loaded: true,
-                    label: name,
-                };
-                html += renderTreeItem(childId, itemState, `${vol.toFixed(0)} mm³`);
+                html += `<div class="tree-item" data-item="ctv_${labelId}" style="display:flex;align-items:center;gap:6px;padding:2px 8px 2px 28px;font-size:0.7rem;">
+                    <button class="eye-btn" onclick="event.stopPropagation();toggleDataVisibility('ctv')" style="font-size:0.65rem;">&#128065;</button>
+                    <span class="color-swatch" style="background:${color};width:10px;height:10px;border-radius:2px;cursor:pointer;" onclick="event.stopPropagation();openColorPicker('ctv_${labelId}', this)"></span>
+                    <span>${name}</span>
+                    <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);">${(vol/1000).toFixed(1)} cm³</span>
+                </div>`;
             });
-            html += `</div></div>`;
-        } else {
+        } else if (!hasMultiLabelCtv) {
+            // Single-label CTV (not from nnUNet multi-label)
             const ctvVolume = state.ctvVolume || null;
-            const ctvInfo = ctvVolume ? `${ctvVolume.toFixed(1)} mm³` : 'loaded';
-            html += renderTreeItem('ctv', dataTreeState.ctv, ctvInfo);
+            const ctvInfo = ctvVolume ? `${ctvVolume.toFixed(1)} mm³` : '';
+            html += `<div class="tree-item" data-item="ctv" style="display:flex;align-items:center;gap:6px;padding:2px 8px 2px 28px;font-size:0.7rem;">
+                <button class="eye-btn" onclick="event.stopPropagation();toggleDataVisibility('ctv')" style="font-size:0.65rem;">&#128065;</button>
+                <span class="color-swatch" style="background:${dataTreeState.ctv.color};width:10px;height:10px;border-radius:2px;"></span>
+                <span>CTV Mask</span>
+                <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);">${ctvInfo}</span>
+            </div>`;
         }
+
+        html += `</div></div>`; // close CTV group
+
+        // Add CTV sub-labels (artery/vein/unknown) to OAR categories
+        const tumorTypeUsed = state.tumorTypeUsed || 'tumor';
+        const ctvSubLabels = [];
+
+        // Non-traversable: artery (2), vein (3)
+        nonTravLabels.forEach(labelId => {
+            const count = ctvLabelData.filter(v => v === labelId).length;
+            const vol = count * voxelVol;
+            const name = labelNames[labelId] || `Label ${labelId}`;
+            const color = labelColorLUT[labelId] ? `rgb(${labelColorLUT[labelId].join(',')})` : '#f97316';
+            ctvSubLabels.push({
+                id: `ctv_${labelId}`,
+                labelId: labelId,
+                label: name,
+                color: color,
+                visible: true,
+                opacity: 0.5,
+                voxelCount: count,
+                category: 'non_traversable',
+                source: 'ctv',
+            });
+        });
+
+        // Traversable: unknown labels (4, 5, 6, etc.)
+        otherLabels.forEach(labelId => {
+            const count = ctvLabelData.filter(v => v === labelId).length;
+            const vol = count * voxelVol;
+            const name = labelNames[labelId] || `Label ${labelId}`;
+            const color = labelColorLUT[labelId] ? `rgb(${labelColorLUT[labelId].join(',')})` : '#22c55e';
+            ctvSubLabels.push({
+                id: `ctv_${labelId}`,
+                labelId: labelId,
+                label: name,
+                color: color,
+                visible: true,
+                opacity: 0.5,
+                voxelCount: count,
+                category: 'traversable',
+                source: 'ctv',
+            });
+        });
+
+        // Merge CTV sub-labels into organs list (avoid duplicates)
+        ctvSubLabels.forEach(sub => {
+            if (!dataTreeState.organs.some(o => o.id === sub.id)) {
+                dataTreeState.organs.push(sub);
+            }
+        });
     }
 
     // OAR with sub-categories
@@ -4427,10 +4480,24 @@ function renderDataTree() {
             </div>
             <div class="tree-group-items">`;
         doseLevels.forEach(level => {
-            const levelState = { visible: level.visible, opacity: level.opacity, color: level.color, loaded: true, label: `Dose ${level.threshold} Gy` };
-            html += renderTreeItem(`dose_iso_${level.threshold}`, levelState, `${level.threshold} Gy`);
+            const levelState = { visible: level.visible, opacity: level.opacity, color: level.color, loaded: true, label: `Dose ×${level.threshold}` };
+            const pctLabel = level.pctLabel || `${level.threshold.toFixed(1)}`;
+            html += renderTreeItem(`dose_iso_${level.threshold}`, levelState, pctLabel);
         });
         html += `</div></div>`;
+    }
+
+    // Dose overlay toggle (2D overlay on CT slices)
+    if (state.doseOverlay && state.doseOverlay.data) {
+        const ovVis = state.doseOverlay.visible;
+        const ovOp = state.doseOverlay.opacity;
+        html += `<div class="tree-item" data-item="dose_overlay" style="display:flex;align-items:center;gap:6px;padding:2px 8px;font-size:0.7rem;">
+            <button class="eye-btn ${ovVis ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDoseOverlayVisibility()" style="font-size:0.65rem;">${ovVis ? '&#128065;' : '&#128064;'}</button>
+            <span style="color:#22d3ee;">◉</span>
+            <span>Dose Overlay (2D)</span>
+            <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);">max: ${state.doseOverlay.doseMax?.toFixed(1) || '--'}</span>
+            <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(ovOp * 100)}" onclick="event.stopPropagation()" oninput="setDoseOverlayOpacity(this.value)" title="Opacity">
+        </div>`;
     }
 
     // Legacy dose/seed items (if no planning data)
@@ -6612,23 +6679,24 @@ async function loadSeeds3D() {
         dataTreeState.needles.loaded = true;
         dataTreeState.needles.visible = true;
 
-        // Render seeds as cylinders
-        const seedRadius = 0.4;
+        // Render seeds as cylinders (matching Zhiyuan: length=4.5, radius=0.4, yellow)
+        const seedRadius = 0.8;  // Increased for visibility
         const seedLength = 4.5;
         data.seeds.forEach(seed => {
             const pos = new THREE.Vector3(...seed.position);
             const dir = new THREE.Vector3(...seed.direction).normalize();
 
-            const geometry = new THREE.CylinderGeometry(seedRadius, seedRadius, seedLength, 8);
+            const geometry = new THREE.CylinderGeometry(seedRadius, seedRadius, seedLength, 16);
             const material = new THREE.MeshPhysicalMaterial({
-                color: 0xffcc00,
-                metalness: 0.6,
+                color: 0xe6e64d,  // Zhiyuan yellow: RGB(230, 230, 77)
+                metalness: 0.5,
                 roughness: 0.3,
                 emissive: 0x332200,
+                emissiveIntensity: 0.5,
             });
             const mesh = new THREE.Mesh(geometry, material);
 
-            // Orient cylinder along direction
+            // Orient cylinder along direction (initially Y-axis)
             const axis = new THREE.Vector3(0, 1, 0);
             const quaternion = new THREE.Quaternion().setFromUnitVectors(axis, dir);
             mesh.setRotationFromQuaternion(quaternion);
@@ -6639,21 +6707,33 @@ async function loadSeeds3D() {
             scene3D.meshes[seed.id] = mesh;
         });
 
-        // Render needles as lines
+        // Render needles as tubes for visibility (LineBasicMaterial linewidth doesn't work in WebGL)
         data.needles.forEach(needle => {
             if (needle.points.length < 2) return;
             const points = needle.points.map(p => new THREE.Vector3(...p));
-            const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            const material = new THREE.LineBasicMaterial({
+
+            // Create smooth curve through points
+            let curve;
+            if (points.length === 2) {
+                curve = new THREE.LineCurve3(points[0], points[1]);
+            } else {
+                curve = new THREE.CatmullRomCurve3(points);
+            }
+
+            const tubeGeometry = new THREE.TubeGeometry(curve, 32, 0.6, 8, false);
+            const tubeMaterial = new THREE.MeshPhysicalMaterial({
                 color: 0xff6644,
-                linewidth: 2,
                 transparent: true,
-                opacity: 0.8,
+                opacity: 0.7,
+                metalness: 0.2,
+                roughness: 0.6,
+                emissive: 0x331100,
+                emissiveIntensity: 0.3,
             });
-            const line = new THREE.Line(geometry, material);
-            line.userData = { type: 'needle', id: needle.id, trajectoryId: needle.trajectory_id };
-            scene3D.scene.add(line);
-            scene3D.meshes[needle.id] = line;
+            const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
+            tube.userData = { type: 'needle', id: needle.id, trajectoryId: needle.trajectory_id };
+            scene3D.scene.add(tube);
+            scene3D.meshes[needle.id] = tube;
         });
 
         // Update data tree
@@ -6711,6 +6791,9 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
         scene3D.meshes[existingId] = mesh;
 
         // Update dataTreeState
+        const doseRange = data.dose_range || [0, 1];
+        const dMax = doseRange[1] || 1;
+        const pct = Math.round((threshold / dMax) * 100);
         const existingLevel = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
         if (!existingLevel) {
             dataTreeState.planning.doseLevels.push({
@@ -6718,6 +6801,7 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
                 visible: true,
                 opacity: 0.3,
                 color: '#' + color.toString(16).padStart(6, '0'),
+                pctLabel: `${pct}% (${threshold.toFixed(1)})`,
             });
         }
         renderDataTree();
@@ -6728,6 +6812,237 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
         console.error('Dose isosurface failed:', e);
         return { error: e.message };
     }
+}
+
+// Load dose distribution as 2D overlay on CT slices
+let _doseOverlayData = null;
+let _doseOverlayVisible = false;
+let _doseOverlayOpacity = 0.5;
+
+async function loadDoseOverlay() {
+    try {
+        const res = await fetch(API + '/planning/dose_overlay');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Failed to load dose overlay');
+
+        // Store metadata; slices will be fetched on demand
+        state.doseOverlay = {
+            shape: data.dose_shape,
+            doseMin: data.dose_min,
+            doseMax: data.dose_max,
+            visible: true,
+            opacity: 0.5,
+            slices: {},  // Cache: {axis_index: sliceData}
+        };
+
+        renderDataTree();
+
+        // Show colorbar
+        const colorbar = document.getElementById('doseColorbar');
+        if (colorbar) {
+            colorbar.style.display = 'block';
+            document.getElementById('doseColorbarMax').textContent = data.dose_max?.toFixed(1) || 'max';
+            document.getElementById('doseColorbarMin').textContent = data.dose_min?.toFixed(1) || '0';
+        }
+        // Trigger re-render of current slices to show overlay
+        updateSlice('axial', state.slices.axial);
+        updateSlice('coronal', state.slices.coronal);
+        updateSlice('sagittal', state.slices.sagittal);
+        return { shape: data.dose_shape, range: [data.dose_min, data.dose_max] };
+    } catch (e) {
+        console.error('Dose overlay failed:', e);
+        return { error: e.message };
+    }
+}
+
+// Fetch a dose overlay slice (cached)
+async function fetchDoseOverlaySlice(axis, sliceIndex) {
+    if (!state.doseOverlay) return null;
+    const cacheKey = `${axis}_${sliceIndex}`;
+    if (state.doseOverlay.slices[cacheKey]) return state.doseOverlay.slices[cacheKey];
+
+    try {
+        const res = await fetch(API + '/planning/dose_overlay_slice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ axis, slice_index: sliceIndex }),
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data.success) return null;
+        state.doseOverlay.slices[cacheKey] = data.slice;
+        return data.slice;
+    } catch (e) {
+        return null;
+    }
+}
+
+// Render dose overlay on a canvas for the current slice
+function renderDoseOverlayOnCanvas(canvas, sliceIndex, axis) {
+    if (!state.doseOverlay || !state.doseOverlay.visible || !state.doseOverlay.data) return;
+
+    const dose = state.doseOverlay.data;
+    const shape = state.doseOverlay.shape;
+    const dMin = state.doseOverlay.doseMin;
+    const dMax = state.doseOverlay.doseMax;
+    const opacity = state.doseOverlay.opacity;
+
+    if (dMax <= dMin) return;
+
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // Get slice data based on axis
+    let sliceData;
+    if (axis === 'axial' || axis === 'z') {
+        const z = Math.min(sliceIndex, shape[0] - 1);
+        sliceData = dose[z]; // shape: [y, x]
+    } else if (axis === 'coronal' || axis === 'y') {
+        const y = Math.min(sliceIndex, shape[1] - 1);
+        sliceData = dose.map(row => row[y]); // shape: [z, x]
+    } else { // sagittal
+        const x = Math.min(sliceIndex, shape[2] - 1);
+        sliceData = dose.map(row => row.map(col => col[x])); // shape: [z, y]
+    }
+
+    if (!sliceData) return;
+
+    const rows = sliceData.length;
+    const cols = sliceData[0]?.length || 0;
+    if (rows === 0 || cols === 0) return;
+
+    // Create overlay image data
+    const imageData = ctx.createImageData(w, h);
+    const scaleX = w / cols;
+    const scaleY = h / rows;
+
+    // Viridis-like colormap
+    const colormap = (val) => {
+        // val is 0-1
+        const r = Math.min(255, Math.max(0, Math.floor(val < 0.5 ? 68 : 68 + (val - 0.5) * 2 * (253 - 68))));
+        const g = Math.min(255, Math.max(0, Math.floor(val < 0.5 ? 1 + val * 2 * (120 - 1) : 120 + (val - 0.5) * 2 * (231 - 120))));
+        const b = Math.min(255, Math.max(0, Math.floor(val < 0.5 ? 84 + val * 2 * (182 - 84) : 182 + (val - 0.5) * 2 * (45 - 182))));
+        return [r, g, b];
+    };
+
+    for (let py = 0; py < h; py++) {
+        for (let px = 0; px < w; px++) {
+            const sx = Math.floor(px / scaleX);
+            const sy = Math.floor(py / scaleY);
+            if (sx >= cols || sy >= rows) continue;
+
+            const val = sliceData[sy][sx];
+            if (val <= dMin * 0.01) continue; // Skip very low dose
+
+            const normalized = (val - dMin) / (dMax - dMin);
+            const [r, g, b] = colormap(Math.min(1, Math.max(0, normalized)));
+            const idx = (py * w + px) * 4;
+            imageData.data[idx] = r;
+            imageData.data[idx + 1] = g;
+            imageData.data[idx + 2] = b;
+            imageData.data[idx + 3] = Math.floor(opacity * 255);
+        }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+}
+
+// Render dose overlay on top of CT slice canvas
+function renderDoseOverlay(axis, sliceIndex, sliceData) {
+    if (!state.doseOverlay || !state.doseOverlay.visible || !sliceData) return;
+
+    const canvasId = 'sliceCanvas' + capitalize(axis);
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // sliceData is in (z,y,x) format for the given axis
+    const rows = sliceData.length;
+    const cols = sliceData[0]?.length || 0;
+    if (rows === 0 || cols === 0) return;
+
+    const dMin = state.doseOverlay.doseMin;
+    const dMax = state.doseOverlay.doseMax;
+    const opacity = state.doseOverlay.opacity;
+
+    if (dMax <= dMin) return;
+
+    // Create temporary canvas for overlay
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = w;
+    tmpCanvas.height = h;
+    const tmpCtx = tmpCanvas.getContext('2d');
+    const imageData = tmpCtx.createImageData(w, h);
+
+    const scaleX = w / cols;
+    const scaleY = h / rows;
+
+    // Hot colormap (black -> red -> yellow -> white)
+    const colormap = (val) => {
+        const r = Math.min(255, Math.floor(val < 0.33 ? val * 3 * 255 : 255));
+        const g = Math.min(255, Math.floor(val < 0.33 ? 0 : val < 0.66 ? (val - 0.33) * 3 * 255 : 255));
+        const b = Math.min(255, Math.floor(val < 0.66 ? 0 : (val - 0.66) * 3 * 255));
+        return [r, g, b];
+    };
+
+    for (let py = 0; py < h; py++) {
+        for (let px = 0; px < w; px++) {
+            const sx = Math.min(Math.floor(px / scaleX), cols - 1);
+            const sy = Math.min(Math.floor(py / scaleY), rows - 1);
+
+            const val = sliceData[sy][sx];
+            if (val <= dMax * 0.01) continue; // Skip very low dose
+
+            const normalized = (val - dMin) / (dMax - dMin);
+            const [r, g, b] = colormap(Math.min(1, Math.max(0, normalized)));
+            const idx = (py * w + px) * 4;
+            imageData.data[idx] = r;
+            imageData.data[idx + 1] = g;
+            imageData.data[idx + 2] = b;
+            imageData.data[idx + 3] = Math.floor(opacity * 255);
+        }
+    }
+
+    tmpCtx.putImageData(imageData, 0, 0);
+
+    // Composite overlay onto CT canvas
+    ctx.globalAlpha = 1;
+    ctx.drawImage(tmpCanvas, 0, 0);
+}
+
+function toggleDoseOverlayVisibility() {
+    if (!state.doseOverlay) return;
+    state.doseOverlay.visible = !state.doseOverlay.visible;
+    renderDataTree();
+
+    // Show/hide colorbar
+    const colorbar = document.getElementById('doseColorbar');
+    if (colorbar) {
+        colorbar.style.display = state.doseOverlay.visible ? 'block' : 'none';
+        if (state.doseOverlay.visible) {
+            document.getElementById('doseColorbarMax').textContent = state.doseOverlay.doseMax?.toFixed(1) || 'max';
+            document.getElementById('doseColorbarMin').textContent = state.doseOverlay.doseMin?.toFixed(1) || '0';
+        }
+    }
+
+    // Trigger re-render of current slices
+    updateSlice('axial', state.slices.axial);
+    updateSlice('coronal', state.slices.coronal);
+    updateSlice('sagittal', state.slices.sagittal);
+}
+
+function setDoseOverlayOpacity(val) {
+    if (!state.doseOverlay) return;
+    state.doseOverlay.opacity = val / 100;
+    // Re-render current slices
+    updateSlice('axial', state.slices.axial);
+    updateSlice('coronal', state.slices.coronal);
+    updateSlice('sagittal', state.slices.sagittal);
 }
 
 function highlightSeed(seedId) {
@@ -7877,26 +8192,71 @@ function drawDVH() {
     const colors = ['#0ea5e9', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4'];
     let i = 0;
     for (const [name, dvh] of Object.entries(state.dvhData)) {
+        const doseBins = dvh.dose_bins || [];
+        const volPcts = dvh.volume_pcts || [];
         traces.push({
-            x: dvh.dose_bins || [],
-            y: dvh.volume_pcts || [],
+            x: doseBins,
+            y: volPcts,
             type: 'scatter', mode: 'lines', name: name,
             line: { color: colors[i % colors.length], width: 2 },
             fill: i === 0 ? 'tozeroy' : 'none',
             fillcolor: i === 0 ? 'rgba(14,165,233,0.1)' : undefined,
+            hovertemplate: `<b>${name}</b><br>Dose: %{x:.2f}<br>Volume: %{y:.1f}%<extra></extra>`,
         });
         i++;
     }
 
-    Plotly.newPlot('dvhChart', traces, {
+    const dvhEl = document.getElementById('dvhChart');
+    Plotly.newPlot(dvhEl, traces, {
         paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
         font: { color: '#94a3b8', size: 10, family: 'Inter, sans-serif' },
-        margin: { l: 40, r: 10, t: 10, b: 35 },
-        xaxis: { title: 'Dose (Gy)', gridcolor: '#334155', linecolor: '#334155', tickcolor: '#334155', titlefont: { color: '#64748b', size: 9 } },
-        yaxis: { title: 'Volume (%)', gridcolor: '#334155', linecolor: '#334155', tickcolor: '#334155', titlefont: { color: '#64748b', size: 9 } },
-        legend: { orientation: 'h', y: -0.2, x: 0.5, xanchor: 'center' },
-        hovermode: 'closest',
-    }, { responsive: true, displayModeBar: false });
+        margin: { l: 45, r: 15, t: 10, b: 40 },
+        xaxis: {
+            title: 'Dose (normalized)',
+            gridcolor: '#334155', linecolor: '#334155', tickcolor: '#334155',
+            titlefont: { color: '#64748b', size: 9 },
+            zeroline: false,
+        },
+        yaxis: {
+            title: 'Volume (%)',
+            gridcolor: '#334155', linecolor: '#334155', tickcolor: '#334155',
+            titlefont: { color: '#64748b', size: 9 },
+            range: [0, 105],
+            zeroline: false,
+        },
+        legend: { orientation: 'h', y: -0.25, x: 0.5, xanchor: 'center', font: { size: 9 } },
+        hovermode: 'x unified',
+        dragmode: 'zoom',
+    }, {
+        responsive: true,
+        displayModeBar: true,
+        modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d', 'toggleSpikelines'],
+        displaylogo: false,
+    });
+
+    // Click to show coordinates
+    dvhEl.on('plotly_click', function(eventData) {
+        if (eventData && eventData.points && eventData.points.length > 0) {
+            const pt = eventData.points[0];
+            const info = `Dose: ${pt.x.toFixed(2)}, Volume: ${pt.y.toFixed(1)}%`;
+            // Show click coordinate annotation
+            Plotly.relayout(dvhEl, {
+                annotations: [{
+                    x: pt.x, y: pt.y,
+                    text: info,
+                    showarrow: true, arrowhead: 2, arrowcolor: '#fff',
+                    font: { color: '#fff', size: 10 },
+                    bgcolor: 'rgba(0,0,0,0.7)', bordercolor: '#fff', borderwidth: 1,
+                    xanchor: 'left', yanchor: 'bottom',
+                }]
+            });
+        }
+    });
+
+    // Double-click to reset
+    dvhEl.on('plotly_doubleclick', function() {
+        Plotly.relayout(dvhEl, { annotations: [] });
+    });
 }
 
 /******** METRICS ********/
@@ -7964,7 +8324,7 @@ function updateSeeds(seeds) {
         <div class="seed-chip">
             <div class="seed-chip-header">Seed #${i + 1}</div>
             <div class="seed-chip-detail">Pos: ${Array.isArray(s.pos) ? s.pos.map(v => v.toFixed(1)).join(', ') : '--'}</div>
-            <div class="seed-chip-detail">Dose: ${s.dose ? s.dose.toFixed(2) + ' Gy' : '--'}</div>
+            <div class="seed-chip-detail">Dose: ${s.dose ? s.dose.toFixed(2) : '--'}</div>
         </div>
     `).join('');
 }
@@ -8029,7 +8389,7 @@ async function runPlanning() {
     const ctPath = document.getElementById('ctPath').value.trim();
     const ctvPath = document.getElementById('ctvPath').value.trim();
     const oarPath = document.getElementById('oarPath').value.trim();
-    const mode = document.getElementById('planMode').value;
+    const mode = document.getElementById('useRLToggle')?.checked ? 'rl' : 'rule_based';
     if (!ctPath) { alert('Please enter CT image path or browse to select a file'); return; }
 
     showLoading(true);
@@ -8043,7 +8403,7 @@ async function runPlanning() {
         if (data.success) {
             updateMetrics(data.metrics);
             updateSeeds(data.seeds || []);
-            addChat('system', `Plan complete! V100: ${((data.metrics?.v100 || 0) * 100).toFixed(1)}%, D90: ${(data.metrics?.d90 || 0).toFixed(1)} Gy, Score: ${data.metrics?.plan_score || '--'}`);
+            addChat('system', `Plan complete! V100: ${((data.metrics?.v100 || 0) * 100).toFixed(1)}%, D90: ${(data.metrics?.d90 || 0).toFixed(1)}, Score: ${data.metrics?.plan_score || '--'}`);
             if (data.metrics?.oar_metrics) updateOARTable(data.metrics.oar_metrics);
             state.plan3D = data;
             state.dvhData = data.dvh || null;
@@ -8129,7 +8489,25 @@ async function refreshPlanningUI() {
             await loadSeeds3D();
         }
         if (data.has_dose) {
-            await loadDoseIsosurface(1.0, 0x00ff88);
+            // First get dose range, then use meaningful thresholds
+            try {
+                const rangeRes = await fetch(API + '/planning/dose_isosurface', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ threshold: 0 }),
+                });
+                const rangeData = await rangeRes.json();
+                if (rangeData.dose_range) {
+                    const [dMin, dMax] = rangeData.dose_range;
+                    // Use 50% and 80% of max dose as isosurface thresholds
+                    const t1 = dMax * 0.5;
+                    const t2 = dMax * 0.8;
+                    await loadDoseIsosurface(t1, 0x00ff88);
+                    await loadDoseIsosurface(t2, 0xff8800);
+                }
+            } catch (e) { console.warn('Dose isosurface range fetch failed:', e); }
+            // Load dose overlay
+            try { await loadDoseOverlay(); } catch (e) { console.warn('Dose overlay failed:', e); }
         }
 
         return data;
@@ -8154,7 +8532,7 @@ async function showStepResults(step) {
                 // Switch to 3D viewer to show trajectories
                 const viewerTab1 = document.querySelectorAll('.panel-tab')[3];
                 if (viewerTab1) switchPanel('viewers', viewerTab1);
-                addChat('system', `📍 **Trajectory Results**\n- Total trajectories: ${data.trajectories?.length || 0}`);
+                addChat('system', `📍 **Trajectory Results**\n- Total trajectories: ${data.num_trajectories || 0}\n- Total seeds: ${data.total_seeds || 0}`);
                 break;
 
             case 'seeds':
@@ -8173,11 +8551,23 @@ async function showStepResults(step) {
             case 'dose_calc':
             case 'dose_distribution':
                 // Switch to 3D viewer and show dose isosurface
-                await loadDoseIsosurface(1.0, 0x00ff88);
-                await loadDoseIsosurface(1.5, 0xff8800);
+                try {
+                    const dr = await fetch(API + '/planning/dose_isosurface', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ threshold: 0 }),
+                    });
+                    const dd = await dr.json();
+                    if (dd.dose_range) {
+                        const t1 = dd.dose_range[1] * 0.5;
+                        const t2 = dd.dose_range[1] * 0.8;
+                        await loadDoseIsosurface(t1, 0x00ff88);
+                        await loadDoseIsosurface(t2, 0xff8800);
+                    }
+                } catch (e) {}
+                await loadDoseOverlay();
                 const viewerTab3 = document.querySelectorAll('.panel-tab')[3];
                 if (viewerTab3) switchPanel('viewers', viewerTab3);
-                addChat('system', `🌈 **Dose Distribution**\n- Dose isosurfaces loaded (1.0 Gy, 1.5 Gy)`);
+                addChat('system', `🌈 **Dose Distribution**\n- Dose isosurfaces and overlay loaded`);
                 break;
 
             case 'dvh':
@@ -8195,7 +8585,7 @@ async function showStepResults(step) {
                 const metricsTab = document.querySelectorAll('.panel-tab')[1];
                 if (metricsTab) switchPanel('metrics', metricsTab);
                 const m = data.metrics || {};
-                addChat('system', `📊 **Dose Evaluation**\n- V100: ${((m.v100 || 0) * 100).toFixed(1)}%\n- D90: ${(m.d90 || 0).toFixed(2)} Gy\n- Plan Score: ${(m.plan_score || 0).toFixed(0)}/100`);
+                addChat('system', `📊 **Dose Evaluation**\n- V100: ${((m.v100 || 0) * 100).toFixed(1)}%\n- D90: ${(m.d90 || 0).toFixed(2)}\n- Plan Score: ${(m.plan_score || 0).toFixed(0)}/100`);
                 break;
 
             case 'all':
@@ -8273,7 +8663,7 @@ const SCREENSHOT_SELECTORS = {
     'viewer-sagittal': '#viewerSagittal, .viewer-card:nth-child(2)',
     'viewer-coronal': '#viewerCoronal, .viewer-card:nth-child(3)',
     'viewer-3d': '#viewer3D, #threejs-container, .viewer-card-3d',
-    'data-tree': '#dataTree, .data-tree-panel',
+    'data-tree': '#dataTreeContainer, .data-tree-container',
     'chat': '#chatMessages, .chat-panel',
     'metrics': '#metricsPanel, .metrics-panel',
     'input': '#inputPanel, .input-panel',
@@ -8290,16 +8680,23 @@ const SCREENSHOT_SELECTORS = {
  * @returns {Promise<string>} base64 data URL of the screenshot
  */
 async function takeScreenshot(selector, options = {}) {
+    if (typeof html2canvas === 'undefined') {
+        throw new Error('html2canvas not loaded. Check network connection.');
+    }
     const el = document.querySelector(selector);
     if (!el) {
         throw new Error(`Element not found: ${selector}`);
+    }
+    // Ensure element is visible and has dimensions
+    if (el.offsetWidth === 0 || el.offsetHeight === 0) {
+        throw new Error(`Element has zero size: ${selector}`);
     }
 
     const defaultOpts = {
         useCORS: true,
         allowTaint: true,
-        backgroundColor: null, // transparent
-        scale: 2, // high DPI
+        backgroundColor: '#1a1a2e',
+        scale: 1,
         logging: false,
         ...options,
     };
@@ -8375,23 +8772,19 @@ async function executeScreenshotCommand(command) {
         await new Promise(r => setTimeout(r, 500));
     }
 
-    // Show progress in chat
-    addChat('system', `📸 正在截图: ${description}...`);
-
     try {
         const result = await captureAndUpload(target, question, description);
 
-        // Display image in chat
-        addChatImage(result.url, description, question);
-
-        // Send image URL back to LLM for multimodal analysis
-        const followUp = `[Screenshot captured: ${result.url}]\nTarget: ${target}\nQuestion: ${question}`;
-        setTimeout(() => {
-            sendChatMessage(followUp);
-        }, 300);
+        // Collect for gallery display (don't show inline)
+        if (window._pendingScreenshots) {
+            window._pendingScreenshots.push({ url: result.url, description, question });
+        } else {
+            // Fallback if not in streaming context
+            addChatImage(result.url, description, question);
+        }
 
     } catch (e) {
-        addChat('error', `截图失败: ${e.message}`);
+        console.error('Screenshot capture failed:', e);
     }
 }
 
@@ -8447,11 +8840,11 @@ function addChatImage(url, caption, question) {
 
     const zoomIcon = document.createElement('div');
     zoomIcon.className = 'chat-image-zoom-icon';
-    zoomIcon.innerHTML = '🔍 点击放大';
+    zoomIcon.innerHTML = '🔍 Click to zoom';
 
     const captionDiv = document.createElement('div');
     captionDiv.className = 'chat-image-caption';
-    captionDiv.innerHTML = `<span class="screenshot-badge">📸 截图</span> ${escHtml(caption || '')}`;
+    captionDiv.innerHTML = `<span class="screenshot-badge">📸 Screenshot</span> ${escHtml(caption || '')}`;
 
     imgContainer.appendChild(img);
     imgContainer.appendChild(zoomIcon);
@@ -8464,6 +8857,51 @@ function addChatImage(url, caption, question) {
 
     // Save to session
     saveSessionMessage('bot-image', url);
+}
+
+/**
+ * Display collected screenshots as a gallery after response completes.
+ * @param {Array} screenshots - Array of {url, description, question}
+ */
+function displayScreenshotGallery(screenshots) {
+    if (!screenshots || screenshots.length === 0) return;
+
+    const container = document.getElementById('chatMessages');
+
+    const row = document.createElement('div');
+    row.className = 'chat-row bot';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chat-msg-wrapper bot';
+
+    const gallery = document.createElement('div');
+    gallery.className = 'screenshot-gallery';
+    gallery.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;padding:12px;background:var(--bg-2);border-radius:12px;border:1px solid var(--card-border);';
+
+    screenshots.forEach(s => {
+        const card = document.createElement('div');
+        card.style.cssText = 'border-radius:8px;overflow:hidden;background:var(--bg-1);border:1px solid var(--card-border);cursor:pointer;';
+        card.onclick = () => openImageModal(s.url, s.description, s.question);
+
+        const img = document.createElement('img');
+        img.src = s.url;
+        img.alt = s.description || 'Screenshot';
+        img.loading = 'lazy';
+        img.style.cssText = 'width:100%;height:180px;object-fit:cover;display:block;';
+
+        const label = document.createElement('div');
+        label.style.cssText = 'padding:6px 10px;font-size:0.72rem;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        label.textContent = s.description || 'Screenshot';
+
+        card.appendChild(img);
+        card.appendChild(label);
+        gallery.appendChild(card);
+    });
+
+    wrapper.appendChild(gallery);
+    row.appendChild(wrapper);
+    container.appendChild(row);
+    container.scrollTop = container.scrollHeight;
 }
 
 /**
@@ -8763,6 +9201,23 @@ function handleChatKeypress(event) {
     const menu = document.getElementById('slashCommandMenu');
 
     if (event.key === 'Enter') {
+        // Ctrl+Enter or Shift+Enter ALWAYS sends — highest priority
+        if (event.ctrlKey || event.metaKey || event.shiftKey) {
+            event.preventDefault();
+            menu.style.display = 'none';
+            sendChat();
+            return;
+        }
+
+        const value = input.value.trim();
+        // If input exactly matches a slash command (e.g., "/help"), send it directly on plain Enter
+        if (value && slashCommands[value.toLowerCase()]) {
+            event.preventDefault();
+            menu.style.display = 'none';
+            sendChat();
+            return;
+        }
+        // If slash menu is visible, insert the first match (Tab-like behavior)
         if (menu.style.display === 'block') {
             const firstCmd = menu.querySelector('.slash-cmd');
             if (firstCmd) {
@@ -8770,11 +9225,7 @@ function handleChatKeypress(event) {
                 return;
             }
         }
-        // Ctrl+Enter or Shift+Enter to send; plain Enter = new line
-        if (event.ctrlKey || event.metaKey || event.shiftKey) {
-            event.preventDefault();
-            sendChat();
-        }
+        // Plain Enter = new line (default textarea behavior)
     } else if (event.key === 'Tab') {
         event.preventDefault();
         const value = input.value;
@@ -8836,23 +9287,16 @@ function insertSlashCommand(cmd) {
 function executeSlashCommand(cmd, args) {
     switch (cmd) {
         case '/help':
-            sendChatMessage('/help - 请详细介绍BrachyBot的所有功能、使用方法、支持的肿瘤类型、工作流程和快捷命令。请截图并标注每个主要UI区域（Viewer、Data Tree、Planning面板等），用图文并茂的方式讲解。用用户能理解的语言回答。');
-            break;
         case '/plan':
-            sendChatMessage('Start treatment planning for the loaded CT image');
-            break;
         case '/segment':
-            sendChatMessage('Segment the CT image to identify tumor and organs at risk');
-            break;
         case '/evaluate':
-            sendChatMessage('Evaluate the current dose plan quality');
-            break;
         case '/export':
-            sendChatMessage('Export the treatment plan to DICOM format');
+            // Send the raw command to server — LLM will interpret and respond
+            sendChatMessage(cmd + (args ? ' ' + args : ''));
             break;
         case '/viewer':
             if (args) {
-                sendChatMessage(`Control viewer: ${args}`);
+                sendChatMessage(`/viewer ${args}`);
             } else {
                 showViewerHelp();
             }
@@ -8871,7 +9315,7 @@ function executeSlashCommand(cmd, args) {
             clearChat();
             break;
         default:
-            sendChatMessage(cmd.substring(1) + ' ' + (args || ''));
+            sendChatMessage(cmd + (args ? ' ' + args : ''));
     }
 }
 
@@ -9009,8 +9453,10 @@ function clearChat() {
 }
 
 function sendChatMessage(message) {
+    // Set input value and call sendChat with a flag to skip slash command check
     const input = document.getElementById('chatInput');
     input.value = message;
+    window._skipSlashCheck = true;
     sendChat();
 }
 
@@ -9059,6 +9505,10 @@ async function sendChat() {
         return;
     }
 
+    // Collect screenshots during streaming, display as gallery at the end
+    window._pendingScreenshots = [];
+    window._screenshotPromises = [];
+
     // Add to message history for arrow key navigation
     messageHistory.push(msg);
     historyIndex = -1;
@@ -9066,8 +9516,10 @@ async function sendChat() {
     input.value = '';
     input.style.height = 'auto';
 
-    // Handle slash commands
-    if (msg.startsWith('/')) {
+    // Handle slash commands (skip if called from sendChatMessage)
+    const skipSlash = window._skipSlashCheck;
+    window._skipSlashCheck = false;
+    if (!skipSlash && msg.startsWith('/')) {
         const parts = msg.split(' ');
         const cmd = parts[0].toLowerCase();
         const args = parts.slice(1).join(' ');
@@ -9188,12 +9640,42 @@ async function sendChat() {
                                         executeUIActions(actions);
                                     }
                                 }
+                                // Immediately refresh viewer after segmentation completes
+                                if (data.status === 'done' && data.tool) {
+                                    const toolName = data.tool.toLowerCase();
+                                    if (toolName.includes('ctv_segmentation')) {
+                                        state.viewerSettings.showCTV = true;
+                                        dataTreeState.ctv.visible = true;
+                                        dataTreeState.ctv.loaded = true;
+                                        loadLabelVolumes().then(() => {
+                                            renderDataTree();
+                                            if (state.ctLoaded) reloadOverlays();
+                                        });
+                                    } else if (toolName.includes('oar_segmentation')) {
+                                        state.viewerSettings.showOAR = true;
+                                        dataTreeState.oar.visible = true;
+                                        dataTreeState.oar.loaded = true;
+                                        fetch(API + '/viewer/organs').then(r => r.json()).then(data => {
+                                            if (data.success && data.organs) {
+                                                updateOrganList(data.organs);
+                                                renderDataTree();
+                                            }
+                                            if (state.ctLoaded) reloadOverlays();
+                                        }).catch(() => {});
+                                    }
+                                }
+                                // Track planning steps for post-response UI update
+                                if (data.tool === 'planning_pipeline' && data.status === 'done') {
+                                    const step = data.metadata?.step_executed;
+                                    if (step) window._lastPlanningStep = step;
+                                }
                                 // Execute screenshot command from ui_screenshot tool
                                 if (data.tool === 'ui_screenshot' && data.status === 'done' && data.metadata) {
                                     const cmd = data.metadata.screenshot_command;
                                     if (cmd && cmd.command === 'screenshot') {
-                                        // Run async screenshot capture
-                                        executeScreenshotCommand(cmd);
+                                        // Collect async screenshot promise for gallery
+                                        const p = executeScreenshotCommand(cmd);
+                                        if (window._screenshotPromises) window._screenshotPromises.push(p);
                                     }
                                 }
                                 // Display annotated image from ui_annotate tool
@@ -9201,7 +9683,7 @@ async function sendChat() {
                                     const annotatedUrl = data.metadata.annotated_url;
                                     if (annotatedUrl) {
                                         const annCount = data.metadata.annotation_count || 0;
-                                        addChatImage(annotatedUrl, `标注图 (${annCount}个标记)`, '');
+                                        addChatImage(annotatedUrl, `Annotated (${annCount} marks)`, '');
                                     }
                                 }
                             }
@@ -9276,6 +9758,43 @@ async function sendChat() {
         } else {
             addChat('bot-response', response);
         }
+
+        // Hide tool progress elements (outside thinking chain)
+        document.querySelectorAll('.tool-progress-text').forEach(el => {
+            const row = el.closest('.chat-row');
+            if (row) row.style.display = 'none';
+        });
+        // Hide screenshot system messages (they are direct children, not in chat-row)
+        document.querySelectorAll('.chat-msg.system').forEach(el => {
+            const text = el.textContent || '';
+            if (text.includes('Capturing screenshot') || text.includes('Screenshot failed')) {
+                el.style.display = 'none';
+            }
+        });
+
+        // Wait for ALL async screenshot captures to complete before displaying gallery
+        if (window._screenshotPromises && window._screenshotPromises.length > 0) {
+            await Promise.allSettled(window._screenshotPromises);
+            window._screenshotPromises = [];
+        }
+
+        // Display collected screenshots as gallery
+        if (window._pendingScreenshots && window._pendingScreenshots.length > 0) {
+            displayScreenshotGallery(window._pendingScreenshots);
+            window._pendingScreenshots = [];
+        }
+
+        // Hide screenshot system messages and tool progress bars
+        document.querySelectorAll('.chat-msg.system').forEach(el => {
+            const text = el.textContent || '';
+            if (text.includes('Capturing screenshot') || text.includes('Screenshot failed')) {
+                el.style.display = 'none';
+            }
+        });
+        document.querySelectorAll('.tool-progress-text').forEach(el => {
+            const row = el.closest('.chat-row');
+            if (row) row.style.display = 'none';
+        });
 
         // Hide progress container when chat is complete
         const progressContainerEnd = document.getElementById('toolProgressContainer');
@@ -9368,7 +9887,28 @@ async function sendChat() {
         }
 
     } catch (e) {
+        // Clean up all UI indicators on error
         removeThinkingIndicator(thinkingEl);
+        if (progressEl && progressEl.parentNode) {
+            progressEl.remove();
+            progressEl = null;
+        }
+        // Display any collected screenshots even on error
+        if (window._pendingScreenshots && window._pendingScreenshots.length > 0) {
+            displayScreenshotGallery(window._pendingScreenshots);
+            window._pendingScreenshots = [];
+        }
+        if (chainEl && chainEl.parentNode) {
+            // Stop the timer in the thinking chain header
+            const headerEl = chainEl.querySelector('.thinking-header');
+            if (headerEl && headerEl._timer) {
+                clearInterval(headerEl._timer);
+                headerEl._timer = null;
+            }
+            // Mark any pending steps as error
+            const pendingSteps = chainEl.querySelectorAll('.step-status.pending');
+            pendingSteps.forEach(s => { s.textContent = 'error'; s.className = 'step-status error'; });
+        }
         if (e.name === 'AbortError') {
             // User stopped the response — clean up incomplete content
             addChat('system', '⏹ Response stopped.');
@@ -9807,7 +10347,7 @@ function collectUIState() {
         ct_path: document.getElementById('ctPath')?.value?.trim() || '',
         ctv_path: document.getElementById('ctvPath')?.value?.trim() || '',
         oar_path: document.getElementById('oarPath')?.value?.trim() || '',
-        plan_mode: document.getElementById('planMode')?.value || '',
+        plan_mode: document.getElementById('useRLToggle')?.checked ? 'rl' : 'rule_based',
         dev_threshold: document.getElementById('devThreshold')?.value || '',
         viewer: {
             ct_loaded: state.ctLoaded,
@@ -9834,7 +10374,7 @@ function toggleHyperparams() {
 
 function collectHyperparams() {
     return {
-        mode: document.getElementById('planMode')?.value || 'rule_based',
+        mode: document.getElementById('useRLToggle')?.checked ? 'rl' : 'rule_based',
         seed_info: {
             radius: parseFloat(document.getElementById('seedRadius')?.value) || 0.4,
             length: parseFloat(document.getElementById('seedLength')?.value) || 4.5,
@@ -10408,7 +10948,7 @@ function executeUIActions(actions) {
             if (annotatedUrl) {
                 console.log('[UI Annotate] Displaying:', annotatedUrl);
                 const annCount = step.metadata.annotation_count || 0;
-                addChatImage(annotatedUrl, `标注图 (${annCount}个标记)`, '');
+                addChatImage(annotatedUrl, `Annotated (${annCount} marks)`, '');
             }
         }
         if (origHandleStep) origHandleStep(step);
