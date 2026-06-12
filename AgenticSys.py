@@ -1418,6 +1418,13 @@ class BrachyAgent:
             if tool_name in ("ctv_segmentation", "oar_segmentation"):
                 self.memory.store("ct_path", params["image_path"])
 
+        # Remove invalid mask paths — tools will fall back to agent memory
+        for mask_key in ("ctv_mask_path", "oar_mask_path"):
+            if mask_key in params and params[mask_key]:
+                if not os.path.exists(params[mask_key]):
+                    logger.warning(f"{mask_key} not found: {params[mask_key]}. Removing — tool will use memory fallback.")
+                    params.pop(mask_key)
+
         # Execute
         result = self.registry.execute(tool_name, **params)
         meta = result.metadata or {}
@@ -1602,11 +1609,6 @@ print(json.dumps(result))
             (r'(oar|危及器官|器官).{0,5}(分割|segment)', 'segment_oar'),
             (r'(分割|segment).{0,5}(oar|危及器官|器官)', 'segment_oar'),
             (r'(剂量|dose|计算剂量)', 'dose'),
-            (r'(规划|计划|plan|planning).{0,5}(粒子|种子|seed)', 'plan_seeds'),
-            (r'(粒子|种子|seed).{0,5}(规划|计划|plan|planning)', 'plan_seeds'),
-            (r'(穿刺|针|needle|trajectory).{0,5}(规划|计划|plan)', 'plan_trajectory'),
-            (r'(完整|完整|全部|full).{0,5}(规划|计划|plan)', 'plan_full'),
-            (r'(一键|自动|auto).{0,5}(规划|计划|plan)', 'plan_full'),
             (r'(切换|switch).{0,10}(viewer|查看|浏览|视图)', 'ui:panel:viewers'),
             (r'(切换|switch).{0,10}(input|输入)', 'ui:panel:input'),
             (r'(切换|switch).{0,10}(metrics|指标)', 'ui:panel:metrics'),
@@ -1677,48 +1679,6 @@ print(json.dumps(result))
                 tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": {"image_path": ct_path}})
             elif action == 'dose' and ct_path:
                 tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
-            elif action in ('plan_seeds', 'plan_trajectory', 'plan_full') and ct_path:
-                # Full planning workflow: CTV → OAR → 3D recon → Planning
-                has_ctv = self.memory.retrieve("ctv_array") is not None
-                has_oar = self.memory.retrieve("oar_array") is not None
-
-                # Step 1: CTV segmentation (if missing)
-                if not has_ctv:
-                    tumor_type = self._detect_tumor_type_from_message(msg)
-                    tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation",
-                                  "params": {"image_path": ct_path, "tumor_type": tumor_type}})
-                    # Immediately switch to viewers and reconstruct CTV in 3D
-                    tools.append({"id": "tool_ui_viewers", "tool": "ui_controller",
-                                  "params": {"actions": [{"target": "panel", "command": "switch", "value": "viewers"}]}})
-                    tools.append({"id": "tool_ui_3d_ctv", "tool": "ui_controller",
-                                  "params": {"actions": [{"target": "3d.reconstruct", "command": "run", "value": "ctv"}]}})
-
-                # Step 2: OAR segmentation (if missing)
-                if not has_oar:
-                    tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation",
-                                  "params": {"image_path": ct_path, "organ_type": "general"}})
-
-                # Step 4-8: Planning pipeline (individual steps for incremental UI updates)
-                mode = "rl" if "强化" in msg or "rl" in msg.lower() else "rule_based"
-                # 4a. Trajectory initialization
-                tools.append({"id": "tool_direct_plan_traj_init", "tool": "planning_pipeline",
-                              "params": {"ct_image_path": ct_path, "step": "trajectory_init", "mode": mode}})
-                # 4b. Trajectory refinement
-                tools.append({"id": "tool_direct_plan_traj_refine", "tool": "planning_pipeline",
-                              "params": {"ct_image_path": ct_path, "step": "trajectory_refine", "mode": mode}})
-                # 4c. Seed planning
-                tools.append({"id": "tool_direct_plan_seed", "tool": "planning_pipeline",
-                              "params": {"ct_image_path": ct_path, "step": "seed_planning", "mode": mode}})
-                # 4d. Dose calculation
-                tools.append({"id": "tool_direct_plan_dose", "tool": "planning_pipeline",
-                              "params": {"ct_image_path": ct_path, "step": "dose_calc", "mode": mode}})
-                # 4e. Dose evaluation
-                tools.append({"id": "tool_direct_plan_eval", "tool": "planning_pipeline",
-                              "params": {"ct_image_path": ct_path, "step": "dose_eval", "mode": mode}})
-
-                # Step 9: Auto-switch to metrics panel to show results
-                tools.append({"id": "tool_ui_metrics", "tool": "ui_controller",
-                              "params": {"actions": [{"target": "panel", "command": "switch", "value": "metrics"}]}})
 
         return tools or None
 
@@ -1765,14 +1725,54 @@ print(json.dumps(result))
 
         # Build raw results summary, then synthesize with LLM
         raw_results = self._build_direct_response(steps, _lang)
-        # Get the original user message from conversation history
         user_msg = ""
         for msg in reversed(self.memory.conversation):
             if msg.get("role") == "user":
                 user_msg = msg.get("content", "")
                 break
         query_type = self._classify_query_type(user_msg)
-        return self._synthesize_with_llm(raw_results, steps, _lang, user_msg, query_type)
+        response = self._synthesize_with_llm(raw_results, steps, _lang, user_msg, query_type)
+
+        # Quality review with feedback loop
+        if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
+            _needs_review = any(
+                tc.get('tool') in ["planning_pipeline", "seed_planning", "dose_evaluation"]
+                for tc in tools
+            )
+            if _needs_review:
+                _MAX_RETRIES = 3
+                for _retry in range(_MAX_RETRIES):
+                    try:
+                        import asyncio
+                        loop = asyncio.new_event_loop()
+                        review_result = loop.run_until_complete(
+                            self.multi_agent_wrapper.review_output("treatment_plan", {
+                                "dose_metrics": self.memory.retrieve("dose_metrics", {}),
+                                "plan_info": {
+                                    "total_seeds": self.memory.retrieve("total_seeds", 0),
+                                    "num_trajectories": self.memory.retrieve("num_trajectories", 0),
+                                },
+                                "plan_config": self.memory.retrieve("plan_config", {}),
+                            }, lang=_lang)
+                        )
+                        loop.close()
+                        if not review_result or review_result.get("passed"):
+                            break
+                        if _retry < _MAX_RETRIES - 1:
+                            _concerns = []
+                            for r in review_result.get("reviews", []):
+                                _concerns.extend(r.get("concerns", []))
+                            _concerns_text = "; ".join(_concerns) or review_result.get("display_text", "")
+                            _retry_tools = self._detect_tool_request(
+                                user_msg + f"\n\n[Quality review feedback: {_concerns_text}]"
+                            )
+                            if _retry_tools:
+                                self._execute_direct_tools(_retry_tools, steps, step_id_ref)
+                    except Exception as e:
+                        logger.warning(f"Review retry {_retry + 1} failed: {e}")
+                        break
+
+        return response
 
     def _build_direct_response(self, steps: List, lang: str) -> str:
         """Build structured response. Delegates to ToolResultPipeline."""
@@ -3724,6 +3724,18 @@ print(json.dumps(result))
                                 status="pending", tool=tc['tool'], params=tc['params'])
                 yield yield_event("step", step)
                 try:
+                    # Store ct_path for downstream tools
+                    if tc['tool'] in ('ctv_segmentation', 'oar_segmentation') and 'image_path' in tc['params']:
+                        self.memory.store("ct_path", tc['params']['image_path'])
+                        # Also load and store CT image if not already in memory
+                        if self.memory.retrieve("ct_image") is None:
+                            try:
+                                import SimpleITK as sitk
+                                ct_img = sitk.ReadImage(tc['params']['image_path'])
+                                self.memory.store("ct_image", ct_img)
+                            except Exception as _e:
+                                logger.warning(f"Failed to pre-load CT image: {_e}")
+
                     tool_obj = self.registry.get(tc['tool'])
                     if tool_obj:
                         result = tool_obj.execute(**tc['params'])
@@ -3733,6 +3745,13 @@ print(json.dumps(result))
                         yield yield_event("step", step)
                         if result.success:
                             self._store_tool_result(tc['tool'], result)
+                            # After CTV/OAR seg, ensure ct_image is stored for downstream tools
+                            if tc['tool'] == 'ctv_segmentation' and 'image_path' in tc['params']:
+                                if self.memory.retrieve("ct_image") is None:
+                                    try:
+                                        import SimpleITK as sitk
+                                        self.memory.store("ct_image", sitk.ReadImage(tc['params']['image_path']))
+                                    except Exception: pass
                         # Store in conversation for context persistence
                         self.memory.add_message("assistant", f"[Called {tc['tool']}]")
                         result_summary = result.message[:500] if result.success else f"Error: {result.error}"
@@ -3752,39 +3771,72 @@ print(json.dumps(result))
             response = self._synthesize_with_llm(raw_response, steps, _lang, user_msg, query_type)
             self.memory.add_message("assistant", response)
 
-            # Multi-agent review for direct tool execution
+            # Multi-agent review with feedback loop
             if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
-                try:
-                    _needs_review = False
-                    _review_type = "general_response"
-                    for tc in _direct_tool_calls:
-                        if tc['tool'] in ["planning_pipeline", "seed_planning", "dose_evaluation"]:
-                            _needs_review = True
-                            _review_type = "treatment_plan"
+                _needs_review = False
+                _review_type = "general_response"
+                for tc in _direct_tool_calls:
+                    if tc['tool'] in ["planning_pipeline", "seed_planning", "dose_evaluation"]:
+                        _needs_review = True
+                        _review_type = "treatment_plan"
+                        break
+
+                if _needs_review:
+                    _MAX_RETRIES = 3
+                    for _retry in range(_MAX_RETRIES):
+                        try:
+                            import asyncio
+                            loop = asyncio.new_event_loop()
+                            review_result = loop.run_until_complete(
+                                self.multi_agent_wrapper.review_output(_review_type, {
+                                    "dose_metrics": self.memory.retrieve("dose_metrics", {}),
+                                    "plan_info": {
+                                        "total_seeds": self.memory.retrieve("total_seeds", 0),
+                                        "num_trajectories": self.memory.retrieve("num_trajectories", 0),
+                                    },
+                                    "plan_config": self.memory.retrieve("plan_config", {}),
+                                }, lang=self.memory.user_lang)
+                            )
+                            loop.close()
+
+                            if review_result and review_result.get("display_text"):
+                                step = add_step("review", "Quality Review",
+                                              review_result["display_text"],
+                                              status="done" if review_result["passed"] else "warning")
+                                yield yield_event("step", step)
+
+                            # If passed, break out of retry loop
+                            if not review_result or review_result.get("passed"):
+                                break
+
+                            # Not passed — extract concerns and feed back to LLM
+                            _concerns = review_result.get("display_text", "")
+                            # Extract raw concerns from reviews
+                            _raw_concerns = []
+                            for r in review_result.get("reviews", []):
+                                if r.get("concerns"):
+                                    _raw_concerns.extend(r["concerns"])
+                            _concerns_text = "; ".join(_raw_concerns) if _raw_concerns else _concerns
+
+                            if _retry < _MAX_RETRIES - 1:
+                                _feedback_msg = (
+                                    f"Quality review REJECTED (attempt {_retry + 1}/{_MAX_RETRIES}).\n"
+                                    f"Issues found: {_concerns_text}\n"
+                                    f"Please fix these issues by calling the appropriate tools again."
+                                )
+                                step = add_step("thinking", "Review Feedback",
+                                              f"Attempt {_retry + 1}: Retrying based on review feedback",
+                                              status="done")
+                                yield yield_event("step", step)
+
+                                # Let LLM retry with feedback — re-enter function calling loop
+                                _retry_msg = message + f"\n\n[Quality review feedback - fix these issues: {_concerns_text}]"
+                                yield from self._run_llm_function_calling_stream(
+                                    _retry_msg, steps, step_id_ref, yield_event
+                                )
+                        except Exception as e:
+                            logger.warning(f"Review retry {_retry + 1} failed: {e}")
                             break
-
-                    if _needs_review:
-                        import asyncio
-                        loop = asyncio.new_event_loop()
-                        review_result = loop.run_until_complete(
-                            self.multi_agent_wrapper.review_output(_review_type, {
-                                "dose_metrics": self.memory.retrieve("dose_metrics", {}),
-                                "plan_info": {
-                                    "total_seeds": self.memory.retrieve("total_seeds", 0),
-                                    "num_trajectories": self.memory.retrieve("num_trajectories", 0),
-                                },
-                                "plan_config": self.memory.retrieve("plan_config", {}),
-                            }, lang=self.memory.user_lang)
-                        )
-                        loop.close()
-
-                        if review_result and review_result.get("display_text"):
-                            step = add_step("review", "Quality Review",
-                                          review_result["display_text"],
-                                          status="done" if review_result["passed"] else "warning")
-                            yield yield_event("step", step)
-                except Exception as e:
-                    logger.debug(f"Multi-agent review failed: {e}")
 
             yield yield_event("response", {"response": response})
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
@@ -3850,21 +3902,44 @@ print(json.dumps(result))
                         break
 
                 if _needs_review:
-                    import asyncio
-                    loop = asyncio.new_event_loop()
-                    review_result = loop.run_until_complete(
-                        self.multi_agent_wrapper.review_output(
-                            _review_type, _review_content,
-                            lang=self.memory.user_lang)
-                    )
-                    loop.close()
+                    _MAX_RETRIES = 3
+                    for _retry in range(_MAX_RETRIES):
+                        import asyncio
+                        loop = asyncio.new_event_loop()
+                        review_result = loop.run_until_complete(
+                            self.multi_agent_wrapper.review_output(
+                                _review_type, _review_content,
+                                lang=self.memory.user_lang)
+                        )
+                        loop.close()
 
-                    if review_result and review_result.get("display_text"):
-                        step = add_step("review", "Quality Review",
-                                      review_result["display_text"],
-                                      status="done" if review_result["passed"] else "warning",
-                                      review_decision=review_result["decision"])
-                        yield yield_event("step", step)
+                        if review_result and review_result.get("display_text"):
+                            step = add_step("review", "Quality Review",
+                                          review_result["display_text"],
+                                          status="done" if review_result["passed"] else "warning",
+                                          review_decision=review_result.get("decision", ""))
+                            yield yield_event("step", step)
+
+                        if not review_result or review_result.get("passed"):
+                            break
+
+                        # Extract concerns for feedback
+                        _raw_concerns = []
+                        for r in review_result.get("reviews", []):
+                            if r.get("concerns"):
+                                _raw_concerns.extend(r["concerns"])
+                        _concerns_text = "; ".join(_raw_concerns) if _raw_concerns else review_result.get("display_text", "")
+
+                        if _retry < _MAX_RETRIES - 1:
+                            step = add_step("thinking", "Review Feedback",
+                                          f"Attempt {_retry + 1}: Retrying based on review feedback",
+                                          status="done")
+                            yield yield_event("step", step)
+
+                            _retry_msg = message + f"\n\n[Quality review feedback - fix these issues: {_concerns_text}]"
+                            yield from self._run_llm_function_calling_stream(
+                                _retry_msg, steps, step_id_ref, yield_event
+                            )
             except Exception as e:
                 logger.debug(f"Multi-agent review failed: {e}")
 

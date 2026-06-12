@@ -345,12 +345,15 @@ class PlanningPipelineTool(BaseTool):
 
         ct_image_path = kwargs.get("ct_image_path")
         if ct_image_path:
-            logger.info(f"Loading CT image: {ct_image_path}")
-            ct_image = sitk.ReadImage(ct_image_path)
-            if agent:
-                agent.memory.store("ct_image", ct_image)
-                agent.memory.store("ct_path", ct_image_path)
-            return ct_image
+            try:
+                logger.info(f"Loading CT image: {ct_image_path}")
+                ct_image = sitk.ReadImage(ct_image_path)
+                if agent:
+                    agent.memory.store("ct_image", ct_image)
+                    agent.memory.store("ct_path", ct_image_path)
+                return ct_image
+            except Exception as e:
+                logger.warning(f"Failed to load CT from path '{ct_image_path}': {e}. Falling back to memory.")
 
         if agent:
             ct_image = agent.memory.retrieve("ct_image")
@@ -365,11 +368,14 @@ class PlanningPipelineTool(BaseTool):
 
         ctv_mask_path = kwargs.get("ctv_mask_path")
         if ctv_mask_path:
-            logger.info(f"Loading CTV mask from path: {ctv_mask_path}")
-            ctv_mask = sitk.GetArrayFromImage(sitk.ReadImage(ctv_mask_path))
-            if agent:
-                agent.memory.store("ctv_array", ctv_mask)
-            return ctv_mask
+            try:
+                logger.info(f"Loading CTV mask from path: {ctv_mask_path}")
+                ctv_mask = sitk.GetArrayFromImage(sitk.ReadImage(ctv_mask_path))
+                if agent:
+                    agent.memory.store("ctv_array", ctv_mask)
+                return ctv_mask
+            except Exception as e:
+                logger.warning(f"Failed to load CTV mask from path '{ctv_mask_path}': {e}. Falling back to memory.")
 
         if agent:
             # Try _get_label_array first (handles DICOMOrient)
@@ -397,11 +403,14 @@ class PlanningPipelineTool(BaseTool):
 
         oar_mask_path = kwargs.get("oar_mask_path")
         if oar_mask_path:
-            logger.info(f"Loading OAR mask: {oar_mask_path}")
-            oar_mask = sitk.GetArrayFromImage(sitk.ReadImage(oar_mask_path))
-            if agent:
-                agent.memory.store("oar_array", oar_mask)
-            return oar_mask
+            try:
+                logger.info(f"Loading OAR mask: {oar_mask_path}")
+                oar_mask = sitk.GetArrayFromImage(sitk.ReadImage(oar_mask_path))
+                if agent:
+                    agent.memory.store("oar_array", oar_mask)
+                return oar_mask
+            except Exception as e:
+                logger.warning(f"Failed to load OAR mask from path '{oar_mask_path}': {e}. Falling back to memory.")
 
         if agent:
             if hasattr(agent, '_get_label_array'):
