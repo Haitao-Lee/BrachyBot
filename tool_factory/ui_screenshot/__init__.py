@@ -5,7 +5,7 @@ Enables BrachyBot's LLM to capture screenshots of any UI component.
 The LLM calls this tool → frontend captures the target → uploads to server → returns URL.
 
 Flow:
-    1. LLM calls ui_screenshot(target="viewer-axial", question="分析分割效果")
+    1. LLM calls ui_screenshot(target="viewer-axial", question="Analyze segmentation overlay")
     2. Tool returns {command: "screenshot", target: "...", question: "..."}
     3. Frontend intercepts this result in the SSE step handler
     4. Frontend captures the target element using html2canvas
