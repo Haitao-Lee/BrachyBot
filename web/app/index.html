@@ -788,100 +788,38 @@
         }
 
         /* ============ PIPELINE PROGRESS ============ */
-        .pipeline-progress {
-            padding: 0;
+        #pipeline_box {
+            margin: 0.3rem 0.5rem;
+            background: var(--bg-2);
+            border-radius: 6px;
+            padding: 0.35rem 0.5rem;
         }
-        .pipeline-step-block .step-body {
-            padding-top: 0.25rem;
-        }
-
-        .pipeline-header {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-weight: 600;
-            font-size: 0.8rem;
-            color: var(--text);
-            margin-bottom: 0.6rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 1px solid var(--card-border);
-        }
-
-        .pipeline-header-icon {
-            font-size: 1rem;
-        }
-
-        .pipeline-steps {
-            display: flex;
-            flex-direction: column;
-            gap: 0.4rem;
-        }
-
+        .pipeline-progress { padding: 0; }
+        .pipeline-steps { display: flex; flex-direction: column; gap: 0.1rem; }
         .pipeline-step {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.25rem 0;
-            font-size: 0.75rem;
-            color: var(--text-dim);
+            display: flex; align-items: center; gap: 0.4rem;
+            padding: 0.12rem 0; font-size: 0.7rem; color: var(--text-dim);
         }
-
-        .pipeline-step.completed {
-            opacity: 0.6;
-        }
-
-        .pipeline-step.active {
-            color: var(--text);
-            font-weight: 500;
-        }
-
-        .pipeline-step.pending {
-            opacity: 0.35;
-        }
-
-        .pipeline-step.error {
-            color: var(--danger);
-        }
-
+        .pipeline-step.completed { opacity: 0.45; }
+        .pipeline-step.active { color: var(--text); font-weight: 500; }
+        .pipeline-step.pending { opacity: 0.25; }
+        .pipeline-step.error { color: var(--danger); }
         .pipeline-step-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: var(--text-dim);
-            flex-shrink: 0;
+            width: 5px; height: 5px; border-radius: 50%;
+            background: var(--text-dim); flex-shrink: 0;
         }
-
-        .pipeline-step.completed .pipeline-step-dot {
-            background: var(--success);
-        }
-
+        .pipeline-step.completed .pipeline-step-dot { background: var(--success); }
         .pipeline-step.active .pipeline-step-dot {
             background: var(--primary);
             animation: dot-pulse 1s ease-in-out infinite;
         }
-
-        .pipeline-step.error .pipeline-step-dot {
-            background: var(--danger);
-        }
-
+        .pipeline-step.error .pipeline-step-dot { background: var(--danger); }
         @keyframes dot-pulse {
             0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.4; transform: scale(1.8); }
+            50% { opacity: 0.3; transform: scale(2); }
         }
-
-        .pipeline-step-text {
-            flex: 1;
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .pipeline-step-time {
-            font-size: 0.6rem;
-            color: var(--text-dim);
-            flex-shrink: 0;
-        }
+        .pipeline-step-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pipeline-step-time { font-size: 0.55rem; color: var(--text-dim); opacity: 0.6; margin-left: auto; flex-shrink: 0; }
 
         @keyframes spin {
             from { transform: rotate(0deg); }
@@ -3025,7 +2963,9 @@ async function init() {
     state.mesh3D = null;
     window._pipelineShown = false;
     window._pipelineBlock = null;
-    if (window._pipelineObserver) { window._pipelineObserver.disconnect(); window._pipelineObserver = null; }
+    if (window._pipelineKeeper) { clearInterval(window._pipelineKeeper); window._pipelineKeeper = null; }
+    const oldBox = document.getElementById('pipeline_box');
+    if (oldBox) oldBox.remove();
     pipelineState.steps = [];
     pipelineState.containerId = null;
     imageAnalysisData.ct = null;
@@ -8924,14 +8864,6 @@ async function runPlanningStep(step) {
     const stepIndex = allSteps.findIndex(s => s.id === step);
     if (stepIndex === -1) return;
 
-    // Show pipeline progress if not already shown
-    if (!pipelineState.containerId || pipelineState.steps.length === 0) {
-        addPipelineProgress(allSteps, '🔬 Brachytherapy Planning');
-    }
-
-    // Mark current step as active
-    updatePipelineStep(stepIndex, 'active');
-
     showLoading(true);
 
     try {
@@ -8976,22 +8908,7 @@ async function runPlanning() {
     const mode = document.getElementById('useRLToggle')?.checked ? 'rl' : 'rule_based';
     if (!ctPath) { alert('Please enter CT image path or browse to select a file'); return; }
 
-    // Show pipeline progress
-    const pipelineSteps = [
-        { id: 'ct_load', label: 'CT Image Loading' },
-        { id: 'ctv_seg', label: 'CTV Segmentation' },
-        { id: 'oar_seg', label: 'OAR Segmentation' },
-        { id: 'trajectory', label: 'Trajectory Planning' },
-        { id: 'seed_plan', label: 'Seed Planning' },
-        { id: 'dose_calc', label: 'Dose Calculation' },
-        { id: 'dose_eval', label: 'Dose Evaluation' },
-    ];
-    addPipelineProgress(pipelineSteps, '🔬 Radiation Seed Planning');
-
     showLoading(true);
-
-    // Step 1: CT Loading
-    updatePipelineStep(0, 'active');
     addChat('system', 'Starting preoperative planning...');
 
     try {
@@ -9658,85 +9575,59 @@ const pipelineState = {
 };
 
 /**
- * Create pipeline progress UI. Only ONE pipeline exists — subsequent calls just move it to bottom.
- * Uses MutationObserver to keep it pinned at the very end of chat.
+ * Create a compact pipeline progress box. Only ONE exists at a time.
  */
-function addPipelineProgress(steps, title = '🔬 Brachytherapy Planning') {
+function createPipelineBox(labels) {
     const container = document.getElementById('chatMessages');
-    const id = pipelineState.containerId || ('pipeline_' + Date.now());
+    const id = 'pipeline_' + Date.now();
 
-    // If pipeline already exists, just move it to the end
-    if (window._pipelineBlock && window._pipelineBlock.parentNode) {
-        container.appendChild(window._pipelineBlock);
-        container.scrollTop = container.scrollHeight;
-        return id;
-    }
+    // Guard: if already exists, just move to bottom
+    const existing = document.getElementById('pipeline_box');
+    if (existing) { container.appendChild(existing); container.scrollTop = container.scrollHeight; return; }
 
-    // Initialize state
-    pipelineState.steps = steps.map((s, i) => ({
-        ...s,
-        index: i,
-        status: 'pending',
-        startTime: null,
-        endTime: null,
+    pipelineState.steps = labels.map((label, i) => ({
+        label, index: i, status: 'pending', startTime: null, endTime: null,
     }));
     pipelineState.startTime = Date.now();
     pipelineState.containerId = id;
 
-    // Build steps HTML
-    const stepsHtml = pipelineState.steps.map((step, i) => `
+    const stepsHtml = labels.map((label, i) => `
         <div class="pipeline-step pending" id="${id}_step_${i}">
             <span class="pipeline-step-dot"></span>
-            <span class="pipeline-step-text">${step.label}</span>
+            <span class="pipeline-step-text">${label}</span>
             <span class="pipeline-step-time" id="${id}_step_${i}_time"></span>
         </div>
     `).join('');
 
-    // Create pipeline element
-    const block = document.createElement('div');
-    block.className = 'chat-row bot';
-    block.id = 'pipeline_container';
-    block.innerHTML = `
-        <div class="chat-avatar bot-avatar">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-        </div>
-        <div class="thinking-chain">
-            <div class="step-block pipeline-step-block">
-                <div class="step-header" onclick="toggleStep('step_body_pipeline')">
-                    <span class="step-icon tool">🔬</span>
-                    <span class="step-title">${title}</span>
-                    <span class="step-status pending" id="${id}_status">0/${pipelineState.steps.length}</span>
-                    <span class="step-time" style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);" id="${id}_time"></span>
-                </div>
-                <div class="step-body expanded" id="step_body_pipeline">
-                    <div class="pipeline-progress" id="${id}">
-                        <div class="pipeline-steps" id="${id}_steps">
-                            ${stepsHtml}
-                        </div>
-                    </div>
-                </div>
-            </div>
+    const box = document.createElement('div');
+    box.id = 'pipeline_box';
+    box.innerHTML = `
+        <div class="pipeline-progress" id="${id}">
+            <div class="pipeline-steps" id="${id}_steps">${stepsHtml}</div>
         </div>
     `;
-    container.appendChild(block);
-    window._pipelineBlock = block;
+    container.appendChild(box);
+    window._pipelineBlock = box;
 
-    // Observer: keep pipeline at the very bottom whenever new content is added
-    if (!window._pipelineObserver) {
-        window._pipelineObserver = new MutationObserver(() => {
-            if (window._pipelineBlock && window._pipelineBlock.parentNode === container) {
-                const lastChild = container.lastElementChild;
-                if (lastChild !== window._pipelineBlock) {
-                    container.appendChild(window._pipelineBlock);
-                }
+    // Keep pipeline pinned at bottom while planning is active
+    if (!window._pipelineKeeper) {
+        window._pipelineKeeper = setInterval(() => {
+            if (!pipelineState.steps.length) return;
+            const active = pipelineState.steps.some(s => s.status === 'active' || s.status === 'pending');
+            if (!active) return;
+            const p = document.getElementById('pipeline_box');
+            if (!p) {
+                // Pipeline removed — recreate
+                createPipelineBox(pipelineState.steps.map(s => s.label));
+            } else {
+                const c = p.parentNode;
+                if (c && c.lastElementChild !== p) c.appendChild(p);
             }
-        });
-        window._pipelineObserver.observe(container, { childList: true });
+        }, 500);
     }
 
     container.scrollTop = container.scrollHeight;
     updateTimeDisplay(id);
-    return id;
 }
 
 /**
@@ -9782,12 +9673,22 @@ function updatePipelineStep(stepIndex, status, message = '') {
     // Update overall time
     updateTimeDisplay(id);
 
-    // Update status badge in step-block header (e.g., "3/7")
+    // Update status badge
     const statusBadge = document.getElementById(`${id}_status`);
     if (statusBadge) {
         const completed = pipelineState.steps.filter(s => s.status === 'completed').length;
         const total = pipelineState.steps.length;
         statusBadge.textContent = `${completed}/${total}`;
+    }
+
+    // Keep pipeline box at bottom and visible
+    const box = document.getElementById('pipeline_box');
+    if (box) {
+        const container = box.parentNode;
+        if (container && container.lastElementChild !== box) {
+            container.appendChild(box);
+        }
+        box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
 
     // Scroll to bottom
@@ -9834,17 +9735,10 @@ function completePipeline(success = true) {
         }
     });
 
-    // Update header icon
-    const headerEl = document.querySelector(`#${id} .pipeline-header-icon`);
-    if (headerEl) {
-        headerEl.textContent = success ? '✅' : '❌';
-    }
-
-    // Update status badge to show completion
+    // Update status text
     const statusBadge = document.getElementById(`${id}_status`);
     if (statusBadge) {
-        statusBadge.textContent = success ? '✅ Done' : '❌ Error';
-        statusBadge.className = `step-status ${success ? 'done' : 'error'}`;
+        statusBadge.textContent = success ? 'done' : 'error';
     }
 
     // Final time update
@@ -10577,62 +10471,39 @@ async function sendChat() {
                                         }
                                     }
                                 }
-                                // Track planning steps for post-response UI update
-                                if (data.tool === 'planning_pipeline' && data.status === 'done') {
-                                    const step = data.metadata?.step_executed;
-                                    if (step) window._lastPlanningStep = step;
-                                }
                             }
 
-                            // === Pipeline Progress Tracking (runs for ALL tool statuses) ===
+                            // === Pipeline Progress Tracking ===
                             if (data.type === 'tool' && data.tool) {
-                                const toolLower = data.tool.toLowerCase();
-                                const PIPELINE_MAP = {
-                                    'ctv_segmentation': 0,
-                                    'oar_segmentation': 1,
-                                };
-                                const PLANNING_STEP_MAP = {
-                                    'trajectory_init': 2,
-                                    'trajectory_refine': 3,
-                                    'seed_planning': 4,
-                                    'dose_calc': 5,
-                                    'dose_eval': 6,
-                                };
-
+                                const PIPELINE_STEPS = [
+                                    { tool: 'ctv_segmentation', label: 'CTV Segmentation' },
+                                    { tool: 'oar_segmentation', label: 'OAR Segmentation' },
+                                    { tool: 'planning_pipeline', label: 'Planning', substep: 'trajectory_init' },
+                                    { tool: 'planning_pipeline', label: 'Trajectory Refine', substep: 'trajectory_refine' },
+                                    { tool: 'planning_pipeline', label: 'Seed Planning', substep: 'seed_planning' },
+                                    { tool: 'planning_pipeline', label: 'Dose Calculation', substep: 'dose_calc' },
+                                    { tool: 'planning_pipeline', label: 'Dose Evaluation', substep: 'dose_eval' },
+                                ];
                                 let stepIdx = -1;
-                                if (PIPELINE_MAP[toolLower] !== undefined) {
-                                    stepIdx = PIPELINE_MAP[toolLower];
-                                } else if (toolLower === 'planning_pipeline' && data.metadata?.step_executed) {
-                                    stepIdx = PLANNING_STEP_MAP[data.metadata.step_executed] ?? -1;
-                                }
-
-                                // Show pipeline on first planning tool (inside thinking chain)
-                                if (stepIdx >= 0 && !window._pipelineShown) {
-                                    window._pipelineShown = true;
-                                    const allSteps = [
-                                        { label: '🎯 CTV Segmentation' },
-                                        { label: '🫁 OAR Segmentation' },
-                                        { label: '📍 Trajectory Initialization' },
-                                        { label: '🔄 Trajectory Refinement' },
-                                        { label: '💎 Seed Planning' },
-                                        { label: '☢️ Dose Calculation' },
-                                        { label: '📊 Dose Evaluation' },
-                                    ];
-                                    addPipelineProgress(allSteps, '🔬 Brachytherapy Planning');
-                                }
-
-                                // Update pipeline step status
-                                if (stepIdx >= 0 && window._pipelineShown) {
-                                    if (data.status === 'pending') {
-                                        updatePipelineStep(stepIdx, 'active');
-                                    } else if (data.status === 'done') {
-                                        updatePipelineStep(stepIdx, 'completed');
-                                        if (stepIdx === 6) {
-                                            completePipeline(true);
-                                        }
-                                    } else if (data.status === 'error') {
-                                        updatePipelineStep(stepIdx, 'error');
+                                for (let i = 0; i < PIPELINE_STEPS.length; i++) {
+                                    const ps = PIPELINE_STEPS[i];
+                                    if (data.tool.toLowerCase() === ps.tool) {
+                                        if (ps.substep) {
+                                            if (data.metadata?.step_executed === ps.substep) { stepIdx = i; break; }
+                                        } else { stepIdx = i; break; }
                                     }
+                                }
+                                if (stepIdx >= 0) {
+                                    if (!window._pipelineShown) {
+                                        window._pipelineShown = true;
+                                        createPipelineBox(PIPELINE_STEPS.map(s => s.label));
+                                    }
+                                    if (data.status === 'pending') updatePipelineStep(stepIdx, 'active');
+                                    else if (data.status === 'done') {
+                                        updatePipelineStep(stepIdx, 'completed');
+                                        if (stepIdx === PIPELINE_STEPS.length - 1) completePipeline(true);
+                                    }
+                                    else if (data.status === 'error') updatePipelineStep(stepIdx, 'error');
                                 }
                             }
 
