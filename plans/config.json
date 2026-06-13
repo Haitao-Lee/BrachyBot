@@ -13,12 +13,12 @@
         "length": 3.7,
         "margin_rate": 1.5
     },
-    "reference_direc": [0, 1, 0],
+    "reference_direc": [0, -1, 0],
     "radiation_array_params": {
         "target_value": 1,
         "obstacle_value": 2,
         "background_value": 0,
-        "backlit_angle": 0.5,
+        "backlit_angle": 1.5707963267948966,
         "maximum_candidate_trajectories": 200,
         "min_depth_rate": 5,
         "smooth_sigma": 1,

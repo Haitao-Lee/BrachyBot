@@ -39,6 +39,25 @@ CONFIG_PATH = os.path.join(PLANS_DIR, "config.json")
 NEW_SLICES_ROUNDED = 64
 
 
+def _safe_dicom_orient(image, target_orientation='LPI', context=""):
+    """Apply DICOMOrient with explicit logging on failure.
+
+    The bare except: pass pattern is dangerous because a failed orientation
+    leaves the image in its native frame, while labels stored via
+    _store_label_with_metadata may assume LPI. We log the failure so that
+    downstream misalignment is debuggable.
+    """
+    import SimpleITK as sitk
+    try:
+        return sitk.DICOMOrient(image, target_orientation)
+    except Exception as e:
+        logger.warning(
+            f"DICOMOrient('{target_orientation}') failed{(' ' + context) if context else ''}: {e}. "
+            f"Image kept in its native orientation — verify alignment if used with labels."
+        )
+        return image
+
+
 def load_config() -> Dict:
     """Load planning configuration from Zhiyuan config.json."""
     try:
@@ -59,12 +78,12 @@ def _get_agent():
         agent = getattr(AgenticSys, '_global_agent', None)
         if agent:
             ctv = agent.memory.retrieve("ctv_array")
-            logger.info(f"[_get_agent] agent id={id(agent)}, ctv_array={'exists' if ctv is not None else 'None'}")
+            print(f"[GET_AGENT] agent id={id(agent)}, ctv_array={'exists' if ctv is not None else 'None'}, planning_results keys={list(agent.memory.planning_results.keys()) if hasattr(agent.memory, 'planning_results') else 'N/A'}")
         else:
-            logger.warning("[_get_agent] _global_agent is None")
+            print("[GET_AGENT] _global_agent is None")
         return agent
     except Exception as e:
-        logger.error(f"[_get_agent] Error: {e}")
+        print(f"[GET_AGENT] Error: {e}")
         return None
 
 
@@ -141,6 +160,212 @@ def _convert_ref_direc_to_voxel(ref_direc_ras, ct_image):
     """
     from plans.utilizations import ras_direction_to_voxel
     return ras_direction_to_voxel(np.array(ref_direc_ras), ct_image)
+
+
+# ----------------------------------------------------------------------
+# Reference direction resolution
+# ----------------------------------------------------------------------
+# Sentinel values for ``ref_direc`` resolution:
+#   - list/tuple/array of 3 numbers  → use as-is (RAS, will be normalized)
+#   - "auto" or None                  → organ-aware default from _ORGAN_DEFAULT_REFDIREC
+#                                        (falls back to global config, then "auto_detect")
+#   - "auto_detect"                   → geometric detection from CTV center to skin
+#                                        (slowest but most adaptive)
+# ----------------------------------------------------------------------
+
+# Organ-specific default approach direction in RAS (pointing INTO the body
+# toward the tumor). These were chosen to avoid the most common OAR
+# obstructions seen in clinical brachytherapy cases:
+#   - pancreas  : posterior [-Y]      avoids stomach/duodenum in front
+#   - prostate  : posterior [-Y]      standard perineal template
+#   - liver     : lateral  [+X]       avoids central vessels
+#   - lung      : anterior [+Y]       avoids scapula/posterior ribs
+#   - kidney    : posterior [-Y]      standard posterior oblique
+#   - colon     : posterior [-Y]
+#   - head_neck : superior [+Z]       most tumors reachable from above
+_ORGAN_DEFAULT_REFDIREC = {
+    "pancreas":  [0.0, -1.0, 0.0],
+    "pancreatic": [0.0, -1.0, 0.0],
+    "liver":     [1.0, 0.0, 0.0],
+    "prostate":  [0.0, -1.0, 0.0],
+    "lung":      [0.0, 1.0, 0.0],
+    "kidney":    [0.0, -1.0, 0.0],
+    "colon":     [0.0, -1.0, 0.0],
+    "head_neck": [0.0, 0.0, 1.0],
+    "btcv":      [0.0, 0.0, 1.0],
+    "brats21":   [0.0, 0.0, 1.0],
+}
+
+# Global default if no organ hint is available. Changed from anterior [0,1,0]
+# to posterior [-1,0,0] as a safer fallback — anterior approach is blocked
+# by OARs (stomach/duodenum) for most abdominal tumors.
+_GLOBAL_DEFAULT_REFDIREC = [0.0, -1.0, 0.0]
+
+
+def _normalize_ref_direc(d):
+    """Normalize a 3-vector, returning the global default if degenerate."""
+    d = np.asarray(d, dtype=np.float64).reshape(-1)
+    if d.size != 3 or not np.all(np.isfinite(d)):
+        return np.array(_GLOBAL_DEFAULT_REFDIREC, dtype=np.float64)
+    n = np.linalg.norm(d)
+    if n < 1e-9:
+        return np.array(_GLOBAL_DEFAULT_REFDIREC, dtype=np.float64)
+    return d / n
+
+
+def _get_organ_hint(agent) -> Optional[str]:
+    """Look up the active tumor type from agent memory (best-effort)."""
+    if not agent:
+        return None
+    mem = getattr(agent, "memory", None)
+    if mem is None:
+        return None
+    for key in ("tumor_type_used", "tumor_type", "anatomy"):
+        v = mem.retrieve(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip().lower()
+    return None
+
+
+def _auto_detect_ref_direc(ct_image, ctv_mask) -> np.ndarray:
+    """Pick the cardinal-axis approach direction with the shortest
+    skin-to-CTV path.
+
+    Algorithm:
+      1. Get the CTV center-of-mass in world (mm) coordinates.
+      2. For each of the 6 cardinal axes (±X, ±Y, ±Z in voxel space),
+         walk from the CTV center outward to the body boundary (skin).
+         The "skin" is approximated as the first non-air voxel when
+         stepping away from the image center — but because CTs always
+         include some background, we use a simple HU-based air threshold
+         (< -500 HU) to mark the body.
+      3. Pick the axis with the shortest skin-to-CTV distance; the
+         approach direction is the unit vector from the CTV center
+         toward the skin on that axis (i.e. pointing OUT of the body
+         for needle insertion planning).
+
+    Falls back to the global default if CTV/center cannot be computed.
+    """
+    import SimpleITK as sitk
+
+    if ctv_mask is None or not np.any(ctv_mask > 0):
+        return np.array(_GLOBAL_DEFAULT_REFDIREC, dtype=np.float64)
+
+    try:
+        # CTV center of mass in voxel indices (k, j, i)
+        coords = np.argwhere(ctv_mask > 0)
+        ctv_center_voxel = coords.mean(axis=0)  # shape (3,) in (k, j, i)
+    except Exception as e:
+        logger.warning(f"auto_detect_ref_direc: failed to compute CTV center: {e}")
+        return np.array(_GLOBAL_DEFAULT_REFDIREC, dtype=np.float64)
+
+    # Convert CTV center to physical (mm) coordinates
+    spacing = np.array(ct_image.GetSpacing())            # (sx, sy, sz)  → (x, y, z) in mm
+    origin = np.array(ct_image.GetOrigin())              # (ox, oy, oz)  in mm
+    direction = np.array(ct_image.GetDirection()).reshape(3, 3)
+    # ctv_center_voxel is (k, j, i); physical index is (i, j, k) in mm
+    center_ijk = np.array([ctv_center_voxel[2],
+                            ctv_center_voxel[1],
+                            ctv_center_voxel[0]], dtype=np.float64)
+    ctv_center_world = origin + direction @ (spacing * center_ijk)
+
+    # Get CT array for HU-based body segmentation
+    ct_array = sitk.GetArrayFromImage(ct_image)  # shape (k, j, i)
+    body_mask = ct_array > -500  # soft tissue + bone
+
+    # Image extent in world coords
+    size = np.array(ct_image.GetSize())  # (nx, ny, nz) in (x, y, z)
+    extent_world = origin + direction @ (spacing * (size - 1))
+    min_world = np.minimum(origin, extent_world)
+    max_world = np.maximum(origin, extent_world)
+
+    # For each of 6 cardinal directions in WORLD space, find skin distance
+    # from CTV center along that direction.
+    best_axis = None
+    best_dist = np.inf
+
+    for axis_idx in range(3):
+        for sign in (+1.0, -1.0):
+            step = np.zeros(3, dtype=np.float64)
+            step[axis_idx] = sign
+            # Ray march from ctv_center outward along `step`
+            # Sample at 1 mm intervals
+            max_steps = int(np.linalg.norm(max_world - ctv_center_world) + 1)
+            dist = 0.0
+            found_skin = False
+            for s in range(1, max_steps + 1):
+                p = ctv_center_world + step * float(s)
+                # Convert p back to voxel index
+                rel = (p - origin)
+                try:
+                    inv_dir = np.linalg.inv(direction)
+                    ijk_float = inv_dir @ (rel / spacing)
+                except np.linalg.LinAlgError:
+                    break
+                i_idx = int(round(ijk_float[0]))
+                j_idx = int(round(ijk_float[1]))
+                k_idx = int(round(ijk_float[2]))
+                if not (0 <= i_idx < size[0] and 0 <= j_idx < size[1] and 0 <= k_idx < size[2]):
+                    break  # off the image
+                if body_mask[k_idx, j_idx, i_idx]:
+                    continue  # still inside body
+                # Hit air (skin) — record distance
+                dist = float(s)
+                found_skin = True
+                break
+            if found_skin and dist > 0 and dist < best_dist:
+                best_dist = dist
+                # Approach direction: from skin toward CTV (inward), i.e. -sign
+                best_axis = -sign * step
+
+    if best_axis is None or best_dist == np.inf:
+        return np.array(_GLOBAL_DEFAULT_REFDIREC, dtype=np.float64)
+
+    return _normalize_ref_direc(best_axis)
+
+
+def _resolve_ref_direc(ref_direc_input, ct_image, ctv_mask, agent) -> np.ndarray:
+    """Resolve the user-supplied ref_direc into a concrete RAS unit vector.
+
+    Resolution order:
+      1. If ``ref_direc_input`` is a list/array → return it (normalized).
+      2. If ``ref_direc_input`` is the string ``"auto_detect"`` →
+         run geometric detection.
+      3. Otherwise (None, "auto", or anything else) → look up the
+         organ-specific default from agent memory; if that fails, run
+         auto_detect as a last resort; if that also fails, fall back
+         to the global default.
+
+    Returns:
+        3-element unit vector in RAS world space.
+    """
+    # Case 1: explicit numeric direction
+    if ref_direc_input is not None and not isinstance(ref_direc_input, str):
+        try:
+            return _normalize_ref_direc(ref_direc_input)
+        except Exception as e:
+            logger.warning(f"_resolve_ref_direc: bad numeric input {ref_direc_input!r}: {e}")
+
+    # Case 2: explicit auto_detect request
+    if isinstance(ref_direc_input, str) and ref_direc_input.lower() == "auto_detect":
+        logger.info("_resolve_ref_direc: running geometric auto-detection")
+        return _auto_detect_ref_direc(ct_image, ctv_mask)
+
+    # Case 3: organ-aware default
+    organ = _get_organ_hint(agent)
+    if organ and organ in _ORGAN_DEFAULT_REFDIREC:
+        d = _ORGAN_DEFAULT_REFDIREC[organ]
+        logger.info(f"_resolve_ref_direc: using organ default for {organ!r}: {d}")
+        return _normalize_ref_direc(d)
+
+    # Try geometric detection as a sensible fallback for unknown organs
+    if ctv_mask is not None and np.any(ctv_mask > 0):
+        logger.info(f"_resolve_ref_direc: no organ hint, running auto_detect")
+        return _auto_detect_ref_direc(ct_image, ctv_mask)
+
+    # Last resort
+    logger.info(f"_resolve_ref_direc: using global default {_GLOBAL_DEFAULT_REFDIREC}")
+    return _normalize_ref_direc(_GLOBAL_DEFAULT_REFDIREC)
 
 
 def _load_dose_model():
@@ -240,9 +465,9 @@ class PlanningPipelineTool(BaseTool):
                 },
                 "step": {
                     "type": "string",
-                    "description": "Run specific step or 'full' for complete pipeline",
+                    "description": "Which planning step to run. Default 'trajectory_init'. For full pipeline in one call, use 'full' (runs all 5 steps; intermediate state not inspectable). For stepwise inspection, call each step in order: trajectory_init → trajectory_refine → seed_planning → dose_calc → dose_eval.",
                     "enum": ["trajectory_init", "trajectory_refine", "seed_planning", "dose_calc", "dose_eval", "full"],
-                    "default": "full",
+                    "default": "trajectory_init",
                 },
                 "mode": {
                     "type": "string",
@@ -260,7 +485,15 @@ class PlanningPipelineTool(BaseTool):
                 },
                 "ref_direc": {
                     "type": "array",
-                    "description": "Reference direction [x, y, z] in RAS space",
+                    "description": (
+                        "Reference direction [x, y, z] in RAS world space. "
+                        "Special string values are also accepted: "
+                        "'auto' (default) picks an organ-aware default (e.g. posterior "
+                        "[-Y] for pancreas/prostate, anterior [+Y] for lung); "
+                        "'auto_detect' runs geometric detection to find the shortest "
+                        "skin-to-CTV approach axis. "
+                        "If omitted, falls back to agent config → 'auto'."
+                    ),
                     "items": {"type": "number"},
                 },
             },
@@ -288,7 +521,7 @@ class PlanningPipelineTool(BaseTool):
     def _execute(self, **kwargs) -> ToolResult:
         import SimpleITK as sitk
 
-        step = kwargs.get("step", "full")
+        step = kwargs.get("step", "trajectory_init")
         agent = _get_agent()
 
         # Load CT image (required for all steps)
@@ -311,10 +544,15 @@ class PlanningPipelineTool(BaseTool):
         # Get agent config
         agent_config = getattr(agent, 'config', {}) if agent else {}
 
-        # Get reference direction
-        ref_direc = kwargs.get("ref_direc")
-        if ref_direc is None:
-            ref_direc = agent_config.get("reference_direc", CONFIG.get("reference_direc", [0, 1, 0]))
+        # Get reference direction — accepts explicit array, "auto", or "auto_detect"
+        ref_direc_input = kwargs.get("ref_direc")
+        if ref_direc_input is None:
+            # Try agent config first, then config file (preserves legacy behavior)
+            ref_direc_input = agent_config.get("reference_direc")
+            if ref_direc_input is None:
+                ref_direc_input = CONFIG.get("reference_direc", "auto")
+        # Resolve via the unified helper (handles organ defaults + auto_detect)
+        ref_direc = _resolve_ref_direc(ref_direc_input, ct_image, ctv_mask, agent)
 
         # Get mode
         mode = kwargs.get("mode", "rule_based")
@@ -340,15 +578,24 @@ class PlanningPipelineTool(BaseTool):
     # ============================================================
 
     def _load_ct(self, kwargs, agent):
-        """Load CT image from path or agent memory."""
+        """Load CT image from path or agent memory.
+        Always applies DICOMOrient('LPI') so CT and labels share the same orientation.
+
+        Maintains BOTH 'ct_image' (LPI-oriented) and 'ct_image_raw' (original frame)
+        in agent.memory so that _store_label_with_metadata can correctly copy
+        spatial metadata from the raw frame, matching the contract in AgenticSys.
+        """
         import SimpleITK as sitk
 
         ct_image_path = kwargs.get("ct_image_path")
         if ct_image_path:
             try:
                 logger.info(f"Loading CT image: {ct_image_path}")
-                ct_image = sitk.ReadImage(ct_image_path)
+                ct_raw = sitk.ReadImage(ct_image_path)
+                ct_image = _safe_dicom_orient(ct_raw, 'LPI', context="for CT")
                 if agent:
+                    # Store both raw (for label metadata) and oriented (for downstream use)
+                    agent.memory.store("ct_image_raw", ct_raw)
                     agent.memory.store("ct_image", ct_image)
                     agent.memory.store("ct_path", ct_image_path)
                 return ct_image
@@ -358,6 +605,8 @@ class PlanningPipelineTool(BaseTool):
         if agent:
             ct_image = agent.memory.retrieve("ct_image")
             if ct_image is not None:
+                # Ensure stored CT is also LPI-oriented
+                ct_image = _safe_dicom_orient(ct_image, 'LPI', context="for stored CT")
                 return ct_image
 
         return None
@@ -370,7 +619,10 @@ class PlanningPipelineTool(BaseTool):
         if ctv_mask_path:
             try:
                 logger.info(f"Loading CTV mask from path: {ctv_mask_path}")
-                ctv_mask = sitk.GetArrayFromImage(sitk.ReadImage(ctv_mask_path))
+                ctv_img = sitk.ReadImage(ctv_mask_path)
+                # Orient to LPI to match CT orientation
+                ctv_img = _safe_dicom_orient(ctv_img, 'LPI', context="for CTV mask")
+                ctv_mask = sitk.GetArrayFromImage(ctv_img)
                 if agent:
                     agent.memory.store("ctv_array", ctv_mask)
                 return ctv_mask
@@ -381,8 +633,10 @@ class PlanningPipelineTool(BaseTool):
             # Try _get_label_array first (handles DICOMOrient)
             if hasattr(agent, '_get_label_array'):
                 ctv_mask = agent._get_label_array("ctv_array")
+                print(f"[LOAD_CTV] _get_label_array returned: {'exists' if ctv_mask is not None else 'None'}, type={type(ctv_mask).__name__ if ctv_mask is not None else 'N/A'}")
             else:
                 ctv_mask = agent.memory.retrieve("ctv_array")
+                print(f"[LOAD_CTV] memory.retrieve returned: {'exists' if ctv_mask is not None else 'None'}")
 
             if ctv_mask is not None:
                 # Ensure it's a numpy array
@@ -390,10 +644,13 @@ class PlanningPipelineTool(BaseTool):
                     ctv_mask = sitk.GetArrayFromImage(ctv_mask)
                 # Validate it has content
                 if hasattr(ctv_mask, 'shape'):
-                    logger.info(f"CTV from memory: shape={ctv_mask.shape}, non-zero={int(ctv_mask.sum()) if ctv_mask.dtype in [int, float] else 'N/A'}")
+                    print(f"[LOAD_CTV] CTV from memory: shape={ctv_mask.shape}, non-zero={int(ctv_mask.sum()) if ctv_mask.dtype in [int, float] else 'N/A'}")
                 return ctv_mask
             else:
-                logger.warning("CTV mask not found in agent memory")
+                print("[LOAD_CTV] CTV mask NOT found in agent memory")
+                # Debug: check what's in planning_results
+                if hasattr(agent, 'memory') and hasattr(agent.memory, 'planning_results'):
+                    print(f"[LOAD_CTV] planning_results keys: {list(agent.memory.planning_results.keys())}")
 
         return None
 
@@ -405,7 +662,9 @@ class PlanningPipelineTool(BaseTool):
         if oar_mask_path:
             try:
                 logger.info(f"Loading OAR mask: {oar_mask_path}")
-                oar_mask = sitk.GetArrayFromImage(sitk.ReadImage(oar_mask_path))
+                oar_img = sitk.ReadImage(oar_mask_path)
+                oar_img = _safe_dicom_orient(oar_img, 'LPI', context="for OAR mask")
+                oar_mask = sitk.GetArrayFromImage(oar_img)
                 if agent:
                     agent.memory.store("oar_array", oar_mask)
                 return oar_mask
@@ -578,7 +837,8 @@ class PlanningPipelineTool(BaseTool):
 
         if not trajectories:
             logger.info("No trajectories found, running trajectory_init first...")
-            init_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, [0, 1, 0], {}, agent)
+            # Pass sentinel "auto" so the init step picks an organ-aware default
+            init_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, "auto", {}, agent)
             if not init_result.success:
                 return ToolResult(success=False, error=f"[trajectory_refine] Cannot generate trajectories: {init_result.error}")
             trajectories = init_result.metadata.get("trajectories", [])
@@ -816,7 +1076,7 @@ class PlanningPipelineTool(BaseTool):
                 success=False,
                 error="[dose_calc] No seed plan available. Please run seed_planning first:\n"
                       "  tool('planning_pipeline', step='seed_planning')\n"
-                      "Or run full pipeline: tool('planning_pipeline', step='full')"
+                      "Run steps in order: trajectory_init → trajectory_refine → seed_planning → dose_calc → dose_eval"
             )
 
         # Get dose distribution (already computed during seed_planning)
@@ -909,7 +1169,7 @@ class PlanningPipelineTool(BaseTool):
                 success=False,
                 error="[dose_eval] No dose distribution available. Please run seed_planning or dose_calc first:\n"
                       "  tool('planning_pipeline', step='seed_planning')\n"
-                      "Or run full pipeline: tool('planning_pipeline', step='full')"
+                      "Run steps in order: trajectory_init → trajectory_refine → seed_planning → dose_calc → dose_eval"
             )
 
         # Get organ names for DVH labels

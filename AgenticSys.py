@@ -647,7 +647,7 @@ class ToolResultPipeline:
             max_dose = meta.get("max_dose", 0)
             mean_dose = meta.get("mean_dose", 0)
             num_seeds = meta.get("num_seeds", 0)
-            engine = meta.get("engine", "gaussian")
+            engine = meta.get("engine", "cnn")
             lines = [
                 "## 💊 Dose Calculation",
                 "",
@@ -878,6 +878,7 @@ class BrachyAgent:
             IntraOpReplanSkill, DICOMExportSkill, ReportGenerationSkill,
             MultiOrganSegSkill, VoCoSegSkill, QualityCheckSkill,
             DVHAnalysisSkill, SelfEvolveSkill, CodeWriterSkill,
+            LiverFullSkill, LungFullSkill,
         )
 
         self.interaction_memory = InteractionMemory(session_id=session_id)
@@ -895,6 +896,7 @@ class BrachyAgent:
             IntraOpReplanSkill, DICOMExportSkill, ReportGenerationSkill,
             MultiOrganSegSkill, VoCoSegSkill, QualityCheckSkill,
             DVHAnalysisSkill, SelfEvolveSkill, CodeWriterSkill,
+            LiverFullSkill, LungFullSkill,
         ]:
             self.skill_registry.register(skill_class())
 
@@ -1509,10 +1511,13 @@ class BrachyAgent:
     def _store_tool_result(self, tool_name: str, result):
         """Store tool result in memory based on tool type."""
         if not result.success:
+            print(f"[STORE] Skipping {tool_name}: not successful")
             return
         meta = result.metadata or {}
+        print(f"[STORE] {tool_name}: metadata keys={list(meta.keys())}")
         ct_image = self.memory.retrieve("ct_image")
         if tool_name == "ctv_segmentation" and "ctv_array" in meta:
+            print(f"[STORE] Storing ctv_array, shape={meta['ctv_array'].shape if hasattr(meta['ctv_array'], 'shape') else 'N/A'}, ct_image={'exists' if ct_image is not None else 'None'}")
             if ct_image is not None:
                 self._store_label_with_metadata(meta["ctv_array"], ct_image, "ctv_array")
             else:
@@ -3285,6 +3290,33 @@ print(json.dumps(result))
                 tools_executed = True
                 yield yield_event("step", tool_step)
 
+                # Store tool result in agent memory for downstream tools
+                if tool_result is not None and tool_result.success:
+                    print(f"[EXEC] Calling _store_tool_result for {tool_name}")
+                    self._store_tool_result(tool_name, tool_result)
+                    # Verify storage
+                    if tool_name == 'ctv_segmentation':
+                        _stored = self.memory.retrieve("ctv_array")
+                        print(f"[VERIFY] After store: ctv_array={'exists' if _stored is not None else 'None'}, agent_id={id(self)}")
+                        import AgenticSys as _ag
+                        _global = getattr(_ag, '_global_agent', None)
+                        print(f"[VERIFY] _global_agent id={id(_global) if _global else 'None'}, self id={id(self)}, same={_global is self}")
+                    # Also store ct_path for planning pipeline
+                    if tool_name in ('ctv_segmentation', 'oar_segmentation') and 'image_path' in params:
+                        self.memory.store("ct_path", params['image_path'])
+                        if self.memory.retrieve("ct_image") is None:
+                            try:
+                                import SimpleITK as sitk
+                                ct_img = sitk.ReadImage(params['image_path'])
+                                self.memory.store("ct_image", ct_img)
+                                # Also keep the raw frame for label metadata alignment
+                                self.memory.store("ct_image_raw", ct_img)
+                            except Exception as e:
+                                logger.warning(
+                                    f"Failed to auto-load CT image from {params['image_path']}: {e}. "
+                                    f"Downstream planning may fail with 'No CT image available'."
+                                )
+
                 # Append tool call and result to messages in Anthropic-compatible format
                 tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
                 messages.append({
@@ -3733,6 +3765,8 @@ print(json.dumps(result))
                                 import SimpleITK as sitk
                                 ct_img = sitk.ReadImage(tc['params']['image_path'])
                                 self.memory.store("ct_image", ct_img)
+                                # Keep raw frame for label metadata alignment
+                                self.memory.retrieve("ct_image_raw") or self.memory.store("ct_image_raw", ct_img)
                             except Exception as _e:
                                 logger.warning(f"Failed to pre-load CT image: {_e}")
 
@@ -3750,8 +3784,15 @@ print(json.dumps(result))
                                 if self.memory.retrieve("ct_image") is None:
                                     try:
                                         import SimpleITK as sitk
-                                        self.memory.store("ct_image", sitk.ReadImage(tc['params']['image_path']))
-                                    except Exception: pass
+                                        ct_img = sitk.ReadImage(tc['params']['image_path'])
+                                        self.memory.store("ct_image", ct_img)
+                                        # Also keep raw frame for label metadata alignment
+                                        self.memory.retrieve("ct_image_raw") or self.memory.store("ct_image_raw", ct_img)
+                                    except Exception as e:
+                                        logger.warning(
+                                            f"Failed to auto-load CT from {tc['params']['image_path']}: {e}. "
+                                            f"Downstream planning may fail with 'No CT image available'."
+                                        )
                         # Store in conversation for context persistence
                         self.memory.add_message("assistant", f"[Called {tc['tool']}]")
                         result_summary = result.message[:500] if result.success else f"Error: {result.error}"
