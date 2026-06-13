@@ -43,6 +43,8 @@ from .advanced_skills import (
     DVHAnalysisSkill,
     SelfEvolveSkill,
     CodeWriterSkill,
+    LiverFullSkill,
+    LungFullSkill,
 )
 
 # Markdown skill loader (Claude Code style)
@@ -82,6 +84,8 @@ __all__ = [
     "DVHAnalysisSkill",
     "SelfEvolveSkill",
     "CodeWriterSkill",
+    "LiverFullSkill",
+    "LungFullSkill",
     # Markdown skills
     "MarkdownSkill",
     "MarkdownSkillLoader",

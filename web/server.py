@@ -253,7 +253,9 @@ def create_app(config: Optional[Dict] = None):
     @app.route("/")
     def index():
         resp = send_from_directory(APP_DIR, "index.html")
-        resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+        resp.headers['Pragma'] = 'no-cache'
+        resp.headers['Expires'] = '0'
         return resp
 
     @app.route("/api/upload", methods=["POST"])
@@ -1450,26 +1452,47 @@ def create_app(config: Optional[Dict] = None):
             from tool_factory.seed_plan.planning_pipeline import PlanningPipelineTool
             tool = PlanningPipelineTool()
 
-            # Get config from agent
+            # Get config from agent; fall back to plans/config.json defaults
+            # for any planning params not set on the agent (e.g. reference_direc,
+            # radiation_array_params). This keeps endpoint behavior consistent
+            # with the canonical config and avoids stale [0,1,0] direction.
             config = getattr(agent, 'config', {})
+            try:
+                import json as _json, os as _os
+                _cfg_path = _os.path.join(_os.path.dirname(__file__), '..', 'plans', 'config.json')
+                with open(_cfg_path) as _f:
+                    _default_cfg = _json.load(_f)
+            except Exception:
+                _default_cfg = {}
+
+            def _cfg(key, default=None):
+                """Get config value: agent.config > plans/config.json > default."""
+                if key in config:
+                    return config[key]
+                if key in _default_cfg:
+                    return _default_cfg[key]
+                return default
+
+            # Merge radiation_array_params from default if not on agent
+            _rad_params_default = _default_cfg.get("radiation_array_params", {})
 
             result = tool._execute(
                 ct_image_path=ct_image_path,
                 step=step,
-                mode=config.get("mode", "rule_based"),
-                seed_info=config.get("seed_info"),
+                mode=_cfg("mode", "rule_based"),
+                seed_info=_cfg("seed_info"),
                 planning_params={
-                    "in_lowest_energy": config.get("in_lowest_energy"),
-                    "out_highest_energy": config.get("out_highest_energy"),
-                    "DVH_rate": config.get("DVH_rate"),
-                    "iter_rate": config.get("iter_rate"),
-                    "max_iter": config.get("max_iter"),
-                    "direc_resolution": config.get("direc_resolution"),
-                    "image_normalize": config.get("image_normalize", [-1000, 3000, 255]),
+                    "in_lowest_energy": _cfg("in_lowest_energy"),
+                    "out_highest_energy": _cfg("out_highest_energy"),
+                    "DVH_rate": _cfg("DVH_rate"),
+                    "iter_rate": _cfg("iter_rate"),
+                    "max_iter": _cfg("max_iter"),
+                    "direc_resolution": _cfg("direc_resolution"),
+                    "image_normalize": _cfg("image_normalize", [-1000, 3000, 255]),
                 },
-                dl_params=config.get("dl_params"),
-                rf_params=config.get("rf_params"),
-                ref_direc=config.get("reference_direc"),
+                dl_params=_cfg("dl_params"),
+                rf_params=_cfg("rf_params"),
+                ref_direc=_cfg("reference_direc"),
             )
 
             if result.success:
@@ -2144,8 +2167,15 @@ def create_app(config: Optional[Dict] = None):
         if stream:
             def generate():
                 agent.memory.set_ui_state(ui_state)
-                for event in agent.chat_with_stream(full_message):
-                    yield event
+                try:
+                    for event in agent.chat_with_stream(full_message):
+                        yield event
+                except Exception as e:
+                    # Mid-stream failure: emit a final SSE error event so the
+                    # client can render a graceful message instead of a broken stream.
+                    logger.error(f"Chat stream failed: {e}")
+                    import json
+                    yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
 
             return Response(
                 generate(),
