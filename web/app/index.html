@@ -5517,59 +5517,138 @@ function updateToolProgress(el, toolName, status, result) {
 // collide. The 'folded' state is the resting state after the response
 // completes; the user can re-expand by clicking the header.
 
+// Language-aware todo labels. The user complained that typing
+// English but seeing Chinese todo entries is a "顶层问题" — to
+// fix it top-level, the todo list now picks labels from a
+// per-language dictionary. The chosen language is detected
+// server-side from the user's input (see memory/language.py) and
+// surfaced in /api/status; the frontend reads it via
+// `window._uiLanguage` (set by the chat SSE handler at the
+// start of every turn). When the language flips, every NEW
+// todo list uses the new labels; in-flight todo lists keep
+// their existing labels (no retroactive re-render — that
+// would just flash the user with content that disappears).
+const _TODO_I18N = {
+    zh: {
+        header: '执行进度',
+        default_processing: '处理中',
+        call_prefix: '调用 ',
+        user: '接收用户请求',
+        thinking: 'LLM 思考 / 路由',
+        memory: '记忆检索 / 经验匹配',
+        assistant: '生成最终回复',
+        error: '出现错误',
+        done: '执行完成',
+        tools: {
+            ctv_segmentation: 'CTV 靶区分割',
+            oar_segmentation: 'OAR 危及器官分割',
+            trajectory_planning: '轨迹初始化 / 细化',
+            planning_pipeline: '粒子植入规划（5 步流水线）',
+            seed_planning: '种子位置优化',
+            dose_engine: '剂量计算',
+            dose_evaluation: '剂量学评估',
+            dose_calc: '剂量计算',
+            dose_eval: '剂量学评估',
+            seed_segmentation: '种子区域分割',
+            seed_placement: '种子放置',
+            report_generator: '报告生成',
+            report_auto_fill: '报告自动填充',
+            dicom_rt_exporter: 'DICOM-RT 导出',
+            case_memory: '调用案例记忆',
+            clinical_kb: '查询临床知识库',
+            safety_validator: '安全校验',
+            plan_comparator: '计划对比',
+            code_executor: '执行代码',
+            filesystem_browser: '浏览文件系统',
+            web_search: '联网搜索',
+            web_fetch: '抓取网页',
+            ui_screenshot: '截屏',
+            ui_controller: 'UI 控制',
+            ui_annotate: '图像标注',
+            shell_executor: '执行 Shell 命令',
+            env_manager: '环境管理',
+        },
+    },
+    en: {
+        header: 'Progress',
+        default_processing: 'Processing...',
+        call_prefix: 'Calling ',
+        user: 'User input',
+        thinking: 'LLM thinking / routing',
+        memory: 'Memory recall',
+        assistant: 'Final response',
+        error: 'Error',
+        done: 'Done',
+        tools: {
+            ctv_segmentation: 'CTV tumor segmentation',
+            oar_segmentation: 'OAR segmentation',
+            trajectory_planning: 'Trajectory init / refine',
+            planning_pipeline: 'Brachytherapy planning (5-stage pipeline)',
+            seed_planning: 'Seed position optimization',
+            dose_engine: 'Dose calculation',
+            dose_evaluation: 'Dose evaluation',
+            dose_calc: 'Dose calculation',
+            dose_eval: 'Dose evaluation',
+            seed_segmentation: 'Seed-region segmentation',
+            seed_placement: 'Seed placement',
+            report_generator: 'Report generation',
+            report_auto_fill: 'Report auto-fill',
+            dicom_rt_exporter: 'DICOM-RT export',
+            case_memory: 'Case memory lookup',
+            clinical_kb: 'Clinical knowledge base',
+            safety_validator: 'Safety validation',
+            plan_comparator: 'Plan comparison',
+            code_executor: 'Code execution',
+            filesystem_browser: 'Filesystem browser',
+            web_search: 'Web search',
+            web_fetch: 'Web fetch',
+            ui_screenshot: 'Screenshot',
+            ui_controller: 'UI control',
+            ui_annotate: 'Image annotation',
+            shell_executor: 'Shell command',
+            env_manager: 'Environment management',
+        },
+    },
+};
+
+// Active language for todo lists. Updated by the chat SSE handler
+// when /api/chat returns the detected language for the current turn.
+let _activeTodoLang = 'en';
+function _setActiveTodoLang(code) {
+    if (code && _TODO_I18N[code]) _activeTodoLang = code;
+}
+function _todoI18n() {
+    return _TODO_I18N[_activeTodoLang] || _TODO_I18N.en;
+}
+
 const _TODO_LABELS = {
-    user:        '接收用户请求',
-    thinking:    'LLM 思考 / 路由',
-    memory:      '记忆检索 / 经验匹配',
-    tool:        null,  // dynamic — see _todoLabelForStep
-    assistant:   '生成最终回复',
-    error:       '出现错误',
-    done:        '执行完成',
+    user:        'User input',       // legacy, replaced by _todoI18n()
+    thinking:    'LLM thinking / routing',
+    memory:      'Memory recall',
+    tool:        null,
+    assistant:   'Final response',
+    error:       'Error',
+    done:        'Done',
 };
 
 function _todoLabelForStep(step) {
-    // Tool name → friendly label
-    const toolLabels = {
-        ctv_segmentation: 'CTV 靶区分割',
-        oar_segmentation: 'OAR 危及器官分割',
-        trajectory_planning: '轨迹初始化 / 细化',
-        planning_pipeline: '粒子植入规划（5 步流水线）',
-        seed_planning: '种子位置优化',
-        dose_engine: '剂量计算',
-        dose_evaluation: '剂量学评估',
-        dose_calc: '剂量计算',
-        dose_eval: '剂量学评估',
-        seed_segmentation: '种子区域分割',
-        seed_placement: '种子放置',
-        report_generator: '报告生成',
-        report_auto_fill: '报告自动填充',
-        dicom_rt_exporter: 'DICOM-RT 导出',
-        case_memory: '调用案例记忆',
-        clinical_kb: '查询临床知识库',
-        safety_validator: '安全校验',
-        plan_comparator: '计划对比',
-        code_executor: '执行代码',
-        filesystem_browser: '浏览文件系统',
-        web_search: '联网搜索',
-        web_fetch: '抓取网页',
-        ui_screenshot: '截屏',
-        ui_controller: 'UI 控制',
-        ui_annotate: '图像标注',
-        shell_executor: '执行 Shell 命令',
-        env_manager: '环境管理',
-    };
+    // Pick the language-aware dictionary. The detection happens
+    // server-side (memory/language.py) and is broadcast to the
+    // frontend via the chat SSE start event; we read it from
+    // window._uiLanguage (set by sendChat on every turn).
+    const i18n = _todoI18n();
     if (step.type === 'tool' && step.tool) {
-        return toolLabels[step.tool] || ('调用 ' + step.tool);
+        return i18n.tools[step.tool] || (i18n.call_prefix + step.tool);
     }
     if (step.type === 'thinking') {
         // Use the step title (e.g. "Multi-Agent Router", "LLM Call 1")
         if (step.title) return step.title;
-        return _TODO_LABELS.thinking;
+        return i18n.thinking;
     }
     if (step.type === 'memory') {
-        return step.title || _TODO_LABELS.memory;
+        return step.title || i18n.memory;
     }
-    return _TODO_LABELS[step.type] || (step.title || '处理中');
+    return i18n[step.type] || (step.title || i18n.default_processing);
 }
 
 function _todoCreate() {
@@ -5582,7 +5661,7 @@ function _todoCreate() {
     header.className = 'chat-todo-header';
     const toggle = document.createElement('span');
     toggle.className = 'chat-todo-toggle';
-    toggle.innerHTML = '<span class="chat-todo-caret">▼</span> <span>执行进度</span> <span class="chat-todo-count"></span>';
+    toggle.innerHTML = '<span class="chat-todo-caret">▼</span> <span>' + _todoI18n().header + '</span> <span class="chat-todo-count"></span>';
     toggle.onclick = () => {
         root.classList.toggle('folded');
         const collapsed = root.querySelector('.chat-todo-list').classList.toggle('collapsed');
@@ -5769,20 +5848,30 @@ function _todoUpdateFromStep(todo, step) {
 //
 // Order matches the agent's documented workflow in
 // config/prompts/system_prompt.md §"Phase 4: ACT".
-const PLANNING_PIPELINE_TEMPLATES = [
-    { tool: 'ctv_segmentation',     label: 'CTV 靶区分割',                  predicted: true },
-    { tool: 'oar_segmentation',     label: 'OAR 危及器官分割',                predicted: true },
-    { tool: 'planning_pipeline',    label: '粒子植入规划（5 步流水线）',         predicted: true },
-    { tool: 'dose_evaluation',      label: '剂量学评估',                       predicted: true },
-    { tool: 'report_auto_fill',     label: '报告自动填充',                     predicted: false },
-];
+// The 5-step predicted pipeline. Labels are language-aware — we
+// read them from _TODO_I18n().tools at seed time. The
+// `tool` field is the canonical key (matches the SSE step.tool);
+// the `label` field is a fallback used only if the i18n dict
+// is missing the tool entry.
+function _planningTemplates() {
+    const i18n = _todoI18n();
+    return [
+        { tool: 'ctv_segmentation',  label: i18n.tools.ctv_segmentation,  predicted: true },
+        { tool: 'oar_segmentation',  label: i18n.tools.oar_segmentation,  predicted: true },
+        { tool: 'planning_pipeline', label: i18n.tools.planning_pipeline, predicted: true },
+        { tool: 'dose_evaluation',   label: i18n.tools.dose_evaluation,   predicted: true },
+        { tool: 'report_auto_fill',  label: i18n.tools.report_auto_fill,  predicted: false },
+    ];
+}
+const PLANNING_PIPELINE_TEMPLATES = _planningTemplates();
+
 const GENERIC_TEMPLATES = [
-    { type: 'thinking',  label: '理解用户请求' },
-    { type: 'memory',    label: '记忆检索 / 经验匹配' },
-    { type: 'thinking',  label: '选择工具 / 路由' },
-    { type: 'tool',      label: '调用工具' },
-    { type: 'thinking',  label: '解析结果' },
-    { type: 'assistant', label: '生成最终回复' },
+    { type: 'thinking',  label_en: 'Understand user request', label_zh: '理解用户请求' },
+    { type: 'memory',    label_en: 'Memory recall',           label_zh: '记忆检索 / 经验匹配' },
+    { type: 'thinking',  label_en: 'Tool selection / routing',label_zh: '选择工具 / 路由' },
+    { type: 'tool',      label_en: 'Invoke tool',             label_zh: '调用工具' },
+    { type: 'thinking',  label_en: 'Parse results',          label_zh: '解析结果' },
+    { type: 'assistant', label_en: 'Final response',          label_zh: '生成最终回复' },
 ];
 
 function _todoSeed(todo, userMessage) {
@@ -5793,7 +5882,10 @@ function _todoSeed(todo, userMessage) {
         && /放射性|粒子|植入|brachy|seed|tumor|规划|planning|胰|pancrea|前列|pros|肝|liver|肺|lung|头|head|neck|妇科|gyne/i.test(text)
         || /规划/.test(text) || /planning/i.test(text) || /规划/.test(text);
     if (isFullPlan) {
-        for (const t of PLANNING_PIPELINE_TEMPLATES) {
+        // Re-read the templates on every seed call so the language
+        // switch (zh → en mid-session) takes effect for the next
+        // user message's todo list, not just the first one.
+        for (const t of _planningTemplates()) {
             // Add a placeholder item, marked as predicted (the LLM
             // may add the same tool later, in which case _todoUpdateFromStep
             // will find it by tool-name and update it).
@@ -5959,6 +6051,22 @@ async function sendChat(prefill) {
                     let data = null;
                     try { data = JSON.parse(dataStr); } catch (_) { continue; }
 
+                    if (currentEvent === 'start' && data) {
+                        // The server detected the input language and
+                        // sent it in the start event. The frontend
+                        // uses this for the todo list labels,
+                        // status messages, and any other UI text.
+                        // Without this, the user would see English
+                        // user input → Chinese todo entries → Chinese
+                        // LLM reply, which is a "顶层问题"
+                        // (top-level consistency bug).
+                        if (data.language && data.language.code) {
+                            window._uiLanguage = data.language.code;
+                            if (typeof _setActiveTodoLang === 'function') {
+                                _setActiveTodoLang(data.language.code);
+                            }
+                        }
+                    }
                     if (currentEvent === 'step' && data) {
                         steps.push(data);
                         // First step: replace thinking indicator with the live chain
