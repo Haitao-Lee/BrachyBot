@@ -1,0 +1,43 @@
+{
+  "category": "smoke_12",
+  "description": "Smoke subset of 12_language.json for fast PR feedback (~30s total)",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "LN001",
+      "input": "请分析图像",
+      "language": "zh",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "维度",
+        "体素",
+        "HU"
+      ],
+      "forbidden_keywords": [
+        "Dimensions",
+        "Voxel"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_smoke_reason": "Chinese input → Chinese response"
+    },
+    {
+      "id": "LN002",
+      "input": "Analyze the image",
+      "language": "en",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "Dimensions",
+        "Voxel",
+        "HU"
+      ],
+      "forbidden_keywords": [
+        "维度",
+        "体素"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_smoke_reason": "English input → English response"
+    }
+  ]
+}

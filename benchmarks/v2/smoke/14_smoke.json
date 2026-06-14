@@ -1,0 +1,25 @@
+{
+  "category": "smoke_14",
+  "description": "Smoke subset of 14_response_quality.json for fast PR feedback (~30s total)",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "RQ001",
+      "input": "Analyze the image",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "Dimensions",
+        "Voxel",
+        "HU"
+      ],
+      "forbidden_keywords": [
+        "let me",
+        "I'll",
+        "Great question"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_smoke_reason": "Basic response quality"
+    }
+  ]
+}

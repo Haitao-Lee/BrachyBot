@@ -1,0 +1,24 @@
+{
+  "category": "smoke_08",
+  "description": "Smoke subset of 08_error_recovery.json for fast PR feedback (~30s total)",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "ER001",
+      "input": "Segment a non-existent file /tmp/fake.nii",
+      "setup": "No CT upload",
+      "expected_keywords": [
+        "error",
+        "not found",
+        "file"
+      ],
+      "forbidden_keywords": [
+        "segmentation completed"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_comment": "File not found → should handle gracefully",
+      "_smoke_reason": "File not found"
+    }
+  ]
+}

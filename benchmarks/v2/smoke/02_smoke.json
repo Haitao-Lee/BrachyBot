@@ -1,0 +1,34 @@
+{
+  "category": "smoke_02",
+  "description": "Smoke subset of 02_ctv_segmentation.json for fast PR feedback (~30s total)",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "CS001",
+      "input": "Segment the CTV",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "CTV",
+        "segmentation",
+        "completed",
+        "volume"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_smoke_reason": "Basic CTV seg"
+    },
+    {
+      "id": "CS004",
+      "input": "What is the CTV volume?",
+      "setup": "Upload CT + run CTV segmentation",
+      "expected_keywords": [
+        "27849",
+        "mm",
+        "volume"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_smoke_reason": "Volume query after seg"
+    }
+  ]
+}

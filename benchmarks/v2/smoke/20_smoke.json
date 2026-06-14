@@ -1,0 +1,35 @@
+{
+  "category": "smoke_20",
+  "description": "Smoke subset of 20_clinical_scenarios.json for fast PR feedback (~30s total)",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "CL002",
+      "input": "Help me plan brachytherapy for this pancreatic tumor",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "seed",
+        "plan",
+        "pancreas"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_smoke_reason": "Pancreatic planning"
+    },
+    {
+      "id": "CL006",
+      "input": "What is the dose constraint for the duodenum in pancreatic brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "duodenum",
+        "D2cc",
+        "Gy"
+      ],
+      "expected_answer": "55",
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Knowledge query — verifies against OAR_STANDARDS['pancreas']['duodenum']['d2cc']",
+      "_smoke_reason": "Duodenum D2cc (clinical fact)"
+    }
+  ]
+}

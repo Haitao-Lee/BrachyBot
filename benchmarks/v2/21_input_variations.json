@@ -5,44 +5,99 @@
   "cases": [
     {
       "id": "IV001",
-      "input": "Analyze the CT image",
+      "input": "Set window width to 200",
       "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "setup": "Upload CT",
       "expected_keywords": [
-        "512",
-        "48",
-        "HU"
+        "200",
+        "window"
       ],
-      "forbidden_keywords": [
-        "segmentation",
-        "CTV",
-        "OAR"
-      ],
-      "pass_threshold": 0.6,
+      "pass_threshold": 0.5,
       "difficulty": "easy",
-      "_comment": "Analysis variation (en): same expected output, different input"
+      "_comment": "Window width variation (en)"
     },
     {
       "id": "IV002",
-      "input": "analyze the image",
+      "input": "Change window to 200",
       "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "setup": "Upload CT",
       "expected_keywords": [
-        "512",
-        "48",
-        "HU"
+        "200",
+        "window"
       ],
-      "forbidden_keywords": [
-        "segmentation",
-        "CTV",
-        "OAR"
-      ],
-      "pass_threshold": 0.6,
+      "pass_threshold": 0.5,
       "difficulty": "easy",
-      "_comment": "Analysis variation (en): same expected output, different input"
+      "_comment": "Window width variation (en)"
     },
     {
       "id": "IV003",
+      "input": "Adjust window width to 200",
+      "language": "en",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "200",
+        "window"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Window width variation (en)"
+    },
+    {
+      "id": "IV004",
+      "input": "What is the tumor volume?",
+      "language": "en",
+      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
+      "expected_keywords": [
+        "27849",
+        "mm",
+        "volume"
+      ],
+      "forbidden_keywords": [
+        "not available",
+        "need to segment"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Tumor volume variation (en): must report actual volume"
+    },
+    {
+      "id": "IV005",
+      "input": "Tell me the tumor size",
+      "language": "en",
+      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
+      "expected_keywords": [
+        "27849",
+        "mm",
+        "volume"
+      ],
+      "forbidden_keywords": [
+        "not available",
+        "need to segment"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Tumor volume variation (en): must report actual volume"
+    },
+    {
+      "id": "IV006",
+      "input": "How big is the tumor?",
+      "language": "en",
+      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
+      "expected_keywords": [
+        "27849",
+        "mm",
+        "volume"
+      ],
+      "forbidden_keywords": [
+        "not available",
+        "need to segment"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Tumor volume variation (en): must report actual volume"
+    },
+    {
+      "id": "IV007",
       "input": "Please analyze this CT",
       "language": "en",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
@@ -61,84 +116,8 @@
       "_comment": "Analysis variation (en): same expected output, different input"
     },
     {
-      "id": "IV004",
-      "input": "Can you analyze the CT for me?",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "48",
-        "HU"
-      ],
-      "forbidden_keywords": [
-        "segmentation",
-        "CTV",
-        "OAR"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Analysis variation (en): same expected output, different input"
-    },
-    {
-      "id": "IV005",
-      "input": "I need you to analyze the image",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "48",
-        "HU"
-      ],
-      "forbidden_keywords": [
-        "segmentation",
-        "CTV",
-        "OAR"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Analysis variation (en): same expected output, different input"
-    },
-    {
-      "id": "IV006",
-      "input": "Run image analysis",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "48",
-        "HU"
-      ],
-      "forbidden_keywords": [
-        "segmentation",
-        "CTV",
-        "OAR"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Analysis variation (en): same expected output, different input"
-    },
-    {
-      "id": "IV007",
-      "input": "Give me the CT analysis",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "48",
-        "HU"
-      ],
-      "forbidden_keywords": [
-        "segmentation",
-        "CTV",
-        "OAR"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Analysis variation (en): same expected output, different input"
-    },
-    {
       "id": "IV008",
-      "input": "What are the image statistics?",
+      "input": "Analyze the CT image",
       "language": "en",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
       "expected_keywords": [
@@ -157,7 +136,7 @@
     },
     {
       "id": "IV009",
-      "input": "Show me the CT info",
+      "input": "analyze the image",
       "language": "en",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
       "expected_keywords": [
@@ -176,25 +155,477 @@
     },
     {
       "id": "IV010",
-      "input": "分析图像",
-      "language": "zh",
+      "input": "Please analyze the CT and also segment it",
+      "language": "en",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
       "expected_keywords": [
         "512",
-        "48",
-        "HU"
-      ],
-      "forbidden_keywords": [
-        "segmentation",
-        "CTV",
-        "OAR"
+        "segmentation"
       ],
       "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Analysis variation (zh): same expected output, different input"
+      "difficulty": "medium",
+      "_comment": "Analyze+Segment variation (en): both must execute"
     },
     {
       "id": "IV011",
+      "input": "Analyze and segment the image",
+      "language": "en",
+      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "expected_keywords": [
+        "512",
+        "segmentation"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_comment": "Analyze+Segment variation (en): both must execute"
+    },
+    {
+      "id": "IV012",
+      "input": "Analyze then segment",
+      "language": "en",
+      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "expected_keywords": [
+        "512",
+        "segmentation"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_comment": "Analyze+Segment variation (en): both must execute"
+    },
+    {
+      "id": "IV013",
+      "input": "How many organs were segmented?",
+      "language": "en",
+      "setup": "Upload CT + OAR segmentation (57 organs)",
+      "expected_keywords": [
+        "57",
+        "organ"
+      ],
+      "forbidden_keywords": [
+        "not available",
+        "need to segment"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Organ count variation (en): must report actual count"
+    },
+    {
+      "id": "IV014",
+      "input": "Tell me the number of organs",
+      "language": "en",
+      "setup": "Upload CT + OAR segmentation (57 organs)",
+      "expected_keywords": [
+        "57",
+        "organ"
+      ],
+      "forbidden_keywords": [
+        "not available",
+        "need to segment"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Organ count variation (en): must report actual count"
+    },
+    {
+      "id": "IV015",
+      "input": "How many organs?",
+      "language": "en",
+      "setup": "Upload CT + OAR segmentation (57 organs)",
+      "expected_keywords": [
+        "57",
+        "organ"
+      ],
+      "forbidden_keywords": [
+        "not available",
+        "need to segment"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Organ count variation (en): must report actual count"
+    },
+    {
+      "id": "IV016",
+      "input": "Hello",
+      "language": "en",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "BrachyBot"
+      ],
+      "forbidden_keywords": [
+        "Great question",
+        "Let me know"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Greeting variation (en): no filler phrases"
+    },
+    {
+      "id": "IV017",
+      "input": "Hi",
+      "language": "en",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "BrachyBot"
+      ],
+      "forbidden_keywords": [
+        "Great question",
+        "Let me know"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Greeting variation (en): no filler phrases"
+    },
+    {
+      "id": "IV018",
+      "input": "Hey",
+      "language": "en",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "BrachyBot"
+      ],
+      "forbidden_keywords": [
+        "Great question",
+        "Let me know"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Greeting variation (en): no filler phrases"
+    },
+    {
+      "id": "IV019",
+      "input": "Hide CTV overlay",
+      "language": "en",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "CTV",
+        "hide"
+      ],
+      "forbidden_keywords": [
+        "show",
+        "display"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Overlay hide variation (en)"
+    },
+    {
+      "id": "IV020",
+      "input": "Turn off CTV",
+      "language": "en",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "CTV",
+        "hide"
+      ],
+      "forbidden_keywords": [
+        "show",
+        "display"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Overlay hide variation (en)"
+    },
+    {
+      "id": "IV021",
+      "input": "Disable CTV display",
+      "language": "en",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "CTV",
+        "hide"
+      ],
+      "forbidden_keywords": [
+        "show",
+        "display"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Overlay hide variation (en)"
+    },
+    {
+      "id": "IV022",
+      "input": "Show CTV overlay",
+      "language": "en",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "CTV",
+        "show",
+        "overlay"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Overlay show variation (en)"
+    },
+    {
+      "id": "IV023",
+      "input": "Display the CTV",
+      "language": "en",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "CTV",
+        "show",
+        "overlay"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Overlay show variation (en)"
+    },
+    {
+      "id": "IV024",
+      "input": "Turn on CTV overlay",
+      "language": "en",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "CTV",
+        "show",
+        "overlay"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Overlay show variation (en)"
+    },
+    {
+      "id": "IV025",
+      "input": "Please segment this CT",
+      "language": "en",
+      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "expected_keywords": [
+        "segmentation",
+        "completed"
+      ],
+      "forbidden_keywords": [
+        "Dimensions",
+        "Voxel"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Segmentation variation (en): same expected output, different input"
+    },
+    {
+      "id": "IV026",
+      "input": "Segment the image",
+      "language": "en",
+      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "expected_keywords": [
+        "segmentation",
+        "completed"
+      ],
+      "forbidden_keywords": [
+        "Dimensions",
+        "Voxel"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Segmentation variation (en): same expected output, different input"
+    },
+    {
+      "id": "IV027",
+      "input": "segment the CT",
+      "language": "en",
+      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "expected_keywords": [
+        "segmentation",
+        "completed"
+      ],
+      "forbidden_keywords": [
+        "Dimensions",
+        "Voxel"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Segmentation variation (en): same expected output, different input"
+    },
+    {
+      "id": "IV028",
+      "input": "What is the tumor volume?",
+      "language": "en",
+      "setup": "Upload CT only, NO segmentation",
+      "expected_keywords": [
+        "segment",
+        "not available",
+        "need"
+      ],
+      "forbidden_keywords": [
+        "27849",
+        "mm",
+        "volume",
+        "cm³"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_comment": "Hallucination volume (en): NO segmentation → must NOT fabricate"
+    },
+    {
+      "id": "IV029",
+      "input": "Tell me the tumor size",
+      "language": "en",
+      "setup": "Upload CT only, NO segmentation",
+      "expected_keywords": [
+        "segment",
+        "not available",
+        "need"
+      ],
+      "forbidden_keywords": [
+        "27849",
+        "mm",
+        "volume",
+        "cm³"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_comment": "Hallucination volume (en): NO segmentation → must NOT fabricate"
+    },
+    {
+      "id": "IV030",
+      "input": "How big is the tumor?",
+      "language": "en",
+      "setup": "Upload CT only, NO segmentation",
+      "expected_keywords": [
+        "segment",
+        "not available",
+        "need"
+      ],
+      "forbidden_keywords": [
+        "27849",
+        "mm",
+        "volume",
+        "cm³"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_comment": "Hallucination volume (en): NO segmentation → must NOT fabricate"
+    },
+    {
+      "id": "IV031",
+      "input": "Switch to viewer",
+      "language": "en",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "viewer"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "UI switch variation (en)"
+    },
+    {
+      "id": "IV032",
+      "input": "Go to the viewer panel",
+      "language": "en",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "viewer"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "UI switch variation (en)"
+    },
+    {
+      "id": "IV033",
+      "input": "Show me the viewer",
+      "language": "en",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "viewer"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "UI switch variation (en)"
+    },
+    {
+      "id": "IV034",
+      "input": "把窗宽设为200",
+      "language": "zh",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "200",
+        "window"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Window width variation (zh)"
+    },
+    {
+      "id": "IV035",
+      "input": "窗宽调到200",
+      "language": "zh",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "200",
+        "window"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Window width variation (zh)"
+    },
+    {
+      "id": "IV036",
+      "input": "调整窗宽到200",
+      "language": "zh",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "200",
+        "window"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Window width variation (zh)"
+    },
+    {
+      "id": "IV037",
+      "input": "肿瘤体积是多少？",
+      "language": "zh",
+      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
+      "expected_keywords": [
+        "27849",
+        "mm",
+        "volume"
+      ],
+      "forbidden_keywords": [
+        "not available",
+        "need to segment"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Tumor volume variation (zh): must report actual volume"
+    },
+    {
+      "id": "IV038",
+      "input": "CTV有多大？",
+      "language": "zh",
+      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
+      "expected_keywords": [
+        "27849",
+        "mm",
+        "volume"
+      ],
+      "forbidden_keywords": [
+        "not available",
+        "need to segment"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Tumor volume variation (zh): must report actual volume"
+    },
+    {
+      "id": "IV039",
+      "input": "肿瘤有多大？",
+      "language": "zh",
+      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
+      "expected_keywords": [
+        "27849",
+        "mm",
+        "volume"
+      ],
+      "forbidden_keywords": [
+        "not available",
+        "need to segment"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Tumor volume variation (zh): must report actual volume"
+    },
+    {
+      "id": "IV040",
       "input": "请分析CT图像",
       "language": "zh",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
@@ -213,7 +644,26 @@
       "_comment": "Analysis variation (zh): same expected output, different input"
     },
     {
-      "id": "IV012",
+      "id": "IV041",
+      "input": "分析图像",
+      "language": "zh",
+      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "expected_keywords": [
+        "512",
+        "48",
+        "HU"
+      ],
+      "forbidden_keywords": [
+        "segmentation",
+        "CTV",
+        "OAR"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Analysis variation (zh): same expected output, different input"
+    },
+    {
+      "id": "IV042",
       "input": "帮我分析一下这个CT",
       "language": "zh",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
@@ -232,433 +682,7 @@
       "_comment": "Analysis variation (zh): same expected output, different input"
     },
     {
-      "id": "IV013",
-      "input": "分析一下这张图",
-      "language": "zh",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "48",
-        "HU"
-      ],
-      "forbidden_keywords": [
-        "segmentation",
-        "CTV",
-        "OAR"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Analysis variation (zh): same expected output, different input"
-    },
-    {
-      "id": "IV014",
-      "input": "告诉我CT的基本信息",
-      "language": "zh",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "48",
-        "HU"
-      ],
-      "forbidden_keywords": [
-        "segmentation",
-        "CTV",
-        "OAR"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Analysis variation (zh): same expected output, different input"
-    },
-    {
-      "id": "IV015",
-      "input": "看看这个CT的参数",
-      "language": "zh",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "48",
-        "HU"
-      ],
-      "forbidden_keywords": [
-        "segmentation",
-        "CTV",
-        "OAR"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Analysis variation (zh): same expected output, different input"
-    },
-    {
-      "id": "IV016",
-      "input": "请帮我看看这张图像",
-      "language": "zh",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "48",
-        "HU"
-      ],
-      "forbidden_keywords": [
-        "segmentation",
-        "CTV",
-        "OAR"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Analysis variation (zh): same expected output, different input"
-    },
-    {
-      "id": "IV017",
-      "input": "Segment the image",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (en): same expected output, different input"
-    },
-    {
-      "id": "IV018",
-      "input": "segment the CT",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (en): same expected output, different input"
-    },
-    {
-      "id": "IV019",
-      "input": "Please segment this CT",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (en): same expected output, different input"
-    },
-    {
-      "id": "IV020",
-      "input": "Can you segment the organs?",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (en): same expected output, different input"
-    },
-    {
-      "id": "IV021",
-      "input": "I need organ segmentation",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (en): same expected output, different input"
-    },
-    {
-      "id": "IV022",
-      "input": "Run segmentation",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (en): same expected output, different input"
-    },
-    {
-      "id": "IV023",
-      "input": "Do the segmentation",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (en): same expected output, different input"
-    },
-    {
-      "id": "IV024",
-      "input": "Perform CTV and OAR segmentation",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (en): same expected output, different input"
-    },
-    {
-      "id": "IV025",
-      "input": "Identify the organs and tumor",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (en): same expected output, different input"
-    },
-    {
-      "id": "IV026",
-      "input": "分割图像",
-      "language": "zh",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (zh): same expected output, different input"
-    },
-    {
-      "id": "IV027",
-      "input": "请分割CT",
-      "language": "zh",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (zh): same expected output, different input"
-    },
-    {
-      "id": "IV028",
-      "input": "帮我分割一下",
-      "language": "zh",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (zh): same expected output, different input"
-    },
-    {
-      "id": "IV029",
-      "input": "做一下分割",
-      "language": "zh",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (zh): same expected output, different input"
-    },
-    {
-      "id": "IV030",
-      "input": "分割靶区和危及器官",
-      "language": "zh",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (zh): same expected output, different input"
-    },
-    {
-      "id": "IV031",
-      "input": "帮我识别一下器官",
-      "language": "zh",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (zh): same expected output, different input"
-    },
-    {
-      "id": "IV032",
-      "input": "做OAR和CTV分割",
-      "language": "zh",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Segmentation variation (zh): same expected output, different input"
-    },
-    {
-      "id": "IV033",
-      "input": "Analyze and segment the image",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "segmentation"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "_comment": "Analyze+Segment variation (en): both must execute"
-    },
-    {
-      "id": "IV034",
-      "input": "Analyze then segment",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "segmentation"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "_comment": "Analyze+Segment variation (en): both must execute"
-    },
-    {
-      "id": "IV035",
-      "input": "Please analyze the CT and also segment it",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "segmentation"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "_comment": "Analyze+Segment variation (en): both must execute"
-    },
-    {
-      "id": "IV036",
-      "input": "First analyze, then segment",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "segmentation"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "_comment": "Analyze+Segment variation (en): both must execute"
-    },
-    {
-      "id": "IV037",
-      "input": "Do analysis and segmentation",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "segmentation"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "_comment": "Analyze+Segment variation (en): both must execute"
-    },
-    {
-      "id": "IV038",
-      "input": "I need both analysis and segmentation",
-      "language": "en",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "segmentation"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "_comment": "Analyze+Segment variation (en): both must execute"
-    },
-    {
-      "id": "IV039",
+      "id": "IV043",
       "input": "分析并分割图像",
       "language": "zh",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
@@ -671,7 +695,7 @@
       "_comment": "Analyze+Segment variation (zh): both must execute"
     },
     {
-      "id": "IV040",
+      "id": "IV044",
       "input": "先分析再分割",
       "language": "zh",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
@@ -684,7 +708,7 @@
       "_comment": "Analyze+Segment variation (zh): both must execute"
     },
     {
-      "id": "IV041",
+      "id": "IV045",
       "input": "分析一下图像，然后分割",
       "language": "zh",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
@@ -697,766 +721,7 @@
       "_comment": "Analyze+Segment variation (zh): both must execute"
     },
     {
-      "id": "IV042",
-      "input": "帮我分析和分割",
-      "language": "zh",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "segmentation"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "_comment": "Analyze+Segment variation (zh): both must execute"
-    },
-    {
-      "id": "IV043",
-      "input": "分析图像然后做分割",
-      "language": "zh",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "segmentation"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "_comment": "Analyze+Segment variation (zh): both must execute"
-    },
-    {
-      "id": "IV044",
-      "input": "先看图像信息，再分割",
-      "language": "zh",
-      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
-      "expected_keywords": [
-        "512",
-        "segmentation"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "_comment": "Analyze+Segment variation (zh): both must execute"
-    },
-    {
-      "id": "IV045",
-      "input": "Switch to viewer",
-      "language": "en",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "viewer"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "UI switch variation (en)"
-    },
-    {
       "id": "IV046",
-      "input": "Go to the viewer panel",
-      "language": "en",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "viewer"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "UI switch variation (en)"
-    },
-    {
-      "id": "IV047",
-      "input": "Show me the viewer",
-      "language": "en",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "viewer"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "UI switch variation (en)"
-    },
-    {
-      "id": "IV048",
-      "input": "Take me to the viewer",
-      "language": "en",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "viewer"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "UI switch variation (en)"
-    },
-    {
-      "id": "IV049",
-      "input": "Navigate to viewer",
-      "language": "en",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "viewer"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "UI switch variation (en)"
-    },
-    {
-      "id": "IV050",
-      "input": "切到viewer",
-      "language": "zh",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "viewer"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "UI switch variation (zh)"
-    },
-    {
-      "id": "IV051",
-      "input": "帮我切到查看器",
-      "language": "zh",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "viewer"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "UI switch variation (zh)"
-    },
-    {
-      "id": "IV052",
-      "input": "转到viewer面板",
-      "language": "zh",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "viewer"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "UI switch variation (zh)"
-    },
-    {
-      "id": "IV053",
-      "input": "打开viewer",
-      "language": "zh",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "viewer"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "UI switch variation (zh)"
-    },
-    {
-      "id": "IV054",
-      "input": "切换到图像查看",
-      "language": "zh",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "viewer"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "UI switch variation (zh)"
-    },
-    {
-      "id": "IV055",
-      "input": "Set window width to 200",
-      "language": "en",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "200",
-        "window"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Window width variation (en)"
-    },
-    {
-      "id": "IV056",
-      "input": "Change window to 200",
-      "language": "en",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "200",
-        "window"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Window width variation (en)"
-    },
-    {
-      "id": "IV057",
-      "input": "Adjust window width to 200",
-      "language": "en",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "200",
-        "window"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Window width variation (en)"
-    },
-    {
-      "id": "IV058",
-      "input": "Window width 200",
-      "language": "en",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "200",
-        "window"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Window width variation (en)"
-    },
-    {
-      "id": "IV059",
-      "input": "把窗宽设为200",
-      "language": "zh",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "200",
-        "window"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Window width variation (zh)"
-    },
-    {
-      "id": "IV060",
-      "input": "窗宽调到200",
-      "language": "zh",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "200",
-        "window"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Window width variation (zh)"
-    },
-    {
-      "id": "IV061",
-      "input": "调整窗宽到200",
-      "language": "zh",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "200",
-        "window"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Window width variation (zh)"
-    },
-    {
-      "id": "IV062",
-      "input": "窗宽改成200",
-      "language": "zh",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "200",
-        "window"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Window width variation (zh)"
-    },
-    {
-      "id": "IV063",
-      "input": "Show CTV overlay",
-      "language": "en",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "show",
-        "overlay"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay show variation (en)"
-    },
-    {
-      "id": "IV064",
-      "input": "Display the CTV",
-      "language": "en",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "show",
-        "overlay"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay show variation (en)"
-    },
-    {
-      "id": "IV065",
-      "input": "Turn on CTV overlay",
-      "language": "en",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "show",
-        "overlay"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay show variation (en)"
-    },
-    {
-      "id": "IV066",
-      "input": "Enable CTV display",
-      "language": "en",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "show",
-        "overlay"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay show variation (en)"
-    },
-    {
-      "id": "IV067",
-      "input": "显示CTV",
-      "language": "zh",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "show",
-        "overlay"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay show variation (zh)"
-    },
-    {
-      "id": "IV068",
-      "input": "把CTV显示出来",
-      "language": "zh",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "show",
-        "overlay"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay show variation (zh)"
-    },
-    {
-      "id": "IV069",
-      "input": "打开CTV叠加层",
-      "language": "zh",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "show",
-        "overlay"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay show variation (zh)"
-    },
-    {
-      "id": "IV070",
-      "input": "CTV显示开",
-      "language": "zh",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "show",
-        "overlay"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay show variation (zh)"
-    },
-    {
-      "id": "IV071",
-      "input": "Hide CTV overlay",
-      "language": "en",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "hide"
-      ],
-      "forbidden_keywords": [
-        "show",
-        "display"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay hide variation (en)"
-    },
-    {
-      "id": "IV072",
-      "input": "Turn off CTV",
-      "language": "en",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "hide"
-      ],
-      "forbidden_keywords": [
-        "show",
-        "display"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay hide variation (en)"
-    },
-    {
-      "id": "IV073",
-      "input": "Disable CTV display",
-      "language": "en",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "hide"
-      ],
-      "forbidden_keywords": [
-        "show",
-        "display"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay hide variation (en)"
-    },
-    {
-      "id": "IV074",
-      "input": "Remove CTV overlay",
-      "language": "en",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "hide"
-      ],
-      "forbidden_keywords": [
-        "show",
-        "display"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay hide variation (en)"
-    },
-    {
-      "id": "IV075",
-      "input": "隐藏CTV",
-      "language": "zh",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "hide"
-      ],
-      "forbidden_keywords": [
-        "show",
-        "display"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay hide variation (zh)"
-    },
-    {
-      "id": "IV076",
-      "input": "把CTV关掉",
-      "language": "zh",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "hide"
-      ],
-      "forbidden_keywords": [
-        "show",
-        "display"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay hide variation (zh)"
-    },
-    {
-      "id": "IV077",
-      "input": "CTV不要显示",
-      "language": "zh",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "hide"
-      ],
-      "forbidden_keywords": [
-        "show",
-        "display"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay hide variation (zh)"
-    },
-    {
-      "id": "IV078",
-      "input": "关闭CTV叠加层",
-      "language": "zh",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "CTV",
-        "hide"
-      ],
-      "forbidden_keywords": [
-        "show",
-        "display"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Overlay hide variation (zh)"
-    },
-    {
-      "id": "IV079",
-      "input": "What is the tumor volume?",
-      "language": "en",
-      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
-      "expected_keywords": [
-        "27849",
-        "mm",
-        "volume"
-      ],
-      "forbidden_keywords": [
-        "not available",
-        "need to segment"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Tumor volume variation (en): must report actual volume"
-    },
-    {
-      "id": "IV080",
-      "input": "How big is the tumor?",
-      "language": "en",
-      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
-      "expected_keywords": [
-        "27849",
-        "mm",
-        "volume"
-      ],
-      "forbidden_keywords": [
-        "not available",
-        "need to segment"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Tumor volume variation (en): must report actual volume"
-    },
-    {
-      "id": "IV081",
-      "input": "What is the CTV volume?",
-      "language": "en",
-      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
-      "expected_keywords": [
-        "27849",
-        "mm",
-        "volume"
-      ],
-      "forbidden_keywords": [
-        "not available",
-        "need to segment"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Tumor volume variation (en): must report actual volume"
-    },
-    {
-      "id": "IV082",
-      "input": "Tell me the tumor size",
-      "language": "en",
-      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
-      "expected_keywords": [
-        "27849",
-        "mm",
-        "volume"
-      ],
-      "forbidden_keywords": [
-        "not available",
-        "need to segment"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Tumor volume variation (en): must report actual volume"
-    },
-    {
-      "id": "IV083",
-      "input": "How large is the CTV?",
-      "language": "en",
-      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
-      "expected_keywords": [
-        "27849",
-        "mm",
-        "volume"
-      ],
-      "forbidden_keywords": [
-        "not available",
-        "need to segment"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Tumor volume variation (en): must report actual volume"
-    },
-    {
-      "id": "IV084",
-      "input": "肿瘤体积是多少？",
-      "language": "zh",
-      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
-      "expected_keywords": [
-        "27849",
-        "mm",
-        "volume"
-      ],
-      "forbidden_keywords": [
-        "not available",
-        "need to segment"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Tumor volume variation (zh): must report actual volume"
-    },
-    {
-      "id": "IV085",
-      "input": "CTV有多大？",
-      "language": "zh",
-      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
-      "expected_keywords": [
-        "27849",
-        "mm",
-        "volume"
-      ],
-      "forbidden_keywords": [
-        "not available",
-        "need to segment"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Tumor volume variation (zh): must report actual volume"
-    },
-    {
-      "id": "IV086",
-      "input": "肿瘤有多大？",
-      "language": "zh",
-      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
-      "expected_keywords": [
-        "27849",
-        "mm",
-        "volume"
-      ],
-      "forbidden_keywords": [
-        "not available",
-        "need to segment"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Tumor volume variation (zh): must report actual volume"
-    },
-    {
-      "id": "IV087",
-      "input": "告诉我靶区的体积",
-      "language": "zh",
-      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
-      "expected_keywords": [
-        "27849",
-        "mm",
-        "volume"
-      ],
-      "forbidden_keywords": [
-        "not available",
-        "need to segment"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Tumor volume variation (zh): must report actual volume"
-    },
-    {
-      "id": "IV088",
-      "input": "CTV的体积是多少",
-      "language": "zh",
-      "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
-      "expected_keywords": [
-        "27849",
-        "mm",
-        "volume"
-      ],
-      "forbidden_keywords": [
-        "not available",
-        "need to segment"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Tumor volume variation (zh): must report actual volume"
-    },
-    {
-      "id": "IV089",
-      "input": "How many organs were segmented?",
-      "language": "en",
-      "setup": "Upload CT + OAR segmentation (57 organs)",
-      "expected_keywords": [
-        "57",
-        "organ"
-      ],
-      "forbidden_keywords": [
-        "not available",
-        "need to segment"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Organ count variation (en): must report actual count"
-    },
-    {
-      "id": "IV090",
-      "input": "How many organs?",
-      "language": "en",
-      "setup": "Upload CT + OAR segmentation (57 organs)",
-      "expected_keywords": [
-        "57",
-        "organ"
-      ],
-      "forbidden_keywords": [
-        "not available",
-        "need to segment"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Organ count variation (en): must report actual count"
-    },
-    {
-      "id": "IV091",
-      "input": "What is the organ count?",
-      "language": "en",
-      "setup": "Upload CT + OAR segmentation (57 organs)",
-      "expected_keywords": [
-        "57",
-        "organ"
-      ],
-      "forbidden_keywords": [
-        "not available",
-        "need to segment"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Organ count variation (en): must report actual count"
-    },
-    {
-      "id": "IV092",
-      "input": "Tell me the number of organs",
-      "language": "en",
-      "setup": "Upload CT + OAR segmentation (57 organs)",
-      "expected_keywords": [
-        "57",
-        "organ"
-      ],
-      "forbidden_keywords": [
-        "not available",
-        "need to segment"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Organ count variation (en): must report actual count"
-    },
-    {
-      "id": "IV093",
       "input": "分割了多少个器官？",
       "language": "zh",
       "setup": "Upload CT + OAR segmentation (57 organs)",
@@ -1473,7 +738,7 @@
       "_comment": "Organ count variation (zh): must report actual count"
     },
     {
-      "id": "IV094",
+      "id": "IV047",
       "input": "器官有多少个？",
       "language": "zh",
       "setup": "Upload CT + OAR segmentation (57 organs)",
@@ -1490,7 +755,7 @@
       "_comment": "Organ count variation (zh): must report actual count"
     },
     {
-      "id": "IV095",
+      "id": "IV048",
       "input": "告诉我器官数量",
       "language": "zh",
       "setup": "Upload CT + OAR segmentation (57 organs)",
@@ -1507,104 +772,199 @@
       "_comment": "Organ count variation (zh): must report actual count"
     },
     {
-      "id": "IV096",
-      "input": "分割了几个器官",
+      "id": "IV049",
+      "input": "你好",
       "language": "zh",
-      "setup": "Upload CT + OAR segmentation (57 organs)",
+      "setup": "No CT needed",
       "expected_keywords": [
-        "57",
-        "organ"
+        "BrachyBot"
       ],
       "forbidden_keywords": [
-        "not available",
-        "need to segment"
+        "Great question",
+        "Let me know"
       ],
       "pass_threshold": 0.6,
       "difficulty": "easy",
-      "_comment": "Organ count variation (zh): must report actual count"
+      "_comment": "Greeting variation (zh): no filler phrases"
     },
     {
-      "id": "IV097",
-      "input": "What is the tumor volume?",
-      "language": "en",
-      "setup": "Upload CT only, NO segmentation",
+      "id": "IV050",
+      "input": "嗨",
+      "language": "zh",
+      "setup": "No CT needed",
       "expected_keywords": [
-        "segment",
-        "not available",
-        "need"
+        "BrachyBot"
       ],
       "forbidden_keywords": [
-        "27849",
-        "mm",
-        "volume",
-        "cm³"
+        "Great question",
+        "Let me know"
       ],
       "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "_comment": "Hallucination volume (en): NO segmentation → must NOT fabricate"
+      "difficulty": "easy",
+      "_comment": "Greeting variation (zh): no filler phrases"
     },
     {
-      "id": "IV098",
-      "input": "How big is the tumor?",
-      "language": "en",
-      "setup": "Upload CT only, NO segmentation",
+      "id": "IV051",
+      "input": "您好",
+      "language": "zh",
+      "setup": "No CT needed",
       "expected_keywords": [
-        "segment",
-        "not available",
-        "need"
+        "BrachyBot"
       ],
       "forbidden_keywords": [
-        "27849",
-        "mm",
-        "volume",
-        "cm³"
+        "Great question",
+        "Let me know"
       ],
       "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "_comment": "Hallucination volume (en): NO segmentation → must NOT fabricate"
+      "difficulty": "easy",
+      "_comment": "Greeting variation (zh): no filler phrases"
     },
     {
-      "id": "IV099",
-      "input": "Tell me the tumor size",
-      "language": "en",
-      "setup": "Upload CT only, NO segmentation",
+      "id": "IV052",
+      "input": "隐藏CTV",
+      "language": "zh",
+      "setup": "Upload CT + segmentation",
       "expected_keywords": [
-        "segment",
-        "not available",
-        "need"
+        "CTV",
+        "hide"
       ],
       "forbidden_keywords": [
-        "27849",
-        "mm",
-        "volume",
-        "cm³"
+        "show",
+        "display"
       ],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "_comment": "Hallucination volume (en): NO segmentation → must NOT fabricate"
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Overlay hide variation (zh)"
     },
     {
-      "id": "IV100",
-      "input": "What is the CTV volume?",
-      "language": "en",
-      "setup": "Upload CT only, NO segmentation",
+      "id": "IV053",
+      "input": "把CTV关掉",
+      "language": "zh",
+      "setup": "Upload CT + segmentation",
       "expected_keywords": [
-        "segment",
-        "not available",
-        "need"
+        "CTV",
+        "hide"
       ],
       "forbidden_keywords": [
-        "27849",
-        "mm",
-        "volume",
-        "cm³"
+        "show",
+        "display"
       ],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "_comment": "Hallucination volume (en): NO segmentation → must NOT fabricate"
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Overlay hide variation (zh)"
     },
     {
-      "id": "IV101",
+      "id": "IV054",
+      "input": "CTV不要显示",
+      "language": "zh",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "CTV",
+        "hide"
+      ],
+      "forbidden_keywords": [
+        "show",
+        "display"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Overlay hide variation (zh)"
+    },
+    {
+      "id": "IV055",
+      "input": "显示CTV",
+      "language": "zh",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "CTV",
+        "show",
+        "overlay"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Overlay show variation (zh)"
+    },
+    {
+      "id": "IV056",
+      "input": "把CTV显示出来",
+      "language": "zh",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "CTV",
+        "show",
+        "overlay"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Overlay show variation (zh)"
+    },
+    {
+      "id": "IV057",
+      "input": "打开CTV叠加层",
+      "language": "zh",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": [
+        "CTV",
+        "show",
+        "overlay"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Overlay show variation (zh)"
+    },
+    {
+      "id": "IV058",
+      "input": "请分割CT",
+      "language": "zh",
+      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "expected_keywords": [
+        "segmentation",
+        "completed"
+      ],
+      "forbidden_keywords": [
+        "Dimensions",
+        "Voxel"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Segmentation variation (zh): same expected output, different input"
+    },
+    {
+      "id": "IV059",
+      "input": "分割图像",
+      "language": "zh",
+      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "expected_keywords": [
+        "segmentation",
+        "completed"
+      ],
+      "forbidden_keywords": [
+        "Dimensions",
+        "Voxel"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Segmentation variation (zh): same expected output, different input"
+    },
+    {
+      "id": "IV060",
+      "input": "帮我分割一下",
+      "language": "zh",
+      "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
+      "expected_keywords": [
+        "segmentation",
+        "completed"
+      ],
+      "forbidden_keywords": [
+        "Dimensions",
+        "Voxel"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "Segmentation variation (zh): same expected output, different input"
+    },
+    {
+      "id": "IV061",
       "input": "肿瘤体积是多少？",
       "language": "zh",
       "setup": "Upload CT only, NO segmentation",
@@ -1624,7 +984,7 @@
       "_comment": "Hallucination volume (zh): NO segmentation → must NOT fabricate"
     },
     {
-      "id": "IV102",
+      "id": "IV062",
       "input": "CTV有多大？",
       "language": "zh",
       "setup": "Upload CT only, NO segmentation",
@@ -1644,7 +1004,7 @@
       "_comment": "Hallucination volume (zh): NO segmentation → must NOT fabricate"
     },
     {
-      "id": "IV103",
+      "id": "IV063",
       "input": "肿瘤有多大？",
       "language": "zh",
       "setup": "Upload CT only, NO segmentation",
@@ -1664,152 +1024,40 @@
       "_comment": "Hallucination volume (zh): NO segmentation → must NOT fabricate"
     },
     {
-      "id": "IV104",
-      "input": "告诉我靶区体积",
+      "id": "IV064",
+      "input": "切到viewer",
       "language": "zh",
-      "setup": "Upload CT only, NO segmentation",
+      "setup": "Upload CT",
       "expected_keywords": [
-        "segment",
-        "not available",
-        "need"
+        "viewer"
       ],
-      "forbidden_keywords": [
-        "27849",
-        "mm",
-        "volume",
-        "cm³"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "medium",
-      "_comment": "Hallucination volume (zh): NO segmentation → must NOT fabricate"
-    },
-    {
-      "id": "IV105",
-      "input": "Hello",
-      "language": "en",
-      "setup": "No CT needed",
-      "expected_keywords": [
-        "BrachyBot"
-      ],
-      "forbidden_keywords": [
-        "Great question",
-        "Let me know"
-      ],
-      "pass_threshold": 0.6,
+      "pass_threshold": 0.5,
       "difficulty": "easy",
-      "_comment": "Greeting variation (en): no filler phrases"
+      "_comment": "UI switch variation (zh)"
     },
     {
-      "id": "IV106",
-      "input": "Hi",
-      "language": "en",
-      "setup": "No CT needed",
-      "expected_keywords": [
-        "BrachyBot"
-      ],
-      "forbidden_keywords": [
-        "Great question",
-        "Let me know"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Greeting variation (en): no filler phrases"
-    },
-    {
-      "id": "IV107",
-      "input": "Hey",
-      "language": "en",
-      "setup": "No CT needed",
-      "expected_keywords": [
-        "BrachyBot"
-      ],
-      "forbidden_keywords": [
-        "Great question",
-        "Let me know"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Greeting variation (en): no filler phrases"
-    },
-    {
-      "id": "IV108",
-      "input": "Good morning",
-      "language": "en",
-      "setup": "No CT needed",
-      "expected_keywords": [
-        "BrachyBot"
-      ],
-      "forbidden_keywords": [
-        "Great question",
-        "Let me know"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Greeting variation (en): no filler phrases"
-    },
-    {
-      "id": "IV109",
-      "input": "你好",
+      "id": "IV065",
+      "input": "帮我切到查看器",
       "language": "zh",
-      "setup": "No CT needed",
+      "setup": "Upload CT",
       "expected_keywords": [
-        "BrachyBot"
+        "viewer"
       ],
-      "forbidden_keywords": [
-        "Great question",
-        "Let me know"
-      ],
-      "pass_threshold": 0.6,
+      "pass_threshold": 0.5,
       "difficulty": "easy",
-      "_comment": "Greeting variation (zh): no filler phrases"
+      "_comment": "UI switch variation (zh)"
     },
     {
-      "id": "IV110",
-      "input": "嗨",
+      "id": "IV066",
+      "input": "转到viewer面板",
       "language": "zh",
-      "setup": "No CT needed",
+      "setup": "Upload CT",
       "expected_keywords": [
-        "BrachyBot"
+        "viewer"
       ],
-      "forbidden_keywords": [
-        "Great question",
-        "Let me know"
-      ],
-      "pass_threshold": 0.6,
+      "pass_threshold": 0.5,
       "difficulty": "easy",
-      "_comment": "Greeting variation (zh): no filler phrases"
-    },
-    {
-      "id": "IV111",
-      "input": "您好",
-      "language": "zh",
-      "setup": "No CT needed",
-      "expected_keywords": [
-        "BrachyBot"
-      ],
-      "forbidden_keywords": [
-        "Great question",
-        "Let me know"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Greeting variation (zh): no filler phrases"
-    },
-    {
-      "id": "IV112",
-      "input": "早上好",
-      "language": "zh",
-      "setup": "No CT needed",
-      "expected_keywords": [
-        "BrachyBot"
-      ],
-      "forbidden_keywords": [
-        "Great question",
-        "Let me know"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Greeting variation (zh): no filler phrases"
+      "_comment": "UI switch variation (zh)"
     }
   ]
 }

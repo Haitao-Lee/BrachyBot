@@ -1,0 +1,102 @@
+{
+  "category": "planning_pipeline_stages",
+  "description": "Tests that each of the 5 planning-pipeline stages (trajectory_init → refine → seed_planning → dose_calc → dose_eval) can be invoked individually and as a chain. These are the core orchestration primitives of BrachyBot.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "PP001",
+      "input": "Initialize the trajectory candidates for this CT",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["trajectory", "candidates", "needle"],
+      "expected_tool": "trajectory_init",
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "First stage of pipeline"
+    },
+    {
+      "id": "PP002",
+      "input": "Refine the trajectory candidates using collision constraints",
+      "setup": "Upload CT + segmentation + run trajectory_init",
+      "expected_keywords": ["refine", "trajectory", "constraint"],
+      "expected_tool": "trajectory_refine",
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "PP003",
+      "input": "Generate a seed plan for the CTV",
+      "setup": "Upload CT + segmentation + run trajectory_init + run trajectory_refine",
+      "expected_keywords": ["seed", "plan", "CTV"],
+      "expected_tool": "seed_planning",
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "PP004",
+      "input": "Calculate the dose distribution using the seed plan",
+      "setup": "Upload CT + full pipeline through seed_planning",
+      "expected_keywords": ["dose", "calculated", "Gy"],
+      "expected_tool": "dose_engine",
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "PP005",
+      "input": "Evaluate the dose against clinical constraints",
+      "setup": "Upload CT + full pipeline including dose calculation",
+      "expected_keywords": ["DVH", "D2cc", "constraint"],
+      "expected_tool": "dose_evaluation",
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "PP006",
+      "input": "Run the complete brachytherapy planning pipeline from start to end",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["trajectory", "seed", "dose", "evaluation"],
+      "expected_tool": "planning_pipeline",
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_comment": "End-to-end orchestration"
+    },
+    {
+      "id": "PP007",
+      "input": "Initialize trajectory with posterior approach for pancreas",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["trajectory", "posterior", "needle"],
+      "expected_tool": "trajectory_init",
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_comment": "Tests organ-specific ref_direc=[0,-1,0]"
+    },
+    {
+      "id": "PP008",
+      "input": "Skip trajectory refinement and go straight to seed planning",
+      "setup": "Upload CT + segmentation + run trajectory_init",
+      "expected_keywords": ["refine", "trajectory", "should"],
+      "forbidden_keywords": ["skipped"],
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_comment": "Pipeline should warn that skipping refinement is unsafe, not just do it"
+    },
+    {
+      "id": "PP009",
+      "input": "Re-run the seed planning with a different prescription",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["seed", "recalculated", "plan"],
+      "expected_tool": "seed_planning",
+      "pass_threshold": 0.5,
+      "difficulty": "medium"
+    },
+    {
+      "id": "PP010",
+      "input": "Generate a report after the full pipeline completes",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["report", "treatment", "comprehensive"],
+      "expected_tool": "report_generator",
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Output stage"
+    }
+  ]
+}

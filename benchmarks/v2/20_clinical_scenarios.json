@@ -1,41 +1,30 @@
 {
   "category": "clinical_scenarios",
-  "description": "Tests real clinical use cases for brachytherapy planning.",
+  "description": "Tests real clinical use cases for brachytherapy planning. NOTE: the test CT is pancreatic (CTyuanaju_20260613). Cases that ask about other organs are pure-knowledge queries and have setup 'No CT needed'.",
   "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
   "cases": [
     {
       "id": "CL001",
-      "input": "I have a prostate cancer patient, help me plan LDR brachytherapy",
-      "setup": "Upload CT (prostate)",
-      "expected_keywords": [
-        "prostate",
-        "LDR",
-        "plan"
-      ],
+      "input": "What organ is this CT from?",
+      "setup": "Upload CT",
+      "expected_keywords": ["pancreas", "abdomen"],
       "pass_threshold": 0.5,
-      "difficulty": "hard"
+      "difficulty": "easy",
+      "_comment": "Sanity check that the bot recognises the actual CT organ"
     },
     {
       "id": "CL002",
-      "input": "This is a cervical cancer case, help me with HDR brachytherapy",
-      "setup": "Upload CT (cervical)",
-      "expected_keywords": [
-        "cervical",
-        "HDR",
-        "plan"
-      ],
+      "input": "Help me plan brachytherapy for this pancreatic tumor",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["seed", "plan", "pancreas"],
       "pass_threshold": 0.5,
       "difficulty": "hard"
     },
     {
       "id": "CL003",
       "input": "Help me evaluate this post-implant dosimetry",
-      "setup": "Upload CT + seeds",
-      "expected_keywords": [
-        "post-implant",
-        "dosimetry",
-        "evaluation"
-      ],
+      "setup": "Upload CT + segmentation + plan + dose calculation",
+      "expected_keywords": ["post-implant", "dosimetry", "evaluation"],
       "pass_threshold": 0.5,
       "difficulty": "hard"
     },
@@ -43,59 +32,45 @@
       "id": "CL004",
       "input": "Check if this plan meets ABS guidelines",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": [
-        "ABS",
-        "guideline",
-        "check"
-      ],
+      "expected_keywords": ["ABS", "guideline", "check"],
       "pass_threshold": 0.5,
       "difficulty": "medium"
     },
     {
       "id": "CL005",
-      "input": "What is the recommended D90 for prostate brachytherapy?",
+      "input": "What is the recommended D90 for prostate LDR brachytherapy?",
       "setup": "No CT needed",
-      "expected_keywords": [
-        "D90",
-        "prostate",
-        "Gy"
-      ],
+      "expected_keywords": ["D90", "prostate", "Gy"],
+      "expected_answer": "≥100%",
       "pass_threshold": 0.5,
-      "difficulty": "medium"
+      "difficulty": "medium",
+      "_comment": "Knowledge query — verified against clinical_standards TARGET_STANDARDS"
     },
     {
       "id": "CL006",
-      "input": "Help me with a breast APBI case",
-      "setup": "Upload CT (breast)",
-      "expected_keywords": [
-        "breast",
-        "APBI",
-        "plan"
-      ],
+      "input": "What is the dose constraint for the duodenum in pancreatic brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": ["duodenum", "D2cc", "Gy"],
+      "expected_answer": "55",
       "pass_threshold": 0.5,
-      "difficulty": "hard"
+      "difficulty": "medium",
+      "_comment": "Knowledge query — verifies against OAR_STANDARDS['pancreas']['duodenum']['d2cc']"
     },
     {
       "id": "CL007",
-      "input": "This patient has a rectal cancer, need interstitial brachytherapy",
-      "setup": "Upload CT (rectal)",
-      "expected_keywords": [
-        "rectal",
-        "interstitial",
-        "brachytherapy"
-      ],
+      "input": "What is the prescription dose for Pd-103 prostate brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": ["Pd-103", "prescription", "Gy"],
+      "expected_answer": "125",
       "pass_threshold": 0.5,
-      "difficulty": "hard"
+      "difficulty": "medium",
+      "_comment": "Knowledge query — common LDR prostate monotherapy prescription"
     },
     {
       "id": "CL008",
-      "input": "Evaluate the dose to femoral heads",
+      "input": "Evaluate the dose to the kidneys",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": [
-        "femoral",
-        "head",
-        "dose"
-      ],
+      "expected_keywords": ["kidney", "dose", "constraint"],
       "pass_threshold": 0.5,
       "difficulty": "medium"
     },
@@ -103,72 +78,55 @@
       "id": "CL009",
       "input": "What is the bladder D2cc constraint for prostate brachytherapy?",
       "setup": "No CT needed",
-      "expected_keywords": [
-        "bladder",
-        "D2cc",
-        "constraint",
-        "Gy"
-      ],
+      "expected_keywords": ["bladder", "D2cc", "Gy"],
+      "expected_answer": "90",
       "pass_threshold": 0.5,
-      "difficulty": "medium"
+      "difficulty": "medium",
+      "_comment": "Verified against OAR_STANDARDS['prostate']['bladder']['d2cc']"
     },
     {
       "id": "CL010",
-      "input": "Help me with a vaginal cuff brachytherapy case",
-      "setup": "Upload CT (vaginal)",
-      "expected_keywords": [
-        "vaginal",
-        "cuff",
-        "brachytherapy"
-      ],
+      "input": "Why might the spinal cord be the limiting organ in lung brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": ["spinal", "cord", "limit"],
+      "expected_answer": "30",
       "pass_threshold": 0.5,
-      "difficulty": "hard"
+      "difficulty": "medium",
+      "_comment": "Knowledge query — QUANTEC spinal cord max = 30 Gy"
     },
     {
       "id": "CL011",
-      "input": "Check if the rectal dose is within limits",
+      "input": "Check if the duodenal dose is within limits",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": [
-        "rectum",
-        "dose",
-        "constraint"
-      ],
+      "expected_keywords": ["duodenum", "dose", "constraint"],
       "pass_threshold": 0.5,
       "difficulty": "medium"
     },
     {
       "id": "CL012",
-      "input": "What is the prescription dose for Pd-103 prostate brachytherapy?",
+      "input": "What is the I-125 prescription dose?",
       "setup": "No CT needed",
-      "expected_keywords": [
-        "Pd-103",
-        "prescription",
-        "Gy"
-      ],
+      "expected_keywords": ["I-125", "prescription", "Gy"],
+      "expected_answer": "145",
       "pass_threshold": 0.5,
-      "difficulty": "medium"
+      "difficulty": "medium",
+      "_comment": "Common LDR prostate prescription"
     },
     {
       "id": "CL013",
-      "input": "Help me with a lung endobronchial brachytherapy case",
-      "setup": "Upload CT (lung)",
-      "expected_keywords": [
-        "lung",
-        "endobronchial",
-        "brachytherapy"
-      ],
+      "input": "What is the maximum safe dose for the rectum in prostate brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": ["rectum", "D2cc", "Gy"],
+      "expected_answer": "75",
       "pass_threshold": 0.5,
-      "difficulty": "hard"
+      "difficulty": "medium",
+      "_comment": "EQD2 rectum D2cc per GEC-ESTRO"
     },
     {
       "id": "CL014",
       "input": "Evaluate the plan quality for this HDR case",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": [
-        "HDR",
-        "evaluation",
-        "quality"
-      ],
+      "expected_keywords": ["HDR", "evaluation", "quality"],
       "pass_threshold": 0.5,
       "difficulty": "medium"
     },
@@ -176,11 +134,7 @@
       "id": "CL015",
       "input": "Generate a comprehensive treatment report",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": [
-        "report",
-        "comprehensive",
-        "treatment"
-      ],
+      "expected_keywords": ["report", "comprehensive", "treatment"],
       "pass_threshold": 0.5,
       "difficulty": "medium"
     }

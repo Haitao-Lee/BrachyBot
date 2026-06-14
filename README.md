@@ -1016,8 +1016,7 @@ tool_factory/
 │   ├── seed_planning_rule_based.py  # Greedy + CNN dose prediction
 │   └── seed_planning_rl.py        # REINFORCE RL optimization
 │
-├── dose_engine/          # Dose calculation (2 tools)
-│   ├── gaussian_dose_engine.py    # Gaussian analytical model
+├── dose_engine/          # Dose calculation (1 tool)
 │   └── cnn_dose_engine.py         # CNN dose prediction (myDoseNet)
 │
 ├── dose_eval/            # Dose evaluation (5 tools)

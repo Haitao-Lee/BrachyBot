@@ -499,42 +499,78 @@ class ToolResultPipeline:
             vol = meta.get("ctv_volume_mm3", 0)
             vox = meta.get("ctv_voxel_count", 0)
             label_stats = meta.get("label_stats", {})
-            lines = [
-                "## 🎯 CTV Segmentation",
-                "",
-                "| Metric | Value |",
-                "|--------|-------|",
-                f"| Total Volume | {vol:.1f} mm³ ({vol/1000:.1f} cm³) |",
-                f"| Total Voxels | {vox:,} |",
-            ]
-            if label_stats:
+            if lang == "zh":
+                lines = [
+                    "## 🎯 CTV 分割",
+                    "",
+                    "| 指标 | 数值 |",
+                    "|--------|-------|",
+                    f"| 总体积 | {vol:.1f} mm³ ({vol/1000:.1f} cm³) |",
+                    f"| 总体素数 | {vox:,} |",
+                ]
+                if label_stats:
+                    lines.append("")
+                    lines.append("### 各标签统计:")
+                    lines.append("")
+                    lines.append("| 标签 | 体积 | 体素 | 中心 (mm) |")
+                    lines.append("|-------|--------|--------|-------------|")
+                    for name, stats in label_stats.items():
+                        center = stats.get('centroid_world', [0, 0, 0])
+                        lines.append(
+                            f"| {name} | {stats['volume_cm3']} cm³ | "
+                            f"{stats['voxel_count']:,} | "
+                            f"({center[0]:.0f}, {center[1]:.0f}, {center[2]:.0f}) |"
+                        )
                 lines.append("")
-                lines.append("### Per-Label Statistics:")
+                lines.append("✅ 结果已在查看器面板中显示。")
+            else:
+                lines = [
+                    "## 🎯 CTV Segmentation",
+                    "",
+                    "| Metric | Value |",
+                    "|--------|-------|",
+                    f"| Total Volume | {vol:.1f} mm³ ({vol/1000:.1f} cm³) |",
+                    f"| Total Voxels | {vox:,} |",
+                ]
+                if label_stats:
+                    lines.append("")
+                    lines.append("### Per-Label Statistics:")
+                    lines.append("")
+                    lines.append("| Label | Volume | Voxels | Center (mm) |")
+                    lines.append("|-------|--------|--------|-------------|")
+                    for name, stats in label_stats.items():
+                        center = stats.get('centroid_world', [0,0,0])
+                        lines.append(
+                            f"| {name} | {stats['volume_cm3']} cm³ | "
+                            f"{stats['voxel_count']:,} | "
+                            f"({center[0]:.0f}, {center[1]:.0f}, {center[2]:.0f}) |"
+                        )
                 lines.append("")
-                lines.append("| Label | Volume | Voxels | Center (mm) |")
-                lines.append("|-------|--------|--------|-------------|")
-                for name, stats in label_stats.items():
-                    center = stats.get('centroid_world', [0,0,0])
-                    lines.append(
-                        f"| {name} | {stats['volume_cm3']} cm³ | "
-                        f"{stats['voxel_count']:,} | "
-                        f"({center[0]:.0f}, {center[1]:.0f}, {center[2]:.0f}) |"
-                    )
-            lines.append("")
-            lines.append("✅ Results displayed in the Viewer panel.")
+                lines.append("✅ Results displayed in the Viewer panel.")
             return "\n".join(lines)
         elif tool_name == "oar_segmentation":
             organ_names = meta.get("organ_names", {})
             count = len(organ_names) if organ_names else 0
-            lines = [
-                "## 🎯 OAR Segmentation",
-                "",
-                "| Metric | Value |",
-                "|--------|-------|",
-                f"| Organs segmented | {count} |",
-                "",
-                "✅ Results displayed in the Viewer panel.",
-            ]
+            if lang == "zh":
+                lines = [
+                    "## 🎯 OAR 分割",
+                    "",
+                    "| 指标 | 数值 |",
+                    "|--------|-------|",
+                    f"| 已分割器官 | {count} |",
+                    "",
+                    "✅ 结果已在查看器面板中显示。",
+                ]
+            else:
+                lines = [
+                    "## 🎯 OAR Segmentation",
+                    "",
+                    "| Metric | Value |",
+                    "|--------|-------|",
+                    f"| Organs segmented | {count} |",
+                    "",
+                    "✅ Results displayed in the Viewer panel.",
+                ]
             return "\n".join(lines)
         return result.message or f"{tool_name} completed."
 
@@ -552,24 +588,44 @@ class ToolResultPipeline:
                         vs = d["voxel_size"]
                         sr = d["scan_range_cm"]
                         hu = d["hu_range"]
-                        lines = [
-                            "## 🔍 CT Analysis",
-                            "",
-                            "| Parameter | Value |",
-                            "|-----------|-------|",
-                            f"| Dimensions | {dims[0]} × {dims[1]} × {dims[2]} voxels |",
-                            f"| Voxel size | {vs[0]} × {vs[1]} × {vs[2]} mm |",
-                            f"| Scan range | {sr[0]} × {sr[1]} × {sr[2]} cm |",
-                            f"| HU range | {hu[0]} ~ {hu[1]} |",
-                            f"| Mean HU | {d.get('mean_hu', 'N/A')} |",
-                        ]
-                        tissues = d.get("tissues", [])
-                        if tissues:
-                            lines.append("")
-                            lines.append("| Tissue | HU Range | Share |")
-                            lines.append("|--------|----------|-------|")
-                            for t in tissues:
-                                lines.append(f"| {t['name']} | {t['range']} | {t['pct']}% |")
+                        if lang == "zh":
+                            lines = [
+                                "## 🔍 CT 分析",
+                                "",
+                                "| 参数 | 数值 |",
+                                "|-----------|-------|",
+                                f"| 维度 | {dims[0]} × {dims[1]} × {dims[2]} 体素 |",
+                                f"| 体素尺寸 | {vs[0]} × {vs[1]} × {vs[2]} mm |",
+                                f"| 扫描范围 | {sr[0]} × {sr[1]} × {sr[2]} cm |",
+                                f"| HU 范围 | {hu[0]} ~ {hu[1]} |",
+                                f"| 平均 HU | {d.get('mean_hu', 'N/A')} |",
+                            ]
+                            tissues = d.get("tissues", [])
+                            if tissues:
+                                lines.append("")
+                                lines.append("| 组织 | HU 范围 | 占比 |")
+                                lines.append("|--------|----------|-------|")
+                                for t in tissues:
+                                    lines.append(f"| {t['name']} | {t['range']} | {t['pct']}% |")
+                        else:
+                            lines = [
+                                "## 🔍 CT Analysis",
+                                "",
+                                "| Parameter | Value |",
+                                "|-----------|-------|",
+                                f"| Dimensions | {dims[0]} × {dims[1]} × {dims[2]} voxels |",
+                                f"| Voxel size | {vs[0]} × {vs[1]} × {vs[2]} mm |",
+                                f"| Scan range | {sr[0]} × {sr[1]} × {sr[2]} cm |",
+                                f"| HU range | {hu[0]} ~ {hu[1]} |",
+                                f"| Mean HU | {d.get('mean_hu', 'N/A')} |",
+                            ]
+                            tissues = d.get("tissues", [])
+                            if tissues:
+                                lines.append("")
+                                lines.append("| Tissue | HU Range | Share |")
+                                lines.append("|--------|----------|-------|")
+                                for t in tissues:
+                                    lines.append(f"| {t['name']} | {t['range']} | {t['pct']}% |")
                         return "\n".join(lines)
                 except (ValueError, KeyError, TypeError):
                     pass
@@ -594,53 +650,95 @@ class ToolResultPipeline:
             metrics = meta.get("dose_metrics", {})
 
             if step == "full":
-                lines = [
-                    "## 📋 Brachytherapy Planning Complete",
-                    "",
-                    "| Metric | Value |",
-                    "|--------|-------|",
-                    f"| Total Seeds | {total_seeds} |",
-                    f"| Trajectories | {num_traj} |",
-                    f"| V100 | {metrics.get('v100', 0):.1%} |",
-                    f"| D90 | {metrics.get('d90', 0):.2f} |",
-                    f"| Plan Score | {metrics.get('plan_score', 0):.0f}/100 |",
-                    "",
-                    "✅ Seeds, needles, and dose displayed in 3D viewer.",
-                ]
+                if lang == "zh":
+                    lines = [
+                        "## 📋 近距离放疗规划完成",
+                        "",
+                        "| 指标 | 数值 |",
+                        "|--------|-------|",
+                        f"| 粒子总数 | {total_seeds} |",
+                        f"| 轨迹数 | {num_traj} |",
+                        f"| V100 | {metrics.get('v100', 0):.1%} |",
+                        f"| D90 | {metrics.get('d90', 0):.2f} |",
+                        f"| 计划评分 | {metrics.get('plan_score', 0):.0f}/100 |",
+                        "",
+                        "✅ 粒子、针道和剂量已显示在 3D 查看器中。",
+                    ]
+                else:
+                    lines = [
+                        "## 📋 Brachytherapy Planning Complete",
+                        "",
+                        "| Metric | Value |",
+                        "|--------|-------|",
+                        f"| Total Seeds | {total_seeds} |",
+                        f"| Trajectories | {num_traj} |",
+                        f"| V100 | {metrics.get('v100', 0):.1%} |",
+                        f"| D90 | {metrics.get('d90', 0):.2f} |",
+                        f"| Plan Score | {metrics.get('plan_score', 0):.0f}/100 |",
+                        "",
+                        "✅ Seeds, needles, and dose displayed in 3D viewer.",
+                    ]
                 return "\n".join(lines)
             else:
+                if lang == "zh":
+                    return result.message or f"规划步骤 '{step}' 完成。"
                 return result.message or f"Planning step '{step}' completed."
 
         elif tool_name == "seed_planning":
             total = meta.get("total_seeds", 0)
             num_traj = meta.get("num_trajectories", 0)
             mode = meta.get("mode", "rule_based")
-            lines = [
-                "## 🎯 Seed Planning",
-                "",
-                "| Metric | Value |",
-                "|--------|-------|",
-                f"| Seeds | {total} |",
-                f"| Trajectories | {num_traj} |",
-                f"| Mode | {mode} |",
-                "",
-                "✅ Results stored for dose calculation.",
-            ]
+            if lang == "zh":
+                lines = [
+                    "## 🎯 粒子植入规划",
+                    "",
+                    "| 指标 | 数值 |",
+                    "|--------|-------|",
+                    f"| 粒子数 | {total} |",
+                    f"| 轨迹数 | {num_traj} |",
+                    f"| 模式 | {mode} |",
+                    "",
+                    "✅ 结果已存储,用于剂量计算。",
+                ]
+            else:
+                lines = [
+                    "## 🎯 Seed Planning",
+                    "",
+                    "| Metric | Value |",
+                    "|--------|-------|",
+                    f"| Seeds | {total} |",
+                    f"| Trajectories | {num_traj} |",
+                    f"| Mode | {mode} |",
+                    "",
+                    "✅ Results stored for dose calculation.",
+                ]
             return "\n".join(lines)
 
         elif tool_name == "trajectory_planning":
             num = meta.get("num_trajectories", 0)
             max_depth = meta.get("max_depth_mm", 0)
-            lines = [
-                "## 📍 Trajectory Planning",
-                "",
-                "| Metric | Value |",
-                "|--------|-------|",
-                f"| Candidate Trajectories | {num} |",
-                f"| Max Depth | {max_depth:.1f} mm |",
-                "",
-                "✅ Results stored for seed planning.",
-            ]
+            if lang == "zh":
+                lines = [
+                    "## 📍 轨迹规划",
+                    "",
+                    "| 指标 | 数值 |",
+                    "|--------|-------|",
+                    f"| 候选轨迹 | {num} |",
+                    f"| 最大深度 | {max_depth:.1f} mm |",
+                    "",
+                    "✅ 结果已存储,用于粒子规划。",
+                ]
+            else:
+                lines = [
+                    "## 📍 Trajectory Planning",
+                    "",
+                    "| Metric | Value |",
+                    "|--------|-------|",
+                    f"| Candidate Trajectories | {num} |",
+                    f"| Max Depth | {max_depth:.1f} mm |",
+                    "",
+                    "✅ Results stored for seed planning.",
+                ]
             return "\n".join(lines)
 
         elif tool_name == "dose_engine":
@@ -648,31 +746,54 @@ class ToolResultPipeline:
             mean_dose = meta.get("mean_dose", 0)
             num_seeds = meta.get("num_seeds", 0)
             engine = meta.get("engine", "cnn")
-            lines = [
-                "## 💊 Dose Calculation",
-                "",
-                "| Metric | Value |",
-                "|--------|-------|",
-                f"| Max Dose | {max_dose:.2f} |",
-                f"| Mean Dose | {mean_dose:.2f} |",
-                f"| Seeds | {num_seeds} |",
-                f"| Engine | {engine} |",
-            ]
+            if lang == "zh":
+                lines = [
+                    "## 💊 剂量计算",
+                    "",
+                    "| 指标 | 数值 |",
+                    "|--------|-------|",
+                    f"| 最大剂量 | {max_dose:.2f} |",
+                    f"| 平均剂量 | {mean_dose:.2f} |",
+                    f"| 粒子数 | {num_seeds} |",
+                    f"| 引擎 | {engine} |",
+                ]
+            else:
+                lines = [
+                    "## 💊 Dose Calculation",
+                    "",
+                    "| Metric | Value |",
+                    "|--------|-------|",
+                    f"| Max Dose | {max_dose:.2f} |",
+                    f"| Mean Dose | {mean_dose:.2f} |",
+                    f"| Seeds | {num_seeds} |",
+                    f"| Engine | {engine} |",
+                ]
             return "\n".join(lines)
 
         elif tool_name == "dose_evaluation":
             v100 = meta.get("v100", 0)
             d90 = meta.get("d90", 0)
             score = meta.get("plan_score", 0)
-            lines = [
-                "## 📊 Dose Evaluation",
-                "",
-                "| Metric | Value |",
-                "|--------|-------|",
-                f"| V100 | {v100:.1%} |",
-                f"| D90 | {d90:.2f} |",
-                f"| Plan Score | {score:.0f}/100 |",
-            ]
+            if lang == "zh":
+                lines = [
+                    "## 📊 剂量评估",
+                    "",
+                    "| 指标 | 数值 |",
+                    "|--------|-------|",
+                    f"| V100 | {v100:.1%} |",
+                    f"| D90 | {d90:.2f} |",
+                    f"| 计划评分 | {score:.0f}/100 |",
+                ]
+            else:
+                lines = [
+                    "## 📊 Dose Evaluation",
+                    "",
+                    "| Metric | Value |",
+                    "|--------|-------|",
+                    f"| V100 | {v100:.1%} |",
+                    f"| D90 | {d90:.2f} |",
+                    f"| Plan Score | {score:.0f}/100 |",
+                ]
             return "\n".join(lines)
 
         return result.message or f"{tool_name} completed."
@@ -1220,6 +1341,13 @@ class BrachyAgent:
         except ImportError as e:
             logger.warning(f"ReportGeneratorTool not available: {e}")
 
+        try:
+            from tool_factory.output.report_auto_fill import ReportAutoFillTool
+            self.registry.register(ReportAutoFillTool())
+            logger.info("ReportAutoFillTool registered (chat-driven in-app report fill)")
+        except ImportError as e:
+            logger.warning(f"ReportAutoFillTool not available: {e}")
+
 
         # Web search tool for internet connectivity
         try:
@@ -1260,26 +1388,22 @@ class BrachyAgent:
         dose_distribution = self.memory.retrieve("dose_distribution")
         seed_positions = self.memory.retrieve("seed_positions")
 
-        if tool_name == "ctv_segmentation" and "image" not in params:
+        if tool_name == "ctv_segmentation":
+            # ALWAYS force-inject the LPI-oriented CT from memory.
+            # The LLM may pass `image` as a string repr of a SimpleITK object,
+            # which blocks injection and causes the tool to load raw CT from
+            # image_path — producing masks in wrong orientation.
             if ct_image is not None:
                 params["image"] = ct_image
-            # Map tumor_type to VoCo tool name if needed
+            # Map tumor_type to VoCo tool name if needed, and store for planning pipeline
             if "tumor_type" in params:
                 params["tumor_type"] = self._map_tumor_type(params["tumor_type"])
-        elif tool_name == "oar_segmentation" and "image" not in params:
+                # Store tumor type so planning pipeline can use organ-specific reference direction
+                self.memory.store("tumor_type_used", params["tumor_type"])
+        elif tool_name == "oar_segmentation":
+            # Same: always force-inject LPI-oriented CT
             if ct_image is not None:
-                import SimpleITK as sitk
-                # Check if ct_image is already a SimpleITK image
-                if hasattr(ct_image, 'GetSpacing'):
-                    # Already a SimpleITK image, use directly
-                    params["image"] = ct_image
-                else:
-                    # nibabel image, convert to SimpleITK
-                    ct_array = ct_image.get_fdata()
-                    sitk_image = sitk.GetImageFromArray(ct_array)
-                    sitk_image.SetSpacing(tuple(float(x) for x in ct_image.header.get_zooms()[:3]))
-                    sitk_image.SetOrigin(tuple(float(x) for x in ct_image.affine[:3, 3]))
-                    params["image"] = sitk_image
+                params["image"] = ct_image
         elif tool_name == "trajectory_planning":
             if "dose_image" not in params and ct_image is not None:
                 params["dose_image"] = ct_image
@@ -1353,6 +1477,55 @@ class BrachyAgent:
                     logger.info(f"Stored organ_names: {result.metadata['organ_names']}")
                 if "organ_counts" in result.metadata:
                     self.memory.store("organ_counts", result.metadata["organ_counts"])
+            # If CTV segmentation completed but the resulting OAR map is
+            # missing or only carries a few labels (the CTV pipeline also
+            # extracts a tiny set of "vessel" labels), auto-trigger a
+            # full OAR segmentation so the planning pipeline can use the
+            # real organ map (TotalSegmentator's 117 organs) for dose
+            # evaluation and trajectory avoidance. Without this, the
+            # LLM sometimes skips oar_segmentation and planning_pipeline
+            # runs with only the 2-3 vessel labels, producing a poor
+            # V100 / D90 and a wrong "2 organs" report.
+            if tool_name == "ctv_segmentation" and result.success:
+                oar_array = self.memory.retrieve("oar_array")
+                organ_count = 0
+                if oar_array is not None:
+                    try:
+                        import numpy as _np
+                        organ_count = int(len(_np.unique(oar_array)) - 1)  # subtract background
+                    except Exception:
+                        organ_count = 0
+                if organ_count < 5:  # Need a real OAR map, not just 2-3 vessels
+                    logger.info(f"[auto-oar] CTV seg completed but OAR map has only {organ_count} organs — auto-running oar_segmentation")
+                    try:
+                        # The oar_segmentation tool accepts EITHER an in-memory
+                        # `image` (SimpleITK Image) or an on-disk `image_path`.
+                        # The in-memory path is faster (skips re-reading the
+                        # file from disk) but the tool's validator rejects
+                        # when the image is passed without image_path. Pass
+                        # both, with image_path coming from the agent's
+                        # memory if available (so the tool can also write
+                        # cached side files consistently).
+                        oar_params = {"organ_type": "general"}
+                        ct_image = self.memory.retrieve("ct_image")
+                        ct_path = self.memory.retrieve("ct_path")
+                        if ct_image is not None:
+                            oar_params["image"] = ct_image
+                        if ct_path:
+                            oar_params["image_path"] = ct_path
+                        oar_result = self.registry.execute("oar_segmentation", **oar_params)
+                        if oar_result and oar_result.success:
+                            if "oar_array" in (oar_result.metadata or {}):
+                                self.memory.store("oar_array", oar_result.metadata["oar_array"])
+                            if "organ_names" in (oar_result.metadata or {}):
+                                self.memory.store("organ_names", oar_result.metadata["organ_names"])
+                            if "organ_counts" in (oar_result.metadata or {}):
+                                self.memory.store("organ_counts", oar_result.metadata["organ_counts"])
+                            logger.info(f"[auto-oar] OAR seg done: {len(oar_result.metadata.get('organ_names', {}))} organs")
+                        else:
+                            logger.warning(f"[auto-oar] OAR seg failed: {oar_result.error if oar_result else 'no result'}")
+                    except Exception as e:
+                        logger.warning(f"[auto-oar] exception: {e}")
             elif tool_name == "trajectory_planning" and "trajectories" in result.metadata:
                 self.memory.store("trajectories", result.metadata["trajectories"])
             elif tool_name == "seed_planning":
@@ -1460,13 +1633,16 @@ class BrachyAgent:
         return result
 
     def _store_label_with_metadata(self, label_array, ct_image_source, label_key: str):
-        """Store label array WITH spatial metadata from the ORIGINAL (pre-oriented) CT.
-        At retrieval time, DICOMOrient('LPI') transforms both CT and label identically,
-        guaranteeing alignment regardless of the original orientation.
+        """Store label array WITH spatial metadata from the LPI-oriented CT.
 
-        IMPORTANT: Use ct_image_raw (before DICOMOrient), NOT ct_image (after).
-        If we use the oriented CT's metadata, DICOMOrient thinks the label is
-        already in LPI and skips the transform — causing misalignment."""
+        Segmentation tools (ctv_segmentation, oar_segmentation) receive the
+        LPI-oriented ct_image and produce masks already in LPI space.
+        We store with LPI metadata so DICOMOrient('LPI') in _get_label_array
+        sees it's already oriented and skips the transform.
+
+        NOTE: Previously this used ct_image_raw (pre-orient), which caused a
+        double Z-flip — the mask was in LPI space but tagged with raw metadata,
+        then DICOMOrient flipped Z again, making head↔feet swap."""
         try:
             import SimpleITK as sitk
         except ImportError:
@@ -1474,12 +1650,12 @@ class BrachyAgent:
             return
 
         try:
-            # Use the RAW CT image (before DICOMOrient) for metadata
-            ct_raw = self.memory.retrieve("ct_image_raw") or ct_image_source
+            # Use the LPI-oriented CT image for metadata — mask is already in LPI space
+            ct_lpi = ct_image_source
             label_sitk = sitk.GetImageFromArray(label_array.astype(np.uint8))
-            label_sitk.CopyInformation(ct_raw)
+            label_sitk.CopyInformation(ct_lpi)
             self.memory.store(label_key, label_sitk)
-            logger.info(f"Stored {label_key} with raw CT metadata (direction={label_sitk.GetDirection()})")
+            logger.info(f"Stored {label_key} with LPI CT metadata (direction={label_sitk.GetDirection()})")
         except Exception as e:
             logger.warning(f"Failed to store {label_key} with metadata: {e}")
             self.memory.store(label_key, label_array)
@@ -1495,7 +1671,9 @@ class BrachyAgent:
 
         stored = self.memory.retrieve(label_key)
         if stored is None:
+            logger.info(f"[_get_label_array] {label_key}: NOT found in memory (planning_results keys: {list(self.memory.planning_results.keys())[:10]})")
             return None
+        logger.info(f"[_get_label_array] {label_key}: found, type={type(stored).__name__}")
 
         if isinstance(stored, sitk.Image):
             try:
@@ -2115,8 +2293,9 @@ print(json.dumps(result))
             enhanced_context += "No CT files are loaded. You MUST answer directly from medical knowledge.\n"
             enhanced_context += "DO NOT call segmentation, dose, seed, or analysis tools.\n"
             enhanced_context += "YOU MAY use report_generator (to generate reports, summaries, DVH analysis, JSON/Markdown export)\n"
+            enhanced_context += "YOU MAY use report_auto_fill (in-app Report panel — fills patient/metrics/OAR/narrative from current data)\n"
             enhanced_context += "YOU MAY use clinical_kb (for clinical knowledge queries)\n"
-            enhanced_context += "For report requests, call report_generator with the appropriate action parameter.\n"
+            enhanced_context += "For in-app Report panel requests, call report_auto_fill; for file export, call report_generator.\n"
             enhanced_context += "Provide comprehensive, detailed clinical responses.\n\n"
         if self.enhanced:
             try:
@@ -2468,16 +2647,56 @@ print(json.dumps(result))
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
                 self.memory.add_message("user", f"[Tool result: {result_text[:500]}]")
 
-            # After all tools executed, add explicit instruction for LLM to present results
+            # After all tools executed, instruct LLM to continue or summarize.
+            # The previous instruction let the LLM run open-ended, which
+            # often produced mid-sentence truncation. Constrain the response
+            # format to a compact table + one-line conclusion so the LLM
+            # can't ramble and run out of output tokens mid-thought.
+            #
+            # IMPORTANT: this prompt must NOT give the LLM an excuse to
+            # summarize early. We list the COMPLETE brachytherapy workflow
+            # (CTV seg → OAR seg → planning_pipeline) and require the LLM
+            # to call the next tool if the previous one is not the last in
+            # the chain. The LLM is misreading "Tool execution completed"
+            # as a signal to stop.
             if tool_calls:
-                _present_instruction = (
-                    "Based on the tool results above, present the findings directly. "
-                    "Do NOT search again. Do NOT say 'let me fetch more'. "
-                    "Summarize and present what was found. "
-                    "CRITICAL: Your ENTIRE response must be in the SAME language as the user's original question. "
-                    "If the user wrote in Chinese, ALL content must be in Chinese — translate any English snippets. "
-                    "If the user wrote in English, ALL content must be in English."
+                # Detect which tools have been called so far in this turn
+                _executed_tool_names = [
+                    s.get("tool", "")
+                    for s in steps
+                    if s.get("type") == "tool" and s.get("status") == "done"
+                ]
+                _has_planning = any(
+                    t in _executed_tool_names
+                    for t in ("planning_pipeline", "seed_planning", "trajectory_planning", "dose_engine", "dose_evaluation")
                 )
+                if not _has_planning:
+                    # CTV + OAR are done, but planning is not. Force the
+                    # LLM to continue with planning_pipeline. Without
+                    # this the LLM summarizes after just the segmentations
+                    # and never runs the actual planning.
+                    _present_instruction = (
+                        "Segmentation tools finished, but the planning workflow is INCOMPLETE. "
+                        "You MUST call `planning_pipeline` next with `step: \"full\"` to compute the seed plan and dose. "
+                        "Do NOT summarize yet. Do NOT list the steps as a todo list. "
+                        "Just call the tool directly:\n"
+                        "```tool_call\n"
+                        "{\"tool\": \"planning_pipeline\", \"params\": {\"ct_image_path\": \"<the CT path>\", \"step\": \"full\", \"mode\": \"rule_based\"}}\n"
+                        "```\n"
+                        "After planning completes successfully, the system will give you a final-summary instruction."
+                    )
+                else:
+                    # Planning has run. Now give the constrained summary
+                    # format so the LLM can't ramble and run out of
+                    # output tokens mid-thought.
+                    _present_instruction = (
+                        "All workflow tools completed. Now produce your FINAL summary in this exact format:\n"
+                        "1. One short paragraph (≤ 3 sentences) describing what was completed.\n"
+                        "2. A markdown table with columns | 指标 | 数值 | for the planning results (seeds, V100, D90, score, etc.).\n"
+                        "3. One final sentence confirming completion.\n\n"
+                        "DO NOT exceed this format. The 3D viewer is rebuilt automatically — do NOT ask the user to do it.\n"
+                        "CRITICAL: Your ENTIRE response must be in the SAME language as the user's original question."
+                    )
                 messages.append({"role": "user", "content": _present_instruction})
 
         # Clean response - no summarization
@@ -2785,8 +3004,9 @@ print(json.dumps(result))
             enhanced_context += "No CT files are loaded. You MUST answer directly from medical knowledge.\n"
             enhanced_context += "DO NOT call segmentation, dose, seed, or analysis tools.\n"
             enhanced_context += "YOU MAY use report_generator (to generate reports, summaries, DVH analysis, JSON/Markdown export)\n"
+            enhanced_context += "YOU MAY use report_auto_fill (in-app Report panel — fills patient/metrics/OAR/narrative from current data)\n"
             enhanced_context += "YOU MAY use clinical_kb (for clinical knowledge queries)\n"
-            enhanced_context += "For report requests, call report_generator with the appropriate action parameter.\n"
+            enhanced_context += "For in-app Report panel requests, call report_auto_fill; for file export, call report_generator.\n"
             enhanced_context += "Provide comprehensive, detailed clinical responses.\n\n"
         if self.enhanced:
             try:
@@ -3114,11 +3334,19 @@ print(json.dumps(result))
                 tool_calls = self._parse_tool_calls(content)
 
             if not tool_calls:
+                # Check for incomplete tool call markers — LLM generated [TOOL_CALL] without JSON
+                if re.search(r'\[TOOL_CALL\]\s*$', content.strip()) or re.search(r'```tool_call\s*$', content.strip()):
+                    logger.info(f"[LLM loop] Incomplete tool call detected, retrying iteration={iteration}")
+                    messages.append({"role": "user", "content": "Your tool call was incomplete. Please call the next tool in the workflow (e.g., oar_segmentation, planning_pipeline). Use the proper tool call format."})
+                    continue  # Retry without breaking
+
                 final_response = accumulated_text or self._clean_response_text(content)
                 if not final_response:
                     final_response = content  # Fallback to raw if cleaning removed everything
                 thinking_step["status"] = "done"
                 thinking_step["content"] = "Response generated"
+                logger.info(f"[LLM loop] No tool calls found. Iteration={iteration}, content_len={len(content)}, cleaned_len={len(final_response)}, tools_executed={tools_executed}")
+                logger.info(f"[LLM loop] Raw content (first 500): {content[:500]}")
                 yield yield_event("step", thinking_step)
                 break
 
@@ -3335,16 +3563,56 @@ print(json.dumps(result))
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
                 self.memory.add_message("user", f"[Tool result: {result_text[:500]}]")
 
-            # After all tools executed, add explicit instruction for LLM to present results
+            # After all tools executed, instruct LLM to continue or summarize.
+            # The previous instruction let the LLM run open-ended, which
+            # often produced mid-sentence truncation. Constrain the response
+            # format to a compact table + one-line conclusion so the LLM
+            # can't ramble and run out of output tokens mid-thought.
+            #
+            # IMPORTANT: this prompt must NOT give the LLM an excuse to
+            # summarize early. We list the COMPLETE brachytherapy workflow
+            # (CTV seg → OAR seg → planning_pipeline) and require the LLM
+            # to call the next tool if the previous one is not the last in
+            # the chain. The LLM is misreading "Tool execution completed"
+            # as a signal to stop.
             if tool_calls:
-                _present_instruction = (
-                    "Based on the tool results above, present the findings directly. "
-                    "Do NOT search again. Do NOT say 'let me fetch more'. "
-                    "Summarize and present what was found. "
-                    "CRITICAL: Your ENTIRE response must be in the SAME language as the user's original question. "
-                    "If the user wrote in Chinese, ALL content must be in Chinese — translate any English snippets. "
-                    "If the user wrote in English, ALL content must be in English."
+                # Detect which tools have been called so far in this turn
+                _executed_tool_names = [
+                    s.get("tool", "")
+                    for s in steps
+                    if s.get("type") == "tool" and s.get("status") == "done"
+                ]
+                _has_planning = any(
+                    t in _executed_tool_names
+                    for t in ("planning_pipeline", "seed_planning", "trajectory_planning", "dose_engine", "dose_evaluation")
                 )
+                if not _has_planning:
+                    # CTV + OAR are done, but planning is not. Force the
+                    # LLM to continue with planning_pipeline. Without
+                    # this the LLM summarizes after just the segmentations
+                    # and never runs the actual planning.
+                    _present_instruction = (
+                        "Segmentation tools finished, but the planning workflow is INCOMPLETE. "
+                        "You MUST call `planning_pipeline` next with `step: \"full\"` to compute the seed plan and dose. "
+                        "Do NOT summarize yet. Do NOT list the steps as a todo list. "
+                        "Just call the tool directly:\n"
+                        "```tool_call\n"
+                        "{\"tool\": \"planning_pipeline\", \"params\": {\"ct_image_path\": \"<the CT path>\", \"step\": \"full\", \"mode\": \"rule_based\"}}\n"
+                        "```\n"
+                        "After planning completes successfully, the system will give you a final-summary instruction."
+                    )
+                else:
+                    # Planning has run. Now give the constrained summary
+                    # format so the LLM can't ramble and run out of
+                    # output tokens mid-thought.
+                    _present_instruction = (
+                        "All workflow tools completed. Now produce your FINAL summary in this exact format:\n"
+                        "1. One short paragraph (≤ 3 sentences) describing what was completed.\n"
+                        "2. A markdown table with columns | 指标 | 数值 | for the planning results (seeds, V100, D90, score, etc.).\n"
+                        "3. One final sentence confirming completion.\n\n"
+                        "DO NOT exceed this format. The 3D viewer is rebuilt automatically — do NOT ask the user to do it.\n"
+                        "CRITICAL: Your ENTIRE response must be in the SAME language as the user's original question."
+                    )
                 messages.append({"role": "user", "content": _present_instruction})
 
         # No summarization - use LLM response directly
@@ -3356,6 +3624,18 @@ print(json.dumps(result))
             if not final_response.strip() and raw_final.strip():
                 logger.info("Cleaned response was empty (pure tool_call content), falling back")
                 final_response = ""
+
+        # Detect mid-sentence truncation. The LLM sometimes runs out of
+        # output tokens mid-thought, leaving a colon / comma / dash /
+        # ellipsis at the end. The user would see the response cut off
+        # abruptly. If we detect this, append a short completion note so
+        # the chat doesn't end with a dangling punctuation mark.
+        if final_response:
+            stripped = final_response.rstrip()
+            if stripped and stripped[-1] in '：;，。、,;.-:—…' and len(stripped) < 4000:
+                # Likely truncated mid-sentence. Append a clean closure.
+                final_response = stripped.rstrip('：;，。、,;.-:—…').rstrip() + '。'
+                logger.info(f"[LLM response] Detected mid-sentence truncation at len={len(stripped)}, appended closure")
 
         # If final_response is still empty, try fallbacks
         if not final_response:
@@ -3870,11 +4150,26 @@ print(json.dumps(result))
                                               status="done")
                                 yield yield_event("step", step)
 
-                                # Let LLM retry with feedback — re-enter function calling loop
+                                # Let LLM retry with feedback — re-enter function calling loop.
+                                # Capture the retry's _result event so the final
+                                # `yield yield_event("response", ...)` emits the
+                                # RETRY's response, not the original (which would
+                                # otherwise be a stale, truncated copy that the
+                                # frontend would re-render on top of the streamed
+                                # retry text, causing a confusing / truncated UI).
                                 _retry_msg = message + f"\n\n[Quality review feedback - fix these issues: {_concerns_text}]"
-                                yield from self._run_llm_function_calling_stream(
-                                    _retry_msg, steps, step_id_ref, yield_event
-                                )
+                                for ev in self._run_llm_function_calling_stream(
+                                        _retry_msg, steps, step_id_ref, yield_event):
+                                    if isinstance(ev, dict) and ev.get("type") == "_result":
+                                        # Override the original response with the
+                                        # retry's full response so the final
+                                        # response event reflects what the user
+                                        # actually saw in the streamed text.
+                                        response = ev.get("response", response) or response
+                                        if ev.get("llm_meta"):
+                                            llm_meta = ev.get("llm_meta", {})
+                                    else:
+                                        yield ev
                         except Exception as e:
                             logger.warning(f"Review retry {_retry + 1} failed: {e}")
                             break
@@ -3978,9 +4273,21 @@ print(json.dumps(result))
                             yield yield_event("step", step)
 
                             _retry_msg = message + f"\n\n[Quality review feedback - fix these issues: {_concerns_text}]"
-                            yield from self._run_llm_function_calling_stream(
-                                _retry_msg, steps, step_id_ref, yield_event
-                            )
+                            # Capture the retry's _result so the final
+                            # `yield yield_event("response", ...)` below
+                            # emits the RETRY's full response, not the
+                            # original (stale, truncated) one — otherwise
+                            # the frontend would re-render the original on
+                            # top of the streamed retry text, causing a
+                            # confusing / truncated chat UI.
+                            for ev in self._run_llm_function_calling_stream(
+                                    _retry_msg, steps, step_id_ref, yield_event):
+                                if isinstance(ev, dict) and ev.get("type") == "_result":
+                                    response = ev.get("response", response) or response
+                                    if ev.get("llm_meta"):
+                                        llm_meta = ev.get("llm_meta", {})
+                                else:
+                                    yield ev
             except Exception as e:
                 logger.debug(f"Multi-agent review failed: {e}")
 

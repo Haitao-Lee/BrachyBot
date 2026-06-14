@@ -1,0 +1,86 @@
+{
+  "category": "reference_direction",
+  "description": "Tests organ-specific reference direction (ref_direc) selection. Each organ has a clinically-preferred approach direction to avoid OARs. Verifies the new _resolve_ref_direc logic (T1.4, planning_pipeline.py).",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "RD001",
+      "input": "Plan trajectory for a pancreatic tumor using the default approach",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["trajectory", "posterior", "needle"],
+      "expected_tool": "trajectory_init",
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Pancreas default = [0,-1,0] posterior (was the bug, now fixed)"
+    },
+    {
+      "id": "RD002",
+      "input": "Plan a liver tumor with a lateral approach",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["trajectory", "lateral", "needle"],
+      "expected_tool": "trajectory_init",
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Liver default = [1,0,0] lateral"
+    },
+    {
+      "id": "RD003",
+      "input": "Plan a lung tumor with an anterior approach",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["trajectory", "anterior", "needle"],
+      "expected_tool": "trajectory_init",
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Lung default = [0,1,0] anterior"
+    },
+    {
+      "id": "RD004",
+      "input": "Auto-detect the best approach direction for this tumor",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["auto", "detect", "direction", "shortest"],
+      "expected_tool": "trajectory_init",
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_comment": "Should use _auto_detect_ref_direc, not random direction"
+    },
+    {
+      "id": "RD005",
+      "input": "Plan a pancreatic tumor with an anterior approach",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["posterior", "anterior", "warn", "stomach"],
+      "forbidden_keywords": ["anterior approach is fine", "using anterior"],
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_comment": "Bot MUST warn that anterior approach for pancreas crosses stomach/duodenum"
+    },
+    {
+      "id": "RD006",
+      "input": "Try different approach directions until trajectory candidates are found",
+      "setup": "Upload CT + segmentation, but no trajectory candidates yet",
+      "expected_keywords": ["auto", "direction", "try"],
+      "expected_tool": "trajectory_init",
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_comment": "Should suggest auto_detect, not brute-force 6 directions"
+    },
+    {
+      "id": "RD007",
+      "input": "Plan a head and neck tumor with a superior approach",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["trajectory", "superior", "head"],
+      "expected_tool": "trajectory_init",
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Head/neck default = [0,0,1] superior"
+    },
+    {
+      "id": "RD008",
+      "input": "What is the default approach direction for pancreatic brachytherapy and why?",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["posterior", "duodenum", "stomach", "avoid"],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Knowledge query — should explain the clinical reasoning"
+    }
+  ]
+}

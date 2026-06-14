@@ -13,7 +13,7 @@ class StandardPlanningSkill(Skill):
     def __init__(self):
         super().__init__(
             name="standard_planning",
-            description="Standard pre-operative planning: CTV + OAR seg -> trajectories -> seeds -> dose eval",
+            description="Standard pre-operative planning: CTV + OAR seg -> trajectories -> seeds -> dose eval (CNN dose)",
             category="planning",
             triggers=["规划", "标准计划", "standard plan", "治疗计划", "treatment plan"],
             tool_sequence=[
@@ -28,7 +28,7 @@ class StandardPlanningSkill(Skill):
                 "ctv_segmentation": {"tumor_type": None},
                 "oar_segmentation": {"organ_type": "general"},
                 "seed_planning": {"mode": "rule_based"},
-                "dose_engine": {"engine": "gaussian"},
+                "dose_engine": {"engine": "cnn"},
             },
         )
 
@@ -61,12 +61,12 @@ class RLPlanningSkill(Skill):
 
 
 class QuickPlanningSkill(Skill):
-    """Quick planning using Gaussian dose model for fast iteration."""
+    """Quick planning using CNN dose model (myDoseNet) for fast iteration."""
 
     def __init__(self):
         super().__init__(
             name="quick_planning",
-            description="Quick planning mode using fast Gaussian dose model",
+            description="Quick planning mode using CNN (myDoseNet) dose model",
             category="planning",
             triggers=["快速", "quick", "预览", "preview", "速览"],
             tool_sequence=[
@@ -78,6 +78,6 @@ class QuickPlanningSkill(Skill):
             parameters={
                 "ctv_segmentation": {"fast_mode": True},
                 "seed_planning": {"mode": "rule_based"},
-                "dose_engine": {"engine": "gaussian"},
+                "dose_engine": {"engine": "cnn"},
             },
         )

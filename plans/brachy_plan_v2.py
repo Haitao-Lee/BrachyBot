@@ -56,7 +56,6 @@ def brachy_plan(ctimage, ctvimage, oarimage, dose_model, args, progressDialog):
     utilizations.throttled_process_events()
 
     try:
-        
         radiation_volume = utilizations.get_planning_volume_array(
             ctvimage,
             oarimage,
@@ -64,9 +63,18 @@ def brachy_plan(ctimage, ctvimage, oarimage, dose_model, args, progressDialog):
             args.radiation_array_params['obstacle_value'],
             args.radiation_array_params['background_value'],
         )
-        
+        import logging as _log
+        _logger = _log.getLogger(__name__)
+        _target_count = int(np.sum(radiation_volume == args.radiation_array_params['target_value']))
+        _obstacle_count = int(np.sum(radiation_volume == args.radiation_array_params['obstacle_value']))
+        _bg_count = int(np.sum(radiation_volume == args.radiation_array_params['background_value']))
+        _logger.info(f"[brachy_plan] radiation_volume: target={_target_count}, obstacle={_obstacle_count}, bg={_bg_count}, shape={radiation_volume.shape}")
+        _logger.info(f"[brachy_plan] dose_image: size={dose_image.GetSize()}, spacing={dose_image.GetSpacing()}")
+        # Check if radiation_volume has any non-zero target voxels in the resampled grid
+        _nz_z, _nz_y, _nz_x = np.where(radiation_volume == args.radiation_array_params['target_value'])
+        if len(_nz_z) > 0:
+            _logger.info(f"[brachy_plan] target Z range: {_nz_z.min()}-{_nz_z.max()}, Y: {_nz_y.min()}-{_nz_y.max()}, X: {_nz_x.min()}-{_nz_x.max()}")
     except Exception as e:
-        
         raise
 
     progressDialog.setValue(25)
@@ -74,14 +82,12 @@ def brachy_plan(ctimage, ctvimage, oarimage, dose_model, args, progressDialog):
     utilizations.throttled_process_events()
 
     try:
-        
         if args.reference_direc is not None:
             ref_direc = np.array(args.reference_direc).reshape(-1)
         else:
             ref_direc = np.array(utilizations.get_reference_direction(radiation_volume, args.radiation_array_params['target_value'])).reshape(-1)
-        
+        _logger.info(f"[brachy_plan] ref_direc={ref_direc}, direc_resolution={args.direc_resolution}, min_depth={args.radiation_array_params.get('min_depth', 1)}")
     except Exception as e:
-        
         raise
 
     progressDialog.setValue(30)
@@ -100,7 +106,8 @@ def brachy_plan(ctimage, ctvimage, oarimage, dose_model, args, progressDialog):
             args.radiation_array_params['background_value'],
             args.radiation_array_params['obstacle_value'],
             args.radiation_array_params['maximum_candidate_trajectories'],
-            progressDialog
+            progressDialog,
+            min_depth=args.radiation_array_params.get('min_depth', 1),
         )
         
     except Exception as e:
@@ -244,7 +251,8 @@ def brachy_plan_rf(ctimage, ctvimage, oarimage, dose_model, args, progressDialog
             args.radiation_array_params['background_value'],
             args.radiation_array_params['obstacle_value'],
             args.radiation_array_params['maximum_candidate_trajectories'],
-            progressDialog
+            progressDialog,
+            min_depth=args.radiation_array_params.get('min_depth', 1),
         )
         
     except Exception as e:

@@ -1,0 +1,20 @@
+{
+  "category": "smoke_06",
+  "description": "Smoke subset of 06_dose_evaluation.json for fast PR feedback (~30s total)",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "DV001",
+      "input": "Evaluate the dose distribution",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": [
+        "dose",
+        "evaluation",
+        "DVH"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_smoke_reason": "Basic DVH evaluation"
+    }
+  ]
+}

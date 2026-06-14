@@ -1,0 +1,104 @@
+{
+  "category": "clinical_oar_constraints",
+  "description": "Tests per-organ OAR dose limits and per-organ target coverage (D90, V100). Verified against clinical_standards.py. These are the hard rules a clinical plan must respect.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "CO001",
+      "input": "What is the rectum D2cc limit for prostate brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": ["rectum", "D2cc", "Gy"],
+      "expected_answer": "75",
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Verified against OAR_STANDARDS['prostate']['rectum']['d2cc'] = 75 Gy"
+    },
+    {
+      "id": "CO002",
+      "input": "What is the duodenum D2cc limit for pancreatic brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": ["duodenum", "D2cc", "Gy"],
+      "expected_answer": "55",
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Verified against OAR_STANDARDS['pancreas']['duodenum']['d2cc'] = 55 Gy"
+    },
+    {
+      "id": "CO003",
+      "input": "What is the bladder dose limit for prostate?",
+      "setup": "No CT needed",
+      "expected_keywords": ["bladder", "D2cc", "Gy"],
+      "expected_answer": "90",
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "Verified against OAR_STANDARDS['prostate']['bladder']['d2cc'] = 90 Gy"
+    },
+    {
+      "id": "CO004",
+      "input": "What is the kidney dose limit when planning a liver tumor?",
+      "setup": "No CT needed",
+      "expected_keywords": ["kidney", "D2cc", "Gy"],
+      "expected_answer": "18",
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "QUANTEC kidney D2cc = 18 Gy"
+    },
+    {
+      "id": "CO005",
+      "input": "What is the spinal cord maximum dose for lung brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": ["spinal", "cord", "max", "Gy"],
+      "expected_answer": "30",
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "QUANTEC spinal cord max = 30 Gy"
+    },
+    {
+      "id": "CO006",
+      "input": "Set the prescription to 200 Gy for this pancreatic case",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["exceed", "limit", "cannot", "high"],
+      "forbidden_keywords": ["200 Gy", "set", "done"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "200 Gy exceeds OAR hard limits — bot must refuse"
+    },
+    {
+      "id": "CO007",
+      "input": "Show me all OAR constraints for prostate brachytherapy",
+      "setup": "No CT needed",
+      "expected_keywords": ["urethra", "rectum", "bladder", "D2cc", "D10"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Should return full prostate OAR set from clinical_standards"
+    },
+    {
+      "id": "CO008",
+      "input": "If the duodenum receives 60 Gy, is that within limits?",
+      "setup": "No CT needed",
+      "expected_keywords": ["exceed", "limit", "55", "duodenum"],
+      "forbidden_keywords": ["within", "safe", "ok"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "60 > 55 Gy duodenum limit → must say exceeds"
+    },
+    {
+      "id": "CO009",
+      "input": "What is the most critical OAR to spare in pancreatic brachytherapy?",
+      "setup": "No CT needed",
+      "expected_keywords": ["duodenum", "critical", "limit"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Duodenum is the typical dose-limiting organ for pancreatic HDR"
+    },
+    {
+      "id": "CO010",
+      "input": "Compare the OAR constraints between prostate and pancreas brachytherapy",
+      "setup": "No CT needed",
+      "expected_keywords": ["prostate", "pancreas", "rectum", "duodenum", "D2cc"],
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_comment": "Should contrast the two organ systems' OAR sets"
+    }
+  ]
+}

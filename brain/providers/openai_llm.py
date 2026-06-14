@@ -92,7 +92,7 @@ class OpenAILLM(BaseLLM):
             "model": kwargs.get("model", self.model),
             "messages": messages,
             "temperature": kwargs.get("temperature", 0.0),
-            "max_tokens": kwargs.get("max_tokens", 4096),
+            "max_tokens": kwargs.get("max_tokens", 8192),
         }
 
         if tools:
@@ -187,7 +187,7 @@ class AzureOpenAILLM(OpenAILLM):
             "model": kwargs.get("model", self.model),
             "messages": messages,
             "temperature": kwargs.get("temperature", 0.0),
-            "max_tokens": kwargs.get("max_tokens", 4096),
+            "max_tokens": kwargs.get("max_tokens", 8192),
         }
 
         if tools:

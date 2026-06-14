@@ -1,0 +1,80 @@
+{
+  "category": "skill_selection",
+  "description": "Tests that the right planning skill is selected based on tumor type. StandardPlanningSkill, LiverFullSkill, and LungFullSkill each have organ-specific ref_direc defaults. Bot should pick the right one and apply its parameters.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "SS001",
+      "input": "Plan brachytherapy for this pancreatic tumor",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["plan", "pancreas", "posterior"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Should use StandardPlanningSkill (ref_direc=[0,-1,0] for pancreas)"
+    },
+    {
+      "id": "SS002",
+      "input": "Plan brachytherapy for this liver tumor",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["plan", "liver", "lateral"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Should use LiverFullSkill (ref_direc=[1,0,0] for liver)"
+    },
+    {
+      "id": "SS003",
+      "input": "Plan brachytherapy for this lung tumor",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["plan", "lung", "anterior"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Should use LungFullSkill (ref_direc=[0,1,0] for lung)"
+    },
+    {
+      "id": "SS004",
+      "input": "Plan brachytherapy for this prostate tumor",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["plan", "prostate", "perineal"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Should use StandardPlanningSkill with prostate template"
+    },
+    {
+      "id": "SS005",
+      "input": "Plan brachytherapy for this head and neck tumor",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["plan", "head", "neck"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Should use StandardPlanningSkill with head_neck defaults"
+    },
+    {
+      "id": "SS006",
+      "input": "Plan a pancreatic tumor with a posterior approach",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["posterior", "plan", "pancreas"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Should use StandardPlanningSkill (its default is already posterior for pancreas)"
+    },
+    {
+      "id": "SS007",
+      "input": "Plan a liver tumor with an anterior approach",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["anterior", "liver", "warn", "anterior"],
+      "forbidden_keywords": ["ok, planning with anterior"],
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_comment": "Liver default is lateral; anterior should be flagged as unusual"
+    },
+    {
+      "id": "SS008",
+      "input": "What brachytherapy planning approaches does the system support?",
+      "setup": "No CT needed",
+      "expected_keywords": ["StandardPlanning", "Liver", "Lung", "skill"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "Should mention the three skills by name"
+    }
+  ]
+}

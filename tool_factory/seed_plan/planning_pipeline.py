@@ -38,6 +38,28 @@ CONFIG_PATH = os.path.join(PLANS_DIR, "config.json")
 # No Gy conversion needed - all metrics use normalized units.
 NEW_SLICES_ROUNDED = 64
 
+# TotalSegmentator v2 organ labels that physically block a needle trajectory.
+# Soft parenchymal organs (lung, liver, kidney, spleen, muscle) are deliberately
+# excluded so the posterior / trans-abdominal approach can find a path to the CTV
+# even when the OAR mask contains the full body atlas (117 organs).
+# See memory/oar-obstacle-filter-fix.md for rationale.
+OBSTACLE_ORGAN_LABELS = frozenset({
+    # Vessels (aorta, vena cava, portal, iliac, pulmonary, brachiocephalic, etc.)
+    15, 52, 53, 54, 55, 56, 57, 58, 59, 60, 62, 63, 64, 65, 66, 67, 68,
+    # Bowel
+    18, 19, 20,
+    # Bone — vertebrae (cervical, thoracic, lumbar, sacrum), ribs, sternum, humerus,
+    # scapula, clavicula, femur, hip, spinal cord
+    25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 79,
+    69, 70, 71, 72, 73, 74, 75, 76, 77, 78,
+    # Soft but high-risk for transabdominal / posterior approach
+    6,    # stomach
+    16,   # trachea
+    17,   # thyroid
+    51,   # heart
+})
+
 
 def _safe_dicom_orient(image, target_orientation='LPI', context=""):
     """Apply DICOMOrient with explicit logging on failure.
@@ -406,15 +428,38 @@ def _build_radiation_volume(ctv_mask, oar_mask, target_value=1, obstacle_value=2
         3 = vein (obstacle)
         4 = pancreas (background, not target)
     Only label 1 (tumor) is the target for planning.
+
+    OAR mask (from TotalSegmentator) is filtered through OBSTACLE_ORGAN_LABELS
+    so soft organs (lung, liver, kidney, spleen, muscle) do NOT block the path —
+    they are physically traversable for a trans-abdominal / posterior needle.
+    Only vessels, bowel, bone and a few critical soft structures become obstacles.
     """
     radiation_volume = np.zeros_like(ctv_mask, dtype=np.int32)
     # Only tumor (label 1) is the target
     radiation_volume[ctv_mask == 1] = target_value
-    # Artery and vein are obstacles (non-traversable)
+    # Artery and vein are obstacles (non-traversable) — handled directly from CTV mask
     radiation_volume[(ctv_mask == 2) | (ctv_mask == 3)] = obstacle_value
-    # OAR from TotalSegmentator (if provided)
+    # OAR from TotalSegmentator (if provided): apply whitelist filter
     if oar_mask is not None:
-        radiation_volume[(oar_mask > 0) & (radiation_volume == 0)] = obstacle_value
+        total_oar_voxels = int((oar_mask > 0).sum())
+        obstacle_mask = np.isin(oar_mask, list(OBSTACLE_ORGAN_LABELS))
+        filtered_voxels = int(obstacle_mask.sum())
+        radiation_volume[obstacle_mask & (radiation_volume == 0)] = obstacle_value
+        logger.info(
+            f"[OAR filter] blocking voxels: {filtered_voxels} / {total_oar_voxels} "
+            f"total OAR ({total_oar_voxels - filtered_voxels} non-blocking skipped)"
+        )
+        # Warn if OAR mask has labels beyond TotalSegmentator v2's 117
+        # — whitelist may not cover them, so they would not be treated as obstacles.
+        try:
+            max_label = int(oar_mask.max())
+        except Exception:
+            max_label = 0
+        if max_label > 117:
+            logger.warning(
+                f"[OAR filter] OAR mask contains labels up to {max_label} (TotalSegmentator v2 max = 117). "
+                f"Labels outside the whitelist will be treated as non-obstacles."
+            )
     return radiation_volume
 
 
@@ -607,6 +652,11 @@ class PlanningPipelineTool(BaseTool):
             if ct_image is not None:
                 # Ensure stored CT is also LPI-oriented
                 ct_image = _safe_dicom_orient(ct_image, 'LPI', context="for stored CT")
+                # Maintain ct_image_raw invariant — _store_label_with_metadata needs it.
+                # If absent (CT was loaded outside this tool), use the LPI-oriented
+                # image as its own raw frame reference (consistent orientation).
+                if agent.memory.retrieve("ct_image_raw") is None:
+                    agent.memory.store("ct_image_raw", ct_image)
                 return ct_image
 
         return None
@@ -750,7 +800,8 @@ class PlanningPipelineTool(BaseTool):
             obstacle_value=args.radiation_array_params['obstacle_value']
         )
         target_count = int(np.sum(radiation_volume == args.radiation_array_params['target_value']))
-        logger.info(f"Radiation volume: target_voxels={target_count}")
+        obstacle_count = int(np.sum(radiation_volume == args.radiation_array_params['obstacle_value']))
+        logger.info(f"Radiation volume: target={target_count}, obstacle={obstacle_count}, shape={radiation_volume.shape}")
         if target_count == 0:
             return ToolResult(success=False, error="[trajectory_init] No target voxels in radiation volume. Check CTV mask.")
 
@@ -766,7 +817,7 @@ class PlanningPipelineTool(BaseTool):
 
         # Run init_plan
         from plans.core import init_plan
-        logger.info("Running init_plan...")
+        logger.info(f"Running init_plan with: ref_direc={voxel_direc}, direc_resolution={args.direc_resolution}, backlit_angle={args.radiation_array_params['backlit_angle']}, target_value={args.radiation_array_params['target_value']}, obstacle_value={args.radiation_array_params['obstacle_value']}, min_depth={args.radiation_array_params.get('min_depth', 1)}, max_traj={args.radiation_array_params['maximum_candidate_trajectories']}")
         try:
             trajectories = init_plan(
                 resampled_ct,
@@ -778,6 +829,7 @@ class PlanningPipelineTool(BaseTool):
                 args.radiation_array_params['background_value'],
                 args.radiation_array_params['obstacle_value'],
                 args.radiation_array_params['maximum_candidate_trajectories'],
+                min_depth=args.radiation_array_params.get('min_depth', 1),
             )
             logger.info(f"init_plan returned {len(trajectories)} trajectories")
         except Exception as e:
@@ -971,28 +1023,65 @@ class PlanningPipelineTool(BaseTool):
         if "DVH_rate" in agent_config:
             args.DVH_rate = agent_config["DVH_rate"]
 
-        # Run planning
-        from plans.brachy_plan_v2 import brachy_plan, brachy_plan_rf
+        # Run planning using core.init_plan + core.optimal_plan directly.
+        # We CANNOT use brachy_plan because it rebuilds the radiation volume
+        # with get_planning_volume_array which treats ALL OAR as obstacles
+        # (185K voxels), while our pipeline uses a whitelist (60K voxels).
+        # This causes brachy_plan to find 0 trajectories.
         import SimpleITK as sitk
+        from plans import core, utilizations
         logger.info(f"Running seed planning (mode={mode})...")
 
-        # Convert numpy arrays to SimpleITK images (brachy_plan needs SimpleITK for coordinate transforms)
-        ctv_sitk = sitk.GetImageFromArray(resampled_ctv.astype(np.uint8))
-        ctv_sitk.CopyInformation(resampled_ct)
-        oar_sitk = None
-        if resampled_oar is not None:
-            oar_sitk = sitk.GetImageFromArray(resampled_oar.astype(np.uint8))
-            oar_sitk.CopyInformation(resampled_ct)
+        # Use the pipeline's radiation volume (already built with whitelist filter)
+        # and the trajectories from trajectory_init/refine
+        trajectories = agent.memory.retrieve("refined_trajectories") or agent.memory.retrieve("trajectories") if agent else None
+        if not trajectories:
+            logger.warning("[seed_planning] No trajectories found in memory, running trajectory_init...")
+            init_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent)
+            if init_result.success:
+                trajectories = init_result.metadata.get("trajectories", [])
+
+        if not trajectories:
+            return ToolResult(success=False, error="[seed_planning] No trajectories available.")
+
+        logger.info(f"[seed_planning] Using {len(trajectories)} trajectories from pipeline")
+
+        # Build dose_image for coordinate transforms
+        dose_image = utilizations.normalize_dose_image(
+            resampled_ct, args.image_normalize[0], args.image_normalize[1],
+            args.image_normalize[0], args.image_normalize[1]
+        )
 
         try:
-            if mode == "rl":
-                plan_res, sum_image, dose_image = brachy_plan_rf(
-                    resampled_ct, ctv_sitk, oar_sitk, dose_model, args, _MockProgressDialog()
-                )
-            else:
-                plan_res, sum_image, dose_image = brachy_plan(
-                    resampled_ct, ctv_sitk, oar_sitk, dose_model, args, _MockProgressDialog()
-                )
+            plan_res = core.optimal_plan(
+                trajectories,
+                radiation_volume,
+                dose_image,
+                dose_model,
+                args.dl_params,
+                args.distance_filtter['lower_bound'],
+                args.distance_filtter['upper_bound'],
+                args.distance_filtter['distance_rate'],
+                args.radiation_array_params['target_value'],
+                args.radiation_array_params['background_value'],
+                args.radiation_array_params['obstacle_value'],
+                args.radiation_array_params['infer_img_size'],
+                args.in_lowest_energy,
+                args.out_highest_energy,
+                args.DVH_rate,
+                args.seed_info,
+                args.iter_rate,
+                args.image_normalize[0],
+                args.image_normalize[1],
+                args.image_normalize[2],
+                _MockProgressDialog()
+            )
+            # Compute dose distribution
+            sum_image = np.zeros_like(radiation_volume, dtype=np.float32)
+            for entry in plan_res:
+                if isinstance(entry, (list, tuple)) and len(entry) >= 3:
+                    for seed_dose in entry[2]:
+                        sum_image += seed_dose
         except Exception as e:
             logger.error(f"Planning failed: {e}")
             import traceback
@@ -1299,7 +1388,11 @@ class PlanningPipelineTool(BaseTool):
             dose_max_full = float(np.max(target_doses)) * DOSE_SCALE * 1.1
             # Reference: dose_max_for_bins = max(prescription*3, 250, dose_max_full)
             dose_max_val = max(prescription_gy * 3.0, 250.0, dose_max_full)
-            num_bins = 300
+            # 600 bins (~1 Gy per bin for a 600 Gy range) gives noticeably
+            # smoother DVH curves than the previous 300-bin version
+            # (~2 Gy per bin). The data is sent to the frontend as JSON
+            # so the ~2x size increase is negligible.
+            num_bins = 600
             dose_bins = np.linspace(0, dose_max_val, num_bins + 1)
             dose_centers = (dose_bins[:-1] + dose_bins[1:]) / 2.0
 
@@ -1394,25 +1487,38 @@ class PlanningPipelineTool(BaseTool):
     def _run_full_pipeline(self, ct_image, ctv_mask, oar_mask, ref_direc,
                            mode, agent_config, agent):
         """Run the complete planning pipeline."""
+        import time
         results = {}
+        # Per-substep wall-clock timings (seconds). The frontend uses this
+        # to render per-step timers in the planning pipeline progress box
+        # (otherwise the 4 planning substeps show no time and no running
+        # indicator because the agent only streams a single 'done' event
+        # for the whole planning_pipeline tool call).
+        substep_timings = {}
 
         # Step 1: Trajectory initialization
         logger.info("Step 1/5: Trajectory initialization...")
+        t0 = time.time()
         traj_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent)
+        substep_timings["trajectory_init"] = round(time.time() - t0, 2)
         if not traj_result.success:
             return traj_result
         results["trajectories"] = traj_result.metadata.get("trajectories", [])
 
         # Step 2: Trajectory refinement
         logger.info("Step 2/5: Trajectory refinement...")
+        t0 = time.time()
         refine_result = self._step_trajectory_refine(ct_image, ctv_mask, oar_mask, agent)
+        substep_timings["trajectory_refine"] = round(time.time() - t0, 2)
         if not refine_result.success:
             return refine_result
         results["refined_trajectories"] = refine_result.metadata.get("refined_trajectories", [])
 
         # Step 3: Seed planning
         logger.info("Step 3/5: Seed placement optimization...")
+        t0 = time.time()
         seed_result = self._step_seed_planning(ct_image, ctv_mask, oar_mask, mode, agent_config, agent)
+        substep_timings["seed_planning"] = round(time.time() - t0, 2)
         if not seed_result.success:
             return seed_result
         results["seed_plan"] = seed_result.metadata.get("seed_plan", [])
@@ -1420,13 +1526,17 @@ class PlanningPipelineTool(BaseTool):
 
         # Step 4: Dose calculation
         logger.info("Step 4/5: Dose calculation...")
+        t0 = time.time()
         dose_result = self._step_dose_calc(ct_image, ctv_mask, oar_mask, agent_config, agent)
+        substep_timings["dose_calc"] = round(time.time() - t0, 2)
         if dose_result.success:
             results["dose_distribution"] = dose_result.data
 
         # Step 5: Dose evaluation
         logger.info("Step 5/5: Dose evaluation...")
+        t0 = time.time()
         eval_result = self._step_dose_eval(ctv_mask, oar_mask, agent)
+        substep_timings["dose_eval"] = round(time.time() - t0, 2)
         if eval_result.success:
             results["dose_metrics"] = eval_result.metadata
 
@@ -1450,6 +1560,10 @@ class PlanningPipelineTool(BaseTool):
                 "dose_metrics": results.get("dose_metrics", {}),
                 "total_seeds": total_seeds,
                 "summary": summary,
+                # Per-substep wall-clock timings in seconds. Used by the
+                # frontend pipeline progress box to show per-step timers
+                # and "running..." indicators for each planning substep.
+                "substep_timings": substep_timings,
             },
         )
 

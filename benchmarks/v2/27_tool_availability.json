@@ -1,0 +1,65 @@
+{
+  "category": "tool_availability",
+  "description": "Tests that BrachyBot recognises which tools actually exist vs hallucinating non-existent ones. Real tool names are listed in tool_factory/*/*.py. Bot must refuse to pretend a non-existent tool works.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "TA001",
+      "input": "Compute the DVH curve for the CTV",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["DVH", "curve", "bin"],
+      "expected_tool": "dvh_curve",
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "dvh_curve is a real auto-generated tool"
+    },
+    {
+      "id": "TA002",
+      "input": "Use the super_planner tool to make a comprehensive plan",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["not available", "not found", "unknown"],
+      "forbidden_keywords": ["using super_planner", "called super_planner"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "super_planner does not exist — must refuse"
+    },
+    {
+      "id": "TA003",
+      "input": "List all the brachytherapy tools available in this system",
+      "setup": "No CT needed",
+      "expected_keywords": ["ctv_segmentation", "oar_segmentation", "dose_engine"],
+      "pass_threshold": 0.4,
+      "difficulty": "medium",
+      "_comment": "Should mention at least 3 real tool names from tool_factory/"
+    },
+    {
+      "id": "TA004",
+      "input": "Check OAR constraints using the constraint checker",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["OAR", "constraint", "check", "violation"],
+      "expected_tool": "oar_constraint_checker",
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "oar_constraint_checker is real"
+    },
+    {
+      "id": "TA005",
+      "input": "Run trajectory initialization",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["trajectory", "candidates", "needle"],
+      "expected_tool": "trajectory_init",
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "TrajectoryInitTool is real"
+    },
+    {
+      "id": "TA006",
+      "input": "What tools can I use for OAR analysis on this case?",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["OAR", "segmentation", "constraint", "check"],
+      "pass_threshold": 0.4,
+      "difficulty": "medium",
+      "_comment": "Should mention oar_segmentation, oar_constraint_checker, plan_quality_scorer"
+    }
+  ]
+}
