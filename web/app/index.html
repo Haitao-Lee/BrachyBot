@@ -681,6 +681,51 @@ body::before {
     min-width: 0;
     background:
         linear-gradient(180deg, transparent 0%, var(--bg-1) 100%);
+    position: relative;
+}
+
+/* Drag handle on the LEFT edge of the chat column so the user can
+   resize the LLM chat column. The chat column's siblings are the
+   session sidebar (left) and the right-panel (right); without this
+   handle the chat column was effectively fixed-width and the user
+   complained they couldn't drag the "中间" column.
+
+   The handle is 6px wide, sticks 3px to the LEFT of the chat area
+   (overlapping the session sidebar boundary), and has cursor:col-resize.
+   A transparent background by default; on hover a subtle blue tint
+   lights up so the user can see the affordance. The visible 3px bar
+   in the center is a ::after pseudo-element so the actual hit area
+   is bigger than the visual bar (helps mobile / trackpad users). */
+.chat-area-resize-handle {
+    position: absolute;
+    top: 0;
+    left: -3px;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 10;
+    transition: background var(--t-base) var(--ease);
+}
+.chat-area-resize-handle:hover,
+.chat-area-resize-handle.dragging {
+    background: rgba(59, 130, 246, 0.10);
+}
+.chat-area-resize-handle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: 40px;
+    background: var(--border-soft);
+    border-radius: 1px;
+    transition: background var(--t-base) var(--ease), height var(--t-base) var(--ease);
+}
+.chat-area-resize-handle:hover::after,
+.chat-area-resize-handle.dragging::after {
+    background: var(--primary);
+    height: 56px;
 }
 
 .chat-header {
@@ -3909,7 +3954,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     </div>
 
     <!-- ============ LEFT: CHAT ============ -->
-    <div class="chat-area">
+    <div class="chat-area" id="chatArea">
+        <!-- Drag handle on the LEFT edge of the chat column so the user
+             can resize the chat column (its sibling the session sidebar
+             is on the left, and its other sibling the right-panel is on
+             the right). The handle sticks 4px outside the chat area on
+             the left so it's easy to grab with the mouse. -->
+        <div class="chat-area-resize-handle" id="chatAreaResizeHandle"></div>
         <div class="chat-header">
             <button onclick="toggleSessionSidebar()" title="Toggle chat history" style="background:none;border:none;color:var(--text);cursor:pointer;font-size:0.9rem;padding:2px 6px;">&#9776;</button>
             <div class="chat-header-icon">
@@ -6734,6 +6785,7 @@ async function init() {
     // handle. They run once on init and never need to re-bind.
     try { setupSplitter(); } catch (e) { console.warn('setupSplitter failed:', e); }
     try { setupSidebarResize(); } catch (e) { console.warn('setupSidebarResize failed:', e); }
+    try { setupChatAreaResize(); } catch (e) { console.warn('setupChatAreaResize failed:', e); }
 
     // NOTE: Do NOT call refreshPlanningUI() on init
     // Planning data was just cleared — user should run planning manually
@@ -6942,23 +6994,27 @@ function setupSplitter() {
     const splitter = document.getElementById('vSplitter');
     const sidebar = document.querySelector('.session-sidebar');
     const rightPanel = document.querySelector('.right-panel');
+    if (!splitter || !rightPanel) return;
     let dragging = false;
 
     splitter.addEventListener('mousedown', (e) => {
         dragging = true;
         document.body.classList.add('v-dragging');
         splitter.classList.add('dragging');
+        // Make the hit area unambiguous — prevent text-select / drag-image
         e.preventDefault();
     });
 
     document.addEventListener('mousemove', (e) => {
         if (!dragging) return;
         const container = document.querySelector('.app-body');
+        if (!container) return;
         const containerRect = container.getBoundingClientRect();
         const newWidth = containerRect.right - e.clientX;
         if (newWidth >= 300 && newWidth <= containerRect.width - 200) {
             rightPanel.style.width = newWidth + 'px';
-            // Force flex recalculation on viewers-panel
+            // Force flex recalculation on viewers-panel so the 2D
+            // canvases re-measure against the new panel width.
             const panel = document.getElementById('viewersPanel');
             if (panel) {
                 panel.style.display = 'none';
@@ -6968,6 +7024,7 @@ function setupSplitter() {
             ['axial', 'sagittal', 'coronal'].forEach(axis => {
                 requestAnimationFrame(() => resizeCanvas(axis));
             });
+            try { localStorage.setItem('layout.right.width', String(Math.round(newWidth))); } catch (_) {}
         }
     });
 
@@ -6978,6 +7035,15 @@ function setupSplitter() {
             splitter.classList.remove('dragging');
         }
     });
+
+    // Restore previously-saved right-panel width on page load
+    try {
+        const saved = localStorage.getItem('layout.right.width');
+        if (saved) {
+            const w = parseInt(saved, 10);
+            if (w >= 300 && w <= 4000) rightPanel.style.width = w + 'px';
+        }
+    } catch (_) {}
 }
 
 function setupSidebarResize() {
@@ -6995,6 +7061,7 @@ function setupSidebarResize() {
         startWidth = sidebar.offsetWidth;
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
+        handle.classList.add('dragging');
         e.preventDefault();
         e.stopPropagation();
     });
@@ -7004,6 +7071,7 @@ function setupSidebarResize() {
         const newWidth = startWidth + (e.clientX - startX);
         if (newWidth >= 180 && newWidth <= 500) {
             sidebar.style.width = newWidth + 'px';
+            try { localStorage.setItem('layout.sidebar.width', String(Math.round(newWidth))); } catch (_) {}
         }
     });
 
@@ -7012,6 +7080,72 @@ function setupSidebarResize() {
             dragging = false;
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
+            handle.classList.remove('dragging');
+        }
+    });
+
+    // Restore previously-saved width
+    try {
+        const saved = localStorage.getItem('layout.sidebar.width');
+        if (saved) sidebar.style.width = saved + 'px';
+    } catch (_) {}
+}
+
+// Drag-resize for the chat column (the middle column, between the
+// session sidebar and the right panel). The handle is the thin
+// vertical bar on the LEFT edge of #chatArea. Dragging it changes
+// the chat column's width — by SHRINKING the sidebar (since the
+// chat column itself has flex: 1, the natural way to resize the
+// middle column is to consume space from the sidebar on the left).
+// We persist the resulting width to localStorage so it survives
+// page reloads.
+function setupChatAreaResize() {
+    const handle = document.getElementById('chatAreaResizeHandle');
+    const chatArea = document.getElementById('chatArea');
+    const sidebar = document.getElementById('sessionSidebar');
+    if (!handle || !chatArea || !sidebar) return;
+
+    let dragging = false;
+    let startX = 0;
+    let startChatWidth = 0;
+    let startSidebarWidth = 0;
+
+    handle.addEventListener('mousedown', (e) => {
+        dragging = true;
+        startX = e.clientX;
+        // The chat area's effective width = its bounding rect width.
+        // The sidebar's width will be the sink — drag right = sidebar
+        // shrinks, chat area grows; drag left = sidebar grows, chat
+        // area shrinks. We keep the chat area's actual layout width
+        // driven by the parent flex (flex: 1), so we manipulate the
+        // sidebar's width to indirectly size the chat.
+        startChatWidth = chatArea.getBoundingClientRect().width;
+        startSidebarWidth = sidebar.offsetWidth;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        handle.classList.add('dragging');
+        e.preventDefault();
+        e.stopPropagation();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const dx = e.clientX - startX;
+        // Dragging right (positive dx) widens the chat, so sidebar shrinks.
+        const newSidebarWidth = startSidebarWidth - dx;
+        // Clamp: sidebar [180, 500], chat area >= 240
+        if (newSidebarWidth >= 180 && newSidebarWidth <= 500) {
+            sidebar.style.width = newSidebarWidth + 'px';
+            try { localStorage.setItem('layout.sidebar.width', String(Math.round(newSidebarWidth))); } catch (_) {}
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (dragging) {
+            dragging = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            handle.classList.remove('dragging');
         }
     });
 }
