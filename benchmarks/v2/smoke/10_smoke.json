@@ -1,0 +1,19 @@
+{
+  "category": "smoke_10",
+  "description": "Smoke subset of 10_web_search.json for fast PR feedback (~30s total)",
+  "ct_file": "<workspace>/data/Cases/10/CTpatient1.nii",
+  "cases": [
+    {
+      "id": "WS001",
+      "input": "Search for DeepRare",
+      "setup": "No CT needed",
+      "expected_keywords": [
+        "DeepRare",
+        "search"
+      ],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_smoke_reason": "Search triggers"
+    }
+  ]
+}

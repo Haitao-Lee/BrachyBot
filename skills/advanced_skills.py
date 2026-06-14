@@ -30,7 +30,7 @@ class FullAutoPlanningSkill(Skill):
                 "ctv_segmentation": {"mode": "auto"},
                 "oar_segmentation": {"mode": "totalsegmentator"},
                 "seed_planning": {"mode": "rule_based"},
-                "dose_engine": {"method": "gaussian"},
+                "dose_engine": {"method": "cnn"},
             },
         )
 
@@ -49,7 +49,7 @@ class QuickPlanSkill(Skill):
             tool_sequence=["trajectory_planning", "seed_planning", "dose_engine", "dose_evaluation"],
             parameters={
                 "seed_planning": {"mode": "rule_based"},
-                "dose_engine": {"method": "gaussian"},
+                "dose_engine": {"method": "cnn"},
             },
         )
 
@@ -137,6 +137,57 @@ class ProstateFullSkill(Skill):
             parameters={
                 "ctv_segmentation": {"anatomy": "prostate"},
                 "oar_segmentation": {"method": "totalsegmentator"},
+            },
+        )
+
+
+class LiverFullSkill(Skill):
+    """Full liver brachytherapy planning workflow.
+
+    Liver tumors typically use a right-lateral or right-posterior oblique
+    trajectory to avoid major vessels, gallbladder, and stomach. The
+    planning_pipeline tool will pick the corresponding RAS default
+    direction automatically when this skill runs.
+    """
+    def __init__(self):
+        super().__init__(
+            name="liver_full_workflow",
+            description="Complete liver brachytherapy workflow: seg → lateral/posterior trajectory → seed → dose → eval",
+            category="workflow",
+            triggers=["liver workflow", "肝癌全流程", "肝肿瘤", "liver brachytherapy", "liver tumor", "hepatic"],
+            tool_sequence=["ctv_segmentation", "oar_segmentation", "trajectory_planning",
+                          "seed_planning", "dose_engine", "dose_evaluation",
+                          "oar_constraint_checker", "plan_quality_scorer"],
+            parameters={
+                "ctv_segmentation": {"anatomy": "liver"},
+                "oar_segmentation": {"method": "totalsegmentator"},
+                "seed_planning": {"mode": "rule_based"},
+                # Right-lateral approach — avoids central vessels/stomach
+                "planning_pipeline": {"ref_direc": [1.0, 0.0, 0.0]},
+            },
+        )
+
+
+class LungFullSkill(Skill):
+    """Full lung brachytherapy planning workflow.
+
+    Lung lesions are typically reached via an anterior transthoracic
+    approach; avoid the scapula and posterior rib heads.
+    """
+    def __init__(self):
+        super().__init__(
+            name="lung_full_workflow",
+            description="Complete lung brachytherapy workflow: seg → anterior trajectory → seed → dose → eval",
+            category="workflow",
+            triggers=["lung workflow", "肺癌全流程", "肺肿瘤", "lung brachytherapy", "lung tumor", "pulmonary"],
+            tool_sequence=["ctv_segmentation", "oar_segmentation", "trajectory_planning",
+                          "seed_planning", "dose_engine", "dose_evaluation",
+                          "oar_constraint_checker", "plan_quality_scorer"],
+            parameters={
+                "ctv_segmentation": {"anatomy": "lung"},
+                "oar_segmentation": {"method": "totalsegmentator"},
+                # Anterior approach (+Y)
+                "planning_pipeline": {"ref_direc": [0.0, 1.0, 0.0]},
             },
         )
 

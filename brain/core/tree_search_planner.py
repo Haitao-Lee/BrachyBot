@@ -188,7 +188,7 @@ class PlanningTreeSearch:
             1: [("oar_segmentation", {"auto": True}), ("radiation_volume", {})],
             2: [("trajectory_planning", {"auto": True}), ("radiation_volume", {})],
             3: [("seed_planning", {"auto": True}), ("trajectory_planning", {})],
-            4: [("dose_calculation", {"method": "gaussian"}), ("seed_planning", {})],
+            4: [("dose_calculation", {"method": "cnn"}), ("seed_planning", {})],
             5: [("dose_evaluation", {"comprehensive": True}), ("dose_calculation", {})],
             6: [("plan_quality_check", {}), ("dose_evaluation", {})],
         }

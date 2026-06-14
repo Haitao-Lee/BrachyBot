@@ -54,7 +54,7 @@ class PreferenceStore:
             "default_organ_type": {"value": "general", "confidence": 1.0, "source": "default"},
         },
         "dose": {
-            "default_engine": {"value": "gaussian", "confidence": 1.0, "source": "default"},
+            "default_engine": {"value": "cnn", "confidence": 1.0, "source": "default"},
             "default_normalize_min": {"value": -1000, "confidence": 1.0, "source": "default"},
             "default_normalize_max": {"value": 3000, "confidence": 1.0, "source": "default"},
         },

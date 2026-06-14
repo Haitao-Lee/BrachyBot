@@ -3255,12 +3255,19 @@ def select_optimal_trajectory(candidate_trajectories, planned_trajectories, radi
     
     # Step 5: Combine scores using element-wise multiplication
     candidate_traj_scores = (
-        np.array(candidate_traj_weights).reshape(-1) * 
-        np.array(candidate_traj_radiation).reshape(-1) * 
-        np.array(candidate_direction_score).reshape(-1) * 
+        np.array(candidate_traj_weights).reshape(-1) *
+        np.array(candidate_traj_radiation).reshape(-1) *
+        np.array(candidate_direction_score).reshape(-1) *
         np.array(adjusted_candidate_traj_margin).reshape(-1)
     )
-    
+
+    # Guard: if any input array was empty, return None instead of crashing on np.max.
+    # This can happen when candidate_trajectories was empty (no point continuing).
+    if candidate_traj_scores.size == 0:
+        import logging as _log
+        _log.getLogger(__name__).info(f"[select_optimal] scores.size=0, candidates={len(candidate_trajectories)}")
+        return None, None
+
     if np.max(candidate_traj_scores) == 0 or np.max(candidate_traj_scores) is np.nan:
         candidate_traj_scores = (
             np.array(candidate_traj_weights).reshape(-1) * 
@@ -3281,10 +3288,16 @@ def select_optimal_trajectory(candidate_trajectories, planned_trajectories, radi
                 if np.max(candidate_traj_scores) == 0:
                     return None, None
     
+    _avail_count = 0
     for i, candidate_trajectory in enumerate(candidate_trajectories):
         throttled_process_events()
-        if len(get_available_position(candidate_trajectory, [], seed_info, dose_image, distance_map)) == 0 or i in selected_indices:
-            candidate_traj_scores[i] = 0 
+        avail = get_available_position(candidate_trajectory, [], seed_info, dose_image, distance_map)
+        if len(avail) == 0 or i in selected_indices:
+            candidate_traj_scores[i] = 0
+        else:
+            _avail_count += 1
+    import logging as _log
+    _log.getLogger(__name__).info(f"[select_optimal] {len(candidate_trajectories)} candidates, {_avail_count} with available positions, max_score={np.max(candidate_traj_scores) if candidate_traj_scores.size > 0 else 'empty'}")
 
     # Step 6: Select and return the trajectory with the highest score
     return candidate_trajectories[np.argmax(candidate_traj_scores)], np.argmax(candidate_traj_scores)
@@ -3771,8 +3784,29 @@ def put_seeds(radiation_volume, dose_image, dose_cal_model, infer_img_size, radi
             break
         effective_range = get_available_position(trajectory, seeds, seed_info, dose_image, distance_map)
 
-    
+
     return seeds, cur_DVH_rate, single_seed_radiations
+
+
+def _safe_distance_lookup(distance_map, coords):
+    """Look up distance_map at integer voxel coords, clipping out-of-bounds to 0.
+
+    Coordinates near image edges can fall outside the array after `coords.astype(int)`.
+    Returning 0 for out-of-bounds coords is conservative (treats edge voxels as if
+    they were right next to an obstacle) and prevents IndexError crashes in
+    trajectory scoring.
+    """
+    try:
+        idx = tuple(int(round(float(c))) for c in coords)
+        if len(idx) != distance_map.ndim:
+            return 0.0
+        # Check bounds for each axis
+        for axis_i, ax in enumerate(idx):
+            if ax < 0 or ax >= distance_map.shape[axis_i]:
+                return 0.0
+        return float(distance_map[idx])
+    except (IndexError, TypeError, ValueError):
+        return 0.0
 
 
 def get_available_position(trajectory, seeds, seed_info, dose_image, distance_map, distance_margin = 0):
@@ -3804,13 +3838,17 @@ def get_available_position(trajectory, seeds, seed_info, dose_image, distance_ma
 
     # Initialize the effective range (valid positions).
     effective_range = []
-    
+
     # Compute the valid positions (effective range) based on the target and background depths.
     for i in range(len(target_depths)):
         effective_range += list(range(
             1 + sum(background_depths[:i]) + sum(target_depths[:i]),
             target_depths[i] + 1 + sum(background_depths[:i]) + sum(target_depths[:i])
         ))
+
+    import logging as _log
+    _logger = _log.getLogger(__name__)
+    _logger.info(f"[get_avail_pos] target_depths={target_depths}, background_depths={background_depths}, initial_range={len(effective_range)}")
     
     # Exclude positions near the boundary of the seed influence zone.
     total_depth = sum(background_depths) + sum(target_depths) 
@@ -3820,11 +3858,12 @@ def get_available_position(trajectory, seeds, seed_info, dose_image, distance_ma
     # if len(effective_range) > seed_info['num_of_seeds'][1]:
     #     rate *= 2
     effective_range = [
-        x for x in effective_range 
-        if np.linalg.norm(position_transform(dose_image, np.array(update_direction * x + point))[0] - world_p) > rate * seed_info['length'] / 2 \
-            and np.linalg.norm(position_transform(dose_image, np.array(update_direction * x + point))[0] - world_p) < np.linalg.norm(position_transform(dose_image, np.array(update_direction * total_depth + point)) - world_p) - rate * seed_info['length'] / 2 \
-                and distance_map[tuple(np.array(update_direction * x + point).astype(int))] > distance_margin*seed_volume_length
+        x for x in effective_range
+        if np.linalg.norm(position_transform(dose_image, np.array(update_direction * x + point))[0] - world_p) > rate * seed_info['length'] / 2
+        and np.linalg.norm(position_transform(dose_image, np.array(update_direction * x + point))[0] - world_p) < np.linalg.norm(position_transform(dose_image, np.array(update_direction * total_depth + point)) - world_p) - rate * seed_info['length'] / 2
+        and _safe_distance_lookup(distance_map, np.array(update_direction * x + point)) > distance_margin * seed_volume_length
     ]
+    _logger.info(f"[get_avail_pos] after margin/distance filter: {len(effective_range)} positions (margin_rate={rate}, seed_length={seed_info['length']})")
 
     # Adjust the effective range to exclude positions influenced by each already-placed seed.
     for seed in seeds:

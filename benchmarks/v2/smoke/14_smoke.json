@@ -1,0 +1,25 @@
+{
+  "category": "smoke_14",
+  "description": "Smoke subset of 14_response_quality.json for fast PR feedback (~30s total)",
+  "ct_file": "<workspace>/data/Cases/10/CTpatient1.nii",
+  "cases": [
+    {
+      "id": "RQ001",
+      "input": "Analyze the image",
+      "setup": "Upload CT",
+      "expected_keywords": [
+        "Dimensions",
+        "Voxel",
+        "HU"
+      ],
+      "forbidden_keywords": [
+        "let me",
+        "I'll",
+        "Great question"
+      ],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_smoke_reason": "Basic response quality"
+    }
+  ]
+}

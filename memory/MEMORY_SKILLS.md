@@ -95,7 +95,7 @@ print(mode)  # 'rl'
 # 批量应用偏好到工具参数
 params = {"mode": None, "engine": None}
 applied = store.apply_to_tool_params("seed_planning", params)
-print(applied)  # {'mode': 'rl', 'engine': 'gaussian'}
+print(applied)  # {'mode': 'rl', 'engine': 'cnn'}
 ```
 
 ---
@@ -130,7 +130,7 @@ registry.record_use("standard_planning", success=True)
 |------|--------|---------|
 | `standard_planning` | 规划、标准计划、治疗计划 | CTV→OAR→轨迹→种子→剂量→评估 |
 | `rl_planning` | RL、强化学习、复杂 | CTV→OAR→轨迹→种子(RL)→CNN剂量→评估 |
-| `quick_planning` | 快速、预览 | CTV→轨迹→种子→Gaussian剂量 |
+| `quick_planning` | 快速、预览 | CTV→轨迹→种子→CNN剂量 |
 | `pancreas_segmentation` | 胰腺、pancreas | CTV(胰腺) + OAR(胰腺) |
 | `prostate_segmentation` | 前列腺、prostate | CTV(前列腺) + OAR(通用) |
 | `detailed_evaluation` | 详细评估、DVH | 评估→DVH→约束→评分→报告 |

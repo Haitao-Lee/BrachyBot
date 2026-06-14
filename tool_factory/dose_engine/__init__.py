@@ -2,7 +2,12 @@
 Dose Engine Tool
 ================
 Dose calculation engine module.
-Provides access to CNN and Gaussian dose calculation tools.
+
+The only supported engine is the CNN surrogate (``myDoseNet``) — a deep
+learning model that predicts 3D dose distributions from seed positions,
+directions, and the surrounding CT context.  The earlier analytical
+Gaussian engine was removed: its dose-fall-off approximation is not
+clinically valid and produced unrealistic plan evaluations.
 """
 
 from tool_factory import BaseTool, ToolResult
@@ -10,19 +15,16 @@ import numpy as np
 from typing import Dict, List
 
 from tool_factory.dose_engine.cnn_dose_engine import CNNDoseEngineTool
-from tool_factory.dose_engine.gaussian_dose_engine import GaussianDoseEngineTool
 
 
 class DoseEngineTool(BaseTool):
     """
-    Unified dose calculation tool supporting both CNN and Gaussian engines.
+    CNN-based dose calculation tool (myDoseNet surrogate).
 
-    Supports two modes:
-    1. CNN surrogate (myDoseNet) - deep learning based dose prediction
-    2. Gaussian analytical model - fast analytical approximation
-
-    The LLM Agent can choose the appropriate engine based on the context
-    (fast planning vs. high-accuracy validation).
+    The dose-engine dispatcher is a thin wrapper that forwards every call
+    to :class:`CNNDoseEngineTool`.  The ``engine`` parameter is retained
+    for backward compatibility with previously-saved skill / preference
+    payloads; only ``"cnn"`` is accepted, anything else raises an error.
     """
 
     @property
@@ -32,9 +34,9 @@ class DoseEngineTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Calculate radiation dose distribution for given seed positions and directions. "
-            "Supports two engines: 'cnn' (fast, uses pre-trained myDoseNet) and 'gaussian' (analytical Gaussian model). "
-            "Input: CT image, seed positions/directions, and planning parameters. "
+            "Calculate radiation dose distribution using the CNN (myDoseNet) "
+            "deep-learning surrogate. "
+            "Input: CT image, seed positions/directions, and CNN inference parameters. "
             "Output: 3D dose distribution array and per-seed dose contributions."
         )
 
@@ -50,23 +52,6 @@ class DoseEngineTool(BaseTool):
                 "seeds": {
                     "type": "array",
                     "description": "List of seed entries, each [[position], [direction]] where position is [z, y, x] and direction is [dx, dy, dz]",
-                },
-                "seed_sigma": {
-                    "type": "array",
-                    "description": "Gaussian sigma for dose spread (length, radius, radius) - used by gaussian engine",
-                    "items": {"type": "number"},
-                    "default": [4.5, 1.2, 1.2],
-                },
-                "seed_avr_dose": {
-                    "type": "number",
-                    "description": "Average dose per seed in Gy (default: 50)",
-                    "default": 50,
-                },
-                "engine": {
-                    "type": "string",
-                    "description": "Dose calculation engine: 'gaussian' or 'cnn' (default: 'gaussian')",
-                    "enum": ["gaussian", "cnn"],
-                    "default": "gaussian",
                 },
                 "dl_params": {
                     "type": "object",
@@ -97,6 +82,12 @@ class DoseEngineTool(BaseTool):
                     "type": "object",
                     "description": "Seed parameters dict with 'length' key (default: {'length': 4.5})",
                     "default": {"length": 4.5},
+                },
+                "engine": {
+                    "type": "string",
+                    "description": "Dose calculation engine. Only 'cnn' (myDoseNet) is supported; the legacy 'gaussian' engine has been removed.",
+                    "enum": ["cnn"],
+                    "default": "cnn",
                 },
             },
             "required": ["dose_image", "seeds"],
@@ -135,31 +126,30 @@ class DoseEngineTool(BaseTool):
         }
 
     def _execute(self, **kwargs) -> ToolResult:
-        engine = kwargs.get("engine", "gaussian")
-
-        if engine == "gaussian":
-            tool = GaussianDoseEngineTool()
-            return tool._execute(**kwargs)
-        elif engine == "cnn":
-            tool = CNNDoseEngineTool()
-            return tool._execute(**kwargs)
-        else:
+        engine = kwargs.get("engine", "cnn")
+        if engine != "cnn":
             return ToolResult(
                 success=False,
-                error=f"Unknown engine: {engine}. Use 'gaussian' or 'cnn'.",
+                error=(
+                    f"Unknown engine: {engine!r}. The only supported engine is 'cnn' "
+                    f"(myDoseNet); the legacy 'gaussian' analytical engine has been removed."
+                ),
             )
+
+        # Forward everything else (including unused legacy seed_sigma / seed_avr_dose
+        # which may still be present in older skill payloads) to the CNN engine.
+        cnn_tool = CNNDoseEngineTool()
+        return cnn_tool._execute(**kwargs)
 
 
 def main():
     import argparse
     import json
+    import SimpleITK as sitk
 
-    parser = argparse.ArgumentParser(description="Dose Engine Tool - Calculate radiation dose distributions")
+    parser = argparse.ArgumentParser(description="Dose Engine Tool (CNN / myDoseNet)")
     parser.add_argument("--dose_image", required=True, help="Path to CT dose image (.nii.gz)")
     parser.add_argument("--seeds", required=True, help="JSON string: list of [[position], [direction]] entries")
-    parser.add_argument("--engine", choices=["gaussian", "cnn"], default="gaussian", help="Dose engine to use")
-    parser.add_argument("--seed_sigma", nargs=3, type=float, default=[4.5, 1.2, 1.2], help="Gaussian sigma (length, radius, radius)")
-    parser.add_argument("--seed_avr_dose", type=float, default=50, help="Average dose per seed in Gy")
     parser.add_argument("--infer_img_size", nargs=3, type=int, default=[32, 32, 32], help="CNN inference patch size")
     parser.add_argument("--normalize_min", type=float, default=-1000, help="Image normalization min")
     parser.add_argument("--normalize_max", type=float, default=3000, help="Image normalization max")
@@ -169,7 +159,6 @@ def main():
 
     args = parser.parse_args()
 
-    import SimpleITK as sitk
     dose_image = sitk.ReadImage(args.dose_image)
     seeds = json.loads(args.seeds)
 
@@ -177,9 +166,6 @@ def main():
     result = tool._execute(
         dose_image=dose_image,
         seeds=seeds,
-        engine=args.engine,
-        seed_sigma=args.seed_sigma,
-        seed_avr_dose=args.seed_avr_dose,
         infer_img_size=args.infer_img_size,
         normalize_min=args.normalize_min,
         normalize_max=args.normalize_max,

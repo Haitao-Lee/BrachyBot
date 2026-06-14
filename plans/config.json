@@ -20,6 +20,7 @@
         "background_value": 0,
         "backlit_angle": 1.5707963267948966,
         "maximum_candidate_trajectories": 200,
+        "min_depth": 2,
         "min_depth_rate": 5,
         "smooth_sigma": 1,
         "dose_img_dimention": [128, 128, 64],

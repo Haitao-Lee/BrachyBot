@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # 0=bg, 1=tumor(PDAC), 2=artery, 3=vein, 4=pancreas, 5=unknown, 6=unknown
 LABEL_MAP = {
     0: ("background", False),
-    1: ("tumor", True),
+    1: ("pancreatic tumor", True),
     2: ("artery", False),
     3: ("vein", False),
     4: ("pancreas", False),

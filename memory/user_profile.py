@@ -188,9 +188,7 @@ class UserProfile:
             self.observe_behavior(input_text, "prefers_rl_optimization", "planning")
 
     def _detect_dose_preference(self, input_text: str):
-        if any(w in input_text.lower() for w in ["Gaussian", "analytical", "高斯"]):
-            self.observe_behavior(input_text, "prefers_gaussian_dose", "dose")
-        if any(w in input_text.lower() for w in ["CNN", "myDoseNet", "深度学习"]):
+        if any(w in input_text.lower() for w in ["CNN", "myDoseNet", "深度学习", "deep learning"]):
             self.observe_behavior(input_text, "prefers_cnn_dose", "dose")
 
     def _detect_segmentation_preference(self, input_text: str):

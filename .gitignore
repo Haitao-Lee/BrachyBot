@@ -72,3 +72,9 @@ Thumbs.db
 .env.local
 *.key
 mykey.py
+
+# Local debug scripts (never committed)
+debug_*.py
+
+# Runtime web search cache (regenerated on demand)
+tool_factory/web_search/cache/

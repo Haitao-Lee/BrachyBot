@@ -260,37 +260,91 @@ def create_app(config: Optional[Dict] = None):
 
     @app.route("/api/upload", methods=["POST"])
     def api_upload():
-        """Upload a file to the server and return the server-side path."""
-        try:
-            if "file" not in request.files:
-                return jsonify({"error": "No file provided"}), 400
+        """Upload a file (or many files / a folder) and return a server-side path.
 
-            file = request.files["file"]
-            if file.filename == "":
-                return jsonify({"error": "No file selected"}), 400
+        Three input modes:
+          1. Single file (.nii/.nii.gz/.mha/.nrrd/.mhd) → saved as one file
+          2. Single file (.dcm) → saved as one file
+          3. Many files (form key 'file' repeated, or a folder drop) → saved
+             into a fresh timestamped sub-directory so the path can be passed
+             to the DICOM series reader
+
+        Returns a path that downstream endpoints (viewer/load, header/info,
+        report/auto-fill) understand the same way regardless of kind.
+        """
+        try:
+            files = request.files.getlist("file")
+            if not files:
+                return jsonify({"error": "No file provided"}), 400
 
             upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")
             os.makedirs(upload_dir, exist_ok=True)
-
-            # Sanitize filename
-            filename = "".join(c for c in file.filename if c.isalnum() or c in "._- ")
-            if not filename:
-                filename = "uploaded_file"
-
-            # Avoid overwriting: add timestamp
-            base, ext = os.path.splitext(filename)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            save_name = f"{base}_{timestamp}{ext}"
-            save_path = os.path.join(upload_dir, save_name)
 
-            file.save(save_path)
-            abs_path = os.path.abspath(save_path)
+            def _safe(name):
+                name = os.path.basename(name or "")
+                name = "".join(c for c in name if c.isalnum() or c in "._- ")
+                return name or "uploaded_file"
 
+            if len(files) == 1:
+                f = files[0]
+                if f.filename == "":
+                    return jsonify({"error": "No file selected"}), 400
+                filename = _safe(f.filename)
+                base, ext = os.path.splitext(filename)
+                # Handle .nii.gz two-part extension
+                if base.lower().endswith(".nii") and ext.lower() == ".gz":
+                    base = os.path.splitext(base)[0]
+                    ext = ".nii.gz"
+                save_name = f"{base}_{timestamp}{ext}"
+                save_path = os.path.join(upload_dir, save_name)
+                f.save(save_path)
+                abs_path = os.path.abspath(save_path)
+                return jsonify({
+                    "success": True,
+                    "path": abs_path,
+                    "kind": "single_file",
+                    "filename": save_name,
+                    "size": os.path.getsize(abs_path),
+                    "file_count": 1,
+                })
+
+            # Multiple files → treat as a DICOM folder
+            sub_dir = os.path.join(upload_dir, f"dicom_{timestamp}")
+            os.makedirs(sub_dir, exist_ok=True)
+            saved = 0
+            first_relative = None
+            for f in files:
+                if not f.filename:
+                    continue
+                # For webkitdirectory uploads, filename includes the relative
+                # path (e.g. "Series1/IMG0001.dcm"). Preserve the leaf name.
+                rel = f.filename.replace("\\", "/").rstrip("/")
+                leaf = _safe(rel.split("/")[-1])
+                if not leaf:
+                    continue
+                save_path = os.path.join(sub_dir, leaf)
+                # Avoid collision: append counter
+                if os.path.exists(save_path):
+                    stem, ext2 = os.path.splitext(leaf)
+                    i = 1
+                    while os.path.exists(os.path.join(sub_dir, f"{stem}_{i}{ext2}")):
+                        i += 1
+                    save_path = os.path.join(sub_dir, f"{stem}_{i}{ext2}")
+                f.save(save_path)
+                saved += 1
+                if first_relative is None:
+                    first_relative = rel
+            if saved == 0:
+                return jsonify({"error": "No files saved"}), 400
+            abs_dir = os.path.abspath(sub_dir)
             return jsonify({
                 "success": True,
-                "path": abs_path,
-                "filename": save_name,
-                "size": os.path.getsize(abs_path),
+                "path": abs_dir,
+                "kind": "dicom_folder",
+                "directory": abs_dir,
+                "file_count": saved,
+                "filename": os.path.basename(first_relative or abs_dir),
             })
         except Exception as e:
             import traceback
@@ -317,6 +371,545 @@ def create_app(config: Optional[Dict] = None):
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    @staticmethod
+    def _load_ct_image(path):
+        """Load a medical image from `path` and return (sitk.Image, kind, meta).
+
+        `path` may be:
+          - a volumetric file (.nii/.nii.gz/.mha/.nrrd/.mhd) — read directly
+          - a single .dcm file — read directly (single-slice DICOM)
+          - a directory containing a DICOM series — assembled with
+            ImageSeriesReader; we pick the largest series (most slices) so
+            the CT is preferred over a small Dose/SR/SEG series
+
+        Returns: (sitk.Image, kind, meta_dict)
+            kind: 'volume' | 'dicom_file' | 'dicom_series'
+            meta: extra context (series count, file count, modality, etc.)
+        """
+        import os
+        import SimpleITK as sitk
+
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Path does not exist: {path}")
+
+        # 1) Directory → DICOM series
+        if os.path.isdir(path):
+            reader = sitk.ImageSeriesReader()
+            reader.SetOutputPixelType(sitk.sitkFloat32)
+            series_ids = reader.GetGDCMSeriesIDs(path) or []
+            if not series_ids:
+                raise RuntimeError(
+                    f"No DICOM series found in directory: {path}. "
+                    "Make sure the folder contains .dcm files with valid DICOM headers."
+                )
+
+            # Pick the largest series (slice count). Walk the first file of
+            # each series to read Modality and skip non-image series (SR/SEG
+            # etc.) if a CT series is present.
+            best_id, best_files, best_meta = None, [], {}
+            for sid in series_ids:
+                try:
+                    files = reader.GetGDCMSeriesFileNames(path, sid)
+                except Exception:
+                    continue
+                if not files:
+                    continue
+                # Read Modality + size from first file
+                try:
+                    head = sitk.ReadImage(files[0])
+                    modality = ""
+                    try:
+                        modality = head.GetMetaData("0008|0060") or ""
+                    except Exception:
+                        pass
+                except Exception:
+                    modality = ""
+                if not best_id or len(files) > len(best_files):
+                    best_id, best_files, best_meta = sid, files, {
+                        "modality": modality,
+                        "series_id": sid,
+                    }
+            if not best_files:
+                raise RuntimeError(f"Found {len(series_ids)} series IDs in {path} but none readable")
+
+            reader.SetFileNames(best_files)
+            img = reader.Execute()
+
+            # Try to enrich tags from the first slice (after series read,
+            # tags may be empty on the volume — read a slice separately).
+            try:
+                first = sitk.ReadImage(best_files[0])
+                best_meta["first_slice_tags"] = _extract_dicom_tags(first)
+            except Exception:
+                pass
+
+            return img, "dicom_series", {
+                "series_count": len(series_ids),
+                "file_count": len(best_files),
+                "selected_series_id": best_id,
+                "modality": best_meta.get("modality", ""),
+                "directory": os.path.abspath(path),
+                "first_slice_tags": best_meta.get("first_slice_tags", {}),
+            }
+
+        # 2) Single file — check extension
+        ext = os.path.splitext(path)[1].lower()
+        volume_exts = {".nii", ".mha", ".mhd", ".nrrd", ".img", ".hdr"}
+        if ext == ".gz":
+            # .nii.gz — peel both
+            base = os.path.splitext(os.path.basename(path))[0].lower()
+            if base.endswith(".nii"):
+                ext = ".nii.gz"
+
+        if ext in volume_exts or ext == ".nii.gz":
+            return sitk.ReadImage(path), "volume", {"file": os.path.abspath(path)}
+
+        # 3) Single .dcm (or unknown — try DICOM reader)
+        if ext in (".dcm", ".dicom", ".dic") or ext == "":
+            # Try as DICOM; if it fails, fall back to generic reader.
+            try:
+                rdr = sitk.ImageFileReader()
+                rdr.SetFileName(path)
+                img = rdr.Execute()
+                meta = {"file": os.path.abspath(path)}
+                try:
+                    meta["modality"] = img.GetMetaData("0008|0060")
+                except Exception:
+                    pass
+                return img, "dicom_file", meta
+            except Exception:
+                # Last-resort generic read
+                return sitk.ReadImage(path), "volume", {"file": os.path.abspath(path)}
+
+        # Unknown extension — try anyway
+        return sitk.ReadImage(path), "volume", {"file": os.path.abspath(path)}
+
+    @staticmethod
+    def _extract_dicom_tags(sitk_img):
+        """Extract clinically relevant DICOM tags via SimpleITK.
+
+        Returns an empty dict for NIfTI files (which have no DICOM tags).
+        Safe to call on any SimpleITK image — keys with missing tags are
+        silently skipped.
+        """
+        if sitk_img is None:
+            return {}
+        tags = {}
+        keys = {
+            "0010|0010": "patient_name",
+            "0010|0020": "patient_id",
+            "0010|0030": "patient_birth_date",
+            "0010|0040": "patient_sex",
+            "0008|0020": "study_date",
+            "0008|002A": "study_date_dt",
+            "0008|0050": "accession_number",
+            "0008|0060": "modality",
+            "0008|0070": "manufacturer",
+            "0008|0080": "institution_name",
+            "0008|0090": "referring_physician",
+            "0008|1010": "station_name",
+            "0008|1030": "study_description",
+            "0008|103E": "series_description",
+            "0008|1050": "performing_physician",
+            "0008|1080": "operators_name",
+            "0020|000D": "study_instance_uid",
+            "0020|000E": "series_instance_uid",
+            "0008|0008": "image_type",
+        }
+        for k, name in keys.items():
+            try:
+                v = sitk_img.GetMetaData(k)
+                if v:
+                    # DICOM Person Name (PN) format is "Family^Given^Middle^Prefix^Suffix"
+                    if name in ("patient_name", "referring_physician",
+                                "performing_physician", "operators_name"):
+                        v = v.replace("^", " ").strip()
+                    tags[name] = v
+            except (RuntimeError, KeyError):
+                pass
+        # Normalize DICOM date YYYYMMDD -> YYYY-MM-DD
+        if "study_date" in tags and len(tags["study_date"]) == 8 and tags["study_date"].isdigit():
+            d = tags["study_date"]
+            tags["study_date"] = f"{d[:4]}-{d[4:6]}-{d[6:8]}"
+        # Map patient_sex to UI gender vocabulary (男/女 vs M/F)
+        if "patient_sex" in tags:
+            sx = tags["patient_sex"].upper()
+            if sx.startswith("M"):
+                tags["patient_sex_label_zh"] = "男"
+                tags["patient_sex_label_en"] = "Male"
+            elif sx.startswith("F"):
+                tags["patient_sex_label_zh"] = "女"
+                tags["patient_sex_label_en"] = "Female"
+            else:
+                tags["patient_sex_label_zh"] = sx
+                tags["patient_sex_label_en"] = sx
+        return tags
+
+    @app.route("/api/header/info", methods=["POST"])
+    def api_header_info():
+        """Return DICOM header metadata for a CT path.
+
+        Cheap: reads the image header only (SimpleITK caches the pixel
+        data lazily). Safe to call repeatedly. Returns an empty `tags`
+        dict for NIfTI files. Accepts a directory path containing a
+        DICOM series — series tags come from the first slice of the
+        largest series.
+        """
+        data = request.get_json() or {}
+        ct_path = data.get("ct_path")
+        if not ct_path:
+            return jsonify({"error": "ct_path is required"}), 400
+        try:
+            img, kind, meta = _load_ct_image(ct_path)
+            # For series reads, the assembled volume has empty metadata.
+            # Fall back to first-slice tags we collected in the helper.
+            tags = _extract_dicom_tags(img)
+            if not tags and meta.get("first_slice_tags"):
+                tags = dict(meta["first_slice_tags"])
+            tags["_source"] = "dicom" if (tags.get("patient_name") or meta.get("modality") or kind == "dicom_series") else "nifti"
+            tags["_kind"] = kind
+            if kind == "dicom_series":
+                tags["_series_count"] = meta.get("series_count", 0)
+                tags["_file_count"] = meta.get("file_count", 0)
+                if meta.get("modality"):
+                    tags.setdefault("modality", meta["modality"])
+            elif kind == "dicom_file" and meta.get("modality"):
+                tags.setdefault("modality", meta["modality"])
+            try:
+                tags["_shape"] = [int(s) for s in img.GetSize()]
+                tags["_spacing"] = [float(s) for s in img.GetSpacing()]
+            except Exception:
+                pass
+            return jsonify({"success": True, "tags": tags, "kind": kind, "meta": {
+                k: v for k, v in meta.items() if k != "first_slice_tags"
+            }})
+        except Exception as e:
+            import traceback
+            logger.error(f"Header extract failed: {e}")
+            logger.error(traceback.format_exc())
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    # ----- Report auto-fill helpers -----
+    @staticmethod
+    def _build_report_interpretation(agent, language="zh"):
+        """Generate clinical-interpretation narrative in the requested language.
+
+        Mirrors the frontend `_autoFillInterpretation()` in index.html but
+        lives on the server so the brachybot tool can return a patch that
+        includes the narrative.
+        """
+        dose = (agent.memory.retrieve("dose_metrics") or {}) if agent else {}
+        m = dose
+        v100 = (m.get("v100") * 100) if m.get("v100") is not None else None
+        d90 = m.get("d90")
+        d95 = m.get("d95")
+        v150 = (m.get("v150") * 100) if m.get("v150") is not None else None
+        v200 = (m.get("v200") * 100) if m.get("v200") is not None else None
+        ci = m.get("ci")
+        hi = m.get("hi")
+        gi = m.get("gi")
+        score = m.get("plan_score")
+        prescribed = m.get("prescribed_dose", 120.0)
+        if language == "zh":
+            lines = ["**剂量学评估与临床解读**"]
+            if v100 is not None:
+                if v100 >= 90:
+                    lines.append(f"- CTV 覆盖率 V100 = {v100:.1f}% **满足临床要求**（≥ 90%，参考 ESTRO/GEC-ESTRO 推荐）。")
+                else:
+                    lines.append(f"- ⚠️ CTV 覆盖率 V100 = {v100:.1f}% **低于临床标准**（≥ 90%），建议增加粒子数或重新规划路径。")
+            if d90 is not None:
+                lines.append(f"- D90 = {d90:.2f} Gy（90% 靶区体积接受的最低剂量），按 ICRU 89 标准报告；处方剂量 {prescribed:.1f} Gy。")
+            if d95 is not None:
+                lines.append(f"- D95 = {d95:.2f} Gy。")
+            if v150 is not None:
+                lines.append(f"- V150 = {v150:.1f}%（参考 ≤ 50%）。")
+            if v200 is not None:
+                lines.append(f"- V200 = {v200:.1f}%（参考 ≤ 20%）。")
+            if ci is not None:
+                lines.append(f"- 适形指数 CI = {ci:.3f}。")
+            if hi is not None:
+                lines.append(f"- 均匀性指数 HI = {hi:.3f}。")
+            if gi is not None:
+                lines.append(f"- 梯度指数 GI = {gi:.3f}。")
+            if score is not None:
+                if score >= 80:
+                    lines.append(f"- 计划评分 = {score:.0f}/100（优）。")
+                elif score >= 60:
+                    lines.append(f"- 计划评分 = {score:.0f}/100（良，可优化）。")
+                else:
+                    lines.append(f"- 计划评分 = {score:.0f}/100（差，建议重新规划）。")
+            lines.append("- 剂量计算基于 TG-43 / TG-229 形式主义（参考 AAPM Task Group 229）。")
+            lines.append("- DVH 报告符合 ICRU Report 89 标准。")
+            lines.append("")
+            lines.append("_本解读由 BrachyBot AI 自动生成，已由规划医师审阅。_")
+            safety = (
+                "**安全与质量控制**\n\n"
+                "- 粒子活度校验：建议打印剂量报告并由物理师双签。\n"
+                "- 术前剂量验证：参考 GBZ/T 201.7-2015。\n"
+                "- 术中影像引导：术中 CT/超声 实时确认粒子位置。\n"
+                f"- 剂量限值参考：TG-43 / ICRU 89 / 国家标准 GBZ/T 201.7-2015；处方剂量 {prescribed:.1f} Gy。"
+            )
+        else:
+            lines = ["**Dosimetric Evaluation & Clinical Interpretation**"]
+            if v100 is not None:
+                if v100 >= 90:
+                    lines.append(f"- CTV coverage V100 = {v100:.1f}% **meets clinical threshold** (≥ 90%, per ESTRO/GEC-ESTRO).")
+                else:
+                    lines.append(f"- ⚠️ CTV coverage V100 = {v100:.1f}% **below clinical standard** (≥ 90%); consider increasing seeds or replanning.")
+            if d90 is not None:
+                lines.append(f"- D90 = {d90:.2f} Gy (minimum dose to 90% of CTV), per ICRU 89; prescribed dose {prescribed:.1f} Gy.")
+            if d95 is not None:
+                lines.append(f"- D95 = {d95:.2f} Gy.")
+            if v150 is not None:
+                lines.append(f"- V150 = {v150:.1f}% (reference ≤ 50%).")
+            if v200 is not None:
+                lines.append(f"- V200 = {v200:.1f}% (reference ≤ 20%).")
+            if ci is not None:
+                lines.append(f"- Conformity Index CI = {ci:.3f}.")
+            if hi is not None:
+                lines.append(f"- Homogeneity Index HI = {hi:.3f}.")
+            if gi is not None:
+                lines.append(f"- Gradient Index GI = {gi:.3f}.")
+            if score is not None:
+                if score >= 80:
+                    lines.append(f"- Plan score = {score:.0f}/100 (excellent).")
+                elif score >= 60:
+                    lines.append(f"- Plan score = {score:.0f}/100 (good; may be optimizable).")
+                else:
+                    lines.append(f"- Plan score = {score:.0f}/100 (poor; consider replanning).")
+            lines.append("- Dose calculation per TG-43 / TG-229 formalism (AAPM TG-229).")
+            lines.append("- DVH reporting per ICRU Report 89.")
+            lines.append("")
+            lines.append("_This interpretation was auto-generated by BrachyBot AI and reviewed by the planner._")
+            safety = (
+                "**Safety & Quality Control**\n\n"
+                "- Seed activity verification: dose report printout + medical physicist double-signature.\n"
+                "- Pre-treatment QA: per GBZ/T 201.7-2015.\n"
+                "- Intra-operative imaging guidance: real-time CT/ultrasound confirmation of seed position.\n"
+                f"- Dose limits: TG-43 / ICRU 89 / GBZ/T 201.7-2015; prescribed dose {prescribed:.1f} Gy."
+            )
+        return "\n".join(lines), safety
+
+    @app.route("/api/report/auto-fill", methods=["POST"])
+    def api_report_auto_fill():
+        """Build a partial report patch from agent memory (DICOM + NIfTI + planning).
+
+        Body: { scope: 'all'|'patient'|'metrics'|'oar'|'interpretation'|'safety',
+                language: 'zh'|'en',
+                sources: ['nifti','dicom','planning'] }
+        Returns: { success, patch, provenance, language }
+
+        The frontend applies `patch` field-by-field, skipping any keys the
+        user has manually edited. Server returns a *suggestion* patch; the
+        client owns the edit policy.
+        """
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+        data = request.get_json() or {}
+        scope = data.get("scope", "all")
+        language = data.get("language", "zh")
+        sources = set(data.get("sources", ["nifti", "dicom", "planning"]))
+        patch = {}
+        provenance = {"dicom": [], "nifti": [], "planning": [], "derived": []}
+
+        try:
+            # ---- DICOM tags (patient & hospital info) ----
+            if "dicom" in sources and scope in ("all", "patient"):
+                tags = agent.memory.retrieve("ct_dicom_tags") or {}
+                if not tags:
+                    # Try to compute on the fly from the raw image
+                    raw = agent.memory.retrieve("ct_image_raw")
+                    if raw is not None:
+                        try:
+                            tags = _extract_dicom_tags(raw)
+                            if tags:
+                                agent.memory.store("ct_dicom_tags", tags)
+                        except Exception:
+                            tags = {}
+                if tags.get("patient_name"):
+                    patch["patient.name"] = tags["patient_name"]
+                    provenance["dicom"].append("patient.name")
+                if tags.get("patient_id"):
+                    patch["patient.id"] = tags["patient_id"]
+                    provenance["dicom"].append("patient.id")
+                if tags.get("patient_sex_label_zh") and language == "zh":
+                    patch["patient.gender"] = tags["patient_sex_label_zh"]
+                    provenance["dicom"].append("patient.gender")
+                elif tags.get("patient_sex_label_en") and language == "en":
+                    patch["patient.gender"] = tags["patient_sex_label_en"]
+                    provenance["dicom"].append("patient.gender")
+                if tags.get("patient_birth_date"):
+                    # Birth date goes into the report directly (see below)
+                    pass
+                if tags.get("study_date"):
+                    patch["study.scanDate"] = tags["study_date"]
+                    provenance["dicom"].append("study.scanDate")
+                if tags.get("accession_number"):
+                    patch["study.accession"] = tags["accession_number"]
+                    provenance["dicom"].append("study.accession")
+                if tags.get("modality"):
+                    patch["study.modality"] = tags["modality"]
+                    provenance["dicom"].append("study.modality")
+                if tags.get("institution_name"):
+                    patch["hospital.name"] = tags["institution_name"]
+                    provenance["dicom"].append("hospital.name")
+                if tags.get("performing_physician"):
+                    patch["study.radiologist"] = tags["performing_physician"]
+                    provenance["dicom"].append("study.radiologist")
+                if tags.get("referring_physician"):
+                    patch["study.referring"] = tags["referring_physician"]
+                    provenance["dicom"].append("study.referring")
+                if tags.get("manufacturer"):
+                    patch["imaging.scanner"] = tags["manufacturer"]
+                    provenance["dicom"].append("imaging.scanner")
+                if tags.get("study_description"):
+                    patch["study.description"] = tags["study_description"]
+                    provenance["dicom"].append("study.description")
+                if tags.get("series_description"):
+                    patch["study.series"] = tags["series_description"]
+                    provenance["dicom"].append("study.series")
+                if tags.get("patient_birth_date"):
+                    patch["patient.birthDate"] = tags["patient_birth_date"]
+                    provenance["dicom"].append("patient.birthDate")
+
+            # ---- NIfTI / file metadata ----
+            if "nifti" in sources:
+                ct_path = agent.memory.retrieve("ct_path")
+                if ct_path:
+                    import os
+                    base = os.path.basename(ct_path)
+                    for ext in (".nii.gz", ".nii", ".mha", ".nrrd"):
+                        if base.lower().endswith(ext):
+                            base = base[: -len(ext)]
+                            break
+                    patch["case.patientId"] = base
+                    provenance["nifti"].append("case.patientId")
+                spacing = agent.memory.retrieve("ct_spacing")
+                shape = agent.memory.retrieve("ct_shape")
+                if spacing and shape:
+                    # Shape is (Z, Y, X) post-LPI; spacing is (X, Y, Z)
+                    try:
+                        patch["imaging.sliceCount"] = int(shape[0])
+                        patch["imaging.pixelSpacingMm"] = float(spacing[0])
+                        patch["imaging.sliceThicknessMm"] = float(spacing[2])
+                        provenance["nifti"] += [
+                            "imaging.sliceCount", "imaging.pixelSpacingMm",
+                            "imaging.sliceThicknessMm",
+                        ]
+                    except Exception:
+                        pass
+                # Patient age from birth date if available
+                bd = (agent.memory.retrieve("ct_dicom_tags") or {}).get("patient_birth_date")
+                sd = (agent.memory.retrieve("ct_dicom_tags") or {}).get("study_date")
+                if bd and sd and len(bd) == 8 and len(sd) == 8 and bd.isdigit() and sd.isdigit():
+                    try:
+                        from datetime import date
+                        b = date(int(bd[:4]), int(bd[4:6]), int(bd[6:8]))
+                        s = date(int(sd[:4]), int(sd[4:6]), int(sd[6:8]))
+                        age = s.year - b.year - ((s.month, s.day) < (b.month, b.day))
+                        if 0 <= age <= 130:
+                            patch["patient.age"] = str(age)
+                            provenance["derived"].append("patient.age")
+                    except Exception:
+                        pass
+
+            # ---- Planning metrics + OAR ----
+            if "planning" in sources and scope in ("all", "metrics", "oar"):
+                dose = agent.memory.retrieve("dose_metrics") or {}
+                total_seeds = agent.memory.retrieve("total_seeds")
+                num_trajectories = agent.memory.retrieve("num_trajectories")
+                ctv_voxels = agent.memory.retrieve("ctv_voxels")
+                spacing = agent.memory.retrieve("ct_spacing")
+
+                if dose.get("v100") is not None:
+                    patch["metrics.v100"] = round(float(dose["v100"]) * 100, 2)
+                    provenance["planning"].append("metrics.v100")
+                if dose.get("d90") is not None:
+                    patch["metrics.d90"] = round(float(dose["d90"]), 2)
+                    provenance["planning"].append("metrics.d90")
+                if dose.get("d95") is not None:
+                    patch["metrics.d95"] = round(float(dose["d95"]), 2)
+                    provenance["planning"].append("metrics.d95")
+                if dose.get("v150") is not None:
+                    patch["metrics.v150"] = round(float(dose["v150"]) * 100, 2)
+                    provenance["planning"].append("metrics.v150")
+                if dose.get("v200") is not None:
+                    patch["metrics.v200"] = round(float(dose["v200"]) * 100, 2)
+                    provenance["planning"].append("metrics.v200")
+                if dose.get("ci") is not None:
+                    patch["metrics.ci"] = round(float(dose["ci"]), 3)
+                    provenance["planning"].append("metrics.ci")
+                if dose.get("hi") is not None:
+                    patch["metrics.hi"] = round(float(dose["hi"]), 3)
+                    provenance["planning"].append("metrics.hi")
+                if dose.get("gi") is not None:
+                    patch["metrics.gi"] = round(float(dose["gi"]), 3)
+                    provenance["planning"].append("metrics.gi")
+                if dose.get("plan_score") is not None:
+                    patch["metrics.score"] = round(float(dose["plan_score"]), 1)
+                    provenance["planning"].append("metrics.score")
+                if dose.get("prescribed_dose") is not None:
+                    patch["planning.prescriptionGy"] = round(float(dose["prescribed_dose"]), 1)
+                    provenance["planning"].append("planning.prescriptionGy")
+
+                if total_seeds:
+                    patch["planning.totalSeeds"] = int(total_seeds)
+                    provenance["planning"].append("planning.totalSeeds")
+                if num_trajectories:
+                    patch["planning.trajectoryCount"] = int(num_trajectories)
+                    provenance["planning"].append("planning.trajectoryCount")
+                if ctv_voxels and spacing:
+                    try:
+                        vol_mm3 = float(ctv_voxels) * float(spacing[0]) * float(spacing[1]) * float(spacing[2])
+                        patch["case.ctvVolumeMm3"] = round(vol_mm3, 1)
+                        provenance["planning"].append("case.ctvVolumeMm3")
+                    except Exception:
+                        pass
+
+                # OAR list
+                oar = agent.memory.retrieve("oar_metrics") or {}
+                if oar and scope in ("all", "oar"):
+                    oar_list = []
+                    for n, v in oar.items():
+                        if not isinstance(v, dict):
+                            continue
+                        d2 = v.get("d2cc"); d1 = v.get("d1cc"); d0 = v.get("d0_1cc")
+                        if not (d2 or d1 or d0):
+                            continue
+                        oar_list.append({
+                            "organ": n,
+                            "d2cc": round(float(d2), 1) if d2 else None,
+                            "d1cc": round(float(d1), 1) if d1 else None,
+                            "d0_1cc": round(float(d0), 1) if d0 else None,
+                            "v100": round(float(v.get("v100", 0)) * 100, 1) if v.get("v100") else None,
+                        })
+                    oar_list.sort(key=lambda x: (x.get("d2cc") or 0), reverse=True)
+                    patch["oarDose"] = oar_list[:12]
+                    provenance["planning"].append("oarDose")
+
+            # ---- Clinical interpretation / safety (LLM-style template) ----
+            if scope in ("all", "interpretation"):
+                interp, safety = _build_report_interpretation(agent, language)
+                patch["interpretation"] = interp
+                provenance["derived"].append("interpretation")
+                if scope == "all":
+                    patch["safety"] = safety
+                    provenance["derived"].append("safety")
+
+            return jsonify({
+                "success": True,
+                "patch": patch,
+                "provenance": provenance,
+                "language": language,
+                "marker": "report-update",
+            })
+        except Exception as e:
+            import traceback
+            logger.error(f"Report auto-fill failed: {e}")
+            logger.error(traceback.format_exc())
+            return jsonify({"success": False, "error": str(e)}), 500
+
     @app.route("/api/viewer/load", methods=["POST"])
     def api_viewer_load():
         """Load CT image and return slice metadata (no pixel data)."""
@@ -332,17 +925,34 @@ def create_app(config: Optional[Dict] = None):
         if not ct_path:
             return jsonify({"error": "ct_path is required"}), 400
 
+        # Per-patient memory isolation: if a DIFFERENT CT is being
+        # loaded, wipe all planning / segmentation / dose state from
+        # the previous patient. The agent otherwise happily reuses
+        # stale CTV/OAR/planning data from a previous case, which
+        # causes wrong masks, wrong seeds, and confusing reports.
+        # The user's expectation: same CT path → reuse memory
+        # (continuing work on the same patient); different CT path
+        # → fresh start.
+        prev_ct_path = agent.memory.retrieve("ct_path")
+        if prev_ct_path and prev_ct_path != ct_path:
+            logger.info(f"[patient-isolation] CT changed ({prev_ct_path} → {ct_path}), clearing previous patient's state")
+            try:
+                agent.memory.clear_all_data()
+            except Exception as e:
+                logger.warning(f"[patient-isolation] clear_all_data failed: {e}")
+
         try:
             import numpy as np
             import SimpleITK as sitk
 
             logger.info(f"Loading CT from: {ct_path}")
-            ct_sitk = sitk.ReadImage(ct_path)
-            
+            ct_sitk, kind, src_meta = _load_ct_image(ct_path)
+            logger.info(f"CT source kind: {kind}; meta: {src_meta}")
+
             # Reorient to LPI (Left-Posterior-Inferior) standard anatomical orientation
             ct_oriented = sitk.DICOMOrient(ct_sitk, 'LPI')
             logger.info(f"Reoriented to LPI")
-            
+
             ct_data = sitk.GetArrayFromImage(ct_oriented)  # Shape: (Z, Y, X) in LPI orientation
             spacing = ct_oriented.GetSpacing()  # (X, Y, Z)
             origin = ct_oriented.GetOrigin()  # (X, Y, Z)
@@ -361,6 +971,20 @@ def create_app(config: Optional[Dict] = None):
             agent.memory.store("ct_window_center", window_center)
             agent.memory.store("ct_window_width", window_width)
             agent.memory.store("ct_path", ct_path)  # Store path for 3D reconstruction
+            agent.memory.store("ct_source_kind", kind)
+            if src_meta:
+                # Don't store the heavy first_slice_tags blob — only summary
+                summary = {k: v for k, v in src_meta.items() if k != "first_slice_tags"}
+                agent.memory.store("ct_source_meta", summary)
+
+            # Extract DICOM tags (best-effort, no-op for NIfTI). For series
+            # reads the assembled volume's metadata is empty — fall back to
+            # the tags we read off the first slice in the helper.
+            dicom_tags = _extract_dicom_tags(ct_sitk)
+            if not dicom_tags and src_meta.get("first_slice_tags"):
+                dicom_tags = dict(src_meta["first_slice_tags"])
+            if dicom_tags:
+                agent.memory.store("ct_dicom_tags", dicom_tags)
 
             # After LPI orientation:
             # - Array axis 0 = Z = Superior->Inferior (head to foot)
@@ -382,13 +1006,19 @@ def create_app(config: Optional[Dict] = None):
                     'shape': [int(shape[0]), int(shape[1]), int(shape[2])],
                 }
 
-            return jsonify({
+            response = {
                 "success": True,
                 "slices": slices,
                 "spacing": [float(spacing[0]), float(spacing[1]), float(spacing[2])],
                 "shape": [int(shape[0]), int(shape[1]), int(shape[2])],
                 "hu_range": [float(ct_data.min()), float(ct_data.max())],
-            })
+                "dicom": dicom_tags,
+                "source_kind": kind,
+            }
+            if kind == "dicom_series":
+                response["series_count"] = src_meta.get("series_count", 0)
+                response["file_count"] = src_meta.get("file_count", 0)
+            return jsonify(response)
         except Exception as e:
             import traceback
             logger.error(f"Viewer load failed: {e}")
@@ -436,18 +1066,34 @@ def create_app(config: Optional[Dict] = None):
             # sagittal: axis 2 -> (Z, Y) = (48, 512), transpose for Z vertical
             # coronal: axis 1 -> (Z, X) = (48, 512), transpose for Z vertical
             slice_data = np.take(ct_windowed, slice_index, axis=axis)
-            
-            if axis_name == 'sagittal':
-                slice_data = slice_data.T
+
+            # Apply Z-flip to match raw DICOM ordering in sagittal/coronal views.
+            # DICOMOrient('LPI') reverses array Z so LPI Z=0 = head. We invert again at
+            # render time so the user sees raw DICOM convention (slider 0 = feet).
+            # Axial: single slice, flip via (Z-1)-sliceIndex in the take above.
+            if axis_name == 'axial':
+                src_idx = ct_data.shape[0] - 1 - slice_index
+                slice_data = np.take(ct_windowed, src_idx, axis=axis)
+            elif axis_name == 'sagittal':
+                # (Z, Y) -> (Y, Z) with Z flipped so top of canvas = raw Z=0 (feet)
+                z_arr = np.arange(ct_data.shape[0])[::-1]
+                slice_data = ct_windowed[z_arr, :, slice_index].T
             elif axis_name == 'coronal':
-                slice_data = slice_data.T
+                z_arr = np.arange(ct_data.shape[0])[::-1]
+                slice_data = ct_windowed[z_arr, slice_index, :].T
 
             # Apply threshold overlay if requested
             if threshold is not None:
                 mask = ct_data > threshold
-                mask_slice = np.take(mask, slice_index, axis=axis)
-                if axis_name in ('sagittal', 'coronal'):
-                    mask_slice = mask_slice.T
+                if axis_name == 'axial':
+                    src_idx = mask.shape[0] - 1 - slice_index
+                    mask_slice = np.take(mask, src_idx, axis=axis)
+                elif axis_name == 'sagittal':
+                    z_arr = np.arange(mask.shape[0])[::-1]
+                    mask_slice = mask[z_arr, :, slice_index].T
+                elif axis_name == 'coronal':
+                    z_arr = np.arange(mask.shape[0])[::-1]
+                    mask_slice = mask[z_arr, slice_index, :].T
                 # Create RGB overlay
                 slice_rgb = np.stack([slice_data] * 3, axis=-1)
                 slice_rgb[mask_slice, 0] = np.minimum(255, slice_rgb[mask_slice, 0].astype(int) + 120)
@@ -530,12 +1176,62 @@ def create_app(config: Optional[Dict] = None):
 
             # Use full multi-label array for CTV (includes tumor, artery, vein, pancreas, etc.)
             # Falls back to binary ctv_array if full labels not available
-            ctv_array = agent._get_label_array("ctv_full_labels")
-            if ctv_array is None:
-                ctv_array = agent._get_label_array("ctv_array")
+            ctv_full = agent._get_label_array("ctv_full_labels")
+            if ctv_full is None:
+                ctv_full = agent._get_label_array("ctv_array")
             oar_array = agent._get_label_array("oar_array")
 
+            # Reorganize labels for data tree:
+            # - CTV node: only tumor (label 1)
+            # - OAR non-traversable: artery (label 2), vein (label 3) from nnUNet
+            # - OAR traversable: pancreas (label 4) from nnUNet
+            ctv_array = None
+            if ctv_full is not None:
+                # CTV = only tumor
+                ctv_array = (ctv_full == 1).astype(np.uint8) if np.any(ctv_full == 1) else ctv_full
+
+                # Merge nnUNet vessel/organ labels into OAR array
+                nnunet_oar_labels = {
+                    2: 201,   # artery -> OAR label 201
+                    3: 202,   # vein -> OAR label 202
+                    4: 203,   # pancreas -> OAR label 203
+                }
+                has_nnunet_oar = False
+                for src_label, dst_label in nnunet_oar_labels.items():
+                    if np.any(ctv_full == src_label):
+                        has_nnunet_oar = True
+                        break
+
+                if has_nnunet_oar:
+                    if oar_array is None:
+                        oar_array = np.zeros_like(ctv_full, dtype=np.uint8)
+                    elif oar_array.shape != ctv_full.shape:
+                        # Resample OAR to match CTV shape if needed
+                        pass  # Will be handled by shape check below
+                    for src_label, dst_label in nnunet_oar_labels.items():
+                        mask = ctv_full == src_label
+                        if np.any(mask):
+                            oar_array[mask] = dst_label
+
             shape = ct_data.shape  # (Z, Y, X)
+
+            # DEBUG: verify mask-CT alignment
+            if ctv_array is not None:
+                import SimpleITK as _sitk_dbg
+                _ct_img = agent.memory.retrieve("ct_image")
+                _ct_dir = _ct_img.GetDirection() if _ct_img is not None else "None"
+                _ctv_stored = agent.memory.retrieve("ctv_array")
+                _ctv_dir = _ctv_stored.GetDirection() if isinstance(_ctv_stored, _sitk_dbg.Image) else "numpy"
+                _ctv_nz = [int(i) for i in np.where(ctv_array > 0)[0][:5]] if np.any(ctv_array > 0) else []
+                _ct_nz = [int(i) for i in np.where(ct_data > 0)[0][:5]] if np.any(ct_data > 0) else []
+                logger.info(f"[DEBUG label_volume] CT shape={shape}, dir={_ct_dir}")
+                logger.info(f"[DEBUG label_volume] CTV shape={ctv_array.shape}, dir={_ctv_dir}, first_nz_z={_ctv_nz}")
+                logger.info(f"[DEBUG label_volume] CT first_nz_z={_ct_nz}")
+                # Check if CTV center Z matches CT center Z
+                if np.any(ctv_array > 0):
+                    _ctv_z = np.where(ctv_array > 0)[0]
+                    logger.info(f"[DEBUG label_volume] CTV Z range: {_ctv_z.min()}-{_ctv_z.max()}, center={_ctv_z.mean():.1f}")
+                    logger.info(f"[DEBUG label_volume] CT Z range: 0-{ct_data.shape[0]-1}")
 
             # Ensure label arrays have same shape as CT
             if ctv_array is not None and ctv_array.shape != shape:
@@ -608,11 +1304,16 @@ def create_app(config: Optional[Dict] = None):
                 response.headers['X-CTV-Label-Map'] = _json.dumps({str(k): v for k, v in ctv_label_map.items()})
             else:
                 # Fallback: use default label names
-                response.headers['X-CTV-Label-Map'] = _json.dumps({"1": "pancreatic tumor", "2": "artery", "3": "vein", "4": "pancreas", "5": "unknown_5", "6": "unknown_6"})
+                response.headers['X-CTV-Label-Map'] = _json.dumps({"1": "pancreatic tumor"})
 
             # Also return organ metadata for data tree
             organ_names = agent.memory.retrieve("organ_names", {})
             organ_counts = agent.memory.retrieve("organ_counts", {})
+            # Add nnUNet-derived OAR label names
+            nnunet_oar_names = {201: "artery", 202: "vein", 203: "pancreas"}
+            for lid, name in nnunet_oar_names.items():
+                if lid not in organ_names:
+                    organ_names[lid] = name
             organ_meta = {}
             if oar_array is not None:
                 for lid in np.unique(oar_array):
@@ -679,7 +1380,16 @@ def create_app(config: Optional[Dict] = None):
 
             # Extract slice from mask: np.take with axis gives correct orientation
             # mask_data is (Z, Y, X), axis_map: axial=0(Z), sagittal=2(X), coronal=1(Y)
-            mask_slice = np.take(mask_data, slice_index, axis=axis)
+            # Z-flip applied so display matches raw DICOM ordering (slider 0 = feet).
+            if axis_name == 'axial':
+                src_idx = mask_data.shape[0] - 1 - slice_index
+                mask_slice = np.take(mask_data, src_idx, axis=axis)
+            elif axis_name == 'sagittal':
+                z_arr = np.arange(mask_data.shape[0])[::-1]
+                mask_slice = mask_data[z_arr, :, slice_index]
+            elif axis_name == 'coronal':
+                z_arr = np.arange(mask_data.shape[0])[::-1]
+                mask_slice = mask_data[z_arr, slice_index, :]
 
             # For sagittal/coronal: resample Z-axis to match isotropic display
             # Client expects: sagittal -> width=Y, height=Z_resampled
@@ -1332,7 +2042,12 @@ def create_app(config: Optional[Dict] = None):
 
     @app.route("/api/planning/results", methods=["GET"])
     def api_planning_results():
-        """Get latest planning results including metrics, seeds, and DVH data for UI updates."""
+        """Get latest planning results including metrics, seeds, trajectories, dose, DVH.
+
+        Returns:
+            success, metrics, seeds, trajectories, dvh, has_dose,
+            dose_shape, dose_range, has_trajectories, num_trajectories.
+        """
         import AgenticSys as _ag
         agent = getattr(_ag, '_global_agent', None) or get_agent()
         if agent is None:
@@ -1347,16 +2062,51 @@ def create_app(config: Optional[Dict] = None):
             num_trajectories = agent.memory.retrieve("num_trajectories") or 0
             seed_plan = agent.memory.retrieve("seed_plan")
             dose_distribution = agent.memory.retrieve("dose_distribution")
+            dose_distribution_gy = agent.memory.retrieve("dose_distribution_gy")
+            trajectories = agent.memory.retrieve("trajectories") or agent.memory.retrieve("refined_trajectories")
 
-            # Build seeds list for UI (convert from planning grid voxel to world coords)
+            # Build seeds list with trajectory linkage for the data tree.
+            # Each trajectory is a tuple/list of the form:
+            #   (entry_pt, exit_pt, target_pt, target_idx, depth, extra...)
+            # and seed_plan[i] is [trajectory_descriptor, [seed_list_per_seed_pos]]
+            # We pair seeds with their parent trajectory so the data tree can
+            # show "Trajectory N → Seed 1, Seed 2, …".
             resampled_ct = agent.memory.retrieve("resampled_ct")
             seeds = []
+            trajectories_data = []
+
             if seed_plan:
                 for i, entry in enumerate(seed_plan):
                     if not isinstance(entry, (list, tuple)) or len(entry) < 2:
                         continue
+                    traj_descriptor = entry[0]
                     seed_list = entry[1] if len(entry) > 1 else []
-                    for j, seed in enumerate(seed_list):
+                    # Convert trajectory descriptor to world coordinates
+                    entry_pt_world = None
+                    target_pt_world = None
+                    try:
+                        if resampled_ct is not None and traj_descriptor is not None:
+                            from plans.utilizations import position_transform
+                            # entry[0] can be many shapes; canonicalize
+                            if isinstance(traj_descriptor, (list, tuple)) and len(traj_descriptor) >= 2:
+                                entry_pt = np.array(traj_descriptor[0], dtype=np.float64).flatten()[:3]
+                                target_pt = np.array(traj_descriptor[2], dtype=np.float64).flatten()[:3] if len(traj_descriptor) > 2 else None
+                                entry_pt_world = position_transform(resampled_ct, entry_pt)[0].tolist()
+                                if target_pt is not None:
+                                    target_pt_world = position_transform(resampled_ct, target_pt)[0].tolist()
+                    except Exception:
+                        pass
+
+                    trajectory_id = f"traj_{i + 1}"
+                    trajectories_data.append({
+                        "id": trajectory_id,
+                        "index": i,
+                        "entry": entry_pt_world,
+                        "target": target_pt_world,
+                        "seed_count": len(seed_list) if isinstance(seed_list, (list, tuple)) else 0,
+                    })
+
+                    for j, seed in enumerate(seed_list or []):
                         if not isinstance(seed, (list, tuple)) or len(seed) < 2:
                             continue
                         pos_voxel = np.array(seed[0], dtype=np.float64).flatten()[:3]
@@ -1369,24 +2119,48 @@ def create_app(config: Optional[Dict] = None):
                         else:
                             pos_world = pos_voxel.tolist()
                         seeds.append({
+                            "id": f"seed_{i + 1}_{j + 1}",
                             "pos": pos_world,
                             "dose": float(dose_metrics.get("d90", 0)),
+                            "trajectory_id": trajectory_id,
                         })
 
             # Build DVH data
             dvh_data = dose_metrics.get("dvh_data", {})
 
+            # Dose shape/range
+            dose_shape = None
+            dose_min = None
+            dose_max = None
+            dose_for_stats = dose_distribution_gy if dose_distribution_gy is not None else dose_distribution
+            if dose_for_stats is not None:
+                try:
+                    dnp = np.asarray(dose_for_stats)
+                    if dnp.ndim == 3:
+                        dose_shape = list(dnp.shape)
+                    dose_min = float(np.min(dnp))
+                    dose_max = float(np.max(dnp))
+                except Exception:
+                    pass
+
             return jsonify({
                 "success": True,
                 "metrics": dose_metrics,
                 "seeds": seeds,
+                "trajectories": trajectories_data,
                 "total_seeds": total_seeds,
                 "num_trajectories": num_trajectories,
+                "has_trajectories": bool(trajectories) or len(trajectories_data) > 0,
                 "dvh": dvh_data,
-                "has_dose": dose_distribution is not None,
+                "has_dose": dose_for_stats is not None,
+                "dose_shape": dose_shape,
+                "dose_min": dose_min,
+                "dose_max": dose_max,
             })
         except Exception as e:
             logger.error(f"Get planning results failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/planning/show_step", methods=["POST"])
@@ -1498,11 +2272,20 @@ def create_app(config: Optional[Dict] = None):
             if result.success:
                 # Store results in memory
                 agent._store_tool_result("planning_pipeline", result)
+                # Sanitize metadata for JSON serialization (strip non-scalar fields
+                # like trajectory lists / numpy arrays — callers can read them via
+                # /api/planning/show_step).
+                import numpy as _np
+                _meta = {}
+                for _k, _v in (result.metadata or {}).items():
+                    if isinstance(_v, (_np.ndarray, list, tuple)):
+                        continue  # skip heavy / non-serializable
+                    _meta[_k] = _v
                 return jsonify({
                     "success": True,
                     "step": step,
                     "message": result.message,
-                    "metadata": result.metadata,
+                    "metadata": _meta,
                 })
             else:
                 return jsonify({"success": False, "error": result.error}), 400

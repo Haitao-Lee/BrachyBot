@@ -140,6 +140,11 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
     # --- Stage 1: Trajectory Selection and Initial Planning ---
     selected_indices = []
     stage1_count = 0
+    import logging as _log
+    _logger = _log.getLogger(__name__)
+    _logger.info(f"[optimal_plan] Start: {len(candidate_trajectories)} candidates, DVH_rate={DVH_rate}, cur_DVH={cur_DVH_rate}")
+    if len(candidate_trajectories) == 0:
+        _logger.warning(f"[optimal_plan] 0 candidates! radiation_volume target_voxels={int(np.sum(radiation_volume == target_value))}, dose_image type={type(dose_image).__name__}")
     while cur_DVH_rate < DVH_rate:
         stage1_count += 1
         if stage1_count > 100:
@@ -161,6 +166,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
             selected_indices
         )
         if optimal_trajectory is None:
+            _logger.info(f"[optimal_plan] select_optimal_trajectory returned None at iteration {stage1_count}, {len(init_planned_res)} trajectories planned")
             return init_planned_res
         selected_indices.append(selected_idx)
         optimal_seeds, cur_DVH_rate, cur_single_seed_radiations = utilizations.put_seeds(
@@ -182,6 +188,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
         )
 
         if len(optimal_seeds) == 0:
+            _logger.info(f"[optimal_plan] put_seeds returned 0 seeds at iteration {stage1_count}, trajectory={optimal_trajectory[0][:3] if optimal_trajectory else 'None'}")
             return init_planned_res
 
         init_planned_res.append([optimal_trajectory, optimal_seeds, cur_single_seed_radiations])
