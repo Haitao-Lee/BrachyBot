@@ -187,13 +187,9 @@ class PancreaticTumorSegmentationTool(BaseTool):
             if fast_mode:
                 cmd.append("--disable_tta")
 
-            device_str = "cpu"
-            try:
-                import torch
-                if torch.cuda.is_available():
-                    device_str = "cuda"
-            except ImportError:
-                pass
+            from plans.device_manager import get_device as _get_device
+
+            device_str = str(_get_device(caller=__name__))
             cmd.extend(["-device", device_str])
 
             logger.info(f"Running nnU-Net: {' '.join(cmd)}")
