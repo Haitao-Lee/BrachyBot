@@ -2652,6 +2652,22 @@ def create_app(config: Optional[Dict] = None):
             logger.error(f"Get config failed: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/device/status", methods=["GET"])
+    def api_device_status():
+        """Get current GPU/CPU device allocation. The agent uses
+        plans/device_manager.DeviceManager to pick the best free GPU
+        at the start of each tool call; this endpoint surfaces the
+        live state so the frontend can show a "GPU 0 (12GB free)"
+        badge in the status bar. Tools (ctv_segmentation,
+        oar_segmentation, dose engine) record which device they're
+        using so the user can see the distribution."""
+        try:
+            from plans.device_manager import DeviceManager
+            return jsonify({"success": True, **DeviceManager.instance().status()})
+        except Exception as e:
+            logger.error(f"Get device status failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/config", methods=["POST"])
     def api_config():
         """Update agent configuration (hyperparameters)."""
@@ -2688,6 +2704,14 @@ def create_app(config: Optional[Dict] = None):
 
         status = agent.get_status()
         status["brain_available"] = agent.brain_available
+        # Surface GPU/CPU device allocation. See plans/device_manager.py
+        # for the auto-pick heuristic (best free memory, with concurrent
+        # lease penalty so we spread load across GPUs).
+        try:
+            from plans.device_manager import DeviceManager
+            status["devices"] = DeviceManager.instance().status()
+        except Exception as _e:
+            status["devices"] = {"cuda_available": False, "error": str(_e)}
         return jsonify(status)
 
     @app.route("/api/plan/preoperative", methods=["POST"])

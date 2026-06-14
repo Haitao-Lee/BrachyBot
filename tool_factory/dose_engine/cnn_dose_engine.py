@@ -133,7 +133,15 @@ class CNNDoseEngineTool(BaseTool):
                 out_channels=dl_params.get("dose_out_channel", 1),
                 features=dl_params.get("dose_cal_features", (16, 32, 64, 128, 256, 32)),
             )
-            device = dl_params.get("device", torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+            # Smart device selection: prefer the most-free GPU; fall
+            # back to CPU if no CUDA. The centralized manager caches
+            # the per-tool choice so the same GPU is reused across
+            # forward passes (model weights stay warm). See
+            # plans/device_manager.py for the auto-pick heuristic
+            # (best free memory, with concurrent-lease penalty so
+            # we spread load across multiple GPUs).
+            from plans.device_manager import get_device as _get_device
+            device = _get_device(caller="cnn_dose_engine")
             if dl_params.get("multi_GPU", False):
                 model = torch.nn.DataParallel(model)
             model_path = dl_params.get("dose_model_path", "./dose_pre/dose_model.pth")

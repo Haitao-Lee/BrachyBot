@@ -2288,6 +2288,31 @@ print(json.dumps(result))
         enhanced_context = ""
         ui_state_for_override = self.memory.get_ui_state()
         _no_files_loaded = not AgentMemory.is_ct_loaded(ui_state_for_override)
+
+        # === LANGUAGE DIRECTIVE (top-level) ===
+        # The user complained that they typed English but the agent
+        # replied in Chinese — a "顶层问题" (top-level issue). We now
+        # detect the user's input language and prepend a HIGH-PRIORITY
+        # language clause to the system prompt so the LLM is never in
+        # doubt about which language to reply in. The detector handles
+        # Chinese, English, Japanese, Korean, Russian, Arabic, and
+        # falls back to the most recent session language for very
+        # short messages (yes / no / do it). See memory/language.py
+        # for the full detection rules.
+        try:
+            from memory.language import detect as _lang_detect, system_prompt_clause as _lang_clause
+            _ui_lang = (ui_state_for_override or {}).get("language") or None
+            _lang_info = _lang_detect(message, explicit=_ui_lang)
+            enhanced_context += "\n" + _lang_clause(_lang_info) + "\n"
+            # Persist for next-turn fallback (short messages like
+            # "yes" / "do it" inherit the previous language instead
+            # of being re-classified as English).
+            try:
+                self.memory.store("session_language", _lang_info)
+            except Exception:
+                pass
+        except Exception as _e:
+            logger.debug(f"language detection failed: {_e}")
         if _no_files_loaded:
             enhanced_context += "\n### ⚠️ OVERRIDE: NO FILES LOADED - LIMITED TOOLS\n"
             enhanced_context += "No CT files are loaded. You MUST answer directly from medical knowledge.\n"
@@ -2999,6 +3024,25 @@ print(json.dumps(result))
         enhanced_context = ""
         ui_state_for_override = self.memory.get_ui_state()
         _no_files_loaded = not AgentMemory.is_ct_loaded(ui_state_for_override)
+
+        # === LANGUAGE DIRECTIVE (top-level) ===
+        # Detect user input language and inject a HIGH-PRIORITY
+        # language clause into the system prompt. The user's complaint
+        # was that they typed English and got Chinese back — we now
+        # detect the language and tell the LLM explicitly to reply in
+        # the same language. See memory/language.py for the full
+        # detection rules.
+        try:
+            from memory.language import detect as _lang_detect, system_prompt_clause as _lang_clause
+            _ui_lang = (ui_state_for_override or {}).get("language") or None
+            _lang_info = _lang_detect(message, explicit=_ui_lang)
+            enhanced_context += "\n" + _lang_clause(_lang_info) + "\n"
+            try:
+                self.memory.store("session_language", _lang_info)
+            except Exception:
+                pass
+        except Exception as _e:
+            logger.debug(f"language detection failed: {_e}")
         if _no_files_loaded:
             enhanced_context += "\n### ⚠️ OVERRIDE: NO FILES LOADED - LIMITED TOOLS\n"
             enhanced_context += "No CT files are loaded. You MUST answer directly from medical knowledge.\n"
@@ -4003,7 +4047,19 @@ print(json.dumps(result))
             return f"event: {event_type}\ndata: {json.dumps(data, default=str)}\n\n"
 
         # Start
-        yield yield_event("start", {"message": message})
+        # Include the detected language so the frontend can pick
+        # language-aware labels for the todo list, status messages,
+        # and other UI text. The detection uses memory/language.py
+        # which counts character ranges (CJK vs Latin) and falls
+        # back to the previous session's language for ambiguous
+        # short messages. See memory/language.py for the full
+        # detection rules and the rationale for top-level injection.
+        try:
+            from memory.language import detect as _lang_detect_start
+            _lang_info_start = _lang_detect_start(message)
+        except Exception:
+            _lang_info_start = {"code": "en", "name": "English", "source": "default"}
+        yield yield_event("start", {"message": message, "language": _lang_info_start})
 
         # User step
         add_step("user", "User Input", message)

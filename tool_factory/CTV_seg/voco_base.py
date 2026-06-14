@@ -96,7 +96,13 @@ class VoCoSegmentationBase(BaseTool):
         if not os.path.exists(self.MODEL_PATH):
             raise FileNotFoundError(f"Model not found: {self.MODEL_PATH}")
 
-        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # Use the centralized device manager so we pick the most-free
+        # GPU and stay there for the lifetime of this model instance.
+        # The caller name is the class name, so two CTV segmenters
+        # (pancreatic, prostate) automatically share the same GPU
+        # unless one of them OOMs — see plans/device_manager.py.
+        from plans.device_manager import get_device as _get_device
+        self._device = _get_device(caller=self.__class__.__name__)
 
         model = SwinUNETR(
             in_channels=1,
