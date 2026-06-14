@@ -5238,19 +5238,24 @@ function createLiveThinkingChain() {
 
     const header = document.createElement('div');
     header.className = 'thinking-header';
+    // The elapsed-time indicator used to live here ("0.0s" → "27.6s"),
+    // but the user complained it was weird for trivial Q&A — for
+    // a simple "你好" the chain shows "27.6s" of nothing happening.
+    // The thinking chain is only meaningful when the agent IS
+    // doing multi-step work; for direct replies there's no chain
+    // to time. So we drop the indicator entirely. The thinking
+    // count alone is enough signal.
     header.innerHTML =
         '<span class="thinking-toggle expanded">&#9654;</span>' +
         '<span class="thinking-label">Thinking</span>' +
-        '<span class="thinking-count">0 steps</span>' +
-        '<span class="thinking-time" style="margin-left:auto;font-size:0.62rem;color:var(--text-dim);font-variant-numeric:tabular-nums;">0.0s</span>';
+        '<span class="thinking-count">0 steps</span>';
     header.onclick = () => toggleThinkingChain(wrapper, []);
     wrapper.appendChild(header);
 
-    const timer = setInterval(() => {
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        const timeEl = header.querySelector('.thinking-time');
-        if (timeEl) timeEl.textContent = elapsed + 's';
-    }, 100);
+    // The timer is kept around (set to fire-and-no-render) so
+    // finalizeThinkingChain can still find header._timer and clear
+    // it without a null check. We just don't display the value.
+    const timer = setInterval(() => { /* no-op: speed indicator removed */ }, 100);
     header._timer = timer;
 
     const stepsDiv = document.createElement('div');
@@ -6081,31 +6086,26 @@ async function sendChat(prefill) {
                         if (typeof updateChainHeader === 'function') {
                             updateChainHeader(headerEl, steps);
                         }
-                        // Persistent todo. The first time we see a step
-                        // event, we create the todo list and append it to
-                        // the bot's chat-msg-wrapper (the same wrapper that
-                        // holds the thinking chain AND will hold the final
-                        // AI response bubble). That way the todo is the
-                        // LAST child of the wrapper — i.e. directly above
-                        // the final reply, which is what the user wants.
+                        // Persistent todo — but ONLY create it when
+                        // the LLM actually starts a multi-step workflow.
+                        // The user's complaint: trivial Q&A (e.g. "你好")
+                        // was showing the "执行进度" todo list with
+                        // weird numbers like "27.6s" — there was no
+                        // actual workflow to track. The LLM signals
+                        // "I need multiple steps" by emitting a step
+                        // event with type === 'tool'. Until then, no
+                        // todo list appears. This makes the todo
+                        // genuinely LLM-driven: the LLM "decides" by
+                        // calling tools.
                         if (typeof _todoCreate === 'function') {
-                            if (!todo && chainEl) {
+                            if (!todo && chainEl && data.type === 'tool' && data.tool) {
                                 todo = _todoCreate();
-                                // chainEl IS the .thinking-chain div, but
-                                // it's also a child of the bot's
-                                // .chat-msg-wrapper. Walk one level up to
-                                // find the wrapper and append there so the
-                                // todo sits below the response.
                                 const wrapper = chainEl.parentElement;
                                 if (wrapper) wrapper.appendChild(todo.root);
                                 // Pre-populate with the predicted workflow
                                 // (ctv → oar → planning → eval → report)
                                 // so the user can see "what's coming"
-                                // before events arrive. The seed is
-                                // matched by tool name in _todoUpdateFromStep
-                                // so real events just flip predicted items
-                                // from "predicted" to "active/done" without
-                                // duplicating.
+                                // before events arrive.
                                 try { _todoSeed(todo, window._lastUserMessage || ''); } catch (_) {}
                                 scrollToBottom();
                             }
@@ -7104,16 +7104,28 @@ function setupSplitter() {
     const rightPanel = document.querySelector('.right-panel');
     if (!splitter || !rightPanel) return;
     let dragging = false;
+    let lastWidth = rightPanel.offsetWidth;
 
-    splitter.addEventListener('mousedown', (e) => {
+    // Pointer Events (preferred over mouse events) — works uniformly
+    // across mouse / trackpad / touch and is more reliable than
+    // mouse events when the user drags fast. We bind the pointer
+    // handlers to the splitter (capture phase) so we don't depend
+    // on the bubble path staying intact when other clickable
+    // elements (e.g. chat-area-resize-handle at the SAME pixel
+    // boundary) might compete for the event.
+    splitter.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;  // left click only
         dragging = true;
+        lastWidth = rightPanel.offsetWidth;
         document.body.classList.add('v-dragging');
         splitter.classList.add('dragging');
-        // Make the hit area unambiguous — prevent text-select / drag-image
+        // Capture so the cursor doesn't flip to text-select while
+        // we drag outside the handle.
+        try { splitter.setPointerCapture(e.pointerId); } catch (_) {}
         e.preventDefault();
+        e.stopPropagation();
     });
-
-    document.addEventListener('mousemove', (e) => {
+    splitter.addEventListener('pointermove', (e) => {
         if (!dragging) return;
         const container = document.querySelector('.app-body');
         if (!container) return;
@@ -7135,14 +7147,18 @@ function setupSplitter() {
             try { localStorage.setItem('layout.right.width', String(Math.round(newWidth))); } catch (_) {}
         }
     });
-
-    document.addEventListener('mouseup', () => {
-        if (dragging) {
-            dragging = false;
-            document.body.classList.remove('v-dragging');
-            splitter.classList.remove('dragging');
-        }
-    });
+    const _endDrag = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        document.body.classList.remove('v-dragging');
+        splitter.classList.remove('dragging');
+        try { if (e && e.pointerId !== undefined) splitter.releasePointerCapture(e.pointerId); } catch (_) {}
+    };
+    splitter.addEventListener('pointerup', _endDrag);
+    splitter.addEventListener('pointercancel', _endDrag);
+    // Belt + suspenders: if the user releases outside the handle
+    // (e.g. mouse leaves the window), end the drag.
+    document.addEventListener('pointerup', _endDrag);
 
     // Restore previously-saved right-panel width on page load
     try {
@@ -7163,18 +7179,27 @@ function setupSidebarResize() {
     let startX = 0;
     let startWidth = 0;
 
-    handle.addEventListener('mousedown', (e) => {
+    // Use Pointer Events for reliability across mouse / trackpad /
+    // touch. The user reported the drag does nothing — switching
+    // from mouse events to pointer events makes the handler robust
+    // to the other resize-handle that overlaps this handle's hit
+    // area (the chat-area-resize-handle sits at the same 3px
+    // boundary; pointer events fire on the deepest hit target so
+    // whichever handle the user actually grabbed wins cleanly).
+    handle.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
         dragging = true;
         startX = e.clientX;
         startWidth = sidebar.offsetWidth;
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
         handle.classList.add('dragging');
+        try { handle.setPointerCapture(e.pointerId); } catch (_) {}
         e.preventDefault();
         e.stopPropagation();
     });
 
-    document.addEventListener('mousemove', (e) => {
+    handle.addEventListener('pointermove', (e) => {
         if (!dragging) return;
         const newWidth = startWidth + (e.clientX - startX);
         if (newWidth >= 180 && newWidth <= 500) {
@@ -7183,14 +7208,17 @@ function setupSidebarResize() {
         }
     });
 
-    document.addEventListener('mouseup', () => {
-        if (dragging) {
-            dragging = false;
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-            handle.classList.remove('dragging');
-        }
-    });
+    const _endDrag = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        handle.classList.remove('dragging');
+        try { if (e && e.pointerId !== undefined) handle.releasePointerCapture(e.pointerId); } catch (_) {}
+    };
+    handle.addEventListener('pointerup', _endDrag);
+    handle.addEventListener('pointercancel', _endDrag);
+    document.addEventListener('pointerup', _endDrag);
 
     // Restore previously-saved width
     try {
@@ -7218,44 +7246,52 @@ function setupChatAreaResize() {
     let startChatWidth = 0;
     let startSidebarWidth = 0;
 
-    handle.addEventListener('mousedown', (e) => {
+    // Pointer Events for the same reasons as setupSplitter /
+    // setupSidebarResize. The chat-area-resize-handle sits at the
+    // SAME 3px boundary as the sidebar-resize-handle (the chat
+    // handle is `left: -3px` of the chat-area; the sidebar handle
+    // is `right: -3px` of the sidebar). The two handles' hit
+    // targets overlap, but pointer events fire on the deepest hit
+    // target — whichever handle the user actually grabbed wins
+    // cleanly. The user reported that the older mouse-event
+    // version "does nothing" — switching to pointer events also
+    // makes the drag work even if the user starts moving the
+    // cursor over a different element after grabbing the handle.
+    handle.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
         dragging = true;
         startX = e.clientX;
-        // The chat area's effective width = its bounding rect width.
-        // The sidebar's width will be the sink — drag right = sidebar
-        // shrinks, chat area grows; drag left = sidebar grows, chat
-        // area shrinks. We keep the chat area's actual layout width
-        // driven by the parent flex (flex: 1), so we manipulate the
-        // sidebar's width to indirectly size the chat.
         startChatWidth = chatArea.getBoundingClientRect().width;
         startSidebarWidth = sidebar.offsetWidth;
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
         handle.classList.add('dragging');
+        try { handle.setPointerCapture(e.pointerId); } catch (_) {}
         e.preventDefault();
         e.stopPropagation();
     });
 
-    document.addEventListener('mousemove', (e) => {
+    handle.addEventListener('pointermove', (e) => {
         if (!dragging) return;
         const dx = e.clientX - startX;
-        // Dragging right (positive dx) widens the chat, so sidebar shrinks.
         const newSidebarWidth = startSidebarWidth - dx;
-        // Clamp: sidebar [180, 500], chat area >= 240
         if (newSidebarWidth >= 180 && newSidebarWidth <= 500) {
             sidebar.style.width = newSidebarWidth + 'px';
             try { localStorage.setItem('layout.sidebar.width', String(Math.round(newSidebarWidth))); } catch (_) {}
         }
     });
 
-    document.addEventListener('mouseup', () => {
-        if (dragging) {
-            dragging = false;
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-            handle.classList.remove('dragging');
-        }
-    });
+    const _endDrag = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        handle.classList.remove('dragging');
+        try { if (e && e.pointerId !== undefined) handle.releasePointerCapture(e.pointerId); } catch (_) {}
+    };
+    handle.addEventListener('pointerup', _endDrag);
+    handle.addEventListener('pointercancel', _endDrag);
+    document.addEventListener('pointerup', _endDrag);
 }
 
 /******** METRICS SECTION RESIZE ********

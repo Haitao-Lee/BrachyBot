@@ -165,7 +165,8 @@ class VoCoTotalSegmentatorTool(BaseTool):
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model not found: {model_path}")
 
-        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        from plans.device_manager import get_device as _dm_get_device
+        self._device = _dm_get_device(caller=self.__class__.__name__)
 
         model = SwinUNETR(
             img_size=config["roi_size"],

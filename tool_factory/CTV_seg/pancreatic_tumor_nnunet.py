@@ -202,12 +202,31 @@ class NNUNetPancreaticTumorTool(BaseTool):
         os.environ["OMP_NUM_THREADS"] = "1"
         os.environ["MKL_NUM_THREADS"] = "1"
 
-        # Auto-detect device: use all available GPUs, fallback to CPU
-        if torch.cuda.is_available():
-            n_gpus = torch.cuda.device_count()
-            device = torch.device("cuda")
-            os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(n_gpus))
-            logger.info(f"Using {n_gpus} GPU(s): {[torch.cuda.get_device_name(i) for i in range(n_gpus)]}")
+        # Auto-detect device via the centralized DeviceManager.
+        # nnUNet uses DataParallel across all visible GPUs (the
+        # framework requirement), so for this tool we override the
+        # "pick one best" default with "all GPUs" by setting
+        # CUDA_VISIBLE_DEVICES explicitly. The device_manager is
+        # still consulted for status logging so the user sees the
+        # same free-memory snapshot in /api/device/status.
+        from plans.device_manager import DeviceManager
+        _dm = DeviceManager.instance()
+        if _dm.cuda_available():
+            n_gpus = _dm.device_count()
+            # Pin to the most-free single GPU by default. nnUNet will
+            # still use DataParallel within that one device's memory.
+            # If the user wants the old "all GPUs" behavior, set
+            # NNUNET_USE_ALL_GPUS=1 in the env.
+            if os.environ.get("NNUNET_USE_ALL_GPUS", "").lower() in ("1", "true", "yes"):
+                chosen = f"cuda:0"  # nnUNet will see all GPUs via DataParallel
+                os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(n_gpus))
+            else:
+                # Pick the most-free single GPU (smart scheduler)
+                chosen = _dm.acquire(caller=self.__class__.__name__)
+                os.environ["CUDA_VISIBLE_DEVICES"] = chosen.split(":", 1)[1] if ":" in chosen else "0"
+            device = torch.device(chosen)
+            logger.info(f"nnUNet using {chosen} (managed by DeviceManager); "
+                        f"{n_gpus} total GPU(s) visible: {_dm.device_names()}")
         else:
             device = torch.device("cpu")
             logger.info("No GPU available, using CPU")

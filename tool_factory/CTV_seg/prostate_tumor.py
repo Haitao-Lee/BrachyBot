@@ -150,13 +150,16 @@ class ProstateTumorSegmentationTool(BaseTool):
 
             sitk.WriteImage(image, input_file)
 
-            device_str = "cpu"
-            try:
-                import torch
-                if torch.cuda.is_available():
-                    device_str = "gpu"
-            except ImportError:
-                pass
+            from plans.device_manager import get_device as _get_device
+
+
+            # Totalsegmentator uses "gpu"/"cpu" strings; map our device
+
+
+            _dev = str(_get_device(caller=__name__))
+
+
+            device_str = "gpu" if _dev.startswith("cuda") else _dev
 
             cmd = [
                 ts_exe,
