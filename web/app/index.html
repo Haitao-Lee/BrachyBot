@@ -1734,13 +1734,24 @@ body::before {
 }
 
 .v-splitter {
-    width: 5px;
+    /* The visible 3px blue bar (::after) is centered in this
+       div. We make the splitter 8px wide so the user has a
+       generous click target — 5px is too thin and the user
+       often misses the drag handle on the first click. The
+       center 3px has the colored bar; the side 5px is
+       transparent (still cursor: col-resize so it looks the
+       same visually). */
+    width: 8px;
     background: transparent;
     cursor: col-resize;
     flex-shrink: 0;
     position: relative;
-    transition: all var(--t-base) var(--ease);
+    transition: background var(--t-base) var(--ease);
     z-index: 10;
+}
+.v-splitter:hover,
+.v-splitter.dragging {
+    background: rgba(59, 130, 246, 0.06);
 }
 .v-splitter::after {
     content: '';
@@ -7121,29 +7132,50 @@ function setupSplitter() {
     const rightPanel = document.querySelector('.right-panel');
     if (!splitter || !rightPanel) return;
     let dragging = false;
+    let activePointerId = null;
     let lastWidth = rightPanel.offsetWidth;
 
-    // Pointer Events (preferred over mouse events) — works uniformly
-    // across mouse / trackpad / touch and is more reliable than
-    // mouse events when the user drags fast. We bind the pointer
-    // handlers to the splitter (capture phase) so we don't depend
-    // on the bubble path staying intact when other clickable
-    // elements (e.g. chat-area-resize-handle at the SAME pixel
-    // boundary) might compete for the event.
+    // CRITICAL DESIGN NOTE (4th fix attempt):
+    //
+    // The previous version bound pointermove to the SPLITTER
+    // element itself. The splitter is only 5px wide. The user's
+    // cursor is essentially guaranteed to leave the 5px area
+    // within a few pixels of drag movement — and the moment it
+    // does, the pointermove event stops firing on the splitter.
+    // setPointerCapture is supposed to fix this, but the
+    // capture is fragile: it can fail silently if the click
+    // actually landed on a child element (e.g. the visible
+    // 3px ::after pseudo), if the element has been detached /
+    // re-attached since pointerdown, or if the browser's
+    // pointer-capture policy rejects it (e.g. cross-iframe,
+    // different document, etc).
+    //
+    // The robust fix is to bind pointermove and pointerup to
+    // the DOCUMENT, not the splitter. Document-level events
+    // fire no matter where the cursor goes on the page, so the
+    // drag tracks even if the user drags the cursor into a
+    // child element, off the window, or onto a totally
+    // different element. We still need pointerdown on the
+    // splitter to detect WHEN the drag starts; everything else
+    // is on document.
     splitter.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return;  // left click only
         dragging = true;
+        activePointerId = e.pointerId;
         lastWidth = rightPanel.offsetWidth;
         document.body.classList.add('v-dragging');
         splitter.classList.add('dragging');
-        // Capture so the cursor doesn't flip to text-select while
-        // we drag outside the handle.
+        // Best-effort capture; harmless if it fails since
+        // document-level handlers will catch the move anyway.
         try { splitter.setPointerCapture(e.pointerId); } catch (_) {}
         e.preventDefault();
         e.stopPropagation();
     });
-    splitter.addEventListener('pointermove', (e) => {
+    const _onPointerMove = (e) => {
         if (!dragging) return;
+        // If we know which pointer started the drag, ignore
+        // other pointers' moves (e.g. touch + pen simultaneously).
+        if (activePointerId !== null && e.pointerId !== activePointerId) return;
         const container = document.querySelector('.app-body');
         if (!container) return;
         const containerRect = container.getBoundingClientRect();
@@ -7163,19 +7195,25 @@ function setupSplitter() {
             });
             try { localStorage.setItem('layout.right.width', String(Math.round(newWidth))); } catch (_) {}
         }
-    });
+    };
+    document.addEventListener('pointermove', _onPointerMove);
     const _endDrag = (e) => {
         if (!dragging) return;
+        if (activePointerId !== null && e && e.pointerId !== undefined && e.pointerId !== activePointerId) return;
         dragging = false;
+        activePointerId = null;
         document.body.classList.remove('v-dragging');
         splitter.classList.remove('dragging');
         try { if (e && e.pointerId !== undefined) splitter.releasePointerCapture(e.pointerId); } catch (_) {}
     };
+    // Listen on BOTH the splitter and document. Splitter catches
+    // pointerup that ends ON the splitter; document catches
+    // pointerup that ends ELSEWHERE on the page. Together they
+    // guarantee the drag always ends cleanly.
     splitter.addEventListener('pointerup', _endDrag);
     splitter.addEventListener('pointercancel', _endDrag);
-    // Belt + suspenders: if the user releases outside the handle
-    // (e.g. mouse leaves the window), end the drag.
     document.addEventListener('pointerup', _endDrag);
+    document.addEventListener('pointercancel', _endDrag);
 
     // Restore previously-saved right-panel width on page load
     try {
@@ -7203,6 +7241,13 @@ function setupSidebarResize() {
     // area (the chat-area-resize-handle sits at the same 3px
     // boundary; pointer events fire on the deepest hit target so
     // whichever handle the user actually grabbed wins cleanly).
+    //
+    // Round 4 fix: pointermove and pointerup are on DOCUMENT
+    // (not the handle itself). The handle is only 6px wide and
+    // the cursor will leave it within the first few pixels of
+    // any drag. setPointerCapture is fragile and can fail
+    // silently — so we don't depend on it. Document-level
+    // pointermove fires no matter where the cursor goes.
     handle.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return;
         dragging = true;
@@ -7216,14 +7261,15 @@ function setupSidebarResize() {
         e.stopPropagation();
     });
 
-    handle.addEventListener('pointermove', (e) => {
+    const _onPointerMove = (e) => {
         if (!dragging) return;
         const newWidth = startWidth + (e.clientX - startX);
         if (newWidth >= 180 && newWidth <= 500) {
             sidebar.style.width = newWidth + 'px';
             try { localStorage.setItem('layout.sidebar.width', String(Math.round(newWidth))); } catch (_) {}
         }
-    });
+    };
+    document.addEventListener('pointermove', _onPointerMove);
 
     const _endDrag = (e) => {
         if (!dragging) return;
@@ -7236,6 +7282,7 @@ function setupSidebarResize() {
     handle.addEventListener('pointerup', _endDrag);
     handle.addEventListener('pointercancel', _endDrag);
     document.addEventListener('pointerup', _endDrag);
+    document.addEventListener('pointercancel', _endDrag);
 
     // Restore previously-saved width
     try {
@@ -7288,7 +7335,7 @@ function setupChatAreaResize() {
         e.stopPropagation();
     });
 
-    handle.addEventListener('pointermove', (e) => {
+    const _onPointerMove = (e) => {
         if (!dragging) return;
         const dx = e.clientX - startX;
         const newSidebarWidth = startSidebarWidth - dx;
@@ -7296,7 +7343,8 @@ function setupChatAreaResize() {
             sidebar.style.width = newSidebarWidth + 'px';
             try { localStorage.setItem('layout.sidebar.width', String(Math.round(newSidebarWidth))); } catch (_) {}
         }
-    });
+    };
+    document.addEventListener('pointermove', _onPointerMove);
 
     const _endDrag = (e) => {
         if (!dragging) return;
@@ -7309,6 +7357,7 @@ function setupChatAreaResize() {
     handle.addEventListener('pointerup', _endDrag);
     handle.addEventListener('pointercancel', _endDrag);
     document.addEventListener('pointerup', _endDrag);
+    document.addEventListener('pointercancel', _endDrag);
 }
 
 /******** METRICS SECTION RESIZE ********
