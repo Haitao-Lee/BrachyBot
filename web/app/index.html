@@ -3428,7 +3428,24 @@ body::before {
 }
 
 body.v-dragging { cursor: col-resize !important; }
-body.v-dragging * { pointer-events: none; user-select: none; }
+/* Prevent text selection while the user is dragging any of the
+   3 splitters. We deliberately do NOT use
+   `body.v-dragging * { pointer-events: none }` because that rule
+   applies to the splitter / handle themselves — once the
+   element the listener is attached to has `pointer-events: none`,
+   the `pointermove` handler never fires and the drag appears
+   dead. The cursor + `document.body.style.userSelect = 'none'`
+   (set per-handler at mousedown time) is enough to prevent text
+   selection without breaking drag tracking. The user's
+   third complaint about "click the blue bar, drag does nothing"
+   was caused by this self-contradicting rule. */
+body.v-dragging { user-select: none; -webkit-user-select: none; }
+/* Belt + suspenders: re-enable pointer-events on the splitter
+   itself. If a future change reintroduces the `*` rule, this
+   opt-out keeps the drag working. */
+.v-splitter,
+.sidebar-resize-handle,
+.chat-area-resize-handle { pointer-events: auto !important; }
 .v-splitter.dragging {
     background: rgba(59, 130, 246, 0.10);
 }
