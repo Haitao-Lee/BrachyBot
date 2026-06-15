@@ -7170,6 +7170,28 @@ async function init() {
     try { setupSidebarResize(); } catch (e) { console.warn('setupSidebarResize failed:', e); }
     try { setupChatAreaResize(); } catch (e) { console.warn('setupChatAreaResize failed:', e); }
 
+    // Cache-bust diagnostic: 7 rounds of splitter-fix attempts
+    // happened because the user's browser was serving a cached
+    // version of this HTML (with `https://cdn.jsdelivr.net/...`
+    // URLs that fail behind firewalls). If we detect the OLD
+    // HTML is in the DOM, show a visible banner asking the user
+    // to hard-refresh. The check is a single line: if the
+    // current splitters have `static/js/...` src (new format)
+    // we know the HTML is fresh; if they still have `https://...`
+    // we know the HTML is stale.
+    try {
+        const probe = document.querySelector('script[src*="plotly"]');
+        if (probe && probe.getAttribute('src') && probe.getAttribute('src').startsWith('https://')) {
+            // Stale HTML detected. Show a banner.
+            const banner = document.createElement('div');
+            banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#dc2626;color:white;padding:12px 20px;font-size:14px;text-align:center;font-family:system-ui;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
+            banner.innerHTML = '⚠️ 您的浏览器加载了 <b>旧版</b> BrachyBot 页面（仍然引用 CDN 资源，会报错）。请按 <kbd style="background:#fff;color:#dc2626;padding:2px 6px;border-radius:3px;font-family:monospace;">Ctrl+Shift+R</kbd>（Mac: <kbd style="background:#fff;color:#dc2626;padding:2px 6px;border-radius:3px;font-family:monospace;">Cmd+Shift+R</kbd>）强刷。';
+            document.body.appendChild(banner);
+            // Auto-dismiss after 30s in case the user can't refresh
+            setTimeout(() => { try { banner.remove(); } catch (_) {} }, 30000);
+        }
+    } catch (_) { /* best-effort diagnostic */ }
+
     // NOTE: Do NOT call refreshPlanningUI() on init
     // Planning data was just cleared — user should run planning manually
 }
