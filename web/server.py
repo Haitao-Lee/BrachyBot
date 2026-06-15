@@ -2207,6 +2207,76 @@ def create_app(config: Optional[Dict] = None):
             logger.error(f"Show step results failed: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/segmentation", methods=["POST"])
+    def api_segmentation():
+        """MANUAL segmentation (2026-06-15) — runs CTV or OAR
+        segmentation directly without going through the LLM agent.
+        Used by the Step-by-Step manual planning buttons in the Input
+        panel. The user wanted a "manual UI" that doesn't require
+        chatting with the LLM at all.
+
+        Request: { kind: 'ctv' | 'oar', image_path: '...' }
+        Returns: { success, kind, label_counts, total_labels, ... }
+        """
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        data = request.get_json() or {}
+        kind = data.get("kind", "ctv")
+        image_path = data.get("image_path", "")
+        if not image_path:
+            return jsonify({"error": "image_path is required"}), 400
+
+        try:
+            # Dispatch to the appropriate tool.
+            if kind == "ctv":
+                from tool_factory.CTV_seg.pancreatic_tumor_nnunet import (
+                    NNUNetPancreaticTumorTool,
+                )
+                tool = NNUNetPancreaticTumorTool()
+                result = tool.execute(image_path=image_path)
+            elif kind == "oar":
+                from tool_factory.OAR_seg.totalsegmentator_oar import (
+                    TotalSegmentatorOARTool,
+                )
+                tool = TotalSegmentatorOARTool()
+                result = tool.execute(image_path=image_path)
+            else:
+                return jsonify({"error": f"Unknown segmentation kind: {kind}"}), 400
+
+            if not result.success:
+                return jsonify({"error": result.error or "Segmentation failed"}), 500
+
+            # Store under the standard memory keys the rest of the
+            # system reads from (ctv_label_data, oar_label_data, etc.).
+            if kind == "ctv" and hasattr(agent, "memory"):
+                mask = getattr(result, "mask_array", None) or getattr(result, "mask", None)
+                if mask is not None:
+                    try:
+                        agent.memory.store("ctv_label_data", mask)
+                        agent.memory.store("ctv_segmented", True)
+                    except Exception as e:
+                        logger.warning(f"store ctv_label_data failed: {e}")
+            elif kind == "oar" and hasattr(agent, "memory"):
+                mask = getattr(result, "mask_array", None) or getattr(result, "mask", None)
+                if mask is not None:
+                    try:
+                        agent.memory.store("oar_label_data", mask)
+                        agent.memory.store("oar_segmented", True)
+                    except Exception as e:
+                        logger.warning(f"store oar_label_data failed: {e}")
+
+            return jsonify({
+                "success": True,
+                "kind": kind,
+                "label_counts": getattr(result, "label_counts", {}) or {},
+                "total_labels": len(getattr(result, "label_counts", {}) or {}),
+            })
+        except Exception as e:
+            logger.error(f"Manual segmentation ({kind}) failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/planning/run_step", methods=["POST"])
     def api_planning_run_step():
         """Run a specific planning step."""
@@ -2634,6 +2704,7 @@ def create_app(config: Optional[Dict] = None):
                 "contours": contours_data,
                 "dose_range": [d_min, d_max],
                 "slice_range": [s_min, s_max],
+                "slice_shape": [int(slice_2d.shape[0]), int(slice_2d.shape[1])],
             })
         except Exception as e:
             logger.error(f"Dose contour slice failed: {e}")

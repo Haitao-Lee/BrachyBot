@@ -437,7 +437,13 @@ body::before {
 .app-body {
     display: flex;
     flex: 1;
-    overflow: hidden;
+    /* overflow:hidden (in original) was clipping the breathing
+       animation on the active todo item when it scaled to 1.25.
+       Switched to overflow-y: visible; overflow-x: hidden so
+       the splitter handles still clip horizontally but the
+       vertical scale animation is no longer truncated. */
+    overflow-x: hidden;
+    overflow-y: visible;
     position: relative;
     z-index: 1;
 }
@@ -724,6 +730,13 @@ body::before {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    /* ALLOW OVERFLOW for breathing animation (2026-06-15):
+       the active todo item scales to 1.25 at the peak of its
+       breathing animation, which would otherwise be clipped by
+       the parent .chat-area's default overflow:hidden (inherited
+       via flex). Without this, the user sees the top of the
+       active item get cut off during the peak. */
+    overflow: visible;
     /* DEEPER CHAT THEME (2026-06-15): user wants the chat panel to
        read as a focused, dark, medical-grade surface — not the same
        light slate as the rest of the app. We push the entire chat
@@ -897,6 +910,12 @@ body::before {
     -webkit-user-select: text;
     cursor: text;
     z-index: 1;
+    /* CHATGPT-STYLE TEXT ALIGNMENT (2026-06-15): explicitly set
+       text-align: left/start. Without this, in some flex contexts
+       (chat-msg-wrapper.bot with align-items: flex-start), text
+       inside can look "centered" because there's no anchor
+       declaration. Defensive — doesn't hurt, prevents drift. */
+    text-align: left;
 }
 .chat-msg p { margin: 0.2rem 0; }
 .chat-msg p:first-child { margin-top: 0; }
@@ -917,16 +936,40 @@ body::before {
 }
 
 .chat-msg.bot {
-    /* Deep theme: bot card is the next layer up from sunken —
-       a slightly elevated slate with a hairline border. */
-    background: linear-gradient(180deg, var(--bg-1) 0%, var(--bg-2) 100%);
+    /* SUNKEN PANEL EFFECT (2026-06-15 round 2): user feedback
+       round 1 made the bot response fully transparent (no card
+       styling) and the text blended into the bg-sunken chat
+       column — no visual distinction between "container" and
+       "background". This iteration restores a SUBTLE panel: a
+       slightly-elevated gradient + hairline border so the LLM
+       reply reads as a distinct surface, while still spanning
+       the full chat column width (ChatGPT-style prose flow). The
+       panel uses a translucent inner shadow on top + a soft
+       bottom shadow so it appears to "float" within the sunken
+       chat column. */
+    background: linear-gradient(180deg, var(--bg-2) 0%, var(--bg-1) 100%);
     color: #dde3f0;
     border-color: var(--border-default);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 12px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 4px 16px rgba(0, 0, 0, 0.32);
+    padding: 0.95rem 1.15rem;
+    border-radius: var(--radius-md);
 }
 .chat-msg.bot:hover {
-    background: linear-gradient(180deg, var(--bg-2) 0%, var(--bg-3) 100%);
+    background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
     border-color: var(--border-emphasis);
+}
+
+/* Links inside chat responses — clickable, styled, open in new tab */
+.chat-msg a[href], .md-table a[href] {
+    color: #60a5fa;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(96, 165, 250, 0.3);
+    transition: color 0.15s, border-color 0.15s;
+    word-break: break-all;
+}
+.chat-msg a[href]:hover, .md-table a[href]:hover {
+    color: #93c5fd;
+    border-bottom-color: #93c5fd;
 }
 
 .chat-msg.system {
@@ -1026,52 +1069,41 @@ body::before {
 }
 
 .md-table {
-    /* DEEP THEME TABLES (2026-06-15): user wants tables to be the
-       primary layout for tool lists / capability summaries. The
-       previous version was a flat 1px border. We now have:
-       - distinct, brand-tinted header
-       - subtle zebra striping for row scanability
-       - tight padding that respects the chat-panel density
-       - proper border-radius (was getting clipped on Safari) */
     border-collapse: separate;
     border-spacing: 0;
     margin: 0.6rem 0 0.8rem;
     width: 100%;
     font-size: 0.76rem;
-    background: var(--bg-1);
+    /* Clean white background with dark text — professional look */
+    background: #ffffff;
+    color: #1a1a2e;
     border-radius: var(--radius-md);
     overflow: hidden;
-    border: 1px solid var(--border-default);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 2px 12px rgba(0, 0, 0, 0.25);
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 .md-table th, .md-table td {
     padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--border-hairline);
+    border-bottom: 1px solid #f1f5f9;
     text-align: left;
     vertical-align: top;
     line-height: 1.5;
+    color: #1a1a2e;
 }
 .md-table th {
-    /* Brand-tinted header. Solid color, no transparency, so the
-       contrast is reliable across light/dark themes. */
-    background: linear-gradient(180deg, rgba(96, 165, 250, 0.16) 0%, rgba(96, 165, 250, 0.08) 100%);
-    color: #cfe2ff;
+    background: #f8fafc;
+    color: #334155;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-size: 0.65rem;
-    border-bottom: 1px solid rgba(96, 165, 250, 0.28);
-    font-family: 'Space Grotesk', sans-serif;
+    letter-spacing: 0.03em;
+    font-size: 0.68rem;
+    border-bottom: 2px solid #e2e8f0;
 }
 .md-table tr:last-child td { border-bottom: none; }
 .md-table tbody tr:nth-child(even) td {
-    /* Subtle zebra striping. Uses --bg-1 with a 30% blend to the
-       chat-msg.bot background so the row alternation reads in
-       BOTH light and dark themes. */
-    background: rgba(96, 165, 250, 0.03);
+    background: #f8fafc;
 }
 .md-table tbody tr:hover td {
-    background: rgba(96, 165, 250, 0.06);
+    background: #f1f5f9;
 }
 .md-table code {
     background: var(--bg-sunken);
@@ -1152,7 +1184,14 @@ body::before {
 }
 .chat-row:hover { background: var(--msg-hover); }
 .chat-row.user { align-self: flex-end; flex-direction: row-reverse; max-width: 85%; }
-.chat-row.bot { align-self: flex-start; max-width: 92%; }
+/* CHATGPT-STYLE BOT ROW (2026-06-15): the bot response should span
+   the full chat column width (not be a "card" with max-width 92%),
+   so prose flows naturally like a long-form article. The avatar
+   stays as a fixed 28px slot on the left, and the response text
+   fills the remaining space. The previous card-style max-width
+   made long responses look "centered" / constrained which the
+   user explicitly compared against ChatGPT's layout and disliked. */
+.chat-row.bot { align-self: stretch; max-width: 100%; }
 
 .chat-avatar {
     width: 28px; height: 28px;
@@ -1316,16 +1355,22 @@ body::before {
    done, X for error. The active step's left bar pulses so the user's
    eye lands there. Done items are dimmed with strikethrough. */
 .chat-todo {
-    margin: 0.5rem 0 0;
-    padding: 0.5rem 0.65rem 0.55rem 0.85rem;
-    background: var(--bg-2);
-    border: 1px solid var(--border-hairline);
-    border-radius: var(--radius-md);
+    /* BOTTOM-OF-CHAT DOCK (2026-06-15): the todo list is now a
+       dock pinned to the bottom of the chat column (just above the
+       input area), not a per-message widget. The dock style is a
+       compact horizontal pill list — header on the left, scrollable
+       steps to the right when overflow. The chat-msg side margins
+       are now 0 because it's not a message anymore. */
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    background: linear-gradient(180deg, rgba(96, 165, 250, 0.06) 0%, transparent 100%);
+    border: none;
+    border-bottom: 1px solid var(--border-hairline);
+    border-radius: 0;
     font-size: 0.72rem;
     color: var(--text);
-    box-shadow: var(--shadow-xs);
+    box-shadow: none;
     max-width: 100%;
-    /* Container animation when the todo is mounted / folded */
     transition: opacity 0.3s ease, transform 0.3s ease;
     transform-origin: top left;
 }
@@ -1416,18 +1461,27 @@ body::before {
 }
 
 /* Active — high-contrast: blue background tint + bright text + pulsing
-   left bar + filled dot with breathing glow. This is the visual
-   focal point of the todo list. */
+   left bar + filled dot with breathing glow + WHOLE-ITEM SCALE
+   PULSE so the user's eye lands there even when scanning fast.
+   The 1.0 -> 1.25 scale + 0.6->1.0 background opacity pulse is
+   obvious enough to feel "alive" even at a glance. transform-origin
+   centers the pulse on the left edge so the text doesn't slide. */
 .chat-todo-item.active {
     color: var(--primary-ink);
     font-weight: 600;
-    background: linear-gradient(90deg, rgba(14,165,233,0.18) 0%, rgba(14,165,233,0.05) 100%);
-    box-shadow: inset 0 0 0 1px rgba(14,165,233,0.35);
+    background: linear-gradient(90deg, rgba(14,165,233,0.30) 0%, rgba(14,165,233,0.08) 100%);
+    /* Pulsing glow — the primary "breathing" visual. box-shadow
+       is NOT affected by overflow:hidden or transition conflicts. */
+    animation: todo-active-breathe 1.4s ease-in-out infinite;
+}
+/* Font-size pulse on label — secondary effect */
+.chat-todo-item.active .chat-todo-label {
+    animation: todo-label-breathe 1.4s ease-in-out infinite;
 }
 .chat-todo-item.active::before {
     background: var(--primary);
-    box-shadow: 0 0 6px 1px rgba(14,165,233,0.7);
-    animation: todo-bar-breathe 1.4s ease-in-out infinite;
+    box-shadow: 0 0 8px 2px rgba(14,165,233,0.8);
+    animation: todo-bar-breathe 1.6s ease-in-out infinite;
 }
 
 /* Center dot — sized for the new font */
@@ -1470,12 +1524,42 @@ body::before {
    dot so the active step is unmistakable. Modeled on the soft
    cyan pulse used by Claude Code's todo list. */
 @keyframes todo-bar-breathe {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.0); opacity: 0.7; }
-    50%      { box-shadow: 0 0 10px 2px rgba(14, 165, 233, 0.7); opacity: 1.0; }
+    0%, 100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.0); opacity: 0.6; }
+    50%      { box-shadow: 0 0 14px 3px rgba(14, 165, 233, 0.9); opacity: 1.0; }
 }
 @keyframes todo-dot-breathe {
     0%, 100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.0); transform: scale(1.0); }
-    50%      { box-shadow: 0 0 10px 3px rgba(14, 165, 233, 0.8); transform: scale(1.3); }
+    50%      { box-shadow: 0 0 14px 4px rgba(14, 165, 233, 0.9); transform: scale(1.4); }
+}
+/* Whole-item breathing scale (1.0 -> 1.25 -> 1.0). The 1.25
+   peak is dramatic enough to be visible at a glance but not so
+   much that it disrupts adjacent rows. transform-origin: center
+   left keeps the row anchored on its left edge so it doesn't
+   slide sideways. Background-color also pulses from 30% -> 60%
+   opacity so the eye picks up the active state even if the
+   scale change is missed (e.g., peripheral vision or slow scan). */
+@keyframes todo-item-breathe {
+    0%, 100% { transform: scale(1.0);   background: linear-gradient(90deg, rgba(14,165,233,0.30) 0%, rgba(14,165,233,0.08) 100%); }
+    50%      { transform: scale(1.25);  background: linear-gradient(90deg, rgba(14,165,233,0.60) 0%, rgba(14,165,233,0.20) 100%); }
+}
+/* Font-size breathing for the active step label — avoids conflict
+   with .chat-todo-item's transition:transform which cancels the
+   scale animation. font-size pulsing is more targeted and visible. */
+@keyframes todo-label-breathe {
+    0%, 100% { font-size: 0.72rem; }
+    50%      { font-size: 0.88rem; }
+}
+/* Box-shadow breathing pulse — always visible regardless of
+   overflow or transition conflicts. */
+@keyframes todo-active-breathe {
+    0%, 100% {
+        box-shadow: inset 0 0 0 1px rgba(14,165,233,0.45),
+                    0 0 6px 1px rgba(14,165,233,0.15);
+    }
+    50% {
+        box-shadow: inset 0 0 0 1px rgba(14,165,233,0.80),
+                    0 0 18px 6px rgba(14,165,233,0.45);
+    }
 }
 
 .chat-msg-action-btn {
@@ -1490,7 +1574,17 @@ body::before {
 }
 .chat-msg-action-btn:hover { color: var(--primary); background: var(--primary-soft); }
 
-.chat-msg.bot-response { /* keep */ }
+.chat-msg.bot-response {
+    /* Mirror .chat-msg.bot: subtle sunken-panel effect (gradient +
+       hairline border + soft shadow). Both the streaming response
+       and the finalized addChat('bot-response') use this class. */
+    background: linear-gradient(180deg, var(--bg-2) 0%, var(--bg-1) 100%);
+    color: #dde3f0;
+    border-color: var(--border-default);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 4px 16px rgba(0, 0, 0, 0.32);
+    padding: 0.95rem 1.15rem;
+    border-radius: var(--radius-md);
+}
 .chat-msg.user { /* keep */ }
 .chat-msg.system { /* keep */ }
 .chat-msg.error { /* keep */ }
@@ -1872,7 +1966,7 @@ body::before {
    RIGHT PANEL (strong glass)
    =========================================================== */
 .right-panel {
-    width: 45%; min-width: 420px;
+    width: 45%; min-width: 50px;
     background: var(--glass-tint-cool);
     backdrop-filter: var(--blur-lg);
     -webkit-backdrop-filter: var(--blur-lg);
@@ -2305,11 +2399,21 @@ body::before {
     letter-spacing: 0.1em;
     margin-bottom: 0.55rem;
     display: flex; align-items: center; gap: 0.5rem;
+    /* TITLE PADDING FIX (2026-06-15): the parent .metrics-section
+       has border-radius:14px and overflow:hidden so the first
+       character of the title was being clipped by the rounded
+       corner. We give the title horizontal + top padding so the
+       label sits inside the safe area. The trailing ::after line
+       (the divider) extends across the full title width, so the
+       visual style is preserved. */
+    padding: 0.55rem 0.85rem 0;
+    margin-top: 0;
 }
 .metrics-title::after {
     content: '';
     flex: 1; height: 1px;
     background: var(--border-soft);
+    margin-left: 0;
 }
 
 .metrics-grid {
@@ -2322,8 +2426,13 @@ body::before {
 /* Default: floating card */
 .metric-card {
     background: var(--bg-2);
-    border-radius: var(--radius-sm);
-    padding: 0.7rem 0.5rem;
+    /* ROUNDED CORNERS CLIPPING FIX (2026-06-15): the previous
+       border-radius of 10px + small padding caused the top-left
+       of the big metric value to get clipped by the corner
+       curve. We reduce the radius to 6px and bump top padding
+       so the value has visual clearance from the corner. */
+    border-radius: 6px;
+    padding: 0.85rem 0.5rem 0.7rem;
     text-align: center;
     border: 1px solid transparent;
     box-shadow: var(--inset-top), var(--shadow-elevated);
@@ -3302,6 +3411,7 @@ body::before {
 }
 
 .viewers-row.viewer-resized { flex: 0 0 var(--resize-h, auto) !important; }
+.viewer-card.viewer-resized { flex: 0 0 var(--resize-h, auto) !important; }
 .viewer-card-3d.viewer-resized { flex: 0 0 var(--resize-h, auto) !important; }
 .viewer-card:hover { z-index: 2; }
 
@@ -3378,17 +3488,20 @@ body::before {
 }
 
 .viewer-resize-h {
-    height: 6px;
+    height: 10px;
     cursor: row-resize;
     flex-shrink: 0;
     position: relative;
     z-index: 20;
+    /* Wider hit target so the user can grab it easily */
+    margin: -2px 0;
 }
 .viewer-resize-h::after {
     content: '';
     position: absolute;
-    bottom: 0; left: 25%; right: 25%;
+    top: 50%; left: 15%; right: 15%;
     height: 3px;
+    transform: translateY(-50%);
     background: var(--border-soft);
     border-radius: 2px;
     transition: all var(--t-fast) var(--ease);
@@ -3866,12 +3979,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     outline-offset: 2px;
 }
 
+/* Accessibility: when the OS "reduce motion" is enabled, shorten
+   transitions but KEEP essential feedback animations running.
+   The previous rule used animation-duration:0.01ms !important
+   which killed ALL animations — spinner, breathing, step glow —
+   leaving zero visual feedback. */
 @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
-    }
+    /* Slow down but don't kill these animations */
+    .chat-todo-item.active,
+    .chat-todo-item.active .chat-todo-label,
+    .chat-todo-item.active::before,
+    .step-status.pending,
+    .step-status.pending::before,
+    .step-block:has(.step-status.pending),
+    .spinner-ring,
+    .spinner-ring--sm { animation-duration: 2.4s !important; }
+    * { transition-duration: 0.1s !important; }
 }
 
 /* =============================================================================
@@ -4189,6 +4312,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
             <div class="chat-msg system">Welcome to BrachyBot. Describe your brachytherapy case — tumor location, type, patient condition — and I will help you generate an optimal treatment plan. You can also load CT data directly via the Input panel on the right.</div>
         </div>
 
+        <!-- TODO DOCK (2026-06-15): the persistent workflow indicator
+             is appended here when the LLM starts a multi-step plan.
+             Sits at the bottom of the chat column, just above the input
+             area, so the user always sees current step / progress.
+
+             NOTE on overflow: we use `overflow: visible` instead of
+             `overflow-y: auto` so the active item's breathing
+             transform (scale 1.0 -> 1.25) can render WITHOUT being
+             clipped by the dock's bounding box. The dock can still
+             grow up to 40vh naturally; if there are more than 5-6
+             sub-steps the dock can be scrolled (we wrap the inner
+             list in a .chat-todo-scroll if needed in the future). -->
+        <div id="chatTodoDock" style="display:none;flex-shrink:0;max-height:40vh;overflow:visible;background:linear-gradient(180deg, var(--bg-1) 0%, var(--bg-sunken) 100%);border-top:1px solid var(--border-hairline);padding:0.4rem 0.5rem 0.3rem;"></div>
+
         <div class="chat-input-area" style="position:relative;">
             <!-- Tool Progress Display -->
             <div id="toolProgressContainer" style="display:none;padding:0.5rem 1rem;background:var(--bg-2);border-top:1px solid var(--card-border);">
@@ -4440,50 +4577,87 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
                 </div>
 
                 <div class="form-section-title" style="cursor:pointer" onclick="toggleStepButtons()">
-                    <span>Step-by-Step</span>
-                    <span id="stepToggle" style="font-size:0.6rem;color:var(--text-dim);">&#9654;</span>
+                    <span>Step-by-Step (manual)</span>
+                    <span id="stepToggle" style="font-size:0.6rem;color:var(--text-dim);">&#9660;</span>
                 </div>
 
-                <div id="stepButtonsSection" style="display:none;flex-direction:column;gap:0.5rem;">
+                <!-- Default-OPEN (2026-06-15): the user complained the
+                     section was "折叠打不开了". Previously the toggle
+                     was broken (no JS function). Now the section is
+                     visible by default and contains the full 8-step
+                     manual pipeline:
+                       1. CTV segmentation
+                       2. OAR segmentation
+                       3. Trajectory init
+                       4. Trajectory refine
+                       5. Seed planning
+                       6. Dose calculation
+                       7. Dose evaluation
+                     plus View Results (jump to a specific step's
+                     output) and Export (DICOM-RT / STL / Report).
+                     Each step button is disabled until its
+                     prerequisite is met (e.g. OAR seg needs CTV seg;
+                     trajectory_init needs CT loaded). Status badges
+                     show which steps have completed. -->
+                <div id="stepButtonsSection" style="display:flex;flex-direction:column;gap:0.4rem;">
+                    <div style="font-size:0.6rem;color:var(--text-dim);">Click each step in order. Steps that need an earlier result will be auto-disabled until the prerequisite completes.</div>
+
+                    <!-- Row 1: CTV / OAR segmentation -->
                     <div style="display:flex;gap:4px;">
-                        <button class="btn btn-outline" onclick="runPlanningStep('trajectory_init')" style="flex:1;font-size:0.65rem;padding:6px 4px;">
-                            <span class="btn-icon">&#127919;</span> 1. Trajectories
+                        <button class="btn btn-outline" id="stepBtn_ctv_segmentation" onclick="runSegmentationStep('ctv_segmentation')" style="flex:1;font-size:0.65rem;padding:6px 4px;display:flex;align-items:center;justify-content:center;gap:4px;">
+                            <span class="step-num">0</span> CTV Seg
                         </button>
-                        <button class="btn btn-outline" onclick="runPlanningStep('trajectory_refine')" style="flex:1;font-size:0.65rem;padding:6px 4px;">
-                            <span class="btn-icon">&#9986;</span> 2. Refine
-                        </button>
-                    </div>
-                    <div style="display:flex;gap:4px;">
-                        <button class="btn btn-outline" onclick="runPlanningStep('seed_planning')" style="flex:1;font-size:0.65rem;padding:6px 4px;">
-                            <span class="btn-icon">&#128167;</span> 3. Seeds
-                        </button>
-                        <button class="btn btn-outline" onclick="runPlanningStep('dose_calc')" style="flex:1;font-size:0.65rem;padding:6px 4px;">
-                            <span class="btn-icon">&#9889;</span> 4. Dose
-                        </button>
-                    </div>
-                    <div style="display:flex;gap:4px;">
-                        <button class="btn btn-outline" onclick="runPlanningStep('dose_eval')" style="flex:1;font-size:0.65rem;padding:6px 4px;">
-                            <span class="btn-icon">&#128202;</span> 5. Evaluate
-                        </button>
-                        <button class="btn btn-outline" onclick="showStepResults('all')" style="flex:1;font-size:0.65rem;padding:6px 4px;">
-                            <span class="btn-icon">&#128065;</span> Show All
+                        <button class="btn btn-outline" id="stepBtn_oar_segmentation" onclick="runSegmentationStep('oar_segmentation')" style="flex:1;font-size:0.65rem;padding:6px 4px;display:flex;align-items:center;justify-content:center;gap:4px;" disabled>
+                            <span class="step-num">0</span> OAR Seg
                         </button>
                     </div>
 
-                    <div class="form-section-title" style="font-size:0.65rem;margin-top:4px;">View Results</div>
-                    <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                        <button class="btn btn-outline" onclick="showStepResults('trajectories')" style="font-size:0.6rem;padding:4px 8px;">&#127919; Trajectories</button>
-                        <button class="btn btn-outline" onclick="showStepResults('seeds')" style="font-size:0.6rem;padding:4px 8px;">&#128167; Seeds</button>
-                        <button class="btn btn-outline" onclick="showStepResults('dose')" style="font-size:0.6rem;padding:4px 8px;">&#9889; Dose</button>
-                        <button class="btn btn-outline" onclick="showStepResults('dvh')" style="font-size:0.6rem;padding:4px 8px;">&#128202; DVH</button>
-                        <button class="btn btn-outline" onclick="showStepResults('metrics')" style="font-size:0.6rem;padding:4px 8px;">&#128200; Metrics</button>
+                    <!-- Row 2: trajectory init / refine -->
+                    <div style="display:flex;gap:4px;">
+                        <button class="btn btn-outline" id="stepBtn_trajectory_init" onclick="runPlanningStep('trajectory_init')" style="flex:1;font-size:0.65rem;padding:6px 4px;display:flex;align-items:center;justify-content:center;gap:4px;" disabled>
+                            <span class="step-num">1</span> Trajectories
+                        </button>
+                        <button class="btn btn-outline" id="stepBtn_trajectory_refine" onclick="runPlanningStep('trajectory_refine')" style="flex:1;font-size:0.65rem;padding:6px 4px;display:flex;align-items:center;justify-content:center;gap:4px;" disabled>
+                            <span class="step-num">2</span> Refine
+                        </button>
                     </div>
 
-                    <div class="form-section-title" style="font-size:0.65rem;margin-top:4px;">Export</div>
+                    <!-- Row 3: seed / dose -->
+                    <div style="display:flex;gap:4px;">
+                        <button class="btn btn-outline" id="stepBtn_seed_planning" onclick="runPlanningStep('seed_planning')" style="flex:1;font-size:0.65rem;padding:6px 4px;display:flex;align-items:center;justify-content:center;gap:4px;" disabled>
+                            <span class="step-num">3</span> Seeds
+                        </button>
+                        <button class="btn btn-outline" id="stepBtn_dose_calc" onclick="runPlanningStep('dose_calc')" style="flex:1;font-size:0.65rem;padding:6px 4px;display:flex;align-items:center;justify-content:center;gap:4px;" disabled>
+                            <span class="step-num">4</span> Dose
+                        </button>
+                    </div>
+
+                    <!-- Row 4: eval / show-all -->
+                    <div style="display:flex;gap:4px;">
+                        <button class="btn btn-outline" id="stepBtn_dose_eval" onclick="runPlanningStep('dose_eval')" style="flex:1;font-size:0.65rem;padding:6px 4px;display:flex;align-items:center;justify-content:center;gap:4px;" disabled>
+                            <span class="step-num">5</span> Evaluate
+                        </button>
+                        <button class="btn btn-outline" onclick="showStepResults('all')" style="flex:1;font-size:0.65rem;padding:6px 4px;display:flex;align-items:center;justify-content:center;gap:4px;">
+                            <span>&#128065;</span> Show All
+                        </button>
+                    </div>
+
+                    <!-- View Results sub-group -->
+                    <div class="form-section-title" style="font-size:0.65rem;margin-top:6px;">View Results</div>
                     <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                        <button class="btn btn-outline" onclick="exportDicomRT()" style="font-size:0.6rem;padding:4px 8px;">&#128190; DICOM-RT</button>
-                        <button class="btn btn-outline" onclick="exportSTL()" style="font-size:0.6rem;padding:4px 8px;">&#128190; STL</button>
-                        <button class="btn btn-outline" onclick="exportReport()" style="font-size:0.6rem;padding:4px 8px;">&#128196; Report</button>
+                        <button class="btn btn-outline" onclick="showStepResults('trajectories')" style="font-size:0.6rem;padding:4px 8px;">Trajectories</button>
+                        <button class="btn btn-outline" onclick="showStepResults('seeds')" style="font-size:0.6rem;padding:4px 8px;">Seeds</button>
+                        <button class="btn btn-outline" onclick="showStepResults('dose')" style="font-size:0.6rem;padding:4px 8px;">Dose</button>
+                        <button class="btn btn-outline" onclick="showStepResults('dvh')" style="font-size:0.6rem;padding:4px 8px;">DVH</button>
+                        <button class="btn btn-outline" onclick="showStepResults('metrics')" style="font-size:0.6rem;padding:4px 8px;">Metrics</button>
+                    </div>
+
+                    <!-- Export sub-group -->
+                    <div class="form-section-title" style="font-size:0.65rem;margin-top:6px;">Export</div>
+                    <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                        <button class="btn btn-outline" onclick="exportDicomRT()" style="font-size:0.6rem;padding:4px 8px;">DICOM-RT</button>
+                        <button class="btn btn-outline" onclick="exportSTL()" style="font-size:0.6rem;padding:4px 8px;">STL</button>
+                        <button class="btn btn-outline" onclick="exportReport()" style="font-size:0.6rem;padding:4px 8px;">Report</button>
                     </div>
                 </div>
             </div>
@@ -4995,21 +5169,53 @@ let sessions = {};
 let activeSessionId = null;
 
 function loadSessions() {
-    // EPHEMERAL START: do NOT auto-load previously-saved sessions on
-    // page load. The user complained: "刷新浏览器后，我已经看到上次
-    // 对话还在最左边的session里" — fresh page = empty state. Old
-    // sessions are still in localStorage (so the user can browse them
-    // via the session sidebar) but the chat area shows the welcome
-    // message, NOT a stale conversation. A "New chat" session is
-    // created lazily when the user actually sends their first message
-    // (see ensurePendingSession() called from sendChat()).
+    // PERSISTENT + AUTO-NEW (2026-06-15): the user wants two
+    // apparently-opposite things:
+    //   (a) fresh page load should NOT show stale conversations
+    //       from a previous browser session
+    //   (b) sessions must NOT be wiped on refresh — only manual
+    //       delete should remove them
+    // The fix: always restore previous sessions from localStorage
+    // (so refresh preserves them), and if no session is currently
+    // active, create ONE new "New chat" session as the default
+    // landing target. The chat area then shows the welcome message
+    // (because the new session is empty), but the user can click
+    // any prior session in the sidebar to switch back.
     try {
         const data = localStorage.getItem(SESSIONS_KEY);
         sessions = data ? JSON.parse(data) : {};
     } catch {
         sessions = {};
     }
-    activeSessionId = null;  // No active session on fresh page
+    // Try to restore the previously-active session id. If it still
+    // exists, keep it active (so refresh preserves the chat the
+    // user was looking at). If it no longer exists (e.g. user
+    // cleared data on another tab), create a fresh "New chat".
+    let savedActive = null;
+    try { savedActive = localStorage.getItem(ACTIVE_KEY); } catch (_) {}
+    if (savedActive && sessions[savedActive]) {
+        activeSessionId = savedActive;
+    } else {
+        // No active session — reuse an existing empty "New chat" if
+        // one exists, otherwise create a fresh one. This prevents
+        // accumulating empty sessions on every page refresh.
+        const existingNew = Object.values(sessions).find(
+            s => s.title === 'New chat' && (!s.messages || s.messages.length === 0)
+        );
+        if (existingNew) {
+            activeSessionId = existingNew.id;
+        } else {
+            const id = generateSessionId();
+            sessions[id] = {
+                id,
+                title: 'New chat',
+                messages: [],
+                created: Date.now(),
+            };
+            activeSessionId = id;
+        }
+        saveSessions();
+    }
 }
 
 // Called by sendChat() right before sending the user's first
@@ -5206,7 +5412,41 @@ function loadSessionChat(id) {
     if (session.messages.length === 0) {
         container.innerHTML = '<div class="chat-msg system">Welcome to BrachyBot. Describe your brachytherapy case — tumor location, type, patient condition — and I will help you generate an optimal treatment plan. You can also load CT data directly via the Input panel on the right.</div>';
     } else {
-        session.messages.forEach(msg => {
+        // DEDUP ON RENDER (2026-06-15): the user had a bug where on
+        // page refresh, the same chat message was rendered 2-4
+        // times. Root cause: sendChat retried on network error
+        // (the catch block in sendChat calls addChat('error', ...))
+        // and each retry also called saveSessionMessage, producing
+        // an array like [user, error, user, error, ...]. On refresh
+        // the array was replayed verbatim.
+        //
+        // Two-pass dedup:
+        //   1. Drop "Send failed" error messages entirely — they
+        //      are transient network noise, not part of the
+        //      conversation the user wants to see on refresh.
+        //   2. For all OTHER (type, content) pairs, keep only the
+        //      FIRST occurrence in the array. Subsequent identical
+        //      messages (even non-adjacent) are dropped. This
+        //      handles the case where the user retried with the
+        //      same text multiple times and the array accumulated
+        //      duplicates at non-adjacent positions.
+        const msgs = session.messages;
+        const seen = new Set();
+        const deduped = [];
+        for (let i = 0; i < msgs.length; i++) {
+            const m = msgs[i];
+            // Skip transient error messages — they're for live
+            // debugging, not for the persistent transcript.
+            if (m.type === 'error' && typeof m.content === 'string'
+                && /^Send failed/i.test(m.content)) {
+                continue;
+            }
+            const key = m.type + '||' + m.content;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            deduped.push(m);
+        }
+        deduped.forEach(msg => {
             if (msg.type === 'thinking') {
                 renderThinkingChain(msg.steps);
             } else {
@@ -5222,6 +5462,20 @@ function loadSessionChat(id) {
 function saveSessionMessage(type, content, steps) {
     const session = sessions[activeSessionId];
     if (!session) return;
+    // DEDUP ON SAVE (2026-06-15): if the most recent message has
+    // the same type+content, skip the new one. This prevents the
+    // page-refresh bug where a network error or double-Enter sent
+    // the user's message multiple times in a row, all of which
+    // got persisted to localStorage and re-rendered on every
+    // refresh. The user saw 2-4 copies of the same message stacked
+    // in the chat. With this dedup, only the FIRST save wins and
+    // subsequent duplicates are silently dropped. (The visual UI
+    // is still updated by the caller's separate addChat call —
+    // this only affects persistence.)
+    const _last = session.messages[session.messages.length - 1];
+    if (_last && _last.type === type && _last.content === content) {
+        return;
+    }
     session.messages.push({ type, content, steps: steps || null });
     if (session.messages.length === 1 && type === 'user') {
         session.title = content.slice(0, 40) + (content.length > 40 ? '...' : '');
@@ -5419,7 +5673,15 @@ function addChat(type, content, scroll) {
         const c = (content == null ? '' : content).toString();
         // Accept legacy aliases: 'bot-response' → 'bot' for visual treatment,
         // 'thinking' → 'bot' (the thinking chain uses its own renderer).
+        // CRITICAL (2026-06-15): if we don't remap 'bot-response' to 'bot',
+        // the message falls through to 'system' which has
+        // text-align: center / align-self: center — so on session restore,
+        // old saved messages render CENTERED (the user's "排版乱掉居中"
+        // bug). The remap below fixes that.
         let safeType = ['user', 'bot', 'system', 'error'].includes(t) ? t : 'system';
+        if (safeType === 'system' && (t === 'bot-response' || t === 'bot' || t === 'thinking')) {
+            safeType = 'bot';
+        }
         if (safeType === 'thinking') safeType = 'bot';
 
         if (safeType === 'user' || safeType === 'bot') {
@@ -5569,6 +5831,12 @@ function renderMarkdown(text) {
                 };
                 const _hr = R.hr.bind(R);
                 R.hr = function() { return '<hr class="md-hr">'; };
+                // Links open in new tab with security attrs
+                const _link = R.link.bind(R);
+                R.link = function(href, title, text) {
+                    const html = _link(href, title, text);
+                    return html.replace(/^<a /, '<a target="_blank" rel="noopener noreferrer" ');
+                };
                 marked.setOptions({ renderer: R, gfm: true, breaks: false });
                 renderMarkdown._renderer_installed = true;
             }
@@ -5741,13 +6009,18 @@ function appendStepToChain(stepsDiv, step, idx) {
     const resultHtml = step.result ? '<div class="step-result">&#8594; ' + escHtml(step.result) + '</div>' : '';
     const contentHtml = step.content ? '<div class="step-content">' + escHtml(step.content) + '</div>' : '';
 
+    // Don't add .expanded to new steps if the chain is already
+    // finalized — the user has the final response and shouldn't
+    // see the chain re-expand with late-arriving steps.
+    const chainFinalized = stepsDiv.closest('[data-finalized]');
+    const bodyExpanded = chainFinalized ? '' : ' expanded';
     const bodyHtml =
         '<div class="step-header" onclick="toggleStep(\'step_body_' + idx + '\')">' +
             '<span class="step-icon ' + escHtml(step.type || '') + '">' + icon + '</span>' +
             '<span class="step-title">' + escHtml(step.title || '') + '</span>' +
             '<span class="step-status ' + escHtml(step.status || '') + '">' + escHtml(step.status || '') + '</span>' +
         '</div>' +
-        '<div class="step-body expanded" id="step_body_' + idx + '">' +
+        '<div class="step-body' + bodyExpanded + '" id="step_body_' + idx + '">' +
             toolName + params + contentHtml + resultHtml +
         '</div>';
 
@@ -5774,6 +6047,11 @@ function updateChainHeader(headerEl, steps) {
 
 function finalizeThinkingChain(chainEl, headerEl, steps) {
     if (!chainEl) return;
+    // Mark as finalized so late SSE events (text_chunk, step) cannot
+    // re-expand the chain. Without this flag, the text_chunk handler
+    // adds .expanded back and the user sees the tool history covering
+    // the final response.
+    chainEl.dataset.finalized = '1';
     chainEl.removeAttribute('id');
     const labelEl = headerEl && headerEl.querySelector('.thinking-label');
     if (labelEl) labelEl.textContent = 'Execution Trace';
@@ -5906,6 +6184,10 @@ function showToolProgress(toolName, params) {
     const container = document.getElementById('chatMessages');
     if (!container) return null;
 
+    // Track progress elements so we can hide them when the turn ends.
+    if (!window._toolProgressEls) window._toolProgressEls = [];
+
+
     const row = document.createElement('div');
     row.className = 'chat-row bot';
 
@@ -5943,6 +6225,8 @@ function showToolProgress(toolName, params) {
     row.appendChild(wrapper);
     container.appendChild(row);
     scrollToBottom();
+    // Track for cleanup at end of turn
+    window._toolProgressEls.push(row);
     return div;
 }
 
@@ -6012,11 +6296,19 @@ const _TODO_I18N = {
             oar_segmentation: 'OAR 危及器官分割',
             trajectory_planning: '轨迹初始化 / 细化',
             planning_pipeline: '粒子植入规划（5 步流水线）',
+            // Sub-steps emitted by planning_pipeline step:full.
+            // The tool calls back into the agent for each of these
+            // and the agent translates to SSE step events so the
+            // todo list ticks through 5 items, not just one black
+            // box. Without these entries, the labels would fall
+            // through to "调用 trajectory_init" which is awkward.
+            trajectory_init: '轨迹初始化',
+            trajectory_refine: '轨迹细化',
             seed_planning: '种子位置优化',
             dose_engine: '剂量计算',
-            dose_evaluation: '剂量学评估',
             dose_calc: '剂量计算',
             dose_eval: '剂量学评估',
+            dose_evaluation: '剂量学评估',
             seed_segmentation: '种子区域分割',
             seed_placement: '种子放置',
             report_generator: '报告生成',
@@ -6052,6 +6344,9 @@ const _TODO_I18N = {
             oar_segmentation: 'OAR segmentation',
             trajectory_planning: 'Trajectory init / refine',
             planning_pipeline: 'Brachytherapy planning (5-stage pipeline)',
+            // Sub-steps emitted by planning_pipeline step:full.
+            trajectory_init: 'Trajectory initialization',
+            trajectory_refine: 'Trajectory refinement',
             seed_planning: 'Seed position optimization',
             dose_engine: 'Dose calculation',
             dose_evaluation: 'Dose evaluation',
@@ -6165,11 +6460,18 @@ function _todoCreate() {
             return item;
         },
         markActive(item) {
+            // Never reactivate a completed or errored step — the LLM
+            // may emit events out of order (e.g. re-emit an old step
+            // as 'pending' while a newer step is already done).
+            if (item.status === 'done' || item.status === 'error') return;
             // demote previous active, promote this one
             for (const it of api.items) {
                 if (it.status === 'active') {
                     it.status = 'pending';  // will be moved to done by the next done event
                     it.node.classList.remove('active');
+                    // Stop the old item's timer — otherwise it keeps
+                    // ticking and the user sees "341.7s" on a done step.
+                    if (it._timer) { clearInterval(it._timer); it._timer = null; }
                 }
             }
             item.status = 'active';
@@ -6504,6 +6806,8 @@ async function sendChat(prefill) {
             return;
         }
         window._chatStreaming = true;
+        window._toolProgressEls = [];
+        window._chatFallbackUsed = false;
 
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
@@ -6576,8 +6880,26 @@ async function sendChat(prefill) {
                         if (typeof _todoCreate === 'function') {
                             if (!todo && chainEl && data.type === 'tool' && data.tool) {
                                 todo = _todoCreate();
-                                const wrapper = chainEl.parentElement;
-                                if (wrapper) wrapper.appendChild(todo.root);
+                                // BOTTOM-OF-CHAT (2026-06-15): the user
+                                // complained the todo list was "in the
+                                // side" of a chat message. Move it to a
+                                // fixed/sticky panel at the bottom of
+                                // the chat column, just above the input
+                                // area. This is a single global
+                                // workflow indicator, not a per-message
+                                // widget. The DOM target is
+                                // #chatTodoDock (defined in HTML next to
+                                // #chatInput).
+                                const dock = document.getElementById('chatTodoDock');
+                                if (dock) {
+                                    dock.appendChild(todo.root);
+                                    dock.style.display = '';
+                                } else {
+                                    // Fallback: append to the message
+                                    // wrapper (old behavior).
+                                    const wrapper = chainEl.parentElement;
+                                    if (wrapper) wrapper.appendChild(todo.root);
+                                }
                                 // Pre-populate with the predicted workflow
                                 // (ctv → oar → planning → eval → report)
                                 // so the user can see "what's coming"
@@ -6611,20 +6933,22 @@ async function sendChat(prefill) {
                                     }
                                 }
                             }
-                            // RESET ON RETRY: when a NEW assistant step
-                            // starts (pending), the previous response text
-                            // and bubble are wiped. This is what fires when
-                            // the LLM is retrying after a Quality Review
-                            // rejection — without it, the retry's text
-                            // chunks get APPENDED to the original response
-                            // and the user sees the same answer twice in a
-                            // row, which they read as "the response stopped
-                            // mid-sentence".
-                            if (data.type === 'assistant' && data.status === 'pending' && responseEl) {
-                                window._lastResponseText = responseText;
-                                responseText = '';
-                                try { responseEl.remove(); } catch (_) {}
-                                responseEl = null;
+                            // MARK FOR RETRY: just record that a
+                            // Quality Review reject happened. We do NOT
+                            // wipe the response bubble here — wiping
+                            // eagerly is risky because if the LLM retry
+                            // produces no text, the user loses the
+                            // first response. Instead, the actual wipe
+                            // happens LAZILY in the text_chunk handler:
+                            // when the FIRST text_chunk arrives after
+                            // the retry marker, we know the LLM is
+                            // actually regenerating text, and we wipe
+                            // the previous response at that point.
+                            if (data.type === 'review' && data.status === 'warning') {
+                                window._pendingReviewRetry = true;
+                            }
+                            if (data.type === 'thinking' && data.title === 'Review Feedback') {
+                                window._pendingReviewRetry = true;
                             }
                         }
                         // Show tool progress (pending / done)
@@ -6686,6 +7010,34 @@ async function sendChat(prefill) {
                         scrollToBottom();
                     } else if (currentEvent === 'text_chunk' && data && data.text) {
                         responseText += data.text;
+                        // LAZY WIPE ON REVIEW RETRY (2026-06-15):
+                        // if a Quality Review reject already fired
+                        // (window._pendingReviewRetry is true) and the
+                        // LLM is now sending text_chunks for the
+                        // retry, the user will see the retry's text
+                        // APPENDED to the original response unless
+                        // we wipe first. Wipe the previous response
+                        // (text + bubble + entire chat-row including
+                        // the wrapper/avatar) on the FIRST text_chunk
+                        // of the retry, then start fresh.
+                        //
+                        // We do this LAZILY (not eagerly on the
+                        // review-warning event) so that if the retry
+                        // produces NO text at all, the user still
+                        // sees the original response.
+                        if (window._pendingReviewRetry && responseEl) {
+                            window._pendingReviewRetry = false;
+                            window._lastResponseText = responseText;
+                            responseText = '';
+                            try {
+                                const _row = responseEl.closest('.chat-row');
+                                if (_row) _row.remove();
+                                else responseEl.remove();
+                            } catch (_) {
+                                try { responseEl.remove(); } catch (__) {}
+                            }
+                            responseEl = null;
+                        }
                         if (!responseEl) {
                             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
                             if (!chainEl && typeof createLiveThinkingChain === 'function') {
@@ -6757,11 +7109,34 @@ async function sendChat(prefill) {
             try { saveSessionMessage('thinking', '', steps); } catch (_) {}
         }
 
-        // Finalize response element (markdown render) or fall back to a static bubble
+        // SAFETY: fold the todo when the stream ends, even if the
+        // server never sent the final 'assistant' event (e.g.
+        // network drop, timeout, crash). Without this, the todo
+        // stays unfolded with timers running forever.
+        if (todo && typeof todo.fold === 'function') {
+            try { todo.fold(); } catch (_) {}
+        }
+
+        // Hide standalone tool progress messages ("ctv_segmentation
+        // completed", "planning_pipeline completed", etc.) — they're
+        // redundant with the Execution Trace and clutter the final
+        // response area. The thinking chain already shows all steps.
+        if (window._toolProgressEls && window._toolProgressEls.length) {
+            window._toolProgressEls.forEach(el => {
+                try { el.style.display = 'none'; } catch (_) {}
+            });
+            window._toolProgressEls = [];
+        }
+
+        // Finalize response element (markdown render) or fall back to a static bubble.
+        // Guard against duplicates: if responseEl exists, finalize it; only create
+        // a new bubble if there's NO response element AND no prior addChat fallback
+        // was used during streaming.
         const finalText = responseText || '(no reply)';
         if (responseEl && typeof finalizeStreamingResponse === 'function') {
             finalizeStreamingResponse(responseEl, finalText);
-        } else if (!responseEl) {
+        } else if (!responseEl && !window._chatFallbackUsed) {
+            window._chatFallbackUsed = true;
             if (typeof addChat === 'function') addChat('bot-response', finalText);
         }
 
@@ -7341,6 +7716,18 @@ async function init() {
     dataTreeState.planning.meshes = [];
     dataTreeState.seeds.loaded = false;
     dataTreeState.needles.loaded = false;
+    // Clear CTV/OAR state — on refresh, no images are loaded in
+    // the frontend even if the server has them in memory. The data
+    // tree should start clean until the user loads data again.
+    dataTreeState.ctv.loaded = false;
+    dataTreeState.ctv.visible = true;
+    dataTreeState.oar.loaded = false;
+    dataTreeState.oar.visible = true;
+    dataTreeState.organs = [];
+    state.ctLoaded = false;
+    state.doseOverlay = null;
+    volumeData = null;
+    volumeShape = null;
     // Clear 3D meshes
     if (scene3D && scene3D.meshes) {
         Object.keys(scene3D.meshes).forEach(id => {
@@ -7354,6 +7741,21 @@ async function init() {
     // Clear dose overlay
     state.doseOverlay = null;
     Object.keys(_doseContourCache).forEach(key => delete _doseContourCache[key]);
+    // Clear 2D viewer canvases and dose overlay canvases
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            canvas.style.display = 'none';
+        }
+        const doseCanvas = document.getElementById('doseOverlayCanvas' + capitalize(axis));
+        if (doseCanvas) { doseCanvas.remove(); }
+        const contourCanvas = document.getElementById('contourCanvas' + capitalize(axis));
+        if (contourCanvas) { contourCanvas.remove(); }
+    });
+    // Show "No CT data" placeholders
+    document.querySelectorAll('.viewer-no-data').forEach(el => { el.style.display = ''; });
     // Update UI
     updateSeeds([]);
     updateMetrics({});
@@ -7403,6 +7805,23 @@ async function init() {
     // Apply default viewer layout (vertical = 4 rows in 1 column)
     setViewerLayout(state.viewerSettings.layout || 'vertical');
 
+    // Restore chat sessions + ensure there's an active one. This
+    // was previously declared but never CALLED — the user saw an
+    // empty session list on every page load and refresh wiped
+    // nothing because there was nothing to wipe. Now we run
+    // loadSessions() which restores prior sessions from
+    // localStorage AND creates a default "New chat" if no
+    // active session exists. The chat area then renders the
+    // active session's messages (empty welcome for the new
+    // "New chat" default).
+    try {
+        if (typeof loadSessions === 'function') loadSessions();
+        if (typeof renderSessionList === 'function') renderSessionList();
+        if (typeof loadSessionChat === 'function' && activeSessionId) {
+            loadSessionChat(activeSessionId);
+        }
+    } catch (e) { console.warn('Session init failed:', e); }
+
     // Install the drag-resize splitters. These were previously defined
     // but never called — the user reported that the chat/right-panel
     // divider and the session-sidebar resize handle had become
@@ -7412,6 +7831,14 @@ async function init() {
     try { setupSplitter(); } catch (e) { console.warn('setupSplitter failed:', e); }
     try { setupSidebarResize(); } catch (e) { console.warn('setupSidebarResize failed:', e); }
     try { setupChatAreaResize(); } catch (e) { console.warn('setupChatAreaResize failed:', e); }
+    try { setupMetricsResize(); } catch (e) { console.warn('setupMetricsResize failed:', e); }
+
+    // Wire the manual Step-by-Step section (2026-06-15): the buttons
+    // re-evaluate their enable/disable state when the CT path input
+    // changes, and once on init so the section reflects the current
+    // pipeline state. Also runs after a short delay to catch the
+    // case where the CT is auto-loaded from server status.
+    try { _wireManualStepInputs(); } catch (e) { console.warn('wireManualStepInputs failed:', e); }
 
     // Cache-bust diagnostic: a long history of splitter/cursor fixes
     // failed silently because the user's browser was serving a cached
@@ -7685,29 +8112,33 @@ function setupSplitter() {
     // different element. We still need pointerdown on the
     // splitter to detect WHEN the drag starts; everything else
     // is on document.
-    splitter.addEventListener('pointerdown', (e) => {
+    // Use BOTH pointer and mouse events for maximum compatibility.
+    // Some browsers/configurations don't fire pointermove reliably
+    // when setPointerCapture fails (e.g. cross-origin iframes,
+    // certain Linux WMs). mousedown/mousemove always works for mouse.
+    const _startDrag = (e) => {
         if (e.button !== 0) return;  // left click only
         dragging = true;
-        activePointerId = e.pointerId;
+        activePointerId = e.pointerId || null;
         lastWidth = rightPanel.offsetWidth;
         document.body.classList.add('v-dragging');
         splitter.classList.add('dragging');
-        // Best-effort capture; harmless if it fails since
-        // document-level handlers will catch the move anyway.
-        try { splitter.setPointerCapture(e.pointerId); } catch (_) {}
+        try { if (e.pointerId !== undefined) splitter.setPointerCapture(e.pointerId); } catch (_) {}
         e.preventDefault();
         e.stopPropagation();
-    });
+    };
+    splitter.addEventListener('pointerdown', _startDrag);
+    splitter.addEventListener('mousedown', _startDrag);
     const _onPointerMove = (e) => {
         if (!dragging) return;
         // If we know which pointer started the drag, ignore
         // other pointers' moves (e.g. touch + pen simultaneously).
-        if (activePointerId !== null && e.pointerId !== activePointerId) return;
+        if (activePointerId !== null && e.pointerId !== undefined && e.pointerId !== activePointerId) return;
         const container = document.querySelector('.app-body');
         if (!container) return;
         const containerRect = container.getBoundingClientRect();
         const newWidth = containerRect.right - e.clientX;
-        if (newWidth >= 300 && newWidth <= containerRect.width - 200) {
+        if (newWidth >= 50 && newWidth <= containerRect.width - 100) {
             rightPanel.style.width = newWidth + 'px';
             // Force flex recalculation on viewers-panel so the 2D
             // canvases re-measure against the new panel width.
@@ -7724,6 +8155,7 @@ function setupSplitter() {
         }
     };
     document.addEventListener('pointermove', _onPointerMove);
+    document.addEventListener('mousemove', _onPointerMove);
     const _endDrag = (e) => {
         if (!dragging) return;
         if (activePointerId !== null && e && e.pointerId !== undefined && e.pointerId !== activePointerId) return;
@@ -7741,13 +8173,14 @@ function setupSplitter() {
     splitter.addEventListener('pointercancel', _endDrag);
     document.addEventListener('pointerup', _endDrag);
     document.addEventListener('pointercancel', _endDrag);
+    document.addEventListener('mouseup', _endDrag);
 
     // Restore previously-saved right-panel width on page load
     try {
         const saved = localStorage.getItem('layout.right.width');
         if (saved) {
             const w = parseInt(saved, 10);
-            if (w >= 300 && w <= 4000) rightPanel.style.width = w + 'px';
+            if (w >= 50 && w <= 4000) rightPanel.style.width = w + 'px';
         }
     } catch (_) {}
 }
@@ -8569,6 +9002,46 @@ function renderSliceFromVolume(axis, sliceIndex) {
     }
     ctx.putImageData(imageData, 0, 0);
 
+    // Dose overlay: use a SEPARATE canvas layer so the old dose
+    // stays visible while the new dose is being fetched. Without
+    // this, putImageData clears the old dose and the user sees
+    // a flash of CT-only before the new dose arrives.
+    if (state.doseOverlay && state.doseOverlay.visible) {
+        const doseCanvasId = 'doseOverlayCanvas' + capitalize(axis);
+        let doseCanvas = document.getElementById(doseCanvasId);
+        if (!doseCanvas) {
+            doseCanvas = document.createElement('canvas');
+            doseCanvas.id = doseCanvasId;
+            doseCanvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;';
+            canvas.parentElement.appendChild(doseCanvas);
+        }
+        // Sync dose canvas size and position with CT canvas
+        doseCanvas.width = width;
+        doseCanvas.height = height;
+        doseCanvas.style.width = canvas.style.width;
+        doseCanvas.style.height = canvas.style.height;
+        doseCanvas.style.left = canvas.style.left;
+        doseCanvas.style.top = canvas.style.top;
+
+        const cacheKey = axis + '_' + sliceIndex;
+        if (state.doseOverlay.slices[cacheKey]) {
+            // Cached: draw immediately in same frame
+            try { renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, state.doseOverlay.slices[cacheKey]); } catch (_) {}
+        } else {
+            // Not cached: fire async fetch. Old dose stays visible
+            // on the separate canvas until new data arrives.
+            fetchDoseOverlaySlice(axis, sliceIndex).then(sliceData => {
+                if (sliceData) {
+                    // Only draw if the user is still on this slice
+                    if (state.slices[axis] === sliceIndex) {
+                        renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData);
+                    }
+                }
+            });
+            preloadDoseSlices(axis, sliceIndex);
+        }
+    }
+
     const containerRect = container.getBoundingClientRect();
     const containerW = containerRect.width || 400;  // Fallback if container not visible
     const containerH = containerRect.height || 300;
@@ -8874,28 +9347,10 @@ function updateSlice(view, val) {
         loadSlice(view, sliceIndex);
     }
 
-    // Dose overlay: paint in the SAME synchronous frame as the CT
-    // whenever possible to avoid the "CT flashes, then dose fills in"
-    // visible gap when the user scrubs the slice slider. If the dose
-    // slice is already cached (state.doseOverlay.slices[cacheKey])
-    // we paint it NOW; otherwise we fire the async fetch and paint
-    // when it lands. Either way, the contour lines are also
-    // triggered.
+    // Dose overlay is now rendered inside renderSliceFromVolume via
+    // a separate canvas layer (no flicker). Only trigger contour
+    // lines here.
     if (state.doseOverlay && state.doseOverlay.visible) {
-        const cacheKey = view + '_' + sliceIndex;
-        if (state.doseOverlay.slices[cacheKey]) {
-            // Already fetched — paint synchronously in this frame so
-            // CT + dose land together. No visible "flash of CT-only".
-            try { renderDoseOverlay(view, sliceIndex, state.doseOverlay.slices[cacheKey]); } catch (e) {}
-        } else {
-            // Cold cache: fire async fetch. The renderDoseOverlay call
-            // inside the .then() does a `state.slices[axis] === sliceIndex`
-            // check so a stale response won't paint over a newer slice.
-            fetchDoseOverlaySlice(view, sliceIndex).then(sliceData => {
-                if (sliceData) renderDoseOverlay(view, sliceIndex, sliceData);
-            });
-        }
-        // Also render dose contour lines
         triggerDoseContourRender(view, sliceIndex);
     }
 }
@@ -9166,7 +9621,8 @@ function renderDataTree() {
 
     // Check what data is loaded
     dataTreeState.ct.loaded = state.ctLoaded;
-    dataTreeState.ctv.loaded = !!state.ctLoaded;
+    // CTV loaded = CT loaded AND CTV segmentation data exists
+    dataTreeState.ctv.loaded = !!state.ctLoaded && !!ctvLabelData && ctvLabelData.length > 0;
     dataTreeState.oar.loaded = dataTreeState.organs.length > 0;
     dataTreeState.dose.loaded = !!(state.metrics && state.metrics.v100 !== undefined);
     dataTreeState.seeds.loaded = !!(state.seeds && state.seeds.length > 0);
@@ -9483,8 +9939,11 @@ function renderDataTree() {
             </div>
             <div class="tree-group-items">`;
         doseLevels.forEach(level => {
-            const levelState = { visible: level.visible, opacity: level.opacity, color: level.color, loaded: true, label: `Dose ×${level.threshold}` };
-            const pctLabel = level.pctLabel || `${level.threshold.toFixed(1)}`;
+            // Show absolute Gy instead of multiplier (e.g. "120 Gy" not "1x")
+            const rxGy = (window.reportForm?.planning?.prescriptionGy) || 120;
+            const absGy = (level.threshold * rxGy).toFixed(0);
+            const levelState = { visible: level.visible, opacity: level.opacity, color: level.color, loaded: true, label: `${absGy} Gy` };
+            const pctLabel = level.pctLabel || `${absGy} Gy`;
             html += renderTreeItem(`dose_iso_${level.threshold}`, levelState, pctLabel);
         });
         html += `</div></div>`;
@@ -10645,23 +11104,26 @@ function setupHorizontalResize() {
         if (handle._resizeListener) return;
         handle._resizeListener = true;
         handle.addEventListener('mousedown', e => {
-            const viewerCard = handle.parentElement;
-            if (!viewerCard || !viewerCard.classList.contains('viewer-card')) return;
-            // Find siblings in same row
+            e.preventDefault();
+            e.stopPropagation();
+            // The resize handle is INSIDE the viewer-card (not a sibling).
+            // Use closest() to find the parent viewer-card.
+            const viewerCard = handle.closest('.viewer-card');
+            if (!viewerCard) return;
+            // Find all viewer-cards in the same parent (panel)
             const parent = viewerCard.parentElement;
             const allCards = Array.from(parent.querySelectorAll(':scope > .viewer-card'));
             _resize.active = true;
             _resize.type = 'height';
             _resize.card = viewerCard;
             _resize.cards = allCards;
-            _resize.parent = parent;  // Also resize parent container
+            _resize.parent = parent;
             _resize.startPos = e.clientY;
             _resize.startSizes = allCards.map(c => c.offsetHeight);
             _resize.startParentH = parent.offsetHeight;
             _resize.handle = handle;
             document.body.style.cursor = 'row-resize';
             document.body.style.userSelect = 'none';
-            e.preventDefault();
         });
     });
 }
@@ -10681,15 +11143,20 @@ document.addEventListener('mousemove', e => {
     } else {
         // Height: all cards in row get same new height
         const delta = e.clientY - _resize.startPos;
-        const newH = Math.max(150, _resize.startSizes[0] + delta);
+        const newH = Math.max(100, _resize.startSizes[0] + delta);
+        const newHPx = newH + 'px';
         if (_resize.parent && _resize.parent.classList.contains('viewers-row')) {
             // Cards in a row — resize the ROW, not individual cards
-            _resize.parent.style.setProperty('--resize-h', newH + 'px');
+            _resize.parent.style.setProperty('--resize-h', newHPx);
             _resize.parent.classList.add('viewer-resized');
         } else {
-            // 3D card (direct child of panel) — resize the card directly
+            // Vertical layout — resize each card directly.
+            // Set BOTH the CSS variable AND inline flex/height to
+            // guarantee the override regardless of CSS specificity.
             _resize.cards.forEach(card => {
-                card.style.setProperty('--resize-h', newH + 'px');
+                card.style.setProperty('--resize-h', newHPx);
+                card.style.flex = '0 0 ' + newHPx;
+                card.style.height = newHPx;
                 card.classList.add('viewer-resized');
             });
         }
@@ -12202,21 +12669,18 @@ function _petRainbow2(val) {
     } else if (v < 0.65) {
         // 300–390 Gy: cyan → green
         r = 0; g = 255; b = Math.floor((1 - (v - 0.50) / 0.15) * 255);
-    } else if (v < 0.78) {
-        // 390–468 Gy: green → yellow
-        r = Math.floor((v - 0.65) / 0.13 * 255); g = 255; b = 0;
-    } else if (v < 0.92) {
-        // 468–552 Gy: yellow → orange (still NOT red — pushed out from 0.85 → 0.92)
-        // Mostly red channel, small amount of green, no blue → orange/amber
+    } else if (v < 0.833) {
+        // 390–500 Gy: green → yellow
+        r = Math.floor((v - 0.65) / 0.183 * 255); g = 255; b = 0;
+    } else if (v < 0.95) {
+        // 500–570 Gy: yellow → orange (NOT red yet)
         r = 255;
-        g = Math.floor((1 - (v - 0.78) / 0.14) * 180); // green fades 180 → 0
+        g = Math.floor((1 - (v - 0.833) / 0.117) * 200); // green fades 200 → 0
         b = 0;
     } else {
-        // 552–600 Gy: orange → pure red. This is the ONLY red region
-        // (~8% of the colorbar). User specifically requested red start
-        // at 550 Gy+ to keep the dose map visually informative.
+        // 570–600 Gy: orange → pure red. Ultra-narrow red band (~5%).
         r = 255;
-        g = Math.floor((1 - (v - 0.92) / 0.08) * 80); // green fades 80 → 0
+        g = Math.floor((1 - (v - 0.95) / 0.05) * 80); // green fades 80 → 0
         b = 0;
     }
     return [r, g, b];
@@ -12288,6 +12752,11 @@ async function loadDoseOverlay() {
             visible: true,
             opacity: 0.5,
             slices: {},  // Cache: {axis_index: sliceData}
+            maxSlice: {
+                axial: (data.dose_shape?.[0] || 200) - 1,
+                sagittal: (data.dose_shape?.[1] || 200) - 1,
+                coronal: (data.dose_shape?.[2] || 200) - 1,
+            },
         };
 
         renderDataTree();
@@ -12343,6 +12812,24 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
     } catch (e) {
         return null;
     }
+}
+
+// Preload adjacent dose slices so scrubbing doesn't flicker.
+// Fires-and-forgets ±PRELOAD_RANGE slices around the current position.
+let _dosePreloadTimer = null;
+function preloadDoseSlices(axis, centerSlice) {
+    if (!state.doseOverlay || !state.doseOverlay.visible) return;
+    if (_dosePreloadTimer) clearTimeout(_dosePreloadTimer);
+    _dosePreloadTimer = setTimeout(() => {
+        const PRELOAD_RANGE = 10;
+        const maxSlice = state.doseOverlay.maxSlice?.[axis] || 200;
+        for (let d = 1; d <= PRELOAD_RANGE; d++) {
+            const fwd = centerSlice + d;
+            const bwd = centerSlice - d;
+            if (fwd <= maxSlice) fetchDoseOverlaySlice(axis, fwd).catch(() => {});
+            if (bwd >= 0) fetchDoseOverlaySlice(axis, bwd).catch(() => {});
+        }
+    }, 30); // debounce: don't fire on every pixel of scrub
 }
 
 // Render dose overlay on a canvas for the current slice
@@ -12429,6 +12916,52 @@ function renderDoseOverlayOnCanvas(canvas, sliceIndex, axis) {
 }
 
 // Render dose overlay on top of CT slice canvas
+// Render dose overlay onto a SEPARATE canvas layer (not the CT canvas).
+// This prevents the CT's putImageData from clearing the old dose.
+function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
+    if (!state.doseOverlay || !state.doseOverlay.visible || !sliceData) return;
+    if (state.slices[axis] !== undefined && state.slices[axis] !== sliceIndex) return;
+
+    const ctx = doseCanvas.getContext('2d');
+    const w = doseCanvas.width;
+    const h = doseCanvas.height;
+    const rows = sliceData.length;
+    const cols = sliceData[0]?.length || 0;
+    if (rows === 0 || cols === 0) return;
+
+    const opacity = state.doseOverlay.opacity;
+    const dMinGy = COLORBAR_MIN_GY;
+    const dMaxGy = COLORBAR_MAX_GY;
+
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = w;
+    tmpCanvas.height = h;
+    const tmpCtx = tmpCanvas.getContext('2d');
+    const imageData = tmpCtx.createImageData(w, h);
+    const scaleX = w / cols;
+    const scaleY = h / rows;
+    const colormap = (val) => _petRainbow2(val);
+
+    for (let py = 0; py < h; py++) {
+        for (let px = 0; px < w; px++) {
+            const sx = Math.min(Math.floor(px / scaleX), cols - 1);
+            const sy = Math.min(Math.floor(py / scaleY), rows - 1);
+            const val = sliceData[sy][sx];
+            const valGy = val * DOSE_NORM_TO_GY;
+            const normalized = (valGy - dMinGy) / (dMaxGy - dMinGy);
+            const [r, g, b] = colormap(Math.min(1, Math.max(0, normalized)));
+            const idx = (py * w + px) * 4;
+            imageData.data[idx] = r;
+            imageData.data[idx + 1] = g;
+            imageData.data[idx + 2] = b;
+            imageData.data[idx + 3] = Math.floor(opacity * 255);
+        }
+    }
+    tmpCtx.putImageData(imageData, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(tmpCanvas, 0, 0);
+}
+
 function renderDoseOverlay(axis, sliceIndex, sliceData) {
     if (!state.doseOverlay || !state.doseOverlay.visible || !sliceData) return;
 
@@ -12585,27 +13118,15 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
     const w = canvas.width;
     const h = canvas.height;
 
-    // Get slice dimensions from the contour data
-    // Contour coordinates are in (row, col) format of the 2D slice
-    // We need to scale them to the canvas size
-    const sliceData = data.contours[0]?.lines[0];
-    if (!sliceData || sliceData.length === 0) return;
+    // Use server-provided slice shape for correct coordinate mapping.
+    // Contour coordinates are in (row, col) of the dose slice, which
+    // may differ from the CT canvas dimensions.
+    const sliceRows = data.slice_shape?.[0] || 0;
+    const sliceCols = data.slice_shape?.[1] || 0;
+    if (sliceRows === 0 || sliceCols === 0) return;
 
-    // Find the bounding box of all contours to determine slice dimensions
-    let maxRow = 0, maxCol = 0;
-    data.contours.forEach(c => {
-        c.lines.forEach(line => {
-            line.forEach(([row, col]) => {
-                if (row > maxRow) maxRow = row;
-                if (col > maxCol) maxCol = col;
-            });
-        });
-    });
-
-    if (maxRow === 0 || maxCol === 0) return;
-
-    const scaleX = w / (maxCol + 1);
-    const scaleY = h / (maxRow + 1);
+    const scaleX = w / sliceCols;
+    const scaleY = h / sliceRows;
 
     // Draw contour lines
     data.contours.forEach(contour => {
@@ -12872,6 +13393,338 @@ async function exportReport() {
     } catch (e) {
         addChat('error', `Report failed: ${e.message}`);
     }
+}
+
+// =============================================================================
+// STEP-BY-STEP MANUAL PLANNING (2026-06-15)
+// The "Step-by-Step" section in the Input panel used to have these
+// buttons but their onclick handlers referenced three functions
+// (toggleStepButtons / runPlanningStep / showStepResults) that were
+// NEVER DECLARED. The user reported "折叠打不开了" — the toggle was
+// dead because the function was missing. We restore them here, with
+// proper UI feedback (loading spinner, error display, auto-refresh of
+// the relevant panel).
+//
+// Workflow design (product-manager view):
+//   1. Load CT (existing Browse button in Image Data section)
+//   2. Run CTV segmentation (calls /api/header/info ctv_segmentation)
+//   3. Run OAR segmentation
+//   4. Run trajectory_init  → first-pass needle paths
+//   5. Run trajectory_refine → collision-checked paths
+//   6. Run seed_planning    → optimize seed positions
+//   7. Run dose_calc        → TG-43 / CNN dose distribution
+//   8. Run dose_eval        → DVH + V100/D90 + OAR constraints
+//   9. View Results (trajectories / seeds / dose / DVH / metrics)
+//  10. Export (DICOM-RT / STL / Report PDF)
+//
+// Each step is a separate button so the user can stop and inspect
+// at any point. The system also remembers the last completed step
+// in localStorage so the user can resume after a refresh.
+// =============================================================================
+
+// Manual planning state — persists across page reloads.
+function _manualState() {
+    try {
+        const s = localStorage.getItem('brachybot_manual_state');
+        if (s) return JSON.parse(s);
+    } catch (_) {}
+    return {
+        ct_loaded: false,
+        ctv_segmentation: false,
+        oar_segmentation: false,
+        trajectory_init: false,
+        trajectory_refine: false,
+        seed_planning: false,
+        dose_calc: false,
+        dose_eval: false,
+        last_step: null,
+    };
+}
+function _saveManualState(patch) {
+    try {
+        const s = _manualState();
+        Object.assign(s, patch);
+        localStorage.setItem('brachybot_manual_state', JSON.stringify(s));
+    } catch (_) {}
+}
+
+function toggleStepButtons() {
+    const sec = document.getElementById('stepButtonsSection');
+    const tog = document.getElementById('stepToggle');
+    if (!sec) return;
+    const wasHidden = sec.style.display === 'none' || !sec.style.display;
+    sec.style.display = wasHidden ? 'flex' : 'none';
+    if (tog) tog.innerHTML = wasHidden ? '&#9660;' : '&#9654;';
+    // If the section is opening, log to the chat so the user has a
+    // record of what they did. The buttons themselves emit chat
+    // messages on each click.
+    if (wasHidden) {
+        if (typeof addChat === 'function') {
+            addChat('system', 'Manual planning mode: click the step buttons in the Input panel to run each pipeline stage individually.');
+        }
+    }
+}
+
+// Run a single planning step manually. The user must have a CT
+// loaded first; we surface a clear error if not.
+async function runPlanningStep(step) {
+    const stepLabels = {
+        trajectory_init:  { num: 1, label: 'Trajectory init',  i18n_zh: '轨迹初始化' },
+        trajectory_refine:{ num: 2, label: 'Trajectory refine',i18n_zh: '轨迹优化' },
+        seed_planning:    { num: 3, label: 'Seed planning',    i18n_zh: '粒子布源' },
+        dose_calc:        { num: 4, label: 'Dose calculation', i18n_zh: '剂量计算' },
+        dose_eval:        { num: 5, label: 'Dose evaluation',  i18n_zh: '剂量评估' },
+    };
+    const info = stepLabels[step];
+    if (!info) {
+        if (typeof addChat === 'function') addChat('error', `Unknown planning step: ${step}`);
+        return;
+    }
+    const ctPathEl = document.getElementById('ctPath');
+    const ctPath = ctPathEl ? ctPathEl.value.trim() : '';
+    if (!ctPath) {
+        if (typeof addChat === 'function') {
+            addChat('error', '请先在 Image Data 区域加载 CT 图像,然后再运行规划步骤。');
+        }
+        return;
+    }
+    // Validate prerequisite steps are met.
+    const st = _manualState();
+    const prerequisites = {
+        trajectory_init:   { needs: 'ctv_segmentation',     label: 'CTV segmentation' },
+        trajectory_refine: { needs: 'trajectory_init',      label: 'Trajectory init' },
+        seed_planning:     { needs: 'trajectory_refine',    label: 'Trajectory refine' },
+        dose_calc:         { needs: 'seed_planning',        label: 'Seed planning' },
+        dose_eval:         { needs: 'dose_calc',            label: 'Dose calculation' },
+    };
+    const prereq = prerequisites[step];
+    if (prereq && !st[prereq.needs]) {
+        if (typeof addChat === 'function') {
+            addChat('error', `请先完成前置步骤: ${prereq.label} (${prereq.needs})`);
+        }
+        return;
+    }
+    if (typeof addChat === 'function') {
+        addChat('system', `▶ Step ${info.num}/5: ${info.label} (${info.i18n_zh})...`);
+    }
+    // Show a small loading badge next to the clicked button.
+    const btn = document.querySelector(`button[onclick="runPlanningStep('${step}')"]`);
+    const oldText = btn ? btn.innerHTML : null;
+    if (btn) { btn.disabled = true; btn.innerHTML = '... ' + info.label; }
+    try {
+        const res = await fetch(API + '/planning/run_step', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ct_image_path: ctPath, step: step }),
+        });
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`HTTP ${res.status}: ${errText.slice(0, 200)}`);
+        }
+        const data = await res.json();
+        if (data.success) {
+            _saveManualState({ [step]: true, last_step: step });
+            if (typeof addChat === 'function') {
+                addChat('system', `✅ Step ${info.num}/5: ${info.label} done.`);
+            }
+            // Update step button badges (digit → checkmark).
+            if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
+            // Refresh the analysis panel / 3D viewer if available.
+            if (typeof refreshPlanningUI === 'function') {
+                try { await refreshPlanningUI(); } catch (_) {}
+            }
+        } else {
+            throw new Error(data.error || 'Unknown error');
+        }
+    } catch (e) {
+        if (typeof addChat === 'function') {
+            addChat('error', `Step ${info.num} (${info.label}) failed: ${e.message}`);
+        }
+    } finally {
+        if (btn) { btn.disabled = false; if (oldText) btn.innerHTML = oldText; }
+    }
+}
+
+// Show specific step results — pushes a summary into the chat and
+// also switches the right panel to the Analysis tab so the user
+// sees DVH / metrics.
+async function showStepResults(step) {
+    if (typeof addChat === 'function') {
+        addChat('system', `Fetching results for: ${step}...`);
+    }
+    try {
+        const res = await fetch(API + '/planning/show_step', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ step: step }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        // Build a human-friendly summary.
+        const lines = [];
+        if (step === 'all' || step === 'trajectories') {
+            const n = data.num_trajectories || 0;
+            lines.push(`**Trajectories**: ${n} candidate needle paths`);
+        }
+        if (step === 'all' || step === 'seeds' || step === 'seed_planning') {
+            const total = data.total_seeds || 0;
+            lines.push(`**Seeds**: ${total} seeds placed`);
+        }
+        if (step === 'all' || step === 'dose' || step === 'dose_distribution') {
+            if (data.has_dose) {
+                const [lo, hi] = data.dose_range || [0, 0];
+                lines.push(`**Dose**: range [${lo.toFixed(2)}, ${hi.toFixed(2)}] Gy`);
+            } else {
+                lines.push(`**Dose**: not computed yet`);
+            }
+        }
+        if (step === 'all' || step === 'dvh' || step === 'dose_eval' || step === 'metrics') {
+            const m = data.metrics || {};
+            if (Object.keys(m).length) {
+                lines.push(`**Metrics**: V100=${m.v100 || '-'}, D90=${m.d90 || '-'}`);
+            } else {
+                lines.push(`**Metrics**: not evaluated yet`);
+            }
+        }
+        if (typeof addChat === 'function') {
+            addChat('system', lines.join('\n') || 'No data yet — run the corresponding step first.');
+        }
+        // Switch right panel to Analysis for visualization.
+        const analysisTab = document.querySelector('.panel-tab:nth-child(2)');
+        if (analysisTab && typeof switchPanel === 'function') {
+            try { switchPanel('metrics', analysisTab); } catch (_) {}
+        }
+        if (typeof refreshPlanningUI === 'function') {
+            try { await refreshPlanningUI(); } catch (_) {}
+        }
+    } catch (e) {
+        if (typeof addChat === 'function') {
+            addChat('error', `Show results failed: ${e.message}`);
+        }
+    }
+}
+
+// CTV / OAR segmentation step. These are NOT in the planning pipeline
+// (run_step), they're separate tool calls. We expose them as
+// Step-by-Step buttons 0 and "0.5" so the user can drive the
+// full workflow without going through the LLM.
+async function runSegmentationStep(kind) {
+    if (kind !== 'ctv_segmentation' && kind !== 'oar_segmentation') {
+        if (typeof addChat === 'function') addChat('error', `Unknown segmentation step: ${kind}`);
+        return;
+    }
+    const label = kind === 'ctv_segmentation' ? 'CTV segmentation' : 'OAR segmentation';
+    const apiKind = kind === 'ctv_segmentation' ? 'ctv' : 'oar';
+    const ctPath = (document.getElementById('ctPath') || {}).value || '';
+    if (!ctPath.trim()) {
+        if (typeof addChat === 'function') {
+            addChat('error', '请先在 Image Data 区域加载 CT 图像,然后再运行分割。');
+        }
+        return;
+    }
+    const btn = document.getElementById('stepBtn_' + kind);
+    if (btn) {
+        btn.disabled = true;
+        const numEl = btn.querySelector('.step-num');
+        if (numEl) numEl.textContent = '...';
+    }
+    if (typeof addChat === 'function') {
+        addChat('system', `▶ ${label} (${apiKind.toUpperCase()}) — running...`);
+    }
+    try {
+        const res = await fetch(API + '/segmentation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind: apiKind, image_path: ctPath.trim() }),
+        });
+        if (!res.ok) {
+            const t = await res.text();
+            throw new Error(`HTTP ${res.status}: ${t.slice(0, 200)}`);
+        }
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Segmentation failed');
+        const n = data.total_labels || Object.keys(data.label_counts || {}).length || 0;
+        _saveManualState({ [kind]: true });
+        if (typeof addChat === 'function') {
+            addChat('system', `✅ ${label} done — ${n} label(s) found.`);
+        }
+        if (typeof refreshPlanningUI === 'function') {
+            try { await refreshPlanningUI(); } catch (_) {}
+        }
+    } catch (e) {
+        if (typeof addChat === 'function') {
+            addChat('error', `${label} failed: ${e.message}`);
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            // The step number reflects state — re-render via _refreshManualStepUI.
+            if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
+        }
+    }
+}
+
+// Re-evaluate which Step-by-Step buttons should be enabled. The
+// chain is:
+//   ct loaded         → enables CTV seg
+//   CTV segmented     → enables OAR seg AND trajectory_init
+//   trajectory_init   → enables trajectory_refine
+//   trajectory_refine → enables seed_planning
+//   seed_planning     → enables dose_calc
+//   dose_calc         → enables dose_eval
+// Buttons are also disabled if the corresponding /planning/run_step
+// reported a previous success (in manual state).
+function _refreshManualStepUI() {
+    const s = _manualState();
+    const ctPath = ((document.getElementById('ctPath') || {}).value || '').trim();
+    const ctLoaded = !!ctPath;
+    const ctvDone = !!s.ctv_segmentation;
+    const oarDone = !!s.oar_segmentation;
+    const trajInit = !!s.trajectory_init;
+    const trajRefine = !!s.trajectory_refine;
+    const seeds = !!s.seed_planning;
+    const dose = !!s.dose_calc;
+    const evalDone = !!s.dose_eval;
+
+    function setBtn(id, enabled, num, done) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.disabled = !enabled;
+        const numEl = el.querySelector('.step-num');
+        if (numEl) {
+            numEl.textContent = done ? '✓' : String(num);
+            numEl.style.color = done ? 'var(--success)' : '';
+        }
+        // Subtle visual cue for "done"
+        if (done) el.style.borderColor = 'var(--success)';
+        else el.style.borderColor = '';
+    }
+    setBtn('stepBtn_ctv_segmentation', ctLoaded, 0, ctvDone);
+    setBtn('stepBtn_oar_segmentation', ctvDone, 0, oarDone);
+    setBtn('stepBtn_trajectory_init', ctvDone, 1, trajInit);
+    setBtn('stepBtn_trajectory_refine', trajInit, 2, trajRefine);
+    setBtn('stepBtn_seed_planning', trajRefine, 3, seeds);
+    setBtn('stepBtn_dose_calc', seeds, 4, dose);
+    setBtn('stepBtn_dose_eval', dose, 5, evalDone);
+}
+
+// Wire the Step-by-Step section: re-evaluate button state when the
+// CT path input changes, so the buttons react to the user loading
+// a CT.
+function _wireManualStepInputs() {
+    const ctPathEl = document.getElementById('ctPath');
+    if (ctPathEl) {
+        ctPathEl.addEventListener('input', () => {
+            try { _refreshManualStepUI(); } catch (_) {}
+        });
+        ctPathEl.addEventListener('change', () => {
+            try { _refreshManualStepUI(); } catch (_) {}
+        });
+    }
+    // Also re-evaluate when the user lands on the Input panel
+    // (in case the CT was loaded programmatically).
+    setTimeout(() => { try { _refreshManualStepUI(); } catch (_) {} }, 800);
 }
 
 let huFetchTimeout = null;
@@ -14637,8 +15490,8 @@ const REPORT_TEMPLATES = {
         i125: true,
         prescriptionGy: 145,
         interpretation: {
-            zh: '本计划针对**前列腺癌**永久粒子植入。处方剂量 145 Gy（¹²⁵I）。关注直肠前壁、尿道、膀胱颈剂量限值，参考 ABS 前列腺粒子共识指南。',
-            en: 'This plan targets **prostate cancer** with permanent seed brachytherapy. Prescription dose 145 Gy (¹²⁵I). Pay attention to rectal wall, urethra, and bladder neck dose limits, per ABS prostate brachytherapy consensus guidelines.',
+            zh: '本计划针对**前列腺癌**放射性粒子植入。处方剂量 145 Gy（¹²⁵I）。关注直肠前壁、尿道、膀胱颈剂量限值，参考 ABS 前列腺粒子共识指南。',
+            en: 'This plan targets **prostate cancer** with radioactive seed brachytherapy. Prescription dose 145 Gy (¹²⁵I). Pay attention to rectal wall, urethra, and bladder neck dose limits, per ABS prostate brachytherapy consensus guidelines.',
         },
         defaultReferences: ['PROSTATE', 'ICRU_DOSE', 'AAPM_DOSE', 'ESTRO_DVH'],
     },
@@ -14759,7 +15612,7 @@ const REPORT_STRINGS = {
         trajUnitWord: '条',
         defaultGender: '男',
         defaultDepartment: '放射治疗科',
-        defaultTechniqueI125: '永久粒子植入 (¹²⁵I Permanent Seed Implantation)',
+        defaultTechniqueI125: '放射性粒子植入 (¹²⁵I Radioactive Seed Implantation)',
         defaultTechniqueHDR: 'HDR 近距离治疗 (Ir-192)',
         planSectionTitle: '治疗计划',
         imagingSectionTitle: '影像学资料',
@@ -14771,7 +15624,7 @@ const REPORT_STRINGS = {
     },
     en: {
         reportTitle: 'Brachytherapy Treatment Plan Report',
-        reportSubtitle: 'AI-Assisted Permanent Seed Implantation Plan',
+        reportSubtitle: 'AI-Assisted Radioactive Seed Implantation Plan',
         hospitalName: 'Brachybot',
         hospitalNameEn: 'Brachybot',
         hospitalDept: 'Brachytherapy Planning Platform  ·  AI-Assisted',
@@ -14855,7 +15708,7 @@ const REPORT_STRINGS = {
         trajUnitWord: 'trajectories',
         defaultGender: 'Male',
         defaultDepartment: 'Radiation Oncology',
-        defaultTechniqueI125: 'Permanent Seed Implantation (¹²⁵I)',
+        defaultTechniqueI125: 'Radioactive Seed Implantation (¹²⁵I)',
         defaultTechniqueHDR: 'HDR Brachytherapy (Ir-192)',
         planSectionTitle: 'Treatment Plan',
         imagingSectionTitle: 'Imaging Data',
@@ -16252,6 +17105,97 @@ function removeReportFigure(idx) {
     window.reportForm.figures.splice(idx, 1);
     renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();
 }
+
+// Auto-capture visual evidence for the report (2026-06-15).
+// Captures segmentation overlay, dose heatmap, DVH curves, and 3D
+// planning view — each as a figure with a descriptive caption.
+// Called before PDF export so the report always has evidence.
+async function autoCaptureReportFigures() {
+    if (!window.reportForm) return;
+    if (!window.reportForm.figures) window.reportForm.figures = [];
+
+    // Only auto-capture if no figures exist yet (don't duplicate
+    // user-added figures).
+    if (window.reportForm.figures.length > 0) return;
+
+    const _ts = () => new Date().toISOString();
+
+    // 1. Segmentation overlay — capture the first visible 2D viewer
+    //    (axial preferred) which shows CTV/OAR contour overlays.
+    const axes = ['axial', 'sagittal', 'coronal'];
+    for (const ax of axes) {
+        const card = document.getElementById('viewer' + ax.charAt(0).toUpperCase() + ax.slice(1));
+        if (card && card.offsetParent !== null) {
+            const composite = _composite2DViewerCanvas(ax);
+            if (composite) {
+                window.reportForm.figures.push({
+                    type: 'screenshot', title: '靶区与危及器官分割重建',
+                    dataUrl: composite, axis: ax,
+                    sliceIdx: (state.slices && state.slices[ax]) || 0,
+                    caption: 'CTV（红色轮廓）及 OAR 器官分割结果叠加于 CT 切片',
+                    capturedAt: _ts(),
+                });
+                break; // one 2D view is enough for segmentation
+            }
+        }
+    }
+
+    // 2. Dose distribution heatmap — capture a 2D viewer that has
+    //    dose overlay enabled. Uses the same composite function;
+    //    if dose overlay is active, the canvas already includes it.
+    if (state.doseOverlay && state.doseOverlay.active) {
+        for (const ax of axes) {
+            const card = document.getElementById('viewer' + ax.charAt(0).toUpperCase() + ax.slice(1));
+            if (card && card.offsetParent !== null) {
+                const composite = _composite2DViewerCanvas(ax);
+                if (composite) {
+                    window.reportForm.figures.push({
+                        type: 'screenshot', title: '剂量分布热图',
+                        dataUrl: composite, axis: ax,
+                        sliceIdx: (state.slices && state.slices[ax]) || 0,
+                        caption: '处方剂量分布叠加于 CT 切片（暖色=高剂量，冷色=低剂量）',
+                        capturedAt: _ts(),
+                    });
+                    break;
+                }
+            }
+        }
+    }
+
+    // 3. 3D planning view — needles, seeds, CTV/OAR mesh.
+    try {
+        const canvas3d = document.querySelector('#canvas3D canvas');
+        if (canvas3d) {
+            const dataUrl = canvas3d.toDataURL('image/png');
+            window.reportForm.figures.push({
+                type: 'screenshot', title: '三维规划方案',
+                dataUrl, axis: '3d', sliceIdx: null,
+                caption: '针道轨迹（蓝色）、放射性粒子（黄色）与靶区/器官三维重建',
+                capturedAt: _ts(),
+            });
+        }
+    } catch (e) { /* 3D capture failed — non-fatal */ }
+
+    // 4. DVH curve — use Plotly.toImage if available.
+    try {
+        const dvhEl = document.getElementById('dvhChart');
+        if (dvhEl && typeof Plotly !== 'undefined' && typeof Plotly.toImage === 'function') {
+            const imgData = await Plotly.toImage(dvhEl, { format: 'png', width: 800, height: 400 });
+            window.reportForm.figures.push({
+                type: 'screenshot', title: 'DVH 剂量体积直方图',
+                dataUrl: imgData, axis: 'dvh', sliceIdx: null,
+                caption: 'CTV 及各 OAR 的剂量-体积曲线（横轴: 剂量 Gy，纵轴: 体积 %）',
+                capturedAt: _ts(),
+            });
+        }
+    } catch (e) { /* DVH capture failed — non-fatal */ }
+
+    // Re-render editor + preview so the new figures appear.
+    if (window.reportForm.figures.length > 0) {
+        renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();
+    }
+}
+
 function _composite2DViewerCanvas(axis) {
     const sliceCanvas = document.getElementById('sliceCanvas' + axis.charAt(0).toUpperCase() + axis.slice(1));
     if (!sliceCanvas) return null;
@@ -16308,7 +17252,7 @@ function applyReportTemplate(templateKey) {
     if (!window.reportForm.planning.prescriptionGy) window.reportForm.planning.prescriptionGy = tpl.prescriptionGy;
     if (!window.reportForm.planning.technique) {
         window.reportForm.planning.technique = tpl.i125
-            ? _S_or('defaultTechniqueI125', pick('永久粒子植入 (¹²⁵I Permanent Seed Implantation)', 'Permanent Seed Implantation (¹²⁵I)'))
+            ? _S_or('defaultTechniqueI125', pick('放射性粒子植入 (¹²⁵I Radioactive Seed Implantation)', 'Radioactive Seed Implantation (¹²⁵I)'))
             : _S_or('defaultTechniqueHDR',    pick('HDR 近距离治疗 (Ir-192)',                       'HDR Brachytherapy (Ir-192)'));
     }
     if (!window.reportForm.case.tumorType) {
@@ -16483,7 +17427,7 @@ function _localizedEmptyReportForm(language) {
         imaging: { modality: 'CT', scanner: '', sliceCount: null, pixelSpacingMm: null, sliceThicknessMm: null, contrast: '', acquisitionDate: '' },
         segmentation: { ctvModelName: 'nnUNet (pancreatic / 7-class)', ctvVoxels: null, oarModelName: 'TotalSegmentator (pancreatic)', contouringNotes: '' },
         planning: {
-            technique: _S_or('defaultTechniqueI125', pick('永久粒子植入 (¹²⁵I Permanent Seed Implantation)', 'Permanent Seed Implantation (¹²⁵I)')),
+            technique: _S_or('defaultTechniqueI125', pick('放射性粒子植入 (¹²⁵I Radioactive Seed Implantation)', 'Radioactive Seed Implantation (¹²⁵I)')),
             prescriptionGy: 120, prescriptionUnit: 'Gy',
             totalSeeds: null, totalActivityMBq: null, trajectoryCount: null, dwellPositionCount: null,
         },
@@ -16844,7 +17788,13 @@ function hideExportMenu() {
     if (m) m.style.display = 'none';
 }
 
-function exportReportPDF() {
+async function exportReportPDF() {
+    // Auto-capture visual evidence before rendering PDF.
+    try { await autoCaptureReportFigures(); } catch (e) { console.warn('autoCaptureReportFigures failed:', e); }
+    // Re-render preview so captured figures appear in the pages.
+    _updateReportPreview();
+    // Small delay to let the preview DOM update.
+    await new Promise(r => setTimeout(r, 200));
     const pages = document.querySelectorAll('#reportPages .report-page');
     if (!pages.length) return;
     const f = window.reportForm;
