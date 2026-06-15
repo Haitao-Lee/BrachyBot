@@ -4044,7 +4044,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
             <button class="new-chat-btn" onclick="newChat()">&#43; New</button>
         </div>
         <div class="session-list" id="sessionList"></div>
-        <div class="sidebar-resize-handle" id="sidebarResizeHandle" style="cursor:col-resize;pointer-events:auto !important;isolation:isolate;transform:translateZ(0);" title="Drag to resize the chat history sidebar"></div>
+        <div class="sidebar-resize-handle" id="sidebarResizeHandle" data-splitter-version="v3-2026-06-15" style="cursor:col-resize;pointer-events:auto !important;isolation:isolate;transform:translateZ(0);" title="Drag to resize the chat history sidebar"></div>
         <div class="context-panel" id="contextPanel" style="display:none">
             <div class="context-panel-header">
                 <span>Context Summary</span>
@@ -4071,7 +4071,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
              is on the left, and its other sibling the right-panel is on
              the right). The handle sticks 4px outside the chat area on
              the left so it's easy to grab with the mouse. -->
-        <div class="chat-area-resize-handle" id="chatAreaResizeHandle" style="cursor:col-resize;pointer-events:auto !important;isolation:isolate;transform:translateZ(0);" title="Drag to resize the chat column"></div>
+        <div class="chat-area-resize-handle" id="chatAreaResizeHandle" data-splitter-version="v3-2026-06-15" style="cursor:col-resize;pointer-events:auto !important;isolation:isolate;transform:translateZ(0);" title="Drag to resize the chat column"></div>
         <div class="chat-header">
             <button onclick="toggleSessionSidebar()" title="Toggle chat history" style="background:none;border:none;color:var(--text);cursor:pointer;font-size:0.9rem;padding:2px 6px;">&#9776;</button>
             <div class="chat-header-icon">
@@ -4147,7 +4147,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     </div>
 
     <!-- VERTICAL SPLITTER -->
-    <div class="v-splitter" id="vSplitter" style="cursor:col-resize;pointer-events:auto !important;width:8px;isolation:isolate;transform:translateZ(0);" title="Drag to resize the right (viewers) panel"></div>
+    <div class="v-splitter" id="vSplitter" data-splitter-version="v3-2026-06-15" style="cursor:col-resize;pointer-events:auto !important;width:8px;isolation:isolate;transform:translateZ(0);" title="Drag to resize the right (viewers) panel"></div>
 
     <!-- ============ RIGHT PANEL ============ -->
     <div class="right-panel">
@@ -7289,24 +7289,39 @@ async function init() {
     try { setupSidebarResize(); } catch (e) { console.warn('setupSidebarResize failed:', e); }
     try { setupChatAreaResize(); } catch (e) { console.warn('setupChatAreaResize failed:', e); }
 
-    // Cache-bust diagnostic: 7 rounds of splitter-fix attempts
-    // happened because the user's browser was serving a cached
-    // version of this HTML (with `https://cdn.jsdelivr.net/...`
-    // URLs that fail behind firewalls). If we detect the OLD
-    // HTML is in the DOM, show a visible banner asking the user
-    // to hard-refresh. The check is a single line: if the
-    // current splitters have `static/js/...` src (new format)
-    // we know the HTML is fresh; if they still have `https://...`
-    // we know the HTML is stale.
+    // Cache-bust diagnostic: a long history of splitter/cursor fixes
+    // failed silently because the user's browser was serving a cached
+    // version of this HTML. We now check TWO fingerprints:
+    //   (1) the CDN-vs-local script src (was the original signal),
+    //   (2) the data-splitter-version attribute on the 3 main
+    //       splitters (added in commit d305d36 as a hard marker for
+    //       "this HTML includes the cursor-leak fix").
+    // Either mismatch → show a top-of-screen banner asking the user
+    // to hard-refresh. The banner auto-dismisses after 30s so it
+    // doesn't block the UI in case the user can't refresh.
     try {
+        let stale = false;
+        let reason = '';
         const probe = document.querySelector('script[src*="plotly"]');
         if (probe && probe.getAttribute('src') && probe.getAttribute('src').startsWith('https://')) {
-            // Stale HTML detected. Show a banner.
+            stale = true;
+            reason = 'still references CDN';
+        } else {
+            // Check splitter version fingerprint. If the splitters
+            // don't have the marker attribute, the page is older
+            // than the cursor-leak fix.
+            const vs = document.querySelector('#vSplitter');
+            const expectedVer = 'v3-2026-06-15';
+            if (vs && vs.getAttribute('data-splitter-version') !== expectedVer) {
+                stale = true;
+                reason = 'is missing the splitter-version marker (pre-cursor-leak-fix)';
+            }
+        }
+        if (stale) {
             const banner = document.createElement('div');
             banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#dc2626;color:white;padding:12px 20px;font-size:14px;text-align:center;font-family:system-ui;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
-            banner.innerHTML = '⚠️ 您的浏览器加载了 <b>旧版</b> BrachyBot 页面（仍然引用 CDN 资源，会报错）。请按 <kbd style="background:#fff;color:#dc2626;padding:2px 6px;border-radius:3px;font-family:monospace;">Ctrl+Shift+R</kbd>（Mac: <kbd style="background:#fff;color:#dc2626;padding:2px 6px;border-radius:3px;font-family:monospace;">Cmd+Shift+R</kbd>）强刷。';
+            banner.innerHTML = '⚠️ 您的浏览器加载了 <b>旧版</b> BrachyBot 页面（' + reason + '）。请按 <kbd style="background:#fff;color:#dc2626;padding:2px 6px;border-radius:3px;font-family:monospace;">Ctrl+Shift+R</kbd>（Mac: <kbd style="background:#fff;color:#dc2626;padding:2px 6px;border-radius:3px;font-family:monospace;">Cmd+Shift+R</kbd>）强刷。';
             document.body.appendChild(banner);
-            // Auto-dismiss after 30s in case the user can't refresh
             setTimeout(() => { try { banner.remove(); } catch (_) {} }, 30000);
         }
     } catch (_) { /* best-effort diagnostic */ }
@@ -16946,6 +16961,32 @@ try {
 } catch (e) {
     console.error('[BOOT] boot wiring failed:', e);
 }
+
+// =============================================================================
+// CURSOR LEAK GUARD — global safety net. The 3 splitter setups set
+// `document.body.style.cursor = 'col-resize'` on pointerdown and reset
+// it to '' on pointerup. If a drag is interrupted (browser context
+// loss, system dialog, JS error inside the handler, etc.) the body
+// cursor can stay stuck on 'col-resize', making the user feel like
+// "the cursor is the resize arrow everywhere". This document-level
+// pointerup listener is the last line of defense: ANY pointerup on
+// the page, anywhere, will clear the body cursor. Costs ~no-op on
+// normal drags (each handler's own pointerup fires first; this one
+// just sets '' to '' which is a no-op), but rescues stuck cursors.
+// =============================================================================
+document.addEventListener('pointerup', () => {
+    if (document.body.style.cursor === 'col-resize' ||
+        document.body.style.cursor === 'row-resize') {
+        document.body.style.cursor = '';
+    }
+    if (document.body.classList.contains('v-dragging')) {
+        document.body.classList.remove('v-dragging');
+    }
+}, true);
+document.addEventListener('pointercancel', () => {
+    document.body.style.cursor = '';
+    document.body.classList.remove('v-dragging');
+}, true);
 
 </script>
 </body>
