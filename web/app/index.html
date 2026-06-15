@@ -1434,18 +1434,29 @@ body::before {
 .pipeline-step.error .pipeline-step-icon::before { content: '✕'; }
 
 .usage-bar {
-    display: flex; align-items: center; gap: 0.4rem;
-    padding: 0.5rem 0.75rem;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.4rem 0.7rem;
+    margin-top: 0.55rem;
     background: var(--bg-sunken);
     border: 1px solid var(--border-hairline);
     border-radius: var(--radius-sm);
     font-size: 0.68rem;
     box-shadow: var(--inset-bottom), var(--shadow-xs);
+    align-self: flex-start;
 }
-.usage-item { display: flex; align-items: center; gap: 0.25rem; }
-.usage-label { color: var(--text-dim); }
+.usage-item { display: inline-flex; align-items: center; gap: 0.28rem; }
+.usage-label {
+    color: var(--text-dim);
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
 .usage-value {
-    color: var(--primary);
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+}    color: var(--primary);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     font-family: 'JetBrains Mono', monospace;
@@ -5015,6 +5026,86 @@ const CHAT_AVATAR_SVGS = {
     bot:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>',
 };
 
+// Build the small footer that sits below the bot's response bubble.
+// The footer is a single horizontal row with: response time (left),
+// then token counts, then tool call count. All in monospace numerals
+// and a dimmed text color so the footer doesn't compete with the
+// actual reply text for attention. The data comes from
+// `llm_meta` (server) plus client-side elapsed time.
+//   llm_meta = {
+//       usage: {prompt_tokens, completion_tokens, total_tokens},
+//       latency_ms: number,  // server-side LLM time
+//       llm_calls: number,   // how many LLM round-trips
+//   }
+function _buildResponseFooter(llmMeta) {
+    const footer = document.createElement('div');
+    footer.className = 'usage-bar';
+    // We compute elapsed time client-side from when the SSE 'start'
+    // event arrived. If for some reason _chatTurnStartTime isn't
+    // set, fall back to the server-reported latency.
+    const clientMs = (window._chatTurnStartTime)
+        ? (Date.now() - window._chatTurnStartTime)
+        : 0;
+    const serverMs = (llmMeta && llmMeta.latency_ms) ? llmMeta.latency_ms : 0;
+    // Prefer the larger of the two — usually the client-measured
+    // time (includes network overhead too) is what the user perceives.
+    const totalMs = Math.max(clientMs, serverMs);
+    const totalSec = (totalMs / 1000).toFixed(1);
+
+    const usage = (llmMeta && llmMeta.usage) || {};
+    const promptT = usage.prompt_tokens || 0;
+    const compT = usage.completion_tokens || 0;
+    const totalT = usage.total_tokens || 0;
+    const toolCalls = (window._todoTurnToolCount !== undefined)
+        ? window._todoTurnToolCount
+        : ((llmMeta && llmMeta.llm_calls) || 0);
+
+    // Build the items in a single flex row. Each item is label + value.
+    // Keep the label light (var(--text-dim)) and the value bolder so
+    // the numbers are the focal point. Numbers use a tabular-nums
+    // font-feature so multi-digit counts don't jiggle horizontally
+    // as they tick up during streaming.
+    const makeItem = (label, value, unit) => {
+        const item = document.createElement('span');
+        item.className = 'usage-item';
+        const lbl = document.createElement('span');
+        lbl.className = 'usage-label';
+        lbl.textContent = label;
+        const val = document.createElement('span');
+        val.className = 'usage-value';
+        val.textContent = value + (unit || '');
+        item.appendChild(lbl);
+        item.appendChild(val);
+        return item;
+    };
+    const sep = () => {
+        const s = document.createElement('span');
+        s.className = 'usage-sep';
+        return s;
+    };
+
+    footer.appendChild(makeItem('耗时', totalSec, 's'));
+    footer.appendChild(sep());
+    if (totalT > 0) {
+        footer.appendChild(makeItem('Tokens', totalT.toLocaleString(), ''));
+        footer.appendChild(sep());
+        if (promptT > 0 || compT > 0) {
+            footer.appendChild(makeItem(
+                '↑↓',
+                `${promptT.toLocaleString()}/${compT.toLocaleString()}`,
+                ''
+            ));
+            footer.appendChild(sep());
+        }
+    }
+    footer.appendChild(makeItem('工具', toolCalls.toString(), ' 次'));
+
+    // Reset the per-turn counters so the next turn starts fresh.
+    window._chatTurnStartTime = null;
+    window._todoTurnToolCount = 0;
+    return footer;
+}
+
 function addChat(type, content, scroll) {
     try {
         const container = document.getElementById('chatMessages');
@@ -5266,24 +5357,27 @@ function createLiveThinkingChain() {
 
     const header = document.createElement('div');
     header.className = 'thinking-header';
-    // The elapsed-time indicator used to live here ("0.0s" → "27.6s"),
-    // but the user complained it was weird for trivial Q&A — for
-    // a simple "你好" the chain shows "27.6s" of nothing happening.
-    // The thinking chain is only meaningful when the agent IS
-    // doing multi-step work; for direct replies there's no chain
-    // to time. So we drop the indicator entirely. The thinking
-    // count alone is enough signal.
+    // The elapsed-time indicator (`.thinking-time`) shows the
+    // wall-clock seconds since the chain was created. It updates
+    // live (timer below) so the user can see how long the LLM
+    // is taking. The final value is also captured in the
+    // usage-bar footer at the end of the response.
     header.innerHTML =
         '<span class="thinking-toggle expanded">&#9654;</span>' +
         '<span class="thinking-label">Thinking</span>' +
-        '<span class="thinking-count">0 steps</span>';
+        '<span class="thinking-count">0 steps</span>' +
+        '<span class="thinking-time" style="margin-left:auto;font-size:0.62rem;color:var(--text-dim);font-variant-numeric:tabular-nums;">0.0s</span>';
     header.onclick = () => toggleThinkingChain(wrapper, []);
     wrapper.appendChild(header);
 
-    // The timer is kept around (set to fire-and-no-render) so
-    // finalizeThinkingChain can still find header._timer and clear
-    // it without a null check. We just don't display the value.
-    const timer = setInterval(() => { /* no-op: speed indicator removed */ }, 100);
+    // Live timer — updates the `.thinking-time` span every 100ms.
+    // We keep the timer reference on the header so finalizeThinkingChain
+    // can clearInterval it when the chain collapses.
+    const timer = setInterval(() => {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        const timeEl = header.querySelector('.thinking-time');
+        if (timeEl) timeEl.textContent = elapsed + 's';
+    }, 100);
     header._timer = timer;
 
     const stepsDiv = document.createElement('div');
@@ -6099,6 +6193,12 @@ async function sendChat(prefill) {
                                 _setActiveTodoLang(data.language.code);
                             }
                         }
+                        // Start-of-turn clock for the response-time
+                        // display in the usage-bar footer. The footer
+                        // is rendered when the response is finalized,
+                        // so this is the "click send" baseline.
+                        window._chatTurnStartTime = Date.now();
+                        window._todoTurnToolCount = 0;
                     }
                     if (currentEvent === 'step' && data) {
                         steps.push(data);
@@ -6193,6 +6293,15 @@ async function sendChat(prefill) {
                             if (progressEl && typeof updateToolProgress === 'function') {
                                 updateToolProgress(progressEl, lastToolName, data.status, data.result);
                             }
+                            // Count completed tool calls for the usage-bar
+                            // footer. We count BOTH done and error because
+                            // an errored call is still a call the user
+                            // spent tokens on. (success vs failure is
+                            // already visible in the thinking chain.)
+                            if (window._todoTurnToolCount === undefined) {
+                                window._todoTurnToolCount = 0;
+                            }
+                            window._todoTurnToolCount += 1;
                             // When a planning tool finishes, pull the latest
                             // plan summary from the server and re-render the
                             // metrics panel, DVH chart, OAR table, data tree,
@@ -6273,6 +6382,14 @@ async function sendChat(prefill) {
                         } else if (!responseText) {
                             responseText = data.response;
                         }
+                        // Capture the LLM metadata so we can render the
+                        // usage-bar footer (token counts, latency, tool
+                        // call count) once the response is finalized.
+                        // The server already emits this in the response
+                        // event; we just stash it for later rendering.
+                        if (data.llm_meta) {
+                            window._lastLLMMeta = data.llm_meta;
+                        }
                     } else if (currentEvent === 'error' && data && data.message) {
                         if (typeof addChat === 'function') addChat('error', 'AI error: ' + data.message);
                     } else if (currentEvent === 'done') {
@@ -6298,6 +6415,25 @@ async function sendChat(prefill) {
             finalizeStreamingResponse(responseEl, finalText);
         } else if (!responseEl) {
             if (typeof addChat === 'function') addChat('bot-response', finalText);
+        }
+
+        // Append a usage-bar footer BELOW the response bubble so the
+        // user can see response time + token counts + tool call count
+        // for this turn. The footer lives inside the same chat-msg-wrapper
+        // as the response bubble, so it sits directly under the LLM's
+        // reply (matching the layout the user remembers from the original
+        // implementation). The data comes from the server's
+        // `llm_meta` field in the `response` SSE event, captured in
+        // window._lastLLMMeta above. Client-side elapsed time is
+        // computed from _chatTurnStartTime which the start handler set.
+        if (responseEl && typeof responseEl.appendChild === 'function') {
+            try {
+                const wrapper = responseEl.parentElement;
+                if (wrapper) {
+                    const footer = _buildResponseFooter(window._lastLLMMeta);
+                    if (footer) wrapper.appendChild(footer);
+                }
+            } catch (_) { /* footer is best-effort */ }
         }
     } catch (e) {
         if (typeof addChat === 'function') {
