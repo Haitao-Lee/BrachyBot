@@ -468,9 +468,23 @@ body::before {
     z-index: 10;
     transition: background var(--t-base) var(--ease);
 }
-.sidebar-resize-handle:hover {
-    background: rgba(59, 130, 246, 0.10);
+/* Always-visible 2px blue bar in the center of the splitter so the
+   user can SEE where to click. Hover / dragging lights up the
+   full handle for clearer affordance. */
+.sidebar-resize-handle::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    background: var(--primary);
+    opacity: 0.35;
+    transition: opacity var(--t-base) var(--ease), width var(--t-base) var(--ease);
+    pointer-events: none;
 }
+.sidebar-resize-handle:hover { background: rgba(59, 130, 246, 0.10); }
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle.dragging::after { opacity: 1; width: 3px; }
 
 .session-sidebar-header {
     padding: 0.95rem 0.85rem;
@@ -737,6 +751,27 @@ body::before {
     z-index: 10;
     transition: background var(--t-base) var(--ease);
 }
+/* Always-visible 2px blue bar. The chat column's resize handle sits
+   right on top of the sidebar's resize handle (both at the same
+   3px boundary), so the visible bar must NOT rely on hover to be
+   seen — by default the user can't tell where to grab. */
+.chat-area-resize-handle::before {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    background: var(--primary);
+    opacity: 0.35;
+    transition: opacity var(--t-base) var(--ease), width var(--t-base) var(--ease);
+    pointer-events: none;
+}
+.chat-area-resize-handle:hover,
+.chat-area-resize-handle.dragging {
+    background: rgba(59, 130, 246, 0.10);
+}
+.chat-area-resize-handle:hover::before,
+.chat-area-resize-handle.dragging::before { opacity: 1; width: 3px; }
 .chat-area-resize-handle:hover,
 .chat-area-resize-handle.dragging {
     background: rgba(59, 130, 246, 0.10);
@@ -1776,13 +1811,10 @@ body::before {
 }
 
 .v-splitter {
-    /* The visible 3px blue bar (::after) is centered in this
-       div. We make the splitter 8px wide so the user has a
-       generous click target — 5px is too thin and the user
-       often misses the drag handle on the first click. The
-       center 3px has the colored bar; the side 5px is
-       transparent (still cursor: col-resize so it looks the
-       same visually). */
+    /* 8px wide so the user has a generous click target — 5px is
+       too thin and the user often misses the drag handle on
+       the first click. The center has a colored bar; the side
+       is transparent (still cursor: col-resize). */
     width: 8px;
     background: transparent;
     cursor: col-resize;
@@ -1795,24 +1827,25 @@ body::before {
 .v-splitter.dragging {
     background: rgba(59, 130, 246, 0.06);
 }
+/* Always-visible 2px blue bar FULL HEIGHT of the splitter so the
+   user can see where to grab. On hover/dragging it grows to 3px
+   and brightens. pointer-events: none lets the parent .v-splitter
+   receive the click (the bar is purely decorative). */
 .v-splitter::after {
     content: '';
     position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: 3px; height: 40px;
-    background: var(--border-soft);
+    top: 0; bottom: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    background: var(--primary);
+    opacity: 0.35;
     border-radius: 2px;
-    transition: all var(--t-base) var(--ease);
-    /* The pseudo is purely decorative — the parent v-splitter
-       div is the hit target. pointer-events: none on the ::after
-       prevents the 3px bar from stealing the click from the
-       8px parent. */
+    transition: opacity var(--t-base) var(--ease), width var(--t-base) var(--ease);
     pointer-events: none;
 }
 .v-splitter:hover::after, .v-splitter.dragging::after {
-    background: var(--primary);
-    height: 56px;
+    opacity: 1;
+    width: 3px;
 }
 
 .panel-tabs {
@@ -4011,7 +4044,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
             <button class="new-chat-btn" onclick="newChat()">&#43; New</button>
         </div>
         <div class="session-list" id="sessionList"></div>
-        <div class="sidebar-resize-handle" id="sidebarResizeHandle" style="cursor:col-resize;pointer-events:auto !important;background:rgba(59,130,246,0.12);isolation:isolate;transform:translateZ(0);"></div>
+        <div class="sidebar-resize-handle" id="sidebarResizeHandle" style="cursor:col-resize;pointer-events:auto !important;isolation:isolate;transform:translateZ(0);" title="Drag to resize the chat history sidebar"></div>
         <div class="context-panel" id="contextPanel" style="display:none">
             <div class="context-panel-header">
                 <span>Context Summary</span>
@@ -4038,7 +4071,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
              is on the left, and its other sibling the right-panel is on
              the right). The handle sticks 4px outside the chat area on
              the left so it's easy to grab with the mouse. -->
-        <div class="chat-area-resize-handle" id="chatAreaResizeHandle" style="cursor:col-resize;pointer-events:auto !important;background:rgba(59,130,246,0.12);isolation:isolate;transform:translateZ(0);"></div>
+        <div class="chat-area-resize-handle" id="chatAreaResizeHandle" style="cursor:col-resize;pointer-events:auto !important;isolation:isolate;transform:translateZ(0);" title="Drag to resize the chat column"></div>
         <div class="chat-header">
             <button onclick="toggleSessionSidebar()" title="Toggle chat history" style="background:none;border:none;color:var(--text);cursor:pointer;font-size:0.9rem;padding:2px 6px;">&#9776;</button>
             <div class="chat-header-icon">
@@ -4114,7 +4147,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     </div>
 
     <!-- VERTICAL SPLITTER -->
-    <div class="v-splitter" id="vSplitter" style="cursor:col-resize;pointer-events:auto !important;background:rgba(59,130,246,0.12);width:8px;isolation:isolate;transform:translateZ(0);"></div>
+    <div class="v-splitter" id="vSplitter" style="cursor:col-resize;pointer-events:auto !important;width:8px;isolation:isolate;transform:translateZ(0);" title="Drag to resize the right (viewers) panel"></div>
 
     <!-- ============ RIGHT PANEL ============ -->
     <div class="right-panel">
@@ -7166,6 +7199,12 @@ async function init() {
     if (window._pipelineKeeper) { clearInterval(window._pipelineKeeper); window._pipelineKeeper = null; }
     const oldBox = document.getElementById('pipeline_box');
     if (oldBox) oldBox.remove();
+    // pipelineState may not be declared in some boot paths — guard
+    // so a single missing global doesn't abort init() before the
+    // splitters are installed.
+    if (typeof pipelineState === 'undefined') {
+        window.pipelineState = { steps: [], containerId: null };
+    }
     pipelineState.steps = [];
     pipelineState.containerId = null;
     imageAnalysisData.ct = null;
@@ -16880,6 +16919,32 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initReportPanel);
 } else {
     setTimeout(initReportPanel, 100);
+}
+
+// =============================================================================
+// BOOT — kick off the main init() that wires splitters, layout, and status.
+// init() was defined at line 7134 but its boot invocation was lost during
+// the 24aa6ad "12-issue fix batch" commit. Without this call none of the
+// drag-resize splitters bind their pointerdown handlers, which is why
+// the 3 main column handles (sidebar / chat / right-panel) have been
+// dead for multiple fix rounds. Real-browser Playwright trace confirmed
+// the handler closure never ran — init() was never invoked.
+// =============================================================================
+console.log('[BOOT] BrachyBot starting…');
+try {
+    if (typeof init === 'function') {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => init().catch(e => console.error('[BOOT] init() rejected:', e)));
+        } else {
+            // Fire after a tick so the report module (which also boots
+            // at the end of this script) can finish its own setup first.
+            setTimeout(() => init().catch(e => console.error('[BOOT] init() rejected:', e)), 0);
+        }
+    } else {
+        console.error('[BOOT] init() not declared');
+    }
+} catch (e) {
+    console.error('[BOOT] boot wiring failed:', e);
 }
 
 </script>
