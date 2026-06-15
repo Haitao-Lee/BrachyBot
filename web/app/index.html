@@ -4,20 +4,35 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BrachyBot — AI Brachytherapy Planning</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <!-- Inline SVG favicon (a stylized "B" with cyan accent). Avoids the
+         404 the user used to see when /favicon.ico wasn't served. The
+         SVG is tiny (≈400 bytes) so the inline data-URL is fine. -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230f172a'/><text x='16' y='23' text-anchor='middle' font-family='Inter,system-ui,sans-serif' font-size='20' font-weight='700' fill='%2300d4ff'>B</text></svg>">
+    <!-- Google Fonts: CDN-loaded. If the user's network blocks it,
+         the page falls back to system fonts (defined in --font-sans,
+         --font-mono below). The CSS variable approach means we don't
+         need to vendor the .woff2 files (they're large) — system
+         fonts look fine for body text. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-python.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-javascript.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-json.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"
+          onerror="this.disabled=true; console.warn('Google Fonts CDN unreachable; falling back to system fonts.')">
+    <!-- External libraries are vendored LOCALLY under /static/js/ so the
+         page works behind firewalls and on offline-first environments.
+         If the local file is missing for some reason we fall back to
+         the CDN URL with onerror logging — the user sees a clear
+         console message instead of a silently-broken page. -->
+    <script src="static/js/plotly.min.js" onerror="console.error('Failed to load plotly.min.js — check web/app/static/js/')"></script>
+    <script src="static/js/marked.min.js" onerror="console.error('Failed to load marked.min.js')"></script>
+    <link rel="stylesheet" href="static/css/prism-tomorrow.min.css" onerror="console.error('Failed to load prism-tomorrow.min.css')">
+    <script src="static/js/prism.min.js" onerror="console.error('Failed to load prism.min.js')"></script>
+    <script src="static/js/prism-python.min.js" onerror="console.error('Failed to load prism-python.min.js')"></script>
+    <script src="static/js/prism-javascript.min.js" onerror="console.error('Failed to load prism-javascript.min.js')"></script>
+    <script src="static/js/prism-bash.min.js" onerror="console.error('Failed to load prism-bash.min.js')"></script>
+    <script src="static/js/prism-json.min.js" onerror="console.error('Failed to load prism-json.min.js')"></script>
+    <script src="static/js/three.min.js" onerror="console.error('Failed to load three.min.js')"></script>
+    <script src="static/js/OrbitControls.js" onerror="console.error('Failed to load OrbitControls.js')"></script>
+    <script src="static/js/html2canvas.min.js" onerror="console.error('Failed to load html2canvas.min.js')"></script>
     <style>
 /* =============================================================
    BrachyBot — Quiet Glass v2
