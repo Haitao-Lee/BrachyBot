@@ -1050,6 +1050,11 @@ class BrachyAgent:
                 llm_config = {
                     "anthropic": {
                         "enabled": True,
+                        # PINNED to M2.7-highspeed. User explicitly does NOT
+                        # want M3 ("M3 太慢了,不要用"). This is enforced
+                        # again after the router is built (see _lock_model)
+                        # so any env-var override or config file mutation
+                        # is caught and reset.
                         "model": "MiniMax-M2.7-highspeed",
                         "base_url": "https://api.minimaxi.com/anthropic",
                         "api_key": "sk-cp-JTtRZ0CJJmTv7-39iG-3mWH8ebyitJDwep48dEspT48aoJHhDIJSPrPYAxVg7AY-mVeNQOwWRNUobHvyRxPYwN0rex-MAZHHINmL_kQP5skhWbVE7zREXXM",
@@ -1057,6 +1062,11 @@ class BrachyAgent:
                 }
 
             self.brain_router = LLMRouter(llm_config)
+            # Enforce the M2.7-highspeed pin: any provider that ended up
+            # on M3 / M3-highspeed gets reset back to M2.7-highspeed.
+            # This is a hard guarantee — user explicitly does not want
+            # M3 ("M3 太慢了,不要用").
+            self._lock_model_to_m27()
             self.brain_rag = get_rag()
 
             tool_registry = get_tool_registry()
@@ -1090,6 +1100,47 @@ class BrachyAgent:
             logger.warning(f"Brain system not available: {e}")
         except Exception as e:
             logger.warning(f"Brain system initialization failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Model pin: M2.7-highspeed only. M3 is explicitly forbidden by the
+    # user ("M3 太慢了,不要用"). This guard walks every provider after
+    # the router has built them and resets any M3 variant back to
+    # M2.7-highspeed. It also writes a log line on every boot so a
+    # /api/status consumer can audit which model is actually live.
+    # ------------------------------------------------------------------
+    _FORBIDDEN_MODEL_TOKENS = ("m3", "M3")  # case-sensitive enough; we check both
+    _PINNED_MODEL = "MiniMax-M2.7-highspeed"
+    _PINNED_BASE_URL = "https://api.minimaxi.com/anthropic"
+
+    def _lock_model_to_m27(self):
+        """Walk brain_router.providers; force M2.7-highspeed on any
+        provider that ended up on M3. Idempotent — safe to call multiple
+        times. Logs every change."""
+        if not getattr(self, "brain_router", None):
+            return
+        for name, llm in list(self.brain_router.providers.items()):
+            current_model = getattr(llm, "model", "")
+            if any(tok in current_model for tok in self._FORBIDDEN_MODEL_TOKENS):
+                logger.warning(
+                    f"[MODEL-PIN] provider {name!r} was on {current_model!r} "
+                    f"(forbidden — user does not want M3). "
+                    f"Resetting to {self._PINNED_MODEL!r}."
+                )
+                llm.model = self._PINNED_MODEL
+                if hasattr(llm, "base_url") and llm.base_url and "minimaxi" not in (llm.base_url or ""):
+                    llm.base_url = self._PINNED_BASE_URL
+            # Also log the final state for audit
+            logger.info(
+                f"[MODEL-PIN] provider {name!r} active model: "
+                f"{getattr(llm, 'model', '?')!r} "
+                f"base_url: {getattr(llm, 'base_url', '?')!r}"
+            )
+        # If the router has a default_provider that's M3, also force it
+        dp = getattr(self.brain_router, "default_provider", None)
+        if dp and dp in self.brain_router.providers:
+            llm = self.brain_router.providers[dp]
+            if any(tok in getattr(llm, "model", "") for tok in self._FORBIDDEN_MODEL_TOKENS):
+                llm.model = self._PINNED_MODEL
 
     def _init_self_evolution(self):
         """Initialize self-evolution system."""
