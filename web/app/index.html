@@ -5130,6 +5130,78 @@ const CHAT_AVATAR_SVGS = {
     bot:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>',
 };
 
+// Language-aware labels for the usage-bar footer. The footer is
+// one of the few UI elements whose labels are user-facing text
+// (not class names / IDs), so it needs to follow the same
+// language detection as the todo list. We read the active
+// language from window._uiLanguage (set by the SSE start handler
+// when the server emits its detected language) and pick the
+// matching label set. The fallback is English.
+//
+// Key mapping mirrors memory/language.py server-side detection:
+//   zh → Chinese, en → English, ja → Japanese, ko → Korean,
+//   ru → Russian, ar → Arabic.
+const FOOTER_I18N = {
+    zh: {
+        time:  '耗时',
+        tokens:'Tokens',
+        input: '输入',
+        output:'输出',
+        tools: '工具',
+        unit_s:'秒',
+        unit_times:'次',
+    },
+    en: {
+        time:  'Time',
+        tokens:'Tokens',
+        input: 'Input',
+        output:'Output',
+        tools: 'Tools',
+        unit_s:'s',
+        unit_times:'×',
+    },
+    ja: {
+        time:  '時間',
+        tokens:'トークン',
+        input: '入力',
+        output:'出力',
+        tools: 'ツール',
+        unit_s:'秒',
+        unit_times:'回',
+    },
+    ko: {
+        time:  '시간',
+        tokens:'토큰',
+        input: '입력',
+        output:'출력',
+        tools: '도구',
+        unit_s:'초',
+        unit_times:'회',
+    },
+    ru: {
+        time:  'Время',
+        tokens:'Токенов',
+        input: 'Вход',
+        output:'Выход',
+        tools: 'Инструментов',
+        unit_s:'с',
+        unit_times:'раз',
+    },
+    ar: {
+        time:  'الوقت',
+        tokens:'الرموز',
+        input: 'إدخال',
+        output:'إخراج',
+        tools: 'الأدوات',
+        unit_s:'ث',
+        unit_times:'مرات',
+    },
+};
+function _footerI18n() {
+    const code = (typeof window !== 'undefined' && window._uiLanguage) || 'en';
+    return FOOTER_I18N[code] || FOOTER_I18N.en;
+}
+
 // Build the small footer that sits below the bot's response bubble.
 // The footer is a single horizontal row with: response time (left),
 // then token counts, then tool call count. All in monospace numerals
@@ -5188,21 +5260,29 @@ function _buildResponseFooter(llmMeta) {
         return s;
     };
 
-    footer.appendChild(makeItem('耗时', totalSec, 's'));
+    const t = _footerI18n();
+
+    // Build footer items in a fixed order:
+    //   Time  Tokens (Input/Output)  Tools
+    // The Input/Output breakdown is split into TWO separate
+    // items (e.g. "Input 800" and "Output 434") so the user can
+    // see the breakdown at a glance — the old "↑↓ 800/434" was
+    // visually compact but hard to read.
+    footer.appendChild(makeItem(t.time, totalSec, t.unit_s));
     footer.appendChild(sep());
     if (totalT > 0) {
-        footer.appendChild(makeItem('Tokens', totalT.toLocaleString(), ''));
+        footer.appendChild(makeItem(t.tokens, totalT.toLocaleString(), ''));
         footer.appendChild(sep());
-        if (promptT > 0 || compT > 0) {
-            footer.appendChild(makeItem(
-                '↑↓',
-                `${promptT.toLocaleString()}/${compT.toLocaleString()}`,
-                ''
-            ));
+        if (promptT > 0) {
+            footer.appendChild(makeItem(t.input, promptT.toLocaleString(), ''));
+            footer.appendChild(sep());
+        }
+        if (compT > 0) {
+            footer.appendChild(makeItem(t.output, compT.toLocaleString(), ''));
             footer.appendChild(sep());
         }
     }
-    footer.appendChild(makeItem('工具', toolCalls.toString(), ' 次'));
+    footer.appendChild(makeItem(t.tools, toolCalls.toString(), t.unit_times));
 
     // Reset the per-turn counters so the next turn starts fresh.
     window._chatTurnStartTime = null;
