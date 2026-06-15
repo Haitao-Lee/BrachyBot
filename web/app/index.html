@@ -724,9 +724,30 @@ body::before {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    /* DEEPER CHAT THEME (2026-06-15): user wants the chat panel to
+       read as a focused, dark, medical-grade surface — not the same
+       light slate as the rest of the app. We push the entire chat
+       column down to bg-sunken level (#050810) and let the message
+       cards lift UP from that well with subtle elevation. The
+       gradient was a light→mid blue; it's now a mid→sunken gradient
+       for a "looking into a deep display panel" feel. */
     background:
-        linear-gradient(180deg, transparent 0%, var(--bg-1) 100%);
+        linear-gradient(180deg, var(--bg-1) 0%, var(--bg-sunken) 100%),
+        radial-gradient(ellipse at 50% 0%, rgba(96, 165, 250, 0.04) 0%, transparent 60%);
     position: relative;
+    border-left: 1px solid var(--border-hairline);
+    border-right: 1px solid var(--border-hairline);
+}
+/* Subtle inner glow at the top of the chat panel for the
+   "depth" effect the user asked for. */
+.chat-area::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 60px;
+    background: linear-gradient(180deg, rgba(96, 165, 250, 0.06) 0%, transparent 100%);
+    pointer-events: none;
+    z-index: 0;
 }
 
 /* Drag handle on the LEFT edge of the chat column so the user can
@@ -858,7 +879,10 @@ body::before {
     -webkit-user-select: text;
 }
 
-/* ----- Chat messages: USER = tinted brand, BOT = sunken darker ----- */
+/* ----- Chat messages: USER = tinted brand, BOT = sunken darker -----
+   DEEP THEME (2026-06-15): cards now sit on the bg-sunken chat
+   panel and lift UP with a slight elevation halo. We want the
+   reading area to feel like a focused, calm, dark cockpit. */
 .chat-msg {
     padding: 0.7rem 0.95rem;
     border-radius: var(--radius-md);
@@ -872,33 +896,37 @@ body::before {
     user-select: text;
     -webkit-user-select: text;
     cursor: text;
+    z-index: 1;
 }
 .chat-msg p { margin: 0.2rem 0; }
 .chat-msg p:first-child { margin-top: 0; }
 .chat-msg p:last-child { margin-bottom: 0; }
 
 .chat-msg.user {
-    background: var(--msg-user-bg);
-    color: var(--primary-ink);
-    border-color: var(--msg-user-border);
-    box-shadow: var(--inset-top), var(--shadow-xs);
+    /* Deep theme: user card is a subtle blue-tinted dark surface.
+       Lifts off the sunken chat panel. */
+    background: linear-gradient(135deg, rgba(96, 165, 250, 0.14) 0%, rgba(59, 130, 246, 0.10) 100%);
+    color: #e0eaff;
+    border-color: rgba(96, 165, 250, 0.28);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 8px rgba(0, 0, 0, 0.25);
     font-weight: 500;
 }
 .chat-msg.user:hover {
-    background: rgba(59, 130, 246, 0.12);
-    border-color: rgba(59, 130, 246, 0.30);
+    background: linear-gradient(135deg, rgba(96, 165, 250, 0.20) 0%, rgba(59, 130, 246, 0.16) 100%);
+    border-color: rgba(96, 165, 250, 0.45);
 }
 
 .chat-msg.bot {
-    background: var(--msg-assistant-bg);
-    color: var(--text);
-    border-color: var(--msg-assistant-border);
-    box-shadow: var(--inset-bottom), var(--shadow-xs);
+    /* Deep theme: bot card is the next layer up from sunken —
+       a slightly elevated slate with a hairline border. */
+    background: linear-gradient(180deg, var(--bg-1) 0%, var(--bg-2) 100%);
+    color: #dde3f0;
+    border-color: var(--border-default);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 12px rgba(0, 0, 0, 0.35);
 }
 .chat-msg.bot:hover {
-    background: var(--bg-3);
-    border-color: var(--border-default);
-    box-shadow: var(--inset-bottom), var(--shadow-sm);
+    background: linear-gradient(180deg, var(--bg-2) 0%, var(--bg-3) 100%);
+    border-color: var(--border-emphasis);
 }
 
 .chat-msg.system {
@@ -998,28 +1026,60 @@ body::before {
 }
 
 .md-table {
-    border-collapse: collapse;
-    margin: 0.5rem 0;
+    /* DEEP THEME TABLES (2026-06-15): user wants tables to be the
+       primary layout for tool lists / capability summaries. The
+       previous version was a flat 1px border. We now have:
+       - distinct, brand-tinted header
+       - subtle zebra striping for row scanability
+       - tight padding that respects the chat-panel density
+       - proper border-radius (was getting clipped on Safari) */
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 0.6rem 0 0.8rem;
     width: 100%;
-    font-size: 0.75rem;
-    background: var(--bg-2);
-    border-radius: var(--radius-sm);
+    font-size: 0.76rem;
+    background: var(--bg-1);
+    border-radius: var(--radius-md);
     overflow: hidden;
-    border: 1px solid var(--border-hairline);
-    box-shadow: var(--inset-top), var(--shadow-xs);
+    border: 1px solid var(--border-default);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 2px 12px rgba(0, 0, 0, 0.25);
 }
 .md-table th, .md-table td {
-    padding: 0.45rem 0.7rem;
-    border: 1px solid var(--border-hairline);
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border-hairline);
     text-align: left;
+    vertical-align: top;
+    line-height: 1.5;
 }
 .md-table th {
-    background: var(--bg-sunken);
-    color: var(--text);
+    /* Brand-tinted header. Solid color, no transparency, so the
+       contrast is reliable across light/dark themes. */
+    background: linear-gradient(180deg, rgba(96, 165, 250, 0.16) 0%, rgba(96, 165, 250, 0.08) 100%);
+    color: #cfe2ff;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+    font-size: 0.65rem;
+    border-bottom: 1px solid rgba(96, 165, 250, 0.28);
+    font-family: 'Space Grotesk', sans-serif;
+}
+.md-table tr:last-child td { border-bottom: none; }
+.md-table tbody tr:nth-child(even) td {
+    /* Subtle zebra striping. Uses --bg-1 with a 30% blend to the
+       chat-msg.bot background so the row alternation reads in
+       BOTH light and dark themes. */
+    background: rgba(96, 165, 250, 0.03);
+}
+.md-table tbody tr:hover td {
+    background: rgba(96, 165, 250, 0.06);
+}
+.md-table code {
+    background: var(--bg-sunken);
+    color: #c2d8ff;
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+    font-size: 0.72rem;
+    border: 1px solid var(--border-hairline);
 }
 
 .md-list, .md-ordered-list {
@@ -1042,13 +1102,41 @@ body::before {
     font-weight: 600;
     margin: 0.65rem 0 0.3rem;
     letter-spacing: -0.005em;
+    /* CONSISTENT ICON STYLE (2026-06-15): user complained that some
+       sibling headings had an emoji/icon (🎯, 🛠️, 💡...) and others
+       didn't, which made the layout look uneven. The fix is two-fold:
+
+       (1) NO leading emoji. The system prompt for the LLM now
+           explicitly says "do not use emojis in section headings" —
+           see config/prompts/system_prompt.md.
+       (2) Every H2/H3/H4 here gets a thin brand-colored vertical
+           bar on the left as the visual marker, so the heading
+           hierarchy is still scannable without depending on emojis. */
 }
 .md-h1 { font-size: 1.1rem; margin-top: 0.85rem; }
-.md-h2 { font-size: 0.95rem; margin-top: 0.7rem; }
-.md-h3 { font-size: 0.85rem; margin-top: 0.55rem; }
-.md-h4 { font-size: 0.8rem; margin-top: 0.45rem; }
-.md-h5 { font-size: 0.78rem; margin-top: 0.35rem; }
+.md-h2 {
+    font-size: 0.95rem;
+    margin-top: 0.85rem;
+    padding-left: 0.6rem;
+    border-left: 3px solid var(--primary);
+    color: #d6e4ff;
+}
+.md-h3 {
+    font-size: 0.85rem;
+    margin-top: 0.6rem;
+    padding-left: 0.5rem;
+    border-left: 2px solid var(--border-emphasis);
+    color: #c8d2e3;
+}
+.md-h4 { font-size: 0.8rem; margin-top: 0.45rem; color: #b8c1d3; }
+.md-h5 { font-size: 0.78rem; margin-top: 0.35rem; color: var(--text-dim); }
 .md-h1:first-child, .md-h2:first-child, .md-h3:first-child, .md-h4:first-child, .md-h5:first-child { margin-top: 0; }
+/* If the LLM still emits a leading emoji (legacy / drift), we
+   hide it visually so the heading bar provides a uniform look.
+   This is a CSS-only safety net. */
+.md-h2 > .md-emoji-prefix,
+.md-h3 > .md-emoji-prefix,
+.md-h4 > .md-emoji-prefix { display: none; }
 
 .chat-row {
     display: flex;
@@ -5447,10 +5535,46 @@ function renderMarkdown(text) {
     if (!text) return '';
     try {
         if (typeof marked !== 'undefined' && marked && marked.parse) {
-            // marked@4.x; renderer customization is optional, default is fine
+            // marked@4.x; we customize the renderer so the output
+            // carries the .md-* class names the chat CSS expects
+            // (otherwise the default marked output is bare <table>,
+            // <h1>, <ul> etc and gets browser-default styling). The
+            // customization is idempotent — if we've already wrapped
+            // the renderer once, leave it alone.
+            if (!renderMarkdown._renderer_installed) {
+                const R = new marked.Renderer();
+                const _table = R.table.bind(R);
+                R.table = function(...args) {
+                    const html = _table(...args);
+                    return html.replace(/^<table>/, '<table class="md-table">');
+                };
+                const _h1 = R.heading.bind(R);
+                R.heading = function(text, level, raw, slugger) {
+                    // Drop any leading emoji + space so the visual
+                    // style is consistent across sibling headings
+                    // (the user complained about mixed 🎯/🛠️/💡).
+                    const cleaned = String(text).replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F2FF}]\s*/u, '');
+                    const html = _h1(cleaned, level, raw, slugger);
+                    return html.replace(/^<(h[1-6])>/, '<$1 class="md-$1">').replace(/^<(h[1-6]) class="md-(h[1-6])">/, '<$1 class="md-$2">');
+                };
+                const _ul = R.list.bind(R);
+                R.list = function(body, ordered) {
+                    const cls = ordered ? 'md-ordered-list' : 'md-list';
+                    const html = _ul(body, ordered);
+                    return html.replace(/^<(ul|ol)>/, '<$1 class="' + cls + '">');
+                };
+                const _li = R.listitem.bind(R);
+                R.listitem = function(text) {
+                    return _li(text).replace(/^<li>/, '<li class="md-list-item">');
+                };
+                const _hr = R.hr.bind(R);
+                R.hr = function() { return '<hr class="md-hr">'; };
+                marked.setOptions({ renderer: R, gfm: true, breaks: false });
+                renderMarkdown._renderer_installed = true;
+            }
             return marked.parse(text);
         }
-    } catch (e) { /* fall through to plain escape */ }
+    } catch (e) { console.warn('renderMarkdown:', e); /* fall through */ }
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
 }
 
