@@ -3989,9 +3989,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
             <div class="context-panel-body" id="contextPanelBody"></div>
         </div>
         <div class="session-sidebar-footer">
-            <button class="context-toggle-btn" onclick="toggleContextPanel()">
+            <button class="context-toggle-btn" onclick="toggleContextPanel()" title="Show / hide the context summary panel">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 Context
+            </button>
+            <button class="context-toggle-btn" onclick="clearLocalChatData()" title="Wipe ALL local chat sessions, report forms, layout prefs. Server-side state (CT, planning) is untouched.">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/></svg>
+                Clear
             </button>
         </div>
     </div>
@@ -4839,21 +4843,45 @@ let sessions = {};
 let activeSessionId = null;
 
 function loadSessions() {
+    // EPHEMERAL START: do NOT auto-load previously-saved sessions on
+    // page load. The user complained: "刷新浏览器后，我已经看到上次
+    // 对话还在最左边的session里" — fresh page = empty state. Old
+    // sessions are still in localStorage (so the user can browse them
+    // via the session sidebar) but the chat area shows the welcome
+    // message, NOT a stale conversation. A "New chat" session is
+    // created lazily when the user actually sends their first message
+    // (see ensurePendingSession() called from sendChat()).
     try {
         const data = localStorage.getItem(SESSIONS_KEY);
         sessions = data ? JSON.parse(data) : {};
     } catch {
         sessions = {};
     }
-    if (Object.keys(sessions).length === 0) {
-        const id = generateSessionId();
-        sessions[id] = { id, title: 'New chat', messages: [], created: Date.now() };
-        saveSessions();
-    }
-    activeSessionId = localStorage.getItem(ACTIVE_KEY) || Object.keys(sessions)[0];
-    if (!sessions[activeSessionId]) {
-        activeSessionId = Object.keys(sessions)[0];
-    }
+    activeSessionId = null;  // No active session on fresh page
+}
+
+// Called by sendChat() right before sending the user's first
+// message. Creates a fresh "New chat" session IF there isn't one
+// already pending. The session's id is persisted in localStorage
+// so the user can find it again next time.
+function ensurePendingSession() {
+    if (activeSessionId && sessions[activeSessionId]) return;
+    const id = generateSessionId();
+    sessions[id] = {
+        id,
+        title: 'New chat',
+        messages: [],
+        created: Date.now(),
+        // Mark this session as "in progress" so the UI shows the
+        // typing indicator (the welcome message gets cleared when
+        // the LLM's first response arrives).
+        pending: true,
+    };
+    activeSessionId = id;
+    saveSessions();
+    // Re-render the session list so the new session appears
+    // immediately in the sidebar.
+    if (typeof renderSessionList === 'function') renderSessionList();
 }
 
 function saveSessions() {
@@ -4863,6 +4891,47 @@ function saveSessions() {
 
 function generateSessionId() {
     return 'sess_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+// Wipe ALL locally-stored chat data: sessions, active-session
+// pointer, report form, layout preferences (column widths).
+// Server-side state (CT load, planning results) is NOT touched
+// — that's owned by the agent's per-session memory and the user
+// would have to actively clear it via the "Clear" button in the
+// Input panel. The user asked for clean data isolation between
+// page loads; this is the manual way to enforce it if the
+// auto-clear-on-page-load behavior isn't enough.
+function clearLocalChatData() {
+    const ok = window.confirm(
+        '确定要清除所有本地存储的聊天数据吗？\n' +
+        '这会清空:\n' +
+        '  · 所有保存的对话 session\n' +
+        '  · 报告表单内容\n' +
+        '  · 布局偏好 (列宽)\n' +
+        '\n' +
+        '注意: 不会影响服务器上的 CT/规划数据。\n\n' +
+        '确定清除？'
+    );
+    if (!ok) return;
+    try {
+        // Chat sessions + active-session pointer
+        localStorage.removeItem('brachybot_sessions');
+        localStorage.removeItem('brachybot_active_session');
+        // Report form (saved data)
+        localStorage.removeItem('brachyplan_reportForm');
+        // Report auto-save data
+        try { localStorage.removeItem('brachybot_report_autosave'); } catch (_) {}
+        // Layout preferences (column widths) — but keep the
+        // user's last-typed values for the form fields
+        ['layout.sidebar.width', 'layout.right.width'].forEach(k => {
+            try { localStorage.removeItem(k); } catch (_) {}
+        });
+    } catch (e) {
+        console.warn('clearLocalChatData: partial failure', e);
+    }
+    // Reload the page so the cleared state takes effect everywhere
+    // (sidebar re-renders, report panel resets, etc).
+    try { location.reload(); } catch (_) {}
 }
 
 function toggleSessionSidebar() {
@@ -6093,6 +6162,13 @@ async function sendChat(prefill) {
     if (input) input.value = '';
     if (typeof addChat === 'function') addChat('user', text);
     window._lastUserMessage = text;
+
+    // EPHEMERAL START: lazily create a "New chat" session on the
+    // first message send. Until the user actually sends something,
+    // no session is active and the chat area shows the welcome
+    // message. This avoids leaking the previous session into a
+    // fresh page load.
+    try { if (typeof ensurePendingSession === 'function') ensurePendingSession(); } catch (_) {}
 
     // If user already has an active stream, treat this as a STOP request
     if (chatAbortController && window._chatStreaming) {
@@ -16642,7 +16718,17 @@ if (false && _origSendChat && !window._reportLangHooked) {
 
 // ----- 22. Boot -----
 function initReportPanel() {
-    _loadReportFromStorage();
+    // EPHEMERAL START: do NOT auto-load previously-saved report
+    // form from localStorage on page load. The user complained:
+    // "我刷新浏览器后, 都没有上传任何数据, 为什么报告里会已经有
+    // 数据" — fresh page = empty report. Previously-saved report
+    // data is still in localStorage (under key 'brachyplan_reportForm')
+    // and the user can restore it via the "Load" button — but it does
+    // not auto-fill the panel on every page open, which would
+    // confuse the user into thinking the data is for the current
+    // case when it might be from a previous patient.
+    // The previously-saved form is still accessible via
+    // _loadReportFromStorage() (callable from the "Load" button).
     if (!window.reportForm) window.reportForm = _newEmptyReportForm();
     if (!window.reportForm.editedFields) window.reportForm.editedFields = new Set();
     if (!window.reportForm.language) window.reportForm.language = 'zh';
