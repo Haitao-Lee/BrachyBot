@@ -1426,8 +1426,17 @@ class BrachyAgent:
 
         logger.info(f"Registered {len(self.registry.tool_names)} tools: {self.registry.tool_names}")
     
-    def _execute_tool_with_memory(self, tool_name: str, params: Dict, progress_callback=None) -> Any:
-        """Execute a tool, automatically injecting memory-stored data."""
+    def _execute_tool_with_memory(self, tool_name: str, params: Dict, progress_callback=None, step_callback=None) -> Any:
+        """Execute a tool, automatically injecting memory-stored data.
+
+        step_callback (optional): callable(substep_name, status, content)
+        passed to the tool so it can report internal sub-step transitions
+        (e.g. planning_pipeline with step:full emits 5 sub-step events
+        for trajectory_init, trajectory_refine, seed_planning, dose_calc,
+        dose_eval). The streaming wrapper drains these into the SSE
+        stream so the todo list ticks through the sub-steps with the
+        breathing animation.
+        """
         if progress_callback:
             progress_callback(f"Preparing {tool_name}...", 10)
 
@@ -1495,6 +1504,15 @@ class BrachyAgent:
         if progress_callback:
             progress_callback(f"Executing {tool_name}...", 50)
 
+        # Pass step_callback to the tool ONLY for tools that understand
+        # it (currently just planning_pipeline). Other tools (CTV/OAR
+        # seg, etc.) would forward it to the LLM as a bogus param and
+        # fail. Injecting it on every tool was a bug — the LLM was
+        # getting 'step_callback=<function ...>' as a tool argument and
+        # refusing to call the tool.
+        if step_callback is not None and tool_name == "planning_pipeline":
+            params["step_callback"] = step_callback
+
         # Use validation + recovery for critical tools
         if tool_name in self._VALIDATORS:
             result = self._validate_and_execute(tool_name, params)
@@ -1548,6 +1566,20 @@ class BrachyAgent:
                         organ_count = 0
                 if organ_count < 5:  # Need a real OAR map, not just 2-3 vessels
                     logger.info(f"[auto-oar] CTV seg completed but OAR map has only {organ_count} organs — auto-running oar_segmentation")
+                    # Emit a 'pending' step event so the todo list ticks
+                    # through oar_segmentation just like the LLM had
+                    # called it explicitly. The user's complaint:
+                    # "OAR was silently auto-run by the agent but the
+                    # todo list never showed it, so the workflow
+                    # appeared incomplete." With this emit, the
+                    # predicted oar_segmentation row gets the
+                    # breathing animation, then transitions to done
+                    # when auto-OAR completes.
+                    if step_callback is not None:
+                        try:
+                            step_callback("oar_segmentation", "pending", "Auto-running OAR (CTV map had <5 organs)")
+                        except Exception as _e:
+                            logger.debug(f"step_callback (oar pending) failed: {_e}")
                     try:
                         # The oar_segmentation tool accepts EITHER an in-memory
                         # `image` (SimpleITK Image) or an on-disk `image_path`.
@@ -1573,8 +1605,20 @@ class BrachyAgent:
                             if "organ_counts" in (oar_result.metadata or {}):
                                 self.memory.store("organ_counts", oar_result.metadata["organ_counts"])
                             logger.info(f"[auto-oar] OAR seg done: {len(oar_result.metadata.get('organ_names', {}))} organs")
+                            # Emit 'done' for the predicted oar row.
+                            if step_callback is not None:
+                                try:
+                                    n_organs = len(oar_result.metadata.get("organ_names", {}))
+                                    step_callback("oar_segmentation", "done", f"{n_organs} organs")
+                                except Exception as _e:
+                                    logger.debug(f"step_callback (oar done) failed: {_e}")
                         else:
                             logger.warning(f"[auto-oar] OAR seg failed: {oar_result.error if oar_result else 'no result'}")
+                            if step_callback is not None:
+                                try:
+                                    step_callback("oar_segmentation", "error", oar_result.error if oar_result else "no result")
+                                except Exception as _e:
+                                    logger.debug(f"step_callback (oar error) failed: {_e}")
                     except Exception as e:
                         logger.warning(f"[auto-oar] exception: {e}")
             elif tool_name == "trajectory_planning" and "trajectories" in result.metadata:
@@ -2454,8 +2498,10 @@ print(json.dumps(result))
                     content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
                     if not content or len(content) < 10:
                         continue
-                # Label as historical context to prevent confusion with current task
-                messages.append({"role": role, "content": f"[Historical reference — not current task]\n{content}"})
+                # Label as past context so the LLM knows this is prior
+                # conversation, NOT the current task. Avoid "historical
+                # reference" — the LLM was echoing that phrase back.
+                messages.append({"role": role, "content": f"[Earlier conversation — ignore for current task]\n{content}"})
         else:
             # Fallback: use last 12 messages
             msg_history = self.memory.conversation[-12:]
@@ -2924,6 +2970,7 @@ print(json.dumps(result))
         """Remove tool call blocks from LLM response, keep only user-facing text."""
         # Strip internal context labels that LLM might echo back
         content = re.sub(r'\[Historical reference[^\]]*\]\s*', '', content)
+        content = re.sub(r'\[Earlier conversation[^\]]*\]\s*', '', content)
         content = re.sub(r'\[MANDATORY:[^\]]*\]\s*', '', content)
         stripped = content.strip()
 
@@ -3184,8 +3231,10 @@ print(json.dumps(result))
                     content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
                     if not content or len(content) < 10:
                         continue
-                # Label as historical context to prevent confusion with current task
-                messages.append({"role": role, "content": f"[Historical reference — not current task]\n{content}"})
+                # Label as past context so the LLM knows this is prior
+                # conversation, NOT the current task. Avoid "historical
+                # reference" — the LLM was echoing that phrase back.
+                messages.append({"role": role, "content": f"[Earlier conversation — ignore for current task]\n{content}"})
         else:
             # Fallback: use last 12 messages
             msg_history = self.memory.conversation[-12:]
@@ -3510,15 +3559,83 @@ print(json.dumps(result))
                 steps.append(tool_step)
                 yield yield_event("step", tool_step)
 
-                # Progress callback for real-time updates
+                # Progress callback for real-time updates. This is a
+                # regular function (not a generator) — the previous
+                # code used `yield yield_event(...)` which was a no-op
+                # because the function body containing `yield` makes it
+                # a generator and the yield yields the SSE string
+                # itself, never reaching the stream. We now append to
+                # a shared list that the streaming wrapper drains
+                # between event yields.
+                #
+                # The list (self._pending_callback_events) acts as a
+                # bridge between the sync tool call (which can't
+                # `yield` because it's a regular function) and the
+                # streaming generator (which can). Tools call the
+                # callback, the callback appends to the list, and
+                # after the tool returns, the streaming wrapper
+                # flushes the list as additional SSE events.
+                if not hasattr(self, '_pending_callback_events'):
+                    self._pending_callback_events = []
+                self._pending_callback_events.clear()
+
                 def tool_progress_callback(message, percent):
-                    progress_event = {
-                        "type": "tool_progress",
-                        "tool": tool_name,
-                        "message": message,
-                        "percent": percent,
+                    self._pending_callback_events.append((
+                        "progress",
+                        {
+                            "type": "tool_progress",
+                            "tool": tool_name,
+                            "message": message,
+                            "percent": percent,
+                        },
+                    ))
+
+                # step_callback: called by tools (e.g. planning_pipeline
+                # with step:full) for each internal sub-step transition.
+                # The agent translates (substep_name, status) into an
+                # SSE step event so the todo list ticks through the
+                # 5 sub-steps with the breathing animation, instead of
+                # showing a single black-box 'planning_pipeline' step.
+                def tool_step_callback(substep_name, substep_status, substep_content=None):
+                    # Human-friendly title that omits the "调用" prefix
+                    # the generic tool loop adds. Sub-steps are already
+                    # known to be tool calls, so just show the name +
+                    # status, e.g. "trajectory_init (active)".
+                    substep_step = {
+                        "id": step_id_ref[0] + 1,
+                        "type": "tool",
+                        "title": f"{substep_name} — {substep_status}",
+                        "content": substep_content or substep_name,
+                        "status": substep_status,
+                        "tool": substep_name,
+                        "params": {},
+                        "parent_tool": tool_name,
                     }
-                    yield yield_event("progress", progress_event)
+                    if substep_status == "pending":
+                        step_id_ref[0] += 1
+                        substep_step["id"] = step_id_ref[0]
+                        steps.append(substep_step)
+                        self._pending_callback_events.append(("step", substep_step))
+                    elif substep_status in ("done", "error"):
+                        # Find the matching pending entry we appended
+                        # earlier and update it in place.
+                        match = None
+                        for s in steps:
+                            if (s.get("tool") == substep_name
+                                    and s.get("parent_tool") == tool_name
+                                    and s.get("status") == "pending"):
+                                match = s
+                                break
+                        if match:
+                            match["status"] = substep_status
+                            if substep_content:
+                                match["result"] = str(substep_content)[:200]
+                            self._pending_callback_events.append(("step", match))
+                        else:
+                            step_id_ref[0] += 1
+                            substep_step["id"] = step_id_ref[0]
+                            steps.append(substep_step)
+                            self._pending_callback_events.append(("step", substep_step))
 
                 tool_result = None  # Track result for metadata
                 if tool_name in ("self_evolve", "evolve", "进化", "总结经验"):
@@ -3527,7 +3644,21 @@ print(json.dumps(result))
                     result_text = self._handle_code_writing(params)
                 elif tool_name in self.registry.tool_names:
                     try:
-                        result = self._execute_tool_with_memory(tool_name, params, progress_callback=tool_progress_callback)
+                        result = self._execute_tool_with_memory(
+                            tool_name, params,
+                            progress_callback=tool_progress_callback,
+                            step_callback=tool_step_callback,
+                        )
+                        # Drain any sub-step events the tool emitted
+                        # while running. The tool's callbacks are
+                        # sync, so they couldn't `yield` directly —
+                        # they appended to _pending_callback_events,
+                        # and now we flush that list into the SSE
+                        # stream. THIS is what makes the todo list
+                        # tick through 5 sub-steps in real time.
+                        for _evt_type, _evt_data in self._pending_callback_events:
+                            yield yield_event(_evt_type, _evt_data)
+                        self._pending_callback_events.clear()
                         tool_result = result
                         if result.success:
                             result_text = result.message

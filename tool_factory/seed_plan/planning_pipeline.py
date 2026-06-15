@@ -569,6 +569,16 @@ class PlanningPipelineTool(BaseTool):
         step = kwargs.get("step", "trajectory_init")
         agent = _get_agent()
 
+        # step_callback: optional, called for each sub-step with
+        #   (substep_name, status) where status is 'pending' or 'done'.
+        # The agent uses this to emit SSE step events for the todo list
+        # so the user sees each sub-step tick through with the
+        # breathing animation on the active item, instead of one big
+        # 'planning_pipeline' pending → done transition that hides all
+        # 5 sub-steps. Internal to this file, NOT exposed in the
+        # input_schema (popped before validation).
+        step_callback = kwargs.pop("step_callback", None)
+
         # Load CT image (required for all steps)
         ct_image = self._load_ct(kwargs, agent)
         if ct_image is None:
@@ -604,7 +614,7 @@ class PlanningPipelineTool(BaseTool):
 
         # Route to the requested step
         if step == "full":
-            return self._run_full_pipeline(ct_image, ctv_mask, oar_mask, ref_direc, mode, agent_config, agent)
+            return self._run_full_pipeline(ct_image, ctv_mask, oar_mask, ref_direc, mode, agent_config, agent, step_callback=step_callback)
         elif step == "trajectory_init":
             return self._step_trajectory_init(ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent)
         elif step == "trajectory_refine":
@@ -1485,8 +1495,15 @@ class PlanningPipelineTool(BaseTool):
     # ============================================================
 
     def _run_full_pipeline(self, ct_image, ctv_mask, oar_mask, ref_direc,
-                           mode, agent_config, agent):
-        """Run the complete planning pipeline."""
+                           mode, agent_config, agent, step_callback=None):
+        """Run the complete planning pipeline.
+
+        step_callback (optional): callable(substep_name, status) called at
+        the start ('pending') and end ('done' or 'error') of each of the
+        5 sub-steps. The agent translates this to SSE step events so the
+        todo list ticks through ctv→oar→trajectory→seeds→dose instead
+        of showing a single 'planning_pipeline' black box.
+        """
         import time
         results = {}
         # Per-substep wall-clock timings (seconds). The frontend uses this
@@ -1496,29 +1513,48 @@ class PlanningPipelineTool(BaseTool):
         # for the whole planning_pipeline tool call).
         substep_timings = {}
 
+        def _notify(substep_name, status, content=None):
+            """Forward a sub-step transition to the agent. Errors are
+            swallowed (callback is best-effort telemetry, must never
+            break the tool)."""
+            if step_callback is None:
+                return
+            try:
+                step_callback(substep_name, status, content)
+            except Exception as _e:
+                logger.debug(f"step_callback for {substep_name} failed: {_e}")
+
         # Step 1: Trajectory initialization
         logger.info("Step 1/5: Trajectory initialization...")
+        _notify("trajectory_init", "pending", "Generating candidate trajectories")
         t0 = time.time()
         traj_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent)
         substep_timings["trajectory_init"] = round(time.time() - t0, 2)
+        _notify("trajectory_init", "done" if traj_result.success else "error",
+                f"{len(traj_result.metadata.get('trajectories', []))} trajectories")
         if not traj_result.success:
             return traj_result
         results["trajectories"] = traj_result.metadata.get("trajectories", [])
 
         # Step 2: Trajectory refinement
         logger.info("Step 2/5: Trajectory refinement...")
+        _notify("trajectory_refine", "pending", "Refining candidate trajectories")
         t0 = time.time()
         refine_result = self._step_trajectory_refine(ct_image, ctv_mask, oar_mask, agent)
         substep_timings["trajectory_refine"] = round(time.time() - t0, 2)
+        _notify("trajectory_refine", "done" if refine_result.success else "error")
         if not refine_result.success:
             return refine_result
         results["refined_trajectories"] = refine_result.metadata.get("refined_trajectories", [])
 
         # Step 3: Seed planning
         logger.info("Step 3/5: Seed placement optimization...")
+        _notify("seed_planning", "pending", "Optimizing seed placement")
         t0 = time.time()
         seed_result = self._step_seed_planning(ct_image, ctv_mask, oar_mask, mode, agent_config, agent)
         substep_timings["seed_planning"] = round(time.time() - t0, 2)
+        _notify("seed_planning", "done" if seed_result.success else "error",
+                f"{seed_result.metadata.get('total_seeds', 0)} seeds")
         if not seed_result.success:
             return seed_result
         results["seed_plan"] = seed_result.metadata.get("seed_plan", [])
@@ -1526,17 +1562,21 @@ class PlanningPipelineTool(BaseTool):
 
         # Step 4: Dose calculation
         logger.info("Step 4/5: Dose calculation...")
+        _notify("dose_calc", "pending", "Computing dose distribution")
         t0 = time.time()
         dose_result = self._step_dose_calc(ct_image, ctv_mask, oar_mask, agent_config, agent)
         substep_timings["dose_calc"] = round(time.time() - t0, 2)
+        _notify("dose_calc", "done" if dose_result.success else "error")
         if dose_result.success:
             results["dose_distribution"] = dose_result.data
 
         # Step 5: Dose evaluation
         logger.info("Step 5/5: Dose evaluation...")
+        _notify("dose_eval", "pending", "Evaluating dose metrics")
         t0 = time.time()
         eval_result = self._step_dose_eval(ctv_mask, oar_mask, agent)
         substep_timings["dose_eval"] = round(time.time() - t0, 2)
+        _notify("dose_eval", "done" if eval_result.success else "error")
         if eval_result.success:
             results["dose_metrics"] = eval_result.metadata
 
