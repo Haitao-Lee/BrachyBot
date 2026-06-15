@@ -4,6 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BrachyBot — AI Brachytherapy Planning</title>
+    <!--
+        Cache-buster meta tags. We use multiple belt-and-suspenders
+        cache invalidation directives:
+          - Cache-Control: no-cache, no-store, must-revalidate
+          - Pragma: no-cache (HTTP/1.0 fallback)
+          - Expires: 0 (forces revalidation on every visit)
+        These prevent the browser from serving a stale version of
+        the HTML from disk cache when the user navigates by URL.
+        (Same headers are also set by the Flask server response.)
+        If the user is still seeing stale content, they need to do a
+        HARD refresh (Ctrl+Shift+R / Cmd+Shift+R) which discards
+        the disk cache and forces a fresh fetch.
+    -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <!-- Inline SVG favicon (a stylized "B" with cyan accent). Avoids the
          404 the user used to see when /favicon.ico wasn't served. The
          SVG is tiny (≈400 bytes) so the inline data-URL is fine. -->
@@ -22,17 +38,17 @@
          If the local file is missing for some reason we fall back to
          the CDN URL with onerror logging — the user sees a clear
          console message instead of a silently-broken page. -->
-    <script src="static/js/plotly.min.js" onerror="console.error('Failed to load plotly.min.js — check web/app/static/js/')"></script>
-    <script src="static/js/marked.min.js" onerror="console.error('Failed to load marked.min.js')"></script>
-    <link rel="stylesheet" href="static/css/prism-tomorrow.min.css" onerror="console.error('Failed to load prism-tomorrow.min.css')">
-    <script src="static/js/prism.min.js" onerror="console.error('Failed to load prism.min.js')"></script>
-    <script src="static/js/prism-python.min.js" onerror="console.error('Failed to load prism-python.min.js')"></script>
-    <script src="static/js/prism-javascript.min.js" onerror="console.error('Failed to load prism-javascript.min.js')"></script>
-    <script src="static/js/prism-bash.min.js" onerror="console.error('Failed to load prism-bash.min.js')"></script>
-    <script src="static/js/prism-json.min.js" onerror="console.error('Failed to load prism-json.min.js')"></script>
-    <script src="static/js/three.min.js" onerror="console.error('Failed to load three.min.js')"></script>
-    <script src="static/js/OrbitControls.js" onerror="console.error('Failed to load OrbitControls.js')"></script>
-    <script src="static/js/html2canvas.min.js" onerror="console.error('Failed to load html2canvas.min.js')"></script>
+    <script src="static/js/plotly.min.js?v=2" onerror="console.error('Failed to load plotly.min.js — check web/app/static/js/')"></script>
+    <script src="static/js/marked.min.js?v=2" onerror="console.error('Failed to load marked.min.js')"></script>
+    <link rel="stylesheet" href="static/css/prism-tomorrow.min.css?v=2" onerror="console.error('Failed to load prism-tomorrow.min.css')">
+    <script src="static/js/prism.min.js?v=2" onerror="console.error('Failed to load prism.min.js')"></script>
+    <script src="static/js/prism-python.min.js?v=2" onerror="console.error('Failed to load prism-python.min.js')"></script>
+    <script src="static/js/prism-javascript.min.js?v=2" onerror="console.error('Failed to load prism-javascript.min.js')"></script>
+    <script src="static/js/prism-bash.min.js?v=2" onerror="console.error('Failed to load prism-bash.min.js')"></script>
+    <script src="static/js/prism-json.min.js?v=2" onerror="console.error('Failed to load prism-json.min.js')"></script>
+    <script src="static/js/three.min.js?v=2" onerror="console.error('Failed to load three.min.js')"></script>
+    <script src="static/js/OrbitControls.js?v=2" onerror="console.error('Failed to load OrbitControls.js')"></script>
+    <script src="static/js/html2canvas.min.js?v=2" onerror="console.error('Failed to load html2canvas.min.js')"></script>
     <style>
 /* =============================================================
    BrachyBot — Quiet Glass v2
