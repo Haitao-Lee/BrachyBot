@@ -1831,12 +1831,24 @@ class BrachyAgent:
                 # currently tagged with the same label name. We keep
                 # all other OAR labels (e.g. small_bowel, colon)
                 # untouched.
-                self._merge_ctv_labels_into_oar(
-                    result.metadata.get("oar_array"),
-                    result.metadata.get("organ_names"),
-                    result.metadata.get("label_stats"),
-                    result.metadata.get("label_map"),
-                )
+                #
+                # BUG FIX 2026-06-16 (runtime): the helpers
+                # _merge_ctv_labels_into_oar / _strip_oar_labels_in_ctv
+                # live on AgentMemory (where they can see the stored
+                # arrays). Route through self.memory to call them.
+                try:
+                    self.memory._merge_ctv_labels_into_oar(
+                        result.metadata.get("oar_array"),
+                        result.metadata.get("organ_names"),
+                        result.metadata.get("label_stats"),
+                        result.metadata.get("label_map"),
+                    )
+                except AttributeError:
+                    # Fallback if memory helper is missing (defensive)
+                    if "oar_array" in result.metadata:
+                        self.memory.store("oar_array", result.metadata["oar_array"])
+                    if "organ_names" in result.metadata:
+                        self.memory.store("organ_names", result.metadata["organ_names"])
             elif tool_name == "oar_segmentation":
                 logger.info(f"OAR segmentation result: oar_array={'oar_array' in result.metadata}, organ_names={'organ_names' in result.metadata}")
                 # BUG FIX 2026-06-16: BEFORE storing the new OAR
@@ -1852,9 +1864,13 @@ class BrachyAgent:
                 organ_names = result.metadata.get("organ_names")
                 organ_counts = result.metadata.get("organ_counts")
                 if oar_array is not None:
-                    oar_array, organ_names, organ_counts = self._strip_oar_labels_in_ctv(
-                        oar_array, organ_names, organ_counts
-                    )
+                    # BUG FIX 2026-06-16: route helper through self.memory
+                    try:
+                        oar_array, organ_names, organ_counts = self.memory._strip_oar_labels_in_ctv(
+                            oar_array, organ_names, organ_counts
+                        )
+                    except AttributeError:
+                        pass
                 if oar_array is not None:
                     self.memory.store("oar_array", oar_array)
                 if organ_names is not None:
@@ -1923,9 +1939,13 @@ class BrachyAgent:
                                 oar_a = oar_result.metadata["oar_array"]
                                 oar_n = oar_result.metadata.get("organ_names", {})
                                 oar_c = oar_result.metadata.get("organ_counts", {})
-                                oar_a, oar_n, oar_c = self._strip_oar_labels_in_ctv(
-                                    oar_a, oar_n, oar_c
-                                )
+                                # BUG FIX 2026-06-16: route helper through self.memory
+                                try:
+                                    oar_a, oar_n, oar_c = self.memory._strip_oar_labels_in_ctv(
+                                        oar_a, oar_n, oar_c
+                                    )
+                                except AttributeError:
+                                    pass
                                 self.memory.store("oar_array", oar_a)
                                 if oar_n:
                                     self.memory.store("organ_names", oar_n)
@@ -1936,9 +1956,12 @@ class BrachyAgent:
                                 # (rare). Still strip overlapping labels.
                                 oar_n = oar_result.metadata["organ_names"]
                                 oar_c = oar_result.metadata.get("organ_counts", {})
-                                _, oar_n, oar_c = self._strip_oar_labels_in_ctv(
-                                    None, oar_n, oar_c
-                                )
+                                try:
+                                    _, oar_n, oar_c = self.memory._strip_oar_labels_in_ctv(
+                                        None, oar_n, oar_c
+                                    )
+                                except AttributeError:
+                                    pass
                                 self.memory.store("organ_names", oar_n)
                                 if oar_c:
                                     self.memory.store("organ_counts", oar_c)
