@@ -940,21 +940,100 @@ class ToolResultPipeline:
                 + (f"\n\n可用来源URL：\n{sources_text}" if sources_text else "")
             )
         else:
-            synth_prompt = (
-                f"User question: {user_message}\n\n"
-                f"{anti_halluc}\n\n"
-                "You just executed the following tools. Generate a coherent English response.\n"
-                "Requirements:\n"
-                "1. **Respond entirely in English** — translate any non-English content\n"
-                "2. Summarize what was done and the results of each tool\n"
-                "3. **All structured data must be presented in tables or lists** (e.g., image parameters, segmentation results, organ lists, dose metrics)\n"
-                "4. Briefly interpret key data points\n"
-                f"5. **Source attribution**: {source_rule}\n"
-                "6. Note any anomalies (e.g., zero volume) and suggest next steps\n"
-                "7. When citing search results, embed URLs naturally in text (e.g., [title](URL)), don't list them separately\n\n"
-                "Tool results:\n" + "\n\n".join(tool_summary)
-                + (f"\n\nAvailable source URLs:\n{sources_text}" if sources_text else "")
+            # Detect if this was a planning run — if so, we demand a much
+            # more comprehensive clinical response with all metrics,
+            # OAR dose analysis, flagged issues, and clinical guidelines.
+            # The user complained (2026-06-16) that the LLM response
+            # after planning was just a 5-row table with no OAR analysis,
+            # no flagged issues, no clinical context — "太简短"
+            # (too brief). This template forces the LLM to actually
+            # structure the response like a real clinical report.
+            planning_tools = {"ctv_segmentation", "oar_segmentation",
+                              "planning_pipeline", "seed_planning",
+                              "dose_calc", "dose_evaluation",
+                              "trajectory_init", "trajectory_refine"}
+            is_planning = any(
+                r.get("tool") in planning_tools
+                for r in formatted_results
             )
+            if is_planning:
+                synth_prompt = (
+                    f"User question: {user_message}\n\n"
+                    f"{anti_halluc}\n\n"
+                    "You just executed the brachytherapy planning pipeline. "
+                    "Generate a COMPREHENSIVE clinical response — the user explicitly "
+                    "complained that previous responses were too brief (just a 5-row "
+                    "metric table). This response must be thorough.\n\n"
+                    "REQUIRED SECTIONS (in this order):\n\n"
+                    "## 1. Workflow Summary\n"
+                    "2-3 sentences: which tools ran, in what order, and the overall "
+                    "outcome (success / partial / needs-attention).\n\n"
+                    "## 2. CTV Segmentation\n"
+                    "- Tumor volume in cm³ (convert mm³ → cm³: divide by 1000)\n"
+                    "- Voxel count\n"
+                    "- Anatomical location (e.g. pancreatic head, prostate peripheral zone)\n"
+                    "- Number of CTV sub-labels found (e.g. tumor, artery, vein, pancreas)\n\n"
+                    "## 3. OAR Segmentation\n"
+                    "- Total OAR count (typical: 50-117 for TotalSegmentator)\n"
+                    "- List the 5-10 most clinically relevant OARs that appear in this case "
+                    "(e.g. duodenum, small_bowel, colon, stomach, liver, kidney, spinal cord)\n"
+                    "- Note any OARs that are MISSING or have zero voxels\n\n"
+                    "## 4. Trajectory & Seed Plan\n"
+                    "- Number of trajectories generated\n"
+                    "- Number of seeds placed\n"
+                    "- Mode used (rule_based / rl)\n"
+                    "- Trajectory density (seeds per cm³ CTV)\n"
+                    "- Any anatomical obstacles avoided (vessels, bones, critical OARs)\n\n"
+                    "## 5. Dose Distribution\n"
+                    "- Prescription dose\n"
+                    "- CTV coverage: V100, V150, V200 (as percentages)\n"
+                    "- D90, Dmean, D2 (max dose in Gy)\n"
+                    "- Conformity Index (CI), Homogeneity Index (HI)\n"
+                    "- Plan score (0-100)\n\n"
+                    "## 6. OAR Dose Analysis — MUST INCLUDE TABLE\n"
+                    "Present ALL OAR metrics returned by dose_evaluation in a TABLE:\n"
+                    "| OAR | Dmax (Gy) | D2cc (Gy) | D1cc (Gy) | Status |\n"
+                    "|-----|-----------|-----------|-----------|--------|\n"
+                    "Then for each OAR, classify status as: OK / WARN / EXCEEDS based on:\n"
+                    "- ABS / GEC-ESTRO / ICRU 89 / TG-43 / TG-229 / QUANTEC tolerance\n"
+                    - V100 < 1.0 Gy, D2cc < 1.0 Gy (1×Rx) = OK\n"
+                    "- Dmax > 2×Rx = EXCEEDS\n"
+                    "- D2cc > 1×Rx = WARN\n\n"
+                    "## 7. Flagged Issues\n"
+                    "Bullet list of every metric that does NOT meet clinical tolerance, "
+                    "with the actual value vs. the tolerance and a one-line clinical implication.\n\n"
+                    "## 8. Clinical Recommendations\n"
+                    "3-5 bullet points: actionable next steps (e.g. consider seed repositioning "
+                    "near duodenum, validate with secondary dose calculation, consult radiation "
+                    "oncologist for plan acceptance).\n\n"
+                    "## 9. References\n"
+                    "Inline links to relevant guidelines — pick the most applicable 2-3:\n"
+                    "- [TG-43 AAPM](https://www.aapm.org/pubs/reports/RPT_268.pdf)\n"
+                    "- [GEC-ESTRO](https://www.estro.org/Science/Guidelines)\n"
+                    "- [ICRU Report 89](https://www.icru.org/report/icru-report-89-prescribing-recording-and-reporting-photon-beam-therapy-2nd-edition)\n"
+                    "- [ABS Brachy Guidelines](https://www.americanbrachytherapy.org/)\n"
+                    "- [TG-229 AAPM](https://www.aapm.org/pubs/reports/RPT_229.pdf)\n"
+                    "- [NCCN Guidelines](https://www.nccn.org/guidelines)\n\n"
+                    f"10. **Source attribution**: {source_rule}\n\n"
+                    "## Tool results:\n" + "\n\n".join(tool_summary)
+                    + (f"\n\nAvailable source URLs:\n{sources_text}" if sources_text else "")
+                )
+            else:
+                synth_prompt = (
+                    f"User question: {user_message}\n\n"
+                    f"{anti_halluc}\n\n"
+                    "You just executed the following tools. Generate a coherent English response.\n"
+                    "Requirements:\n"
+                    "1. **Respond entirely in English** — translate any non-English content\n"
+                    "2. Summarize what was done and the results of each tool\n"
+                    "3. **All structured data must be presented in tables or lists** (e.g., image parameters, segmentation results, organ lists, dose metrics)\n"
+                    "4. Briefly interpret key data points\n"
+                    f"5. **Source attribution**: {source_rule}\n"
+                    "6. Note any anomalies (e.g., zero volume) and suggest next steps\n"
+                    "7. When citing search results, embed URLs naturally in text (e.g., [title](URL)), don't list them separately\n\n"
+                    "Tool results:\n" + "\n\n".join(tool_summary)
+                    + (f"\n\nAvailable source URLs:\n{sources_text}" if sources_text else "")
+                )
 
         try:
             resp = brain_router.chat(synth_prompt)
