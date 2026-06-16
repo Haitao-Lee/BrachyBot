@@ -6636,7 +6636,71 @@ function createLiveThinkingChain() {
 
 function appendStepToChain(stepsDiv, step, idx) {
     if (!stepsDiv) return;
-    const existingBlock = stepsDiv.querySelector('[data-step-id="' + step.id + '"]');
+    // BUG FIX 2026-06-16 (LLM Call pending hang): the user's trace
+    // showed rows like "oar_segmentation — pending done" appearing
+    // TWICE and "LLM Call N" rows lingering in 'pending' even after
+    // the response finalized. Two root causes:
+    //   (a) The server sometimes emits the SAME step under different
+    //       ids when the tool loops back (e.g. CTV's auto-OAR inside
+    //       ctv_segmentation creates a separate pending event whose
+    //       id was incremented independently from the planning
+    //       pipeline's later oar_segmentation run). The frontend's
+    //       dedup-by-id misses these.
+    //   (b) When the SSE pump re-emits a step with the SAME id, the
+    //       existing block is updated in place — but if the status
+    //       goes from pending -> done on a step that previously
+    //       already showed done, the .step-status class doesn't
+    //       refresh. So even though the data updated, the user sees
+    //       the stale 'pending' pill.
+    // Fix: do a TWO-PASS dedup. First by step.id; if no match, also
+    // check (type + tool + parent_tool) so cross-id duplicates are
+    // caught. Then ALWAYS re-render the .step-status class on update
+    // so stale "pending" classes get cleared.
+    let existingBlock = stepsDiv.querySelector('[data-step-id="' + step.id + '"]');
+    if (!existingBlock && step.tool) {
+        // Fallback dedup: match a block with the same (type, tool,
+        // parent_tool) regardless of id. This catches the case
+        // where the server emits the same logical step under
+        // different ids (e.g. CTV's auto-OAR inside ctv_segmentation
+        // emits pending with id=N, planning_pipeline re-emits the
+        // same oar_segmentation with id=M).
+        //
+        // Match priority:
+        //   1. Any 'pending' block for the same (type, tool, parent)
+        //      — promote it to the new status (most common case).
+        //   2. If new step is 'pending' AND existing is also 'pending'
+        //      — drop the new one (duplicate re-emission).
+        //   3. If new step is 'done' AND existing is 'done' (no
+        //      pending anywhere) — update the FIRST occurrence.
+        const blocks = Array.from(stepsDiv.querySelectorAll('.step-block'));
+        let sameToolDoneBlock = null;
+        for (const b of blocks) {
+            const bTool = b.dataset.stepTool || '';
+            const bParent = b.dataset.stepParent || '';
+            const bType = b.dataset.stepType || '';
+            const bStatus = b.querySelector('.step-status')?.textContent || '';
+            if (bType !== step.type || bTool !== step.tool) continue;
+            if (bParent !== (step.parent_tool || '')) continue;
+            if (bStatus === 'pending') {
+                // Reuse this block's id and update it.
+                step.id = b.dataset.stepId;
+                existingBlock = b;
+                break;
+            }
+            if (step.status === 'pending' && bStatus === 'pending') {
+                // Both pending; treat as duplicate and DROP this one.
+                return;
+            }
+            // Remember a same-tool done block as a fallback target so
+            // later "done" events don't create yet another duplicate.
+            if (!sameToolDoneBlock) sameToolDoneBlock = b;
+        }
+        // If still no match and we have a same-tool done block, reuse it.
+        if (!existingBlock && sameToolDoneBlock && step.status === 'done') {
+            step.id = sameToolDoneBlock.dataset.stepId;
+            existingBlock = sameToolDoneBlock;
+        }
+    }
     const icon = STEP_ICONS[step.type] || '&#9679;';
     const toolName = step.tool ? '<div class="step-tool-name">' + escHtml(step.tool) + '</div>' : '';
     const params = step.params ? '<div class="step-params">' + Object.entries(step.params).map(([k, v]) => escHtml(k) + ': ' + escHtml(JSON.stringify(v))).join(', ') + '</div>' : '';
@@ -6660,6 +6724,12 @@ function appendStepToChain(stepsDiv, step, idx) {
 
     if (existingBlock) {
         existingBlock.innerHTML = bodyHtml;
+        // Re-stamp the dedup attributes so subsequent fallback dedup
+        // can still find this block by (type, tool, parent_tool).
+        existingBlock.dataset.stepId = step.id;
+        existingBlock.dataset.stepTool = step.tool || '';
+        existingBlock.dataset.stepParent = step.parent_tool || '';
+        existingBlock.dataset.stepType = step.type || '';
         try { existingBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
         return;
     }
@@ -6668,6 +6738,9 @@ function appendStepToChain(stepsDiv, step, idx) {
     block.className = 'step-block';
     block.id = 'step_' + idx;
     block.dataset.stepId = step.id;
+    block.dataset.stepTool = step.tool || '';
+    block.dataset.stepParent = step.parent_tool || '';
+    block.dataset.stepType = step.type || '';
     block.innerHTML = bodyHtml;
     stepsDiv.appendChild(block);
 }
