@@ -162,6 +162,214 @@ class AgentMemory:
     def retrieve(self, key: str, default: Any = None) -> Any:
         return self.planning_results.get(key, default)
 
+    # ------------------------------------------------------------------
+    # CTV/OAR label priority (2026-06-16)
+    # ------------------------------------------------------------------
+    # User rule: when the SAME anatomical label appears in BOTH the
+    # CTV segmentation (e.g. pancreatic head CT nnUNet which extracts
+    # pancreas / duodenum / vessels as CTV sub-labels) AND the OAR
+    # segmentation (TotalSegmentator's 117-organ map), CTV wins. This
+    # matters most for pancreatic patients where:
+    #   - CTV nnUNet outputs: tumor, artery, vein, pancreas
+    #   - OAR TotalSegmentator outputs: pancreas, duodenum, ...
+    # Without merging, the data tree shows two `pancreas` rows, the
+    # DVH has duplicate traces, and DVH dose_eval gets confused.
+    #
+    # Two helpers below:
+    #   _merge_ctv_labels_into_oar(): called when CTV completes. It
+    #     takes the CTV's oar_array (which contains the CTV-version
+    #     of pancreas / vessels) and MERGES it INTO the existing
+    #     oar_array. For labels that exist in BOTH, the CTV voxels
+    #     overwrite the OAR voxels (priority).
+    #
+    #   _strip_oar_labels_in_ctv(): called when OAR completes AFTER
+    #     CTV has already been stored. It REMOVES any OAR labels
+    #     whose name is in the CTV label map (so the OAR's pancreas
+    #     can't overwrite the CTV's pancreas).
+    # ------------------------------------------------------------------
+    def _normalize_label_name(self, name: str) -> str:
+        """Normalize a label name for comparison: lowercase, strip
+        common anatomical suffixes that don't change identity
+        (pancreas_head = pancreas, kidney_left = kidney, etc.).
+        We aggressively strip any trailing qualifier so that
+        TotalSegmentator's `pancreas_head` and CTV nnUNet's
+        `pancreas` are recognized as the same organ.
+        """
+        if not name:
+            return ""
+        s = str(name).strip().lower().replace("-", "_").replace(" ", "_")
+        # Iteratively strip suffixes until none match (handles
+        # 'pancreas_head_left' → 'pancreas').
+        suffixes = (
+            "_left", "_right", "_anterior", "_posterior",
+            "_superior", "_inferior", "_medial", "_lateral",
+            "_head", "_body", "_tail", "_upper", "_lower",
+            "_proximal", "_distal", "_central", "_peripheral",
+            "_anterior_lobe", "_posterior_lobe",
+        )
+        changed = True
+        while changed:
+            changed = False
+            for suf in suffixes:
+                if s.endswith(suf):
+                    s = s[:-len(suf)]
+                    changed = True
+                    break
+        return s
+
+    def _merge_ctv_labels_into_oar(self, ctv_oar_array, ctv_organ_names,
+                                    ctv_label_stats, ctv_label_map):
+        """Merge the CTV segmentation's OAR-equivalent labels (pancreas,
+        vessels, etc.) INTO the existing OAR array. For matching label
+        names, CTV voxels win.
+
+        Safe to call when oar_array / organ_names are None or empty —
+        we just store the CTV's versions as the new baseline.
+        """
+        try:
+            import numpy as np
+        except ImportError:
+            return
+        if ctv_oar_array is None:
+            return
+        ctv_arr = np.asarray(ctv_oar_array)
+        if ctv_arr.size == 0:
+            return
+        # The CTV tool labels: {numeric_label: name}
+        ctv_labels = {}
+        if isinstance(ctv_organ_names, dict):
+            ctv_labels.update(ctv_organ_names)
+        if isinstance(ctv_label_map, dict):
+            for k, v in ctv_label_map.items():
+                if v not in ctv_labels.values():
+                    ctv_labels[k] = v
+        if not ctv_labels:
+            return
+
+        # Get the existing OAR array and label dict
+        existing_oar = self.retrieve("oar_array")
+        existing_names = self.retrieve("organ_names") or {}
+        if existing_oar is None:
+            # No prior OAR → just use CTV's OAR as the new baseline
+            self.store("oar_array", ctv_arr)
+            self.store("organ_names", dict(ctv_labels))
+            return
+
+        existing_arr = np.asarray(existing_oar)
+        if existing_arr.shape != ctv_arr.shape:
+            # Shape mismatch (rare) — bail out, keep existing
+            logger.warning(f"CTV/OAR array shape mismatch "
+                           f"({ctv_arr.shape} vs {existing_arr.shape}); "
+                           f"skipping merge")
+            return
+
+        # Build a normalized-name → existing-label-id map for matching
+        existing_by_norm = {}
+        for lid, name in existing_names.items():
+            norm = self._normalize_label_name(name)
+            if norm and norm not in existing_by_norm:
+                existing_by_norm[norm] = (lid, name)
+
+        # Merge: for each CTV label, find matching OAR label by
+        # normalized name, then overwrite those voxels with CTV's
+        # voxels and CTV's label id.
+        merged_names = dict(existing_names)
+        for ctv_lid, ctv_name in ctv_labels.items():
+            norm = self._normalize_label_name(ctv_name)
+            if not norm:
+                continue
+            match = existing_by_norm.get(norm)
+            if match:
+                # Replace OAR's voxels with CTV's voxels (priority)
+                oar_lid, oar_name = match
+                try:
+                    ctv_lid_int = int(ctv_lid)
+                    oar_lid_int = int(oar_lid)
+                    mask = (ctv_arr == ctv_lid_int)
+                    if mask.any():
+                        existing_arr[mask] = oar_lid_int
+                except (ValueError, TypeError):
+                    pass
+                # Keep the existing OAR's display name (CTV's name
+                # might be longer / different formatting).
+            else:
+                # New label not in OAR — add CTV's voxels under a
+                # NEW label id that's not currently used. Find the
+                # max existing id.
+                try:
+                    max_id = max(int(k) for k in existing_names.keys() if str(k).isdigit())
+                except (ValueError, TypeError):
+                    max_id = 100
+                new_id = str(max_id + 1)
+                try:
+                    ctv_lid_int = int(ctv_lid)
+                    mask = (ctv_arr == ctv_lid_int)
+                    if mask.any():
+                        existing_arr[mask] = int(new_id)
+                        merged_names[new_id] = ctv_name
+                except (ValueError, TypeError):
+                    pass
+
+        self.store("oar_array", existing_arr)
+        self.store("organ_names", merged_names)
+        logger.info(f"CTV/OAR merge: kept {len(merged_names)} labels, "
+                    f"CTV overwrote matching OAR voxels for "
+                    f"{sum(1 for n in ctv_labels.values() if self._normalize_label_name(n) in existing_by_norm)} labels")
+
+    def _strip_oar_labels_in_ctv(self, oar_array, organ_names, organ_counts):
+        """Remove labels from the OAR array whose name matches a CTV
+        label name. Returns the filtered (array, names, counts) tuple.
+
+        Called BEFORE storing OAR results, so OAR's `pancreas` doesn't
+        overwrite the CTV's `pancreas`.
+        """
+        try:
+            import numpy as np
+        except ImportError:
+            return oar_array, organ_names, organ_counts
+        if oar_array is None or organ_names is None:
+            return oar_array, organ_names, organ_counts
+        ctv_labels = self.retrieve("ctv_label_map") or {}
+        if isinstance(self.retrieve("ctv_label_stats"), dict):
+            # Build name → set from ctv_label_stats keys
+            ctv_names = set(self._normalize_label_name(k)
+                            for k in (self.retrieve("ctv_label_stats") or {}).keys())
+        else:
+            ctv_names = set()
+        # Also include label_map values
+        if isinstance(ctv_labels, dict):
+            for v in ctv_labels.values():
+                norm = self._normalize_label_name(v)
+                if norm:
+                    ctv_names.add(norm)
+        if not ctv_names:
+            return oar_array, organ_names, organ_counts
+
+        arr = np.asarray(oar_array)
+        filtered_names = {}
+        filtered_counts = {}
+        if isinstance(organ_counts, dict):
+            for lid, name in organ_names.items():
+                if self._normalize_label_name(name) in ctv_names:
+                    # Zero out voxels for this label
+                    try:
+                        arr[arr == int(lid)] = 0
+                    except (ValueError, TypeError):
+                        pass
+                    # Don't add to filtered_names — drop the label
+                else:
+                    filtered_names[lid] = name
+                    if organ_counts.get(lid) is not None:
+                        filtered_counts[lid] = organ_counts[lid]
+        else:
+            for lid, name in organ_names.items():
+                if self._normalize_label_name(name) not in ctv_names:
+                    filtered_names[lid] = name
+
+        logger.info(f"OAR strip: removed {len(organ_names) - len(filtered_names)} "
+                    f"labels that overlap CTV (kept {len(filtered_names)})")
+        return arr, filtered_names, filtered_counts
+
     def log_tool_call(self, tool_name: str, inputs: Dict, result):
         self.tool_results.append({
             "tool": tool_name,
@@ -996,9 +1204,9 @@ class ToolResultPipeline:
                     "|-----|-----------|-----------|-----------|--------|\n"
                     "Then for each OAR, classify status as: OK / WARN / EXCEEDS based on:\n"
                     "- ABS / GEC-ESTRO / ICRU 89 / TG-43 / TG-229 / QUANTEC tolerance\n"
-                    - V100 < 1.0 Gy, D2cc < 1.0 Gy (1×Rx) = OK\n"
-                    "- Dmax > 2×Rx = EXCEEDS\n"
-                    "- D2cc > 1×Rx = WARN\n\n"
+                    "- V100 < 1.0 Gy, D2cc < 1.0 Gy (1xRx) = OK\n"
+                    "- Dmax > 2xRx = EXCEEDS\n"
+                    "- D2cc > 1xRx = WARN\n\n"
                     "## 7. Flagged Issues\n"
                     "Bullet list of every metric that does NOT meet clinical tolerance, "
                     "with the actual value vs. the tolerance and a one-line clinical implication.\n\n"
@@ -1611,20 +1819,49 @@ class BrachyAgent:
                     self.memory.store("ctv_label_stats", result.metadata["label_stats"])
                 if "label_map" in result.metadata:
                     self.memory.store("ctv_label_map", result.metadata["label_map"])
-                # Store OAR from CTV (artery/vein as non-traversable)
-                if "oar_array" in result.metadata:
-                    self.memory.store("oar_array", result.metadata["oar_array"])
-                if "organ_names" in result.metadata:
-                    self.memory.store("organ_names", result.metadata["organ_names"])
+                # BUG FIX 2026-06-16 (CTV/OAR label priority): for
+                # pancreatic patients, CTV segmentation produces a
+                # `pancreas` label (and sometimes other anatomically
+                # adjacent structures like duodenum). OAR segmentation
+                # (TotalSegmentator) ALSO produces `pancreas` and
+                # `duodenum`. Without merging, the data tree, DVH,
+                # and dose eval see TWO copies of the same label.
+                # User's rule: CTV WINS. Merge the CTV labels into
+                # the existing OAR map, OVERWRITING any voxels
+                # currently tagged with the same label name. We keep
+                # all other OAR labels (e.g. small_bowel, colon)
+                # untouched.
+                self._merge_ctv_labels_into_oar(
+                    result.metadata.get("oar_array"),
+                    result.metadata.get("organ_names"),
+                    result.metadata.get("label_stats"),
+                    result.metadata.get("label_map"),
+                )
             elif tool_name == "oar_segmentation":
                 logger.info(f"OAR segmentation result: oar_array={'oar_array' in result.metadata}, organ_names={'organ_names' in result.metadata}")
-                if "oar_array" in result.metadata:
-                    self.memory.store("oar_array", result.metadata["oar_array"])
-                if "organ_names" in result.metadata:
-                    self.memory.store("organ_names", result.metadata["organ_names"])
-                    logger.info(f"Stored organ_names: {result.metadata['organ_names']}")
-                if "organ_counts" in result.metadata:
-                    self.memory.store("organ_counts", result.metadata["organ_counts"])
+                # BUG FIX 2026-06-16: BEFORE storing the new OAR
+                # array, REMOVE any labels that are also in the
+                # CTV label map (CTV wins). This handles the case
+                # where OAR runs FIRST (before CTV) — when CTV
+                # eventually runs, the CTV labels are merged on
+                # top via _merge_ctv_labels_into_oar. But if the
+                # user runs OAR again after CTV, this prevents the
+                # OAR's `pancreas` from overwriting the CTV's
+                # `pancreas`.
+                oar_array = result.metadata.get("oar_array")
+                organ_names = result.metadata.get("organ_names")
+                organ_counts = result.metadata.get("organ_counts")
+                if oar_array is not None:
+                    oar_array, organ_names, organ_counts = self._strip_oar_labels_in_ctv(
+                        oar_array, organ_names, organ_counts
+                    )
+                if oar_array is not None:
+                    self.memory.store("oar_array", oar_array)
+                if organ_names is not None:
+                    self.memory.store("organ_names", organ_names)
+                    logger.info(f"Stored organ_names: {organ_names}")
+                if organ_counts is not None:
+                    self.memory.store("organ_counts", organ_counts)
             # If CTV segmentation completed but the resulting OAR map is
             # missing or only carries a few labels (the CTV pipeline also
             # extracts a tiny set of "vessel" labels), auto-trigger a
@@ -1678,12 +1915,34 @@ class BrachyAgent:
                         oar_result = self.registry.execute("oar_segmentation", **oar_params)
                         if oar_result and oar_result.success:
                             if "oar_array" in (oar_result.metadata or {}):
-                                self.memory.store("oar_array", oar_result.metadata["oar_array"])
-                            if "organ_names" in (oar_result.metadata or {}):
-                                self.memory.store("organ_names", oar_result.metadata["organ_names"])
-                            if "organ_counts" in (oar_result.metadata or {}):
-                                self.memory.store("organ_counts", oar_result.metadata["organ_counts"])
-                            logger.info(f"[auto-oar] OAR seg done: {len(oar_result.metadata.get('organ_names', {}))} organs")
+                                # BUG FIX 2026-06-16 (CTV/OAR priority):
+                                # strip any OAR labels that overlap with
+                                # the CTV's label map so the auto-OAR
+                                # doesn't overwrite the CTV's pancreas
+                                # with the TotalSegmentator version.
+                                oar_a = oar_result.metadata["oar_array"]
+                                oar_n = oar_result.metadata.get("organ_names", {})
+                                oar_c = oar_result.metadata.get("organ_counts", {})
+                                oar_a, oar_n, oar_c = self._strip_oar_labels_in_ctv(
+                                    oar_a, oar_n, oar_c
+                                )
+                                self.memory.store("oar_array", oar_a)
+                                if oar_n:
+                                    self.memory.store("organ_names", oar_n)
+                                if oar_c:
+                                    self.memory.store("organ_counts", oar_c)
+                            elif "organ_names" in (oar_result.metadata or {}):
+                                # Fallback: OAR has no array but has names
+                                # (rare). Still strip overlapping labels.
+                                oar_n = oar_result.metadata["organ_names"]
+                                oar_c = oar_result.metadata.get("organ_counts", {})
+                                _, oar_n, oar_c = self._strip_oar_labels_in_ctv(
+                                    None, oar_n, oar_c
+                                )
+                                self.memory.store("organ_names", oar_n)
+                                if oar_c:
+                                    self.memory.store("organ_counts", oar_c)
+                            logger.info(f"[auto-oar] OAR seg done: {len(oar_result.metadata.get('organ_names', {}))} organs (after CTV-strip)")
                             # Emit 'done' for the predicted oar row.
                             if step_callback is not None:
                                 try:
