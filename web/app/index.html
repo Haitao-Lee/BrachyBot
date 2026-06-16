@@ -7157,6 +7157,21 @@ function _todoCreate() {
                 }
             }
             item.status = 'active';
+            // BUG FIX 2026-06-16: the user reported that after CTV
+            // finished, OAR's row went directly from "predicted" →
+            // "done" without any visible "active" breathing state.
+            // Root cause: SSE `pending` + `done` events for the
+            // auto-fired OAR arrive in the SAME flush batch (both
+            // appended to _pending_callback_events and drained
+            // together after the CTV tool returns). The browser
+            // processes them in the same JS task and never paints
+            // an intermediate "active" frame. We work around this
+            // client-side by enforcing a minimum display time:
+            // when a predicted item goes active, we record
+            // `_activatedAt`; if a `done` event arrives within 1s
+            // of activation, defer the done transition by the
+            // remaining time so the user sees the breathing state.
+            item._activatedAt = Date.now();
             // GUARD against bad startedAt values (2026-06-16 bug: the
             // OAR step showed "781586106.x seconds" because startedAt
             // had been clobbered to 0 somewhere upstream, and the
@@ -7179,6 +7194,27 @@ function _todoCreate() {
             _todoStartGpuBadge(item);
         },
         markDone(item, errMsg) {
+            // BUG FIX 2026-06-16: enforce a minimum active-display
+            // time so the user can SEE the breathing animation
+            // before the row transitions to done. Without this,
+            // an item that was just promoted from 'predicted' →
+            // 'active' and immediately receives 'done' (e.g. the
+            // auto-OAR flow where both events arrive in the same
+            // SSE flush batch) goes directly from dim ghost to ✓
+            // with no visible activity. We defer the actual DOM
+            // transitions until at least 800ms have elapsed since
+            // activation. The timer keeps ticking so the duration
+            // shown to the user is the REAL tool time, not the
+            // artificial delay.
+            const MIN_ACTIVE_MS = 800;
+            const sinceActive = item._activatedAt ? (Date.now() - item._activatedAt) : MIN_ACTIVE_MS;
+            if (item.status === 'active' && sinceActive < MIN_ACTIVE_MS) {
+                const delay = MIN_ACTIVE_MS - sinceActive;
+                setTimeout(() => {
+                    if (item.status === 'active') this.markDone(item, errMsg);
+                }, delay);
+                return;
+            }
             if (item._timer) { clearInterval(item._timer); item._timer = null; }
             _todoStopGpuBadge(item);
             item.status = errMsg ? 'error' : 'done';
