@@ -47,7 +47,7 @@ _MODULE_TRIGGERS = {
         r"(?:dose constraint|剂量限制|OAR limit|危及器官|organ tolerance|耐受量|DVH|safety check|安全检查|剂量验证)",
     ],
     "search_guide": [
-        r"(?:web_search|web_fetch|搜索结果|search result|cite|引用|source|来源|参考文献)",
+        r"(?:web_search|web_fetch|搜索结果|search result|cite|引用|source|来源|参考文献|全网搜索|联网搜索|检索|权威指南|pubmed|nccn|estro|icru|aapm|guideline|guidelines)",
     ],
     "memory_recall": [
         r"(?:recall|remember|回忆|记得|提醒我|之前.*讨论|上次.*说|prior conversation|previous session)",
