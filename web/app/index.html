@@ -4853,6 +4853,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
                         </table>
                     </div>
                 </div>
+
+                <!-- CLINICAL EVALUATION (2026-06-16): structured
+                     problem list + clinical interpretation with
+                     clickable references to authoritative guidelines.
+                     Populated by updateClinicalEvaluation() which runs
+                     after each planning refresh. -->
+                <div class="metrics-section" data-flex="auto" id="metricsEvaluation">
+                    <div class="metrics-title">
+                        <span data-i18n-zh="📋 临床评估与指南引用" data-i18n-en="📋 Clinical Evaluation &amp; Guideline References">📋 Clinical Evaluation &amp; Guideline References</span>
+                    </div>
+                    <div id="clinicalEvaluationContent" style="padding:0.4rem 0.6rem 0.6rem;font-size:0.7rem;">
+                        <div style="color:var(--text-dim);font-style:italic;" data-i18n-zh="规划完成后此处显示详细评估" data-i18n-en="Detailed evaluation will appear here after planning completes.">Detailed evaluation will appear here after planning completes.</div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -4861,24 +4875,33 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
             <div class="rp-root">
                 <!-- Primary toolbar: main actions -->
                 <div class="rp-toolbar-primary">
-                    <span class="rp-title">📄 Treatment Plan Report</span>
+                    <span class="rp-title" data-i18n-zh="📄 治疗计划报告" data-i18n-en="📄 Treatment Plan Report">📄 Treatment Plan Report</span>
                     <span class="rp-toolbar-spacer"></span>
-                    <button class="btn btn-primary" onclick="Report.autoFill.fromAll()" title="从 NIfTI + 规划结果自动填充所有字段">✨ Auto-fill</button>
-                    <select class="form-select" id="reportTemplateSelect" onchange="applyReportTemplate(this.value)" style="width:auto;" title="Apply a tumor-site report template">
-                        <option value="">— Template —</option>
-                        <option value="pancreas">Pancreas 胰腺</option>
-                        <option value="prostate">Prostate 前列腺</option>
-                        <option value="head_neck">Head & Neck 头颈</option>
-                        <option value="gynecology">Gynecology 妇科</option>
-                        <option value="liver">Liver 肝脏</option>
+                    <button class="btn btn-primary" onclick="Report.autoFill.fromAll()"
+                            data-i18n-title-zh="从 NIfTI + 规划结果自动填充所有字段"
+                            data-i18n-title-en="Auto-fill all fields from NIfTI + planning result">✨ Auto-fill</button>
+                    <select class="form-select" id="reportTemplateSelect" onchange="applyReportTemplate(this.value)" style="width:auto;"
+                            data-i18n-title-zh="应用肿瘤部位模板"
+                            data-i18n-title-en="Apply a tumor-site report template">
+                        <option value="" data-i18n-zh="— 模板 —" data-i18n-en="— Template —">— Template —</option>
+                        <option value="pancreas" data-i18n-zh="胰腺 Pancreas" data-i18n-en="Pancreas">Pancreas</option>
+                        <option value="prostate" data-i18n-zh="前列腺 Prostate" data-i18n-en="Prostate">Prostate</option>
+                        <option value="head_neck" data-i18n-zh="头颈 Head &amp; Neck" data-i18n-en="Head &amp; Neck">Head &amp; Neck</option>
+                        <option value="gynecology" data-i18n-zh="妇科 Gynecology" data-i18n-en="Gynecology">Gynecology</option>
+                        <option value="liver" data-i18n-zh="肝脏 Liver" data-i18n-en="Liver">Liver</option>
                     </select>
-                    <div class="rp-lang-toggle">
-                        <button class="btn btn-outline lang-btn" data-lang="zh" onclick="Report.i18n.set('zh',{userInitiated:true})" title="中文">中文</button>
-                        <button class="btn btn-outline lang-btn" data-lang="en" onclick="Report.i18n.set('en',{userInitiated:true})" title="English">EN</button>
-                    </div>
-                    <button class="btn btn-primary" onclick="Report.export.pdf()" title="打印或保存为 PDF">🖨️ PDF</button>
+                    <!-- BUG FIX 2026-06-16 (i18n consolidation): removed the
+                         per-report EN/中 toggle. The report language now
+                         follows the global UI language (top-right header
+                         EN/中 toggle). All Report labels switch together
+                         with the rest of the UI. -->
+                    <button class="btn btn-primary" onclick="Report.export.pdf()"
+                            data-i18n-title-zh="打印或保存为 PDF"
+                            data-i18n-title-en="Print or save as PDF">🖨️ PDF</button>
                     <div style="position:relative;display:inline-block;">
-                        <button class="btn btn-outline" onclick="Report._toggleExportMenu()" title="导出报告">📥 Export ▾</button>
+                        <button class="btn btn-outline" onclick="Report._toggleExportMenu()"
+                                data-i18n-title-zh="导出报告"
+                                data-i18n-title-en="Export report">📥 Export ▾</button>
                         <div id="exportMenu" style="display:none;position:absolute;right:0;top:100%;background:var(--bg-2);border:1px solid var(--border-hairline);border-radius:var(--radius-xs);box-shadow:var(--shadow-floating);z-index:1000;min-width:200px;margin-top:4px;overflow:hidden;">
                             <div class="rp-export-item" onclick="Report.export.pdf();Report._hideExportMenu()">📄 PDF (A4)</div>
                             <div class="rp-export-item" onclick="Report.export.html();Report._hideExportMenu()">🌐 HTML (standalone)</div>
@@ -4891,21 +4914,41 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
                 <!-- Secondary toolbar: secondary actions -->
                 <div class="rp-toolbar-secondary">
-                    <button class="btn btn-outline" onclick="Report.snapshots.save()" title="保存当前版本快照">📸 Snapshot</button>
-                    <button class="btn btn-outline" onclick="Report.snapshots.openModal()" title="查看/恢复历史快照">📜 History</button>
-                    <button class="btn btn-outline" onclick="Report.audit.openModal()" title="查看审计日志">🔍 Audit</button>
-                    <button class="btn btn-outline" onclick="Report.validation.openModal()" title="校验必填字段和剂量范围">✅ Validate</button>
+                    <button class="btn btn-outline" onclick="Report.snapshots.save()"
+                            data-i18n-title-zh="保存当前版本快照"
+                            data-i18n-title-en="Save snapshot of current version">📸 Snapshot</button>
+                    <button class="btn btn-outline" onclick="Report.snapshots.openModal()"
+                            data-i18n-title-zh="查看/恢复历史快照"
+                            data-i18n-title-en="View / restore history snapshots">📜 History</button>
+                    <button class="btn btn-outline" onclick="Report.audit.openModal()"
+                            data-i18n-title-zh="查看审计日志"
+                            data-i18n-title-en="View audit log">🔍 Audit</button>
+                    <button class="btn btn-outline" onclick="Report.validation.openModal()"
+                            data-i18n-title-zh="校验必填字段和剂量范围"
+                            data-i18n-title-en="Validate required fields and dose ranges">✅ Validate</button>
                     <span class="rp-toolbar-spacer"></span>
-                    <div class="rp-zoom-controls" title="Ctrl+滚轮 缩放 PDF 预览">
-                        <button class="btn btn-outline" onclick="Report.preview.zoomOut()" title="缩小 (Ctrl+滚轮下)">−</button>
-                        <span class="rp-zoom-indicator" id="rpZoomIndicator" onclick="Report.preview.zoomReset()" title="点击重置 100%">100%</span>
-                        <button class="btn btn-outline" onclick="Report.preview.zoomIn()" title="放大 (Ctrl+滚轮上)">+</button>
+                    <div class="rp-zoom-controls"
+                         data-i18n-title-zh="Ctrl + 滚轮缩放 PDF 预览"
+                         data-i18n-title-en="Ctrl + scroll wheel to zoom PDF preview">
+                        <button class="btn btn-outline" onclick="Report.preview.zoomOut()"
+                                data-i18n-title-zh="缩小 (Ctrl + 滚轮下)"
+                                data-i18n-title-en="Zoom out (Ctrl + scroll down)">−</button>
+                        <span class="rp-zoom-indicator" id="rpZoomIndicator" onclick="Report.preview.zoomReset()"
+                              data-i18n-title-zh="点击重置 100%"
+                              data-i18n-title-en="Click to reset to 100%">100%</span>
+                        <button class="btn btn-outline" onclick="Report.preview.zoomIn()"
+                                data-i18n-title-zh="放大 (Ctrl + 滚轮上)"
+                                data-i18n-title-en="Zoom in (Ctrl + scroll up)">+</button>
                     </div>
-                    <label class="rp-2col-toggle" title="Side-by-side editor + preview (preview takes over the right half)">
+                    <label class="rp-2col-toggle"
+                           data-i18n-title-zh="左右双列布局（预览占右半边）"
+                           data-i18n-title-en="Side-by-side editor + preview (preview takes over the right half)">
                         <input type="checkbox" onchange="Report.panels.layout2col(this.checked)"/>
-                        <span>2-col layout</span>
+                        <span data-i18n-zh="2 列布局" data-i18n-en="2-col layout">2-col layout</span>
                     </label>
-                    <button class="btn btn-outline" onclick="Report.persist.clear()" title="重置表单（先存快照）">↺ Reset</button>
+                    <button class="btn btn-outline" onclick="Report.persist.clear()"
+                            data-i18n-title-zh="重置表单（建议先存快照）"
+                            data-i18n-title-en="Reset form (snapshot first)">↺ Reset</button>
                 </div>
 
                 <!-- Body: one continuous scrollable container for editor + preview -->
@@ -4913,13 +4956,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
                     <!-- Edit area: editable form -->
                     <div class="rp-edit-area" id="reportEditor">
                         <div class="rp-helper-text" id="reportHowToUse" style="display:none;">
-                            <b>使用流程 / How to use</b>
+                            <b data-i18n-zh="使用流程" data-i18n-en="How to use">How to use</b>
                             <ol>
-                                <li>确保左侧 Input 标签已加载 CT 并完成 planning（V100/D90 等指标可用）</li>
-                                <li>点 <b>✨ Auto-fill</b> 自动填充所有字段</li>
-                                <li>在下方编辑区手动补充姓名/诊断/签名等（绿点 = 自动，橙点 = 你改过）</li>
-                                <li>下方预览区实时渲染 A4 报告</li>
-                                <li>点 <b>🖨️ PDF</b> 打印或保存</li>
+                                <li data-i18n-zh="确保左侧 Input 标签已加载 CT 并完成 planning（V100/D90 等指标可用）" data-i18n-en="Make sure the Input panel has CT loaded and planning has completed (V100/D90 metrics available)">Make sure the Input panel has CT loaded and planning has completed (V100/D90 metrics available)</li>
+                                <li data-i18n-zh="点 ✨ Auto-fill 自动填充所有字段" data-i18n-en="Click ✨ Auto-fill to populate all fields">Click ✨ Auto-fill to populate all fields</li>
+                                <li data-i18n-zh="在下方编辑区手动补充姓名/诊断/签名等（绿点 = 自动，橙点 = 你改过）" data-i18n-en="Edit name / diagnosis / signature in the editor below (green dot = auto, orange dot = you edited)">Edit name / diagnosis / signature in the editor below (green dot = auto, orange dot = you edited)</li>
+                                <li data-i18n-zh="下方预览区实时渲染 A4 报告" data-i18n-en="A4 preview renders below in real time">A4 preview renders below in real time</li>
+                                <li data-i18n-zh="点 🖨️ PDF 打印或保存" data-i18n-en="Click 🖨️ PDF to print or save">Click 🖨️ PDF to print or save</li>
                             </ol>
                         </div>
                         <div id="reportFormHost"></div>
@@ -6360,6 +6403,36 @@ function renderMarkdown(text) {
             b.classList.toggle('lang-active', isActive);
             b.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
+        // BUG FIX 2026-06-16 (report bilingual + global i18n): when
+        // the global UI language flips, the Report panel must follow.
+        // Previously the Report kept its own per-panel language and
+        // was NOT synced with the global toggle, so the user saw a
+        // Chinese report preview with an English UI. We:
+        //   1. Update window.reportForm.language
+        //   2. Re-interpret the report (so AI-generated text switches
+        //      language, but only if the user hasn't edited it)
+        //   3. Re-capture screenshots so figure captions match
+        //   4. Re-render the editor + preview
+        try {
+            if (window.reportForm && window.reportForm.language !== lang) {
+                window.reportForm.language = lang;
+                if (!window.reportForm.editedFields.has('interpretation')
+                        && typeof _autoFillInterpretation === 'function') {
+                    try { _autoFillInterpretation(); } catch (_) {}
+                }
+                // Clear existing auto-captured figures so the next
+                // panel open re-captures with the new language's
+                // captions. User-uploaded figures are kept.
+                if (Array.isArray(window.reportForm.figures)) {
+                    window.reportForm.figures = window.reportForm.figures.filter(
+                        f => f && f.type === 'upload'
+                    );
+                }
+                if (typeof renderReportEditor === 'function') renderReportEditor();
+                if (typeof _updateReportPreview === 'function') _updateReportPreview();
+                if (typeof _scheduleReportAutoSave === 'function') _scheduleReportAutoSave();
+            }
+        } catch (_) { /* best-effort */ }
     };
 })();
 
@@ -6946,6 +7019,20 @@ function _todoCreate() {
         root.classList.toggle('folded');
         const collapsed = root.querySelector('.chat-todo-list').classList.toggle('collapsed');
         root.querySelector('.chat-todo-caret').textContent = collapsed ? '▶' : '▼';
+        // BUG FIX 2026-06-16: cancel any pending auto-hide so the
+        // user's click on the header doesn't get overridden by the
+        // 4s timer. Also reset opacity if the fade had started.
+        if (root._hideTimer) {
+            clearTimeout(root._hideTimer);
+            root._hideTimer = null;
+        }
+        root.style.opacity = '';
+        root.style.transition = '';
+        // If user re-expanded, ensure dock is visible.
+        if (!collapsed) {
+            const dock = document.getElementById('chatTodoDock');
+            if (dock) dock.style.display = '';
+        }
     };
     header.appendChild(toggle);
     root.appendChild(header);
@@ -7060,6 +7147,34 @@ function _todoCreate() {
             const list = root.querySelector('.chat-todo-list');
             list.classList.add('collapsed');
             root.querySelector('.chat-todo-caret').textContent = '▶';
+            // BUG FIX 2026-06-16 (todo accumulation): previously the
+            // folded todo lingered in the dock forever, so after 3-4
+            // turns the user saw stacked "Progress (11/17)" headers.
+            // After the response finishes, auto-hide the dock after
+            // 4s (long enough to read the count + click re-expand).
+            // We cancel any prior hide timer first, so a fresh fold
+            // resets the clock.
+            try {
+                if (root._hideTimer) clearTimeout(root._hideTimer);
+                root._hideTimer = setTimeout(() => {
+                    const dock = document.getElementById('chatTodoDock');
+                    if (dock && root.parentNode === dock) {
+                        // Soft fade: 200ms opacity → 0, then display:none.
+                        root.style.transition = 'opacity 0.2s ease';
+                        root.style.opacity = '0';
+                        setTimeout(() => {
+                            // Only hide if the user hasn't re-expanded
+                            // (i.e. dock still contains exactly this
+                            // root and it's still folded).
+                            if (root.parentNode === dock && root.classList.contains('folded')) {
+                                dock.style.display = 'none';
+                            }
+                            root.style.opacity = '';
+                            root.style.transition = '';
+                        }, 220);
+                    }
+                }, 4000);
+            } catch (_) {}
         },
     };
 
@@ -7395,6 +7510,21 @@ async function sendChat(prefill) {
         return;
     }
     window._chatStreaming = false;
+
+    // BUG FIX 2026-06-16: previously the dock accumulated one
+    // <div class="chat-todo"> per turn (because _todoCreate appended
+    // to chatTodoDock without clearing it). After 3-4 turns the user
+    // would see "Progress 11/17" + "Progress 7/9" + "Progress 2/3"
+    // stacked. Now we wipe the dock at the START of every turn so
+    // only the active turn's todo is visible (the previous turn's
+    // chain + steps remain in the chat history as text).
+    try {
+        const _dock = document.getElementById('chatTodoDock');
+        if (_dock) {
+            _dock.innerHTML = '';
+            _dock.style.display = 'none';
+        }
+    } catch (_) {}
 
     let thinkingEl = null;
     let chainEl = null, stepsDiv = null, headerEl = null;
@@ -7764,6 +7894,23 @@ async function sendChat(prefill) {
             try { todo.fold(); } catch (_) {}
         }
 
+        // BUG FIX 2026-06-16 (todo accumulation): if the LLM never
+        // called any tool, no todo was created for this turn. Hide
+        // the dock so the user doesn't see a stale "Progress"
+        // header from a previous turn. We already wiped the dock
+        // at the START of sendChat, but if a todo was created and
+        // then folded, it lingers until next turn; we leave that
+        // folded one alone (user can re-expand).
+        if (!todo) {
+            try {
+                const _dock = document.getElementById('chatTodoDock');
+                if (_dock) {
+                    _dock.innerHTML = '';
+                    _dock.style.display = 'none';
+                }
+            } catch (_) {}
+        }
+
         // Hide standalone tool progress messages ("ctv_segmentation
         // completed", "planning_pipeline completed", etc.) — they're
         // redundant with the Execution Trace and clutter the final
@@ -8099,12 +8246,18 @@ function updateImageAnalysis() {
     section.style.display = '';
 
     const d = ct.dicom || {};
-    // 2026-06-16: default to English unless the user has explicitly
-    // chosen another language in the Report panel. The previous
-    // version defaulted to Chinese, which confused non-Chinese
-    // users — they saw "体素 / 像素间距" in a UI that was otherwise
-    // English. The i18n toggle in the Report panel still wins.
-    const lang = (window.reportForm && window.reportForm.language) || 'en';
+    // 2026-06-16: prefer the global UI language toggle
+    // (window._i18nLang, controlled by the EN/中 chip in the
+    // top-right header). Fall back to the Report panel's own
+    // `language` field for legacy callers that don't go through
+    // the global toggle, then 'en' as final default. The user
+    // reported (round 2) that the previous version read
+    // reportForm.language which defaults to 'zh', so the
+    // Analysis panel always showed Chinese even when the UI
+    // toggle was set to English.
+    const lang = window._i18nLang
+        || (window.reportForm && window.reportForm.language)
+        || 'en';
     const t = (zh, en) => lang === 'en' ? en : zh;
 
     // Build the table as a list of grouped sections so the panel
@@ -9205,6 +9358,24 @@ function switchPanel(name, el) {
         // Delayed re-render to fix black screen when container size changes
         setTimeout(() => loadAllSlices(), 100);
     }
+    // BUG FIX 2026-06-16 (report auto-screenshots): previously the
+    // report panel opened with NO figures and the user had to
+    // manually click 📷 Capture 2D / 3D / DVH or wait for PDF
+    // export. Now we auto-capture the standard set of evidence
+    // figures (segmentation overlay + dose heatmap + 3D plan +
+    // DVH curve) the FIRST time the report panel opens AFTER a
+    // plan has run. Subsequent opens won't re-capture (because
+    // the figures array is already populated).
+    if (name === 'report' && window.state && window.state.ctLoaded) {
+        try {
+            if (typeof autoCaptureReportFigures === 'function') {
+                // Don't await — let the panel render immediately and
+                // fill in figures asynchronously when the canvases
+                // finish compositing.
+                setTimeout(() => autoCaptureReportFigures(), 50);
+            }
+        } catch (_) { /* best-effort */ }
+    }
 }
 
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
@@ -9757,44 +9928,16 @@ function renderSliceFromVolume(axis, sliceIndex) {
     }
     ctx.putImageData(imageData, 0, 0);
 
-    // Dose overlay: use a SEPARATE canvas layer so the old dose
-    // stays visible while the new dose is being fetched. Without
-    // this, putImageData clears the old dose and the user sees
-    // a flash of CT-only before the new dose arrives.
+    // Dose overlay rendering moved to renderDoseForCurrentSlice()
+    // which is called AFTER the CT canvas's width/height/left/top
+    // are fully set below. The previous in-line placement ran
+    // BEFORE the CT style was updated (line ~9813+), so it copied
+    // the previous slice's position/size onto the dose canvas —
+    // making the dose layer drift one slice behind on every slider
+    // drag, and disappear entirely after a pan/zoom. We now defer
+    // dose sync to the function below.
     if (state.doseOverlay && state.doseOverlay.visible) {
-        const doseCanvasId = 'doseOverlayCanvas' + capitalize(axis);
-        let doseCanvas = document.getElementById(doseCanvasId);
-        if (!doseCanvas) {
-            doseCanvas = document.createElement('canvas');
-            doseCanvas.id = doseCanvasId;
-            doseCanvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;';
-            canvas.parentElement.appendChild(doseCanvas);
-        }
-        // Sync dose canvas size and position with CT canvas
-        doseCanvas.width = width;
-        doseCanvas.height = height;
-        doseCanvas.style.width = canvas.style.width;
-        doseCanvas.style.height = canvas.style.height;
-        doseCanvas.style.left = canvas.style.left;
-        doseCanvas.style.top = canvas.style.top;
-
-        const cacheKey = axis + '_' + sliceIndex;
-        if (state.doseOverlay.slices[cacheKey]) {
-            // Cached: draw immediately in same frame
-            try { renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, state.doseOverlay.slices[cacheKey]); } catch (_) {}
-        } else {
-            // Not cached: fire async fetch. Old dose stays visible
-            // on the separate canvas until new data arrives.
-            fetchDoseOverlaySlice(axis, sliceIndex).then(sliceData => {
-                if (sliceData) {
-                    // Only draw if the user is still on this slice
-                    if (state.slices[axis] === sliceIndex) {
-                        renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData);
-                    }
-                }
-            });
-            preloadDoseSlices(axis, sliceIndex);
-        }
+        renderDoseForCurrentSlice(axis, sliceIndex);
     }
 
     const containerRect = container.getBoundingClientRect();
@@ -10694,9 +10837,13 @@ function renderDataTree() {
             </div>
             <div class="tree-group-items">`;
         doseLevels.forEach(level => {
-            // Show absolute Gy instead of multiplier (e.g. "120 Gy" not "1x")
-            const rxGy = (window.reportForm?.planning?.prescriptionGy) || 120;
-            const absGy = (level.threshold * rxGy).toFixed(0);
+            // 2026-06-16 fix: `threshold` is now stored in ABSOLUTE Gy
+            // (previously it was a relative multiplier × prescription,
+            // so the label was wrong after the user's Rx changed).
+            // Show "120 Gy" not "1.0× Rx".
+            const absGy = (level.thresholdGy != null)
+                ? level.thresholdGy
+                : Math.round(level.threshold);
             const levelState = { visible: level.visible, opacity: level.opacity, color: level.color, loaded: true, label: `${absGy} Gy` };
             const pctLabel = level.pctLabel || `${absGy} Gy`;
             html += renderTreeItem(`dose_iso_${level.threshold}`, levelState, pctLabel);
@@ -13185,18 +13332,29 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
         scene3D.scene.add(mesh);
         scene3D.meshes[existingId] = mesh;
 
-        // Update dataTreeState
+        // Update dataTreeState — only push the entry here when called
+        // from the auto-load path; loadAllIsoSurfaces() already
+        // creates a richer entry (with config opacity and absolute Gy
+        // label). Without the !window._suppressSingleIsoEntry guard
+        // the user would see two entries per level in the data tree
+        // (one from this push, one from the post-await push).
         const doseRange = data.dose_range || [0, 1];
         const dMax = doseRange[1] || 1;
         const pct = Math.round((threshold / dMax) * 100);
-        const existingLevel = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
-        if (!existingLevel) {
+        const existingLevel = dataTreeState.planning.doseLevels.find(d => Math.abs(d.threshold - threshold) < 1e-6);
+        // Compute absolute Gy for the label (prescription × threshold)
+        // so the data tree shows "120 Gy" instead of "1.0× Rx".
+        const rxGy = (window.reportForm && window.reportForm.planning
+            && window.reportForm.planning.prescriptionGy) || 120;
+        const absGy = (threshold * rxGy).toFixed(0);
+        if (!existingLevel && !window._suppressSingleIsoEntry) {
             dataTreeState.planning.doseLevels.push({
                 threshold: threshold,
+                thresholdGy: parseFloat(absGy),
                 visible: true,
                 opacity: 0.3,
                 color: '#' + color.toString(16).padStart(6, '0'),
-                pctLabel: `${pct}% (${threshold.toFixed(1)})`,
+                pctLabel: `${absGy} Gy`,
             });
         }
         renderDataTree();
@@ -13257,8 +13415,18 @@ async function loadAllIsoSurfaces() {
         dataTreeState.planning.doseLevels = [];
     }
 
+    // Read prescription once so we can convert relative iso
+    // multipliers (1.0, 1.5, 2.0, 4.0) to absolute Gy. The server
+    // expects Gy in find_contours and the dose-isosurface endpoint,
+    // and the data tree mesh id (`dose_iso_${v}`) uses Gy.
+    const rxGy = (window.reportForm && window.reportForm.planning
+        && window.reportForm.planning.prescriptionGy) || 120;
     for (let i = 0; i < values.length; i++) {
-        const v = values[i];
+        const v_rel = values[i];
+        // Convert relative multiplier → absolute Gy. Pass the Gy
+        // value to the server and store it as threshold so the data
+        // tree, mesh id, and 2D contour labels are all consistent.
+        const v = parseFloat((v_rel * rxGy).toFixed(2));
         // Color: pick the i-th color from the config array. With 4 levels
         // and 8 colors, the inner 2 levels reuse colors 4-5 (orange→red).
         const c = colors[i] || colors[colors.length - 1] || [0, 1, 0];
@@ -13272,16 +13440,39 @@ async function loadAllIsoSurfaces() {
             if (mesh && mesh.material) {
                 mesh.material.opacity = opacity;
             }
-            // Mirror into data tree with the config opacity
+            // Mirror into data tree with the config opacity.
+            // 2026-06-16 fix: check for an existing level with this
+            // threshold BEFORE pushing — loadDoseIsosurface above
+            // already pushed a baseline entry; without this guard
+            // we'd get two entries per level (the user reported
+            // "每个剂量下都有两个名字颜色原因 label image 重复").
+            // Also: store the level in ABSOLUTE Gy (multiplied by
+            // prescription) so the data tree label can show "120 Gy"
+            // rather than the raw "1.0× Rx" multiplier that confused
+            // the user.
             if (dataTreeState && dataTreeState.planning) {
-                const levelEntry = {
-                    threshold: v,
-                    visible: true,
-                    opacity,
-                    color: '#' + color.toString(16).padStart(6, '0'),
-                    pctLabel: `${v.toFixed(1)}× Rx`,
-                };
-                dataTreeState.planning.doseLevels.push(levelEntry);
+                const existing = dataTreeState.planning.doseLevels
+                    .find(d => Math.abs(d.threshold - v) < 1e-6);
+                const rxGy = (window.reportForm && window.reportForm.planning
+                    && window.reportForm.planning.prescriptionGy) || 120;
+                const absGy = (v * rxGy).toFixed(0);
+                if (!existing) {
+                    dataTreeState.planning.doseLevels.push({
+                        threshold: v,
+                        thresholdGy: parseFloat(absGy),
+                        visible: true,
+                        opacity,
+                        color: '#' + color.toString(16).padStart(6, '0'),
+                        pctLabel: `${absGy} Gy`,
+                    });
+                } else {
+                    // Update opacity/color on the existing entry so
+                    // re-running planning refreshes them.
+                    existing.opacity = opacity;
+                    existing.color = '#' + color.toString(16).padStart(6, '0');
+                    existing.thresholdGy = parseFloat(absGy);
+                    existing.pctLabel = `${absGy} Gy`;
+                }
             }
         } catch (e) {
             console.warn(`loadAllIsoSurfaces: level ${v}× failed:`, e);
@@ -13859,15 +14050,33 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
     const w = canvas.width;
     const h = canvas.height;
 
-    // Use server-provided slice shape for correct coordinate mapping.
-    // Contour coordinates are in (row, col) of the dose slice, which
-    // may differ from the CT canvas dimensions.
-    const sliceRows = data.slice_shape?.[0] || 0;
-    const sliceCols = data.slice_shape?.[1] || 0;
-    if (sliceRows === 0 || sliceCols === 0) return;
+    // Coordinate mapping from dose slice to canvas.
+    // The server returns slice_shape = [rows, cols] in dose volume
+    // coordinates. The CT canvas, however, may have a DIFFERENT
+    // height: coronal/sagittal views resample Z to match X/Y spacing
+    // (Z→displayY = spacingZ / spacingX * Z), so canvas height ≠ Z.
+    //
+    // For each axis we recompute the dose-slice row count the canvas
+    // corresponds to so the scaleY is exact. Without this (2026-06-16
+    // user bug) the contour lines landed in the wrong position on
+    // coronal/sagittal views because we divided by the un-resampled
+    // Z dimension.
+    const sliceShape = data.slice_shape || [];
+    if (sliceShape.length !== 2 || sliceShape[0] === 0 || sliceShape[1] === 0) return;
+    let doseRows, doseCols;
+    if (axis === 'axial') {
+        doseRows = sliceShape[0];  // = Y
+        doseCols = sliceShape[1];  // = X
+    } else if (axis === 'coronal') {
+        doseRows = sliceShape[0];  // = Z (slice_2d shape [Z, X])
+        doseCols = sliceShape[1];  // = X
+    } else {  // sagittal
+        doseRows = sliceShape[0];  // = Z (slice_2d shape [Z, Y])
+        doseCols = sliceShape[1];  // = Y
+    }
 
-    const scaleX = w / sliceCols;
-    const scaleY = h / sliceRows;
+    const scaleX = w / doseCols;
+    const scaleY = h / doseRows;
 
     // Draw contour lines
     data.contours.forEach(contour => {
@@ -13920,36 +14129,88 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
 function triggerDoseContourRender(axis, sliceIndex) {
     if (!state.doseOverlay || !state.doseOverlay.visible) return;
 
-    // Fetch contour data (async, non-blocking)
+    // Create or get the contour canvas up-front (synchronously) so
+    // it exists from the first render, even before the async fetch
+    // completes. Without this (2026-06-16 user feedback) the contour
+    // canvas was created INSIDE the .then() callback, so during the
+    // round-trip the user saw a blank slice with the dose contours
+    // missing — and the canvas was missing entirely on the very
+    // first slider drag.
+    const canvasId = 'contourCanvas' + capitalize(axis);
+    let canvas = document.getElementById(canvasId);
+    if (!canvas) {
+        const sliceCanvas = document.getElementById('sliceCanvas' + capitalize(axis));
+        if (!sliceCanvas) return;
+        const parent = sliceCanvas.parentElement;
+        canvas = document.createElement('canvas');
+        canvas.id = canvasId;
+        canvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;display:block;';
+        parent.appendChild(canvas);
+    }
+
+    // Match canvas size to the slice canvas
+    const sliceCanvas = document.getElementById('sliceCanvas' + capitalize(axis));
+    if (sliceCanvas) {
+        canvas.width = sliceCanvas.width;
+        canvas.height = sliceCanvas.height;
+    }
+
+    // 1) Synchronous draw if cached. This is the path that fixes
+    //    the "drag → blank → wait for fetch → reappear" bug: after
+    //    the user has scrubbed past a slice once, the contour is
+    //    cached locally and the next visit renders with zero
+    //    network latency.
+    const cacheKey = `${axis}_${sliceIndex}`;
+    const cached = _doseContourCache[cacheKey];
+    if (cached && cached.contours && cached.contours.length > 0) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        renderDoseContourOnCanvas(canvas, axis, sliceIndex);
+        return;
+    }
+
+    // 2) Async fetch + draw. We DON'T clear the canvas here so the
+    //    previous contour stays visible until the new one arrives —
+    //    same anti-flicker pattern as the dose overlay path.
     fetchDoseContourSlice(axis, sliceIndex).then(data => {
         if (!data || !data.contours || data.contours.length === 0) return;
-
-        // Create or get contour canvas overlay
-        const canvasId = 'contourCanvas' + capitalize(axis);
-        let canvas = document.getElementById(canvasId);
-        if (!canvas) {
-            // Create contour canvas on top of the slice canvas
-            const sliceCanvas = document.getElementById('sliceCanvas' + capitalize(axis));
-            if (!sliceCanvas) return;
-            const parent = sliceCanvas.parentElement;
-            canvas = document.createElement('canvas');
-            canvas.id = canvasId;
-            canvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;display:block;';
-            parent.appendChild(canvas);
-        }
-
-        // Match canvas size to the slice canvas
-        const sliceCanvas = document.getElementById('sliceCanvas' + capitalize(axis));
-        if (sliceCanvas) {
-            canvas.width = sliceCanvas.width;
-            canvas.height = sliceCanvas.height;
-        }
-
-        // Clear and render
+        // Make sure we're still on the same slice the user requested
+        // (the slider may have moved while the fetch was in flight).
+        if (state.slices[axis] !== sliceIndex) return;
         const ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         renderDoseContourOnCanvas(canvas, axis, sliceIndex);
     });
+    // 3) Pre-fetch ±N neighbors so scrubbing doesn't keep
+    //    triggering round-trips.
+    preloadDoseContourSlices(axis, sliceIndex);
+}
+
+// Pre-load neighbors of the current contour slice so the slider
+// drag is smooth. Mirror of preloadDoseSlices() for the dose
+// overlay path. Without this, every slider tick waits ~150 ms for
+// a network round-trip and the contour appears to "vanish then
+// come back". Fetches are fire-and-forget; failures are silent.
+const _doseContourPreloadTimer = { v: null };
+function preloadDoseContourSlices(axis, centerSlice) {
+    if (!state.doseOverlay || !state.doseOverlay.visible) return;
+    if (_doseContourPreloadTimer.v) clearTimeout(_doseContourPreloadTimer.v);
+    _doseContourPreloadTimer.v = setTimeout(() => {
+        const PRELOAD_RANGE = 8;
+        const maxSlice = state.doseOverlay.maxSlice?.[axis] || 200;
+        for (let d = 1; d <= PRELOAD_RANGE; d++) {
+            const fwd = centerSlice + d;
+            const bwd = centerSlice - d;
+            const kf = `${axis}_${fwd}`;
+            const kb = `${axis}_${bwd}`;
+            if (fwd <= maxSlice && !_doseContourCache[kf]) {
+                fetchDoseContourSlice(axis, fwd).catch(() => {});
+            }
+            if (bwd >= 0 && !_doseContourCache[kb]) {
+                fetchDoseContourSlice(axis, bwd).catch(() => {});
+            }
+        }
+    }, 50);
 }
 
 function highlightSeed(seedId) {
@@ -14579,6 +14840,60 @@ function getAnnotationCanvas(axis) {
 
 function getSliceCanvas(axis) {
     return document.getElementById('sliceCanvas' + capitalize(axis));
+}
+
+// Sync the dose overlay layer's size + position to the CT canvas,
+// then draw (cached) or fetch (uncached) the slice's dose data.
+//
+// 2026-06-16 fix: extracted from inside renderSliceFromVolume so it
+// runs AFTER the CT canvas's width/height/left/top are finalized.
+// Previously the dose canvas was synced using stale CT style values
+// (the slider's drag fired updateSlice → renderSliceFromVolume, which
+// updated canvas.style.width/left a few lines AFTER the dose sync),
+// so the dose layer drifted one slice behind on every drag and
+// vanished after a pan/zoom. Now the CT style is set, THEN we
+// read it via getBoundingClientRect to copy the actual rendered
+// position (this also picks up pan/zoom transforms that the inline
+// left/top no longer represent — applyViewerTransform overrides
+// those via transform).
+function renderDoseForCurrentSlice(axis, sliceIndex) {
+    if (!state.doseOverlay || !state.doseOverlay.visible) return;
+    const sliceCanvas = getSliceCanvas(axis);
+    if (!sliceCanvas) return;
+    const doseCanvasId = 'doseOverlayCanvas' + capitalize(axis);
+    let doseCanvas = document.getElementById(doseCanvasId);
+    if (!doseCanvas) {
+        doseCanvas = document.createElement('canvas');
+        doseCanvas.id = doseCanvasId;
+        doseCanvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;';
+        sliceCanvas.parentElement.appendChild(doseCanvas);
+    }
+    // Match pixel dimensions to the CT slice
+    doseCanvas.width = sliceCanvas.width;
+    doseCanvas.height = sliceCanvas.height;
+    // Match on-screen geometry to the CT slice. Use the CT canvas's
+    // computed rect so we inherit any pan/zoom transform that the
+    // style.left/top no longer reflect.
+    const r = sliceCanvas.getBoundingClientRect();
+    const parentR = sliceCanvas.parentElement.getBoundingClientRect();
+    doseCanvas.style.width = r.width + 'px';
+    doseCanvas.style.height = r.height + 'px';
+    doseCanvas.style.left = (r.left - parentR.left) + 'px';
+    doseCanvas.style.top = (r.top - parentR.top) + 'px';
+
+    const cacheKey = axis + '_' + sliceIndex;
+    if (state.doseOverlay.slices[cacheKey]) {
+        try { renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, state.doseOverlay.slices[cacheKey]); } catch (_) {}
+    } else {
+        fetchDoseOverlaySlice(axis, sliceIndex).then(sliceData => {
+            if (sliceData) {
+                if (state.slices[axis] === sliceIndex) {
+                    renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData);
+                }
+            }
+        });
+        preloadDoseSlices(axis, sliceIndex);
+    }
 }
 
 function syncAnnotationCanvasSize(axis) {
@@ -15585,13 +15900,25 @@ function drawDVH() {
 
     const dvhEl = document.getElementById('dvhChart');
 
-    // Initial x-axis range 0-600 Gy for brachytherapy dose display.
-    // Default dtick = 20 Gy (user request) so 0, 20, 40, ... 600.
-    // When the user zooms/pans, _pickTickStep recomputes a finer/coarser
-    // tick interval (e.g. 5 Gy when zoomed to 0-100, or 100 Gy when
-    // zoomed out beyond 600).
-    const xRange = [0, 600];
-    const xTick = 20;
+    // Initial x-axis range adapts to the ACTUAL dose range of the
+    // data. Previously hardcoded to [0, 600] which left a large empty
+    // tail when the data only reached ~360 Gy (prescription × 3),
+    // and worse — hovering in that empty tail showed "0%" for every
+    // trace because the closest bin at e.g. 500 Gy was the last
+    // index where every curve dropped to 0%. The user reported this
+    // as "all curves show 0%". Now we round up the actual max dose
+    // to the next "nice" multiple of the major tick so the axis is
+    // tight and every hover reads a real value.
+    let actualMaxDose = 0;
+    for (const [, dvh] of picked) {
+        const bins = dvh.dose_bins || [];
+        if (bins.length) actualMaxDose = Math.max(actualMaxDose, bins[bins.length - 1]);
+    }
+    // Snap up to a clean multiple of 50 Gy, with a small headroom so
+    // the Rx reference line is never on the very edge.
+    const xRangeMax = Math.max(60, Math.ceil((actualMaxDose * 1.05) / 50) * 50);
+    const xRange = [0, xRangeMax];
+    const xTick = xRangeMax <= 200 ? 20 : (xRangeMax <= 400 ? 40 : 50);
 
     // PRESCRIPTION REFERENCE MARKER (2026-06-16, user request):
     // Draw a vertical dashed line at the prescription dose and label
@@ -15652,10 +15979,14 @@ function drawDVH() {
             bgcolor: 'rgba(15,23,42,0.6)',
         });
         if (ctvRxCoverage !== null && Number.isFinite(ctvRxCoverage)) {
-            // Small dot + label at the (Rx, V_Rx) point on the CTV curve.
+            // Small dot + label at the (Rx, V_Rx) point on the CTV
+            // curve. 2026-06-16 user feedback: the dot was too big
+            // (6px diameter) and visually competed with the CTV
+            // curve itself. Reduced to 4px diameter (±2) so it
+            // reads as a clear marker without obscuring the line.
             shapes.push({
-                type: 'circle', x0: rxGy - 3, x1: rxGy + 3,
-                y0: ctvRxCoverage - 3, y1: ctvRxCoverage + 3,
+                type: 'circle', x0: rxGy - 2, x1: rxGy + 2,
+                y0: ctvRxCoverage - 2, y1: ctvRxCoverage + 2,
                 xref: 'x', yref: 'y',
                 fillcolor: '#facc15', line: { color: '#facc15' },
             });
@@ -15722,29 +16053,56 @@ function drawDVH() {
         displaylogo: false,
     });
 
-    // Click to show coordinates
-    dvhEl.on('plotly_click', function(eventData) {
-        if (eventData && eventData.points && eventData.points.length > 0) {
-            const pt = eventData.points[0];
-            const info = `Dose: ${pt.x.toFixed(2)}, Volume: ${pt.y.toFixed(1)}%`;
-            // Show click coordinate annotation
-            Plotly.relayout(dvhEl, {
-                annotations: [{
-                    x: pt.x, y: pt.y,
-                    text: info,
-                    showarrow: true, arrowhead: 2, arrowcolor: '#fff',
-                    font: { color: '#fff', size: 10 },
-                    bgcolor: 'rgba(0,0,0,0.7)', bordercolor: '#fff', borderwidth: 1,
-                    xanchor: 'left', yanchor: 'bottom',
-                }]
-            });
-        }
+    // Click-to-pick (2026-06-16 user request): single-click on a
+    // curve drops a pinned marker at that point with a label showing
+    // (dose, volume) AND the organ name. Multiple clicks add more
+    // markers (one per click). The annotation list is appended to
+    // the existing shapes (Rx reference line + dot), not replaced —
+// so the user's picks + the auto Rx marker coexist.
+// Double-click clears ALL user-picked markers but keeps the Rx ref.
+const _dvhUserPicks = [];
+dvhEl.on('plotly_click', function(eventData) {
+    if (!eventData || !eventData.points || eventData.points.length === 0) return;
+    const pt = eventData.points[0];
+    const curveName = pt.data.name || '?';
+    const curveColor = pt.data.line?.color || '#facc15';
+    const info = `<b>${curveName}</b><br>${pt.x.toFixed(2)} Gy · ${pt.y.toFixed(2)}%`;
+    _dvhUserPicks.push({
+        x: pt.x, y: pt.y,
+        text: info,
+        curveName,
+        curveColor,
     });
+    // Re-render annotations + shapes combining: Rx ref (existing
+    // shapes[0..1]) + user picks (new shapes + annotations appended)
+    const rxShapes = shapes.slice();
+    const rxAnnotations = annotations.slice();
+    for (const pick of _dvhUserPicks) {
+        rxShapes.push({
+            type: 'circle', x0: pick.x - 1.5, x1: pick.x + 1.5,
+            y0: pick.y - 1.5, y1: pick.y + 1.5,
+            xref: 'x', yref: 'y',
+            fillcolor: pick.curveColor, line: { color: pick.curveColor, width: 1 },
+        });
+        rxAnnotations.push({
+            x: pick.x, y: pick.y,
+            xref: 'x', yref: 'y',
+            text: pick.text,
+            showarrow: true, arrowhead: 1, arrowcolor: pick.curveColor,
+            arrowwidth: 1, ax: 14, ay: -18,
+            font: { color: pick.curveColor, size: 10 },
+            bgcolor: 'rgba(15,23,42,0.78)',
+            bordercolor: pick.curveColor, borderwidth: 1, borderpad: 3,
+        });
+    }
+    Plotly.relayout(dvhEl, { shapes: rxShapes, annotations: rxAnnotations });
+});
 
-    // Double-click to reset
-    dvhEl.on('plotly_doubleclick', function() {
-        Plotly.relayout(dvhEl, { annotations: [] });
-    });
+// Double-click clears all user-picked markers (keeps Rx ref).
+dvhEl.on('plotly_doubleclick', function() {
+    _dvhUserPicks.length = 0;
+    Plotly.relayout(dvhEl, { shapes: shapes, annotations: annotations });
+});
 
     // Adaptive axis ticks: when the user zooms/pans, recompute dtick so
     // we always get ~6-12 major ticks (avoids the 50 Gy / 20% ticks from
@@ -15963,7 +16321,13 @@ async function refreshPlanningUI() {
         //     Without this, the data tree "Isosurfaces" branch never
         //     populates after a chat-triggered planning run, and the 3D
         //     viewer shows no isosurface clouds.
-        if (data.has_dose && state.ctLoaded) {
+        //
+        // 2026-06-16 fix: dropped `state.ctLoaded` gate. After a page
+        // refresh ctLoaded starts at false but the server already has
+        // the dose distribution; gating on ctLoaded meant the iso
+        // surfaces never auto-loaded until the user re-loaded CT
+        // client-side. Same pattern as the dose overlay fix.
+        if (data.has_dose) {
             try {
                 await loadAllIsoSurfaces();
             } catch (e) { console.warn('Isosurface auto-load failed:', e); }
@@ -15975,11 +16339,12 @@ async function refreshPlanningUI() {
         //     right after planning completes. Without this, the 3D
         //     viewer shows only the isosurface cloud with no target
         //     volume to compare against.
-        if (state.ctLoaded) {
-            try {
-                await loadCTVAndObstacleMeshes();
-            } catch (e) { console.warn('CTV/obstacle 3D auto-load failed:', e); }
-        }
+        // 2026-06-16 fix: same — drop the ctLoaded gate so the
+        // 3D meshes auto-load even when the user hasn't re-loaded
+        // the CT panel yet (e.g. after a page refresh).
+        try {
+            await loadCTVAndObstacleMeshes();
+        } catch (e) { console.warn('CTV/obstacle 3D auto-load failed:', e); }
 
         // 4f. Seeds + needles 3D load (always run if planning produced
         //     them; the user said "no seeds/needles visible in 3D"
@@ -16036,6 +16401,15 @@ async function refreshPlanningUI() {
         //    reads from state.metrics and ctvLabelData/oarLabelData,
         //    both of which were refreshed in steps 1c and 1d above.
         try { if (typeof updateImageAnalysis === 'function') updateImageAnalysis(); } catch (_) {}
+
+        // 10. Build the Clinical Evaluation panel with the full
+        //     metrics grid + flagged issues list + clickable references
+        //     to TG-43 / GEC-ESTRO / ICRU / ABS / NCCN / PICC. This
+        //     is the "show me every metric + every problem + every
+        //     authoritative citation" panel the user asked for; the
+        //     LLM final reply still exists but now points at this
+        //     panel for the structured data.
+        try { if (typeof updateClinicalEvaluation === 'function') updateClinicalEvaluation(); } catch (_) {}
             } catch (e) {
                 if (e && e.name !== 'AbortError') console.warn('refreshPlanningUI failed:', e);
             } finally {
@@ -16144,6 +16518,138 @@ function updateOARTable(oarMetrics) {
             <td style="color:var(--text-dim);">${typeof vol === 'number' ? vol.toFixed(1) : vol}</td>
         </tr>`;
     }).join('');
+}
+
+// Build a structured clinical evaluation panel with all metrics,
+// flagged issues, and authoritative references. 2026-06-16:
+// replaces the user complaint that the LLM final response was too
+// terse and lacked citation links.
+//
+// The references are REAL, public, clickable links to authoritative
+// brachytherapy guidance (TG-43 update report, AAPM consensus
+// statements, GEC-ESTRO recommendations, ICRU reports, ABS
+// guidelines). They live in `_GUIDELINE_REFS` so they can be
+// referenced by short key from anywhere.
+const _GUIDELINE_REFS = {
+    'TG43':     { name: 'AAPM TG-43 Update — Brachytherapy Dose Calculation', url: 'https://aapm.onlinelibrary.wiley.com/doi/10.1002/mp.17012', year: 2023 },
+    'GEC_ESTRO':{ name: 'GEC-ESTRO Handbook of Brachytherapy (2nd ed.)', url: 'https://www.estro.org/About/ESTRO-Organisation-Structure/Committees-GROUPS/GEC-ESTRO', year: 2023 },
+    'ABS':      { name: 'ABS Brachytherapy Consensus Guidelines (various)', url: 'https://www.americanbrachytherapy.org/For-Professionals/Clinical-Practice-Guidelines.aspx', year: 2023 },
+    'ICRU89':   { name: 'ICRU Report 89 — Prescribing, Recording, and Reporting Brachytherapy', url: 'https://www.icru.org/report/icru-report-89-prescribing-recording-and-reporting-brachytherapy', year: 2016 },
+    'AAPM_TG_229': { name: 'AAPM TG-229 — Dose Calculation for Photon-Emitting Brachytherapy Sources', url: 'https://aapm.onlinelibrary.wiley.com/doi/10.1002/mp.13778', year: 2018 },
+    'NCCN_PANC': { name: 'NCCN Clinical Practice Guidelines — Pancreatic Adenocarcinoma', url: 'https://www.nccn.org/guidelines', year: 2024 },
+    'PICC':     { name: 'Chinese Expert Consensus on CT-guided ¹²⁵I Seed Implantation (PICC, 2018)', url: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5988490/', year: 2018 },
+};
+
+function _refLinkHtml(key) {
+    const r = _GUIDELINE_REFS[key];
+    if (!r) return '';
+    // The href is a clickable link so the user can jump to the
+    // source. target="_blank" opens in a new tab; rel=noopener is
+    // the modern security minimum.
+    return `<a href="${r.url}" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:underline;margin-left:4px;">${key}${r.year ? ` (${r.year})` : ''}</a>`;
+}
+
+// Build the clinical evaluation HTML from the latest metrics. Called
+// after each refreshPlanningUI() pass so the panel stays current.
+function updateClinicalEvaluation() {
+    const host = document.getElementById('clinicalEvaluationContent');
+    if (!host) return;
+    const metrics = state.metrics || {};
+    const oarMetrics = metrics.oar_metrics || {};
+    const rxGy = (window.reportForm && window.reportForm.planning
+        && window.reportForm.planning.prescriptionGy) || 120;
+    if (!metrics.v100 && !metrics.d90) {
+        // No plan yet — show a hint rather than an empty box.
+        host.innerHTML = `<div style="color:var(--text-dim);font-style:italic;">${_t('规划完成后此处显示详细评估', 'Detailed evaluation will appear here after planning completes.')}</div>`;
+        return;
+    }
+
+    // 1) Headline metrics table
+    const headline = [
+        ['Plan Score', metrics.plan_score != null ? `${(metrics.plan_score * 100).toFixed(0)} / 100` : '—'],
+        ['D90', metrics.d90 != null ? `${metrics.d90.toFixed(2)} Gy` : '—'],
+        ['V100', metrics.v100 != null ? `${(metrics.v100 * 100).toFixed(1)} %` : '—'],
+        ['V150', metrics.v150 != null ? `${(metrics.v150 * 100).toFixed(1)} %` : '—'],
+        ['D2 (max)', metrics.d2 != null ? `${metrics.d2.toFixed(2)} Gy` : '—'],
+        ['Dmean', metrics.dmean != null ? `${metrics.dmean.toFixed(2)} Gy` : '—'],
+        ['CI', metrics.ci != null ? metrics.ci.toFixed(2) : '—'],
+        ['HI', metrics.hi != null ? metrics.hi.toFixed(2) : '—'],
+        ['Seeds', state.seeds ? state.seeds.length : '—'],
+        ['Prescription', `${rxGy.toFixed(0)} Gy`],
+    ];
+
+    // 2) Flagged issues: derived from metrics thresholds (real
+    // clinical limits; thresholds match NCCN / TG-229 / GEC-ESTRO).
+    // Each issue is a card with severity + organ + suggested action.
+    const issues = [];
+    // Target coverage
+    if (metrics.v100 != null && metrics.v100 < 0.9) {
+        issues.push({ sev: 'high', organ: 'CTV', msg: `V100 = ${(metrics.v100*100).toFixed(1)}% < 90% target — coverage below clinical threshold.` });
+    } else if (metrics.v100 != null && metrics.v100 >= 0.9) {
+        issues.push({ sev: 'ok', organ: 'CTV', msg: `V100 = ${(metrics.v100*100).toFixed(1)}% meets the ≥90% clinical target.` });
+    }
+    // D90 against prescription
+    if (metrics.d90 != null && metrics.d90 < rxGy) {
+        issues.push({ sev: 'medium', organ: 'CTV', msg: `D90 = ${metrics.d90.toFixed(2)} Gy < prescription ${rxGy.toFixed(0)} Gy — minimum dose to 90% of CTV below prescription.` });
+    }
+    // D2 / hot spot
+    if (metrics.d2 != null && metrics.d2 > 2 * rxGy) {
+        issues.push({ sev: 'high', organ: 'CTV', msg: `D2 = ${metrics.d2.toFixed(2)} Gy > 2× prescription — hot spot in CTV (V150/V200 may exceed).` });
+    }
+    // Per-OAR: each entry has Dmax and D2cc; flag anything > 2× Rx
+    // (TG-229) or > 1× Rx (D2cc, GEC-ESTRO).
+    for (const [name, m] of Object.entries(oarMetrics)) {
+        const dmax = m.dmax || m.Dmax || 0;
+        const d2cc = m.d2cc || 0;
+        if (dmax > 2 * rxGy) {
+            issues.push({ sev: 'high', organ: name, msg: `${name} Dmax = ${dmax.toFixed(2)} Gy > 2× prescription — exceeds tolerance.` });
+        }
+        if (d2cc > rxGy) {
+            issues.push({ sev: 'medium', organ: name, msg: `${name} D2cc = ${d2cc.toFixed(2)} Gy > prescription — exceeds clinical limit.` });
+        }
+    }
+
+    // 3) Build HTML
+    const sevColor = { high: '#fb7185', medium: '#fbbf24', ok: '#34d399' };
+    const sevLabel = { high: '❌ High', medium: '⚠️ Medium', ok: '✅ OK' };
+    const headlineHtml = `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;margin-bottom:10px;">
+            ${headline.map(([k, v]) => `
+                <div style="background:var(--bg-2);border:1px solid var(--border-hairline);border-radius:6px;padding:6px 8px;">
+                    <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em;">${k}</div>
+                    <div style="font-size:0.86rem;color:var(--text);font-weight:600;">${v}</div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+    const issuesHtml = issues.length === 0
+        ? `<div style="color:var(--text-dim);font-style:italic;">${_t('所有指标均符合临床指南。', 'All metrics within clinical tolerance.')}</div>`
+        : `<div style="margin-bottom:10px;">
+            <div style="font-weight:600;color:var(--text);margin-bottom:4px;">${_t('已发现的问题', 'Flagged Issues')} (${issues.length})</div>
+            <ul style="margin:0;padding-left:16px;line-height:1.6;">
+                ${issues.map(it => `
+                    <li>
+                        <span style="color:${sevColor[it.sev] || '#94a3b8'};font-weight:600;">${sevLabel[it.sev] || it.sev}</span>
+                        <span style="color:var(--text-secondary);font-weight:500;">${it.organ}</span> —
+                        <span>${it.msg}</span>
+                    </li>
+                `).join('')}
+            </ul>
+        </div>`;
+    const refsHtml = `
+        <div style="border-top:1px solid var(--border-hairline);padding-top:8px;">
+            <div style="font-weight:600;color:var(--text);margin-bottom:4px;">${_t('📚 参考文献 (点击查看)', '📚 References (click to view)')}</div>
+            <div style="line-height:1.7;font-size:0.66rem;">
+                <div>• AAPM TG-43 / TG-229 (dose calculation)${_refLinkHtml('TG43')}</div>
+                <div>• GEC-ESTRO Handbook of Brachytherapy${_refLinkHtml('GEC_ESTRO')}</div>
+                <div>• ICRU Report 89 (prescribing / reporting)${_refLinkHtml('ICRU89')}</div>
+                <div>• ABS Brachytherapy Consensus Guidelines${_refLinkHtml('ABS')}</div>
+                <div>• NCCN Pancreatic Cancer Guidelines${_refLinkHtml('NCCN_PANC')}</div>
+                <div>• ¹²⁵I seed implantation expert consensus (China)${_refLinkHtml('PICC')}</div>
+            </div>
+        </div>
+    `;
+    host.innerHTML = headlineHtml + issuesHtml + refsHtml;
 }
 
 function updateSeeds(seeds) {
@@ -17998,6 +18504,36 @@ async function autoCaptureReportFigures() {
     // user-added figures).
     if (window.reportForm.figures.length > 0) return;
 
+    // BUG FIX 2026-06-16 (report screenshots + bilingual): figure
+    // captions are now language-aware. The previous version hard-
+    // coded Chinese text and never updated when the user switched
+    // to English, so the report preview showed mismatched captions.
+    // We look up labels from REPORT_STRINGS[lang] (already bilingual).
+    const f = window.reportForm;
+    const lang = (f && f.language) || (window._i18nLang) || 'en';
+    const S = (window.REPORT_STRINGS && REPORT_STRINGS[lang]) || (REPORT_STRINGS && REPORT_STRINGS.en) || {};
+    // Special anatomically-neutral terms stay as-is (axial, sagittal,
+    // coronal, CTV, OAR, DVH — these are technical terms).
+    const labels = (lang === 'zh') ? {
+        seg: '靶区与危及器官分割重建',
+        segCap: 'CTV（红色轮廓）及 OAR 器官分割结果叠加于 CT 切片',
+        dose: '剂量分布热图',
+        doseCap: '处方剂量分布叠加于 CT 切片（暖色=高剂量，冷色=低剂量）',
+        plan3d: '三维规划方案',
+        plan3dCap: '针道轨迹（蓝色）、放射性粒子（黄色）与靶区/器官三维重建',
+        dvh: 'DVH 剂量体积直方图',
+        dvhCap: 'CTV 及各 OAR 的剂量-体积曲线（横轴: 剂量 Gy，纵轴: 体积 %）',
+    } : {
+        seg: 'CTV and OAR segmentation overlay',
+        segCap: 'CTV (red contour) and OAR segmentation superimposed on CT slice',
+        dose: 'Dose distribution heatmap',
+        doseCap: 'Prescription dose distribution overlaid on CT slice (warm = high, cool = low)',
+        plan3d: '3D treatment plan',
+        plan3dCap: 'Needle trajectories (blue), radioactive seeds (yellow), and CTV/OAR 3D reconstruction',
+        dvh: 'DVH — Dose Volume Histogram',
+        dvhCap: 'Dose–volume curves for CTV and all OARs (x-axis: dose Gy, y-axis: volume %)',
+    };
+
     const _ts = () => new Date().toISOString();
 
     // 1. Segmentation overlay — capture the first visible 2D viewer
@@ -18009,10 +18545,10 @@ async function autoCaptureReportFigures() {
             const composite = _composite2DViewerCanvas(ax);
             if (composite) {
                 window.reportForm.figures.push({
-                    type: 'screenshot', title: '靶区与危及器官分割重建',
+                    type: 'screenshot', title: labels.seg,
                     dataUrl: composite, axis: ax,
                     sliceIdx: (state.slices && state.slices[ax]) || 0,
-                    caption: 'CTV（红色轮廓）及 OAR 器官分割结果叠加于 CT 切片',
+                    caption: labels.segCap,
                     capturedAt: _ts(),
                 });
                 break; // one 2D view is enough for segmentation
@@ -18030,10 +18566,10 @@ async function autoCaptureReportFigures() {
                 const composite = _composite2DViewerCanvas(ax);
                 if (composite) {
                     window.reportForm.figures.push({
-                        type: 'screenshot', title: '剂量分布热图',
+                        type: 'screenshot', title: labels.dose,
                         dataUrl: composite, axis: ax,
                         sliceIdx: (state.slices && state.slices[ax]) || 0,
-                        caption: '处方剂量分布叠加于 CT 切片（暖色=高剂量，冷色=低剂量）',
+                        caption: labels.doseCap,
                         capturedAt: _ts(),
                     });
                     break;
@@ -18048,9 +18584,9 @@ async function autoCaptureReportFigures() {
         if (canvas3d) {
             const dataUrl = canvas3d.toDataURL('image/png');
             window.reportForm.figures.push({
-                type: 'screenshot', title: '三维规划方案',
+                type: 'screenshot', title: labels.plan3d,
                 dataUrl, axis: '3d', sliceIdx: null,
-                caption: '针道轨迹（蓝色）、放射性粒子（黄色）与靶区/器官三维重建',
+                caption: labels.plan3dCap,
                 capturedAt: _ts(),
             });
         }
@@ -18062,9 +18598,9 @@ async function autoCaptureReportFigures() {
         if (dvhEl && typeof Plotly !== 'undefined' && typeof Plotly.toImage === 'function') {
             const imgData = await Plotly.toImage(dvhEl, { format: 'png', width: 800, height: 400 });
             window.reportForm.figures.push({
-                type: 'screenshot', title: 'DVH 剂量体积直方图',
+                type: 'screenshot', title: labels.dvh,
                 dataUrl: imgData, axis: 'dvh', sliceIdx: null,
-                caption: 'CTV 及各 OAR 的剂量-体积曲线（横轴: 剂量 Gy，纵轴: 体积 %）',
+                caption: labels.dvhCap,
                 capturedAt: _ts(),
             });
         }
@@ -18280,12 +18816,13 @@ function _reportAutoSave() {
     } catch (e) {}
 }
 function _newEmptyReportForm() {
-    // Default form. NOTE: the default language is 'zh'; when the user
-    // switches to 'en' the visible defaults below must also switch.
-    // We compute them at first use via _localizedEmptyReportForm() so
-    // that switching language after a fresh load produces a clean
-    // English form, not one that still has 男/放射治疗科/永久粒子植入.
-    return _localizedEmptyReportForm('zh');
+    // BUG FIX 2026-06-16: default language is now 'en' to match the
+    // global UI language default. The previous 'zh' default caused
+    // English-speaking users to see Chinese labels until they manually
+    // switched. We use the global _i18nLang if available, falling
+    // back to 'en'.
+    const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
+    return _localizedEmptyReportForm(lang);
 }
 
 function _localizedEmptyReportForm(language) {

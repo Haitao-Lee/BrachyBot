@@ -54,6 +54,31 @@ class RouterAgent(LLMCapableAgent):
             "agents": [AgentRole.KNOWLEDGE],
             "requires_review": False,
         },
+        # BUG FIX 2026-06-16 (web search quality): the user asked
+        # "请你全网搜索权威指南，各个部位的肿瘤处方剂量应该如何设计"
+        # and the previous router matched "剂量" → dose_engine (a
+        # computation tool), which then errored. Add explicit
+        # web_search intent for any query mentioning "search",
+        # "guideline", "PubMed", "NCCN", "ESTRO", "ICRU",
+        # "文献", "联网", "指南", etc. — anything that sounds
+        # like a literature lookup rather than a computation.
+        "web_search": {
+            "keywords": [
+                "search", "搜索", "检索", "联网", "全网", "online",
+                "pubmed", "pmid", "nccn", "estro", "icru", "aapm",
+                "csco", "abs", "guideline", "指南", "标准",
+                "文献", "literature", "review", "paper", "论文",
+                "consensus", "共识", "权威", "authoritative",
+                "最新", "latest", "最新指南", "2024", "2025", "2026",
+                "prescription dose", "处方剂量",
+                "头颈部", "胸部", "盆腔", "腹部", "肝", "胰腺", "前列腺", "宫颈",
+                "head neck", "thorax", "pelvis", "abdomen", "liver",
+                "pancreas", "prostate", "cervix", "lung", "食管",
+            ],
+            "complexity": "medium",
+            "agents": [AgentRole.KNOWLEDGE],
+            "requires_review": False,
+        },
         "optimization": {
             "keywords": ["优化", "optimize", "调整", "adjust", "改进", "improve"],
             "complexity": "high",

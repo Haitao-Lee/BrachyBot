@@ -2644,9 +2644,44 @@ def create_app(config: Optional[Dict] = None):
             # Get iso-dose values from config
             config = getattr(agent, 'config', {})
             iso_params = config.get("iso_dose_params", {})
-            iso_values = iso_params.get("iso_dose_values", [1.0, 1.5, 2.0, 4.0])
+            # iso_dose_values are stored as RELATIVE multipliers of
+            # the prescription dose (1.0×Rx, 1.5×Rx, ...). The dose
+            # distribution here is in absolute Gy, so we must multiply
+            # by prescriptionGy to get the contour level in Gy.
+            #
+            # Without this conversion (2026-06-16 user bug), the
+            # contour endpoint called find_contours(slice_2d, level=1.0)
+            # which interpreted 1.0 as **1 Gy** rather than "1×Rx ≈
+            # 120 Gy". Result: every contour line landed at the dose
+            # distribution's edge (around 1 Gy), which doesn't match
+            # the visible dose map at all.
+            iso_values_rel = iso_params.get("iso_dose_values", [1.0, 1.5, 2.0, 4.0])
             iso_colors_raw = iso_params.get("iso_colors", [[0,1,0],[0,1,1],[1,1,0],[1,0.5,0],[1,0,0]])
             iso_opacities = iso_params.get("iso_opacities", [0.3, 0.2, 0.1, 0.05])
+            # Read prescription in Gy: prefer memory dose_metrics
+            # (already in normalized units * DOSE_SCALE) then fall
+            # back to reportForm, then default 120 Gy.
+            DOSE_SCALE = 120.0
+            prescription_gy = 120.0
+            try:
+                dm = agent.memory.retrieve("dose_metrics") or {}
+                pnorm = dm.get("prescribed_dose")
+                if isinstance(pnorm, (int, float)) and pnorm > 0:
+                    prescription_gy = float(pnorm) * DOSE_SCALE
+            except Exception:
+                pass
+            try:
+                rf = agent.memory.retrieve("report_form") or {}
+                if rf.get("planning", {}).get("prescriptionGy"):
+                    prescription_gy = float(rf["planning"]["prescriptionGy"])
+            except Exception:
+                pass
+            # Convert relative multipliers → absolute Gy for find_contours
+            iso_values_gy = [float(v) * prescription_gy for v in iso_values_rel]
+            # Return absolute Gy as `level` so the frontend label
+            # shows the actual dose in Gy (was previously the
+            # relative multiplier, e.g. "1.0" instead of "120").
+            iso_labels_gy = iso_values_gy
 
             # Extract 2D slice from 3D dose array
             if axis == 'axial' or axis == 'z':
@@ -2662,10 +2697,13 @@ def create_app(config: Optional[Dict] = None):
             d_min = float(dose_np.min())
             d_max = float(dose_np.max())
 
-            # Filter iso_values to those within the dose range of this slice
+            # Filter iso_values to those within the dose range of this slice.
+            # Use the absolute-Gy levels (iso_values_gy) for the
+            # comparison — slice_2d is in Gy.
             s_min = float(slice_2d.min())
             s_max = float(slice_2d.max())
-            valid_levels = [v for v in iso_values if s_min < v < s_max]
+            valid_levels = [(g, r) for g, r in zip(iso_values_gy, iso_values_rel)
+                            if s_min < g < s_max]
 
             if not valid_levels:
                 return jsonify({
@@ -2677,9 +2715,9 @@ def create_app(config: Optional[Dict] = None):
 
             # Generate contour lines using marching squares
             contours_data = []
-            for i, level in enumerate(valid_levels):
+            for i, (level_gy, level_rel) in enumerate(valid_levels):
                 try:
-                    contours = ski_measure.find_contours(slice_2d, level=level)
+                    contours = ski_measure.find_contours(slice_2d, level=level_gy)
                     # Convert to list of [row, col] coordinate arrays
                     contour_lines = []
                     for contour in contours:
@@ -2691,13 +2729,18 @@ def create_app(config: Optional[Dict] = None):
                         color = iso_colors_raw[i % len(iso_colors_raw)]
                         opacity = iso_opacities[min(i, len(iso_opacities) - 1)] if iso_opacities else 0.3
                         contours_data.append({
-                            "level": float(level),
+                            # Return BOTH: level_gy for the 2D label so
+                            # the user sees actual dose (e.g. "120")
+                            # instead of the relative multiplier ("1.0"),
+                            # and level_rel for color/opacity lookup.
+                            "level": float(level_gy),
+                            "level_rel": float(level_rel),
                             "lines": contour_lines,
                             "color": color,
                             "opacity": opacity,
                         })
                 except Exception as e:
-                    logger.warning(f"Contour generation failed for level {level}: {e}")
+                    logger.warning(f"Contour generation failed for level {level_gy}: {e}")
 
             return jsonify({
                 "success": True,
