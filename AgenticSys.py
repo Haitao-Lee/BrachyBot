@@ -3099,6 +3099,23 @@ print(json.dumps(result))
         # Remove [call function ...] and [search_type ...] patterns
         cleaned = re.sub(r'\[call function[^\]]*\]', '', cleaned, flags=re.DOTALL).strip()
         cleaned = re.sub(r'\[search_type[^\]]*\]', '', cleaned, flags=re.DOTALL).strip()
+        # BUG FIX 2026-06-16: remove hallucinated tool-call syntax
+        # variants the LLM sometimes emits. Without this, an LLM that
+        # fails to use the function-call API instead writes inline text
+        # like "第一步：CTV肿瘤靶区分割[TOOL => \"oar_segmentation\",
+        # params => {\"image_path\": \"...\", \"organ_type\": \"pancreatic\"}]"
+        # and the response gets cut off mid-paren without ever
+        # finishing. The cleaner left these intact because they
+        # don't match the standard ```tool_call / <minimax:tool_call>
+        # / [TOOL_CALL] patterns. We strip them too:
+        #   [TOOL => "name", params => {...}]
+        #   [TOOL_CALL] ... [/TOOL_CALL] (already handled but defensive)
+        #   {TOOL => 'name', params => {...}}
+        cleaned = re.sub(r'\[TOOL\s*=>\s*[\'"][^\'"]+[\'"],\s*params\s*=>\s*\{.*?\}\s*\]', '', cleaned, flags=re.DOTALL).strip()
+        cleaned = re.sub(r'\{TOOL\s*=>\s*[\'"][^\'"]+[\'"],\s*params\s*=>\s*\{.*?\}\s*\}', '', cleaned, flags=re.DOTALL).strip()
+        # Same but without trailing brace (LLM cut off):
+        cleaned = re.sub(r'\[TOOL\s*=>\s*[\'"][^\'"]+[\'"],\s*params\s*=>\s*\{.*', '', cleaned, flags=re.DOTALL).strip()
+        cleaned = re.sub(r'\{TOOL\s*=>\s*[\'"][^\'"]+[\'"],\s*params\s*=>\s*\{.*', '', cleaned, flags=re.DOTALL).strip()
         # Remove web_search completed markers
         cleaned = re.sub(r'web_search completed', '', cleaned).strip()
         # Remove <function_calls> blocks (empty or with content)
