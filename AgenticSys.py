@@ -1723,7 +1723,70 @@ class BrachyAgent:
         dose_eval). The streaming wrapper drains these into the SSE
         stream so the todo list ticks through the sub-steps with the
         breathing animation.
+
+        BUG FIX 2026-06-16 (planning_pipeline needs CTV first):
+        when the LLM calls planning_pipeline / seed_planning /
+        trajectory_planning WITHOUT first calling ctv_segmentation,
+        the tool errors with "No CTV mask available". Previously
+        the user saw this error and the LLM had to retry. Now we
+        proactively auto-fire ctv_segmentation (and oar_segmentation
+        if missing) so the planning call succeeds. This makes the
+        LLM's life easier and avoids the error message.
         """
+        # Tools that need CTV pre-segmentation
+        planning_tools_need_ctv = {
+            "planning_pipeline", "seed_planning", "trajectory_planning",
+            "dose_evaluation", "dose_calc", "dose_engine",
+        }
+        if tool_name in planning_tools_need_ctv:
+            ctv_array = self.memory.retrieve("ctv_array")
+            if ctv_array is None:
+                # Auto-fire ctv_segmentation
+                ct_path = self.memory.retrieve("ct_path")
+                if ct_path:
+                    logger.info(f"[auto-fix] No CTV mask for {tool_name}; auto-firing ctv_segmentation")
+                    if step_callback is not None:
+                        try:
+                            step_callback("ctv_segmentation", "pending", "Auto-fired: planning pipeline needs CTV")
+                        except Exception:
+                            pass
+                    ctv_params = {"image_path": ct_path, "tumor_type": "nnunet_pancreatic"}
+                    ct_img = self.memory.retrieve("ct_image")
+                    if ct_img is not None:
+                        ctv_params["image"] = ct_img
+                    try:
+                        ctv_result = self.registry.execute("ctv_segmentation", **ctv_params)
+                        if ctv_result and ctv_result.success:
+                            if "ctv_array" in (ctv_result.metadata or {}):
+                                self.memory.store("ctv_array", ctv_result.metadata["ctv_array"])
+                            if "ctv_mask" in (ctv_result.metadata or {}):
+                                self.memory.store("ctv_mask", ctv_result.metadata["ctv_mask"])
+                            if step_callback is not None:
+                                try:
+                                    step_callback("ctv_segmentation", "done",
+                                                  f"Auto-fired: {ctv_result.message[:100]}")
+                                except Exception:
+                                    pass
+                    except Exception as e:
+                        logger.warning(f"[auto-fix] ctv_segmentation auto-fire failed: {e}")
+                # Also auto-fire oar if missing (planning also needs OAR for trajectory avoidance)
+                if self.memory.retrieve("oar_array") is None:
+                    ct_path2 = self.memory.retrieve("ct_path")
+                    if ct_path2:
+                        logger.info(f"[auto-fix] No OAR map for {tool_name}; auto-firing oar_segmentation")
+                        oar_params = {"organ_type": "general", "image_path": ct_path2}
+                        ct_img2 = self.memory.retrieve("ct_image")
+                        if ct_img2 is not None:
+                            oar_params["image"] = ct_img2
+                        try:
+                            oar_result = self.registry.execute("oar_segmentation", **oar_params)
+                            if oar_result and oar_result.success:
+                                if "oar_array" in (oar_result.metadata or {}):
+                                    self.memory.store("oar_array", oar_result.metadata["oar_array"])
+                                if "organ_names" in (oar_result.metadata or {}):
+                                    self.memory.store("organ_names", oar_result.metadata["organ_names"])
+                        except Exception as e:
+                            logger.warning(f"[auto-fix] oar_segmentation auto-fire failed: {e}")
         if progress_callback:
             progress_callback(f"Preparing {tool_name}...", 10)
 
@@ -1993,7 +2056,75 @@ class BrachyAgent:
             elif tool_name == "dose_engine" and result.data is not None:
                 self.memory.store("dose_distribution", result.data)
             elif tool_name == "dose_evaluation":
-                self.memory.store("metrics", result.metadata)
+                # BUG FIX 2026-06-16 (clinical eval scaling): the
+                # dose_evaluation result has metadata shaped like
+                #   {metrics: {CTV: {V100, V150, D90, D2, Dmean, ...},
+                #            colon: {Dmax, D2cc, ...}, ...},
+                #    plan_score: 73, prescribed_dose: 1.0, ...}
+                # but state.metrics was being set to result.metadata
+                # directly, which means the nested CTV metrics were
+                # at state.metrics.metrics.CTV.V100 — NOT at
+                # state.metrics.v100. The clinical eval panel
+                # reads state.metrics.v100 etc., so it found
+                # nothing for the top-level fields and instead
+                # rendered organ-level data (e.g. colon.Dmax=127)
+                # as if it were a plan metric — producing the
+                # wildly wrong values the user reported (Score
+                # 7307 instead of 73, D2 2874 Gy instead of 280,
+                # HI 93.64 instead of 0.42).
+                #
+                # FIX: store a FLAT dict at state.metrics so the
+                # clinical eval can read top-level v100/d90/d2/etc.
+                # directly. We pull:
+                #   - plan_score, prescribed_dose from metadata
+                #   - V100/V150/D90/D2/Dmean/ci/hi from the CTV
+                #     sub-dict (the target structure)
+                #   - oar_metrics map (organ name → {Dmax, D2cc, ...})
+                _flat = {}
+                _meta = result.metadata or {}
+                # Top-level scalars
+                for k in ("plan_score", "prescribed_dose", "voxel_volume_cc"):
+                    if k in _meta:
+                        _flat[k] = _meta[k]
+                # Nested structure metrics: find the target structure
+                # (the one with type=="target") and flatten its keys.
+                _nested = _meta.get("metrics", {}) or {}
+                _target_name = None
+                # If result.data has structure_type info, use it;
+                # otherwise default to 'CTV' (the most common target).
+                if isinstance(result.data, dict):
+                    _stype = (result.data.get("structure_type") or {})
+                    for _n, _t in _stype.items():
+                        if (_t or "").lower() == "target":
+                            _target_name = _n
+                            break
+                if not _target_name:
+                    _target_name = "CTV" if "CTV" in _nested else (next(iter(_nested), None))
+                _target = _nested.get(_target_name, {}) if _target_name else {}
+                # Map nested metric names (V100, D90, D2cc, ...) to
+                # the keys the clinical eval panel expects (v100, d90,
+                # d2cc, ...). D90 → d90, V100 → v100, etc.
+                for _n_k, _v in _target.items():
+                    if _n_k in ("dvh", "total_voxels", "volume_cc", "error"):
+                        continue
+                    _flat[_n_k.lower()] = _v
+                # Build oar_metrics map: name → {Dmax, D2cc, ...}
+                _oar = {}
+                for _n, _m in _nested.items():
+                    if _n == _target_name:
+                        continue
+                    if not isinstance(_m, dict) or "error" in _m:
+                        continue
+                    _oar[_n] = {
+                        "dmax": _m.get("Dmax"),
+                        "d2cc": _m.get("D2cc"),
+                        "d1cc": _m.get("D1cc"),
+                        "d0_1cc": _m.get("D0.1cc"),
+                        "dmean": _m.get("Dmean"),
+                        "v100": (_m.get("V100") or 0) * 100,  # → percent
+                    }
+                _flat["oar_metrics"] = _oar
+                self.memory.store("metrics", _flat)
 
         self.memory.log_tool_call(tool_name, params, result)
 
