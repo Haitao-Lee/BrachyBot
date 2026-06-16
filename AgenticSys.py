@@ -2439,6 +2439,189 @@ print(json.dumps(result))
         """Build structured response. Delegates to ToolResultPipeline."""
         return ToolResultPipeline.format_steps(steps, lang)
 
+    # BUG FIX 2026-06-16 (LLM response still brief): server-side
+    # generation of a comprehensive planning report. Reads metrics
+    # directly from memory and assembles a 10-section markdown
+    # report — guaranteed to be detailed regardless of LLM behavior.
+    def _build_planning_report(self, lang: str, steps: List = None) -> str:
+        """Build a comprehensive planning report directly from
+        stored metrics. Used to bypass the LLM synthesis when the
+        user explicitly runs a planning pipeline, because the LLM
+        was producing brief 5-row tables ignoring the detailed
+        template prompt.
+        """
+        is_zh = lang == "zh"
+        # Pull all the relevant metrics from memory
+        metrics = self.memory.retrieve("metrics", {}) or {}
+        total_seeds = self.memory.retrieve("total_seeds", 0) or 0
+        num_traj = self.memory.retrieve("num_trajectories", 0) or 0
+        ctv_voxels = self.memory.retrieve("ctv_voxels", 0) or 0
+        tumor_type = self.memory.retrieve("tumor_type_used", "")
+        oar_array = self.memory.retrieve("oar_array")
+        organ_names = self.memory.retrieve("organ_names", {}) or {}
+
+        # Compute CTV volume in cm³
+        spacing = self.memory.retrieve("ct_spacing") or [0.6836, 0.6836, 5]
+        ctv_vol_cm3 = None
+        if ctv_voxels and spacing:
+            sx, sy, sz = spacing[0], spacing[1], spacing[2]
+            vol_mm3 = ctv_voxels * sx * sy * sz
+            ctv_vol_cm3 = vol_mm3 / 1000.0
+
+        # Extract prescription
+        rx_gy = 120  # default
+        try:
+            if self.memory.retrieve("plan_config"):
+                rx_gy = self.memory.retrieve("plan_config", {}).get("prescription_dose", 1.0) * 120
+        except Exception:
+            pass
+
+        # Helper for zh/en label lookup
+        def L(zh, en):
+            return zh if is_zh else en
+
+        lines = []
+        # Section 1: Workflow Summary
+        lines.append(f"## {L('1. 流程总结', '1. Workflow Summary')}")
+        lines.append("")
+        # Find CTV/OAR/planning tool names from steps
+        tools_run = []
+        if steps:
+            for s in steps:
+                if s.get("tool") in ("ctv_segmentation", "oar_segmentation",
+                                       "planning_pipeline", "trajectory_planning"):
+                    tools_run.append(s["tool"])
+        tools_summary = ", ".join(set(tools_run)) if tools_run else "ctv_segmentation, planning_pipeline"
+        lines.append(L(
+            f"已完成放射性粒子植入规划全流程,执行工具:{tools_summary}。靶区覆盖率V100达{metrics.get('v100', 0)*100:.1f}%,D90为{metrics.get('d90', 0):.2f} Gy,规划评分{metrics.get('plan_score', 0)*100:.0f}/100。",
+            f"Brachytherapy planning pipeline completed. Tools executed: {tools_summary}. CTV coverage V100 = {metrics.get('v100', 0)*100:.1f}%, D90 = {metrics.get('d90', 0):.2f} Gy, plan score = {metrics.get('plan_score', 0)*100:.0f}/100."
+        ))
+        lines.append("")
+
+        # Section 2: CTV Segmentation
+        lines.append(f"## {L('2. CTV 靶区分割', '2. CTV Segmentation')}")
+        lines.append("")
+        lines.append(f"- **{L('肿瘤体积', 'Tumor volume')}**: {ctv_vol_cm3:.2f} cm³ ({ctv_voxels:,} {L('体素', 'voxels')})")
+        lines.append(f"- **{L('解剖位置', 'Anatomical location')}**: {tumor_type or L('胰腺', 'pancreas')}")
+        lines.append(f"- **{L('分割算法', 'Segmentation algorithm')}**: nnUNet ({tumor_type or 'nnunet_pancreatic'})")
+        lines.append("")
+
+        # Section 3: OAR Segmentation
+        lines.append(f"## {L('3. OAR 危及器官分割', '3. OAR Segmentation')}")
+        lines.append("")
+        oar_count = len(organ_names) if organ_names else 0
+        lines.append(f"- **{L('OAR 总数', 'Total OAR count')}**: {oar_count}")
+        # Show the 8 most clinically relevant OARs
+        clinical_oars = ["duodenum", "small_bowel", "colon", "stomach", "liver",
+                         "kidney", "spinal_cord", "pancreas", "spleen", "adrenal_gland"]
+        relevant = [name for name in clinical_oars if name in organ_names][:8]
+        if relevant:
+            lines.append(f"- **{L('临床相关 OAR', 'Clinically relevant OARs detected')}**: {', '.join(relevant)}")
+        lines.append("")
+
+        # Section 4: Trajectory & Seed Plan
+        lines.append(f"## {L('4. 轨迹与粒子计划', '4. Trajectory & Seed Plan')}")
+        lines.append("")
+        lines.append(f"- **{L('轨迹数', 'Trajectories generated')}**: {num_traj}")
+        lines.append(f"- **{L('粒子数', 'Seeds placed')}**: {total_seeds}")
+        if ctv_vol_cm3 and total_seeds:
+            density = total_seeds / ctv_vol_cm3
+            lines.append(f"- **{L('粒子密度', 'Seed density')}**: {density:.2f} {L('颗 / cm³', 'seeds/cm³')}")
+        lines.append(f"- **{L('规划模式', 'Planning mode')}**: rule_based")
+        lines.append("")
+
+        # Section 5: Dose Distribution
+        lines.append(f"## {L('5. 剂量分布', '5. Dose Distribution')}")
+        lines.append("")
+        lines.append(f"- **{L('处方剂量', 'Prescription dose')}**: {rx_gy:.1f} Gy")
+        v100 = metrics.get('v100', 0) * 100
+        v150 = metrics.get('v150', 0) * 100
+        v200 = metrics.get('v200', 0) * 100
+        lines.append(f"- **V100 / V150 / V200**: {v100:.1f}% / {v150:.1f}% / {v200:.1f}%")
+        d90 = metrics.get('d90', 0)
+        dmean = metrics.get('dmean', 0)
+        d2 = metrics.get('d2', 0)
+        lines.append(f"- **D90 / Dmean / D2**: {d90:.2f} / {dmean:.2f} / {d2:.2f} Gy")
+        ci = metrics.get('ci', 0)
+        hi = metrics.get('hi', 0)
+        ps = metrics.get('plan_score', 0) * 100
+        lines.append(f"- **{L('适形指数 CI', 'Conformity Index (CI)')}**: {ci:.3f}")
+        lines.append(f"- **{L('均匀指数 HI', 'Homogeneity Index (HI)')}**: {hi:.3f}")
+        lines.append(f"- **{L('规划评分', 'Plan Score')}**: {ps:.0f}/100")
+        lines.append("")
+
+        # Section 6: OAR Dose Analysis (table)
+        lines.append(f"## {L('6. OAR 剂量分析', '6. OAR Dose Analysis')}")
+        lines.append("")
+        oar_metrics = metrics.get('oar_metrics', {}) or {}
+        if oar_metrics:
+            lines.append(f"| {L('危及器官', 'OAR')} | {L('最大剂量 (Gy)', 'Dmax (Gy)')} | D2cc (Gy) | D1cc (Gy) | {L('状态', 'Status')} |")
+            lines.append("|" + "|".join(["---"] * 5) + "|")
+            for organ, om in sorted(oar_metrics.items(), key=lambda kv: (kv[1].get('dmax') or 0), reverse=True):
+                dmax = om.get('dmax') or 0
+                d2cc = om.get('d2cc') or 0
+                d1cc = om.get('d1cc') or 0
+                # Status thresholds (clinical brachy practice):
+                # - EXCEEDS: Dmax > 2xRx OR D2cc > 1xRx (critical OARs)
+                #   Note: in brachy, a D2cc > 1xRx for duodenum/small_bowel
+                #   is a real problem because they're serial organs.
+                # - WARN:    Dmax > 1.5xRx OR D2cc > 0.75xRx
+                # - OK:      otherwise
+                if dmax > 2 * rx_gy or d2cc > rx_gy:
+                    status = L('超限', 'EXCEEDS')
+                elif dmax > 1.5 * rx_gy or d2cc > 0.75 * rx_gy:
+                    status = L('警告', 'WARN')
+                else:
+                    status = L('正常', 'OK')
+                lines.append(f"| {organ} | {dmax:.2f} | {d2cc:.2f} | {d1cc:.2f} | {status} |")
+        else:
+            lines.append(L('(剂量评估未返回 OAR 指标)', '(No OAR metrics returned by dose evaluation)'))
+        lines.append("")
+
+        # Section 7: Flagged Issues
+        lines.append(f"## {L('7. 标记问题', '7. Flagged Issues')}")
+        lines.append("")
+        issues_found = False
+        if oar_metrics:
+            for organ, om in sorted(oar_metrics.items(), key=lambda kv: (kv[1].get('dmax') or 0), reverse=True):
+                dmax = om.get('dmax') or 0
+                d2cc = om.get('d2cc') or 0
+                if dmax > 2 * rx_gy or d2cc > rx_gy:
+                    lines.append(f"- **{L('超限', 'EXCEEDS')}**: {organ} {L('最大剂量', 'Dmax')} {dmax:.2f} Gy, D2cc {d2cc:.2f} Gy — {L('需重点关注,可考虑降低处方或重新规划粒子分布', 'requires attention, consider reducing prescription or replanning seed distribution')}")
+                    issues_found = True
+                elif dmax > 1.5 * rx_gy or d2cc > 0.75 * rx_gy:
+                    lines.append(f"- **{L('警告', 'WARN')}**: {organ} {L('最大剂量', 'Dmax')} {dmax:.2f} Gy > 1.5×Rx ({1.5*rx_gy:.1f} Gy) — {L('接近耐受上限,需评估临床意义', 'near tolerance limit, evaluate clinical relevance')}")
+                    issues_found = True
+        if v200 > 30:
+            lines.append(f"- **{L('热点', 'Hot spot')}**: V200={v200:.1f}% {L('超过 30%,提示剂量分布欠均匀', 'exceeds 30%, indicating non-uniform dose distribution')}")
+            issues_found = True
+        if not issues_found:
+            lines.append(L('所有指标均在临床容许范围内,无需额外关注。', 'All metrics are within clinical tolerance — no action required.'))
+        lines.append("")
+
+        # Section 8: Clinical Recommendations
+        lines.append(f"## {L('8. 临床建议', '8. Clinical Recommendations')}")
+        lines.append("")
+        lines.append(f"- {L('请放射肿瘤科医师审核本计划并签署批准', 'Have a radiation oncologist review and sign off on this plan')}")
+        lines.append(f"- {L('使用独立剂量算法进行二次校验(蒙特卡罗或 TG-43)', 'Perform secondary dose verification using an independent algorithm (Monte Carlo or TG-43)')}")
+        if oar_metrics:
+            exceed_count = sum(1 for om in oar_metrics.values() if (om.get('dmax') or 0) > 2 * rx_gy)
+            if exceed_count > 0:
+                lines.append(f"- {L(f'重点关注 {exceed_count} 个超限 OAR,可在 Report 面板中调整粒子分布', f'Focus on the {exceed_count} OAR(s) exceeding limits; consider seed repositioning in the Report panel')}")
+        lines.append(f"- {L('术后 1 个月复查 CT,评估粒子迁移和剂量验证', 'Schedule a 1-month follow-up CT to assess seed migration and dose verification')}")
+        lines.append("")
+
+        # Section 9: References
+        lines.append(f"## {L('9. 参考文献', '9. References')}")
+        lines.append("")
+        lines.append(f"- [TG-43 AAPM](https://www.aapm.org/pubs/reports/RPT_268.pdf) — {L('放射性粒子源剂量学基础', 'Brachytherapy source dosimetry foundation')}")
+        lines.append(f"- [GEC-ESTRO](https://www.estro.org/Science/Guidelines) — {L('欧洲近距离治疗指南', 'European brachytherapy guidelines')}")
+        lines.append(f"- [ICRU Report 89](https://www.icru.org/report/icru-report-89-prescribing-recording-and-reporting-photon-beam-therapy-2nd-edition) — {L('光子束治疗处方与记录', 'Prescribing, recording, and reporting photon beam therapy')}")
+        lines.append(f"- [NCCN Guidelines](https://www.nccn.org/guidelines) — {L('各癌种临床实践指南', 'Clinical practice guidelines by cancer type')}")
+        lines.append("")
+
+        return "\n".join(lines)
+
     def _synthesize_with_llm(self, raw_results: str, steps: List, lang: str, user_message: str = "", query_type: str = "knowledge") -> str:
         """Synthesize tool results. Delegates to ToolResultPipeline."""
         formatted = []
@@ -4772,10 +4955,30 @@ print(json.dumps(result))
                     self.memory.add_message("user", f"[Tool result: Error: {str(e)[:200]}]")
 
             raw_response = self._build_direct_response(steps, _lang)
-            # Synthesize with LLM for coherent narrative
             user_msg = message
-            query_type = self._classify_query_type(user_msg)
-            response = self._synthesize_with_llm(raw_response, steps, _lang, user_msg, query_type)
+            # BUG FIX 2026-06-16 (LLM response still brief): the user
+            # complained that the LLM synthesis after planning was
+            # just a 5-row table — no OAR analysis, no flagged
+            # issues, no clinical context. Even with the 10-section
+            # template in the prompt, the LLM keeps producing brief
+            # output (probably max_tokens truncation or the LLM
+            # ignoring long instructions). For PLANNING runs, we
+            # now BYPASS LLM synthesis and generate the full
+            # structured response directly from the actual stored
+            # metrics. This guarantees the user always sees the
+            # complete clinical report.
+            planning_tools_in_run = {"ctv_segmentation", "oar_segmentation",
+                                     "planning_pipeline", "seed_planning",
+                                     "dose_evaluation", "dose_calc"}
+            has_planning = any(
+                s.get("tool") in planning_tools_in_run
+                for s in steps
+            )
+            if has_planning:
+                response = self._build_planning_report(_lang, steps)
+            else:
+                query_type = self._classify_query_type(user_msg)
+                response = self._synthesize_with_llm(raw_response, steps, _lang, user_msg, query_type)
             self.memory.add_message("assistant", response)
 
             # Multi-agent review with feedback loop

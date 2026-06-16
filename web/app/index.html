@@ -12470,12 +12470,28 @@ function renderSliceToCanvas(axis, sliceData) {
             canvas.style.width = displayW + 'px';
             canvas.style.height = displayH + 'px';
             canvas.style.position = 'absolute';
+            // BUG FIX 2026-06-16 (dose map persistence): if the
+            // slice canvas has been wrapped in a transform-host
+            // (because the dose overlay was activated), position
+            // the slice relative to the WRAPPER (which now hosts
+            // both slice + dose) — not relative to the original
+            // .viewer-card-canvas container.
+            const posParent = canvas._doseWrapper || container;
             if (!canvas._posSet || canvas._posContainerW !== containerW || canvas._posContainerH !== containerH) {
                 canvas.style.left = ((containerW - displayW) / 2) + 'px';
                 canvas.style.top = ((containerH - displayH) / 2) + 'px';
                 canvas._posSet = true;
                 canvas._posContainerW = containerW;
                 canvas._posContainerH = containerH;
+            }
+            // Size the wrapper to match the container so the
+            // slice canvas (positioned absolutely inside) has
+            // the right coordinate space. Without this, the
+            // wrapper would collapse to 0x0 since it only has
+            // absolutely-positioned children.
+            if (canvas._doseWrapper) {
+                canvas._doseWrapper.style.width = containerW + 'px';
+                canvas._doseWrapper.style.height = containerH + 'px';
             }
             canvas.style.margin = '0';
 
@@ -15063,61 +15079,50 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
     if (!doseCanvas) {
         doseCanvas = document.createElement('canvas');
         doseCanvas.id = doseCanvasId;
-        // BUG FIX 2026-06-16 (dose map persistence, FINAL):
-        // append the dose canvas as a SIBLING of the slice canvas
-        // (inside sliceCanvas.parentElement). The slice canvas's
-        // parent IS a flex container (.viewer-card-canvas), but
-        // we make our dose canvas absolutely positioned so the
-        // flex layout ignores it. Then we sync its size+position
-        // to the slice canvas's bounding rect via ResizeObserver.
+        // BUG FIX 2026-06-16 (dose map persistence, FINAL): wrap
+        // the slice canvas in a `transform-host` div so we can
+        // apply the same pan/zoom/rotate transform to BOTH the
+        // CT slice AND the dose canvas together. The transform-
+        // host is a positioned div (its layout matches the slice
+        // canvas), and we set it as `position:relative` so the
+        // absolutely-positioned dose child covers it.
         //
-        // Why sibling (not child of slice canvas): canvas elements
-        // don't lay out their children like block elements —
-        // getBoundingClientRect returned 0x0 even with explicit
-        // pixel dimensions. We need the slice canvas's parent as
-        // the positioning anchor.
-        doseCanvas.style.cssText = 'position:absolute;pointer-events:none;z-index:5;display:block;';
-        sliceCanvas.parentElement.appendChild(doseCanvas);
-        // Sync function: position the dose canvas over the slice.
-        const _syncDose = () => {
-            const dc2 = document.getElementById(doseCanvasId);
-            if (!dc2) return;
-            const sr = sliceCanvas.getBoundingClientRect();
-            if (sr.width <= 0 || sr.height <= 0) return;
-            const pr = sliceCanvas.parentElement.getBoundingClientRect();
-            dc2.style.left = (sr.left - pr.left) + 'px';
-            dc2.style.top = (sr.top - pr.top) + 'px';
-            dc2.style.width = sr.width + 'px';
-            dc2.style.height = sr.height + 'px';
-        };
-        sliceCanvas._syncDoseFn = _syncDose;
-        // ResizeObserver: keep the dose canvas aligned with the
-        // slice canvas on every layout change (slider drag,
-        // window resize, panel split, etc.). This is the single
-        // most reliable way to prevent the "dose map vanishes on
-        // drag" bug — we react to ALL layout changes.
-        if (typeof ResizeObserver !== 'undefined' && !sliceCanvas._doseResizeObs) {
-            sliceCanvas._doseResizeObs = new ResizeObserver(() => {
-                // Only sync if no active drag/animation in progress
-                // (the slice canvas's rect updates a few frames after
-                // the observer fires).
-                requestAnimationFrame(_syncDose);
-            });
-            sliceCanvas._doseResizeObs.observe(sliceCanvas);
+        // Why not just append dose to sliceCanvas.parentElement:
+        // applyViewerTransform applies a CSS transform (rotate/
+        // scale/translate) to the slice canvas. If the dose canvas
+        // is a SIBLING, applying the same transform to it produces
+        // correct on-screen positioning, but each transform frame
+        // also moves the slice canvas's bounding rect — so the
+        // ResizeObserver fires repeatedly trying to "sync" the
+        // dose canvas's left/top, fighting with the transform.
+        //
+        // The cleanest solution: wrap slice + dose in a div, apply
+        // the transform to the wrapper. Both children move together.
+        const parent = sliceCanvas.parentElement;
+        const wrapper = document.createElement('div');
+        wrapper.id = 'doseTransformHost_' + axis;
+        wrapper.style.cssText = 'position:relative;display:inline-block;line-height:0;';
+        parent.insertBefore(wrapper, sliceCanvas);
+        wrapper.appendChild(sliceCanvas);
+        doseCanvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;display:block;';
+        wrapper.appendChild(doseCanvas);
+        sliceCanvas._doseWrapper = wrapper;
+        sliceCanvas._doseCanvas = doseCanvas;
+        // Copy any pre-existing transform from the slice canvas to
+        // the wrapper (applyViewerTransform may have run before
+        // the dose was first created).
+        if (sliceCanvas.style.transform) {
+            wrapper.style.transform = sliceCanvas.style.transform;
+            wrapper.style.transformOrigin = sliceCanvas.style.transformOrigin || 'center center';
+            // Clear the transform from the slice canvas — the
+            // wrapper now owns it.
+            sliceCanvas.style.transform = '';
+            sliceCanvas.style.transformOrigin = '';
         }
-        window.addEventListener('resize', _syncDose);
     }
     // Match pixel dimensions to the CT slice
     doseCanvas.width = sliceCanvas.width;
     doseCanvas.height = sliceCanvas.height;
-    // Position the dose canvas over the slice canvas using the
-    // sync function (defined above). Fall back to direct read if
-    // the observer hasn't been registered yet.
-    try {
-        if (sliceCanvas._syncDoseFn) {
-            sliceCanvas._syncDoseFn();
-        }
-    } catch (_) {}
 
     const cacheKey = axis + '_' + sliceIndex;
     if (state.doseOverlay.slices[cacheKey]) {
@@ -15443,9 +15448,16 @@ function applyViewerTransform() {
 
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         const canvas = getSliceCanvas(axis);
-        if (canvas) {
-            canvas.style.transform = transform;
-            canvas.style.transformOrigin = 'center center';
+        // BUG FIX 2026-06-16 (dose map persistence, FINAL): if
+        // the slice canvas has been wrapped in a transform-host
+        // (because the dose overlay was activated), apply the
+        // transform to the WRAPPER so both slice and dose move
+        // together. Otherwise apply to the canvas directly.
+        const wrapper = canvas && canvas._doseWrapper;
+        const transformTarget = wrapper || canvas;
+        if (transformTarget) {
+            transformTarget.style.transform = transform;
+            transformTarget.style.transformOrigin = 'center center';
         }
         const annCanvas = getAnnotationCanvas(axis);
         if (annCanvas) {
@@ -15463,6 +15475,8 @@ function applyViewerTransform() {
             overlayDiv.style.transform = transform;
             overlayDiv.style.transformOrigin = 'center center';
         }
+        // Dose canvas is a child of the wrapper — it inherits the
+        // wrapper's transform automatically. No separate apply needed.
     });
 }
 
@@ -16063,6 +16077,34 @@ function _pickTickStep(span, targetCount = 8, preferDivisibleBy2 = false) {
     return result;
 }
 
+// Pin a sensible default dtick for the given axis span so the chart
+// always shows a usable grid even when Plotly's autorange kicks in.
+// Bug fix 2026-06-16: user complained that the y-axis tick spacing
+// "reset" to 1 (way too dense) after picking a point. Plotly's
+// autorange sometimes overrides dtick to its default of 1. We
+// explicitly compute and set dtick from the visible span.
+function _dvhDefaultDticks(xRange, yRange) {
+    // Dose axis (x): 0-600 default → 30 ticks @ 20 Gy each (or
+    // proportional on zoom).
+    let xTick = 20;
+    if (Array.isArray(xRange) && xRange.length === 2) {
+        const xSpan = xRange[1] - xRange[0];
+        xTick = _pickTickStep(xSpan, 12, true);
+        // Sanity floor: never go below 1 Gy tick spacing.
+        if (xTick < 1) xTick = 1;
+    }
+    // Volume axis (y): 0-100 default → 10 ticks @ 10% each (or
+    // proportional on zoom).
+    let yTick = 10;
+    if (Array.isArray(yRange) && yRange.length === 2) {
+        const ySpan = yRange[1] - yRange[0];
+        yTick = _pickTickStep(ySpan, 10, false);
+        // Sanity floor: at least 1% tick spacing (don't go below).
+        if (yTick < 1) yTick = 1;
+    }
+    return { xTick, yTick };
+}
+
 function drawDVH() {
     const placeholder = document.getElementById('dvhPlaceholder');
     if (!state.dvhData || Object.keys(state.dvhData).length === 0) return;
@@ -16146,7 +16188,13 @@ function drawDVH() {
     // time and the Rx line moved around. The reset button restores
     // this 0–600 Gy default.
     const xRange = [0, 600];
-    const xTick = 50;
+    // BUG FIX 2026-06-16: user wants x-axis to default to 20 Gy
+    // tick spacing (so 0, 20, 40, 60, ..., 600 — 31 ticks) and
+    // y-axis to default to 10% (0, 10, 20, ..., 100 — 11 ticks).
+    // The previous 50 Gy / 10% defaults left the y-axis correct
+    // but the x-axis too sparse. On zoom, the relayout handler
+    // adapts automatically.
+    const xTick = 20;
 
     // PRESCRIPTION REFERENCE MARKER (2026-06-16, user request):
     // Draw a vertical dashed line at the prescription dose and label
@@ -16312,6 +16360,12 @@ dvhEl.on('plotly_click', function(eventData) {
     const curveName = pt.data.name || '?';
     const curveColor = pt.data.line?.color || '#facc15';
     const info = `<b>${curveName}</b><br>${pt.x.toFixed(2)} Gy · ${pt.y.toFixed(2)}%`;
+    // BUG FIX 2026-06-16 (DVH pick): user wants each NEW click to
+    // REPLACE the previous pick (show only one labeled point at a
+    // time), not accumulate. The previous version pushed to
+    // _dvhUserPicks and rendered ALL of them — leaving a trail of
+    // stale labels that the user couldn't clear without dbl-click.
+    _dvhUserPicks.length = 0;
     _dvhUserPicks.push({
         x: pt.x, y: pt.y,
         text: info,
@@ -16319,34 +16373,57 @@ dvhEl.on('plotly_click', function(eventData) {
         curveColor,
     });
     // Re-render annotations + shapes combining: Rx ref (existing
-    // shapes[0..1]) + user picks (new shapes + annotations appended)
+    // shapes[0..1]) + the single new pick.
     const rxShapes = shapes.slice();
     const rxAnnotations = annotations.slice();
-    for (const pick of _dvhUserPicks) {
-        rxShapes.push({
-            type: 'circle', x0: pick.x - 1.5, x1: pick.x + 1.5,
-            y0: pick.y - 1.5, y1: pick.y + 1.5,
-            xref: 'x', yref: 'y',
-            fillcolor: pick.curveColor, line: { color: pick.curveColor, width: 1 },
-        });
-        rxAnnotations.push({
-            x: pick.x, y: pick.y,
-            xref: 'x', yref: 'y',
-            text: pick.text,
-            showarrow: true, arrowhead: 1, arrowcolor: pick.curveColor,
-            arrowwidth: 1, ax: 14, ay: -18,
-            font: { color: pick.curveColor, size: 10 },
-            bgcolor: 'rgba(15,23,42,0.78)',
-            bordercolor: pick.curveColor, borderwidth: 1, borderpad: 3,
-        });
-    }
+    const pick = _dvhUserPicks[0];
+    rxShapes.push({
+        type: 'circle', x0: pick.x - 1.5, x1: pick.x + 1.5,
+        y0: pick.y - 1.5, y1: pick.y + 1.5,
+        xref: 'x', yref: 'y',
+        fillcolor: pick.curveColor, line: { color: pick.curveColor, width: 1 },
+    });
+    rxAnnotations.push({
+        x: pick.x, y: pick.y,
+        xref: 'x', yref: 'y',
+        text: pick.text,
+        showarrow: true, arrowhead: 1, arrowcolor: pick.curveColor,
+        arrowwidth: 1, ax: 14, ay: -18,
+        font: { color: pick.curveColor, size: 10 },
+        bgcolor: 'rgba(15,23,42,0.78)',
+        bordercolor: pick.curveColor, borderwidth: 1, borderpad: 3,
+    });
     Plotly.relayout(dvhEl, { shapes: rxShapes, annotations: rxAnnotations });
 });
 
-// Double-click clears all user-picked markers (keeps Rx ref).
+// Double-click clears the user-picked marker (keeps Rx ref). The
+// previous version called Plotly.relayout with the original shapes
+// + annotations — but Plotly interpreted the missing xaxis.range /
+// yaxis.range as "autorange" and reset the chart, which the user
+// found disruptive. Now we explicitly preserve the current axis
+// ranges + tick settings.
 dvhEl.on('plotly_doubleclick', function() {
     _dvhUserPicks.length = 0;
-    Plotly.relayout(dvhEl, { shapes: shapes, annotations: annotations });
+    // Snapshot the current x/y ranges and dticks BEFORE we clear.
+    const curLayout = dvhEl.layout || {};
+    const preserve = {};
+    if (curLayout.xaxis) {
+        if (curLayout.xaxis.range) preserve['xaxis.range'] = curLayout.xaxis.range;
+        if (curLayout.xaxis.dtick != null) preserve['xaxis.dtick'] = curLayout.xaxis.dtick;
+        if (curLayout.xaxis.tick0 != null) preserve['xaxis.tick0'] = curLayout.xaxis.tick0;
+    }
+    if (curLayout.yaxis) {
+        if (curLayout.yaxis.range) preserve['yaxis.range'] = curLayout.yaxis.range;
+        if (curLayout.yaxis.dtick != null) preserve['yaxis.dtick'] = curLayout.yaxis.dtick;
+        if (curLayout.yaxis.tick0 != null) preserve['yaxis.tick0'] = curLayout.yaxis.tick0;
+    }
+    // Explicitly disable autorange so Plotly doesn't snap to data.
+    preserve['xaxis.autorange'] = false;
+    preserve['yaxis.autorange'] = false;
+    // Clear shapes/annotations but keep axis settings.
+    preserve['shapes'] = shapes;
+    preserve['annotations'] = annotations;
+    Plotly.relayout(dvhEl, preserve);
 });
 
     // Adaptive axis ticks: when the user zooms/pans, recompute dtick so
@@ -16377,23 +16454,29 @@ dvhEl.on('plotly_doubleclick', function() {
                 if (!hasUserInput) return;
 
                 const update = {};
+                // BUG FIX 2026-06-16: always compute the correct
+                // dtick for both axes on every relayout, so the
+                // user NEVER sees a stray dtick=1 (the Plotly
+                // default that the user complained about). The old
+                // 20%-change threshold let the chart stay at bad
+                // values indefinitely.
+                const def = _dvhDefaultDticks(xR, yR);
                 if (Array.isArray(xR) && xR.length === 2 && xR[1] > xR[0]) {
-                    const span = xR[1] - xR[0];
-                    // Dose axis: prefer 20 Gy multiples so the user sees
-                    // 0, 20, 40, ... at the default 0-600 range, 0, 10, ...
-                    // at 0-100 zoom, 0, 50, ... at 0-300 zoom, etc.
-                    const newTick = _pickTickStep(span, 8, true);
-                    const oldTick = (layout.xaxis && layout.xaxis.dtick) || 1;
-                    if (Math.abs(newTick - oldTick) / oldTick > 0.2) {
+                    const newTick = def.xTick;
+                    const oldTick = (layout.xaxis && layout.xaxis.dtick) || def.xTick;
+                    if (Math.abs(newTick - oldTick) / Math.max(1, oldTick) > 0.15 || oldTick === 1) {
                         update['xaxis.dtick'] = newTick;
                         update['xaxis.tick0'] = Math.ceil(xR[0] / newTick) * newTick;
                     }
                 }
                 if (Array.isArray(yR) && yR.length === 2 && yR[1] > yR[0]) {
-                    const span = yR[1] - yR[0];
-                    const newTick = _pickTickStep(span, 8, true);
-                    const oldTick = (layout.yaxis && layout.yaxis.dtick) || 1;
-                    if (Math.abs(newTick - oldTick) / oldTick > 0.2) {
+                    const newTick = def.yTick;
+                    const oldTick = (layout.yaxis && layout.yaxis.dtick) || def.yTick;
+                    // Force-fix the bug where dtick becomes 1: any
+                    // time the current y-tick is < 5% on a span
+                    // >= 50, we override regardless of the threshold.
+                    const force = (oldTick < 5 && (yR[1] - yR[0]) >= 50);
+                    if (force || Math.abs(newTick - oldTick) / Math.max(1, oldTick) > 0.15 || oldTick === 1) {
                         update['yaxis.dtick'] = newTick;
                         update['yaxis.tick0'] = Math.ceil(yR[0] / newTick) * newTick;
                     }
