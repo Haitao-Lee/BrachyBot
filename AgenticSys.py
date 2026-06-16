@@ -1676,14 +1676,36 @@ class BrachyAgent:
         if "image_path" in params:
             path = params["image_path"]
             if not os.path.exists(path):
-                # Try to find the file in uploads
+                # 1) Try the same basename in the canonical uploads dir.
                 alt = os.path.join(os.path.dirname(__file__), "uploads", os.path.basename(path))
                 if os.path.exists(alt):
                     params["image_path"] = alt
                     logger.info(f"Path corrected: {path} → {alt}")
                 else:
-                    from tool_factory import ToolResult
-                    return ToolResult(success=False, error=f"File not found: {path}")
+                    # 2) Fall back to the agent's remembered ct_path.
+                    #    The LLM occasionally fabricates a CT filename
+                    #    (e.g. wrong year in a timestamped upload) when
+                    #    a real CT is already loaded in the session. We
+                    #    do NOT fail the tool call — we substitute the
+                    #    path we actually have. Without this fallback
+                    #    (2026-06-16 bug) the agent gets stuck in an
+                    #    infinite File-not-found retry loop because the
+                    #    fabricated basename differs from the real one
+                    #    by just a digit, and the LLM can't self-correct.
+                    try:
+                        remembered = self.memory.retrieve("ct_path")
+                    except Exception:
+                        remembered = None
+                    if remembered and os.path.exists(remembered):
+                        logger.warning(
+                            f"LLM-supplied image_path {path!r} not "
+                            f"found; substituting remembered ct_path "
+                            f"{remembered!r}"
+                        )
+                        params["image_path"] = remembered
+                    else:
+                        from tool_factory import ToolResult
+                        return ToolResult(success=False, error=f"File not found: {path}")
             # Store ct_path in memory for 3D reconstruction and other tools
             if tool_name in ("ctv_segmentation", "oar_segmentation"):
                 self.memory.store("ct_path", params["image_path"])
@@ -2318,10 +2340,58 @@ print(json.dumps(result))
 
         Returns filtered list of valid tool calls. Invalid ones are dropped.
         """
+        # INTERNAL FIELDS that the LLM must NEVER inject into a tool call.
+        # These are runtime-side-channel values that the agent passes
+        # via Python kwargs (e.g. step_callback), not part of the tool
+        # input_schema. If the LLM hallucinates one of these field names
+        # (M2.7-highspeed has been observed doing this in 2026-06-16
+        # when the LLM saw "step_callback" leak through system prompt
+        # wording), the literal repr "<function ...>" or "<class ...>"
+        # would otherwise be passed to the tool, which would then log
+        # it AND potentially inject it back into the next turn's
+        # messages, causing an infinite hallucination loop.
+        _INTERNAL_FIELDS = {
+            "step_callback", "progress_callback", "memory", "agent",
+            "_internal", "callback", "context", "ctx", "self_ref",
+        }
+        # Values that look like Python reprs — only seen when the LLM
+        # is mimicking a schema field that doesn't exist. Reject any
+        # tool call whose params include such a value.
+        _PYTHON_REPR_RE = re.compile(
+            r"^<function\s|^<class\s|^<bound method\s|^<module\s|^<object\s"
+        )
         valid = []
         for tc in tool_calls:
             tn = tc.get("tool", "")
             p = tc.get("params", {})
+            # GENERAL SANITIZATION (applies to ALL tools):
+            # 1) Drop any internal-field name from the params dict
+            #    silently — the LLM is hallucinating; the tool's
+            #    runtime side-channel will set it correctly.
+            # 2) Reject the entire tool call if any value looks like
+            #    a Python repr (function/class object literal). The
+            #    user saw `step_callback=<function ...>` get logged
+            #    in 2026-06-16, which is exactly this shape.
+            stripped = []
+            for k in list(p.keys()):
+                v = p[k]
+                if k in _INTERNAL_FIELDS:
+                    logger.warning(
+                        f"Stripped internal field {k!r} from LLM "
+                        f"tool call params for {tn!r}"
+                    )
+                    p.pop(k, None)
+                    stripped.append(k)
+                elif isinstance(v, str) and _PYTHON_REPR_RE.match(v):
+                    logger.warning(
+                        f"Refusing tool call {tn!r}: param {k!r} "
+                        f"contains a Python repr ({v[:60]!r}) — the "
+                        f"LLM is hallucinating a function-valued field"
+                    )
+                    p = None
+                    break
+            if p is None:
+                continue  # Skip this tool call entirely
             if tn == "filesystem_browser":
                 if "dirPath" in p and "path" not in p:
                     p["path"] = p.pop("dirPath")
