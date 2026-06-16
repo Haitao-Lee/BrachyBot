@@ -6329,6 +6329,32 @@ function renderMarkdown(text) {
     }
     window._i18nLang = getInitialLang();
     window._I18N = I18N;
+    // Sync the todo list's active language to the global UI lang
+    // at boot. The todo `_TODO_I18N` dict is defined later in the
+    // file (line ~6965). Defer with requestAnimationFrame so we
+    // run AFTER the file's bottom-of-file IIFE/const definitions
+    // have completed. Re-attempt every frame until _TODO_I18N is
+    // available, with a safety cap of 200 frames (~3s).
+    (function _syncTodoLangAtBoot() {
+        let frames = 0;
+        const trySync = () => {
+            frames++;
+            try {
+                if (typeof _setActiveTodoLang === 'function' && typeof _TODO_I18N !== 'undefined') {
+                    _setActiveTodoLang(window._i18nLang);
+                    return true;
+                }
+            } catch (_) {}
+            return false;
+        };
+        if (!trySync()) {
+            const tick = () => {
+                if (trySync() || frames > 200) return;
+                requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+        }
+    })();
 
     // Lazy-register a (zh, en) pair so applyI18n() can re-render
     // dynamic content later. The key is auto-generated from a hash
@@ -6403,6 +6429,18 @@ function renderMarkdown(text) {
             b.classList.toggle('lang-active', isActive);
             b.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
+        // BUG FIX 2026-06-16 (todo list i18n): the user reported that
+        // todo list labels (e.g. "执行进度" / "Progress") did NOT
+        // switch when the global EN/中 toggle was flipped. Previously
+        // todo lang was driven by server-side user-input language
+        // detection only. Now the global toggle wins — if the user
+        // explicitly switched UI lang, override whatever the SSE
+        // start event set.
+        try {
+            if (typeof _setActiveTodoLang === 'function') {
+                _setActiveTodoLang(lang);
+            }
+        } catch (_) {}
         // BUG FIX 2026-06-16 (report bilingual + global i18n): when
         // the global UI language flips, the Report panel must follow.
         // Previously the Report kept its own per-panel language and
@@ -6964,11 +7002,39 @@ const _TODO_I18N = {
     },
 };
 
-// Active language for todo lists. Updated by the chat SSE handler
-// when /api/chat returns the detected language for the current turn.
+// Active language for todo lists. Updated by:
+//   1. The chat SSE handler when /api/chat returns the detected
+//      user-input language (server-side detection).
+//   2. The global UI language toggle (setUiLanguage) when the user
+//      flips EN/中 in the header. Per user feedback (2026-06-16),
+//      todo labels must follow the GLOBAL toggle, not just the
+//      per-message detected language — otherwise switching EN/中
+//      in the header leaves the todo in the wrong language.
+// Default 'en' to match the global default.
 let _activeTodoLang = 'en';
 function _setActiveTodoLang(code) {
-    if (code && _TODO_I18N[code]) _activeTodoLang = code;
+    if (!code || !_TODO_I18N[code]) return;
+    if (_activeTodoLang === code) return;
+    _activeTodoLang = code;
+    // Re-render any visible todo list's labels in the new language.
+    // We only update the LABEL TEXT — status dots (✓/✕), elapsed
+    // times, and the count badge remain unchanged. The header
+    // text and per-step tool names are recomputed from _TODO_I18N.
+    try {
+        const dock = document.getElementById('chatTodoDock');
+        if (!dock) return;
+        const headerSpan = dock.querySelector('.chat-todo-header > .chat-todo-toggle > span:nth-child(2)');
+        if (headerSpan) headerSpan.textContent = _TODO_I18N[code].header;
+        // Update each item's label text from its stored step.
+        dock.querySelectorAll('.chat-todo-item').forEach(li => {
+            const lbl = li.querySelector('.chat-todo-label');
+            if (!lbl) return;
+            const item = (window._activeTodoApi && window._activeTodoApi.items || []).find(it => it.node === li);
+            if (item && item.step) {
+                lbl.textContent = _todoLabelForStep(item.step);
+            }
+        });
+    } catch (_) { /* best-effort */ }
 }
 function _todoI18n() {
     return _TODO_I18N[_activeTodoLang] || _TODO_I18N.en;
@@ -7015,6 +7081,12 @@ function _todoCreate() {
     const toggle = document.createElement('span');
     toggle.className = 'chat-todo-toggle';
     toggle.innerHTML = '<span class="chat-todo-caret">▼</span> <span>' + _todoI18n().header + '</span> <span class="chat-todo-count"></span>';
+    // Track the active todo API globally so _setActiveTodoLang()
+    // can re-render labels when the user flips the global EN/中
+    // toggle mid-task. There is only ever one todo visible at a
+    // time per chat (sendChat wipes the dock at start), so a
+    // single global ref is enough.
+    window._activeTodoApi = null; // will be set after api is built
     toggle.onclick = () => {
         root.classList.toggle('folded');
         const collapsed = root.querySelector('.chat-todo-list').classList.toggle('collapsed');
@@ -7287,6 +7359,11 @@ function _todoCreate() {
             badge.textContent = '';
         }
     }
+
+    // Register this todo as the currently active one so the global
+    // EN/中 toggle can re-render its labels in the new language
+    // (see _setActiveTodoLang above).
+    window._activeTodoApi = api;
 
     return api;
 }
