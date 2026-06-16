@@ -3122,9 +3122,15 @@ body::before {
    DATA TREE
    =========================================================== */
 .data-tree-container {
-    width: 220px;
-    min-width: 150px;
-    max-width: 500px;
+    /* BUG FIX 2026-06-16: user asked for the data tree default
+       width to be DOUBLED. Previously 220px was too narrow to read
+       long organ names like "inferior_pulmonary_artery_left" or
+       "temporal_lobe_right". 440px (2×) keeps full names visible
+       while still leaving room for the viewer cards. The user can
+       still drag the resize handle to shrink/grow it. */
+    width: 440px;
+    min-width: 200px;
+    max-width: 700px;
     border-right: 1px solid var(--border-hairline);
     background: var(--bg-2);
     overflow-y: auto;
@@ -10941,28 +10947,18 @@ function renderDataTree() {
         </div>`;
     }
 
-    // 3D Meshes group (CTV, OAR, dose, etc. reconstructed via 3d.reconstruct)
-    const meshEntries = dataTreeState.planning.meshes || [];
-    if (meshEntries.length > 0) {
-        const meshVis = meshEntries.some(m => m.visible);
-        const meshOp = meshEntries[0]?.opacity ?? 0.7;
-        html += `<div class="tree-group" data-group="planning_meshes">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('planning_meshes', event)">
-                <span class="arrow">&#9660;</span>
-                <button class="eye-btn ${meshVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_meshes', ${!meshVis})" title="Toggle">${meshVis ? '&#128065;' : '&#128064;'}</button>
-                <span>3D Meshes (${meshEntries.length})</span>
-                <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
-                    <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(meshOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('planning_meshes', this.value)" title="Opacity">
-                </span>
-            </div>
-            <div class="tree-group-items">`;
-        meshEntries.forEach(m => {
-            const mState = { visible: m.visible, opacity: m.opacity, color: m.color, loaded: true, label: m.label };
-            const info = m.source === 'ctv' ? 'CTV' : (m.source === 'oar' ? 'OAR' : 'Mesh');
-            html += renderTreeItem(m.id, mState, info);
-        });
-        html += `</div></div>`;
-    }
+    // BUG FIX 2026-06-16 (data tree 3D meshes): removed the
+    // redundant "3D Meshes (N)" parent group. The user complained
+    // that this group duplicated entries that already live under
+    // their source (CTV / OAR / Dose), and that each item already
+    // has a per-row "3D Reconstruct" button (renderTreeItem at
+    // line ~10994) which they want to use instead of a separate
+    // toggle group. Now meshes only appear as a "Meshes" sub-row
+    // under their source — no duplicate parent group.
+    //
+    // We no longer emit a `3D Meshes` tree-group at all here; the
+    // meshes are still rendered as items via renderTreeItem under
+    // their owning source (CTV, OAR, dose iso-surface).
 
     // Legacy dose/seed items (if no planning data)
     if (!hasPlanning) {
