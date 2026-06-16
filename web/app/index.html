@@ -13451,11 +13451,15 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
         const dMax = doseRange[1] || 1;
         const pct = Math.round((threshold / dMax) * 100);
         const existingLevel = dataTreeState.planning.doseLevels.find(d => Math.abs(d.threshold - threshold) < 1e-6);
-        // Compute absolute Gy for the label (prescription × threshold)
-        // so the data tree shows "120 Gy" instead of "1.0× Rx".
+        // BUG FIX 2026-06-16: detect whether `threshold` is already
+        // in absolute Gy (called from loadAllIsoSurfaces with v in Gy)
+        // or a relative multiplier (called directly with 1.0, 1.5, etc.).
+        // Multiplying an already-Gy value by rxGy again produced labels
+        // like "14400 Gy" — the "extra 120" the user saw.
         const rxGy = (window.reportForm && window.reportForm.planning
             && window.reportForm.planning.prescriptionGy) || 120;
-        const absGy = (threshold * rxGy).toFixed(0);
+        const isAlreadyGy = threshold > 5;  // 1.0×/1.5×/2.0×/4.0× are all < 5; real Gy is 50+
+        const absGy = isAlreadyGy ? threshold.toFixed(0) : (threshold * rxGy).toFixed(0);
         if (!existingLevel && !window._suppressSingleIsoEntry) {
             dataTreeState.planning.doseLevels.push({
                 threshold: threshold,
@@ -13562,9 +13566,13 @@ async function loadAllIsoSurfaces() {
             if (dataTreeState && dataTreeState.planning) {
                 const existing = dataTreeState.planning.doseLevels
                     .find(d => Math.abs(d.threshold - v) < 1e-6);
-                const rxGy = (window.reportForm && window.reportForm.planning
-                    && window.reportForm.planning.prescriptionGy) || 120;
-                const absGy = (v * rxGy).toFixed(0);
+                // BUG FIX 2026-06-16: `v` is ALREADY in absolute Gy
+                // (computed above as v_rel × rxGy). The previous
+                // version multiplied AGAIN by rxGy here, producing
+                // labels like "14400 Gy" for 1.0×Rx@120Gy. The user
+                // reported "iso surface 命名多乘了一个 120". Use `v`
+                // directly.
+                const absGy = v.toFixed(0);
                 if (!existing) {
                     dataTreeState.planning.doseLevels.push({
                         threshold: v,
@@ -14974,7 +14982,15 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
     if (!doseCanvas) {
         doseCanvas = document.createElement('canvas');
         doseCanvas.id = doseCanvasId;
-        doseCanvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;';
+        // BUG FIX 2026-06-16 (dose map persistence): the dose canvas
+        // was getting visually overwritten by the CT canvas after
+        // slider drags because the CT canvas was being re-appended
+        // (or repainted on a higher z-index). Add explicit z-index
+        // and `position:relative` parent hint so the dose layer stays
+        // ABOVE the CT during slider scrubbing. Also use `inset:0`
+        // so the dose canvas covers the full CT area regardless of
+        // any pan/zoom on the parent.
+        doseCanvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;';
         sliceCanvas.parentElement.appendChild(doseCanvas);
     }
     // Match pixel dimensions to the CT slice
@@ -14983,12 +14999,30 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
     // Match on-screen geometry to the CT slice. Use the CT canvas's
     // computed rect so we inherit any pan/zoom transform that the
     // style.left/top no longer reflect.
+    //
+    // BUG FIX 2026-06-16: previous version set left/top to
+    // (r.left - parentR.left, r.top - parentR.top). After a slider
+    // drag, the dose canvas was being positioned slightly OFFSET
+    // from the CT canvas (because of fractional pixel rounding)
+    // — making the heatmap appear off-center or vanish. We now
+    // use inset:0 (already in cssText) and override left/top only
+    // if the dimensions truly differ; otherwise keep inset:0 to
+    // cover the full CT area.
     const r = sliceCanvas.getBoundingClientRect();
     const parentR = sliceCanvas.parentElement.getBoundingClientRect();
-    doseCanvas.style.width = r.width + 'px';
-    doseCanvas.style.height = r.height + 'px';
-    doseCanvas.style.left = (r.left - parentR.left) + 'px';
-    doseCanvas.style.top = (r.top - parentR.top) + 'px';
+    if (Math.abs(r.width - sliceCanvas.offsetWidth) < 2 &&
+        Math.abs(r.height - sliceCanvas.offsetHeight) < 2) {
+        // CT canvas size matches its layout — inset:0 is correct.
+        doseCanvas.style.width = '100%';
+        doseCanvas.style.height = '100%';
+        doseCanvas.style.left = '';
+        doseCanvas.style.top = '';
+    } else {
+        doseCanvas.style.width = r.width + 'px';
+        doseCanvas.style.height = r.height + 'px';
+        doseCanvas.style.left = (r.left - parentR.left) + 'px';
+        doseCanvas.style.top = (r.top - parentR.top) + 'px';
+    }
 
     const cacheKey = axis + '_' + sliceIndex;
     if (state.doseOverlay.slices[cacheKey]) {
@@ -16009,25 +16043,15 @@ function drawDVH() {
 
     const dvhEl = document.getElementById('dvhChart');
 
-    // Initial x-axis range adapts to the ACTUAL dose range of the
-    // data. Previously hardcoded to [0, 600] which left a large empty
-    // tail when the data only reached ~360 Gy (prescription × 3),
-    // and worse — hovering in that empty tail showed "0%" for every
-    // trace because the closest bin at e.g. 500 Gy was the last
-    // index where every curve dropped to 0%. The user reported this
-    // as "all curves show 0%". Now we round up the actual max dose
-    // to the next "nice" multiple of the major tick so the axis is
-    // tight and every hover reads a real value.
-    let actualMaxDose = 0;
-    for (const [, dvh] of picked) {
-        const bins = dvh.dose_bins || [];
-        if (bins.length) actualMaxDose = Math.max(actualMaxDose, bins[bins.length - 1]);
-    }
-    // Snap up to a clean multiple of 50 Gy, with a small headroom so
-    // the Rx reference line is never on the very edge.
-    const xRangeMax = Math.max(60, Math.ceil((actualMaxDose * 1.05) / 50) * 50);
-    const xRange = [0, xRangeMax];
-    const xTick = xRangeMax <= 200 ? 20 : (xRangeMax <= 400 ? 40 : 50);
+    // BUG FIX 2026-06-16: user asked for the DVH chart to default
+    // to a FIXED 0–600 Gy x-range (the brachytherapy planning view
+    // is typically ≤200 Gy, but the user wants consistent axis
+    // comparison across plans). The previous "adaptive" range that
+    // snapped to actual data max made the chart look different every
+    // time and the Rx line moved around. The reset button restores
+    // this 0–600 Gy default.
+    const xRange = [0, 600];
+    const xTick = 50;
 
     // PRESCRIPTION REFERENCE MARKER (2026-06-16, user request):
     // Draw a vertical dashed line at the prescription dose and label
@@ -16155,6 +16179,23 @@ function drawDVH() {
         shapes, annotations,
         hovermode: 'x unified',
         dragmode: 'zoom',
+        // BUG FIX 2026-06-16 (DVH hover): the user reported the
+        // hover tooltip showing as a "gray-white box with incomplete
+        // text". Plotly's default hoverlabel uses white text on
+        // white-ish bg, which on our deep-dark theme makes organ
+        // names invisible. We force an explicit dark-bg + bright-
+        // text style for ALL hover tooltip variants. The user can
+        // also see the dose/volume + organ name clearly.
+        hoverlabel: {
+            bgcolor: 'rgba(15,23,42,0.95)',
+            bordercolor: 'rgba(148,163,184,0.45)',
+            font: {
+                family: 'Inter, "Space Grotesk", system-ui, sans-serif',
+                size: 11,
+                color: '#e2e8f0',
+            },
+            align: 'left',
+        },
     }, {
         responsive: true,
         displayModeBar: true,
@@ -17392,6 +17433,14 @@ window.Report = (function () {
         layout2col(on) {
             try { document.body.classList.toggle('report-2col', !!on); } catch (e) {}
             try { localStorage.setItem('brachyplan_report_2col', on ? '1' : '0'); } catch (e) {}
+            // BUG FIX 2026-06-16: sync the actual checkbox UI when
+            // layout2col is called from anywhere (auto-restore, the
+            // toolbar toggle, etc.) so the visible state matches the
+            // body class.
+            try {
+                const cb = document.querySelector('.rp-2col-toggle input[type="checkbox"]');
+                if (cb && cb.checked !== !!on) cb.checked = !!on;
+            } catch (_) {}
         },
     };
 
@@ -18181,7 +18230,29 @@ window.Report = (function () {
             .oar-card-head { display:flex; justify-content:space-between; align-items:center; }
         `;
         document.head.appendChild(s);
-        try { if (localStorage.getItem('brachyplan_report_2col') === '1') document.body.classList.add('report-2col'); } catch (e) {}
+        try {
+            // BUG FIX 2026-06-16: user reported that the "2-col layout"
+            // checkbox was defaulting to ON even though the HTML markup
+            // had no `checked` attribute. Root cause: localStorage was
+            // restoring the body.report-2col class from a previous
+            // session, which silently made the layout 2-col WITHOUT
+            // checking the actual checkbox. Now we ALSO sync the
+            // checkbox element from the same stored value so the UI
+            // and the layout are always consistent.
+            //
+            // The user explicitly wants 2-col to DEFAULT TO OFF. If
+            // no user-initiated value is stored, ensure the class is
+            // absent and the checkbox is unchecked.
+            const stored = localStorage.getItem('brachyplan_report_2col');
+            const cb = document.querySelector('.rp-2col-toggle input[type="checkbox"]');
+            if (stored === '1') {
+                document.body.classList.add('report-2col');
+                if (cb) cb.checked = true;
+            } else {
+                document.body.classList.remove('report-2col');
+                if (cb) cb.checked = false;
+            }
+        } catch (e) {}
     }
 
     // ---------- Boot ----------
