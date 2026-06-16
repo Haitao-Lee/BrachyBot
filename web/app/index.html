@@ -3579,6 +3579,14 @@ body::before {
     align-items: center;
     justify-content: center;
     color: rgba(255, 255, 255, 0.4);
+    /* BUG FIX 2026-06-16 (dose map persistence): the dose canvas
+       is a sibling of the slice canvas, positioned absolutely
+       over it via JS sync (renderDoseForCurrentSlice). We need
+       position:relative here so the absolute child's
+       left/top/width/height are anchored to this card (not the
+       body or viewport) — without this, the dose canvas would
+       drift off-screen on slider drag. */
+    position: relative;
     font-size: 0.74rem;
     position: relative;
     min-height: 0;
@@ -15055,47 +15063,61 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
     if (!doseCanvas) {
         doseCanvas = document.createElement('canvas');
         doseCanvas.id = doseCanvasId;
-        // BUG FIX 2026-06-16 (dose map persistence): the dose canvas
-        // was getting visually overwritten by the CT canvas after
-        // slider drags because the CT canvas was being re-appended
-        // (or repainted on a higher z-index). Add explicit z-index
-        // and `position:relative` parent hint so the dose layer stays
-        // ABOVE the CT during slider scrubbing. Also use `inset:0`
-        // so the dose canvas covers the full CT area regardless of
-        // any pan/zoom on the parent.
-        doseCanvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;';
+        // BUG FIX 2026-06-16 (dose map persistence, FINAL):
+        // append the dose canvas as a SIBLING of the slice canvas
+        // (inside sliceCanvas.parentElement). The slice canvas's
+        // parent IS a flex container (.viewer-card-canvas), but
+        // we make our dose canvas absolutely positioned so the
+        // flex layout ignores it. Then we sync its size+position
+        // to the slice canvas's bounding rect via ResizeObserver.
+        //
+        // Why sibling (not child of slice canvas): canvas elements
+        // don't lay out their children like block elements —
+        // getBoundingClientRect returned 0x0 even with explicit
+        // pixel dimensions. We need the slice canvas's parent as
+        // the positioning anchor.
+        doseCanvas.style.cssText = 'position:absolute;pointer-events:none;z-index:5;display:block;';
         sliceCanvas.parentElement.appendChild(doseCanvas);
+        // Sync function: position the dose canvas over the slice.
+        const _syncDose = () => {
+            const dc2 = document.getElementById(doseCanvasId);
+            if (!dc2) return;
+            const sr = sliceCanvas.getBoundingClientRect();
+            if (sr.width <= 0 || sr.height <= 0) return;
+            const pr = sliceCanvas.parentElement.getBoundingClientRect();
+            dc2.style.left = (sr.left - pr.left) + 'px';
+            dc2.style.top = (sr.top - pr.top) + 'px';
+            dc2.style.width = sr.width + 'px';
+            dc2.style.height = sr.height + 'px';
+        };
+        sliceCanvas._syncDoseFn = _syncDose;
+        // ResizeObserver: keep the dose canvas aligned with the
+        // slice canvas on every layout change (slider drag,
+        // window resize, panel split, etc.). This is the single
+        // most reliable way to prevent the "dose map vanishes on
+        // drag" bug — we react to ALL layout changes.
+        if (typeof ResizeObserver !== 'undefined' && !sliceCanvas._doseResizeObs) {
+            sliceCanvas._doseResizeObs = new ResizeObserver(() => {
+                // Only sync if no active drag/animation in progress
+                // (the slice canvas's rect updates a few frames after
+                // the observer fires).
+                requestAnimationFrame(_syncDose);
+            });
+            sliceCanvas._doseResizeObs.observe(sliceCanvas);
+        }
+        window.addEventListener('resize', _syncDose);
     }
     // Match pixel dimensions to the CT slice
     doseCanvas.width = sliceCanvas.width;
     doseCanvas.height = sliceCanvas.height;
-    // Match on-screen geometry to the CT slice. Use the CT canvas's
-    // computed rect so we inherit any pan/zoom transform that the
-    // style.left/top no longer reflect.
-    //
-    // BUG FIX 2026-06-16: previous version set left/top to
-    // (r.left - parentR.left, r.top - parentR.top). After a slider
-    // drag, the dose canvas was being positioned slightly OFFSET
-    // from the CT canvas (because of fractional pixel rounding)
-    // — making the heatmap appear off-center or vanish. We now
-    // use inset:0 (already in cssText) and override left/top only
-    // if the dimensions truly differ; otherwise keep inset:0 to
-    // cover the full CT area.
-    const r = sliceCanvas.getBoundingClientRect();
-    const parentR = sliceCanvas.parentElement.getBoundingClientRect();
-    if (Math.abs(r.width - sliceCanvas.offsetWidth) < 2 &&
-        Math.abs(r.height - sliceCanvas.offsetHeight) < 2) {
-        // CT canvas size matches its layout — inset:0 is correct.
-        doseCanvas.style.width = '100%';
-        doseCanvas.style.height = '100%';
-        doseCanvas.style.left = '';
-        doseCanvas.style.top = '';
-    } else {
-        doseCanvas.style.width = r.width + 'px';
-        doseCanvas.style.height = r.height + 'px';
-        doseCanvas.style.left = (r.left - parentR.left) + 'px';
-        doseCanvas.style.top = (r.top - parentR.top) + 'px';
-    }
+    // Position the dose canvas over the slice canvas using the
+    // sync function (defined above). Fall back to direct read if
+    // the observer hasn't been registered yet.
+    try {
+        if (sliceCanvas._syncDoseFn) {
+            sliceCanvas._syncDoseFn();
+        }
+    } catch (_) {}
 
     const cacheKey = axis + '_' + sliceIndex;
     if (state.doseOverlay.slices[cacheKey]) {
