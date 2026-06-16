@@ -431,6 +431,43 @@ body::before {
 .status-chip .dot.yellow { background: var(--warning); }
 .status-chip .dot.red { background: var(--danger); }
 
+/* UI language toggle (2026-06-16). Sits in the top-right header
+   next to Connected / Brain online / Session. Two pill buttons
+   (EN / 中) styled as a segmented control. The active language
+   gets a brand-tinted background; the inactive one stays neutral
+   so the user can spot the current language at a glance. */
+.lang-toggle {
+    padding: 0 !important;
+    overflow: hidden;
+    gap: 0 !important;
+}
+.lang-btn {
+    height: 100%;
+    padding: 0 0.55rem;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+    font-weight: 600;
+    font-family: 'Inter, sans-serif';
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease);
+}
+.lang-btn:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.04);
+}
+.lang-btn.lang-active {
+    background: var(--primary);
+    color: #fff;
+    box-shadow: var(--inset-top);
+}
+.lang-btn.lang-active:hover {
+    background: var(--primary);
+    color: #fff;
+}
+
 /* ===========================================================
    MAIN BODY
    =========================================================== */
@@ -1168,12 +1205,24 @@ body::before {
 .md-h4 { font-size: 0.8rem; margin-top: 0.45rem; color: #b8c1d3; }
 .md-h5 { font-size: 0.78rem; margin-top: 0.35rem; color: var(--text-dim); }
 .md-h1:first-child, .md-h2:first-child, .md-h3:first-child, .md-h4:first-child, .md-h5:first-child { margin-top: 0; }
-/* If the LLM still emits a leading emoji (legacy / drift), we
-   hide it visually so the heading bar provides a uniform look.
-   This is a CSS-only safety net. */
-.md-h2 > .md-emoji-prefix,
-.md-h3 > .md-emoji-prefix,
-.md-h4 > .md-emoji-prefix { display: none; }
+
+/* ICON STYLING (2026-06-16, round 2): icons are now injected by the
+   marked Renderer with single-source-of-truth rules — every H1/H2/H3
+   gets a level-mapped icon (🎯/📌/🔹), and inline sentences get
+   semantic icons (💡/✅/⚠️/📊/🕐) only when matched. This selector
+   styles the leading icon character inside a heading with a tiny
+   right margin so it doesn't crowd the text. The .md-emoji-prefix
+   safety-net hide is REMOVED — there is no need to hide the LLM's
+   leading emoji because the Renderer strips it before injection. */
+.md-h1::first-letter,
+.md-h2::first-letter,
+.md-h3::first-letter,
+.md-h4::first-letter { font-weight: 500; }
+
+/* Inline-icon visual: a slight right margin to separate the icon
+   from the text. Uses `first-of-type` to avoid setting it on every
+   text node — the icon is always the first character. */
+.md-h2 + p, .md-h3 + p, .md-h4 + p { margin-top: 0.35rem; }
 
 .chat-row {
     display: flex;
@@ -1517,6 +1566,44 @@ body::before {
     flex-shrink: 0;
 }
 .chat-todo-item.active .chat-todo-time { color: var(--primary); opacity: 0.95; font-weight: 500; }
+
+/* GPU badge (2026-06-16): only shown while a step is active.
+   Polled from /api/device/status every 2s. Sits to the LEFT of
+   the elapsed time. The 🎮 emoji + cyan tint signals hardware
+   acceleration, addressing the user complaint that they couldn't
+   tell if a step was actually using GPU or stuck on CPU. */
+.chat-todo-gpu {
+    flex-shrink: 0;
+    margin-left: 0.45rem;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(14, 165, 233, 0.10);
+    color: var(--primary);
+    font-size: 0.58rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    border: 1px solid rgba(14, 165, 233, 0.25);
+    white-space: nowrap;
+    min-width: 0;
+    /* Hidden by default — only visible while the step is active.
+       The JS keeps the DOM node around (with empty text) so the
+       layout doesn't reflow when the badge appears/disappears. */
+    visibility: hidden;
+}
+.chat-todo-item.active .chat-todo-gpu {
+    visibility: visible;
+    animation: todo-gpu-pulse 1.4s ease-in-out infinite;
+}
+.chat-todo-gpu.cpu {
+    background: rgba(234, 179, 8, 0.12);
+    color: #fbbf24;
+    border-color: rgba(234, 179, 8, 0.32);
+}
+@keyframes todo-gpu-pulse {
+    0%, 100% { opacity: 0.7; }
+    50%      { opacity: 1.0; }
+}
 
 /* Folding animation when final AI response arrives */
 .chat-todo.folded {
@@ -4240,13 +4327,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     <div class="header-status">
         <div class="status-chip">
             <span class="dot green" id="serverDot"></span>
-            <span id="serverStatus">Connected</span>
+            <span id="serverStatus" data-i18n-zh="已连接" data-i18n-en="Connected">Connected</span>
         </div>
         <div class="status-chip">
             <span class="dot green" id="brainDot"></span>
-            <span>Brain <span id="brainStatusText">Online</span></span>
+            <span><span data-i18n-zh="" data-i18n-en="Brain">Brain</span> <span id="brainStatusText" data-i18n-zh="在线" data-i18n-en="Online">Online</span></span>
         </div>
-        <div class="status-chip">Session: <span id="sessionDisplay">web</span></div>
+        <div class="status-chip"><span data-i18n-zh="会话" data-i18n-en="Session">Session</span>: <span id="sessionDisplay">web</span></div>
+        <!-- GLOBAL UI LANGUAGE TOGGLE (2026-06-16). Defaults to EN.
+             Toggles only UI labels, NOT LLM input/output language. -->
+        <div class="lang-toggle status-chip" role="group" aria-label="UI language"
+             data-i18n-title-zh="切换界面语言" data-i18n-title-en="Switch UI language"
+             title="Switch UI language">
+            <button class="lang-btn" data-lang-btn="en" onclick="setUiLanguage('en')" aria-pressed="true">EN</button>
+            <button class="lang-btn" data-lang-btn="zh" onclick="setUiLanguage('zh')" aria-pressed="false">中</button>
+        </div>
     </div>
 </header>
 
@@ -4256,8 +4351,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     <!-- ============ SESSION SIDEBAR ============ -->
     <div class="session-sidebar" id="sessionSidebar">
         <div class="session-sidebar-header">
-            <span class="session-sidebar-title">Chats</span>
-            <button class="new-chat-btn" onclick="newChat()">&#43; New</button>
+            <span class="session-sidebar-title" data-i18n-zh="对话" data-i18n-en="Chats">Chats</span>
+            <button class="new-chat-btn" onclick="newChat()"><span data-i18n-zh="+ 新建" data-i18n-en="+ New">+ New</span></button>
         </div>
         <div class="session-list" id="sessionList"></div>
         <div class="sidebar-resize-handle" id="sidebarResizeHandle" data-splitter-version="v3-2026-06-15" style="cursor:col-resize;pointer-events:auto !important;isolation:isolate;transform:translateZ(0);" title="Drag to resize the chat history sidebar"></div>
@@ -4385,16 +4480,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
         <!-- Tabs -->
         <div class="panel-tabs">
             <div class="panel-tab active" onclick="switchPanel('input', this)">
-                <span>&#9881;</span> Input
+                <span>&#9881;</span> <span data-i18n-zh="输入" data-i18n-en="Input">Input</span>
             </div>
             <div class="panel-tab" onclick="switchPanel('metrics', this)">
-                <span>&#128200;</span> Analysis
+                <span>&#128200;</span> <span data-i18n-zh="分析" data-i18n-en="Analysis">Analysis</span>
             </div>
             <div class="panel-tab" onclick="switchPanel('viewers', this)">
-                <span>&#9638;</span> Viewers
+                <span>&#9638;</span> <span data-i18n-zh="视图" data-i18n-en="Viewers">Viewers</span>
             </div>
             <div class="panel-tab" onclick="switchPanel('report', this)">
-                <span>&#128203;</span> Report
+                <span>&#128203;</span> <span data-i18n-zh="报告" data-i18n-en="Report">Report</span>
             </div>
         </div>
 
@@ -4677,7 +4772,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
                         <span>&#128269;</span> Image Analysis
                         <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);" id="analysisTime"></span>
                     </div>
-                    <div id="analysisContent" style="max-height:500px;overflow-y:auto;padding:0.25rem;"></div>
+                    <div id="analysisContent" style="max-height:800px;overflow-y:auto;padding:0.25rem;"></div>
                 </div>
 
                 <div class="metrics-section" style="flex-shrink:2;">
@@ -5446,7 +5541,15 @@ function loadSessionChat(id) {
                 && /^Send failed/i.test(m.content)) {
                 continue;
             }
-            const key = m.type + '||' + m.content;
+            // KEY = content only (NOT type+content). Reason: a saved
+            // bot-response message gets re-rendered by addChat which
+            // remaps the type to 'bot' (for CSS), then would re-save
+            // it as 'bot' if we don't suppress that. Using content
+            // alone catches both 'bot-response' and 'bot' copies of
+            // the same answer — the type rename on save was the
+            // root cause of the user seeing 2-6-8-12… copies of every
+            // message after each page refresh.
+            const key = String(m.content || '');
             if (seen.has(key)) continue;
             seen.add(key);
             deduped.push(m);
@@ -5455,7 +5558,10 @@ function loadSessionChat(id) {
             if (msg.type === 'thinking') {
                 renderThinkingChain(msg.steps);
             } else {
-                addChat(msg.type, msg.content, false);
+                // fromSession=true tells addChat NOT to call
+                // saveSessionMessage again — the message is already
+                // in the session, we are just re-rendering it.
+                addChat(msg.type, msg.content, false, msg.timestamp || null, true);
             }
         });
     }
@@ -5464,7 +5570,7 @@ function loadSessionChat(id) {
     container.scrollTop = container.scrollHeight;
 }
 
-function saveSessionMessage(type, content, steps) {
+function saveSessionMessage(type, content, steps, timestamp) {
     const session = sessions[activeSessionId];
     if (!session) return;
     // DEDUP ON SAVE (2026-06-15): if the most recent message has
@@ -5481,7 +5587,11 @@ function saveSessionMessage(type, content, steps) {
     if (_last && _last.type === type && _last.content === content) {
         return;
     }
-    session.messages.push({ type, content, steps: steps || null });
+    // Store the timestamp so session restore shows the time the
+    // message was originally sent, not the time of page refresh.
+    // addChat() passes Date.now() when persisting live messages.
+    const _ts = (typeof timestamp === 'number' && timestamp > 0) ? timestamp : Date.now();
+    session.messages.push({ type, content, steps: steps || null, timestamp: _ts });
     if (session.messages.length === 1 && type === 'user') {
         session.title = content.slice(0, 40) + (content.length > 40 ? '...' : '');
         document.getElementById('chatSessionTitle').textContent = session.title;
@@ -5670,7 +5780,7 @@ function _buildResponseFooter(llmMeta) {
     return footer;
 }
 
-function addChat(type, content, scroll) {
+function addChat(type, content, scroll, timestamp, fromSession) {
     try {
         const container = document.getElementById('chatMessages');
         if (!container) return;
@@ -5744,11 +5854,17 @@ function addChat(type, content, scroll) {
             }
             wrapper.appendChild(div);
 
-            // Timestamp
+            // Timestamp — prefer the saved timestamp (if this message
+            // is being re-rendered from a session) so it shows the
+            // time the message was originally sent, not the time of
+            // the page refresh. Falls back to "now" for live messages.
             const ts = document.createElement('div');
             ts.className = 'chat-timestamp';
             try {
-                ts.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const tsSrc = (typeof timestamp === 'number' && timestamp > 0)
+                    ? new Date(timestamp)
+                    : new Date();
+                ts.textContent = tsSrc.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             } catch (_) { ts.textContent = ''; }
             wrapper.appendChild(ts);
 
@@ -5770,9 +5886,14 @@ function addChat(type, content, scroll) {
         if (scroll !== false) {
             container.scrollTop = container.scrollHeight;
         }
-        // Also persist into the active session so a refresh keeps it
-        if (typeof saveSessionMessage === 'function') {
-            try { saveSessionMessage(safeType, c); } catch (_) { /* sessions may not be ready yet */ }
+        // Also persist into the active session so a refresh keeps it.
+        // SKIP when re-rendering from a saved session (the message
+        // is already in the session, saving it again causes the
+        // page-refresh duplication bug the user reported on
+        // 2026-06-16 — each refresh would re-persist the same
+        // message and the array would grow by 2 with every reload).
+        if (fromSession !== true && typeof saveSessionMessage === 'function') {
+            try { saveSessionMessage(safeType, c, null, Date.now()); } catch (_) { /* sessions may not be ready yet */ }
         }
     } catch (e) {
         // Never let chat rendering break the caller (CT load, plan, etc.)
@@ -5798,6 +5919,92 @@ const STEP_ICONS = {
 
 // Safe markdown renderer — uses the global `marked` (loaded from CDN) if
 // available, with a plain-escape fallback otherwise.
+
+// CONSISTENT ICON INJECTION (2026-06-16).
+// The user wants icons back in chat output, but used judiciously:
+// headings should always have a level-mapped icon (single source of
+// truth, not whatever the LLM felt like writing), and inline content
+// should get a soft semantic icon ONLY when the user has opted in via
+// the `window._chatIconsEnabled` switch (default ON; set to false to
+// disable all auto-icon injection in chat output).
+//
+// Where icons are appropriate:
+//   1. Headings  — level → icon map (this is the only place icons
+//                  are mandatory when enabled).
+//   2. Soft / subjective lines    — sentences starting with "建议",
+//                                    "小贴士", "经验上", "一般来说"
+//                                    get a 💡 prefix.
+//   3. Success lines              — "成功", "完成", "通过", "达标"
+//                                    get a ✅ prefix.
+//   4. Warning lines              — "警告", "注意", "风险", "不符合"
+//                                    get a ⚠️ prefix.
+//   5. Data source lines          — "数据来源", "source:", "from:"
+//                                    get a 📊 prefix.
+//   6. Time / duration mentions   — "约 90 秒", "耗时", "用了 ... 秒"
+//                                    get a 🕐 prefix.
+//
+// Where icons are NOT injected (intentional restraint):
+//   - Inside table cells (too dense, breaks scanning)
+//   - Code blocks / inline code
+//   - Strict medical / regulatory wording
+//   - Numeric metrics inside a sentence (e.g. "V100 = 97.6%")
+const _HEADING_ICONS = {
+    1: '🎯',  // top-level goal
+    2: '📌',  // section
+    3: '🔹',  // sub-section
+    4: '🔸',  // detail
+    5: '🔻',  // micro-note
+    6: '🔻',
+};
+function _headingIcon(level) {
+    return _HEADING_ICONS[level] || '';
+}
+
+// Strip any leading emoji characters from text (so the LLM's own
+// leading emoji doesn't fight the level-mapped icon we inject).
+const _LEADING_EMOJI_RE = /^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F2FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}️\s]+/u;
+function _stripLeadingEmoji(s) {
+    return String(s).replace(_LEADING_EMOJI_RE, '').trim();
+}
+
+// Pattern → icon map for soft / subjective / status lines. The
+// regexes are deliberately simple Chinese-prefixed and English-prefixed
+// variants so the icon matches the way the LLM naturally phrases things.
+const _INLINE_ICON_RULES = [
+    { re: /^(建议|小贴士|Tip|Advice|Recommendation|经验上|一般来说|通常情况下|Pro tip)/u, icon: '💡' },
+    { re: /(成功|已完成|已经完成|规划完成|计算完成|执行完毕|\bDone\b|\bCompleted\b|\bFinished\b|\bSucceeded\b|\bPassed\b|达标|符合|满足要求)/u, icon: '✅' },
+    { re: /^(注意|警告|⚠|风险|不符合|异常|失败|\bWarning\b|\bFailed\b|\bError\b|\bCaution\b|\bRisk\b)/u, icon: '⚠️' },
+    { re: /^(数据来源|来源|source|from|根据|引用)/iu, icon: '📊' },
+    { re: /(耗时|用了.*?秒|约\s*\d+\s*秒|耗时约|用了大约|duration|elapsed)/iu, icon: '🕐' },
+];
+
+// Run on a single block of text (paragraph, list item body, etc.).
+// Returns the text with a single leading icon prepended IF a rule
+// matches AND the text doesn't already start with an emoji. Idempotent.
+function _injectInlineIcon(text) {
+    if (!text) return text;
+    if (window._chatIconsEnabled === false) return text;  // opt-out
+    if (_LEADING_EMOJI_RE.test(text)) return text;        // LLM already gave one
+    for (const rule of _INLINE_ICON_RULES) {
+        if (rule.re.test(text)) {
+            return rule.icon + ' ' + text;
+        }
+    }
+    return text;
+}
+
+// Variant used by Renderer hooks — returns just the matched icon
+// string (no leading space) so the caller can choose how to splice
+// it into the surrounding HTML. Returns '' if no rule matches.
+function _firstMatchingIcon(text) {
+    if (!text || window._chatIconsEnabled === false) return '';
+    if (_LEADING_EMOJI_RE.test(text)) return '';
+    for (const rule of _INLINE_ICON_RULES) {
+        if (rule.re.test(text)) return rule.icon;
+    }
+    return '';
+}
+
 function renderMarkdown(text) {
     if (!text) return '';
     try {
@@ -5817,12 +6024,26 @@ function renderMarkdown(text) {
                 };
                 const _h1 = R.heading.bind(R);
                 R.heading = function(text, level, raw, slugger) {
-                    // Drop any leading emoji + space so the visual
-                    // style is consistent across sibling headings
-                    // (the user complained about mixed 🎯/🛠️/💡).
-                    const cleaned = String(text).replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F2FF}]\s*/u, '');
-                    const html = _h1(cleaned, level, raw, slugger);
-                    return html.replace(/^<(h[1-6])>/, '<$1 class="md-$1">').replace(/^<(h[1-6]) class="md-(h[1-6])">/, '<$1 class="md-$2">');
+                    // CONSISTENT ICON STYLE (2026-06-16, round 2):
+                    // The user previously complained that some sibling
+                    // headings had an emoji (🎯/🛠️/💡) and others didn't —
+                    // we solved that by stripping all leading emoji and
+                    // using a left bar as visual marker. Now the user
+                    // wants icons BACK, but consistently. The fix is to
+                    // never trust the LLM's leading emoji: we STRIP any
+                    // leading emoji the LLM might have added, then
+                    // INJECT our own icon based purely on heading level.
+                    // This way every H1/H2/H3/H4 has a single, predictable
+                    // icon regardless of what the LLM wrote.
+                    const cleaned = String(text).replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F2FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}]+\s*/u, '').trim();
+                    const icon = _headingIcon(level);
+                    const injected = icon ? (icon + ' ' + cleaned) : cleaned;
+                    const html = _h1(injected, level, raw, slugger);
+                    // marked@4.x emits `<h2 id="slug">…</h2>` (with
+                    // attributes), so we match `^<(h[1-6])` and insert
+                    // `class="md-hX"` right after the tag name. If the
+                    // class is already there we replace it.
+                    return html.replace(/^<(h[1-6])(\s)/, '<$1 class="md-$1"$2').replace(/^<(h[1-6]) class="md-(h[1-6])"(\s)/, '<$1 class="md-$2"$3');
                 };
                 const _ul = R.list.bind(R);
                 R.list = function(body, ordered) {
@@ -5832,7 +6053,45 @@ function renderMarkdown(text) {
                 };
                 const _li = R.listitem.bind(R);
                 R.listitem = function(text) {
-                    return _li(text).replace(/^<li>/, '<li class="md-list-item">');
+                    // Inject a soft semantic icon (💡/✅/⚠️/📊/🕐) at
+                    // the start of the list item IF the visible text
+                    // matches an inline rule. We do it here on the
+                    // inner HTML (which is already escaped) by finding
+                    // the first <…> tag and prepending into it. For
+                    // simple text-only items the inner is just text.
+                    let processed = text;
+                    if (window._chatIconsEnabled !== false) {
+                        // Extract the visible text: strip tags.
+                        const visible = text.replace(/<[^>]+>/g, '').trim();
+                        const icon = _firstMatchingIcon(visible);
+                        if (icon && !_LEADING_EMOJI_RE.test(visible)) {
+                            // Prepend a <span class="md-li-icon"> right
+                            // after the opening <li>.
+                            processed = _li(icon + ' ' + text).replace(/^<li>/, '<li class="md-list-item">');
+                        } else {
+                            processed = _li(text).replace(/^<li>/, '<li class="md-list-item">');
+                        }
+                    } else {
+                        processed = _li(text).replace(/^<li>/, '<li class="md-list-item">');
+                    }
+                    return processed;
+                };
+                const _p = R.paragraph.bind(R);
+                R.paragraph = function(text) {
+                    // Same inline-icon logic for paragraph blocks.
+                    let processed = text;
+                    if (window._chatIconsEnabled !== false) {
+                        const visible = text.replace(/<[^>]+>/g, '').trim();
+                        const icon = _firstMatchingIcon(visible);
+                        if (icon && !_LEADING_EMOJI_RE.test(visible)) {
+                            processed = '<p class="md-paragraph">' + icon + ' ' + text + '</p>';
+                        } else {
+                            processed = '<p class="md-paragraph">' + text + '</p>';
+                        }
+                    } else {
+                        processed = '<p class="md-paragraph">' + text + '</p>';
+                    }
+                    return processed;
                 };
                 const _hr = R.hr.bind(R);
                 R.hr = function() { return '<hr class="md-hr">'; };
@@ -5850,6 +6109,259 @@ function renderMarkdown(text) {
     } catch (e) { console.warn('renderMarkdown:', e); /* fall through */ }
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
 }
+
+/* ====================================================================
+   GLOBAL I18N SYSTEM (2026-06-16)
+   --------------------------------------------------------------------
+   The user requested a global EN/中 toggle placed in the top-right
+   header (next to "Connected" / "Brain online"). This affects ALL UI
+   labels — header, tab names, button text, status text, placeholders,
+   tooltips, panel titles — but NOT LLM input/output language
+   detection (which is server-side, based on the user's typed text and
+   is intentionally independent of UI display language so a user with
+   a Chinese UI can still ask the agent in English and vice versa).
+
+   Architecture:
+     - `window._I18N` is a flat key→{zh,en} dictionary, grouped by
+       panel/section. New keys can be added inline at the call site
+       via `_t(zh, en)` (auto-registers) without touching the dict.
+     - `window._t(zh, en)` returns the right side for the current
+       language AND lazily registers the pair into _I18N so a later
+       `applyI18n()` can re-render dynamic content.
+     - `applyI18n()` walks the DOM for elements with `data-i18n`
+       attributes and replaces their text content. It also fires a
+       `i18nchange` CustomEvent so dynamic renderers (Report panel,
+       Analysis panel) can re-render their strings.
+
+   Defaults:
+     - First load: 'en' (English). The user explicitly asked for
+       English to be the default; the Chinese option is for users who
+       need a Chinese UI but still want the agent to reply in their
+       input language.
+     - Persisted to localStorage as 'brachybot_ui_lang'.
+   ==================================================================== */
+(function() {
+    // Central dictionary. Group by section. Anything not in here will
+    // fall through to the _t(zh, en) call's explicit pair.
+    const I18N = {
+        // Header / status
+        'header.connected':           { zh: '已连接', en: 'Connected' },
+        'header.connecting':          { zh: '连接中', en: 'Connecting' },
+        'header.disconnected':        { zh: '已断开', en: 'Disconnected' },
+        'header.brain_online':        { zh: '在线', en: 'Online' },
+        'header.brain_offline':       { zh: '离线', en: 'Offline' },
+        'header.brain_busy':          { zh: '工作中', en: 'Busy' },
+        'header.session':             { zh: '会话', en: 'Session' },
+        'header.lang_toggle_tooltip': { zh: '切换界面语言 / Switch UI language', en: 'Switch UI language' },
+        // Tab bar
+        'tab.input':                  { zh: '输入',   en: 'Input' },
+        'tab.analysis':               { zh: '分析',   en: 'Analysis' },
+        'tab.viewers':                { zh: '视图',   en: 'Viewers' },
+        'tab.report':                 { zh: '报告',   en: 'Report' },
+        // Sidebar
+        'sidebar.chats':              { zh: '对话',   en: 'Chats' },
+        'sidebar.new_chat':           { zh: '+ 新建', en: '+ New' },
+        'sidebar.connect':            { zh: '连接服务器', en: 'Connect' },
+        'sidebar.disconnect':         { zh: '断开',   en: 'Disconnect' },
+        'sidebar.clear':              { zh: '清空',   en: 'Clear' },
+        // Chat panel
+        'chat.welcome':               { zh: '欢迎使用 BrachyBot。请描述你的近距离治疗病例——肿瘤位置、类型、患者情况——我会帮你生成最佳治疗计划。也可以直接在右侧的「输入」面板加载 CT 数据。', en: 'Welcome to BrachyBot. Describe your brachytherapy case — tumor location, type, patient condition — and I will help you generate an optimal treatment plan. You can also load CT data directly via the Input panel on the right.' },
+        'chat.input_placeholder':     { zh: '描述你的病例或输入 / 查看命令...', en: 'Describe your case or type / for commands...' },
+        'chat.send':                  { zh: '发送', en: 'Send' },
+        'chat.stop':                  { zh: '停止', en: 'Stop' },
+        'chat.copy':                  { zh: '复制', en: 'Copy' },
+        'chat.thinking':              { zh: '正在思考...', en: 'Thinking…' },
+        // Viewers panel
+        'viewers.axial':              { zh: '轴状位', en: 'Axial' },
+        'viewers.sagittal':           { zh: '矢状位', en: 'Sagittal' },
+        'viewers.coronal':            { zh: '冠状位', en: 'Coronal' },
+        'viewers.3d':                 { zh: '三维视图', en: '3D View' },
+        'viewers.slice':              { zh: '切片',   en: 'Slice' },
+        'viewers.window':             { zh: '窗位/窗宽', en: 'W/L' },
+        'viewers.reset':              { zh: '重置',   en: 'Reset' },
+        // Input panel
+        'input.section_image':        { zh: '影像数据',   en: 'Image Data' },
+        'input.section_ct':           { zh: 'CT 图像',   en: 'CT Image' },
+        'input.section_ctv':          { zh: 'CTV 掩膜',   en: 'CTV Mask' },
+        'input.section_oar':          { zh: 'OAR 掩膜',   en: 'OAR Mask' },
+        'input.section_hyper':        { zh: '超参数',     en: 'Hyperparameters' },
+        'input.section_pipeline':     { zh: '完整规划流程', en: 'Full Pipeline' },
+        'input.section_results':      { zh: '规划结果',   en: 'View Results' },
+        'input.section_export':       { zh: '导出',       en: 'Export' },
+        'input.browse':               { zh: '浏览',   en: 'Browse' },
+        'input.browse_ct':            { zh: '点击或拖入 CT (.nii / .nii.gz / DICOM)', en: 'Click or drop CT (.nii / .nii.gz / DICOM)' },
+        'input.browse_ctv':           { zh: '点击或拖入 CTV 标签 (.nii.gz, optional)', en: 'Click or drop CTV label (.nii.gz, optional)' },
+        'input.browse_oar':           { zh: '点击或拖入 OAR 标签 (.nii.gz, optional)', en: 'Click or drop OAR label (.nii.gz, optional)' },
+        'input.start_plan':           { zh: '▶ 开始规划', en: '▶ Start Plan' },
+        'input.stop':                 { zh: '■ 停止',   en: '■ Stop' },
+        'input.reset':                { zh: '↺ 重置',   en: '↺ Reset' },
+        'input.show_all':             { zh: '显示全部', en: 'Show All' },
+        'input.traj':                 { zh: '轨迹',     en: 'Trajectories' },
+        'input.refine':               { zh: '细化',     en: 'Refine' },
+        'input.seeds':                { zh: '粒子',     en: 'Seeds' },
+        'input.dose':                 { zh: '剂量',     en: 'Dose' },
+        'input.eval':                 { zh: '评估',     en: 'Evaluate' },
+        'input.dicom_rt':             { zh: 'DICOM-RT', en: 'DICOM-RT' },
+        'input.stl':                  { zh: 'STL',      en: 'STL' },
+        // Analysis panel
+        'analysis.section_image':     { zh: '影像分析',   en: 'Image Analysis' },
+        'analysis.geometry':          { zh: '📐 图像几何', en: '📐 Image Geometry' },
+        'analysis.dicom_meta':        { zh: '🏥 DICOM 元数据', en: '🏥 DICOM Metadata' },
+        'analysis.source':            { zh: '📁 数据来源', en: '📁 Source' },
+        'analysis.seg_plan':          { zh: '🧬 分割 & 计划', en: '🧬 Segmentation & Plan' },
+        'analysis.target':            { zh: '靶区覆盖率',   en: 'Target Coverage' },
+        'analysis.dvh':               { zh: '剂量体积直方图', en: 'Dose-Volume Histogram' },
+        'analysis.oar':               { zh: '危及器官剂量指标 (Gy)', en: 'OAR Dose Metrics (Gy)' },
+        'analysis.metric':            { zh: '指标',     en: 'Metric' },
+        'analysis.value':             { zh: '数值',     en: 'Value' },
+        'analysis.target_voxels':     { zh: '体素 (X × Y × Z)', en: 'Voxels (X × Y × Z)' },
+        'analysis.target_slices':     { zh: '总切片数', en: 'Total slices' },
+        'analysis.target_spacing':    { zh: '像素间距 (mm)', en: 'Pixel spacing (mm)' },
+        'analysis.target_volume':     { zh: '物理体积', en: 'Physical volume' },
+        'analysis.hu_range':          { zh: 'HU 范围', en: 'HU range' },
+        'analysis.hu_peak':           { zh: 'HU 峰值', en: 'HU peak (mode)' },
+        'analysis.window_level':      { zh: '窗位 / 窗宽', en: 'Window / Level' },
+        'analysis.source_label':      { zh: '数据来源', en: 'Source' },
+        'analysis.nifti_vol':         { zh: 'NIfTI / 体积文件', en: 'NIfTI / volume file' },
+        'analysis.dicom_file':        { zh: 'DICOM 单文件', en: 'DICOM single file' },
+        'analysis.dicom_series':      { zh: 'DICOM 序列', en: 'DICOM series' },
+        'analysis.ctv_labels':        { zh: 'CTV 标签数', en: 'CTV labels' },
+        'analysis.ctv_vox_vol':       { zh: 'CTV 体素 / 体积', en: 'CTV voxels / volume' },
+        'analysis.oar_labels':        { zh: 'OAR 标签数', en: 'OAR labels' },
+        'analysis.oar_vox_vol':       { zh: 'OAR 总体素 / 体积', en: 'OAR total voxels / volume' },
+        'analysis.d90':               { zh: 'D90 (CTV 覆盖)', en: 'D90 (CTV coverage)' },
+        'analysis.v100':              { zh: 'V100 (CTV 覆盖)', en: 'V100 (CTV coverage)' },
+        'analysis.v150':              { zh: 'V150', en: 'V150' },
+        'analysis.d2':                { zh: 'D2 (最高剂量)', en: 'D2 (max dose)' },
+        'analysis.dmean':             { zh: 'Dmean', en: 'Dmean' },
+        'analysis.plan_score':        { zh: '计划评分', en: 'Plan score' },
+        'analysis.seeds_traj':        { zh: '粒子数 / 路径数', en: 'Seeds / Trajectories' },
+        // Todo list dock
+        'todo.header':                { zh: '执行进度', en: 'Progress' },
+        'todo.ctv':                   { zh: 'CTV 靶区分割',   en: 'CTV Segmentation' },
+        'todo.oar':                   { zh: 'OAR 危及器官分割', en: 'OAR Segmentation' },
+        'todo.planning':              { zh: '粒子植入规划 (5 步流水线)', en: 'Particle Implantation (5-step Pipeline)' },
+        'todo.traj_init':             { zh: '轨迹初始化',     en: 'Trajectory Init' },
+        'todo.traj_refine':           { zh: '轨迹细化',       en: 'Trajectory Refine' },
+        'todo.seed_planning':         { zh: '种子位置优化',   en: 'Seed Placement' },
+        'todo.dose_calc':             { zh: '剂量计算',       en: 'Dose Calculation' },
+        'todo.dose_eval':             { zh: '剂量学评估',     en: 'Dose Evaluation' },
+        'todo.response':              { zh: '生成最终回复',   en: 'Final Response' },
+        // Report panel
+        'report.title':               { zh: '📄 治疗计划报告', en: '📄 Treatment Plan Report' },
+        'report.how_to_use':          { zh: '使用流程 / How to use', en: 'How to use' },
+        'report.autofill':            { zh: '✨ 自动填充', en: '✨ Auto-fill' },
+        'report.template':            { zh: '— 模板 —', en: '— Template —' },
+        'report.lang_zh':             { zh: '中文', en: '中文' },
+        'report.lang_en':             { zh: 'EN',   en: 'EN' },
+        'report.pdf':                 { zh: '🖨️ PDF', en: '🖨️ PDF' },
+        'report.snapshot':            { zh: '📸 快照', en: '📸 Snapshot' },
+        'report.history':             { zh: '📜 历史', en: '📜 History' },
+        'report.audit':               { zh: '🔍 审计', en: '🔍 Audit' },
+        'report.validate':            { zh: '✅ 校验', en: '✅ Validate' },
+        'report.two_col':             { zh: '2 列',   en: '2-col' },
+        'report.reset':               { zh: '↺ 重置', en: '↺ Reset' },
+        // Common
+        'common.loading':             { zh: '加载中…',     en: 'Loading…' },
+        'common.ready':               { zh: '就绪',       en: 'Ready' },
+        'common.error':               { zh: '错误',       en: 'Error' },
+        'common.cancel':              { zh: '取消',       en: 'Cancel' },
+        'common.confirm':             { zh: '确认',       en: 'Confirm' },
+        'common.save':                { zh: '保存',       en: 'Save' },
+        'common.close':               { zh: '关闭',       en: 'Close' },
+        'common.yes':                 { zh: '是',         en: 'Yes' },
+        'common.no':                  { zh: '否',         en: 'No' },
+    };
+
+    // Active language: 'en' (default) or 'zh'. Persisted to localStorage
+    // so the user's choice survives a page refresh. We DO NOT couple
+    // this to the server's LLM language detection — those are two
+    // independent things.
+    function getInitialLang() {
+        try {
+            const stored = localStorage.getItem('brachybot_ui_lang');
+            if (stored === 'zh' || stored === 'en') return stored;
+        } catch (_) {}
+        return 'en';  // user explicitly asked for English default
+    }
+    window._i18nLang = getInitialLang();
+    window._I18N = I18N;
+
+    // Lazy-register a (zh, en) pair so applyI18n() can re-render
+    // dynamic content later. The key is auto-generated from a hash
+    // of the pair so identical pairs collapse.
+    let _autoKeyCounter = 0;
+    function _autoKey(zh, en) {
+        return 'auto_' + (zh + '||' + en).split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0).toString(36) + '_' + (_autoKeyCounter++);
+    }
+    function _registerPair(zh, en) {
+        // Find an existing key with the same pair to keep call sites
+        // stable.
+        for (const k in I18N) {
+            if (I18N[k].zh === zh && I18N[k].en === en) return k;
+        }
+        const k = _autoKey(zh, en);
+        I18N[k] = { zh, en };
+        return k;
+    }
+
+    // The translation function. Always returns a string, never throws.
+    // Use this everywhere we have a hardcoded zh/en pair.
+    window._t = function(zh, en) {
+        const lang = window._i18nLang;
+        const k = _registerPair(zh, en);
+        return lang === 'zh' ? zh : en;
+    };
+
+    // Apply the current language to the DOM. Walks every element
+    // with [data-i18n] and replaces its text. Also walks every
+    // [data-i18n-placeholder] / [data-i18n-title] / [data-i18n-aria-label]
+    // for the corresponding HTML attributes. Then fires a custom
+    // event so dynamic renderers can re-render.
+    function applyI18n() {
+        const lang = window._i18nLang;
+        const lookup = (zh, en) => lang === 'zh' ? zh : en;
+        // text content — match elements that have BOTH attributes
+        // (so the same querySelector that finds them also has the
+        // strings it needs to swap in).
+        document.querySelectorAll('[data-i18n-zh][data-i18n-en]').forEach(el => {
+            const zh = el.getAttribute('data-i18n-zh');
+            const en = el.getAttribute('data-i18n-en');
+            el.textContent = lookup(zh, en);
+        });
+        // attributes: placeholder, title, aria-label
+        ['placeholder', 'title', 'aria-label'].forEach(attr => {
+            const sel = '[data-i18n-' + attr + '-zh][data-i18n-' + attr + '-en]';
+            document.querySelectorAll(sel).forEach(el => {
+                const zh = el.getAttribute('data-i18n-' + attr + '-zh');
+                const en = el.getAttribute('data-i18n-' + attr + '-en');
+                el.setAttribute(attr, lookup(zh, en));
+            });
+        });
+        // Fire a custom event so dynamic renderers (Report form,
+        // Analysis panel, todo dock) can re-render with the new
+        // language. The detail object carries the new lang code.
+        try {
+            window.dispatchEvent(new CustomEvent('i18nchange', { detail: { lang } }));
+        } catch (_) {}
+    }
+    window.applyI18n = applyI18n;
+
+    // Set the active language and re-apply. Persists to localStorage.
+    window.setUiLanguage = function(lang) {
+        if (lang !== 'zh' && lang !== 'en') return;
+        window._i18nLang = lang;
+        try { localStorage.setItem('brachybot_ui_lang', lang); } catch (_) {}
+        applyI18n();
+        // Update the toggle button label/active state.
+        const btns = document.querySelectorAll('[data-lang-btn]');
+        btns.forEach(b => {
+            const isActive = b.getAttribute('data-lang-btn') === lang;
+            b.classList.toggle('lang-active', isActive);
+            b.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+    };
+})();
 
 function scrollToBottom() {
     const container = document.getElementById('chatMessages');
@@ -6130,7 +6642,7 @@ function finalizeStreamingResponse(el, text) {
     if (!el) return;
     el.removeAttribute('id');
     el.innerHTML = renderMarkdown(text);
-    try { saveSessionMessage('bot-response', text); } catch (_) {}
+    try { saveSessionMessage('bot-response', text, null, Date.now()); } catch (_) {}
 }
 
 function showThinkingIndicator() {
@@ -6480,7 +6992,17 @@ function _todoCreate() {
                 }
             }
             item.status = 'active';
-            item.startedAt = item.startedAt || Date.now();
+            // GUARD against bad startedAt values (2026-06-16 bug: the
+            // OAR step showed "781586106.x seconds" because startedAt
+            // had been clobbered to 0 somewhere upstream, and the
+            // `|| Date.now()` check didn't catch it because 0 is
+            // falsy but Date.now() is way larger so the diff was
+            // ~1.7e9). Only treat null/undefined as "not started";
+            // accept any positive ms timestamp.
+            if (item.startedAt == null || item.startedAt <= 0
+                    || item.startedAt > Date.now() + 60000) {
+                item.startedAt = Date.now();
+            }
             // Clear ALL transitional classes so the breathing animation
             // actually starts. Without removing 'predicted', the
             // predicted styling (opacity 0.55, no animation) would
@@ -6489,11 +7011,22 @@ function _todoCreate() {
             item.node.classList.add('active');
             _todoUpdateCount();
             _todoStartTimer(item);
+            _todoStartGpuBadge(item);
         },
         markDone(item, errMsg) {
             if (item._timer) { clearInterval(item._timer); item._timer = null; }
+            _todoStopGpuBadge(item);
             item.status = errMsg ? 'error' : 'done';
             item.endedAt = Date.now();
+            // GUARD: if startedAt is still null/bad by the time we
+            // mark done (predicted item that was promoted but the
+            // upstream never sent a pending event for it), fall
+            // back to endedAt so the displayed duration is "0.0s"
+            // instead of "1.7e9s". Same threshold as markActive.
+            if (item.startedAt == null || item.startedAt <= 0
+                    || item.startedAt > Date.now() + 60000) {
+                item.startedAt = item.endedAt;
+            }
             // Clear all transitional classes; only the final
             // status remains. Same reason as markActive: if we
             // leave 'predicted' in, the dimmed ghost styling sticks.
@@ -6507,7 +7040,17 @@ function _todoCreate() {
                 dot.textContent = errMsg ? '✕' : '✓';
             }
             const t = item.node.querySelector('.chat-todo-time');
-            if (t) t.textContent = ((item.endedAt - item.startedAt) / 1000).toFixed(1) + 's';
+            if (t) {
+                const dur = (item.endedAt - item.startedAt) / 1000;
+                // Final defensive clamp: never display a duration
+                // larger than 24h (the user can see something has
+                // gone wrong; we just refuse to show "1.7e9s").
+                if (!isFinite(dur) || dur < 0 || dur > 86400) {
+                    t.textContent = '—';
+                } else {
+                    t.textContent = dur.toFixed(1) + 's';
+                }
+            }
             _todoUpdateCount();
         },
         fold() {
@@ -6535,9 +7078,99 @@ function _todoCreate() {
         const t = item.node.querySelector('.chat-todo-time');
         item._timer = setInterval(() => {
             if (!t) return;
-            const elapsed = ((Date.now() - item.startedAt) / 1000).toFixed(1);
-            t.textContent = elapsed + 's';
+            const elapsed = ((Date.now() - item.startedAt) / 1000);
+            // Defensive: clamp displayed elapsed to 24h max — if
+            // startedAt is bad the user shouldn't see a 9-figure
+            // number ticking up in the dock.
+            if (!isFinite(elapsed) || elapsed < 0 || elapsed > 86400) {
+                t.textContent = '—';
+            } else {
+                t.textContent = elapsed.toFixed(1) + 's';
+            }
         }, 100);
+    }
+
+    // GPU STATUS BADGE (2026-06-16): the user complained that they
+    // couldn't tell if a running step was actually using a GPU or
+    // stuck on CPU. The server already exposes /api/device/status
+    // (powered by plans/device_manager.DeviceManager), so we poll it
+    // while an item is active and show "🎮 cuda:1 (12.3GB free, 87%)"
+    // next to the elapsed time. The badge disappears on markDone.
+    // Polling stops automatically when status changes away from active.
+    function _todoStartGpuBadge(item) {
+        if (item._gpuTimer) clearInterval(item._gpuTimer);
+        // Find or create a badge node inside the active item.
+        let badge = item.node.querySelector('.chat-todo-gpu');
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'chat-todo-gpu';
+            // Place badge to the LEFT of the elapsed time. We insert
+            // before the .chat-todo-time element (which is the last
+            // child of li, added in addPending).
+            const time = item.node.querySelector('.chat-todo-time');
+            if (time && time.parentNode === item.node) {
+                item.node.insertBefore(badge, time);
+            } else {
+                item.node.appendChild(badge);
+            }
+        }
+        // Render helper: take the JSON from /api/device/status and
+        // pick the first device that has an active lease. If no GPU
+        // is leased, fall back to the most-free one.
+        const render = (s) => {
+            if (!s || !s.cuda_available) {
+                badge.textContent = '🎮 CPU';
+                badge.classList.add('cpu');
+                return;
+            }
+            // Try to find a device the current tool is "using".
+            // DeviceManager.status() returns `active_leases` count
+            // and per-device `used_mem_mb`. We just pick the most-
+            // utilized one as "the one in use right now".
+            const devs = (s.devices || []).filter(d => d.is_available !== false);
+            const busy = (s.devices || []).find(d => d.used_mem_mb > 1500);
+            const target = busy || (devs.length ? devs.reduce((a, b) => (a.free_mem_mb > b.free_mem_mb ? a : b)) : null);
+            if (!target) {
+                badge.textContent = '';
+                return;
+            }
+            const freeGB = (target.free_mem_mb / 1024).toFixed(1);
+            const util = (target.utilization_pct >= 0) ? `, ${target.utilization_pct}%` : '';
+            const shortName = (target.name || '').replace(/NVIDIA\s+GeForce\s+/i, '').replace(/^RTX\s+/, 'RTX ');
+            badge.textContent = `🎮 ${target.index === 0 && !busy ? 'auto' : 'cuda:' + target.index} · ${freeGB}GB free${util}`;
+            badge.classList.remove('cpu');
+            badge.title = `GPU ${target.index}: ${target.name}\n` +
+                          `Memory: ${(target.used_mem_mb/1024).toFixed(1)}/${(target.total_mem_mb/1024).toFixed(1)} GB used\n` +
+                          `Active leases on this server: ${s.active_leases}`;
+        };
+        // Use AbortController so we can cancel the in-flight request
+        // when markDone fires.
+        item._gpuAbort = new AbortController();
+        const fetchOnce = async () => {
+            try {
+                const r = await fetch('/api/device/status', { signal: item._gpuAbort.signal });
+                if (!r.ok) return;
+                const s = await r.json();
+                render(s);
+            } catch (e) {
+                if (e.name !== 'AbortError') {
+                    badge.textContent = '🎮 ?';
+                }
+            }
+        };
+        fetchOnce();
+        item._gpuTimer = setInterval(fetchOnce, 2000);
+    }
+    function _todoStopGpuBadge(item) {
+        if (item._gpuTimer) { clearInterval(item._gpuTimer); item._gpuTimer = null; }
+        if (item._gpuAbort) { try { item._gpuAbort.abort(); } catch (_) {} item._gpuAbort = null; }
+        const badge = item.node && item.node.querySelector && item.node.querySelector('.chat-todo-gpu');
+        if (badge) {
+            // Don't remove the DOM node — just clear its text. The
+            // step is still in the list, and the user might want to
+            // see which GPU was used.
+            badge.textContent = '';
+        }
     }
 
     return api;
@@ -6630,12 +7263,21 @@ function _todoUpdateFromStep(todo, step) {
 // is missing the tool entry.
 function _planningTemplates() {
     const i18n = _todoI18n();
+    // THREE core steps only. The 5 sub-steps of planning_pipeline
+    // (trajectory_init/refine/seed_planning/dose_calc/dose_eval) are
+    // emitted by the server via the step_callback side-channel and
+    // appear in the dock as live events. We deliberately do NOT
+    // predict `dose_evaluation` or `report_auto_fill` here: the LLM
+    // does not call them as separate tools in the standard planning
+    // flow (planning_pipeline's step=full covers dose_eval internally,
+    // and report_auto_fill is only invoked when the user explicitly
+    // asks for a report). Predicting them caused the user to see
+    // them stuck in "predicted" forever in the dock (2026-06-16
+    // bug: "11 步 9 完成, 中间两个没完成但后面的都完成了").
     return [
         { tool: 'ctv_segmentation',  label: i18n.tools.ctv_segmentation,  predicted: true },
         { tool: 'oar_segmentation',  label: i18n.tools.oar_segmentation,  predicted: true },
         { tool: 'planning_pipeline', label: i18n.tools.planning_pipeline, predicted: true },
-        { tool: 'dose_evaluation',   label: i18n.tools.dose_evaluation,   predicted: true },
-        { tool: 'report_auto_fill',  label: i18n.tools.report_auto_fill,  predicted: false },
     ];
 }
 const PLANNING_PIPELINE_TEMPLATES = _planningTemplates();
@@ -7111,7 +7753,7 @@ async function sendChat(prefill) {
             if (typeof finalizeThinkingChain === 'function') {
                 finalizeThinkingChain(chainEl, headerEl, steps);
             }
-            try { saveSessionMessage('thinking', '', steps); } catch (_) {}
+            try { saveSessionMessage('thinking', '', steps, Date.now()); } catch (_) {}
         }
 
         // SAFETY: fold the todo when the stream ends, even if the
@@ -7457,43 +8099,83 @@ function updateImageAnalysis() {
     section.style.display = '';
 
     const d = ct.dicom || {};
-    const lang = (window.reportForm && window.reportForm.language) || 'zh';
+    // 2026-06-16: default to English unless the user has explicitly
+    // chosen another language in the Report panel. The previous
+    // version defaulted to Chinese, which confused non-Chinese
+    // users — they saw "体素 / 像素间距" in a UI that was otherwise
+    // English. The i18n toggle in the Report panel still wins.
+    const lang = (window.reportForm && window.reportForm.language) || 'en';
     const t = (zh, en) => lang === 'en' ? en : zh;
 
-    const rows = [];
-    // Volume / spacing — always present after a successful /api/viewer/load
+    // Build the table as a list of grouped sections so the panel
+    // can show more rows (CT stats, DICOM metadata, segmentation
+    // stats) without becoming a wall of text. Each group has a
+    // sub-header and a 2-col key/value table underneath.
+    const groups = [];
+
+    // ----- Group 1: Image geometry (always present after /viewer/load) -----
+    const geo = [];
     if (ct.shape && ct.shape.length === 3) {
         const [z, y, x] = ct.shape;
-        rows.push([t('体素 (X × Y × Z)', 'Voxels (X × Y × Z)'), `${x} × ${y} × ${z}`]);
+        geo.push([t('体素 (X × Y × Z)', 'Voxels (X × Y × Z)'), `${x} × ${y} × ${z}`]);
+        // Total slice count for the 3 viewports
+        geo.push([t('总切片数', 'Total slices'), `${z} (axial) / ${y} (coronal) / ${x} (sagittal)`]);
     }
     if (ct.spacing && ct.spacing.length === 3) {
         const [sx, sy, sz] = ct.spacing;
-        rows.push([t('像素间距 (mm)', 'Pixel spacing (mm)'),
+        geo.push([t('像素间距 (mm)', 'Pixel spacing (mm)'),
             `${sx.toFixed(3)} × ${sy.toFixed(3)} × ${sz.toFixed(3)}`]);
+        // Physical volume (mm³ → cm³)
+        if (ct.shape && ct.shape.length === 3) {
+            const [z, y, x] = ct.shape;
+            const physVolMm3 = x * y * z * sx * sy * sz;
+            const physVolCm3 = physVolMm3 / 1000;
+            geo.push([t('物理体积', 'Physical volume'), `${physVolMm3.toFixed(0)} mm³ (${physVolCm3.toFixed(1)} cm³)`]);
+        }
     }
     if (ct.huRange && ct.huRange.length === 2) {
-        rows.push([t('HU 范围', 'HU range'),
+        geo.push([t('HU 范围', 'HU range'),
             `${ct.huRange[0].toFixed(0)} → ${ct.huRange[1].toFixed(0)}`]);
+        // Histogram peak / mode (useful to confirm the CT is the
+        // expected body window)
+        if (ct.huHistogram && Array.isArray(ct.huHistogram)) {
+            const peakBin = ct.huHistogram.reduce((maxIdx, v, i, a) =>
+                v > (a[maxIdx] || 0) ? i : maxIdx, 0);
+            const peakHU = ct.huMin != null && ct.huMax != null
+                ? ct.huMin + (peakBin / Math.max(1, ct.huHistogram.length - 1)) * (ct.huMax - ct.huMin)
+                : null;
+            if (peakHU !== null) {
+                geo.push([t('HU 峰值', 'HU peak (mode)'), `${peakHU.toFixed(0)} HU`]);
+            }
+        }
     }
+    // Window/Level (matches the 2D viewer's current W/L)
+    if (state && state.viewerSettings) {
+        geo.push([t('窗位 / 窗宽', 'Window / Level'),
+            `W ${state.viewerSettings.window.toFixed(0)} / L ${state.viewerSettings.level.toFixed(0)}`]);
+    }
+    if (geo.length) groups.push({ title: t('📐 图像几何', '📐 Image Geometry'), rows: geo });
 
-    // DICOM metadata — only if a DICOM source fed us
-    if (d.patient_name)         rows.push([t('患者姓名', 'Patient name'),       d.patient_name]);
-    if (d.patient_id)           rows.push([t('患者 ID',   'Patient ID'),         d.patient_id]);
+    // ----- Group 2: DICOM metadata (only if DICOM source) -----
+    const meta = [];
+    if (d.patient_name)         meta.push([t('患者姓名', 'Patient name'),       d.patient_name]);
+    if (d.patient_id)           meta.push([t('患者 ID',   'Patient ID'),         d.patient_id]);
     if (d.patient_sex_label_zh || d.patient_sex_label_en) {
-        rows.push([t('性别', 'Sex'),
+        meta.push([t('性别', 'Sex'),
             lang === 'en' ? (d.patient_sex_label_en || d.patient_sex) : (d.patient_sex_label_zh || d.patient_sex)]);
     }
-    if (d.study_date)           rows.push([t('检查日期', 'Study date'),         d.study_date]);
-    if (d.modality)             rows.push([t('影像模态', 'Modality'),           d.modality]);
-    if (d.manufacturer)         rows.push([t('设备厂家', 'Manufacturer'),       d.manufacturer]);
-    if (d.station_name)         rows.push([t('工作站',   'Station'),            d.station_name]);
-    if (d.institution_name)     rows.push([t('送检单位', 'Institution'),        d.institution_name]);
-    if (d.study_description)    rows.push([t('检查描述', 'Study description'),  d.study_description]);
-    if (d.series_description)   rows.push([t('序列描述', 'Series description'), d.series_description]);
-    if (d.accession_number)     rows.push([t('检查号',   'Accession #'),        d.accession_number]);
-    if (d.performing_physician) rows.push([t('检查医师', 'Performing physician'), d.performing_physician]);
+    if (d.study_date)           meta.push([t('检查日期', 'Study date'),         d.study_date]);
+    if (d.modality)             meta.push([t('影像模态', 'Modality'),           d.modality]);
+    if (d.manufacturer)         meta.push([t('设备厂家', 'Manufacturer'),       d.manufacturer]);
+    if (d.station_name)         meta.push([t('工作站',   'Station'),            d.station_name]);
+    if (d.institution_name)     meta.push([t('送检单位', 'Institution'),        d.institution_name]);
+    if (d.study_description)    meta.push([t('检查描述', 'Study description'),  d.study_description]);
+    if (d.series_description)   meta.push([t('序列描述', 'Series description'), d.series_description]);
+    if (d.accession_number)     meta.push([t('检查号',   'Accession #'),        d.accession_number]);
+    if (d.performing_physician) meta.push([t('检查医师', 'Performing physician'), d.performing_physician]);
+    if (meta.length) groups.push({ title: t('🏥 DICOM 元数据', '🏥 DICOM Metadata'), rows: meta });
 
-    // Source kind (volume / dicom_file / dicom_series) and series info
+    // ----- Group 3: Source -----
     const kindLabel = {
         volume:        t('NIfTI / 体积文件', 'NIfTI / volume file'),
         dicom_file:    t('DICOM 单文件',     'DICOM single file'),
@@ -7503,16 +8185,84 @@ function updateImageAnalysis() {
         const tail = ct.kind === 'dicom_series' && ct.sourceMeta
             ? ` · ${ct.sourceMeta.series_count || '?'} series · ${ct.sourceMeta.file_count || '?'} ${t('切片', 'slices')}`
             : '';
-        rows.push([t('数据来源', 'Source'), kindLabel[ct.kind] + tail]);
+        groups.push({ title: t('📁 数据来源', '📁 Source'), rows: [
+            [t('数据来源', 'Source'), kindLabel[ct.kind] + tail]
+        ]});
     }
 
-    const html = rows.length === 0
-        ? `<div style="font-size:0.7rem;color:var(--text-dim);padding:6px;">—</div>`
-        : `<table class="rp-oar-table" style="font-size:0.66rem;">
+    // ----- Group 4: Segmentation stats (NEW 2026-06-16) -----
+    // Pull CTV and OAR label counts + volumes from dataTreeState, which
+    // is the canonical client-side store for segmentation results
+    // (ctvLabelData / oarLabelData get written by loadLabelVolumes
+    // and re-fetched by refreshPlanningUI).
+    const seg = [];
+    const ctvLabels = (typeof ctvLabelData !== 'undefined' && ctvLabelData && ctvLabelData.labels) || [];
+    const oarLabels = (typeof oarLabelData !== 'undefined' && oarLabelData && oarLabelData.labels) || [];
+    if (ctvLabels.length) {
+        const totalVoxels = ctvLabels.reduce((s, l) => s + (l.voxel_count || 0), 0);
+        const totalVolMm3 = ctvLabels.reduce((s, l) => s + (l.volume_mm3 || 0), 0);
+        seg.push([t('CTV 标签数', 'CTV labels'), `${ctvLabels.length}`]);
+        if (totalVoxels > 0) {
+            seg.push([t('CTV 体素 / 体积', 'CTV voxels / volume'),
+                `${totalVoxels.toLocaleString()} voxels · ${totalVolMm3.toFixed(0)} mm³ (${(totalVolMm3/1000).toFixed(2)} cm³)`]);
+        }
+        // Per-label top-3
+        const top3 = [...ctvLabels].sort((a, b) => (b.volume_mm3 || 0) - (a.volume_mm3 || 0)).slice(0, 3);
+        for (const lbl of top3) {
+            if (lbl.name) {
+                seg.push([`  · ${lbl.name}`,
+                    `${(lbl.voxel_count || 0).toLocaleString()} vox · ${(lbl.volume_mm3 || 0).toFixed(0)} mm³`]);
+            }
+        }
+    }
+    if (oarLabels.length) {
+        const totalOarVoxels = oarLabels.reduce((s, l) => s + (l.voxel_count || 0), 0);
+        const totalOarVolMm3 = oarLabels.reduce((s, l) => s + (l.volume_mm3 || 0), 0);
+        seg.push([t('OAR 标签数', 'OAR labels'), `${oarLabels.length}`]);
+        if (totalOarVoxels > 0) {
+            seg.push([t('OAR 总体素 / 体积', 'OAR total voxels / volume'),
+                `${totalOarVoxels.toLocaleString()} voxels · ${totalOarVolMm3.toFixed(0)} mm³ (${(totalOarVolMm3/1000).toFixed(2)} cm³)`]);
+        }
+        // Top-3 OAR by volume
+        const top3 = [...oarLabels].sort((a, b) => (b.volume_mm3 || 0) - (a.volume_mm3 || 0)).slice(0, 3);
+        for (const lbl of top3) {
+            if (lbl.name) {
+                seg.push([`  · ${lbl.name}`,
+                    `${(lbl.voxel_count || 0).toLocaleString()} vox · ${(lbl.volume_mm3 || 0).toFixed(0)} mm³`]);
+            }
+        }
+    }
+    // Plan metrics (only when planning has run — these are the
+    // headline numbers the user actually looks for)
+    if (state.metrics && Object.keys(state.metrics).length > 0) {
+        const m = state.metrics;
+        if (m.d90 != null) seg.push([t('D90 (CTV 覆盖)', 'D90 (CTV coverage)'), `${m.d90.toFixed(2)} Gy`]);
+        if (m.v100 != null) seg.push([t('V100 (CTV 覆盖)', 'V100 (CTV coverage)'), `${(m.v100 * 100).toFixed(1)}%`]);
+        if (m.v150 != null) seg.push([t('V150', 'V150'), `${(m.v150 * 100).toFixed(1)}%`]);
+        if (m.d2 != null)   seg.push([t('D2 (最高剂量)', 'D2 (max dose)'), `${m.d2.toFixed(2)} Gy`]);
+        if (m.dmean != null) seg.push([t('Dmean', 'Dmean'), `${m.dmean.toFixed(2)} Gy`]);
+        if (m.plan_score != null) seg.push([t('计划评分', 'Plan score'), `${(m.plan_score * 100).toFixed(0)}/100`]);
+        if (state.seeds && state.seeds.length) {
+            seg.push([t('粒子数 / 路径数', 'Seeds / Trajectories'),
+                `${state.seeds.length} seeds · ${(state.trajectories || []).length} trajectories`]);
+        }
+    }
+    if (seg.length) groups.push({ title: t('🧬 分割 & 计划', '🧬 Segmentation & Plan'), rows: seg });
+
+    // Render
+    const renderGroup = (g) => `
+        <div style="margin-top:6px;">
+            <div style="font-size:0.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;padding:3px 6px;border-bottom:1px solid var(--border-hairline);margin-bottom:2px;">${g.title}</div>
+            <table class="rp-oar-table" style="font-size:0.66rem;">
                 <tbody>
-                ${rows.map(([k, v]) => `<tr><th style="text-align:left;color:var(--text-dim);font-weight:500;width:38%;padding:3px 6px;">${k}</th><td style="padding:3px 6px;">${v}</td></tr>`).join('')}
+                ${g.rows.map(([k, v]) => `<tr><th style="text-align:left;color:var(--text-dim);font-weight:500;width:42%;padding:2px 6px;vertical-align:top;">${k}</th><td style="padding:2px 6px;vertical-align:top;">${v}</td></tr>`).join('')}
                 </tbody>
-            </table>`;
+            </table>
+        </div>
+    `;
+    const html = groups.length === 0
+        ? `<div style="font-size:0.7rem;color:var(--text-dim);padding:6px;">—</div>`
+        : groups.map(renderGroup).join('');
     host.innerHTML = html;
     if (timeEl) timeEl.textContent = new Date().toLocaleTimeString();
 }
@@ -7676,11 +8426,11 @@ async function init() {
         state.brainAvailable = data.brain_available;
         state.sessionId = data.session_id || 'web';
         document.getElementById('brainDot').className = 'dot ' + (data.brain_available ? 'green' : 'yellow');
-        document.getElementById('brainStatusText').textContent = data.brain_available ? 'Online' : 'Offline';
+        document.getElementById('brainStatusText').textContent = data.brain_available ? _t('在线', 'Online') : _t('离线', 'Offline');
         document.getElementById('sessionDisplay').textContent = state.sessionId;
     } catch (e) {
         document.getElementById('serverDot').className = 'dot red';
-        document.getElementById('serverStatus').textContent = 'Offline';
+        document.getElementById('serverStatus').textContent = _t('已断开', 'Offline');
     }
 
     // Clear planning data ONLY on first page load (not on periodic refresh)
@@ -12361,36 +13111,22 @@ async function loadSeeds3D() {
             scene3D.meshes[needle.id] = tube;
         });
 
-        // Mirror seeds/needles into the data tree's planning.meshes so the
-        // user can see them listed with their own visibility toggle. Without
-        // this, seeds/needles were visible in the 3D viewer but absent from
-        // the data tree — the user had no way to know they were loaded.
-        // (CTV/OAR meshes go through addMeshToScene which already mirrors;
-        // seeds/needles bypass it, so we mirror here manually.)
+        // Mirror seeds/needles into the data tree. The user previously
+        // saw duplicate listings (2026-06-16 bug): seeds were shown
+        // twice — once under Planning → Trajectories → [Trajectory →
+        // Seed 1.1, ...] (grouped by trajectory_id) and once again
+        // under Planning → 3D Meshes (a flat list). CTV/OAR meshes
+        // still go through addMeshToScene, but seeds/needles are
+        // already shown in the Trajectories tree, so we no longer
+        // push them into planning.meshes. The visibility toggle for
+        // seeds/needles is now controlled via the trajectories group.
         if (dataTreeState && dataTreeState.planning) {
-            // Remove any prior seed/needle mirror entries (in case of re-render)
+            // Remove any prior seed/needle mirror entries from a
+            // previous version of this code (in case the user upgrades
+            // mid-session and we re-run planning with the old data
+            // tree still polluted).
             dataTreeState.planning.meshes = (dataTreeState.planning.meshes || [])
                 .filter(m => !m.id.startsWith('seed_') && !m.id.startsWith('needle_'));
-            data.seeds.forEach(s => {
-                dataTreeState.planning.meshes.push({
-                    id: s.id,
-                    label: `Seed ${s.id}`,
-                    source: 'seed',
-                    color: '#e6e64d',
-                    visible: true,
-                    opacity: 1.0,
-                });
-            });
-            data.needles.forEach(n => {
-                dataTreeState.planning.meshes.push({
-                    id: n.id,
-                    label: `Needle ${n.id}`,
-                    source: 'needle',
-                    color: '#ff2266',
-                    visible: true,
-                    opacity: 0.9,
-                });
-            });
         }
 
         // Update data tree
@@ -14787,26 +15523,41 @@ function drawDVH() {
     if (drawDVH._lastSig === _newSig) return;
     drawDVH._lastSig = _newSig;
 
-    // Cap the number of DVH curves rendered. With 50+ OARs from
-    // TotalSegmentator, a horizontal legend wraps into 50+ rows and
-    // covers the entire plot area. Show only the CTV + top N by volume
-    // for readability; full list is in the OAR Dose Metrics table below.
-    const MAX_DVH_TRACES = 8;
+    // Cap the number of DVH curves rendered. Previously 8 — the user
+    // complained (2026-06-16) that with 50+ OAR labels in the data
+    // tree, only ~10 curves showed up, hiding most organs. The
+    // server-side dvh_data now includes ALL OAR labels (see
+    // planning_pipeline.py:1420-1443 "OAR cumulative DVH (ALL
+    // organs, not just top 3)"), so we just need to let them
+    // through. The legend uses Plotly's right-side column layout to
+    // avoid wrapping across the plot area. The user can also click
+    // any organ in the Data Tree to hide/show it (handled by the
+    // `legendgroup` + `visible` toggling below).
+    const MAX_DVH_TRACES = 30;
     const allEntries = Object.entries(state.dvhData);
     const sorted = allEntries.sort((a, b) => {
         const va = (a[1].volume_pcts && a[1].volume_pcts[0]) || 0;
         const vb = (b[1].volume_pcts && b[1].volume_pcts[0]) || 0;
         return vb - va;
     });
+    // Always put CTV/PTV/GTV at index 0 (it owns the fill), then the
+    // remaining entries by volume.
     const ctvFirst = sorted.find(([n]) => /^(CTV|PTV|GTV)$/i.test(n));
+    const ctvName = ctvFirst ? ctvFirst[0] : null;
+    const ctvEntry = ctvFirst;
     const topOthers = sorted.filter(([n]) => !/^(CTV|PTV|GTV)$/i.test(n)).slice(0, MAX_DVH_TRACES - (ctvFirst ? 1 : 0));
     const picked = ctvFirst ? [ctvFirst, ...topOthers] : topOthers;
 
     const traces = [];
     // Fallback palette used only when an organ is NOT in the data tree
     // (rare — usually the data tree is loaded first). Matches the same
-    // palette used elsewhere for visual consistency.
-    const fallbackColors = ['#0ea5e9', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899'];
+    // palette used elsewhere for visual consistency. Extended to 16
+    // colors so 30+ organ curves still get visually distinct hues.
+    const fallbackColors = [
+        '#0ea5e9', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4',
+        '#f97316', '#ec4899', '#84cc16', '#14b8a6', '#a855f7', '#facc15',
+        '#fb7185', '#34d399', '#60a5fa', '#fbbf24',
+    ];
     let i = 0;
     for (const [name, dvh] of picked) {
         const doseBins = dvh.dose_bins || [];
@@ -14815,15 +15566,19 @@ function drawDVH() {
         // table) so the user can visually trace an OAR across panels.
         const treeColor = _getOrganColor(name);
         const color = treeColor || fallbackColors[i % fallbackColors.length];
+        // Use legendgroup = name so Plotly's legend click toggles
+        // the trace visibility (the data tree can also call
+        // setGroupVisibility for the same effect).
         traces.push({
             x: doseBins,
             y: volPcts,
             type: 'scatter', mode: 'lines', name: name,
-            line: { color, width: 2 },
-            fill: i === 0 ? 'tozeroy' : 'none',
-            fillcolor: i === 0 ? 'rgba(14,165,233,0.1)' : undefined,
-            hovertemplate: `<b>${name}</b><br>Dose: %{x:.2f}<br>Volume: %{y:.1f}%<extra></extra>`,
-            showlegend: false,
+            line: { color, width: name === ctvName ? 2.6 : 1.4 },
+            fill: name === ctvName ? 'tozeroy' : 'none',
+            fillcolor: name === ctvName ? 'rgba(14,165,233,0.10)' : undefined,
+            hovertemplate: `<b>${name}</b><br>Dose: %{x:.2f} Gy<br>Volume: %{y:.1f}%<extra></extra>`,
+            legendgroup: name,
+            showlegend: true,
         });
         i++;
     }
@@ -14838,10 +15593,89 @@ function drawDVH() {
     const xRange = [0, 600];
     const xTick = 20;
 
+    // PRESCRIPTION REFERENCE MARKER (2026-06-16, user request):
+    // Draw a vertical dashed line at the prescription dose and label
+    // the CTV coverage AT that dose (i.e. V_Rx = volume of CTV that
+    // receives >= Rx Gy). This is the single most important DVH
+    // data point for brachytherapy QA — it tells the user "if 120 Gy
+    // is your prescription, 97.6% of the CTV is covered".
+    //
+    // Source: reportForm.planning.prescriptionGy (user-editable in
+    // the Report panel) or state.metrics.prescribed_dose * 120 (the
+    // DOSE_SCALE constant from planning_pipeline.py). The fallback
+    // order is: explicit report form > metrics > 120 Gy default.
+    let rxGy = 120;
+    try {
+        if (window.reportForm && window.reportForm.planning
+                && Number.isFinite(window.reportForm.planning.prescriptionGy)) {
+            rxGy = Number(window.reportForm.planning.prescriptionGy);
+        } else if (state.metrics && Number.isFinite(state.metrics.prescribed_dose)) {
+            rxGy = Number(state.metrics.prescribed_dose) * 120;  // DOSE_SCALE
+        }
+    } catch (_) {}
+    // Compute CTV coverage at Rx — find the bin closest to rxGy
+    // and read its volume_pcts value.
+    let ctvRxCoverage = null;
+    if (ctvEntry && Array.isArray(ctvEntry[1].dose_bins) && Array.isArray(ctvEntry[1].volume_pcts)) {
+        const bins = ctvEntry[1].dose_bins;
+        const pcts = ctvEntry[1].volume_pcts;
+        // Find the bin index whose dose is closest to rxGy
+        let bestIdx = 0;
+        let bestDelta = Infinity;
+        for (let k = 0; k < bins.length; k++) {
+            const d = Math.abs(bins[k] - rxGy);
+            if (d < bestDelta) { bestDelta = d; bestIdx = k; }
+        }
+        ctvRxCoverage = pcts[bestIdx];
+    }
+    // Build the shapes/annotations arrays. The vertical line is a
+    // vertical dashed line at x = rxGy, full height. The marker
+    // annotation is at (rxGy, ctvRxCoverage) on the CTV curve so
+    // the user sees both the dose and the volume in one label.
+    const shapes = [];
+    const annotations = [];
+    if (rxGy > 0 && rxGy <= xRange[1] * 1.5) {
+        shapes.push({
+            type: 'line', x0: rxGy, x1: rxGy, y0: 0, y1: 100,
+            xref: 'x', yref: 'y',
+            line: { color: '#facc15', width: 1.5, dash: 'dash' },
+        });
+        annotations.push({
+            x: rxGy, y: 100,
+            xref: 'x', yref: 'y',
+            text: `Rx ${rxGy.toFixed(1)} Gy`,
+            showarrow: false,
+            yanchor: 'bottom',
+            xanchor: 'left',
+            xshift: 4, yshift: -2,
+            font: { color: '#facc15', size: 10, family: 'Inter, sans-serif' },
+            bgcolor: 'rgba(15,23,42,0.6)',
+        });
+        if (ctvRxCoverage !== null && Number.isFinite(ctvRxCoverage)) {
+            // Small dot + label at the (Rx, V_Rx) point on the CTV curve.
+            shapes.push({
+                type: 'circle', x0: rxGy - 3, x1: rxGy + 3,
+                y0: ctvRxCoverage - 3, y1: ctvRxCoverage + 3,
+                xref: 'x', yref: 'y',
+                fillcolor: '#facc15', line: { color: '#facc15' },
+            });
+            annotations.push({
+                x: rxGy, y: ctvRxCoverage,
+                xref: 'x', yref: 'y',
+                text: `CTV V${rxGy.toFixed(0)} = ${ctvRxCoverage.toFixed(1)}%`,
+                showarrow: true, arrowhead: 2, arrowcolor: '#facc15', arrowwidth: 1,
+                ax: 18, ay: -22,
+                font: { color: '#facc15', size: 10, family: 'Inter, sans-serif' },
+                bgcolor: 'rgba(15,23,42,0.78)',
+                bordercolor: '#facc15', borderwidth: 1, borderpad: 3,
+            });
+        }
+    }
+
     Plotly.react(dvhEl, traces, {
         paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
         font: { color: '#cbd5e1', size: 11, family: 'Inter, sans-serif' },
-        margin: { l: 55, r: 15, t: 10, b: 40 },
+        margin: { l: 55, r: 200, t: 10, b: 40 },
         xaxis: {
             title: 'Dose (Gy)',
             gridcolor: '#334155', linecolor: '#475569', tickcolor: '#475569',
@@ -14867,7 +15701,18 @@ function drawDVH() {
             dtick: 10,
             zeroline: false,
         },
-        showlegend: false,
+        showlegend: true,
+        // Right-side column legend: 30+ entries arranged in 3 columns
+        // so the user can scan all OAR names without the legend
+        // wrapping over the plot area. The CTV (first entry) is
+        // bolded by a wider line width in the trace itself.
+        legend: {
+            orientation: 'v', x: 1.02, y: 1, xanchor: 'left', yanchor: 'top',
+            bgcolor: 'rgba(15,23,42,0.45)', bordercolor: 'rgba(148,163,184,0.18)',
+            borderwidth: 1, font: { size: 9, color: '#cbd5e1' },
+            tracegroupgap: 0, itemwidth: 30,
+        },
+        shapes, annotations,
         hovermode: 'x unified',
         dragmode: 'zoom',
     }, {
@@ -15074,7 +15919,17 @@ async function refreshPlanningUI() {
         //     the SINGLE source of truth for the dose overlay: chat-driven
         //     planning now also lands here, so the dose appears in the
         //     same way as a manual `/api/planning/run_step` call.
-        if (data.has_dose && state.ctLoaded) {
+        //
+        // 2026-06-16 fix: previously required `state.ctLoaded` too.
+        // After a page refresh, ctLoaded starts at false (the CT is
+        // stored on the server but not yet re-fetched client-side),
+        // so dose was silently skipped — the user saw the dose map
+        // "disappear" after refresh even though has_dose=true. We now
+        // trust the server's has_dose signal alone. If the CT isn't
+        // loaded yet, updateSlice calls further down will not be able
+        // to draw, but the dose canvas and colorbar will at least be
+        // created and ready for when CT is loaded.
+        if (data.has_dose) {
             try {
                 const ov = await loadDoseOverlay();
                 if (ov && ov.shape) {
@@ -15157,14 +16012,30 @@ async function refreshPlanningUI() {
         //    returned data successfully. forceRender3DViewer is the
         //    correct call: it just re-sizes the renderer and fits the
         //    camera to whatever meshes are already in scene3D.
-        if (state.ctLoaded) {
-            try { forceRender3DViewer(); } catch (e) { console.warn('forceRender3DViewer failed:', e); }
-        }
+        //
+        // 2026-06-16 fix: previously gated on `state.ctLoaded`. After
+        // a page refresh, ctLoaded starts at false but the server
+        // already has seeds/needles/iso meshes in memory, and
+        // `loadSeeds3D` + `loadAllIsoSurfaces` repopulate scene3D on
+        // this same refresh pass. Forcing a render WITHOUT the
+        // ctLoaded gate means the 3D viewer immediately shows the
+        // meshes that were just loaded, even before the user
+        // re-loads the CT client-side. Same pattern as the dose
+        // overlay fix above.
+        try { forceRender3DViewer(); } catch (e) { console.warn('forceRender3DViewer failed:', e); }
 
         // 8. Auto-fill the report panel now that we have new metrics.
         //    The report already has its own "auto-fill" UI; this just
         //    re-runs it so the user sees fresh data.
         try { if (typeof reportAutoFill === 'function') reportAutoFill(); } catch (_) {}
+
+        // 9. Refresh the Image Analysis panel so the new metrics,
+        //    CTV/OAR label counts, and per-label volumes show up.
+        //    Without this, the panel only updated at CT load time and
+        //    stayed stale through the entire planning run. The panel
+        //    reads from state.metrics and ctvLabelData/oarLabelData,
+        //    both of which were refreshed in steps 1c and 1d above.
+        try { if (typeof updateImageAnalysis === 'function') updateImageAnalysis(); } catch (_) {}
             } catch (e) {
                 if (e && e.name !== 'AbortError') console.warn('refreshPlanningUI failed:', e);
             } finally {
@@ -15848,8 +16719,12 @@ window.Report = (function () {
     };
 
     function _updateLanguageButtons() {
+        // 2026-06-16: scope to `.rp-lang-toggle` only. The header
+        // language toggle uses `.lang-btn` too but is managed by
+        // its own `setUiLanguage()` — touching it here would
+        // override the active state with a flat white background.
         const lang = stateProxy.language;
-        document.querySelectorAll('.lang-btn').forEach(btn => {
+        document.querySelectorAll('.rp-lang-toggle .lang-btn').forEach(btn => {
             const isActive = btn.dataset.lang === lang;
             btn.style.background = isActive ? '#0ea5e9' : '#fff';
             btn.style.color = isActive ? '#fff' : '#334155';
@@ -17231,8 +18106,15 @@ function setReportLanguage(lang) {
     _scheduleReportAutoSave();
 }
 function _updateLanguageButtons() {
+    // 2026-06-16: only target the Report-internal lang buttons (those
+    // scoped to `.rp-lang-toggle`). The top-right header has its own
+    // `.lang-btn` toggle with `data-lang-btn` — we MUST NOT clobber
+    // its CSS-driven styles or the new EN/中 chip looks dead (white
+    // background on both states). The previous version used
+    // `querySelectorAll('.lang-btn')` which caught both and wrote
+    // `#fff` inline on the header's active button.
     const lang = window.reportForm.language;
-    document.querySelectorAll('.lang-btn').forEach(btn => {
+    document.querySelectorAll('.rp-lang-toggle .lang-btn').forEach(btn => {
         const isActive = btn.dataset.lang === lang;
         btn.style.background = isActive ? '#0ea5e9' : '#fff';
         btn.style.color = isActive ? '#fff' : '#334155';
@@ -18036,6 +18918,45 @@ try {
         }
     } else {
         console.error('[BOOT] init() not declared');
+    }
+
+    // I18N BOOT (2026-06-16): run the initial language pass over the
+    // DOM so the header (Connected/Online/Session) and the toggle
+    // button show the correct language from the very first paint.
+    // Then set the toggle's "active" state and register a re-render
+    // hook so dynamic renderers (Analysis panel, Report form, todo
+    // dock) can refresh on language change.
+    if (typeof applyI18n === 'function') {
+        applyI18n();
+        // Mark the active language on the toggle button(s).
+        const _activeLang = window._i18nLang || 'en';
+        document.querySelectorAll('[data-lang-btn]').forEach(b => {
+            const isActive = b.getAttribute('data-lang-btn') === _activeLang;
+            b.classList.toggle('lang-active', isActive);
+            b.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+        // When language changes, re-render the Analysis panel and the
+        // todo dock. The Report module has its own language flow
+        // (window.Report.i18n.set) which already handles itself.
+        window.addEventListener('i18nchange', (ev) => {
+            try { if (typeof updateImageAnalysis === 'function') updateImageAnalysis(); } catch (_) {}
+            // The todo dock keeps a separate _TODO_I18N dict with its
+            // own `setActiveTodoLang(code)` switch. Sync the dock
+            // language to the new global one. The dock's own re-render
+            // is driven by the SSE step event that arrives AFTER a
+            // language change, so we don't need to repaint here — the
+            // active label will pick up the new strings on its next
+            // update.
+            try {
+                if (typeof _setActiveTodoLang === 'function' && ev && ev.detail && ev.detail.lang) {
+                    _setActiveTodoLang(ev.detail.lang);
+                }
+            } catch (_) {}
+            // Re-render the visible report language button highlight.
+            try { if (typeof Report !== 'undefined' && Report.i18n && Report.i18n.set) {
+                Report.i18n.set(ev.detail.lang, { userInitiated: false });
+            }} catch (_) {}
+        });
     }
 } catch (e) {
     console.error('[BOOT] boot wiring failed:', e);
