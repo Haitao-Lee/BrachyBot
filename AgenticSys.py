@@ -1713,6 +1713,17 @@ class BrachyAgent:
                                 self.memory.store("ctv_array", ctv_result.metadata["ctv_array"])
                             if "ctv_mask" in (ctv_result.metadata or {}):
                                 self.memory.store("ctv_mask", ctv_result.metadata["ctv_mask"])
+                            # Store ctv_voxels/volume for report generation
+                            _cv = (ctv_result.metadata or {}).get("ctv_voxel_count")
+                            if not _cv:
+                                try:
+                                    _cv = int(np.sum(np.asarray(ctv_result.metadata["ctv_array"]) > 0))
+                                except Exception:
+                                    _cv = 0
+                            self.memory.store("ctv_voxels", _cv)
+                            _cvm3 = (ctv_result.metadata or {}).get("ctv_volume_mm3")
+                            if _cvm3:
+                                self.memory.store("ctv_volume_mm3", _cvm3)
                             if step_callback is not None:
                                 try:
                                     step_callback("ctv_segmentation", "done",
@@ -1904,6 +1915,20 @@ class BrachyAgent:
                     self.memory.store("ctv_label_stats", result.metadata["label_stats"])
                 if "label_map" in result.metadata:
                     self.memory.store("ctv_label_map", result.metadata["label_map"])
+                # Store ctv_voxels and ctv_volume directly so
+                # _build_planning_report can read them from memory.
+                _cv = result.metadata.get("ctv_voxel_count")
+                if not _cv:
+                    try:
+                        _cv = int(np.sum(np.asarray(result.metadata["ctv_array"]) > 0))
+                    except Exception:
+                        _cv = 0
+                self.memory.store("ctv_voxels", _cv)
+                _cvm3 = result.metadata.get("ctv_volume_mm3")
+                if _cvm3:
+                    self.memory.store("ctv_volume_mm3", _cvm3)
+                if params.get("tumor_type"):
+                    self.memory.store("tumor_type_used", params["tumor_type"])
                 # BUG FIX 2026-06-16 (CTV/OAR label priority): for
                 # pancreatic patients, CTV segmentation produces a
                 # `pancreas` label (and sometimes other anatomically
@@ -2632,25 +2657,30 @@ print(json.dumps(result))
         total_seeds = self.memory.retrieve("total_seeds", 0) or 0
         num_traj = self.memory.retrieve("num_trajectories", 0) or 0
         ctv_voxels = self.memory.retrieve("ctv_voxels", 0) or 0
-        # BUG FIX 2026-06-17: ctv_voxels might not be stored directly
-        # in memory (it was only in a transient context dict). Compute
-        # from ctv_array if available.
+        # Fallback: compute from ctv_array if not stored directly
         if not ctv_voxels:
             ctv_array = self.memory.retrieve("ctv_array")
             if ctv_array is not None:
                 try:
                     import numpy as _np
                     ctv_voxels = int(_np.sum(_np.asarray(ctv_array) > 0))
+                    self.memory.store("ctv_voxels", ctv_voxels)
                 except Exception:
                     pass
         tumor_type = self.memory.retrieve("tumor_type_used", "")
         oar_array = self.memory.retrieve("oar_array")
         organ_names = self.memory.retrieve("organ_names", {}) or {}
 
-        # Compute CTV volume in cm³
-        spacing = self.memory.retrieve("ct_spacing") or [0.6836, 0.6836, 5]
+        # Compute CTV volume in cm³ — prefer pre-computed value
         ctv_vol_cm3 = None
-        if ctv_voxels and spacing:
+        _cvm3 = self.memory.retrieve("ctv_volume_mm3")
+        if _cvm3:
+            ctv_vol_cm3 = _cvm3 / 1000.0
+        elif ctv_voxels:
+            spacing = self.memory.retrieve("ct_spacing") or [0.6836, 0.6836, 5]
+            sx, sy, sz = spacing[0], spacing[1], spacing[2]
+            vol_mm3 = ctv_voxels * sx * sy * sz
+            ctv_vol_cm3 = vol_mm3 / 1000.0
             sx, sy, sz = spacing[0], spacing[1], spacing[2]
             vol_mm3 = ctv_voxels * sx * sy * sz
             ctv_vol_cm3 = vol_mm3 / 1000.0
@@ -5340,7 +5370,7 @@ print(json.dumps(result))
                                 # retry text, causing a confusing / truncated UI).
                                 _retry_msg = message + f"\n\n[Quality review feedback - fix these issues: {_concerns_text}]"
                                 for ev in self._run_llm_function_calling_stream(
-                                        _retry_msg, steps, step_id_ref, yield_event):
+                                        _retry_msg, steps, step_id, yield_event):
                                     if isinstance(ev, dict) and ev.get("type") == "_result":
                                         # Override the original response with the
                                         # retry's full response so the final
@@ -5470,7 +5500,7 @@ print(json.dumps(result))
                             # top of the streamed retry text, causing a
                             # confusing / truncated chat UI.
                             for ev in self._run_llm_function_calling_stream(
-                                    _retry_msg, steps, step_id_ref, yield_event):
+                                    _retry_msg, steps, step_id, yield_event):
                                 if isinstance(ev, dict) and ev.get("type") == "_result":
                                     response = ev.get("response", response) or response
                                     if ev.get("llm_meta"):
@@ -5479,6 +5509,26 @@ print(json.dumps(result))
                                     yield ev
             except Exception as e:
                 logger.debug(f"Multi-agent review failed: {e}")
+
+        # SAFETY NET: after quality review retry, ensure the response
+        # is the full planning report (not a brief LLM acknowledgment).
+        _has_planning = any(
+            s.get("tool") in ("ctv_segmentation", "oar_segmentation",
+                               "planning_pipeline", "seed_planning",
+                               "dose_evaluation", "dose_calc")
+            for s in steps
+        )
+        if _has_planning and response:
+            # Check if response is suspiciously short (likely a retry
+            # artifact that didn't regenerate the full report)
+            if len(response) < 500:
+                try:
+                    _full_report = self._build_planning_report(self.memory.user_lang, steps)
+                    if _full_report and len(_full_report) > len(response):
+                        logger.info(f"[chat_with_stream] Safety net: replaced {len(response)}-char response with {len(_full_report)}-char planning report")
+                        response = _full_report
+                except Exception as e:
+                    logger.warning(f"[chat_with_stream] Safety net report generation failed: {e}")
 
         # Final response
         yield yield_event("response", {"response": response, "steps": steps, "llm_meta": llm_meta})
@@ -5729,9 +5779,22 @@ print(json.dumps(result))
                 self.memory.store("ctv_label_stats", result.metadata["label_stats"])
             if "label_map" in result.metadata:
                 self.memory.store("ctv_label_map", result.metadata["label_map"])
+            # Store ctv_voxels/volume for report generation
+            _cv = result.metadata.get("ctv_voxel_count")
+            if not _cv:
+                try:
+                    _cv = int(np.sum(np.asarray(result.metadata["ctv_array"]) > 0))
+                except Exception:
+                    _cv = 0
+            self.memory.store("ctv_voxels", _cv)
+            _cvm3 = result.metadata.get("ctv_volume_mm3")
+            if _cvm3:
+                self.memory.store("ctv_volume_mm3", _cvm3)
+            if params.get("tumor_type"):
+                self.memory.store("tumor_type_used", params["tumor_type"])
             return result.message
         return f"CTV segmentation failed: {result.error}"
-    
+
     def _handle_oar_segmentation_request(self, message: str) -> str:
         ct_image = self.memory.retrieve("ct_image")
         oar_path = self.memory.retrieve("oar_path")
@@ -5863,6 +5926,10 @@ print(json.dumps(result))
             
             ctv_array = ctv_result.metadata["ctv_array"]
             self.memory.store("ctv_array", ctv_array)
+            self.memory.store("ctv_voxels", ctv_result.metadata.get("ctv_voxel_count", 0))
+            _cvm3 = ctv_result.metadata.get("ctv_volume_mm3")
+            if _cvm3:
+                self.memory.store("ctv_volume_mm3", _cvm3)
             logger.info(f"  CTV voxels: {ctv_result.metadata['ctv_voxel_count']}")
             
             logger.info("Step 3: OAR Segmentation")
