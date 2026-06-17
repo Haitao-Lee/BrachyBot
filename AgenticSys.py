@@ -1825,6 +1825,11 @@ class BrachyAgent:
         # refusing to call the tool.
         if step_callback is not None and tool_name == "planning_pipeline":
             params["step_callback"] = step_callback
+        # Pass agent reference so planning_pipeline can access CTV/OAR
+        # from memory without relying on _global_agent (which may not
+        # be set in all code paths).
+        if tool_name == "planning_pipeline":
+            params["_agent"] = self
 
         # BUG FIX 2026-06-17 (duplicate oar_segmentation): the LLM
         # often calls oar_segmentation explicitly in Call 2, even
