@@ -4611,6 +4611,12 @@ print(json.dumps(result))
                     result_text = self._handle_code_writing(params)
                 elif tool_name in self.registry.tool_names:
                     try:
+                        # For long-running tools (code_executor), yield
+                        # control briefly so the browser can render the
+                        # "pending" step before execution blocks.
+                        if tool_name == "code_executor":
+                            import time as _t
+                            _t.sleep(0.08)
                         result = self._execute_tool_with_memory(
                             tool_name, params,
                             progress_callback=tool_progress_callback,
