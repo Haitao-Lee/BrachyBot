@@ -2763,42 +2763,33 @@ body::before {
     flex-shrink: 0;
 }
 .hp-logo-img {
-    /* BUG FIX 2026-06-17: unified size — all 3 logos are now the
-       same small size (10mm) instead of the previous 16/12/12mm
-       mix. The user wanted them to look consistent and small. */
     width: 10mm; height: 10mm;
     object-fit: contain;
-    background: #fff;
-    border-radius: 3px;
-    border: 1px solid #e2e8f0;
+    background: transparent;
+    border-radius: 0;
+    border: none;
     flex-shrink: 0;
 }
 .hp-logo-img-small {
     width: 10mm; height: 10mm;
 }
 .hp-letterhead-text {
-    /* BUG FIX 2026-06-17: text now sits on the right side of the
-       row, right-aligned, and is structured as 2 stacked lines:
-       (1) byline  (2) github link. */
-    margin-left: auto;     /* push to the right edge */
+    margin-left: auto;
     text-align: right;
-    font-size: 9pt; color: #475569;
-    line-height: 1.45;
+    font-size: 7pt; color: #94a3b8;
+    line-height: 1.4;
     font-family: 'Helvetica Neue', 'Arial', 'Microsoft YaHei', sans-serif;
     flex-shrink: 0;
     max-width: 70%;
 }
 .hp-letterhead-byline {
-    /* Line 1: "Brachybot by SJTU × Ruijin Hospital × ..." */
-    font-weight: 600; color: #0c4a6e; letter-spacing: 0.3px;
-    margin-bottom: 0.6mm;
+    font-weight: 600; color: #64748b; letter-spacing: 0.2px;
+    margin-bottom: 0.4mm;
+    font-size: 7pt;
 }
 .hp-letterhead-github {
-    /* Line 2: full GitHub clone URL (no "github:" label since the
-       URL itself starts with "github.com" — a label would be
-       duplicate). */
-    font-weight: 400; color: #64748b; font-size: 8.5pt;
-    letter-spacing: 0.2px;
+    font-weight: 400; color: #94a3b8; font-size: 6.5pt;
+    letter-spacing: 0.15px;
 }
 .hp-letterhead-github a {
     color: #0369a1; text-decoration: none;
@@ -8754,6 +8745,7 @@ async function loadCTToViewers(ctPath) {
         if (data.success) {
             state.ctLoaded = true;
             state.ctShape = data.shape;
+            state.ctSpacing = data.spacing;
             state.ctHURange = data.hu_range;
 
             // Update slice sliders
@@ -13846,6 +13838,8 @@ async function loadCTVAndObstacleMeshes() {
     init3DScene();
     // CTV: multi-label — labels 1..6 typically
     const ctvLabelIds = (window._ctvLabelMap && Object.keys(window._ctvLabelMap).map(Number)) || [1, 2, 3, 4, 5, 6];
+    console.log('[loadCTVAndObstacle] CTV label IDs:', ctvLabelIds, 'ctvLabelMap:', window._ctvLabelMap);
+    let ctvMeshCount = 0;
     for (const lid of ctvLabelIds) {
         try {
             const res = await fetch(API + '/viewer/3d_mask', {
@@ -13853,18 +13847,19 @@ async function loadCTVAndObstacleMeshes() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ label_id: lid, source: 'ctv', smoothing: 1 }),
             });
-            if (!res.ok) continue;
+            if (!res.ok) { console.log(`[loadCTVAndObstacle] CTV label ${lid}: HTTP ${res.status}`); continue; }
             const data = await res.json();
             if (data && data.success && data.vertex_count > 0) {
-                // Use the same color the data tree shows for this label
                 const c = labelColorLUT && labelColorLUT[lid];
                 data.color = c ? ((c[0] << 16) | (c[1] << 8) | c[2]) : 0xff6b6b;
                 data.organ_id = `ctv_${lid}`;
                 data.label = (window._ctvLabelMap && window._ctvLabelMap[lid]) || `CTV Label ${lid}`;
                 addMeshToScene(data);
+                ctvMeshCount++;
             }
-        } catch (e) { /* skip failed labels */ }
+        } catch (e) { console.warn(`[loadCTVAndObstacle] CTV label ${lid} error:`, e); }
     }
+    console.log(`[loadCTVAndObstacle] CTV meshes added: ${ctvMeshCount}`);
     // Non-traversable OARs: arteries, veins, bones, etc. We derive the
     // list from dataTreeState.organs where category === 'non_traversable'
     // (set by classifyOrgan). Hard-coded fallback for label IDs 201, 202
@@ -13879,6 +13874,8 @@ async function loadCTVAndObstacleMeshes() {
         nonTravIds.add(201); // artery
         nonTravIds.add(202); // vein
     }
+    console.log('[loadCTVAndObstacle] Non-traversable OAR IDs:', [...nonTravIds], 'organs count:', dataTreeState.organs.length);
+    let oarMeshCount = 0;
     for (const lid of nonTravIds) {
         try {
             const res = await fetch(API + '/viewer/3d_mask', {
@@ -13886,7 +13883,7 @@ async function loadCTVAndObstacleMeshes() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ label_id: lid, source: 'oar', smoothing: 1 }),
             });
-            if (!res.ok) continue;
+            if (!res.ok) { console.log(`[loadCTVAndObstacle] OAR label ${lid}: HTTP ${res.status}`); continue; }
             const data = await res.json();
             if (data && data.success && data.vertex_count > 0) {
                 // Color from data tree organ entry, else red-ish default
@@ -13904,9 +13901,11 @@ async function loadCTVAndObstacleMeshes() {
                 data.organ_id = `organ_${lid}`;
                 data.label = (organ && organ.name) || `OAR ${lid}`;
                 addMeshToScene(data);
+                oarMeshCount++;
             }
-        } catch (e) { /* skip */ }
+        } catch (e) { console.warn(`[loadCTVAndObstacle] OAR label ${lid} error:`, e); }
     }
+    console.log(`[loadCTVAndObstacle] OAR meshes added: ${oarMeshCount}. Total scene meshes: ${Object.keys(scene3D.meshes).length}`);
 }
 
 // Load dose distribution as 2D overlay on CT slices
@@ -16768,25 +16767,23 @@ async function refreshPlanningUI() {
             } catch (e) { console.warn('Isosurface auto-load failed:', e); }
         }
 
-        // 4e. CTV + non-traversable OAR 3D mesh auto-load. The user
-        //     expects to see the tumor (CTV) and any arteries/veins
-        //     flagged as non-traversable obstacles, in the 3D viewer
-        //     right after planning completes. Without this, the 3D
-        //     viewer shows only the isosurface cloud with no target
-        //     volume to compare against.
-        // 2026-06-16 fix: same — drop the ctLoaded gate so the
-        // 3D meshes auto-load even when the user hasn't re-loaded
-        // the CT panel yet (e.g. after a page refresh).
+        // 4e. CTV + non-traversable OAR 3D mesh auto-load.
         try {
+            console.log('[3D auto-load] Starting CTV/obstacle mesh load...');
             await loadCTVAndObstacleMeshes();
-        } catch (e) { console.warn('CTV/obstacle 3D auto-load failed:', e); }
+            console.log('[3D auto-load] CTV/obstacle done. Meshes:', Object.keys(scene3D.meshes).length);
+        } catch (e) { console.warn('[3D auto-load] CTV/obstacle FAILED:', e); }
 
         // 4f. Seeds + needles 3D load (always run if planning produced
         //     them; the user said "no seeds/needles visible in 3D"
         //     because this was being skipped when the viewers panel
         //     wasn't the active panel at refresh time).
         if (data.seeds && data.seeds.length > 0) {
-            try { await loadSeeds3D(); } catch (e) { console.warn('loadSeeds3D failed:', e); }
+            try {
+                console.log('[3D auto-load] Loading seeds...');
+                await loadSeeds3D();
+                console.log('[3D auto-load] Seeds done. Meshes:', Object.keys(scene3D.meshes).length);
+            } catch (e) { console.warn('[3D auto-load] Seeds FAILED:', e); }
         }
 
         // 5. Data tree badges ("V100: 91.0%" / "13 seeds") — updateSeeds
@@ -16822,7 +16819,10 @@ async function refreshPlanningUI() {
         // meshes that were just loaded, even before the user
         // re-loads the CT client-side. Same pattern as the dose
         // overlay fix above.
-        try { forceRender3DViewer(); } catch (e) { console.warn('forceRender3DViewer failed:', e); }
+        try {
+            console.log('[3D auto-load] forceRender3DViewer... initialized:', scene3D.initialized, 'meshes:', Object.keys(scene3D.meshes).length);
+            forceRender3DViewer();
+        } catch (e) { console.warn('[3D auto-load] forceRender3DViewer FAILED:', e); }
 
         // 8. Auto-fill the report panel now that we have new metrics.
         //    The report already has its own "auto-fill" UI; this just
@@ -19238,6 +19238,21 @@ function applyReportTemplate(templateKey) {
 async function reportAutoFill() {
     const f = window.reportForm;
     if (state.ctPath) f.case.patientId = state.ctPath.split(/[\/\\]/).pop().replace(/\.nii(\.gz)?$/i, '');
+    // BUG FIX 2026-06-17: set segmentation model names dynamically
+    // based on tumor type (not hard-coded to pancreatic).
+    if (state.metrics && state.metrics.tumor_type) {
+        const tt = state.metrics.tumor_type;
+        f.segmentation.ctvModelName = `nnUNet (${tt})`;
+        f.segmentation.oarModelName = `TotalSegmentator (${tt})`;
+    } else if (window._lastToolResults) {
+        // Fallback: check tool results for tumor type info
+        const tr = window._lastToolResults;
+        if (tr.ctv_segmentation && tr.ctv_segmentation.tumor_type) {
+            const tt = tr.ctv_segmentation.tumor_type;
+            f.segmentation.ctvModelName = `nnUNet (${tt})`;
+            f.segmentation.oarModelName = `TotalSegmentator (${tt})`;
+        }
+    }
     if (state.ctShape && state.ctSpacing) {
         f.imaging.sliceCount = state.ctShape[2] || f.imaging.sliceCount;
         f.imaging.pixelSpacingMm = state.ctSpacing[0] || f.imaging.pixelSpacingMm;
@@ -19443,7 +19458,7 @@ function _localizedEmptyReportForm(language) {
         study: { modality: 'CT', scanDate: '', accession: '', radiologist: '', diagnosis: '', clinicalHistory: '', priorTreatment: '' },
         case: { patientId: '', tumorType: '', planDate: new Date().toISOString().slice(0, 10), plannerName: '', ctvVolumeMm3: null, oarCount: null },
         imaging: { modality: 'CT', scanner: '', sliceCount: null, pixelSpacingMm: null, sliceThicknessMm: null, contrast: '', acquisitionDate: '' },
-        segmentation: { ctvModelName: 'nnUNet (pancreatic / 7-class)', ctvVoxels: null, oarModelName: 'TotalSegmentator (pancreatic)', contouringNotes: '' },
+        segmentation: { ctvModelName: '', ctvVoxels: null, oarModelName: '', contouringNotes: '' },
         planning: {
             technique: _S_or('defaultTechniqueI125', pick('放射性粒子植入 (¹²⁵I Radioactive Seed Implantation)', 'Radioactive Seed Implantation (¹²⁵I)')),
             prescriptionGy: 120, prescriptionUnit: 'Gy',
