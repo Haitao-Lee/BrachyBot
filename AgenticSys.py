@@ -5223,8 +5223,10 @@ print(json.dumps(result))
         yield yield_event("step", steps[-1])
 
         # Multi-agent routing (if available)
+        # SKIP for short messages (< 15 chars) to save an LLM round-trip
+        # on greetings / simple questions.
         _ma_routing = None
-        if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
+        if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled and len(message.strip()) > 15:
             try:
                 import asyncio
                 loop = asyncio.new_event_loop()
