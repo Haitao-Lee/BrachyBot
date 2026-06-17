@@ -2654,7 +2654,10 @@ body::before {
 /* ===========================================================
    DVH — sunken well
    =========================================================== */
-.dvh-panel { padding: 0.95rem; flex: 1; }
+.dvh-panel { padding: 0.95rem; flex: 1; overflow: hidden; position: relative; }
+/* Constrain Plotly hover tooltip so text stays inside the visible area */
+.dvh-panel .hoverlayer { max-width: 100%; overflow: hidden; }
+.dvh-panel .hoverlayer .hovertext { max-width: 200px; }
 
 .dvh-container {
     /* Fill the leftover height of the metrics-section, but never grow
@@ -6754,9 +6757,12 @@ function appendStepToChain(stepsDiv, step, idx) {
                 existingBlock = b;
                 break;
             }
-            if (step.status === 'pending' && bStatus === 'pending') {
-                // Both pending; treat as duplicate and DROP this one.
-                return;
+            // If the new step is pending and we found a done block for
+            // the same tool, reuse the done block (avoids creating a
+            // duplicate pending entry).
+            if (step.status === 'pending' && !existingBlock) {
+                step.id = b.dataset.stepId;
+                existingBlock = b;
             }
             // Remember a same-tool done block as a fallback target so
             // later "done" events don't create yet another duplicate.
@@ -10167,18 +10173,6 @@ function renderSliceFromVolume(axis, sliceIndex) {
     }
     ctx.putImageData(imageData, 0, 0);
 
-    // Dose overlay rendering moved to renderDoseForCurrentSlice()
-    // which is called AFTER the CT canvas's width/height/left/top
-    // are fully set below. The previous in-line placement ran
-    // BEFORE the CT style was updated (line ~9813+), so it copied
-    // the previous slice's position/size onto the dose canvas —
-    // making the dose layer drift one slice behind on every slider
-    // drag, and disappear entirely after a pan/zoom. We now defer
-    // dose sync to the function below.
-    if (state.doseOverlay && state.doseOverlay.visible) {
-        renderDoseForCurrentSlice(axis, sliceIndex);
-    }
-
     const containerRect = container.getBoundingClientRect();
     const containerW = containerRect.width || 400;  // Fallback if container not visible
     const containerH = containerRect.height || 300;
@@ -10230,6 +10224,13 @@ function renderSliceFromVolume(axis, sliceIndex) {
 
     syncAnnotationCanvasSize(axis);
     redrawAllAnnotations();
+
+    // Dose overlay rendering: AFTER the CT canvas's display dimensions
+    // (_displayW, _displayH, _offsetX, _offsetY) are fully set above,
+    // so the dose canvas copies the correct position/size.
+    if (state.doseOverlay && state.doseOverlay.visible) {
+        renderDoseForCurrentSlice(axis, sliceIndex);
+    }
 
     // Overlay is composited inline into CT pixels — hide the separate overlay canvas
     const overlayCanvas = document.getElementById('labelOverlay_' + capitalize(axis));
@@ -13051,14 +13052,20 @@ function init3DScene() {
     animate();
     scene3D.initialized = true;
 
-    // Resize handler for 3D viewer
+    // Resize handler for 3D viewer — also re-fit camera so meshes
+    // become visible when the panel transitions from hidden to shown.
     const resizeObserver3D = new ResizeObserver(() => {
         if (!scene3D.renderer || !scene3D.camera) return;
         const newW = canvas.clientWidth || 400;
         const newH = canvas.clientHeight || 300;
+        if (newW < 10 || newH < 10) return;  // skip if still hidden
         scene3D.camera.aspect = newW / newH;
         scene3D.camera.updateProjectionMatrix();
         scene3D.renderer.setSize(newW, newH);
+        // Re-fit camera to scene when panel becomes visible
+        if (Object.keys(scene3D.meshes).length > 0) {
+            fitCameraToScene();
+        }
     });
     resizeObserver3D.observe(canvas);
 
@@ -13422,6 +13429,20 @@ function forceRender3DViewer() {
             const placeholder = canvas.querySelector('.viewer-no-data');
             if (placeholder && Object.keys(scene3D.meshes).length > 0) {
                 placeholder.style.display = 'none';
+            }
+            // If canvas was still 0×0 (panel not yet visible), retry
+            // once more after a short delay to catch late layout.
+            if ((canvas.clientWidth || 0) < 10 && Object.keys(scene3D.meshes).length > 0) {
+                setTimeout(() => {
+                    const w2 = canvas.clientWidth || 400;
+                    const h2 = canvas.clientHeight || 300;
+                    if (w2 > 10 && h2 > 10) {
+                        scene3D.camera.aspect = w2 / h2;
+                        scene3D.camera.updateProjectionMatrix();
+                        scene3D.renderer.setSize(w2, h2);
+                        fitCameraToScene();
+                    }
+                }, 300);
             }
         });
     });
@@ -16467,12 +16488,7 @@ function drawDVH() {
                 color: '#e2e8f0',
             },
             align: 'left',
-            // BUG FIX 2026-06-17: user reported the DVH hover
-            // tooltip text was "overflowing outside the box" when
-            // the legend name was long (e.g. "autochthon_back_right").
-            // Enforce strict width constraint + smaller font + padding
-            // so all text stays inside the tooltip boundary.
-            maxwidth: 160,
+            namelength: 20,
             pad: { t: 4, b: 4, l: 6, r: 6 },
         },
     }, {
@@ -19596,9 +19612,9 @@ function _updateReportPreview() {
     // BUG FIX 2026-06-17 (real logos): SJTU and Ruijin logos are
     // the real high-res PNGs in _assets/sjtu-real.png and
     // _assets/ruijin-real.png.
-    const bylineZh = 'Powered by BrachyBot · Developed by SJTU × Ruijin Hospital';
-    const bylineEn = 'Powered by BrachyBot · Developed by SJTU × Ruijin Hospital';
-    const byline = (f.language === 'zh') ? bylineZh : bylineEn;
+    const bylineLine1 = 'Powered by BrachyBot';
+    const bylineLine2 = 'Developed by SJTU && Ruijin Hospital';
+    const githubUrl = 'https://github.com/Haitao-Lee/BrachyBot.git';
     let p1 = `
         <div class="report-page">
             <div class="hp-letterhead">
@@ -19608,9 +19624,10 @@ function _updateReportPreview() {
                     <img src="_assets/ruijin-real.png" alt="Ruijin" class="hp-logo-img" title="Ruijin Hospital"/>
                 </div>
                 <div class="hp-letterhead-text">
-                    <div class="hp-letterhead-byline">${escHtml(byline)}</div>
+                    <div class="hp-letterhead-byline">${escHtml(bylineLine1)}</div>
+                    <div class="hp-letterhead-byline">${escHtml(bylineLine2)}</div>
                     <div class="hp-letterhead-github">
-                        <a href="${escHtml(hospitalContact)}" target="_blank" rel="noopener">${escHtml(hospitalContact)}</a>
+                        <a href="${escHtml(githubUrl)}" target="_blank" rel="noopener">${escHtml(githubUrl)}</a>
                     </div>
                 </div>
             </div>
@@ -19961,9 +19978,9 @@ function _printableCss() {
         .hp-logo-group { display: flex; align-items: center; gap: 2mm; flex-shrink: 0; }
         .hp-logo-img { width: 10mm; height: 10mm; object-fit: contain; background: #fff; border-radius: 3px; border: 1px solid #e2e8f0; }
         .hp-logo { width: 10mm; height: 10mm; display: flex; align-items: center; justify-content: center; border-radius: 50%; overflow: hidden; }
-        .hp-letterhead-text { margin-left: auto; text-align: right; font-size: 9pt; color: #475569; font-family: 'Helvetica Neue', 'Arial', 'Microsoft YaHei', sans-serif; line-height: 1.45; flex-shrink: 0; max-width: 70%; }
-        .hp-letterhead-byline { font-weight: 600; color: #0c4a6e; margin-bottom: 0.6mm; }
-        .hp-letterhead-github { font-weight: 400; color: #64748b; font-size: 8.5pt; }
+        .hp-letterhead-text { margin-left: auto; text-align: right; font-size: 7pt; color: #94a3b8; font-family: 'Helvetica Neue', 'Arial', 'Microsoft YaHei', sans-serif; line-height: 1.4; flex-shrink: 0; max-width: 70%; }
+        .hp-letterhead-byline { font-weight: 600; color: #64748b; margin-bottom: 0.4mm; font-size: 7pt; }
+        .hp-letterhead-github { font-weight: 400; color: #94a3b8; font-size: 6.5pt; }
         .hp-letterhead-github a { color: #0369a1; text-decoration: none; border-bottom: 1px dotted #0369a1; font-family: 'SFMono-Regular', 'Consolas', 'Monaco', monospace; font-size: 8.5pt; }
         .hp-letterhead-credit { font-weight: 600; color: #0c4a6e; }
         .hp-letterhead-credit a { color: #0369a1; text-decoration: none; border-bottom: 1px dotted #0369a1; }
