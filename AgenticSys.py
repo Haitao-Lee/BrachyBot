@@ -2370,6 +2370,19 @@ class BrachyAgent:
                     self._store_label_with_metadata(meta["full_label_array"], ct_image, "ctv_full_labels")
                 else:
                     self.memory.store("ctv_full_labels", meta["full_label_array"])
+            # Store ctv_voxels and ctv_volume for report generation
+            _cv = meta.get("ctv_voxel_count")
+            if not _cv:
+                try:
+                    _cv = int(np.sum(np.asarray(meta["ctv_array"]) > 0))
+                except Exception:
+                    _cv = 0
+            self.memory.store("ctv_voxels", _cv)
+            _cvm3 = meta.get("ctv_volume_mm3")
+            if _cvm3:
+                self.memory.store("ctv_volume_mm3", _cvm3)
+            if meta.get("tumor_type"):
+                self.memory.store("tumor_type_used", meta["tumor_type"])
         elif tool_name == "oar_segmentation":
             if "oar_array" in meta:
                 if ct_image is not None:
@@ -2657,6 +2670,7 @@ print(json.dumps(result))
         total_seeds = self.memory.retrieve("total_seeds", 0) or 0
         num_traj = self.memory.retrieve("num_trajectories", 0) or 0
         ctv_voxels = self.memory.retrieve("ctv_voxels", 0) or 0
+        logger.info(f"[_build_planning_report] ctv_voxels={ctv_voxels}, ctv_array={'exists' if self.memory.retrieve('ctv_array') is not None else 'None'}, tumor_type_used='{self.memory.retrieve('tumor_type_used', '')}'")
         # Fallback: compute from ctv_array if not stored directly
         if not ctv_voxels:
             ctv_array = self.memory.retrieve("ctv_array")
