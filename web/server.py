@@ -2143,6 +2143,12 @@ def create_app(config: Optional[Dict] = None):
                 except Exception:
                     pass
 
+            # Include tumor_type in metrics so the client can
+            # display the actual segmentation model name in the report.
+            tumor_type = agent.memory.retrieve("tumor_type_used", "")
+            if tumor_type and isinstance(dose_metrics, dict):
+                dose_metrics["tumor_type"] = tumor_type
+
             return jsonify({
                 "success": True,
                 "metrics": dose_metrics,
