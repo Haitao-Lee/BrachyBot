@@ -16990,17 +16990,15 @@ function updateOARTable(oarMetrics) {
 // replaces the user complaint that the LLM final response was too
 // terse and lacked citation links.
 //
-// The references are REAL, public, clickable links to authoritative
-// brachytherapy guidance (TG-43 update report, AAPM consensus
-// statements, GEC-ESTRO recommendations, ICRU reports, ABS
-// guidelines). They live in `_GUIDELINE_REFS` so they can be
-// referenced by short key from anywhere.
+// BUG FIX 2026-06-17: URLs were wrong (TG-43 linked to TG-229's
+// Wiley page, GEC-ESTRO linked to committee page not handbook).
+// Now uses the correct authoritative URLs, consistent with
+// REPORT_REFERENCES defined below.
 const _GUIDELINE_REFS = {
-    'TG43':     { name: 'AAPM TG-43 Update — Brachytherapy Dose Calculation', url: 'https://aapm.onlinelibrary.wiley.com/doi/10.1002/mp.17012', year: 2023 },
-    'GEC_ESTRO':{ name: 'GEC-ESTRO Handbook of Brachytherapy (2nd ed.)', url: 'https://www.estro.org/About/ESTRO-Organisation-Structure/Committees-GROUPS/GEC-ESTRO', year: 2023 },
-    'ABS':      { name: 'ABS Brachytherapy Consensus Guidelines (various)', url: 'https://www.americanbrachytherapy.org/For-Professionals/Clinical-Practice-Guidelines.aspx', year: 2023 },
-    'ICRU89':   { name: 'ICRU Report 89 — Prescribing, Recording, and Reporting Brachytherapy', url: 'https://www.icru.org/report/icru-report-89-prescribing-recording-and-reporting-brachytherapy', year: 2016 },
-    'AAPM_TG_229': { name: 'AAPM TG-229 — Dose Calculation for Photon-Emitting Brachytherapy Sources', url: 'https://aapm.onlinelibrary.wiley.com/doi/10.1002/mp.13778', year: 2018 },
+    'TG43':     { name: 'AAPM TG-229 / TG-43 Update — Brachytherapy Source Dosimetry', url: 'https://www.aapm.org/pubs/reports/RPT_229.pdf', year: 2020 },
+    'GEC_ESTRO':{ name: 'GEC-ESTRO Handbook of Brachytherapy (2nd ed.)', url: 'https://www.estro.org/Science/Guidelines', year: 2022 },
+    'ABS':      { name: 'ABS Brachytherapy Consensus Guidelines', url: 'https://www.americanbrachytherapy.org/guidelines', year: 2023 },
+    'ICRU89':   { name: 'ICRU Report 89 — Prescribing, Recording, and Reporting Brachytherapy', url: 'https://www.icru.org/report/icru-report-89-prescribing-recording-and-reporting-brachytherapy-for-cancer-of-the-cervix/', year: 2016 },
     'NCCN_PANC': { name: 'NCCN Clinical Practice Guidelines — Pancreatic Adenocarcinoma', url: 'https://www.nccn.org/guidelines', year: 2024 },
     'PICC':     { name: 'Chinese Expert Consensus on CT-guided ¹²⁵I Seed Implantation (PICC, 2018)', url: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5988490/', year: 2018 },
 };
