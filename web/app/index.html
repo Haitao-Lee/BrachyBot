@@ -8071,6 +8071,15 @@ async function sendChat(prefill) {
                         if (typeof addChat === 'function') addChat('error', 'AI error: ' + data.message);
                     } else if (currentEvent === 'done') {
                         // Server says stream is complete
+                        // BUG FIX 2026-06-17: stamp a plan-completion
+                        // timestamp so autoCaptureReportFigures can
+                        // detect and discard stale auto-captured
+                        // figures when the user re-runs planning.
+                        try {
+                            if (window.state && window.state.metrics && window.state.metrics.plan_score != null) {
+                                window.state.lastPlanTimestamp = new Date().toISOString();
+                            }
+                        } catch (_) {}
                     }
                 }
             }
@@ -12488,10 +12497,20 @@ function renderSliceToCanvas(axis, sliceData) {
             // slice canvas (positioned absolutely inside) has
             // the right coordinate space. Without this, the
             // wrapper would collapse to 0x0 since it only has
-            // absolutely-positioned children.
+            // absolutely-positioned children. Note: the wrapper
+            // itself uses width:100%;height:100% to fill the
+            // flex parent, so explicit sizing here is only a
+            // safety net for browsers that don't auto-size
+            // absolute children.
             if (canvas._doseWrapper) {
                 canvas._doseWrapper.style.width = containerW + 'px';
                 canvas._doseWrapper.style.height = containerH + 'px';
+                // ALSO make sure the slice canvas itself fills
+                // the wrapper, since the wrapper's flex-sizing
+                // doesn't auto-size the absolutely-positioned
+                // child.
+                canvas.style.width = Math.min(displayW, containerW) + 'px';
+                canvas.style.height = Math.min(displayH, containerH) + 'px';
             }
             canvas.style.margin = '0';
 
@@ -15101,12 +15120,29 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
         const parent = sliceCanvas.parentElement;
         const wrapper = document.createElement('div');
         wrapper.id = 'doseTransformHost_' + axis;
-        wrapper.style.cssText = 'position:relative;display:inline-block;line-height:0;';
+        // BUG FIX 2026-06-17 (viewers panel black after planning):
+        // the previous version used `display:inline-block` which
+        // breaks the parent's flex layout (the wrapper doesn't
+        // expand to fill the flex slot, so the slice canvas ends up
+        // collapsed to 0×0). Use `display:block; width:100%;
+        // height:100%` so the wrapper takes the full card, and
+        // make sure the slice canvas inside has a fallback size
+        // (`width:100%; height:100%; object-fit:contain`) so it
+        // always renders even if `position:absolute; left/top`
+        // hasn't been computed yet.
+        wrapper.style.cssText = 'position:relative;display:block;width:100%;height:100%;line-height:0;';
         parent.insertBefore(wrapper, sliceCanvas);
         wrapper.appendChild(sliceCanvas);
         doseCanvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;display:block;';
         wrapper.appendChild(doseCanvas);
         sliceCanvas._doseWrapper = wrapper;
+        // BUG FIX 2026-06-17: the slice canvas was previously
+        // `display:none` (inline style set by the HTML). After
+        // wrapping, we need it visible for `renderSliceToCanvas`
+        // to draw into. Force visible.
+        sliceCanvas.style.display = 'block';
+        sliceCanvas.style.maxWidth = '100%';
+        sliceCanvas.style.maxHeight = '100%';
         sliceCanvas._doseCanvas = doseCanvas;
         // Copy any pre-existing transform from the slice canvas to
         // the wrapper (applyViewerTransform may have run before
@@ -17722,6 +17758,16 @@ window.Report = (function () {
             if ((!onlyKey || onlyKey === 'interpretation') && (!f.editedFields || !f.editedFields.has('interpretation'))) {
                 this.interpret();
             }
+            // BUG FIX 2026-06-17 (auto-screenshots in report):
+            // auto-capture visual evidence (CT + masks, dose heatmap,
+            // 3D plan, DVH curve) as report figures. The previous
+            // version only triggered on panel-open, but users who
+            // hit "Auto-fill" expected everything to land together.
+            try {
+                if (typeof autoCaptureReportFigures === 'function') {
+                    setTimeout(() => autoCaptureReportFigures(), 0);
+                }
+            } catch (_) {}
             panels.editor(); panels.preview();
             persist.autoSave();
             audit.log('autoFill.fromAll', '*', null, 'filled');
@@ -18844,6 +18890,27 @@ async function autoCaptureReportFigures() {
     if (!window.reportForm) return;
     if (!window.reportForm.figures) window.reportForm.figures = [];
 
+    // BUG FIX 2026-06-17: previously we skipped capture if
+    // figures existed. But if the user re-runs planning AFTER
+    // capturing figures, the old figures become stale. We now
+    // check if there are stale auto-captured figures (those
+    // with type='screenshot' AND capturedAt older than the
+    // latest planning run). If so, drop them and re-capture.
+    // User-uploaded figures (type='upload') are always kept.
+    try {
+        const _lastPlan = window.state && window.state.lastPlanTimestamp;
+        if (_lastPlan && window.reportForm.figures) {
+            const _ts = new Date(_lastPlan).getTime();
+            window.reportForm.figures = window.reportForm.figures.filter(f => {
+                if (!f) return false;
+                if (f.type === 'upload') return true;  // keep user uploads
+                // Drop auto-captured if older than the last plan
+                const fts = f.capturedAt ? new Date(f.capturedAt).getTime() : 0;
+                return fts >= _ts;
+            });
+        }
+    } catch (_) {}
+
     // Only auto-capture if no figures exist yet (don't duplicate
     // user-added figures).
     if (window.reportForm.figures.length > 0) return;
@@ -19224,6 +19291,20 @@ function _loadReportFromStorage() {
         const parsed = JSON.parse(stored);
         if (parsed && typeof parsed === 'object' && parsed.version) {
             parsed.editedFields = new Set(parsed.editedFields || []);
+            // BUG FIX 2026-06-17: when restoring from localStorage,
+            // sync the report language with the GLOBAL UI language.
+            // Previously the report kept its stored language (often
+            // 'zh' from a prior session) even when the global default
+            // was 'en', leaving Chinese content visible until the
+            // user manually toggled. Now we align to global
+            // (window._i18nLang) on every restore.
+            try {
+                const globalLang = (typeof window._i18nLang === 'string')
+                    ? window._i18nLang : 'en';
+                if (parsed.language !== globalLang) {
+                    parsed.language = globalLang;
+                }
+            } catch (_) {}
             window.reportForm = parsed;
         }
     } catch (e) {}
