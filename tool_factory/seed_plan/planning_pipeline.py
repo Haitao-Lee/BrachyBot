@@ -102,7 +102,11 @@ def _get_agent():
             ctv = agent.memory.retrieve("ctv_array")
             print(f"[GET_AGENT] agent id={id(agent)}, ctv_array={'exists' if ctv is not None else 'None'}, planning_results keys={list(agent.memory.planning_results.keys()) if hasattr(agent.memory, 'planning_results') else 'N/A'}")
         else:
-            print("[GET_AGENT] _global_agent is None")
+            print("[GET_AGENT] _global_agent is None — trying module-level fallback")
+            # Fallback: check if AgenticSys module has the agent
+            agent = getattr(AgenticSys, '_global_agent', None)
+            if agent:
+                print(f"[GET_AGENT] Fallback found agent id={id(agent)}")
         return agent
     except Exception as e:
         print(f"[GET_AGENT] Error: {e}")
