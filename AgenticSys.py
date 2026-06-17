@@ -2283,7 +2283,11 @@ class BrachyAgent:
         try:
             # Use the LPI-oriented CT image for metadata — mask is already in LPI space
             ct_lpi = ct_image_source
-            label_sitk = sitk.GetImageFromArray(label_array.astype(np.uint8))
+            # Handle both numpy arrays and SimpleITK Images as input
+            if isinstance(label_array, sitk.Image):
+                label_sitk = sitk.Cast(label_array, sitk.sitkUInt8)
+            else:
+                label_sitk = sitk.GetImageFromArray(np.asarray(label_array).astype(np.uint8))
             label_sitk.CopyInformation(ct_lpi)
             self.memory.store(label_key, label_sitk)
             logger.info(f"Stored {label_key} with LPI CT metadata (direction={label_sitk.GetDirection()})")
