@@ -3426,9 +3426,26 @@ print(json.dumps(result))
 
 
             if not tool_calls:
-                final_response = self._clean_response_text(content)
-                if not final_response:
-                    final_response = content
+                # BUG FIX 2026-06-17: bypass LLM summary for
+                # planning runs (same as streaming path fix).
+                _executed_tool_names = [
+                    s.get("tool", "")
+                    for s in steps
+                    if s.get("type") == "tool" and s.get("status") == "done"
+                ]
+                _planning_done = any(
+                    t in _executed_tool_names
+                    for t in ("planning_pipeline", "seed_planning",
+                             "trajectory_planning", "dose_engine", "dose_evaluation")
+                )
+                if _planning_done:
+                    final_response = self._build_planning_report(
+                        self.memory.user_lang, steps
+                    )
+                else:
+                    final_response = self._clean_response_text(content)
+                    if not final_response:
+                        final_response = content
                 break
 
             # Filter out tool calls with empty required params, normalize param names
@@ -4246,9 +4263,33 @@ print(json.dumps(result))
                     messages.append({"role": "user", "content": "Your tool call was incomplete. Please call the next tool in the workflow (e.g., oar_segmentation, planning_pipeline). Use the proper tool call format."})
                     continue  # Retry without breaking
 
-                final_response = accumulated_text or self._clean_response_text(content)
-                if not final_response:
-                    final_response = content  # Fallback to raw if cleaning removed everything
+                # BUG FIX 2026-06-17 (LLM response still brief):
+                # the LLM keeps producing a 5-row summary table even
+                # when planning_pipeline completed successfully.
+                # For planning runs we BYPASS the LLM summary and
+                # generate a comprehensive 9-section report directly
+                # from the stored metrics. Same logic as the direct
+                # tools path (see Bug U fix).
+                _executed_tool_names = [
+                    s.get("tool", "")
+                    for s in steps
+                    if s.get("type") == "tool" and s.get("status") == "done"
+                ]
+                _planning_done_in_stream = any(
+                    t in _executed_tool_names
+                    for t in ("planning_pipeline", "seed_planning",
+                             "trajectory_planning", "dose_engine", "dose_evaluation")
+                )
+                if _planning_done_in_stream:
+                    final_response = self._build_planning_report(
+                        self.memory.user_lang, steps
+                    )
+                    logger.info(f"[LLM loop] Bypassed LLM summary for planning run; "
+                                f"generated {len(final_response)}-char report.")
+                else:
+                    final_response = accumulated_text or self._clean_response_text(content)
+                    if not final_response:
+                        final_response = content  # Fallback to raw if cleaning removed everything
                 thinking_step["status"] = "done"
                 thinking_step["content"] = "Response generated"
                 logger.info(f"[LLM loop] No tool calls found. Iteration={iteration}, content_len={len(content)}, cleaned_len={len(final_response)}, tools_executed={tools_executed}")

@@ -16342,10 +16342,18 @@ function drawDVH() {
             bordercolor: 'rgba(148,163,184,0.45)',
             font: {
                 family: 'Inter, "Space Grotesk", system-ui, sans-serif',
-                size: 11,
+                size: 10,
                 color: '#e2e8f0',
             },
             align: 'left',
+            // BUG FIX 2026-06-17: user reported the DVH hover
+            // tooltip text was "overflowing outside the box" when
+            // the legend name was long (e.g. "autochthon_back_right").
+            // The previous size:11 + no width constraint meant long
+            // organ names pushed text past the tooltip border. We
+            // now constrain maxwidth:180 (forces word-wrap inside
+            // the box) and use a smaller font.
+            maxwidth: 180,
         },
     }, {
         responsive: true,
