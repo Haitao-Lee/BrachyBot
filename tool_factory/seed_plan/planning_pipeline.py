@@ -1581,12 +1581,21 @@ class PlanningPipelineTool(BaseTool):
             results["dose_metrics"] = eval_result.metadata
 
         # Build summary
-        total_seeds = results.get("total_seeds", 0)
-        metrics = results.get("dose_metrics", {})
+        # BUG FIX 2026-06-17 (None format): metrics.get(k, 0) returns None
+        # when the key exists but its value is None (e.g. plan_score is
+        # computed later and stored as None at the time summary is built).
+        # The format spec :.1% / :.2f / :.0f then raises
+        # "unsupported format string passed to NoneType.__format__".
+        # Use `or 0` so a None value falls back to 0.
+        total_seeds = results.get("total_seeds", 0) or 0
+        metrics = results.get("dose_metrics", {}) or {}
+        v100_val = metrics.get("v100") or 0
+        d90_val = metrics.get("d90") or 0
+        score_val = metrics.get("plan_score") or 0
         summary = (
             f"Planning completed: {total_seeds} seeds. "
-            f"V100={metrics.get('v100', 0):.1%}, D90={metrics.get('d90', 0):.2f}, "
-            f"Score={metrics.get('plan_score', 0):.0f}/100"
+            f"V100={v100_val:.1%}, D90={d90_val:.2f}, "
+            f"Score={score_val:.0f}/100"
         )
 
         return ToolResult(

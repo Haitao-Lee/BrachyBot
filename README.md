@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="web/app/_assets/brachybot-logo.png" alt="BrachyBot Logo" width="200">
+
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Status](https://img.shields.io/badge/Status-Active%20Development-orange.svg)
@@ -403,7 +405,9 @@ Task: "Generate prostate plan"
 ## ✨ Key Features
 
 ### 🧠 LLM-Driven Decision Making
-- **15 LLM providers**: OpenAI, Anthropic, OpenRouter, Qwen, Kimi, MiniMax, GLM, Gemini, Groq, Grok, Mimo, DeepSeek, Tencent, Ollama, vLLM
+- **Universal LLM support**: Any provider with OpenAI-compatible API (`/v1/chat/completions`) works out of the box — just set `base_url`, `api_key`, `model`
+- **15+ built-in providers**: OpenAI, Anthropic, OpenRouter, Qwen, Kimi, MiniMax, GLM, Gemini, Groq, Grok, Mimo, DeepSeek, Tencent, Ollama, vLLM
+- **Anthropic-compatible proxies**: Also supports Anthropic protocol (`/v1/messages`) via custom `base_url`
 - **Function calling**: LLM discovers and invokes tools via `tool_call` blocks
 - **Fallback mode**: Rule-based keyword matching when LLM unavailable
 
@@ -1630,6 +1634,14 @@ MIT License. See the [LICENSE](LICENSE) file for details.
 - **Issues**: Report bugs and feature requests via [GitHub Issues](https://github.com/Haitao-Lee/BrachyBot/issues)
 - **Discussions**: Join the discussion in [GitHub Discussions](https://github.com/Haitao-Lee/BrachyBot/discussions)
 - **Citation**: If you use BrachyBot in your research, please cite:
+
+### 🎨 Branding
+
+| Asset | Path | Description |
+|-------|------|-------------|
+| Logo | `web/app/_assets/brachybot-logo.png` | Full BrachyBot logo (header, report cover) |
+| Avatar | `web/app/_assets/brachybot-avatar.png` | Chat bot avatar |
+| Favicon | `web/app/_assets/favicon-64.png` | Browser tab icon (64×64) |
 
 ```bibtex
 @software{brachybot2026,
