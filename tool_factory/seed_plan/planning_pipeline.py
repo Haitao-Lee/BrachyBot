@@ -571,7 +571,9 @@ class PlanningPipelineTool(BaseTool):
         import SimpleITK as sitk
 
         step = kwargs.get("step", "trajectory_init")
-        agent = _get_agent()
+        # Accept injected agent from _execute_tool_with_memory,
+        # fall back to global agent lookup.
+        agent = kwargs.pop("_agent", None) or _get_agent()
 
         # step_callback: optional, called for each sub-step with
         #   (substep_name, status) where status is 'pending' or 'done'.
