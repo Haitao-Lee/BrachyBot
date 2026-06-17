@@ -13058,6 +13058,19 @@ function init3DScene() {
         // Sync axes orientation with main camera
         axesGroup.rotation.copy(scene3D.camera.rotation);
 
+        // BUG FIX 2026-06-17 (3D viewer empty after planning):
+        // If the canvas was 0×0 at init time (panel not visible),
+        // the renderer viewport is still 0×0 even after the panel
+        // becomes visible. Detect dimension changes and re-size.
+        const curW = canvas.clientWidth || 400;
+        const curH = canvas.clientHeight || 300;
+        if (scene3D.renderer && (scene3D.renderer.domElement.width !== curW * Math.min(window.devicePixelRatio, 2)
+            || scene3D.renderer.domElement.height !== curH * Math.min(window.devicePixelRatio, 2))) {
+            scene3D.camera.aspect = curW / curH;
+            scene3D.camera.updateProjectionMatrix();
+            scene3D.renderer.setSize(curW, curH);
+        }
+
         // Render main scene
         scene3D.renderer.render(scene3D.scene, scene3D.camera);
 
@@ -13432,20 +13445,23 @@ function forceRender3DViewer() {
     const canvas = document.getElementById('canvas3D');
     if (!canvas) return;
     init3DScene();
-    // Re-measure after layout settles
+    // Re-measure after layout settles. Use double-rAF to ensure the
+    // browser has completed layout before we read clientWidth/Height.
     requestAnimationFrame(() => {
-        if (!scene3D.renderer || !scene3D.camera) return;
-        const w = canvas.clientWidth || 400;
-        const h = canvas.clientHeight || 300;
-        scene3D.camera.aspect = w / h;
-        scene3D.camera.updateProjectionMatrix();
-        scene3D.renderer.setSize(w, h);
-        fitCameraToScene();
-        // Re-hide the "No data" placeholder if meshes are present
-        const placeholder = canvas.querySelector('.viewer-no-data');
-        if (placeholder && Object.keys(scene3D.meshes).length > 0) {
-            placeholder.style.display = 'none';
-        }
+        requestAnimationFrame(() => {
+            if (!scene3D.renderer || !scene3D.camera) return;
+            const w = canvas.clientWidth || 400;
+            const h = canvas.clientHeight || 300;
+            scene3D.camera.aspect = w / h;
+            scene3D.camera.updateProjectionMatrix();
+            scene3D.renderer.setSize(w, h);
+            fitCameraToScene();
+            // Re-hide the "No data" placeholder if meshes are present
+            const placeholder = canvas.querySelector('.viewer-no-data');
+            if (placeholder && Object.keys(scene3D.meshes).length > 0) {
+                placeholder.style.display = 'none';
+            }
+        });
     });
 }
 
@@ -15234,67 +15250,31 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
     if (!doseCanvas) {
         doseCanvas = document.createElement('canvas');
         doseCanvas.id = doseCanvasId;
-        // BUG FIX 2026-06-16 (dose map persistence, FINAL): wrap
-        // the slice canvas in a `transform-host` div so we can
-        // apply the same pan/zoom/rotate transform to BOTH the
-        // CT slice AND the dose canvas together. The transform-
-        // host is a positioned div (its layout matches the slice
-        // canvas), and we set it as `position:relative` so the
-        // absolutely-positioned dose child covers it.
-        //
-        // Why not just append dose to sliceCanvas.parentElement:
-        // applyViewerTransform applies a CSS transform (rotate/
-        // scale/translate) to the slice canvas. If the dose canvas
-        // is a SIBLING, applying the same transform to it produces
-        // correct on-screen positioning, but each transform frame
-        // also moves the slice canvas's bounding rect — so the
-        // ResizeObserver fires repeatedly trying to "sync" the
-        // dose canvas's left/top, fighting with the transform.
-        //
-        // The cleanest solution: wrap slice + dose in a div, apply
-        // the transform to the wrapper. Both children move together.
+        // BUG FIX 2026-06-17 (dose map persistence): place the dose
+        // canvas as a SIBLING of the slice canvas (not wrapped). The
+        // previous wrapper approach failed because the slice canvas
+        // is position:absolute (set by renderSliceFromVolume), which
+        // collapses the wrapper to 0 height — making the dose canvas
+        // invisible. As a sibling, we sync its position from the
+        // slice canvas's computed display rectangle on every render.
         const parent = sliceCanvas.parentElement;
-        const wrapper = document.createElement('div');
-        wrapper.id = 'doseTransformHost_' + axis;
-        // BUG FIX 2026-06-17 (viewers panel black after planning):
-        // the previous version used `display:inline-block` which
-        // breaks the parent's flex layout (the wrapper doesn't
-        // expand to fill the flex slot, so the slice canvas ends up
-        // collapsed to 0×0). Use `display:block; width:100%;
-        // height:100%` so the wrapper takes the full card, and
-        // make sure the slice canvas inside has a fallback size
-        // (`width:100%; height:100%; object-fit:contain`) so it
-        // always renders even if `position:absolute; left/top`
-        // hasn't been computed yet.
-        wrapper.style.cssText = 'position:relative;display:block;width:100%;height:100%;line-height:0;';
-        parent.insertBefore(wrapper, sliceCanvas);
-        wrapper.appendChild(sliceCanvas);
-        doseCanvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;display:block;';
-        wrapper.appendChild(doseCanvas);
-        sliceCanvas._doseWrapper = wrapper;
-        // BUG FIX 2026-06-17: the slice canvas was previously
-        // `display:none` (inline style set by the HTML). After
-        // wrapping, we need it visible for `renderSliceToCanvas`
-        // to draw into. Force visible.
-        sliceCanvas.style.display = 'block';
-        sliceCanvas.style.maxWidth = '100%';
-        sliceCanvas.style.maxHeight = '100%';
+        doseCanvas.style.cssText = 'position:absolute;pointer-events:none;z-index:5;display:block;';
+        parent.appendChild(doseCanvas);
         sliceCanvas._doseCanvas = doseCanvas;
-        // Copy any pre-existing transform from the slice canvas to
-        // the wrapper (applyViewerTransform may have run before
-        // the dose was first created).
-        if (sliceCanvas.style.transform) {
-            wrapper.style.transform = sliceCanvas.style.transform;
-            wrapper.style.transformOrigin = sliceCanvas.style.transformOrigin || 'center center';
-            // Clear the transform from the slice canvas — the
-            // wrapper now owns it.
-            sliceCanvas.style.transform = '';
-            sliceCanvas.style.transformOrigin = '';
-        }
     }
     // Match pixel dimensions to the CT slice
     doseCanvas.width = sliceCanvas.width;
     doseCanvas.height = sliceCanvas.height;
+    // Sync display position from the slice canvas so the dose
+    // overlay exactly covers the CT even after pan/zoom/resize.
+    const sw = sliceCanvas._displayW || sliceCanvas.offsetWidth;
+    const sh = sliceCanvas._displayH || sliceCanvas.offsetHeight;
+    const sx = sliceCanvas._offsetX || parseFloat(sliceCanvas.style.left) || 0;
+    const sy = sliceCanvas._offsetY || parseFloat(sliceCanvas.style.top) || 0;
+    doseCanvas.style.width = sw + 'px';
+    doseCanvas.style.height = sh + 'px';
+    doseCanvas.style.left = sx + 'px';
+    doseCanvas.style.top = sy + 'px';
 
     const cacheKey = axis + '_' + sliceIndex;
     if (state.doseOverlay.slices[cacheKey]) {
@@ -16514,18 +16494,17 @@ function drawDVH() {
             bordercolor: 'rgba(148,163,184,0.45)',
             font: {
                 family: 'Inter, "Space Grotesk", system-ui, sans-serif',
-                size: 10,
+                size: 9,
                 color: '#e2e8f0',
             },
             align: 'left',
             // BUG FIX 2026-06-17: user reported the DVH hover
             // tooltip text was "overflowing outside the box" when
             // the legend name was long (e.g. "autochthon_back_right").
-            // The previous size:11 + no width constraint meant long
-            // organ names pushed text past the tooltip border. We
-            // now constrain maxwidth:180 (forces word-wrap inside
-            // the box) and use a smaller font.
-            maxwidth: 180,
+            // Enforce strict width constraint + smaller font + padding
+            // so all text stays inside the tooltip boundary.
+            maxwidth: 160,
+            pad: { t: 4, b: 4, l: 6, r: 6 },
         },
     }, {
         responsive: true,
@@ -17664,6 +17643,16 @@ window.Report = (function () {
     // ---------- i18n (P4 + P6) ----------
     const i18n = {
         detect() {
+            // BUG FIX 2026-06-17: respect the global UI language toggle
+            // (window._i18nLang, set by getInitialLang() from
+            // 'brachybot_ui_lang' in localStorage). Previously this
+            // method only checked 'brachyplan_report_lang' (a separate
+            // Report-specific key), so the Report panel could show
+            // Chinese when the global toggle was English.
+            if (typeof window._i18nLang === 'string'
+                && (window._i18nLang === 'zh' || window._i18nLang === 'en')) {
+                return window._i18nLang;
+            }
             try {
                 const stored = localStorage.getItem('brachyplan_report_lang');
                 if (stored && (stored === 'zh' || stored === 'en')) return stored;
@@ -19624,8 +19613,8 @@ function _updateReportPreview() {
     // BUG FIX 2026-06-17 (real logos): SJTU and Ruijin logos are
     // the real high-res PNGs in _assets/sjtu-real.png and
     // _assets/ruijin-real.png.
-    const bylineZh = 'Brachybot by SJTU × Ruijin Hospital 放射治疗科';
-    const bylineEn = 'Brachybot by SJTU × Ruijin Hospital · Radiation Oncology';
+    const bylineZh = 'Powered by BrachyBot · Developed by SJTU × Ruijin Hospital';
+    const bylineEn = 'Powered by BrachyBot · Developed by SJTU × Ruijin Hospital';
     const byline = (f.language === 'zh') ? bylineZh : bylineEn;
     let p1 = `
         <div class="report-page">
@@ -20089,7 +20078,12 @@ function initReportPanel() {
     // _loadReportFromStorage() (callable from the "Load" button).
     if (!window.reportForm) window.reportForm = _newEmptyReportForm();
     if (!window.reportForm.editedFields) window.reportForm.editedFields = new Set();
-    if (!window.reportForm.language) window.reportForm.language = 'zh';
+    // BUG FIX 2026-06-17: sync report language with global UI language
+    // on boot. Previously defaulted to 'zh' unconditionally, causing
+    // Chinese report preview when the global toggle was English.
+    if (!window.reportForm.language || window.reportForm.language !== window._i18nLang) {
+        window.reportForm.language = window._i18nLang || 'en';
+    }
     renderReportEditor();
     _updateReportPreview();
     if (window._lastUserMessage) {

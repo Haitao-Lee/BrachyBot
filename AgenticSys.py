@@ -2632,6 +2632,17 @@ print(json.dumps(result))
         total_seeds = self.memory.retrieve("total_seeds", 0) or 0
         num_traj = self.memory.retrieve("num_trajectories", 0) or 0
         ctv_voxels = self.memory.retrieve("ctv_voxels", 0) or 0
+        # BUG FIX 2026-06-17: ctv_voxels might not be stored directly
+        # in memory (it was only in a transient context dict). Compute
+        # from ctv_array if available.
+        if not ctv_voxels:
+            ctv_array = self.memory.retrieve("ctv_array")
+            if ctv_array is not None:
+                try:
+                    import numpy as _np
+                    ctv_voxels = int(_np.sum(_np.asarray(ctv_array) > 0))
+                except Exception:
+                    pass
         tumor_type = self.memory.retrieve("tumor_type_used", "")
         oar_array = self.memory.retrieve("oar_array")
         organ_names = self.memory.retrieve("organ_names", {}) or {}
@@ -5343,6 +5354,14 @@ print(json.dumps(result))
                         except Exception as e:
                             logger.warning(f"Review retry {_retry + 1} failed: {e}")
                             break
+
+            # BUG FIX 2026-06-17: after quality review retry, the
+            # LLM might produce a brief response that overwrites the
+            # comprehensive planning report. Always regenerate from
+            # stored metrics when planning tools were executed.
+            if has_planning:
+                response = self._build_planning_report(_lang, steps)
+                logger.info(f"[streaming] Regenerated planning report after review: {len(response)} chars")
 
             yield yield_event("response", {"response": response})
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
