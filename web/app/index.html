@@ -1848,13 +1848,14 @@ body::before {
 }
 .step-header:hover { background: var(--bg-sunken-strong); }
 .step-icon { font-size: 0.7rem; }
-.step-icon.user { color: var(--primary); }
-.step-icon.thinking { color: var(--warning); }
-.step-icon.tool { color: var(--info); }
-.step-icon.result { color: var(--success); }
-.step-icon.error { color: var(--danger); }
-.step-icon.assistant { color: var(--primary); }
-.step-icon.memory { color: var(--text-secondary); }
+.step-icon.user { color: #a78bfa; }        /* purple */
+.step-icon.thinking { color: #fbbf24; }    /* amber/yellow */
+.step-icon.tool { color: #38bdf8; }        /* sky blue */
+.step-icon.result { color: #34d399; }      /* green */
+.step-icon.error { color: #fb7185; }       /* rose red */
+.step-icon.assistant { color: #a78bfa; }   /* purple */
+.step-icon.memory { color: #c084fc; }      /* violet */
+.step-icon.review { color: #f59e0b; }      /* orange */
 
 .step-title { flex: 1; font-size: 0.72rem; color: var(--text); }
 
@@ -6027,13 +6028,14 @@ function addChat(type, content, scroll, timestamp, fromSession) {
 // collapses once the response is complete.
 
 const STEP_ICONS = {
-    user:      '&#128100;',
-    thinking:  '&#129520;',
-    tool:      '&#9881;',
-    result:    '&#9989;',
-    error:     '&#10060;',
-    assistant: '&#129302;',
-    memory:    '&#128218;',
+    user:      '&#128100;',   // 👤 person
+    thinking:  '&#129504;',   // 🧠 brain
+    tool:      '&#9881;',     // ⚙ gear
+    result:    '&#9989;',     // ✅ check
+    error:     '&#10060;',    // ❌ cross
+    assistant: '&#129302;',   // 🤖 robot
+    memory:    '&#128218;',   // 📚 books
+    review:    '&#128269;',   // 🔍 magnifier
 };
 
 // Safe markdown renderer — uses the global `marked` (loaded from CDN) if
