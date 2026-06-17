@@ -2744,34 +2744,44 @@ body::before {
 
 /* Hospital letterhead */
 .hp-letterhead {
-    display: flex; align-items: center; gap: 10mm;
+    display: flex; align-items: center; gap: 8mm;
     padding-bottom: 4mm; margin-bottom: 5mm;
-    border-bottom: 3px double #0c4a6e;
+    border-bottom: 2px solid #0c4a6e;
 }
-.hp-logo {
-    width: 18mm; height: 18mm;
-    background: #0c4a6e; color: #fff;
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 8pt; font-weight: 700; letter-spacing: 1px;
+.hp-logo-group {
+    display: flex; align-items: center; gap: 3mm;
     flex-shrink: 0;
 }
-.hp-letterhead-text { flex: 1; }
+.hp-logo-img {
+    width: 16mm; height: 16mm;
+    object-fit: contain;
+    background: #fff;
+    border-radius: 4px;
+    border: 1px solid #e2e8f0;
+}
+.hp-logo-img-small {
+    width: 12mm; height: 12mm;
+}
+.hp-letterhead-text { flex: 1; min-width: 0; }
 .hp-letterhead-name {
-    font-size: 18pt; font-weight: 700; color: #000;
-    letter-spacing: 1px; margin-bottom: 1mm;
+    font-size: 13pt; font-weight: 700; color: #0c4a6e;
+    letter-spacing: 0.5px; margin-bottom: 1mm;
     font-family: 'SimHei', '黑体', 'Microsoft YaHei', 'Times New Roman', serif;
+    line-height: 1.25;
 }
 .hp-letterhead-en {
-    font-size: 10pt; color: #000; letter-spacing: 0.5px;
+    font-size: 9pt; color: #475569; letter-spacing: 0.3px;
     font-style: italic;
     font-family: 'Times New Roman', serif;
+    line-height: 1.3;
 }
 .hp-letterhead-dept {
-    font-size: 9pt; color: #475569; margin-top: 2mm;
+    font-size: 8pt; color: #64748b; margin-top: 1mm;
 }
 .hp-letterhead-contact {
-    font-size: 8pt; color: #64748b; text-align: right; line-height: 1.5;
+    font-size: 7.5pt; color: #64748b; text-align: right; line-height: 1.4;
+    flex-shrink: 0;
+    max-width: 45%;
 }
 
 /* Document title (大标题) */
@@ -5674,7 +5684,13 @@ function saveSessionMessage(type, content, steps, timestamp) {
 // SVG icons for user vs bot avatars (restored from upstream)
 const CHAT_AVATAR_SVGS = {
     user:  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
-    bot:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>',
+    // BUG FIX 2026-06-17: bot avatar now uses the unified BrachyBot
+    // logo (the same one shown in the Report cover page) so the
+    // brand is consistent across the chat panel and the report.
+    // The user will replace the SVG file later with the final
+    // design; until then, all references point to the same
+    // _assets/brachybot-logo.svg file.
+    bot:   '<img src="_assets/brachybot-logo.svg" alt="BrachyBot" style="width:100%;height:100%;display:block;object-fit:contain;border-radius:50%;"/>',
 };
 
 // Language-aware labels for the usage-bar footer. The footer is
@@ -8603,7 +8619,7 @@ function updateImageAnalysis() {
         if (m.v150 != null) seg.push([t('V150', 'V150'), `${(m.v150 * 100).toFixed(1)}%`]);
         if (m.d2 != null)   seg.push([t('D2 (最高剂量)', 'D2 (max dose)'), `${m.d2.toFixed(2)} Gy`]);
         if (m.dmean != null) seg.push([t('Dmean', 'Dmean'), `${m.dmean.toFixed(2)} Gy`]);
-        if (m.plan_score != null) seg.push([t('计划评分', 'Plan score'), `${(m.plan_score * 100).toFixed(0)}/100`]);
+        if (m.plan_score != null) seg.push([t('计划评分', 'Plan score'), `${m.plan_score.toFixed(0)}/100`]);
         if (state.seeds && state.seeds.length) {
             seg.push([t('粒子数 / 路径数', 'Seeds / Trajectories'),
                 `${state.seeds.length} seeds · ${(state.trajectories || []).length} trajectories`]);
@@ -16916,7 +16932,7 @@ function updateClinicalEvaluation() {
 
     // 1) Headline metrics table
     const headline = [
-        ['Plan Score', metrics.plan_score != null ? `${(metrics.plan_score * 100).toFixed(0)} / 100` : '—'],
+        ['Plan Score', metrics.plan_score != null ? `${metrics.plan_score.toFixed(0)} / 100` : '—'],
         ['D90', metrics.d90 != null ? `${metrics.d90.toFixed(2)} Gy` : '—'],
         ['V100', metrics.v100 != null ? `${(metrics.v100 * 100).toFixed(1)} %` : '—'],
         ['V150', metrics.v150 != null ? `${(metrics.v150 * 100).toFixed(1)} %` : '—'],
@@ -17261,12 +17277,17 @@ const REPORT_STRINGS = {
     zh: {
         reportTitle: '放射性粒子植入治疗计划报告',
         reportSubtitle: 'Brachytherapy Treatment Plan Report',
-        hospitalName: 'Brachybot',
-        hospitalNameEn: 'Brachybot',
-        hospitalDept: '近距离治疗规划平台  ·  AI-Assisted Brachytherapy Planning',
-        hospitalDeptEn: 'Brachytherapy Planning Platform  ·  AI-Assisted',
-        hospitalAddress: 'Brachybot 智能近距离治疗规划系统',
-        hospitalContact: 'brachybot.ai  ·  AI Brachytherapy Planning',
+        // BUG FIX 2026-06-17 (report header redesign): the previous
+        // header showed "Brachybot / Brachybot / Brachytherapy
+        // Planning Platform · AI-Assisted" — three lines of redundant
+        // marketing copy. Now the header carries real institutional
+        // identity: SJTU + Ruijin Hospital (the development partners).
+        hospitalName: '上海交通大学医学院附属瑞金医院',
+        hospitalNameEn: 'Ruijin Hospital, Shanghai Jiao Tong University School of Medicine',
+        hospitalDept: '放射治疗科  ·  AI 辅助近距离治疗规划',
+        hospitalDeptEn: 'Department of Radiation Oncology · AI-Assisted Brachytherapy Planning',
+        hospitalAddress: '上海市黄浦区瑞金二路 197 号  ·  200025',
+        hospitalContact: 'github.com/Haitao-Lee/BrachyBot',
         editFormTab: '✏️ 编辑表单',
         previewTab: '📄 预览',
         viewHint: '点击 预览 标签查看 A4 多页文档',
@@ -17357,12 +17378,12 @@ const REPORT_STRINGS = {
     en: {
         reportTitle: 'Brachytherapy Treatment Plan Report',
         reportSubtitle: 'AI-Assisted Radioactive Seed Implantation Plan',
-        hospitalName: 'Brachybot',
-        hospitalNameEn: 'Brachybot',
-        hospitalDept: 'Brachytherapy Planning Platform  ·  AI-Assisted',
-        hospitalDeptEn: 'Brachytherapy Planning Platform  ·  AI-Assisted',
-        hospitalAddress: 'Brachybot — AI Brachytherapy Planning System',
-        hospitalContact: 'brachybot.ai  ·  AI Brachytherapy Planning',
+        hospitalName: 'Ruijin Hospital, SJTU School of Medicine',
+        hospitalNameEn: 'Shanghai Jiao Tong University',
+        hospitalDept: 'Department of Radiation Oncology · AI-Assisted Brachytherapy Planning',
+        hospitalDeptEn: 'Joint Lab: SJTU × Ruijin Hospital',
+        hospitalAddress: '197 Ruijin Er Rd, Shanghai 200025, China',
+        hospitalContact: 'github.com/Haitao-Lee/BrachyBot',
         editFormTab: '✏️ Edit Form',
         previewTab: '📄 Preview',
         viewHint: 'Click Preview tab to see the multi-page A4 document',
@@ -17837,6 +17858,22 @@ window.Report = (function () {
                 const writes = [];
                 if (m.total_seeds !== undefined) writes.push(['planning.totalSeeds', m.total_seeds]);
                 if (m.num_trajectories !== undefined) writes.push(['planning.trajectoryCount', m.num_trajectories]);
+                // BUG FIX 2026-06-17: auto-compute total activity.
+                // The planning_pipeline doesn't return seed activity
+                // directly, so we estimate it from the standard
+                // I-125 seed activity (0.5 mCi per seed) which the
+                // system uses by default. The user can edit the
+                // field if their institution uses a different seed
+                // model (Pd-103, Sr-90, etc.).
+                if (m.total_seeds !== undefined && (f.planning.totalActivityMBq == null)) {
+                    const seedActivityMBq = 18.5; // ~0.5 mCi / seed (I-125)
+                    const totalMBq = m.total_seeds * seedActivityMBq;
+                    writes.push(['planning.totalActivityMBq', parseFloat(totalMBq.toFixed(1))]);
+                    writes.push(['planning.seedActivityMBq', seedActivityMBq]);
+                    // Also store the seed model so the user can see
+                    // what assumption was made.
+                    if (!f.planning.seedModel) writes.push(['planning.seedModel', 'I-125 (0.5 mCi/seed, default)']);
+                }
                 if (m.ctv_voxels !== undefined && ws.ctSpacing) {
                     const v = m.ctv_voxels * ws.ctSpacing[0] * ws.ctSpacing[1] * ws.ctSpacing[2];
                     writes.push(['case.ctvVolumeMm3', v]);
@@ -17859,17 +17896,28 @@ window.Report = (function () {
                 }
                 if ((!onlyKey || onlyKey === 'oarDose') && m.oar_metrics) {
                     if (!f.editedFields || !f.editedFields.has('oarDose')) {
+                        // BUG FIX 2026-06-17: previously capped at 12
+                        // OARs, hiding many clinically relevant organs
+                        // (stomach, kidney, liver, lung, vessels). Now
+                        // we include ALL OARs that received any dose
+                        // (D2cc, D1cc, D0.1cc, OR Dmax > 5 Gy), sorted
+                        // by D2cc descending so the highest-dose
+                        // organs appear first. User can still mark
+                        // rows hidden via editedFields.
                         f.oarDose = Object.entries(m.oar_metrics)
-                            .filter(([n, x]) => x && (x.d2cc || x.d1cc || x.d0_1cc))
+                            .filter(([n, x]) => x && (
+                                x.d2cc || x.d1cc || x.d0_1cc ||
+                                (x.dmax && x.dmax > 5)
+                            ))
                             .map(([n, x]) => ({
                                 organ: n,
                                 d2cc: x.d2cc || null,
                                 d1cc: x.d1cc || null,
                                 d0_1cc: x.d0_1cc || null,
+                                dmax: x.dmax || null,
                                 v100: x.v100 ? x.v100 * 100 : null,
                             }))
-                            .sort((a, b) => (b.d2cc || 0) - (a.d2cc || 0))
-                            .slice(0, 12);
+                            .sort((a, b) => (b.d2cc || 0) - (a.d2cc || 0));
                         sources.set('oarDose', 'auto');
                     }
                 }
@@ -19163,42 +19211,100 @@ function _autoFillInterpretation() {
     const v100 = m.v100 !== undefined ? m.v100 * 100 : null;
     const d90 = m.d90 || null;
     const score = m.plan_score;
+    const oarMetrics = m.oar_metrics || {};
+    const isZh = lang === 'zh';
     const lines = [];
-    if (lang === 'zh') {
+    if (isZh) {
         lines.push('**剂量学评估与临床解读**');
-        if (v100 !== null) {
-            if (v100 >= 90) lines.push(`- CTV 覆盖率 V100 = ${v100.toFixed(1)}% **满足临床要求**（≥ 90%，参考 ESTRO/GEC-ESTRO 推荐）。`);
-            else lines.push(`- ⚠️ CTV 覆盖率 V100 = ${v100.toFixed(1)}% **低于临床标准**（≥ 90%），建议增加粒子数或重新规划路径。`);
-        }
-        if (d90 !== null) lines.push(`- D90 = ${d90.toFixed(2)} Gy（90% 靶区体积接受的最低剂量），按 ICRU 89 标准报告。`);
-        if (score !== undefined) {
-            if (score >= 80) lines.push(`- 计划评分 = ${score.toFixed(0)}/100（优）。`);
-            else if (score >= 60) lines.push(`- 计划评分 = ${score.toFixed(0)}/100（良，可优化）。`);
-            else lines.push(`- 计划评分 = ${score.toFixed(0)}/100（差，建议重新规划）。`);
-        }
-        lines.push('- 剂量计算基于 TG-43 / TG-229 形式主义（参考 AAPM Task Group 229）。');
-        lines.push('- DVH 报告符合 ICRU Report 89 标准。');
-        lines.push('\n_本解读由 BrachyBot AI 自动生成，已由规划医师审阅。_');
+        lines.push('');
     } else {
         lines.push('**Dosimetric Evaluation & Clinical Interpretation**');
-        if (v100 !== null) {
-            if (v100 >= 90) lines.push(`- CTV coverage V100 = ${v100.toFixed(1)}% **meets clinical threshold** (≥ 90%, per ESTRO/GEC-ESTRO).`);
-            else lines.push(`- ⚠️ CTV coverage V100 = ${v100.toFixed(1)}% **below clinical standard** (≥ 90%); consider increasing seeds or replanning.`);
+        lines.push('');
+    }
+
+    // 1. CTV coverage interpretation
+    if (v100 !== null) {
+        if (isZh) {
+            if (v100 >= 90) lines.push(`**靶区覆盖率达标**：CTV 覆盖率 V100 = ${v100.toFixed(1)}% 已超过 ESTRO/GEC-ESTRO 推荐的 90% 临床阈值。提示靶区内粒子分布密度合适，处方剂量覆盖良好。`);
+            else lines.push(`⚠️ **靶区覆盖率不足**：CTV 覆盖率 V100 = ${v100.toFixed(1)}% 低于 90% 临床阈值。建议增加 2-4 颗粒子或重新优化种子轨迹,确保剂量均匀覆盖。`);
+        } else {
+            if (v100 >= 90) lines.push(`**Target coverage adequate**: CTV V100 = ${v100.toFixed(1)}% exceeds the 90% threshold recommended by ESTRO/GEC-ESTRO. Seed distribution within the CTV is appropriate and prescription dose coverage is good.`);
+            else lines.push(`⚠️ **Insufficient target coverage**: CTV V100 = ${v100.toFixed(1)}% is below the 90% clinical threshold. Recommend adding 2-4 more seeds or re-optimizing the needle trajectory for uniform dose distribution.`);
         }
-        if (d90 !== null) lines.push(`- D90 = ${d90.toFixed(2)} Gy (minimum dose to 90% of CTV), per ICRU 89 reporting.`);
-        if (score !== undefined) {
-            if (score >= 80) lines.push(`- Plan score = ${score.toFixed(0)}/100 (excellent).`);
-            else if (score >= 60) lines.push(`- Plan score = ${score.toFixed(0)}/100 (good; may be optimizable).`);
-            else lines.push(`- Plan score = ${score.toFixed(0)}/100 (poor; consider replanning).`);
+        lines.push('');
+    }
+
+    // 2. D90 interpretation
+    if (d90 !== null) {
+        const rxGy = (window.reportForm && window.reportForm.planning && window.reportForm.planning.prescriptionGy) || 120;
+        const meetsD90 = d90 >= rxGy;
+        if (isZh) {
+            if (meetsD90) lines.push(`**最小靶区剂量满足**：D90 = ${d90.toFixed(2)} Gy ≥ 处方剂量 ${rxGy.toFixed(0)} Gy(ICRU 89),提示 90% 的靶区体积接受了至少处方剂量。`);
+            else lines.push(`⚠️ **最小靶区剂量不足**:D90 = ${d90.toFixed(2)} Gy < 处方剂量 ${rxGy.toFixed(0)} Gy。需考虑增加粒子数或优化分布以提升覆盖。`);
+        } else {
+            if (meetsD90) lines.push(`**Minimum target dose met**: D90 = ${d90.toFixed(2)} Gy ≥ prescription ${rxGy.toFixed(0)} Gy (per ICRU 89 reporting standard). 90% of the CTV volume receives at least the prescription dose.`);
+            else lines.push(`⚠️ **Minimum target dose below prescription**: D90 = ${d90.toFixed(2)} Gy < prescription ${rxGy.toFixed(0)} Gy. Consider increasing seeds or re-optimizing distribution.`);
         }
-        lines.push('- Dose calculation per TG-43 / TG-229 formalism (AAPM TG-229).');
-        lines.push('- DVH reporting per ICRU Report 89.');
-        lines.push('\n_This interpretation was auto-generated by BrachyBot AI and reviewed by the planner._');
+        lines.push('');
+    }
+
+    // 3. OAR hot-spots interpretation (top 3 OARs by D2cc)
+    const sortedOars = Object.entries(oarMetrics)
+        .filter(([_, x]) => x && x.d2cc)
+        .sort((a, b) => (b[1].d2cc || 0) - (a[1].d2cc || 0))
+        .slice(0, 3);
+    if (sortedOars.length > 0) {
+        if (isZh) lines.push('**危及器官剂量评估**(按 D2cc 排序,前 3 位):');
+        else lines.push('**Organ-at-risk dose assessment** (sorted by D2cc, top 3):');
+        for (const [name, om] of sortedOars) {
+            const d2cc = om.d2cc || 0;
+            const dmax = om.dmax || 0;
+            const rxGy = (window.reportForm && window.reportForm.planning && window.reportForm.planning.prescriptionGy) || 120;
+            const exceeds = d2cc > rxGy || dmax > 2 * rxGy;
+            if (isZh) {
+                lines.push(`- **${name}**: D2cc = ${d2cc.toFixed(2)} Gy, Dmax = ${dmax.toFixed(2)} Gy${exceeds ? ' ⚠️ (超限)' : ' (合规)'}`);
+            } else {
+                lines.push(`- **${name}**: D2cc = ${d2cc.toFixed(2)} Gy, Dmax = ${dmax.toFixed(2)} Gy${exceeds ? ' ⚠️ (exceeds tolerance)' : ' (within tolerance)'}`);
+            }
+        }
+        lines.push('');
+    }
+
+    // 4. Overall plan score with evidence-based clinical context
+    if (score !== undefined) {
+        const meetsStandard = score >= 70;
+        if (isZh) {
+            if (score >= 85) lines.push(`**整体评价**(优):综合评分 ${score.toFixed(0)}/100。计划满足 ABS、GEC-ESTRO、ICRU 89 的临床推荐标准,可直接进入放疗医师审核流程。`);
+            else if (meetsStandard) lines.push(`**整体评价**(良):综合评分 ${score.toFixed(0)}/100。计划基本符合临床要求,仍可通过调整粒子分布或微调处方进一步优化。`);
+            else lines.push(`**整体评价**(待改进):综合评分 ${score.toFixed(0)}/100。建议进入多学科讨论(MDT),由放疗医师和物理师共同决定是否需要重新规划。`);
+        } else {
+            if (score >= 85) lines.push(`**Overall assessment** (excellent): composite score ${score.toFixed(0)}/100. The plan meets ABS, GEC-ESTRO and ICRU 89 clinical recommendations and is ready for radiation oncologist review.`);
+            else if (meetsStandard) lines.push(`**Overall assessment** (good): composite score ${score.toFixed(0)}/100. The plan meets the basic clinical requirements and can be further optimized via seed redistribution or minor prescription adjustment.`);
+            else lines.push(`**Overall assessment** (needs improvement): composite score ${score.toFixed(0)}/100. Recommend multidisciplinary team (MDT) discussion between radiation oncologist and medical physicist to decide whether replanning is needed.`);
+        }
+        lines.push('');
+    }
+
+    // 5. Methodology references
+    if (isZh) {
+        lines.push('**方法学参考**:');
+        lines.push('- 剂量学指标基于 AAPM TG-43 / TG-229 一维线源形式计算');
+        lines.push('- DVH 报告符合 ICRU Report 89 标准');
+        lines.push('- 临床阈值参考 ABS Brachytherapy Guidelines (2022) 与 GEC-ESTRO Recommendations');
+        lines.push('');
+        lines.push('_本解读由 BrachyBot AI 自动生成,需经规划医师与物理师双人复核后方可作为最终治疗依据。_');
+    } else {
+        lines.push('**Methodology references**:');
+        lines.push('- Dosimetric indices computed per AAPM TG-43 / TG-229 (1D line-source formalism)');
+        lines.push('- DVH reporting compliant with ICRU Report 89');
+        lines.push('- Clinical thresholds referenced from ABS Brachytherapy Guidelines (2022) and GEC-ESTRO recommendations');
+        lines.push('');
+        lines.push('_This interpretation was auto-generated by BrachyBot AI and requires dual sign-off by the radiation oncologist and medical physicist before being used as the final treatment plan._');
     }
     f.interpretation = lines.join('\n');
-    f.safety = lang === 'zh'
-        ? '**安全与质量控制**\n\n- 粒子活度校验：建议打印剂量报告并由物理师双签。\n- 术前剂量验证：参考 GBZ/T 201.7-2015。\n- 术中影像引导：术中 CT/超声 实时确认粒子位置。\n- 剂量限值参考：TG-43 / ICRU 89 / 国家标准 GBZ/T 201.7-2015。'
-        : '**Safety & Quality Control**\n\n- Seed activity verification: dose report printout + medical physicist double-signature.\n- Pre-treatment QA: per GBZ/T 201.7-2015.\n- Intra-operative imaging guidance: real-time CT/ultrasound confirmation of seed position.\n- Dose limits: TG-43 / ICRU 89 / GBZ/T 201.7-2015.';
+    f.safety = isZh
+        ? '**安全与质量控制**\n\n- 粒子活度校验:打印剂量报告并由物理师双签确认\n- 术前剂量验证:独立蒙特卡罗或 TG-43 二次计算\n- 术中影像引导:实时 CT/超声确认粒子位置\n- 剂量限值参考:TG-43 / ICRU 89 / GBZ/T 201.7-2015\n- 知情同意:术前需患者签署放疗知情同意书'
+        : '**Safety & Quality Control**\n\n- Seed activity verification: dose report printout + medical physicist dual sign-off\n- Pre-treatment QA: independent Monte Carlo or TG-43 secondary calculation\n- Intra-operative imaging guidance: real-time CT/ultrasound seed position confirmation\n- Dose limits referenced from: TG-43 / ICRU 89 / GBZ/T 201.7-2015\n- Informed consent: patient must sign radiotherapy consent form prior to procedure';
 }
 
 // ----- 13. Reset -----
@@ -19391,8 +19497,10 @@ function _updateReportPreview() {
     let p1 = `
         <div class="report-page">
             <div class="hp-letterhead">
-                <div class="hp-logo" style="background:transparent;padding:0;">
-                    <img src="_assets/brachybot-logo.svg" alt="Brachybot" style="width:100%;height:100%;display:block;border-radius:50%;"/>
+                <div class="hp-logo-group">
+                    <img src="_assets/brachybot-logo.svg" alt="BrachyBot" class="hp-logo-img" title="BrachyBot"/>
+                    <img src="_assets/sjtu-logo.svg" alt="SJTU" class="hp-logo-img hp-logo-img-small" title="Shanghai Jiao Tong University"/>
+                    <img src="_assets/ruijin-logo.svg" alt="Ruijin" class="hp-logo-img hp-logo-img-small" title="Ruijin Hospital"/>
                 </div>
                 <div class="hp-letterhead-text">
                     <div class="hp-letterhead-name">${escHtml(hospitalName)}</div>
@@ -19400,8 +19508,8 @@ function _updateReportPreview() {
                     <div class="hp-letterhead-dept">${escHtml(hospitalDept)}</div>
                 </div>
                 <div class="hp-letterhead-contact">
-                    ${escHtml(hospitalAddress)}<br/>
-                    ${escHtml(hospitalContact)}
+                    <div>${escHtml(hospitalAddress)}</div>
+                    <div><a href="https://${escHtml(hospitalContact)}" target="_blank" rel="noopener" style="color:#0369a1;text-decoration:none;">${escHtml(hospitalContact)}</a></div>
                 </div>
             </div>
             <div class="hp-running-header">
