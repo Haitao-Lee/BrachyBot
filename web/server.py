@@ -3459,6 +3459,40 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
     print(f"  Press Ctrl+C to stop")
     print(f"{'=' * 50}\n")
 
+    # Cleanup handler: kill background threads/subprocesses on exit
+    import atexit, signal as _sig, threading as _threading
+    _shutdown_event = _threading.Event()
+
+    def _cleanup():
+        logger.info("[shutdown] Cleaning up background tasks...")
+        # Signal all background threads to stop
+        _shutdown_event.set()
+        # Kill any orphaned subprocesses (e.g. GPU manager)
+        try:
+            import psutil
+            current = psutil.Process()
+            children = current.children(recursive=True)
+            for child in children:
+                try:
+                    child.terminate()
+                except Exception:
+                    pass
+        except ImportError:
+            pass
+        # Cancel any pending AbortControllers from refreshPlanningUI
+        logger.info("[shutdown] Cleanup complete.")
+
+    atexit.register(_cleanup)
+
+    def _signal_handler(signum, frame):
+        print("\nShutting down...")
+        _cleanup()
+        import os
+        os._exit(0)
+
+    _sig.signal(_sig.SIGTERM, _signal_handler)
+    _sig.signal(_sig.SIGINT, _signal_handler)
+
     try:
         app.run(host=host, port=port, debug=False, threaded=True)
     except KeyboardInterrupt:

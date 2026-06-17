@@ -761,13 +761,13 @@ body::before {
     display: flex;
     flex-direction: column;
     min-width: 0;
-    /* ALLOW OVERFLOW for breathing animation (2026-06-15):
-       the active todo item scales to 1.25 at the peak of its
-       breathing animation, which would otherwise be clipped by
-       the parent .chat-area's default overflow:hidden (inherited
-       via flex). Without this, the user sees the top of the
-       active item get cut off during the peak. */
-    overflow: visible;
+    /* Hide horizontal overflow (breathing animation extends slightly
+       beyond the dock, but only vertically — horizontal is safe to clip).
+       overflow-y must NOT be hidden — that would clip the dock when
+       messages are long. The flex layout (messages=flex:1 auto-scroll,
+       dock=flex-shrink:0) already keeps the dock at the bottom. */
+    overflow-x: hidden;
+    overflow-y: clip;
     /* DEEPER CHAT THEME (2026-06-15): user wants the chat panel to
        read as a focused, dark, medical-grade surface — not the same
        light slate as the rest of the app. We push the entire chat
@@ -4493,7 +4493,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
              grow up to 40vh naturally; if there are more than 5-6
              sub-steps the dock can be scrolled (we wrap the inner
              list in a .chat-todo-scroll if needed in the future). -->
-        <div id="chatTodoDock" style="display:none;flex-shrink:0;max-height:40vh;overflow:visible;background:linear-gradient(180deg, var(--bg-1) 0%, var(--bg-sunken) 100%);border-top:1px solid var(--border-hairline);padding:0.4rem 0.5rem 0.3rem;"></div>
+        <div id="chatTodoDock" style="display:none;flex-shrink:0;max-height:40vh;overflow-y:auto;overflow-x:hidden;background:linear-gradient(180deg, var(--bg-1) 0%, var(--bg-sunken) 100%);border-top:1px solid var(--border-hairline);padding:0.4rem 0.5rem 0.3rem;"></div>
 
         <div class="chat-input-area" style="position:relative;">
             <!-- Tool Progress Display -->
@@ -6622,7 +6622,22 @@ function renderThinkingChain(steps) {
     stepsDiv.className = 'thinking-steps';
 
     if (steps && steps.length > 0) {
-        steps.forEach((step, idx) => {
+        // DEDUP: remove duplicate steps by (type + tool) key, keeping
+        // the LAST occurrence (most recent status wins).
+        const _seenSteps = new Map();
+        const _uniqueSteps = [];
+        for (const s of steps) {
+            const key = (s.type || '') + '|' + (s.tool || '') + '|' + (s.parent_tool || '');
+            if (_seenSteps.has(key)) {
+                // Replace previous with this one (latest status wins)
+                const prevIdx = _seenSteps.get(key);
+                _uniqueSteps[prevIdx] = s;
+            } else {
+                _seenSteps.set(key, _uniqueSteps.length);
+                _uniqueSteps.push(s);
+            }
+        }
+        _uniqueSteps.forEach((step, idx) => {
             const block = document.createElement('div');
             block.className = 'step-block';
             block.id = 'step_' + idx;
@@ -6746,32 +6761,37 @@ function appendStepToChain(stepsDiv, step, idx) {
         //      pending anywhere) — update the FIRST occurrence.
         const blocks = Array.from(stepsDiv.querySelectorAll('.step-block'));
         let sameToolDoneBlock = null;
+        let sameToolAnyBlock = null;
         for (const b of blocks) {
             const bTool = b.dataset.stepTool || '';
             const bParent = b.dataset.stepParent || '';
             const bType = b.dataset.stepType || '';
             const bStatus = b.querySelector('.step-status')?.textContent || '';
-            if (bType !== step.type || bTool !== step.tool) continue;
-            if (bParent !== (step.parent_tool || '')) continue;
-            if (bStatus === 'pending') {
-                // Reuse this block's id and update it.
-                step.id = b.dataset.stepId;
-                existingBlock = b;
-                break;
+            // PASS 1: exact match (type + tool + parent)
+            if (bType === step.type && bTool === step.tool && bParent === (step.parent_tool || '')) {
+                if (bStatus === 'pending') {
+                    step.id = b.dataset.stepId;
+                    existingBlock = b;
+                    break;
+                }
+                if (step.status === 'pending' && !existingBlock) {
+                    step.id = b.dataset.stepId;
+                    existingBlock = b;
+                }
+                if (!sameToolDoneBlock) sameToolDoneBlock = b;
             }
-            // If the new step is pending and we found a done block for
-            // the same tool, reuse the done block (avoids creating a
-            // duplicate pending entry).
-            if (step.status === 'pending' && !existingBlock) {
-                step.id = b.dataset.stepId;
-                existingBlock = b;
+            // PASS 2: tool-name-only match (catch auto-fired vs explicit
+            // duplicates where parent differs, e.g. oar_segmentation
+            // auto-fired inside ctv_segmentation vs LLM explicit call)
+            if (bType === step.type && bTool === step.tool && !sameToolAnyBlock) {
+                sameToolAnyBlock = b;
             }
-            // Remember a same-tool done block as a fallback target so
-            // later "done" events don't create yet another duplicate.
-            if (!sameToolDoneBlock) sameToolDoneBlock = b;
         }
-        // If still no match and we have a same-tool done block, reuse it.
-        if (!existingBlock && sameToolDoneBlock && step.status === 'done') {
+        // If still no match, reuse a same-tool block (ignore parent)
+        if (!existingBlock && sameToolAnyBlock) {
+            step.id = sameToolAnyBlock.dataset.stepId;
+            existingBlock = sameToolAnyBlock;
+        } else if (!existingBlock && sameToolDoneBlock && step.status === 'done') {
             step.id = sameToolDoneBlock.dataset.stepId;
             existingBlock = sameToolDoneBlock;
         }
@@ -7612,6 +7632,9 @@ function _todoUpdateFromStep(todo, step) {
             else if (step.status === 'pending') todo.markActive(existing);
             return existing;
         }
+        // 3b. DEDUP BY TOOL NAME ONLY (ignore parent_tool): catch
+        //     auto-fired vs explicit duplicates (e.g. oar_segmentation
+        //     auto-fired inside ctv_segmentation vs LLM explicit call).
     }
     // 4. Create a new item if no match
     if (!item) {
