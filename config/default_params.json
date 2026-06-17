@@ -57,5 +57,24 @@
     "hierarchical_optimization": true,
     "segmented_rewards": true,
     "flip_ratio": 1
+  },
+  "display_3d": {
+    "_comment": "Default 3D viewer rendering settings. Used by addMeshToScene and the data tree when the user has not overridden via the meshOpacity3D slider. Compatible with the data tree's per-mesh visibility + opacity controls.",
+    "default_opacity": 0.7,
+    "ctv_color": "#ff4444",
+    "oar_non_traversable_color": "#fb923c",
+    "oar_traversable_color": "#0ea5e9",
+    "seed_color": "#facc15",
+    "needle_color": "#a855f7",
+    "iso_surface_colors": ["#7dd3fc", "#22c55e", "#facc15", "#f97316", "#dc2626"],
+    "iso_surface_opacities": [0.25, 0.30, 0.35, 0.40, 0.45],
+    "iso_dose_values_gy": [50, 100, 145, 200, 300],
+    "seed_opacity": 0.95,
+    "needle_opacity": 0.85,
+    "ctv_opacity": 0.65,
+    "oar_opacity": 0.55,
+    "show_isosurfaces_by_default": true,
+    "show_seeds_by_default": true,
+    "show_needles_by_default": true
   }
 }

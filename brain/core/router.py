@@ -109,6 +109,19 @@ class LLMRouter:
 
     def _create_llm(self, name: str, cfg: Dict) -> Optional[BaseLLM]:
         """Create an LLM instance from config."""
+        # Generic OpenAI-compatible provider: works with ANY vendor
+        # that exposes /v1/chat/completions (MiniMax, DeepSeek, Qwen,
+        # Kimi, GLM, MiMo, Groq, OpenRouter, custom proxies, etc.)
+        if cfg.get("type") == "openai_compat":
+            from ..providers.generic_openai_compat import GenericOpenAICompatLLM
+            return GenericOpenAICompatLLM(
+                api_key=cfg.get("api_key", ""),
+                model=cfg.get("model", "gpt-4o"),
+                base_url=cfg.get("base_url", "https://api.openai.com/v1"),
+                timeout=cfg.get("timeout", 120.0),
+                max_retries=cfg.get("max_retries", 3),
+            )
+
         if name == "openai":
             from ..providers.openai_llm import OpenAILLM
             return OpenAILLM(

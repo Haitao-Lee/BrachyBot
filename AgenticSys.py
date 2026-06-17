@@ -1334,26 +1334,19 @@ class BrachyAgent:
 
             llm_config = self.config.get("llm", {})
             if not llm_config:
+                # Default: Anthropic-compatible provider.
+                # base_url points to the proxy; model/api_key are
+                # configurable. Works with any Anthropic-protocol endpoint.
                 llm_config = {
                     "anthropic": {
                         "enabled": True,
-                        # PINNED to M2.7-highspeed. User explicitly does NOT
-                        # want M3 ("M3 太慢了,不要用"). This is enforced
-                        # again after the router is built (see _lock_model)
-                        # so any env-var override or config file mutation
-                        # is caught and reset.
-                        "model": "MiniMax-M2.7-highspeed",
-                        "base_url": "https://api.minimaxi.com/anthropic",
-                        "api_key": "sk-cp-JTtRZ0CJJmTv7-39iG-3mWH8ebyitJDwep48dEspT48aoJHhDIJSPrPYAxVg7AY-mVeNQOwWRNUobHvyRxPYwN0rex-MAZHHINmL_kQP5skhWbVE7zREXXM",
+                        "model": "mimo-v2.5",
+                        "base_url": "https://token-plan-cn.xiaomimimo.com/anthropic",
+                        "api_key": "tp-cebuhb3x0bgx7qhx4wyc5g7ri65s8a91b7x4gocgvsoom89y",
                     }
                 }
 
             self.brain_router = LLMRouter(llm_config)
-            # Enforce the M2.7-highspeed pin: any provider that ended up
-            # on M3 / M3-highspeed gets reset back to M2.7-highspeed.
-            # This is a hard guarantee — user explicitly does not want
-            # M3 ("M3 太慢了,不要用").
-            self._lock_model_to_m27()
             self.brain_rag = get_rag()
 
             tool_registry = get_tool_registry()
@@ -1387,47 +1380,6 @@ class BrachyAgent:
             logger.warning(f"Brain system not available: {e}")
         except Exception as e:
             logger.warning(f"Brain system initialization failed: {e}")
-
-    # ------------------------------------------------------------------
-    # Model pin: M2.7-highspeed only. M3 is explicitly forbidden by the
-    # user ("M3 太慢了,不要用"). This guard walks every provider after
-    # the router has built them and resets any M3 variant back to
-    # M2.7-highspeed. It also writes a log line on every boot so a
-    # /api/status consumer can audit which model is actually live.
-    # ------------------------------------------------------------------
-    _FORBIDDEN_MODEL_TOKENS = ("m3", "M3")  # case-sensitive enough; we check both
-    _PINNED_MODEL = "MiniMax-M2.7-highspeed"
-    _PINNED_BASE_URL = "https://api.minimaxi.com/anthropic"
-
-    def _lock_model_to_m27(self):
-        """Walk brain_router.providers; force M2.7-highspeed on any
-        provider that ended up on M3. Idempotent — safe to call multiple
-        times. Logs every change."""
-        if not getattr(self, "brain_router", None):
-            return
-        for name, llm in list(self.brain_router.providers.items()):
-            current_model = getattr(llm, "model", "")
-            if any(tok in current_model for tok in self._FORBIDDEN_MODEL_TOKENS):
-                logger.warning(
-                    f"[MODEL-PIN] provider {name!r} was on {current_model!r} "
-                    f"(forbidden — user does not want M3). "
-                    f"Resetting to {self._PINNED_MODEL!r}."
-                )
-                llm.model = self._PINNED_MODEL
-                if hasattr(llm, "base_url") and llm.base_url and "minimaxi" not in (llm.base_url or ""):
-                    llm.base_url = self._PINNED_BASE_URL
-            # Also log the final state for audit
-            logger.info(
-                f"[MODEL-PIN] provider {name!r} active model: "
-                f"{getattr(llm, 'model', '?')!r} "
-                f"base_url: {getattr(llm, 'base_url', '?')!r}"
-            )
-        # If the router has a default_provider that's M3, also force it
-        dp = getattr(self.brain_router, "default_provider", None)
-        if dp and dp in self.brain_router.providers:
-            llm = self.brain_router.providers[dp]
-            if any(tok in getattr(llm, "model", "") for tok in self._FORBIDDEN_MODEL_TOKENS):
-                llm.model = self._PINNED_MODEL
 
     def _init_self_evolution(self):
         """Initialize self-evolution system."""
@@ -1863,11 +1815,81 @@ class BrachyAgent:
         if step_callback is not None and tool_name == "planning_pipeline":
             params["step_callback"] = step_callback
 
-        # Use validation + recovery for critical tools
-        if tool_name in self._VALIDATORS:
-            result = self._validate_and_execute(tool_name, params)
-        else:
-            result = self.registry.execute(tool_name, **params)
+        # BUG FIX 2026-06-17 (duplicate oar_segmentation): the LLM
+        # often calls oar_segmentation explicitly in Call 2, even
+        # though the auto-OAR inside ctv_segmentation already ran
+        # TotalSegmentator and stored >=5 organs in memory. This
+        # wastes 30-60s of GPU time. Short-circuit: if the existing
+        # oar_array already has 50+ unique organs and the LLM is
+        # calling oar_segmentation again with the same image_path,
+        # return early with a "skipped — already done" ToolResult.
+        #
+        # Same for ctv_segmentation: if ctv_array is already in
+        # memory and the LLM calls ctv_segmentation again with the
+        # same path, skip the redundant GPU run.
+        _skip_tool = False
+        if tool_name == "ctv_segmentation":
+            _existing_ctv = self.memory.retrieve("ctv_array")
+            _existing_path = self.memory.retrieve("ct_path")
+            if _existing_ctv is not None:
+                _req_path = params.get("image_path", _existing_path)
+                if _req_path in (None, _existing_path):
+                    logger.info(
+                        f"[dedup] ctv_segmentation called but memory "
+                        f"already has ctv_array. Skipping redundant run."
+                    )
+                    if progress_callback:
+                        progress_callback("CTV already segmented (skipped)", 90)
+                    from tool_factory import ToolResult as _TR
+                    result = _TR(
+                        success=True,
+                        data={"ctv_array": _existing_ctv},
+                        message="CTV already segmented (skipped redundant call).",
+                        metadata={
+                            "ctv_array": _existing_ctv,
+                            "ctv_mask": self.memory.retrieve("ctv_mask") or _existing_ctv,
+                            "skipped_duplicate": True,
+                        },
+                    )
+                    _skip_tool = True
+        if tool_name == "oar_segmentation":
+            _existing_oar = self.memory.retrieve("oar_array")
+            _existing_names = self.memory.retrieve("organ_names") or {}
+            _existing_path = self.memory.retrieve("ct_path")
+            if _existing_oar is not None and len(_existing_names) >= 50:
+                _req_path = params.get("image_path", _existing_path)
+                if _req_path in (None, _existing_path):
+                    logger.info(
+                        f"[dedup] oar_segmentation called but memory "
+                        f"already has {len(_existing_names)} organs "
+                        f"(auto-OAR result). Skipping redundant run."
+                    )
+                    if progress_callback:
+                        progress_callback("OAR already segmented (skipped)", 90)
+                    from tool_factory import ToolResult as _TR
+                    result = _TR(
+                        success=True,
+                        data={"oar_array": _existing_oar, "organ_names": _existing_names,
+                              "organ_counts": self.memory.retrieve("organ_counts") or {}},
+                        message=(
+                            f"OAR already segmented (skipped redundant call). "
+                            f"{len(_existing_names)} organs in memory."
+                        ),
+                        metadata={
+                            "oar_array": _existing_oar,
+                            "organ_names": _existing_names,
+                            "organ_counts": self.memory.retrieve("organ_counts") or {},
+                            "skipped_duplicate": True,
+                        },
+                    )
+                    _skip_tool = True
+
+        if not _skip_tool:
+            # Use validation + recovery for critical tools
+            if tool_name in self._VALIDATORS:
+                result = self._validate_and_execute(tool_name, params)
+            else:
+                result = self.registry.execute(tool_name, **params)
 
         if progress_callback:
             progress_callback(f"Processing results...", 90)
@@ -2582,8 +2604,27 @@ print(json.dumps(result))
         template prompt.
         """
         is_zh = lang == "zh"
-        # Pull all the relevant metrics from memory
+        # Pull all the relevant metrics from memory. BUG FIX 2026-06-17
+        # (empty report): the 'metrics' key holds the FLAT dict that
+        # dose_evaluation populates. But for some planning modes
+        # (e.g. rl) the 'metrics' key is not populated, while
+        # 'dose_metrics' (raw nested dict) IS stored. Fall back to
+        # dose_metrics if metrics is empty.
         metrics = self.memory.retrieve("metrics", {}) or {}
+        if not metrics:
+            dose_metrics_raw = self.memory.retrieve("dose_metrics", {}) or {}
+            # If dose_metrics is the nested {metrics: {CTV: {...}, oars: ...}, ...}
+            # shape, pull the target sub-dict (CTV) to the top level.
+            if isinstance(dose_metrics_raw, dict) and "metrics" in dose_metrics_raw:
+                nested = dose_metrics_raw.get("metrics", {}) or {}
+                ctv_sub = nested.get("CTV", {}) if isinstance(nested, dict) else {}
+                if ctv_sub:
+                    metrics = dict(dose_metrics_raw)
+                    metrics.update(ctv_sub)
+                else:
+                    metrics = dose_metrics_raw
+            else:
+                metrics = dose_metrics_raw
         total_seeds = self.memory.retrieve("total_seeds", 0) or 0
         num_traj = self.memory.retrieve("num_trajectories", 0) or 0
         ctv_voxels = self.memory.retrieve("ctv_voxels", 0) or 0
@@ -2607,6 +2648,31 @@ print(json.dumps(result))
         except Exception:
             pass
 
+        # BUG FIX 2026-06-17 (None format): wrap metric reads with
+        # `or 0` so None values don't crash :.1f / :.0f format specs.
+        # Earlier code used metrics.get(k, 0) which returns None
+        # when the key exists but value is None — the format spec
+        # then raised "unsupported format string passed to NoneType".
+        #
+        # BUG FIX 2026-06-17 (plan_score double scaling): plan_score
+        # is already on a 0-100 scale (e.g. 92.71 for a great plan).
+        # Multiplying by 100 then formatting as :.0f yields 9271.
+        # Section 5 displays it correctly as 93/100 (no scaling).
+        # The workflow summary was incorrectly doing `*100` again.
+        v100 = (metrics.get("v100") or 0) * 100
+        v150 = (metrics.get("v150") or 0) * 100
+        v200 = (metrics.get("v200") or 0) * 100
+        d90 = metrics.get("d90") or 0
+        dmean = metrics.get("dmean") or 0
+        d2 = metrics.get("d2") or 0
+        ci = metrics.get("ci") or 0
+        hi = metrics.get("hi") or 0
+        ps = metrics.get("plan_score") or 0
+        v100_frac = metrics.get("v100") or 0
+        d90_gy = metrics.get("d90") or 0
+        # ps is already 0-100, do not multiply again
+        ps_pct = ps
+
         # Helper for zh/en label lookup
         def L(zh, en):
             return zh if is_zh else en
@@ -2624,15 +2690,16 @@ print(json.dumps(result))
                     tools_run.append(s["tool"])
         tools_summary = ", ".join(set(tools_run)) if tools_run else "ctv_segmentation, planning_pipeline"
         lines.append(L(
-            f"已完成放射性粒子植入规划全流程,执行工具:{tools_summary}。靶区覆盖率V100达{metrics.get('v100', 0)*100:.1f}%,D90为{metrics.get('d90', 0):.2f} Gy,规划评分{metrics.get('plan_score', 0)*100:.0f}/100。",
-            f"Brachytherapy planning pipeline completed. Tools executed: {tools_summary}. CTV coverage V100 = {metrics.get('v100', 0)*100:.1f}%, D90 = {metrics.get('d90', 0):.2f} Gy, plan score = {metrics.get('plan_score', 0)*100:.0f}/100."
+            f"已完成放射性粒子植入规划全流程,执行工具:{tools_summary}。靶区覆盖率V100达{v100_frac*100:.1f}%,D90为{d90_gy:.2f} Gy,规划评分{ps_pct:.0f}/100。",
+            f"Brachytherapy planning pipeline completed. Tools executed: {tools_summary}. CTV coverage V100 = {v100_frac*100:.1f}%, D90 = {d90_gy:.2f} Gy, plan score = {ps_pct:.0f}/100."
         ))
         lines.append("")
 
         # Section 2: CTV Segmentation
+        ctv_vol_str = f"{ctv_vol_cm3:.2f} cm³" if ctv_vol_cm3 else "N/A"
         lines.append(f"## {L('2. CTV 靶区分割', '2. CTV Segmentation')}")
         lines.append("")
-        lines.append(f"- **{L('肿瘤体积', 'Tumor volume')}**: {ctv_vol_cm3:.2f} cm³ ({ctv_voxels:,} {L('体素', 'voxels')})")
+        lines.append(f"- **{L('肿瘤体积', 'Tumor volume')}**: {ctv_vol_str} ({ctv_voxels:,} {L('体素', 'voxels')})")
         lines.append(f"- **{L('解剖位置', 'Anatomical location')}**: {tumor_type or L('胰腺', 'pancreas')}")
         lines.append(f"- **{L('分割算法', 'Segmentation algorithm')}**: nnUNet ({tumor_type or 'nnunet_pancreatic'})")
         lines.append("")
@@ -2665,17 +2732,8 @@ print(json.dumps(result))
         lines.append(f"## {L('5. 剂量分布', '5. Dose Distribution')}")
         lines.append("")
         lines.append(f"- **{L('处方剂量', 'Prescription dose')}**: {rx_gy:.1f} Gy")
-        v100 = metrics.get('v100', 0) * 100
-        v150 = metrics.get('v150', 0) * 100
-        v200 = metrics.get('v200', 0) * 100
         lines.append(f"- **V100 / V150 / V200**: {v100:.1f}% / {v150:.1f}% / {v200:.1f}%")
-        d90 = metrics.get('d90', 0)
-        dmean = metrics.get('dmean', 0)
-        d2 = metrics.get('d2', 0)
         lines.append(f"- **D90 / Dmean / D2**: {d90:.2f} / {dmean:.2f} / {d2:.2f} Gy")
-        ci = metrics.get('ci', 0)
-        hi = metrics.get('hi', 0)
-        ps = metrics.get('plan_score', 0)
         lines.append(f"- **{L('适形指数 CI', 'Conformity Index (CI)')}**: {ci:.3f}")
         lines.append(f"- **{L('均匀指数 HI', 'Homogeneity Index (HI)')}**: {hi:.3f}")
         lines.append(f"- **{L('规划评分', 'Plan Score')}**: {ps:.0f}/100")
@@ -3729,11 +3787,35 @@ print(json.dumps(result))
         return content
 
     def _clean_response_text(self, content: str) -> str:
-        """Remove tool call blocks from LLM response, keep only user-facing text."""
-        # Strip internal context labels that LLM might echo back
-        content = re.sub(r'\[Historical reference[^\]]*\]\s*', '', content)
-        content = re.sub(r'\[Earlier conversation[^\]]*\]\s*', '', content)
-        content = re.sub(r'\[MANDATORY:[^\]]*\]\s*', '', content)
+        """Remove tool call blocks from LLM response, keep only user-facing text.
+
+        IMPORTANT (BUG FIX 2026-06-17): the cleaner was over-aggressive
+        in stripping legitimate text. Patterns like
+        `[Historical reference ...]`, `[Earlier conversation ...]`,
+        `[MANDATORY: ...]` are used as INTERNAL context labels in
+        the system prompt, but if the LLM echoes them as part of
+        a response (rare), they get stripped. More commonly, the
+        cleaner was eating real text that incidentally contained
+        `[...]` patterns (e.g. "see [NCCN guidelines]"). We now:
+          - Only strip these patterns at the START of the content
+            (most LLM echoes of context labels appear at the
+            beginning, never mid-response)
+          - Make all tool-call patterns more strict (require
+            specific structural markers so we don't eat legitimate
+            JSON/tool mentions in body text)
+        """
+        # Strip internal context labels that LLM might echo back.
+        # Only at the START of content (anchored with ^) to avoid
+        # eating legitimate text like "[NCCN guidelines]".
+        content = re.sub(r'^\[Historical reference[^\]]*\]\s*', '', content)
+        content = re.sub(r'^\[Earlier conversation[^\]]*\]\s*', '', content)
+        content = re.sub(r'^\[MANDATORY:[^\]]*\]\s*', '', content)
+        # Also strip if these appear IMMEDIATELY after a leading
+        # newline or whitespace (LLM may echo them with a blank
+        # line first). Still anchored, not greedy.
+        content = re.sub(r'^\s*\[Historical reference[^\]]*\]\s*', '', content)
+        content = re.sub(r'^\s*\[Earlier conversation[^\]]*\]\s*', '', content)
+        content = re.sub(r'^\s*\[MANDATORY:[^\]]*\]\s*', '', content)
         stripped = content.strip()
 
         # If content is purely a JSON tool call object, return empty
@@ -3757,6 +3839,17 @@ print(json.dumps(result))
 
         cleaned = re.sub(r'```tool_call\s*\n.*?\n```', '', content, flags=re.DOTALL).strip()
         cleaned = re.sub(r'<minimax:tool_call>.*?</minimax:tool_call>', '', cleaned, flags=re.DOTALL).strip()
+        # BUG FIX 2026-06-17 (response truncation): the LLM emits
+        # the tool_call block as `<tool_call>...</tool_call>` (no
+        # "minimax:" prefix), but the previous cleaner only
+        # matched `<minimax:tool_call>` tags. When the LLM emitted
+        # `<tool_call>{...}</tool_call>`, the cleaner left it
+        # intact in the streamed text and the user saw partial
+        # JSON syntax in their reply. We now match both forms.
+        cleaned = re.sub(r'<tool_call>.*?</tool_call>', '', cleaned, flags=re.DOTALL).strip()
+        # Also remove an opening/incomplete <tool_call> tag (in case
+        # the closing tag is missing because the stream ended mid-tag).
+        cleaned = re.sub(r'<tool_call>.*', '', cleaned, flags=re.DOTALL).strip()
         # Also remove incomplete/opening minimax tool_call tags
         cleaned = re.sub(r'<minimax:tool_call>.*', '', cleaned, flags=re.DOTALL).strip()
         # Remove malformed minimax tags like ]<]minimax>[[
@@ -4176,7 +4269,10 @@ print(json.dumps(result))
                             new_text = cleaned_content[prev_cleaned_len:]
                             # Don't yield if new text starts with tool_call patterns
                             # Use specific patterns to avoid filtering legitimate text like [type something]
-                            if not re.match(r'(\[\s*\{\s*["\']type["\']\s*:\s*["\']tool_use|```tool_call|<minimax:tool_call>|\[\s*TOOL_CALL\s*\])', new_text):
+                            # BUG FIX 2026-06-17: also skip <tool_call>...</tool_call>
+                            # (the format the LLM actually emits, not the
+                            # <minimax:tool_call> prefix that wasn't matched).
+                            if not re.match(r'(\[\s*\{\s*["\']type["\']\s*:\s*["\']tool_use|```tool_call|<tool_call>|<minimax:tool_call>|\[\s*TOOL_CALL\s*\])', new_text):
                                 yield yield_event("text_chunk", {"text": new_text})
                             # Always advance offset so tool_call text is consumed
                             # and doesn't block future chunks when _clean_response_text removes it
@@ -4418,7 +4514,16 @@ print(json.dumps(result))
                         step_id_ref[0] += 1
                         substep_step["id"] = step_id_ref[0]
                         steps.append(substep_step)
-                        self._pending_callback_events.append(("step", substep_step))
+                        # BUG FIX 2026-06-17 (substep duplicate + lost pending):
+                        # append a SHALLOW COPY to the events list. Otherwise
+                        # the 'done' callback below mutates the SAME dict
+                        # (sets status='done') and the SSE pump ends up
+                        # yielding the same data twice, both with status='done'.
+                        # The 'pending' event is also lost because by the time
+                        # the events list is drained, the only copy of the step
+                        # has been mutated to status='done'.
+                        import copy as _copy
+                        self._pending_callback_events.append(("step", _copy.copy(substep_step)))
                     elif substep_status in ("done", "error"):
                         # Find the matching pending entry we appended
                         # earlier and update it in place.

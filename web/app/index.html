@@ -20,10 +20,8 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <!-- Inline SVG favicon (a stylized "B" with cyan accent). Avoids the
-         404 the user used to see when /favicon.ico wasn't served. The
-         SVG is tiny (≈400 bytes) so the inline data-URL is fine. -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230f172a'/><text x='16' y='23' text-anchor='middle' font-family='Inter,system-ui,sans-serif' font-size='20' font-weight='700' fill='%2300d4ff'>B</text></svg>">
+    <!-- BrachyBot logo favicon (user-designed brand logo). -->
+    <link rel="icon" type="image/png" href="_assets/favicon-64.png">
     <!-- Google Fonts: CDN-loaded. If the user's network blocks it,
          the page falls back to system fonts (defined in --font-sans,
          --font-mono below). The CSS variable approach means we don't
@@ -372,17 +370,13 @@ body::before {
 
 .header-logo {
     width: 36px; height: 36px;
-    background: var(--primary);
     border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'Space Grotesk', sans-serif;
-    font-weight: 700; font-size: 0.9rem; flex-shrink: 0; color: #fff;
+    flex-shrink: 0;
     box-shadow: var(--inset-top), var(--shadow-sm);
     transition: all var(--t-base) var(--ease);
 }
 .header-logo:hover {
     transform: translateY(-1px);
-    background: var(--primary-hover);
 }
 
 .header-title {
@@ -2743,31 +2737,87 @@ body::before {
 }
 
 /* Hospital letterhead */
+/* BUG FIX 2026-06-17 (report header redesign): the previous
+   header stacked 3 logos + 3 lines of text (Ruijin Hospital, SJTU
+   School of Medicine, Department of Radiation Oncology, etc.)
+   which looked cluttered and not like a real medical report
+   letterhead. The user requested:
+     1. Smaller unified logo size
+     2. Single line of text: "Brachybot by xxxx: github链接"
+     3. Keep the professional medical report look (border, divider)
+   The new header is a compact 2-row layout: a small row of 3
+   equally-sized logos, then a single horizontal line with the
+   "Brachybot by ..." credit + GitHub link. Compatible with
+   all existing features (i18n, print, screenshot). */
 .hp-letterhead {
-    display: flex; align-items: center; gap: 8mm;
-    padding-bottom: 4mm; margin-bottom: 5mm;
+    /* BUG FIX 2026-06-17 (letterhead split layout): the user
+       asked for 3 logos on the LEFT and 2-line right-aligned
+       credit text on the RIGHT (byline + github). Previous
+       layout had logos + text side-by-side left-justified. */
+    display: flex; align-items: center; gap: 6mm;
+    padding-bottom: 3mm; margin-bottom: 5mm;
     border-bottom: 2px solid #0c4a6e;
 }
 .hp-logo-group {
-    display: flex; align-items: center; gap: 3mm;
+    display: flex; align-items: center; gap: 2mm;
     flex-shrink: 0;
 }
 .hp-logo-img {
-    width: 16mm; height: 16mm;
+    /* BUG FIX 2026-06-17: unified size — all 3 logos are now the
+       same small size (10mm) instead of the previous 16/12/12mm
+       mix. The user wanted them to look consistent and small. */
+    width: 10mm; height: 10mm;
     object-fit: contain;
     background: #fff;
-    border-radius: 4px;
+    border-radius: 3px;
     border: 1px solid #e2e8f0;
+    flex-shrink: 0;
 }
 .hp-logo-img-small {
-    width: 12mm; height: 12mm;
+    width: 10mm; height: 10mm;
 }
-.hp-letterhead-text { flex: 1; min-width: 0; }
-.hp-letterhead-name {
-    font-size: 13pt; font-weight: 700; color: #0c4a6e;
-    letter-spacing: 0.5px; margin-bottom: 1mm;
-    font-family: 'SimHei', '黑体', 'Microsoft YaHei', 'Times New Roman', serif;
-    line-height: 1.25;
+.hp-letterhead-text {
+    /* BUG FIX 2026-06-17: text now sits on the right side of the
+       row, right-aligned, and is structured as 2 stacked lines:
+       (1) byline  (2) github link. */
+    margin-left: auto;     /* push to the right edge */
+    text-align: right;
+    font-size: 9pt; color: #475569;
+    line-height: 1.45;
+    font-family: 'Helvetica Neue', 'Arial', 'Microsoft YaHei', sans-serif;
+    flex-shrink: 0;
+    max-width: 70%;
+}
+.hp-letterhead-byline {
+    /* Line 1: "Brachybot by SJTU × Ruijin Hospital × ..." */
+    font-weight: 600; color: #0c4a6e; letter-spacing: 0.3px;
+    margin-bottom: 0.6mm;
+}
+.hp-letterhead-github {
+    /* Line 2: full GitHub clone URL (no "github:" label since the
+       URL itself starts with "github.com" — a label would be
+       duplicate). */
+    font-weight: 400; color: #64748b; font-size: 8.5pt;
+    letter-spacing: 0.2px;
+}
+.hp-letterhead-github a {
+    color: #0369a1; text-decoration: none;
+    border-bottom: 1px dotted #0369a1;
+    font-family: 'SFMono-Regular', 'Consolas', 'Monaco', monospace;
+    font-size: 8.5pt;
+}
+.hp-letterhead-github a:hover {
+    border-bottom: 1px solid #0369a1;
+}
+.hp-letterhead-credit {
+    font-weight: 600; color: #0c4a6e; letter-spacing: 0.3px;
+}
+.hp-letterhead-credit a {
+    color: #0369a1; text-decoration: none;
+    border-bottom: 1px dotted #0369a1;
+}
+.hp-letterhead-credit a:hover {
+    border-bottom: 1px solid #0369a1;
 }
 .hp-letterhead-en {
     font-size: 9pt; color: #475569; letter-spacing: 0.3px;
@@ -4343,7 +4393,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 <!-- ============ HEADER ============ -->
 <header class="header">
-    <div class="header-logo">AI</div>
+    <img src="_assets/brachybot-logo.png" alt="BrachyBot" class="header-logo" style="width:36px;height:36px;border-radius:10px;object-fit:cover;">
     <div>
         <div class="header-title">BrachyBot</div>
         <div class="header-subtitle">AI Brachytherapy Planning</div>
@@ -5686,11 +5736,13 @@ const CHAT_AVATAR_SVGS = {
     user:  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
     // BUG FIX 2026-06-17: bot avatar now uses the unified BrachyBot
     // logo (the same one shown in the Report cover page) so the
-    // brand is consistent across the chat panel and the report.
-    // The user will replace the SVG file later with the final
-    // design; until then, all references point to the same
-    // _assets/brachybot-logo.svg file.
-    bot:   '<img src="_assets/brachybot-logo.svg" alt="BrachyBot" style="width:100%;height:100%;display:block;object-fit:contain;border-radius:50%;"/>',
+    // BUG FIX 2026-06-17 (BrachyBot logo v2): the user designed a
+    // proper BrachyBot logo (B + head silhouette + circuit +
+    // needle + radioactive seed) and saved it as a 1254x1254 PNG.
+    // The chat bot avatar now uses the smaller 256x256 version
+    // (_assets/brachybot-avatar.png) for performance. The brand
+    // is consistent across the chat panel and the report.
+    bot:   '<img src="_assets/brachybot-avatar.png" alt="BrachyBot" style="width:100%;height:100%;display:block;object-fit:contain;border-radius:50%;"/>',
 };
 
 // Language-aware labels for the usage-bar footer. The footer is
@@ -12636,6 +12688,54 @@ async function loadAllSlices() {
     ]);
 }
 
+// BUG FIX 2026-06-17 (3D default reconstruction): the previous
+// `reconstruct3D` only fetched the CTV as a single marching-cubes
+// mesh, producing a "Brachround red box" (a single iso-surface
+// from the CTV mask). The user wanted:
+//   1. Default = CTV + non-traversable OARs (e.g. arteries/veins/
+//      bones) under CTV/OAR — these are the structures the
+//      planning pipeline treats as obstacles.
+//   2. For planning runs, also reconstruct seeds, needles, and
+//      iso surfaces.
+//   3. Default opacity from hyperparam config (display_3d) so the
+//      user can tune globally; per-mesh overrides via the data
+//      tree still work.
+//   4. Compatible with the data tree's per-mesh visibility + opacity
+//      controls — addMeshToScene already mirrors each mesh into
+//      dataTreeState.planning.meshes, so the data tree sees the new
+//      meshes automatically.
+let _3dConfigCache = null;
+async function _get3DConfig() {
+    if (_3dConfigCache) return _3dConfigCache;
+    try {
+        const resp = await fetch(API + '/config');
+        if (resp.ok) {
+            const j = await resp.json();
+            if (j.success && j.defaults && j.defaults.display_3d) {
+                _3dConfigCache = j.defaults.display_3d;
+                return _3dConfigCache;
+            }
+        }
+    } catch (e) {}
+    // Hard-coded fallback matching default_params.json
+    _3dConfigCache = {
+        default_opacity: 0.7,
+        ctv_color: '#ff4444',
+        oar_non_traversable_color: '#fb923c',
+        oar_traversable_color: '#0ea5e9',
+        seed_color: '#facc15',
+        needle_color: '#a855f7',
+        seed_opacity: 0.95,
+        needle_opacity: 0.85,
+        ctv_opacity: 0.65,
+        oar_opacity: 0.55,
+        show_isosurfaces_by_default: true,
+        show_seeds_by_default: true,
+        show_needles_by_default: true,
+    };
+    return _3dConfigCache;
+}
+
 async function reconstruct3D() {
     if (!state.ctPath || !state.ctLoaded) {
         try {
@@ -12661,29 +12761,28 @@ async function reconstruct3D() {
     if (loading) loading.classList.add('active');
 
     try {
-        // Try CTV first, then OAR
-        let res = await fetch(API + '/viewer/3d', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source: 'ctv' }),
-        });
+        // 1) CTV + non-traversable OARs (the structures the planning
+        //    pipeline actually cares about). This replaces the old
+        //    "single red box from CTV" default that the user
+        //    complained about — those meshes are real, segmentable
+        //    surfaces, not just an iso-contour.
+        await loadCTVAndObstacleMeshes();
 
-        if (!res.ok) {
-            // Fallback to OAR
-            res = await fetch(API + '/viewer/3d', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ source: 'oar' }),
-            });
-        }
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        const data = await res.json();
-        if (data.success) {
-            data.color = data.source === 'ctv' ? 0xff4444 : 0x0ea5e9;
-            state.mesh3D = data;
-            render3DMesh(data);
+        // 2) For planning runs, also reconstruct seeds, needles,
+        //    and iso surfaces. The user can disable any of these
+        //    via the data tree (which already mirrors them as
+        //    planning.meshes entries).
+        const hasPlanning = (state && state.metrics
+            && (state.metrics.total_seeds || state.metrics.trajectories
+                || state.metrics.v100 || state.metrics.d90));
+        if (hasPlanning) {
+            const cfg = await _get3DConfig();
+            if (cfg.show_seeds_by_default && typeof loadSeeds3D === 'function') {
+                try { await loadSeeds3D(); } catch (e) { console.warn('loadSeeds3D failed:', e); }
+            }
+            if (cfg.show_isosurfaces_by_default && typeof loadAllIsoSurfaces === 'function') {
+                try { await loadAllIsoSurfaces(); } catch (e) { console.warn('loadAllIsoSurfaces failed:', e); }
+            }
         }
     } catch (e) {
         addChat('error', '3D reconstruction failed: ' + e.message);
@@ -13214,7 +13313,28 @@ function addMeshToScene(meshData) {
 
     // Use physical coordinates directly (mm) — no scaling
     const color = meshData.color || 0x0ea5e9;
-    const opacity = parseFloat(document.getElementById('meshOpacity3D')?.value || 70) / 100;
+    // BUG FIX 2026-06-17 (3D opacity source): previously the
+    // opacity came only from the meshOpacity3D slider. The user
+    // wanted the DEFAULT opacity to come from the display_3d
+    // hyperparam config, with per-mesh overrides from the data
+    // tree taking precedence. Priority order:
+    //   1. meshData.opacity (per-mesh override from the data tree)
+    //   2. config-based default keyed by source (ctv/oar/seed/needle/iso)
+    //   3. meshOpacity3D slider (user's live tweak)
+    //   4. hard-coded fallback (0.7)
+    let opacity;
+    if (typeof meshData.opacity === 'number' && !isNaN(meshData.opacity)) {
+        opacity = meshData.opacity;
+    } else if (_3dConfigCache) {
+        const src = meshData.source || '';
+        if (src === 'ctv') opacity = _3dConfigCache.ctv_opacity;
+        else if (src === 'oar') opacity = _3dConfigCache.oar_opacity;
+        else if (src === 'seed' || src === 'seeds') opacity = _3dConfigCache.seed_opacity;
+        else if (src === 'needle' || src === 'needles') opacity = _3dConfigCache.needle_opacity;
+        else opacity = _3dConfigCache.default_opacity;
+    } else {
+        opacity = parseFloat(document.getElementById('meshOpacity3D')?.value || 70) / 100;
+    }
 
     // Clean surface rendering (like 3D Slicer polydata)
     const surfaceMat = new THREE.MeshPhysicalMaterial({
@@ -17287,7 +17407,7 @@ const REPORT_STRINGS = {
         hospitalDept: '放射治疗科  ·  AI 辅助近距离治疗规划',
         hospitalDeptEn: 'Department of Radiation Oncology · AI-Assisted Brachytherapy Planning',
         hospitalAddress: '上海市黄浦区瑞金二路 197 号  ·  200025',
-        hospitalContact: 'github.com/Haitao-Lee/BrachyBot',
+        hospitalContact: 'https://github.com/Haitao-Lee/BrachyBot.git',
         editFormTab: '✏️ 编辑表单',
         previewTab: '📄 预览',
         viewHint: '点击 预览 标签查看 A4 多页文档',
@@ -17383,7 +17503,7 @@ const REPORT_STRINGS = {
         hospitalDept: 'Department of Radiation Oncology · AI-Assisted Brachytherapy Planning',
         hospitalDeptEn: 'Joint Lab: SJTU × Ruijin Hospital',
         hospitalAddress: '197 Ruijin Er Rd, Shanghai 200025, China',
-        hospitalContact: 'github.com/Haitao-Lee/BrachyBot',
+        hospitalContact: 'https://github.com/Haitao-Lee/BrachyBot.git',
         editFormTab: '✏️ Edit Form',
         previewTab: '📄 Preview',
         viewHint: 'Click Preview tab to see the multi-page A4 document',
@@ -19494,22 +19614,32 @@ function _updateReportPreview() {
     const gyUnit = U.Gy;
 
     // ============== PAGE 1: Letterhead + Patient ID + Imaging + Case ==============
+    // BUG FIX 2026-06-17 (header redesign): the user requested a
+    // letterhead with 3 logos on the LEFT and a 2-line right-aligned
+    // credit block on the RIGHT:
+    //   Line 1: Brachybot by SJTU × Ruijin Hospital × 放射治疗科
+    //   Line 2: full GitHub clone URL (no "github:" label — the URL
+    //           itself starts with "github.com" so a label would
+    //           be redundant duplication)
+    // BUG FIX 2026-06-17 (real logos): SJTU and Ruijin logos are
+    // the real high-res PNGs in _assets/sjtu-real.png and
+    // _assets/ruijin-real.png.
+    const bylineZh = 'Brachybot by SJTU × Ruijin Hospital 放射治疗科';
+    const bylineEn = 'Brachybot by SJTU × Ruijin Hospital · Radiation Oncology';
+    const byline = (f.language === 'zh') ? bylineZh : bylineEn;
     let p1 = `
         <div class="report-page">
             <div class="hp-letterhead">
                 <div class="hp-logo-group">
-                    <img src="_assets/brachybot-logo.svg" alt="BrachyBot" class="hp-logo-img" title="BrachyBot"/>
-                    <img src="_assets/sjtu-logo.svg" alt="SJTU" class="hp-logo-img hp-logo-img-small" title="Shanghai Jiao Tong University"/>
-                    <img src="_assets/ruijin-logo.svg" alt="Ruijin" class="hp-logo-img hp-logo-img-small" title="Ruijin Hospital"/>
+                    <img src="_assets/brachybot-logo.png" alt="BrachyBot" class="hp-logo-img" title="BrachyBot"/>
+                    <img src="_assets/sjtu-real.png" alt="SJTU" class="hp-logo-img" title="Shanghai Jiao Tong University"/>
+                    <img src="_assets/ruijin-real.png" alt="Ruijin" class="hp-logo-img" title="Ruijin Hospital"/>
                 </div>
                 <div class="hp-letterhead-text">
-                    <div class="hp-letterhead-name">${escHtml(hospitalName)}</div>
-                    <div class="hp-letterhead-en">${escHtml(hospitalNameEn)}</div>
-                    <div class="hp-letterhead-dept">${escHtml(hospitalDept)}</div>
-                </div>
-                <div class="hp-letterhead-contact">
-                    <div>${escHtml(hospitalAddress)}</div>
-                    <div><a href="https://${escHtml(hospitalContact)}" target="_blank" rel="noopener" style="color:#0369a1;text-decoration:none;">${escHtml(hospitalContact)}</a></div>
+                    <div class="hp-letterhead-byline">${escHtml(byline)}</div>
+                    <div class="hp-letterhead-github">
+                        <a href="${escHtml(hospitalContact)}" target="_blank" rel="noopener">${escHtml(hospitalContact)}</a>
+                    </div>
                 </div>
             </div>
             <div class="hp-running-header">
@@ -19852,10 +19982,20 @@ function _printableCss() {
             font-feature-settings: "tnum" 1, "lnum" 1;
         }
         .report-page:last-child { page-break-after: auto; }
-        .hp-letterhead { display: flex; align-items: center; gap: 10mm; padding-bottom: 4mm; margin-bottom: 5mm; border-bottom: 3px double #0c4a6e; }
-        .hp-logo { width: 18mm; height: 18mm; display: flex; align-items: center; justify-content: center; border-radius: 50%; overflow: hidden; }
-        .hp-letterhead-text { flex: 1; }
-        .hp-letterhead-name { font-size: 16pt; font-weight: 700; color: #0c4a6e; }
+        /* BUG FIX 2026-06-17 (print letterhead): match the screen
+           design — small unified logos on the left, 2-line
+           right-aligned credit block on the right. */
+        .hp-letterhead { display: flex; align-items: center; gap: 6mm; padding-bottom: 3mm; margin-bottom: 5mm; border-bottom: 2px solid #0c4a6e; }
+        .hp-logo-group { display: flex; align-items: center; gap: 2mm; flex-shrink: 0; }
+        .hp-logo-img { width: 10mm; height: 10mm; object-fit: contain; background: #fff; border-radius: 3px; border: 1px solid #e2e8f0; }
+        .hp-logo { width: 10mm; height: 10mm; display: flex; align-items: center; justify-content: center; border-radius: 50%; overflow: hidden; }
+        .hp-letterhead-text { margin-left: auto; text-align: right; font-size: 9pt; color: #475569; font-family: 'Helvetica Neue', 'Arial', 'Microsoft YaHei', sans-serif; line-height: 1.45; flex-shrink: 0; max-width: 70%; }
+        .hp-letterhead-byline { font-weight: 600; color: #0c4a6e; margin-bottom: 0.6mm; }
+        .hp-letterhead-github { font-weight: 400; color: #64748b; font-size: 8.5pt; }
+        .hp-letterhead-github a { color: #0369a1; text-decoration: none; border-bottom: 1px dotted #0369a1; font-family: 'SFMono-Regular', 'Consolas', 'Monaco', monospace; font-size: 8.5pt; }
+        .hp-letterhead-credit { font-weight: 600; color: #0c4a6e; }
+        .hp-letterhead-credit a { color: #0369a1; text-decoration: none; border-bottom: 1px dotted #0369a1; }
+        .hp-letterhead-name { font-size: 13pt; font-weight: 700; color: #0c4a6e; }
         .hp-letterhead-en { font-size: 9pt; color: #64748b; font-style: italic; }
         .hp-letterhead-dept { font-size: 9pt; color: #475569; margin-top: 2mm; }
         .hp-letterhead-contact { font-size: 8pt; color: #64748b; text-align: right; line-height: 1.5; }
