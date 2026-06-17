@@ -5396,6 +5396,7 @@ function loadSessions() {
     try {
         const data = localStorage.getItem(SESSIONS_KEY);
         sessions = data ? JSON.parse(data) : {};
+        console.log(`[Session] Loaded ${Object.keys(sessions).length} sessions from localStorage`);
     } catch {
         sessions = {};
     }
@@ -5457,6 +5458,7 @@ function ensurePendingSession() {
 function saveSessions() {
     localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
     localStorage.setItem(ACTIVE_KEY, activeSessionId);
+    console.log(`[Session] Saved ${Object.keys(sessions).length} sessions, active=${activeSessionId}`);
 }
 
 function generateSessionId() {
