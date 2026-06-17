@@ -19773,18 +19773,18 @@ function _updateReportPreview() {
     p4 += `<h2 class="hp-section-title">${escHtml(s.section9)}<span class="hp-section-title-en">Physician Signatures</span></h2>
         <div class="hp-section-body">
             <div class="hp-signature">
-                <div class="hp-signature-block">
+                <div class="hp-signature-block" style="position:relative;">
                     <div class="hp-signature-label">${escHtml(s.physicianPlanner)}</div>
                     <div class="hp-signature-name">${escHtml(f.signature.name) || ND}</div>
                     <div class="hp-signature-title">${escHtml(f.signature.title) || ''}</div>
                     <div class="hp-signature-date">${escHtml(f.signature.date) || ''}</div>
+                    <div class="hp-signature-stamp" style="border-color:#0ea5e9;color:#0ea5e9;">BrachyBot<br/>SEAL</div>
                 </div>
-                <div class="hp-signature-block" style="position:relative;">
+                <div class="hp-signature-block">
                     <div class="hp-signature-label">${escHtml(s.physicianReviewer)}</div>
                     <div class="hp-signature-name">${escHtml(f.case.plannerName) || ND}</div>
                     <div class="hp-signature-title">${escHtml(f.patient.department) || ''}</div>
                     <div class="hp-signature-date">${escHtml(f.signature.date) || ''}</div>
-                    <div class="hp-signature-stamp">${escHtml(hospitalName).substring(0, 4)}<br/>${escHtml(s.stampSuffix)}</div>
                 </div>
             </div>
             ${f.signature.notes ? `<p style="margin-top:6px;font-size:9pt;color:#64748b;">${escHtml(f.signature.notes)}</p>` : ''}
@@ -20024,7 +20024,7 @@ function _printableCss() {
         .hp-signature-name { font-size: 11pt; font-weight: 700; color: #0c4a6e; }
         .hp-signature-title { font-size: 8.5pt; color: #475569; margin-top: 0.5mm; }
         .hp-signature-date { font-size: 8.5pt; color: #475569; margin-top: 1mm; border-top: 1px solid #cbd5e1; padding-top: 1mm; }
-        .hp-signature-stamp { position: absolute; right: 4mm; bottom: 4mm; width: 18mm; height: 18mm; border: 2px solid #dc2626; border-radius: 50%; color: #dc2626; font-size: 7pt; font-weight: 700; display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.1; transform: rotate(-8deg); opacity: 0.65; pointer-events: none; }
+        .hp-signature-stamp { position: absolute; right: 4mm; bottom: 4mm; width: 18mm; height: 18mm; border: 2px solid #0ea5e9; border-radius: 50%; color: #0ea5e9; font-size: 7pt; font-weight: 700; display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.1; transform: rotate(-8deg); opacity: 0.65; pointer-events: none; }
         .hp-running-header { display: flex; justify-content: space-between; align-items: center; font-size: 7.5pt; color: #94a3b8; border-bottom: 1px solid #e2e8f0; padding-bottom: 1.5mm; margin-bottom: 4mm; }
         .hp-page-footer { position: absolute; bottom: 8mm; left: 16mm; right: 16mm; display: flex; justify-content: space-between; align-items: center; font-size: 7.5pt; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 2mm; }
         .hp-page-footer .pageno { font-weight: 600; color: #475569; }
