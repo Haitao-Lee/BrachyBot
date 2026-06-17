@@ -2375,7 +2375,8 @@ class BrachyAgent:
             if not _cv:
                 try:
                     _cv = int(np.sum(np.asarray(meta["ctv_array"]) > 0))
-                except Exception:
+                except Exception as _e:
+                    logger.warning(f"[STORE] ctv_voxel_count fallback failed: {_e}")
                     _cv = 0
             self.memory.store("ctv_voxels", _cv)
             _cvm3 = meta.get("ctv_volume_mm3")
@@ -2383,6 +2384,7 @@ class BrachyAgent:
                 self.memory.store("ctv_volume_mm3", _cvm3)
             if meta.get("tumor_type"):
                 self.memory.store("tumor_type_used", meta["tumor_type"])
+            logger.info(f"[STORE] ctv_segmentation: ctv_voxels={_cv}, ctv_volume_mm3={_cvm3}, tumor_type={meta.get('tumor_type')}")
         elif tool_name == "oar_segmentation":
             if "oar_array" in meta:
                 if ct_image is not None:
@@ -5541,9 +5543,11 @@ print(json.dumps(result))
         if _has_planning and response:
             # Check if response is suspiciously short (likely a retry
             # artifact that didn't regenerate the full report)
+            logger.info(f"[chat_with_stream] Safety net check: has_planning={_has_planning}, response_len={len(response)}")
             if len(response) < 500:
                 try:
                     _full_report = self._build_planning_report(self.memory.user_lang, steps)
+                    logger.info(f"[chat_with_stream] Safety net: regenerated report len={len(_full_report) if _full_report else 0}")
                     if _full_report and len(_full_report) > len(response):
                         logger.info(f"[chat_with_stream] Safety net: replaced {len(response)}-char response with {len(_full_report)}-char planning report")
                         response = _full_report
