@@ -2675,7 +2675,7 @@ print(json.dumps(result))
         lines.append(f"- **D90 / Dmean / D2**: {d90:.2f} / {dmean:.2f} / {d2:.2f} Gy")
         ci = metrics.get('ci', 0)
         hi = metrics.get('hi', 0)
-        ps = metrics.get('plan_score', 0) * 100
+        ps = metrics.get('plan_score', 0)
         lines.append(f"- **{L('适形指数 CI', 'Conformity Index (CI)')}**: {ci:.3f}")
         lines.append(f"- **{L('均匀指数 HI', 'Homogeneity Index (HI)')}**: {hi:.3f}")
         lines.append(f"- **{L('规划评分', 'Plan Score')}**: {ps:.0f}/100")
