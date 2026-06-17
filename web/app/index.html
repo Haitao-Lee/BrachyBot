@@ -1020,10 +1020,10 @@ body::before {
     box-shadow: var(--inset-bottom), var(--shadow-xs);
 }
 
-/* Markdown — code block lifts ABOVE the sunken assistant card */
+/* Markdown — code block blends with dark chat theme */
 .md-code-block {
-    background: var(--bg-2);
-    border: 1px solid var(--border-hairline);
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.1);
     border-radius: var(--radius-sm);
     padding: 0.65rem 0.85rem;
     margin: 0.5rem 0;
@@ -1033,7 +1033,7 @@ body::before {
     line-height: 1.55;
     position: relative;
     color: var(--text);
-    box-shadow: var(--inset-top), var(--shadow-xs);
+    box-shadow: none;
 }
 .md-code-block code { color: var(--text); font-family: inherit; }
 .md-code-block .token.comment,
@@ -6920,7 +6920,11 @@ function createStreamingResponse() {
 
 function updateStreamingResponse(el, text) {
     if (!el) return;
-    el.innerHTML = escHtml(text).replace(/\n/g, '<br>');
+    // Render markdown during streaming so bold/italic/lists display
+    // correctly (not as raw **asterisks**).
+    try { el.innerHTML = renderMarkdown(text); } catch (_) {
+        el.innerHTML = escHtml(text).replace(/\n/g, '<br>');
+    }
 }
 
 function finalizeStreamingResponse(el, text) {
