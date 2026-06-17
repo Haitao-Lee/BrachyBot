@@ -7749,11 +7749,41 @@ function _todoFindPredicted(todo, step) {
 }
 
 // Enter-to-send handler for #chatInput
+// Command history for up/down arrow cycling (like a terminal)
+const _chatHistory = [];
+let _chatHistoryIdx = -1;
+
 function handleChatKeypress(ev) {
     if (!ev) return;
+    const input = document.getElementById('chatInput');
     if (ev.key === 'Enter' && !ev.shiftKey) {
         ev.preventDefault();
+        const text = (input ? input.value : '').trim();
+        if (text) {
+            _chatHistory.push(text);
+            _chatHistoryIdx = _chatHistory.length;
+        }
         if (typeof sendChat === 'function') sendChat();
+    } else if (ev.key === 'ArrowUp' && input && !input.value.trim()) {
+        // Up arrow: recall previous command (only when input is empty or at start)
+        if (_chatHistoryIdx > 0) {
+            _chatHistoryIdx--;
+            input.value = _chatHistory[_chatHistoryIdx] || '';
+            // Move cursor to end
+            input.setSelectionRange(input.value.length, input.value.length);
+        }
+        ev.preventDefault();
+    } else if (ev.key === 'ArrowDown' && input) {
+        // Down arrow: recall next command or clear
+        if (_chatHistoryIdx < _chatHistory.length - 1) {
+            _chatHistoryIdx++;
+            input.value = _chatHistory[_chatHistoryIdx] || '';
+        } else {
+            _chatHistoryIdx = _chatHistory.length;
+            input.value = '';
+        }
+        input.setSelectionRange(input.value.length, input.value.length);
+        ev.preventDefault();
     }
 }
 
