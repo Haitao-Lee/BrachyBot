@@ -8949,41 +8949,11 @@ async function init() {
     renderDataTree();
     // Hide colorbars (all 3 viewers)
     document.querySelectorAll('.dose-colorbar').forEach(el => { el.style.display = 'none'; });
-    // Fetch existing organ data for data tree (only if CT is loaded on server)
-    try {
-        const statusResp = await fetch(API + '/status');
-        if (statusResp.ok) {
-            const statusData = await statusResp.json();
-            // Check if CT is actually loaded in the agent's memory
-            if (statusData.ct_loaded) {
-                state.ctLoaded = true;
-                state.ctPath = statusData.ct_path || '';  // Set CT path for 3D reconstruction
-                // Reload CT volume data and render slices
-                await loadVolumeData();
-                ['axial', 'sagittal', 'coronal'].forEach(axis => {
-                    renderSliceFromVolume(axis, state.slices[axis]);
-                });
-                // Try to load label volumes for client-side overlay rendering
-                await loadLabelVolumes();
-                // Update data tree state based on loaded data
-                if (ctvLabelData) dataTreeState.ctv.loaded = true;
-                if (oarLabelData) dataTreeState.oar.loaded = true;
-                renderDataTree();
-                if (!ctvLabelData && !oarLabelData) {
-                    // Fallback: fetch organ data the old way
-                    const organResp = await fetch(API + '/viewer/organs');
-                    if (organResp.ok) {
-                        const organData = await organResp.json();
-                        if (organData.success && organData.organs && Object.keys(organData.organs).length > 0) {
-                            updateOrganList(organData.organs);
-                            dataTreeState.oar.loaded = true;
-                            renderDataTree();
-                        }
-                    }
-                }
-            }
-        }
-    } catch (e) {}
+    // BUG FIX 2026-06-17: removed auto-load of CT from server on
+    // page refresh. The server keeps CT in memory, and the old code
+    // re-fetched it on every refresh — so the viewer was never
+    // "clean" after a browser refresh. The user must explicitly load
+    // CT via the chat or file upload for each new session.
     // Load default hyperparameters from config
     await loadDefaultParams();
 
