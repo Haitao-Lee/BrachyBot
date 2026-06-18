@@ -1337,12 +1337,19 @@ class BrachyAgent:
                 # Default: Anthropic-compatible provider.
                 # base_url points to the proxy; model/api_key are
                 # configurable. Works with any Anthropic-protocol endpoint.
+                # API key must be provided via environment variable.
+                _api_key = os.environ.get("BRACHYBOT_LLM_API_KEY", "")
+                if not _api_key:
+                    logger.warning(
+                        "No LLM API key found. Set BRACHYBOT_LLM_API_KEY env var. "
+                        "Brain system will be unavailable."
+                    )
                 llm_config = {
                     "anthropic": {
                         "enabled": True,
                         "model": "mimo-v2.5",
                         "base_url": "https://token-plan-cn.xiaomimimo.com/anthropic",
-                        "api_key": "tp-cebuhb3x0bgx7qhx4wyc5g7ri65s8a91b7x4gocgvsoom89y",
+                        "api_key": _api_key,
                     }
                 }
 
@@ -3306,11 +3313,22 @@ print(json.dumps(result))
                         if not _wanted.intersection(_skill):
                             logger.info(f"Skip skill '{sk['name']}' — user wants {_wanted}, skill has {_skill}")
                         else:
+                            # Filter out already-completed steps from chain
+                            _filtered = [s for s in sk['tool_chain']
+                                         if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
+                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None)]
                             enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
-                            enhanced_context += f"Chain: {' -> '.join(sk['tool_chain'])}\n"
+                            enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
+                            if len(_filtered) < len(sk['tool_chain']):
+                                enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
                     else:
+                        _filtered = [s for s in sk['tool_chain']
+                                     if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
+                                     and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None)]
                         enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
-                        enhanced_context += f"Chain: {' -> '.join(sk['tool_chain'])}\n"
+                        enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
+                        if len(_filtered) < len(sk['tool_chain']):
+                            enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
                 if pre_ctx.get("user_preferences"):
                     prefs = pre_ctx["user_preferences"]
                     if prefs:
@@ -3591,6 +3609,7 @@ print(json.dumps(result))
 
             tool_calls = valid_tool_calls
             tools_executed = True  # Mark that tools are being executed
+            _tool_results_to_store = []  # Collect (tool_name, result, params) for batch storage
 
             for tc in tool_calls:
                 tool_name = tc.get("tool", "")
@@ -3619,9 +3638,12 @@ print(json.dumps(result))
                 elif tool_name in ("code_writer", "write_tool", "create_tool", "写工具", "新工具"):
                     result_text = self._handle_code_writing(params)
                 elif tool_name in self.registry.tool_names:
+                    logger.info(f"[TOOL-LOOP] About to execute {tool_name}, params_keys={list(params.keys())}")
                     try:
                         result = self._execute_tool_with_memory(tool_name, params)
                         result_text = ToolResultPipeline.format(tool_name, result, lang=_lang)
+                        # Collect for batch storage
+                        _tool_results_to_store.append((tool_name, result, params.copy()))
                     except Exception as e:
                         result_text = f"Exception: {str(e)}"
                         logger.error(f"Tool {tool_name} failed: {e}")
@@ -3648,12 +3670,29 @@ print(json.dumps(result))
                 messages.append({
                     "role": "user",
                     "content": [
-                        {"type": "tool_result", "tool_use_id": tool_id, "content": result_text[:2000]}
+                        {"type": "tool_result", "tool_use_id": tool_id, "content": result_text[:4000]}
                     ]
                 })
                 # Store in conversation memory for context persistence
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
                 self.memory.add_message("user", f"[Tool result: {result_text[:500]}]")
+
+            # BATCH STORE: Store all tool results after the loop.
+            # This is done AFTER the for-loop to avoid yield-related
+            # generator pauses that could prevent storage.
+            for _tn, _tr, _tp in _tool_results_to_store:
+                logger.info(f"[BATCH-STORE] Storing result for {_tn}")
+                self._store_tool_result(_tn, _tr)
+                if _tn in ('ctv_segmentation', 'oar_segmentation') and 'image_path' in _tp:
+                    self.memory.store("ct_path", _tp['image_path'])
+                    if self.memory.retrieve("ct_image") is None:
+                        try:
+                            import SimpleITK as sitk
+                            ct_img = sitk.ReadImage(_tp['image_path'])
+                            self.memory.store("ct_image", ct_img)
+                            self.memory.store("ct_image_raw", ct_img)
+                        except Exception as e:
+                            logger.warning(f"Failed to auto-load CT image: {e}")
 
             # After all tools executed, instruct LLM to continue or summarize.
             # The previous instruction let the LLM run open-ended, which
@@ -4108,11 +4147,22 @@ print(json.dumps(result))
                         if not _wanted.intersection(_skill):
                             logger.info(f"Skip skill '{sk['name']}' — user wants {_wanted}, skill has {_skill}")
                         else:
+                            # Filter out already-completed steps from chain
+                            _filtered = [s for s in sk['tool_chain']
+                                         if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
+                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None)]
                             enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
-                            enhanced_context += f"Chain: {' -> '.join(sk['tool_chain'])}\n"
+                            enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
+                            if len(_filtered) < len(sk['tool_chain']):
+                                enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
                     else:
+                        _filtered = [s for s in sk['tool_chain']
+                                     if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
+                                     and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None)]
                         enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
-                        enhanced_context += f"Chain: {' -> '.join(sk['tool_chain'])}\n"
+                        enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
+                        if len(_filtered) < len(sk['tool_chain']):
+                            enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
                 if pre_ctx.get("user_preferences"):
                     prefs = pre_ctx["user_preferences"]
                     if prefs:
@@ -4299,6 +4349,7 @@ print(json.dumps(result))
             full_content = ""
             iteration_text = ""  # Text from this iteration only
             tool_calls_from_stream = []
+            _pending_text_chunks = []  # Buffer text until we know if tool calls exist
             llm_error = None
 
             try:
@@ -4339,6 +4390,9 @@ print(json.dumps(result))
                             # (the format the LLM actually emits, not the
                             # <minimax:tool_call> prefix that wasn't matched).
                             if not re.match(r'(\[\s*\{\s*["\']type["\']\s*:\s*["\']tool_use|```tool_call|<tool_call>|<minimax:tool_call>|\[\s*TOOL_CALL\s*\])', new_text):
+                                # Yield text chunks IMMEDIATELY for
+                                # real-time streaming. Don't buffer —
+                                # the user sees each token as it arrives.
                                 yield yield_event("text_chunk", {"text": new_text})
                             # Always advance offset so tool_call text is consumed
                             # and doesn't block future chunks when _clean_response_text removes it
@@ -4418,6 +4472,12 @@ print(json.dumps(result))
             if not tool_calls:
                 tool_calls = self._parse_tool_calls(content)
 
+            # FLUSH or DISCARD buffered text chunks. If the LLM
+            # emitted tool calls, the text is premature (tools
+            # Text chunks are yielded immediately during streaming.
+            # If tool calls exist, just discard any leftover buffer.
+            _pending_text_chunks.clear()
+
             if not tool_calls:
                 # Check for incomplete tool call markers — LLM generated [TOOL_CALL] without JSON
                 if re.search(r'\[TOOL_CALL\]\s*$', content.strip()) or re.search(r'```tool_call\s*$', content.strip()):
@@ -4481,7 +4541,35 @@ print(json.dumps(result))
                 tools_executed = True
                 break
 
+            # HARD BLOCK: prevent redundant tool calls.
+            # The LLM sometimes re-calls tools even after they completed.
+            _filtered_again = []
+            _planning_ran_this_turn = any(
+                s.get("tool") in ("planning_pipeline", "seed_planning", "dose_engine")
+                for s in steps if s.get("type") == "tool" and s.get("status") == "done"
+            )
+            for tc in valid_tool_calls:
+                _tn = tc.get("tool", "")
+                if _tn == "ctv_segmentation" and self.memory.retrieve("ctv_array") is not None:
+                    logger.info(f"[HARD-BLOCK] Skipping redundant ctv_segmentation")
+                    continue
+                if _tn == "oar_segmentation" and self.memory.retrieve("oar_array") is not None:
+                    _oar_names = self.memory.retrieve("organ_names") or {}
+                    if len(_oar_names) >= 50:
+                        logger.info(f"[HARD-BLOCK] Skipping redundant oar_segmentation")
+                        continue
+                if _tn == "planning_pipeline" and _planning_ran_this_turn:
+                    logger.info(f"[HARD-BLOCK] Skipping redundant planning_pipeline (already ran this turn)")
+                    continue
+                _filtered_again.append(tc)
+            valid_tool_calls = _filtered_again
+
+            if not valid_tool_calls:
+                tools_executed = True
+                break
+
             tool_calls = valid_tool_calls
+            _tool_results_to_store = []  # Collect (tool_name, result, params) for batch storage
 
             # Prevent ui_screenshot from being called multiple times per conversation
             _screenshot_called_this_turn = set()
@@ -4617,6 +4705,7 @@ print(json.dumps(result))
                 elif tool_name in ("code_writer", "write_tool", "create_tool", "写工具", "新工具"):
                     result_text = self._handle_code_writing(params)
                 elif tool_name in self.registry.tool_names:
+                    logger.info(f"[TOOL-LOOP] About to execute {tool_name}, params_keys={list(params.keys())}")
                     try:
                         # For long-running tools (code_executor), yield
                         # control briefly so the browser can render the
@@ -4629,6 +4718,17 @@ print(json.dumps(result))
                             progress_callback=tool_progress_callback,
                             step_callback=tool_step_callback,
                         )
+                        # CRITICAL: Capture tool result BEFORE any yields.
+                        # The yield pauses this generator. If the Flask
+                        # SSE consumer closes the connection, code after
+                        # yield never runs — tool_result stays None and
+                        # _store_tool_result is never called.
+                        tool_result = result
+                        if tool_result is not None and tool_result.success:
+                            _tool_results_to_store.append((tool_name, tool_result, params.copy()))
+                            # Also store ct_path immediately
+                            if tool_name in ('ctv_segmentation', 'oar_segmentation') and 'image_path' in params:
+                                self.memory.store("ct_path", params['image_path'])
                         # Drain any sub-step events the tool emitted
                         # while running. The tool's callbacks are
                         # sync, so they couldn't `yield` directly —
@@ -4639,7 +4739,6 @@ print(json.dumps(result))
                         for _evt_type, _evt_data in self._pending_callback_events:
                             yield yield_event(_evt_type, _evt_data)
                         self._pending_callback_events.clear()
-                        tool_result = result
                         if result.success:
                             result_text = result.message
                             # Special handling for web_search - include actual results
@@ -4696,6 +4795,26 @@ print(json.dumps(result))
                                 stdout = result.data.get("stdout", "").strip()
                                 if stdout:
                                     result_text = stdout[:1000]
+                            # Special handling for planning_pipeline —
+                            # include the FULL metrics dict so the LLM
+                            # can generate a detailed report (OAR table,
+                            # clinical flags, etc.) instead of a 1-line
+                            # summary.
+                            elif tool_name == "planning_pipeline" and result.success:
+                                _meta = result.metadata or {}
+                                _data = result.data or {}
+                                # Build a structured metrics block
+                                _dose_metrics = _meta.get("dose_metrics", {})
+                                _parts = [result_text]
+                                if _dose_metrics:
+                                    _parts.append(f"\nDose Metrics: {_dose_metrics}")
+                                _seeds = _meta.get("total_seeds", 0)
+                                if _seeds:
+                                    _parts.append(f"Total seeds: {_seeds}")
+                                _times = _meta.get("substep_timings", {})
+                                if _times:
+                                    _parts.append(f"Substep timings: {_times}")
+                                result_text = "\n".join(_parts)
                             if result.success and hasattr(result, "metadata") and result.metadata:
                                 metrics_summary = {}
                                 for k, v in result.metadata.items():
@@ -4712,6 +4831,7 @@ print(json.dumps(result))
                     except Exception as e:
                         result_text = f"Exception: {str(e)}"
                         logger.error(f"Tool {tool_name} failed: {e}")
+                    logger.info(f"[AFTER-TRY-STREAM] tool={tool_name}, result_text_len={len(result_text) if result_text else 0}, tool_result={type(tool_result).__name__ if tool_result else 'None'}")
                 else:
                     result_text = f"Unknown tool: {tool_name}. Available: {self.registry.tool_names}"
 
@@ -4722,34 +4842,54 @@ print(json.dumps(result))
                 if tool_result is not None and tool_result.success and hasattr(tool_result, 'metadata'):
                     tool_step["metadata"] = tool_result.metadata
                 tools_executed = True
-                yield yield_event("step", tool_step)
 
-                # Store tool result in agent memory for downstream tools
+                # CRITICAL: Store tool result BEFORE yielding the step
+                # event. The yield pauses this generator until the
+                # consumer requests the next event. If the consumer
+                # stops (client disconnect), code after yield never runs.
+                logger.warning(f"[STORE-CHECK] tool={tool_name}, result_type={type(tool_result).__name__}, success={tool_result.success if tool_result else 'N/A'}")
                 if tool_result is not None and tool_result.success:
-                    print(f"[EXEC] Calling _store_tool_result for {tool_name}")
-                    self._store_tool_result(tool_name, tool_result)
-                    # Verify storage
-                    if tool_name == 'ctv_segmentation':
-                        _stored = self.memory.retrieve("ctv_array")
-                        print(f"[VERIFY] After store: ctv_array={'exists' if _stored is not None else 'None'}, agent_id={id(self)}")
-                        import AgenticSys as _ag
-                        _global = getattr(_ag, '_global_agent', None)
-                        print(f"[VERIFY] _global_agent id={id(_global) if _global else 'None'}, self id={id(self)}, same={_global is self}")
-                    # Also store ct_path for planning pipeline
+                    logger.warning(f"[EXEC] Storing result for {tool_name}")
+                    try:
+                        self._store_tool_result(tool_name, tool_result)
+                        logger.warning(f"[EXEC] Stored OK for {tool_name}")
+                    except Exception as store_err:
+                        logger.error(f"[EXEC] FAILED to store {tool_name}: {store_err}")
+                    # Also store ct_path for downstream tools
                     if tool_name in ('ctv_segmentation', 'oar_segmentation') and 'image_path' in params:
                         self.memory.store("ct_path", params['image_path'])
-                        if self.memory.retrieve("ct_image") is None:
-                            try:
-                                import SimpleITK as sitk
-                                ct_img = sitk.ReadImage(params['image_path'])
-                                self.memory.store("ct_image", ct_img)
-                                # Also keep the raw frame for label metadata alignment
-                                self.memory.store("ct_image_raw", ct_img)
-                            except Exception as e:
-                                logger.warning(
-                                    f"Failed to auto-load CT image from {params['image_path']}: {e}. "
-                                    f"Downstream planning may fail with 'No CT image available'."
-                                )
+
+                # SKIP step event for deduped tools — the auto-fired
+                # version already emitted its own step events. Without
+                # this, the todo list shows "oar_segmentation completed"
+                # twice and the CTV timer includes OAR time.
+                _is_skipped_dup = (tool_result is not None
+                                   and hasattr(tool_result, 'metadata')
+                                   and tool_result.metadata
+                                   and tool_result.metadata.get('skipped_duplicate'))
+                if not _is_skipped_dup:
+                    yield yield_event("step", tool_step)
+
+                # Collect for batch storage after loop (yield may
+                # cause generator pause, making in-loop storage unreliable)
+                if tool_result is not None and tool_result.success:
+                    _tool_results_to_store.append((tool_name, tool_result, params))
+
+                # Also store ct_path for planning pipeline
+                if tool_name in ('ctv_segmentation', 'oar_segmentation') and 'image_path' in params:
+                    self.memory.store("ct_path", params['image_path'])
+                    if self.memory.retrieve("ct_image") is None:
+                        try:
+                            import SimpleITK as sitk
+                            ct_img = sitk.ReadImage(params['image_path'])
+                            self.memory.store("ct_image", ct_img)
+                            # Also keep the raw frame for label metadata alignment
+                            self.memory.store("ct_image_raw", ct_img)
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to auto-load CT image from {params['image_path']}: {e}. "
+                                f"Downstream planning may fail with 'No CT image available'."
+                            )
 
                 # Append tool call and result to messages in Anthropic-compatible format
                 tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
@@ -4762,12 +4902,29 @@ print(json.dumps(result))
                 messages.append({
                     "role": "user",
                     "content": [
-                        {"type": "tool_result", "tool_use_id": tool_id, "content": result_text[:2000]}
+                        {"type": "tool_result", "tool_use_id": tool_id, "content": result_text[:4000]}
                     ]
                 })
                 # Store in conversation memory for context persistence
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
                 self.memory.add_message("user", f"[Tool result: {result_text[:500]}]")
+
+            # BATCH STORE: Store all tool results after the loop.
+            # This is done AFTER the for-loop to avoid yield-related
+            # generator pauses that could prevent storage.
+            for _tn, _tr, _tp in _tool_results_to_store:
+                logger.info(f"[BATCH-STORE] Storing result for {_tn}")
+                self._store_tool_result(_tn, _tr)
+                if _tn in ('ctv_segmentation', 'oar_segmentation') and 'image_path' in _tp:
+                    self.memory.store("ct_path", _tp['image_path'])
+                    if self.memory.retrieve("ct_image") is None:
+                        try:
+                            import SimpleITK as sitk
+                            ct_img = sitk.ReadImage(_tp['image_path'])
+                            self.memory.store("ct_image", ct_img)
+                            self.memory.store("ct_image_raw", ct_img)
+                        except Exception as e:
+                            logger.warning(f"Failed to auto-load CT image: {e}")
 
             # After all tools executed, instruct LLM to continue or summarize.
             # The previous instruction let the LLM run open-ended, which
@@ -5343,7 +5500,7 @@ print(json.dumps(result))
                         break
 
                 if _needs_review:
-                    _MAX_RETRIES = 3
+                    _MAX_RETRIES = 2  # Allow one retry for plan quality improvements
                     for _retry in range(_MAX_RETRIES):
                         try:
                             import asyncio
@@ -5397,7 +5554,14 @@ print(json.dumps(result))
                                 # otherwise be a stale, truncated copy that the
                                 # frontend would re-render on top of the streamed
                                 # retry text, causing a confusing / truncated UI).
-                                _retry_msg = message + f"\n\n[Quality review feedback - fix these issues: {_concerns_text}]"
+                                _retry_msg = (
+                                    f"{message}\n\n"
+                                    f"[Quality review: {_concerns_text}. "
+                                    f"If the reviewer identified specific issues that can be fixed "
+                                    f"by re-running tools with different parameters, you may do so. "
+                                    f"Otherwise, acknowledge the review concerns in your response. "
+                                    f"Reply in the SAME language as the user's original message.]"
+                                )
                                 for ev in self._run_llm_function_calling_stream(
                                         _retry_msg, steps, step_id, yield_event):
                                     if isinstance(ev, dict) and ev.get("type") == "_result":
@@ -5470,9 +5634,14 @@ print(json.dumps(result))
                 _review_type = "general_response"
                 _review_content = {"response": response, "steps": steps}
 
-                # Check if treatment plan was generated
+                # Check if treatment plan was generated — only review
+                # if planning tools were actually executed AND produced
+                # dose data. Without the dose_metrics check, the review
+                # fires on non-planning queries (e.g. web_search + tool
+                # list question) and causes duplicate responses.
+                _has_dose_data = bool(self.memory.retrieve("dose_metrics"))
                 for s in steps:
-                    if s.get("tool") in ["planning_pipeline", "seed_planning", "dose_evaluation"]:
+                    if s.get("tool") in ["planning_pipeline", "seed_planning", "dose_evaluation"] and _has_dose_data:
                         _needs_review = True
                         _review_type = "treatment_plan"
                         _review_content = {
@@ -5486,7 +5655,7 @@ print(json.dumps(result))
                         break
 
                 if _needs_review:
-                    _MAX_RETRIES = 3
+                    _MAX_RETRIES = 2  # Allow one retry for plan quality improvements
                     for _retry in range(_MAX_RETRIES):
                         import asyncio
                         loop = asyncio.new_event_loop()

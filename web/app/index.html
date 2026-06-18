@@ -2435,6 +2435,10 @@ body::before {
     height: 480px;          /* generous default — fits 8 DVH curves comfortably */
     max-height: none;       /* no upper cap — user can drag up to 900px and
                                the outer scrollbar takes care of the rest */
+    overflow: visible;      /* CRITICAL: allow Plotly hover tooltip to escape
+                               the section boundary. Without this, the
+                               hoverlabel is clipped by the parent's
+                               overflow:hidden. */
 }
 #metricsOAR {
     /* Natural height — the table sets its own size based on row count.
@@ -2655,10 +2659,23 @@ body::before {
 /* ===========================================================
    DVH — sunken well
    =========================================================== */
-.dvh-panel { padding: 0.95rem; flex: 1; overflow: hidden; position: relative; }
-/* Constrain Plotly hover tooltip so text stays inside the visible area */
-.dvh-panel .hoverlayer { max-width: 100%; overflow: hidden; }
-.dvh-panel .hoverlayer .hovertext { max-width: 200px; }
+.dvh-container { padding: 0.95rem; flex: 1; overflow: visible; position: relative; }
+/* Plotly hover tooltip — keep text inside the tooltip box */
+.dvh-container .hoverlayer { overflow: visible !important; pointer-events: none; }
+.dvh-container .hoverlayer .hovertext {
+    max-width: 220px;
+    min-width: 100px;
+    white-space: normal;
+    word-wrap: break-word;
+    overflow: hidden !important;
+}
+/* Force SVG text elements to stay inside their bounding box */
+.dvh-container .hoverlayer svg text { overflow: hidden !important; }
+.dvh-container .hoverlayer .hovertext text { overflow: hidden !important; }
+.dvh-container .hoverlayer .hovertext rect {
+    rx: 4;
+    ry: 4;
+}
 
 .dvh-container {
     /* Fill the leftover height of the metrics-section, but never grow
@@ -2673,13 +2690,11 @@ body::before {
     border-radius: var(--radius-md);
     border: 1px solid var(--border-hairline);
     box-shadow: var(--inset-bottom), var(--shadow-xs);
-    overflow: hidden;
+    overflow: visible;
     margin-bottom: 0.3rem;
-    /* Lock the height to the section's content box. Without `height: 0`
-       Plotly's responsive handler can grow the container when its
-       internal relayout fires — the visible "sinking" is the OAR
-       table sliding down as the DVH section inflates. */
-    height: 0;
+    /* Do NOT use height:0 — it gives the container zero dimensions,
+       causing Plotly's hover tooltip to misposition and overflow.
+       The metrics-section parent already caps height via flex layout. */
 }
 
 .dvh-placeholder {
@@ -5179,11 +5194,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
                                 <span>No CT data</span>
                             </div>
                             <canvas id="sliceCanvasAxial" style="display:none;max-width:100%;max-height:100%;"></canvas>
-                            <canvas id="crosshairCanvasAxial" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
-                            <canvas id="annotationCanvasAxial" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
+                            <canvas id="crosshairCanvasAxial" style="position:absolute;inset:0;pointer-events:none;display:none;z-index:8;"></canvas>
+                            <canvas id="annotationCanvasAxial" style="position:absolute;inset:0;pointer-events:none;display:none;z-index:9;"></canvas>
                             <canvas id="labelOverlay_Axial" style="position:absolute;pointer-events:none;display:none;opacity:0.6;"></canvas>
                             <!-- Dose overlay colorbar (PETrainbow2, smooth gradient) -->
-                            <div class="dose-colorbar" id="doseColorbarAxial" style="display:none;position:absolute;right:6px;top:6px;bottom:6px;width:42px;z-index:5;pointer-events:none;">
+                            <div class="dose-colorbar" id="doseColorbarAxial" style="display:none;position:absolute;right:6px;top:6px;bottom:6px;width:42px;z-index:7;pointer-events:none;">
                                 <div style="position:relative;width:16px;height:100%;margin-left:auto;border-radius:3px;border:1px solid rgba(255,255,255,0.2);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.3);">
                                     <canvas class="colorbarCanvas" data-axis="axial" width="16" height="512" style="width:100%;height:100%;image-rendering:auto;"></canvas>
                                 </div>
@@ -5223,11 +5238,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
                                 <span>No CT data</span>
                             </div>
                             <canvas id="sliceCanvasSagittal" style="display:none;max-width:100%;max-height:100%;"></canvas>
-                            <canvas id="crosshairCanvasSagittal" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
-                            <canvas id="annotationCanvasSagittal" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
+                            <canvas id="crosshairCanvasSagittal" style="position:absolute;inset:0;pointer-events:none;display:none;z-index:8;"></canvas>
+                            <canvas id="annotationCanvasSagittal" style="position:absolute;inset:0;pointer-events:none;display:none;z-index:9;"></canvas>
                             <canvas id="labelOverlay_Sagittal" style="position:absolute;pointer-events:none;display:none;opacity:0.6;"></canvas>
                             <!-- Dose overlay colorbar (cloned from axial, linear scale Gy) -->
-                            <div class="dose-colorbar" id="doseColorbarSagittal" style="display:none;position:absolute;right:6px;top:6px;bottom:6px;width:42px;z-index:5;pointer-events:none;">
+                            <div class="dose-colorbar" id="doseColorbarSagittal" style="display:none;position:absolute;right:6px;top:6px;bottom:6px;width:42px;z-index:7;pointer-events:none;">
                                 <div style="position:relative;width:16px;height:100%;margin-left:auto;border-radius:3px;border:1px solid rgba(255,255,255,0.2);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.3);">
                                     <canvas class="colorbarCanvas" data-axis="sagittal" width="16" height="512" style="width:100%;height:100%;image-rendering:auto;"></canvas>
                                 </div>
@@ -5265,11 +5280,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
                                 <span>No CT data</span>
                             </div>
                             <canvas id="sliceCanvasCoronal" style="display:none;max-width:100%;max-height:100%;"></canvas>
-                            <canvas id="crosshairCanvasCoronal" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
-                            <canvas id="annotationCanvasCoronal" style="position:absolute;inset:0;pointer-events:none;display:none;"></canvas>
+                            <canvas id="crosshairCanvasCoronal" style="position:absolute;inset:0;pointer-events:none;display:none;z-index:8;"></canvas>
+                            <canvas id="annotationCanvasCoronal" style="position:absolute;inset:0;pointer-events:none;display:none;z-index:9;"></canvas>
                             <canvas id="labelOverlay_Coronal" style="position:absolute;pointer-events:none;display:none;opacity:0.6;"></canvas>
                             <!-- Dose overlay colorbar (cloned from axial, linear scale Gy) -->
-                            <div class="dose-colorbar" id="doseColorbarCoronal" style="display:none;position:absolute;right:6px;top:6px;bottom:6px;width:42px;z-index:5;pointer-events:none;">
+                            <div class="dose-colorbar" id="doseColorbarCoronal" style="display:none;position:absolute;right:6px;top:6px;bottom:6px;width:42px;z-index:7;pointer-events:none;">
                                 <div style="position:relative;width:16px;height:100%;margin-left:auto;border-radius:3px;border:1px solid rgba(255,255,255,0.2);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.3);">
                                     <canvas class="colorbarCanvas" data-axis="coronal" width="16" height="512" style="width:100%;height:100%;image-rendering:auto;"></canvas>
                                 </div>
@@ -7310,7 +7325,10 @@ function _todoCreate() {
             const time = document.createElement('span'); time.className = 'chat-todo-time';
             li.appendChild(dot); li.appendChild(lbl); li.appendChild(time);
             ul.appendChild(li);
-            const item = { id, label, status: 'pending', startedAt: Date.now(), endedAt: null, node: li, step };
+            // Store toolName directly on item for reliable dedup
+            // (labels may be translated to Chinese, so label-based
+            // matching fails for English tool names like "trajectory_init").
+            const item = { id, label, toolName: step.tool || null, status: 'pending', startedAt: Date.now(), endedAt: null, node: li, step };
             api.items.push(item);
             _todoUpdateCount();
             return item;
@@ -7368,22 +7386,15 @@ function _todoCreate() {
             _todoStartGpuBadge(item);
         },
         markDone(item, errMsg) {
-            // BUG FIX 2026-06-16: enforce a minimum active-display
-            // time so the user can SEE the breathing animation
-            // before the row transitions to done. Without this,
-            // an item that was just promoted from 'predicted' →
-            // 'active' and immediately receives 'done' (e.g. the
-            // auto-OAR flow where both events arrive in the same
-            // SSE flush batch) goes directly from dim ghost to ✓
-            // with no visible activity. We defer the actual DOM
-            // transitions until at least 800ms have elapsed since
-            // activation. The timer keeps ticking so the duration
-            // shown to the user is the REAL tool time, not the
-            // artificial delay.
-            const MIN_ACTIVE_MS = 800;
-            const sinceActive = item._activatedAt ? (Date.now() - item._activatedAt) : MIN_ACTIVE_MS;
-            if (item.status === 'active' && sinceActive < MIN_ACTIVE_MS) {
-                const delay = MIN_ACTIVE_MS - sinceActive;
+            // If the item was just activated in the same tick (pending+done
+            // in same batch), skip the defer and mark done immediately.
+            // The old 800ms defer caused items to stay stuck in "active"
+            // when both events arrived in the same SSE batch.
+            const sinceActive = item._activatedAt ? (Date.now() - item._activatedAt) : 9999;
+            // If sinceActive is 0 or very small (<50ms), both events
+            // arrived in the same tick — skip defer entirely.
+            if (item.status === 'active' && sinceActive > 50) {
+                const delay = Math.max(0, 500 - sinceActive);
                 setTimeout(() => {
                     if (item.status === 'active') this.markDone(item, errMsg);
                 }, delay);
@@ -7590,6 +7601,20 @@ function _todoCreate() {
 // creating a new item if no match.
 function _todoUpdateFromStep(todo, step) {
     if (!todo || !step) return;
+    // UNFOLD: if the todo was folded (e.g. by a previous response)
+    // and a new tool step arrives (e.g. quality review retry),
+    // unfold it so the user can see the retry progress.
+    if (step.type === 'tool' && todo.root && todo.root.classList.contains('folded')) {
+        todo.root.classList.remove('folded');
+        const list = todo.root.querySelector('.chat-todo-list');
+        if (list) list.classList.remove('collapsed');
+        todo.root.querySelector('.chat-todo-caret').textContent = '▼';
+        // Cancel any pending hide timer
+        if (todo.root._hideTimer) { clearTimeout(todo.root._hideTimer); todo.root._hideTimer = null; }
+        // Re-show the dock
+        const dock = document.getElementById('chatTodoDock');
+        if (dock) { dock.style.display = ''; todo.root.style.opacity = ''; }
+    }
     // FILTER: skip runtime plumbing steps. The user complained that
     // "接收用户请求 / Multi-Agent Router / Crystallized Skill / Experience
     // Recall / LLM Call 1" — all internal LLM runtime — cluttered the
@@ -7612,35 +7637,57 @@ function _todoUpdateFromStep(todo, step) {
     //    bottom). _todoFindPredicted matches status === 'predicted' —
     //    once a predicted item has been activated, we fall through
     //    to the dedup check below to find the same item by tool name.
+    // 0. MERGE CTV+OAR when auto-fired inside planning pipeline.
+    //    When oar_segmentation has parent_tool === "ctv_segmentation",
+    //    merge it into the CTV item instead of creating a separate
+    //    OAR row. The label becomes "CTV + OAR segmentation".
+    //    When CTV or OAR is called individually (no parent_tool), they
+    //    stay as separate items.
+    if (step.tool === 'oar_segmentation' && step.parent_tool === 'ctv_segmentation') {
+        const ctvItem = todo.items.find(i => {
+            if (i.predicted && i.predictedTool === 'ctv_segmentation') return true;
+            if (i.toolName === 'ctv_segmentation') return true;
+            if (i.step && i.step.tool === 'ctv_segmentation') return true;
+            return false;
+        });
+        if (ctvItem) {
+            const i18n = _todoI18n();
+            const mergedLabel = (i18n.tools.ctv_segmentation || 'CTV segmentation') + ' + ' + (i18n.tools.oar_segmentation || 'OAR segmentation');
+            const lbl = ctvItem.node.querySelector('.chat-todo-label');
+            if (lbl) lbl.textContent = mergedLabel;
+            ctvItem._mergedOAR = true;
+            // Remove the predicted OAR item since it's merged into CTV
+            const predOAR = todo.items.find(i => i.predicted && i.predictedTool === 'oar_segmentation');
+            if (predOAR && predOAR !== ctvItem) {
+                predOAR.node.remove();
+                todo.items = todo.items.filter(i => i !== predOAR);
+            }
+            if (step.status === 'done') todo.markDone(ctvItem);
+            else if (step.status === 'pending') todo.markActive(ctvItem);
+            return ctvItem;
+        }
+    }
+
     let item = _todoFindPredicted(todo, step);
     // 2. Try by id (for re-emission of the same step)
     if (!item && step.id != null) {
         item = todo.items.find(i => i.id === String(step.id));
     }
+
     // 3. DEDUP BY TOOL NAME: if this tool is already represented in
     //    the todo (predicted, active, or done), update it in place.
-    //    The previous version used `i.step && i.step.tool` which only
-    //    matched items that had been created via addPending — the
-    //    pre-seeded predicted items have `i.step === undefined`, so
-    //    they slipped through and a duplicate got appended. We now
-    //    also match on `i.predictedTool` so the same business tool
-    //    always finds its row, regardless of how the row was created.
     if (!item && step.tool) {
         const existing = todo.items.find(i => {
             if (i.predicted && i.predictedTool === step.tool) return true;
             if (i.step && i.step.tool === step.tool) return true;
+            if (i.toolName && i.toolName === step.tool) return true;
             return false;
         });
         if (existing) {
-            // Just update the existing one's status (e.g. flip from
-            // active → done when the final sub-step finishes).
             if (step.status === 'done') todo.markDone(existing);
             else if (step.status === 'pending') todo.markActive(existing);
             return existing;
         }
-        // 3b. DEDUP BY TOOL NAME ONLY (ignore parent_tool): catch
-        //     auto-fired vs explicit duplicates (e.g. oar_segmentation
-        //     auto-fired inside ctv_segmentation vs LLM explicit call).
     }
     // 4. Create a new item if no match
     if (!item) {
@@ -7649,7 +7696,27 @@ function _todoUpdateFromStep(todo, step) {
     if (step.status === 'pending') {
         todo.markActive(item);
     } else if (step.status === 'done') {
-        todo.markDone(item);
+        // If this item is a merged CTV+OAR, only mark done when
+        // BOTH tools are done. Track which tools have completed.
+        if (item._mergedOAR) {
+            if (!item._mergedDone) item._mergedDone = {};
+            item._mergedDone[step.tool] = true;
+            // Mark done only when both ctv_segmentation AND oar_segmentation are done
+            if (item._mergedDone['ctv_segmentation'] && item._mergedDone['oar_segmentation']) {
+                todo.markDone(item);
+            }
+            // If only one is done, just update timing display
+            else if (step.tool === 'ctv_segmentation') {
+                // CTV done but OAR still running — show elapsed time
+                const t = item.node.querySelector('.chat-todo-time');
+                if (t && item.startedAt) {
+                    const dur = (Date.now() - item.startedAt) / 1000;
+                    t.textContent = dur.toFixed(1) + 's';
+                }
+            }
+        } else {
+            todo.markDone(item);
+        }
     } else if (step.status === 'error') {
         todo.markDone(item, step.error || 'failed');
     }
@@ -8067,6 +8134,20 @@ async function sendChat(prefill) {
                         } else if (data.type === 'tool' && (data.status === 'done' || data.status === 'error')) {
                             if (progressEl && typeof updateToolProgress === 'function') {
                                 updateToolProgress(progressEl, lastToolName, data.status, data.result);
+                            }
+                            // Execute UI controller actions
+                            if (data.status === 'done' && data.tool === 'ui_controller' && data.result) {
+                                try {
+                                    let actions = null;
+                                    if (typeof data.result === 'string') {
+                                        actions = JSON.parse(data.result).actions;
+                                    } else if (data.result.actions) {
+                                        actions = data.result.actions;
+                                    }
+                                    if (Array.isArray(actions)) {
+                                        actions.forEach(a => _executeUIAction(a));
+                                    }
+                                } catch (_) {}
                             }
                             // Count completed tool calls for the usage-bar
                             // footer. We count BOTH done and error because
@@ -9622,6 +9703,433 @@ function setupMetricsResize() {
     });
 }
 
+// ============================================================
+// UI Controller action executor
+// ============================================================
+// Confirmation dialog for destructive operations
+function _confirmAction(msg) {
+    return new Promise(resolve => {
+        // Create modal overlay
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;display:flex;align-items:center;justify-content:center;';
+        overlay.innerHTML = `
+            <div style="background:var(--bg-2);border:1px solid var(--border-hairline);border-radius:12px;padding:24px;max-width:400px;text-align:center;">
+                <div style="font-size:1.1rem;font-weight:600;margin-bottom:12px;">⚠️ 确认操作</div>
+                <div style="font-size:0.85rem;color:var(--text-dim);margin-bottom:20px;">${msg}</div>
+                <div style="display:flex;gap:12px;justify-content:center;">
+                    <button id="_confirmYes" class="btn btn-danger" style="min-width:80px;">确认</button>
+                    <button id="_confirmNo" class="btn btn-outline" style="min-width:80px;">取消</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        overlay.querySelector('#_confirmYes').onclick = () => { overlay.remove(); resolve(true); };
+        overlay.querySelector('#_confirmNo').onclick = () => { overlay.remove(); resolve(false); };
+        overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } };
+    });
+}
+
+function _executeUIAction(a) {
+    const { target, command, value, requires_confirm } = a;
+    // Destructive operations require confirmation
+    if (requires_confirm) {
+        const msgs = {
+            'session.delete': `确定要删除会话 ${value} 吗？此操作不可撤销。`,
+            'session.clear_all': '确定要清空所有会话和本地数据吗？此操作不可撤销。',
+            'plan.reset': '确定要重置当前规划会话吗？所有规划数据将被清除。',
+            'report.clear': '确定要清空报告数据吗？',
+            'chat.clear_history': '确定要清空当前聊天记录吗？',
+        };
+        _confirmAction(msgs[target] || `确定要执行 ${target} 吗？`).then(ok => {
+            if (!ok) return;
+            _executeUIActionRaw(a);
+        });
+        return;
+    }
+    _executeUIActionRaw(a);
+}
+
+function _executeUIActionRaw(a) {
+    const { target, command, value } = a;
+    try {
+        // ── Panel switching ──
+        if (target === 'panel' && command === 'switch') {
+            const tab = document.querySelector(`.panel-tab[onclick*="${value}"]`);
+            if (tab) switchPanel(value, tab);
+            return;
+        }
+        // ── Viewer settings ──
+        if (target === 'viewer.window') {
+            const el = document.getElementById('viewerWindow');
+            if (!el) return;
+            let v = parseInt(el.value) || 400;
+            if (command === 'set') v = parseInt(value) || v;
+            else if (command === 'increase') v += parseInt(value) || 50;
+            else if (command === 'decrease') v -= parseInt(value) || 50;
+            el.value = v; state.viewerSettings.window = v;
+            if (state.ctLoaded) loadAllSlices();
+            return;
+        }
+        if (target === 'viewer.level') {
+            const el = document.getElementById('viewerLevel');
+            if (!el) return;
+            let v = parseInt(el.value) || 40;
+            if (command === 'set') v = parseInt(value) || v;
+            else if (command === 'increase') v += parseInt(value) || 20;
+            else if (command === 'decrease') v -= parseInt(value) || 20;
+            el.value = v; state.viewerSettings.level = v;
+            if (state.ctLoaded) loadAllSlices();
+            return;
+        }
+        if (target === 'viewer.zoom') {
+            if (command === 'fit') {
+                state.viewerSettings.zoom = 1; state.viewerSettings.panX = 0; state.viewerSettings.panY = 0;
+            } else {
+                let v = Math.round((state.viewerSettings.zoom || 1) * 100);
+                if (command === 'set') v = parseInt(value) || v;
+                else if (command === 'increase') v += parseInt(value) || 20;
+                else if (command === 'decrease') v -= parseInt(value) || 20;
+                state.viewerSettings.zoom = Math.max(50, Math.min(300, v)) / 100;
+            }
+            applyViewerTransform(); return;
+        }
+        if (target === 'viewer.threshold') {
+            const el = document.getElementById('viewerThreshold');
+            if (el) { el.value = value; state.viewerSettings.threshold = parseInt(value); }
+            return;
+        }
+        if (target === 'viewer.fullscreen') {
+            toggleViewerFullscreen(value); return;
+        }
+        if (target === 'viewer.reset') {
+            state.viewerSettings.window = 400; state.viewerSettings.level = 40;
+            state.viewerSettings.zoom = 1; state.viewerSettings.panX = 0; state.viewerSettings.panY = 0;
+            state.viewerSettings.rotation = 0; state.viewerSettings.flipH = false; state.viewerSettings.flipV = false;
+            document.getElementById('viewerWindow').value = 400;
+            document.getElementById('viewerLevel').value = 40;
+            applyViewerTransform(); loadAllSlices(); return;
+        }
+        if (target === 'viewer.preset') {
+            const pp = document.getElementById('windowPreset');
+            if (pp) { pp.value = value; applyWindowPreset(); }
+            return;
+        }
+        // ── Overlay controls ──
+        if (target === 'overlay.ctv') {
+            const cb = document.getElementById('overlayCTV');
+            if (cb) { cb.checked = command === 'show' || (command === 'toggle' && !cb.checked); toggleOverlay(); }
+            return;
+        }
+        if (target === 'overlay.oar') {
+            const cb = document.getElementById('overlayOAR');
+            if (cb) { cb.checked = command === 'show' || (command === 'toggle' && !cb.checked); toggleOverlay(); }
+            return;
+        }
+        if (target === 'overlay.dose.opacity') {
+            state.doseOpacity = parseInt(value) / 100;
+            const sl = document.getElementById('doseOpacity');
+            if (sl) sl.value = value;
+            if (state.doseOverlay) state.doseOverlay.opacity = parseInt(value) / 100;
+            if (state.ctLoaded) loadAllSlices();
+            return;
+        }
+        if (target === 'overlay.ctv.opacity' || target === 'overlay.oar.opacity') {
+            const axis = target.includes('ctv') ? 'ctv' : 'oar';
+            const opEl = document.getElementById(`labelOp${capitalize(axis)}`);
+            if (opEl) { opEl.value = value; updateLabelImage('axial'); }
+            return;
+        }
+        if (target === 'overlay.display_mode') {
+            const dm = document.getElementById('displayMode');
+            if (dm) { dm.value = value; applyViewerSettings(); }
+            return;
+        }
+        // ── Slice navigation ──
+        if (target.startsWith('slice.')) {
+            const axis = target.split('.')[1];
+            const slider = document.getElementById('slice' + capitalize(axis));
+            if (!slider) return;
+            let v = parseInt(slider.value) || 0;
+            const max = parseInt(slider.max) || 0;
+            if (command === 'set') v = parseInt(value) || 0;
+            else if (command === 'next') v = Math.min(v + 1, max);
+            else if (command === 'prev') v = Math.max(v - 1, 0);
+            else if (command === 'first') v = 0;
+            else if (command === 'last') v = max;
+            slider.value = v; updateSlice(axis, v);
+            return;
+        }
+        // ── Layout ──
+        if (target === 'layout') {
+            const lm = document.getElementById('layoutMode');
+            if (lm) { lm.value = value; lm.dispatchEvent(new Event('change')); }
+            return;
+        }
+        // ── Data tree ──
+        if (target === 'data_tree') {
+            if (command === 'expand_all') {
+                document.querySelectorAll('.tree-group').forEach(g => {
+                    g.classList.remove('collapsed');
+                    const c = g.querySelector('.tree-caret');
+                    if (c) c.textContent = '▼';
+                });
+            } else if (command === 'collapse_all') {
+                document.querySelectorAll('.tree-group').forEach(g => {
+                    g.classList.add('collapsed');
+                    const c = g.querySelector('.tree-caret');
+                    if (c) c.textContent = '▶';
+                });
+            } else {
+                const group = document.querySelector(`.tree-group[data-group="${value}"]`);
+                if (group) {
+                    const caret = group.querySelector('.tree-caret');
+                    if (command === 'expand' && caret) { group.classList.remove('collapsed'); caret.textContent = '▼'; }
+                    else if (command === 'collapse' && caret) { group.classList.add('collapsed'); caret.textContent = '▶'; }
+                }
+            }
+            return;
+        }
+        if (target === 'tree.visibility') {
+            const parts = (value || '').split(',');
+            const id = parts[0], vis = parts[1] === 'on';
+            if (id) setGroupVisibility(id, vis);
+            return;
+        }
+        if (target === 'tree.opacity') {
+            const parts = (value || '').split(',');
+            const id = parts[0], op = parseInt(parts[1]) || 50;
+            if (id) setGroupOpacity(id, op);
+            return;
+        }
+        if (target === 'tree.reconstruct3d') {
+            // Use the same function as right-click → 3D reconstruction
+            reconstructOrgan3D(value);
+            return;
+        }
+        if (target === 'tree.group.visibility') {
+            const [group, vis] = (value || '').split(',');
+            if (group) setGroupVisibility(group, vis === 'show');
+            return;
+        }
+        if (target === 'tree.group.opacity') {
+            const [group, op] = (value || '').split(',');
+            if (group) setGroupOpacity(group, parseInt(op) || 50);
+            return;
+        }
+        if (target === 'tree.group.reconstruct3d') {
+            // Reconstruct all organs in the group using the data tree method
+            if (value === 'ctv') {
+                reconstructOrgan3D('ctv');
+            } else {
+                // For OAR groups, reconstruct all organs in the group
+                if (dataTreeState && dataTreeState.organs) {
+                    const organs = dataTreeState.organs.filter(o => {
+                        if (value === 'non_traversable') return o.category === 'non_traversable';
+                        if (value === 'traversable') return o.category === 'traversable';
+                        return true;
+                    });
+                    organs.forEach(o => reconstructOrgan3D(o.id, true));
+                }
+            }
+            return;
+        }
+        if (target === 'tree.dose.visibility') {
+            if (state.doseOverlay) {
+                state.doseOverlay.visible = value === 'on';
+                if (state.ctLoaded) loadAllSlices();
+            }
+            return;
+        }
+        if (target === 'tree.trajectories.visibility') {
+            if (dataTreeState && dataTreeState.planning) {
+                dataTreeState.planning.trajectoriesVisible = value === 'on';
+                renderDataTree();
+            }
+            return;
+        }
+        if (target === 'tree.seeds.visibility') {
+            if (dataTreeState && dataTreeState.planning) {
+                dataTreeState.planning.seedsVisible = value === 'on';
+                renderDataTree();
+            }
+            return;
+        }
+        if (target === 'tree.needles.visibility') {
+            if (dataTreeState && dataTreeState.planning) {
+                dataTreeState.planning.needlesVisible = value === 'on';
+                renderDataTree();
+            }
+            return;
+        }
+        if (target === 'tree.isosurfaces.visibility') {
+            if (dataTreeState && dataTreeState.planning) {
+                (dataTreeState.planning.doseLevels || []).forEach(d => d.visible = value === 'on');
+                renderDataTree();
+            }
+            return;
+        }
+        // ── Session management ──
+        if (target === 'session.new') { newChat(); return; }
+        if (target === 'session.switch') { switchSession(value); return; }
+        if (target === 'session.rename') {
+            if (activeSessionId && sessions[activeSessionId]) {
+                sessions[activeSessionId].title = value;
+                saveSessions(); renderSessionList();
+            }
+            return;
+        }
+        if (target === 'session.delete') { deleteSession(value); return; }
+        if (target === 'session.clear_all') { clearLocalChatData(); return; }
+        // ── Planning ──
+        if (target === 'plan.run') { runPlanning(); return; }
+        if (target === 'plan.reset') { resetSession(); return; }
+        // ── Report ──
+        if (target === 'report.autofill') {
+            if (typeof Report !== 'undefined' && Report.autoFill) Report.autoFill.fromAll();
+            else if (typeof reportAutoFill === 'function') reportAutoFill();
+            return;
+        }
+        if (target === 'report.export') {
+            if (typeof Report !== 'undefined' && Report.export) {
+                const fn = Report.export[value];
+                if (fn) fn();
+            }
+            return;
+        }
+        if (target === 'report.import') {
+            if (typeof Report !== 'undefined' && Report.persist) Report.persist.importJSON();
+            return;
+        }
+        if (target === 'report.snapshot.save') {
+            if (typeof Report !== 'undefined' && Report.snapshots) Report.snapshots.save();
+            return;
+        }
+        if (target === 'report.snapshot.open') {
+            if (typeof Report !== 'undefined' && Report.snapshots) Report.snapshots.openModal();
+            return;
+        }
+        if (target === 'report.audit.open') {
+            if (typeof Report !== 'undefined' && Report.audit) Report.audit.openModal();
+            return;
+        }
+        if (target === 'report.validation.open') {
+            if (typeof Report !== 'undefined' && Report.validation) Report.validation.openModal();
+            return;
+        }
+        if (target === 'report.preview.zoom') {
+            if (typeof Report !== 'undefined' && Report.preview) {
+                if (command === 'reset') Report.preview.zoomReset();
+                else if (command === 'set') Report.preview.setZoom(parseInt(value) / 100);
+                else if (command === 'increase') Report.preview.zoomIn();
+                else if (command === 'decrease') Report.preview.zoomOut();
+            }
+            return;
+        }
+        if (target === 'report.layout') {
+            if (typeof Report !== 'undefined' && Report.panels) Report.panels.layout2col(value === '2col');
+            return;
+        }
+        if (target === 'report.section.toggle') { toggleReportSection(value); return; }
+        if (target === 'report.reference.add') { addReportReferenceFromCatalog(value); return; }
+        if (target === 'report.reference.remove') { removeReportReference(parseInt(value)); return; }
+        if (target === 'report.clear') {
+            if (typeof Report !== 'undefined' && Report.persist) Report.persist.clear();
+            return;
+        }
+        // ── 3D controls ──
+        if (target === '3d.reconstruct') {
+            // Use the same function as right-click → 3D reconstruction
+            reconstructOrgan3D(value);
+            return;
+        }
+        if (target === '3d.wireframe') {
+            const on = value === 'on' || (value === undefined);
+            const cb = document.getElementById('wireframe3D');
+            if (cb) { cb.checked = on; toggle3DWireframe(on); }
+            return;
+        }
+        if (target === '3d.skin') {
+            const on = value === 'on' || (value === undefined);
+            const cb = document.getElementById('skinToggle3D');
+            if (cb) { cb.checked = on; toggle3DSkin(on); }
+            return;
+        }
+        if (target === '3d.dose_opacity') {
+            const sl = document.getElementById('doseOpacity');
+            if (sl) { sl.value = value; updateDoseOpacity(value); }
+            return;
+        }
+        if (target === '3d.fit') { fitCameraToScene(); return; }
+        if (target === '3d.show_all') {
+            Object.values(scene3D.meshes).forEach(m => { if (m) m.visible = true; });
+            return;
+        }
+        if (target === '3d.hide_all') {
+            Object.values(scene3D.meshes).forEach(m => { if (m) m.visible = false; });
+            return;
+        }
+        // ── Chat ──
+        if (target === 'chat.language') { setUiLanguage(value); return; }
+        if (target === 'chat.clear_history') {
+            const chatArea = document.getElementById('chatMessages');
+            if (chatArea) chatArea.innerHTML = '';
+            return;
+        }
+        if (target === 'chat.sidebar.toggle') { toggleSessionSidebar(); return; }
+        // ── Screenshot ──
+        if (target === 'screenshot') {
+            _captureScreenshot(value); return;
+        }
+        // ── Tools ──
+        if (target === 'tool') { state.activeTool = value; return; }
+    } catch (e) {
+        console.warn('[UIAction] Error executing:', target, command, value, e);
+    }
+}
+
+// Screenshot capture
+function _captureScreenshot(view) {
+    const targets = {
+        'axial': '#sliceCanvasAxial',
+        'sagittal': '#sliceCanvasSagittal',
+        'coronal': '#sliceCanvasCoronal',
+        '3d': '#canvas3D',
+        'dvh': '#dvhChart',
+    };
+    if (view === 'full') {
+        // Capture entire page
+        if (typeof html2canvas !== 'undefined') {
+            html2canvas(document.body).then(canvas => {
+                const link = document.createElement('a');
+                link.download = `brachybot_screenshot_${Date.now()}.png`;
+                link.href = canvas.toDataURL();
+                link.click();
+            });
+        }
+        return;
+    }
+    const selector = targets[view];
+    if (!selector) return;
+    const el = document.querySelector(selector);
+    if (!el) return;
+    if (typeof html2canvas !== 'undefined') {
+        html2canvas(el).then(canvas => {
+            const link = document.createElement('a');
+            link.download = `brachybot_${view}_${Date.now()}.png`;
+            link.href = canvas.toDataURL();
+            link.click();
+        });
+    } else {
+        // Fallback: just capture the 3D canvas
+        const canvas = el.querySelector('canvas') || el;
+        if (canvas.toDataURL) {
+            const link = document.createElement('a');
+            link.download = `brachybot_${view}_${Date.now()}.png`;
+            link.href = canvas.toDataURL();
+            link.click();
+        }
+    }
+}
+
 /******** PANEL SWITCHING ********/
 function switchPanel(name, el) {
     console.log('[switchPanel] Switching to:', name);
@@ -9816,6 +10324,9 @@ async function loadLabelVolumes() {
         const oarSize = parseInt(res.headers.get('X-OAR-Size') || '0');
 
         labelColorLUT = JSON.parse(res.headers.get('X-Color-LUT') || '{}');
+        // Override CTV label 1 (tumor) color: bright pink instead of
+        // the server's blue which is too close to the dose overlay color.
+        if (labelColorLUT[1]) labelColorLUT[1] = [255, 105, 180]; // hot pink
         // Load CTV label names from backend (not hardcoded)
         const ctvLabelMapRaw = res.headers.get('X-CTV-Label-Map');
         if (ctvLabelMapRaw) {
@@ -10546,10 +11057,12 @@ function updateSlice(view, val) {
         loadSlice(view, sliceIndex);
     }
 
-    // Dose overlay is now rendered inside renderSliceFromVolume via
-    // a separate canvas layer (no flicker). Only trigger contour
-    // lines here.
+    // Dose overlay rendering: renderSliceFromVolume calls
+    // renderDoseForCurrentSlice at the end. As a safety net, also
+    // trigger it here in case the async path in renderSliceFromVolume
+    // didn't complete (e.g. dose canvas not yet created).
     if (state.doseOverlay && state.doseOverlay.visible) {
+        renderDoseForCurrentSlice(view, sliceIndex);
         triggerDoseContourRender(view, sliceIndex);
     }
 }
@@ -10890,12 +11403,22 @@ function renderDataTree() {
                 const count = ctvLabelData ? ctvLabelData.filter(v => v === labelId).length : 0;
                 const vol = count * voxelVol;
                 const name = labelNames[labelId] || 'tumor';
-                const color = labelColorLUT[labelId] ? `rgb(${labelColorLUT[labelId].join(',')})` : '#ef4444';
-                html += `<div class="tree-item" data-item="ctv_${labelId}" style="display:flex;align-items:center;gap:6px;padding:2px 8px 2px 28px;font-size:0.7rem;">
+                // Tumor color: bright pink (#ff69b4) instead of blue (too close to dose)
+                const tumorColor = labelColorLUT[labelId]
+                    ? `rgb(${labelColorLUT[labelId].join(',')})`
+                    : '#ff69b4';
+                html += `<div class="tree-item" data-item="ctv_${labelId}" data-organ-id="ctv_${labelId}"
+                    style="display:flex;align-items:center;gap:6px;padding:2px 8px 2px 28px;font-size:0.7rem;"
+                    onclick="handleTreeItemClick('ctv_${labelId}', event)"
+                    oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('ctv_${labelId}', event)">
                     <button class="eye-btn" onclick="event.stopPropagation();toggleDataVisibility('ctv')" style="font-size:0.65rem;">&#128065;</button>
-                    <span class="color-swatch" style="background:${color};width:10px;height:10px;border-radius:2px;cursor:pointer;" onclick="event.stopPropagation();openColorPicker('ctv_${labelId}', this)"></span>
-                    <span>${name}</span>
+                    <span class="color-swatch" style="background:${tumorColor};width:10px;height:10px;border-radius:2px;cursor:pointer;" onclick="event.stopPropagation();openColorPicker('ctv_${labelId}', this)"></span>
+                    <span class="item-label">${name}</span>
                     <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);">${(vol/1000).toFixed(1)} cm³</span>
+                    <button class="recon3d-btn" title="3D Reconstruct" onclick="event.stopPropagation();reconstructOrgan3D('ctv_${labelId}')">&#9638;</button>
+                    <input type="range" class="opacity-slider" min="0" max="100" value="70"
+                        onclick="event.stopPropagation()"
+                        oninput="setDataOpacity('ctv_${labelId}', this.value)">
                 </div>`;
             });
         } else if (!hasMultiLabelCtv) {
@@ -13654,29 +14177,52 @@ async function loadSeeds3D() {
             if (needle.points.length < 2) return;
             const points = needle.points.map(p => new THREE.Vector3(...p));
 
-            // Create smooth curve through points
-            let curve;
-            if (points.length === 2) {
-                curve = new THREE.LineCurve3(points[0], points[1]);
-            } else {
-                curve = new THREE.CatmullRomCurve3(points);
+            try {
+                let tube;
+                if (points.length === 2) {
+                    // For 2-point lines, create a CylinderGeometry along
+                    // the direction — TubeGeometry with LineCurve3 can fail
+                    // in some Three.js builds due to Frenet frame issues.
+                    const dir = new THREE.Vector3().subVectors(points[1], points[0]);
+                    const length = dir.length();
+                    if (length < 0.1) return;
+                    dir.normalize();
+                    const geo = new THREE.CylinderGeometry(1.0, 1.0, length, 10);
+                    const mat = new THREE.MeshPhysicalMaterial({
+                        color: 0xff2266, transparent: true, opacity: 0.9,
+                        metalness: 0.1, roughness: 0.4,
+                        emissive: 0x550011, emissiveIntensity: 0.6,
+                    });
+                    tube = new THREE.Mesh(geo, mat);
+                    // Position at midpoint
+                    const mid = new THREE.Vector3().addVectors(points[0], points[1]).multiplyScalar(0.5);
+                    tube.position.copy(mid);
+                    // Orient along direction
+                    const axis = new THREE.Vector3(0, 1, 0);
+                    const quat = new THREE.Quaternion().setFromUnitVectors(axis, dir);
+                    tube.setRotationFromQuaternion(quat);
+                } else {
+                    const curve = new THREE.CatmullRomCurve3(points);
+                    const tubeGeometry = new THREE.TubeGeometry(curve, 32, 1.0, 10, false);
+                    const tubeMaterial = new THREE.MeshPhysicalMaterial({
+                        color: 0xff2266, transparent: true, opacity: 0.9,
+                        metalness: 0.1, roughness: 0.4,
+                        emissive: 0x550011, emissiveIntensity: 0.6,
+                    });
+                    tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
+                }
+                tube.userData = { type: 'needle', id: needle.id, trajectoryId: needle.trajectory_id };
+                scene3D.scene.add(tube);
+                scene3D.meshes[needle.id] = tube;
+            } catch (e) {
+                // Fallback: render as a simple line
+                const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+                const lineMat = new THREE.LineBasicMaterial({ color: 0xff2266, linewidth: 2 });
+                const line = new THREE.Line(lineGeo, lineMat);
+                line.userData = { type: 'needle', id: needle.id, trajectoryId: needle.trajectory_id };
+                scene3D.scene.add(line);
+                scene3D.meshes[needle.id] = line;
             }
-
-            // 1.0mm radius tube — clearly visible in the 3D scene
-            const tubeGeometry = new THREE.TubeGeometry(curve, 32, 1.0, 10, false);
-            const tubeMaterial = new THREE.MeshPhysicalMaterial({
-                color: 0xff2266,         // Vivid magenta-red for high contrast
-                transparent: true,
-                opacity: 0.9,
-                metalness: 0.1,
-                roughness: 0.4,
-                emissive: 0x550011,      // Subtle glow so tubes read against dark CT
-                emissiveIntensity: 0.6,
-            });
-            const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
-            tube.userData = { type: 'needle', id: needle.id, trajectoryId: needle.trajectory_id };
-            scene3D.scene.add(tube);
-            scene3D.meshes[needle.id] = tube;
         });
 
         // Mirror seeds/needles into the data tree. The user previously
@@ -14004,7 +14550,7 @@ const DOSE_NORM_TO_GY = 120.0;
 // Colorbar display range, in Gy. Matches ref.py displayNode.SetWindow(600) / SetLevel(300).
 // Dose values above this are SATURATED to the top colormap color (not rescaled).
 // Reference: BrachyBot/docs/ref.py lines 4719-4723.
-const COLORBAR_MAX_GY = 600.0;
+const COLORBAR_MAX_GY = 1000.0;
 const COLORBAR_MIN_GY = 0.0;
 
 // PETrainbow2-style colormap (black→blue→cyan→green→yellow→orange→red),
@@ -14025,31 +14571,24 @@ const COLORBAR_MIN_GY = 0.0;
 function _petRainbow2(val) {
     const v = Math.min(1, Math.max(0, val));
     let r, g, b;
-    if (v < 0.10) {
-        // 0–60 Gy: black → dark blue
-        r = 0; g = 0; b = Math.floor(v * 10 * 128);
-    } else if (v < 0.30) {
-        // 60–180 Gy: dark blue → blue
-        r = 0; g = 0; b = 128 + Math.floor((v - 0.10) / 0.20 * 127);
-    } else if (v < 0.50) {
-        // 180–300 Gy: blue → cyan
-        r = 0; g = Math.floor((v - 0.30) / 0.20 * 255); b = 255;
-    } else if (v < 0.65) {
-        // 300–390 Gy: cyan → green
-        r = 0; g = 255; b = Math.floor((1 - (v - 0.50) / 0.15) * 255);
-    } else if (v < 0.833) {
-        // 390–500 Gy: green → yellow
-        r = Math.floor((v - 0.65) / 0.183 * 255); g = 255; b = 0;
-    } else if (v < 0.95) {
-        // 500–570 Gy: yellow → orange (NOT red yet)
-        r = 255;
-        g = Math.floor((1 - (v - 0.833) / 0.117) * 200); // green fades 200 → 0
-        b = 0;
+    // Black portion narrowed by 1/3: was 0-0.25, now 0-0.17
+    const BLACK_END = 0.17;
+    const BLUE_END = 0.42;
+    const CYAN_END = 0.67;
+    if (v < BLACK_END) {
+        // Black → Blue
+        r = 0; g = 0; b = Math.floor((v / BLACK_END) * 255);
+    } else if (v < BLUE_END) {
+        // Blue → Cyan
+        r = 0; g = Math.floor(((v - BLACK_END) / (BLUE_END - BLACK_END)) * 255); b = 255;
+    } else if (v < CYAN_END) {
+        // Cyan → Yellow
+        const t = (v - BLUE_END) / (CYAN_END - BLUE_END);
+        r = Math.floor(t * 255); g = 255; b = Math.floor((1 - t) * 255);
     } else {
-        // 570–600 Gy: orange → pure red. Ultra-narrow red band (~5%).
-        r = 255;
-        g = Math.floor((1 - (v - 0.95) / 0.05) * 80); // green fades 80 → 0
-        b = 0;
+        // Yellow → Red
+        const t = (v - CYAN_END) / (1 - CYAN_END);
+        r = 255; g = Math.floor((1 - t) * 255); b = 0;
     }
     return [r, g, b];
 }
@@ -14155,7 +14694,7 @@ async function loadDoseOverlay() {
 let _doseOverlayRequestVersion = 0;
 
 async function fetchDoseOverlaySlice(axis, sliceIndex) {
-    if (!state.doseOverlay) return null;
+    if (!state.doseOverlay) { console.log('[dose] fetch skipped: no doseOverlay state'); return null; }
     const cacheKey = `${axis}_${sliceIndex}`;
     if (state.doseOverlay.slices[cacheKey]) return state.doseOverlay.slices[cacheKey];
 
@@ -14166,14 +14705,14 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ axis, slice_index: sliceIndex }),
         });
-        if (!res.ok) return null;
+        if (!res.ok) { console.log(`[dose] fetch HTTP ${res.status} for ${cacheKey}`); return null; }
         const data = await res.json();
-        if (!data.success) return null;
+        if (!data.success) { console.log(`[dose] fetch failed: ${data.error} for ${cacheKey}`); return null; }
         // If a newer request was issued while this one was in flight,
-        // discard this stale response so it doesn't overwrite the
-        // current slice's render.
+        // cache the data but don't render (stale slice).
         if (myVersion !== _doseOverlayRequestVersion) {
-            return data.slice;  // Still cache it for the next call
+            state.doseOverlay.slices[cacheKey] = data.slice;
+            return data.slice;
         }
         state.doseOverlay.slices[cacheKey] = data.slice;
         return data.slice;
@@ -14326,6 +14865,8 @@ function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
         }
     }
     tmpCtx.putImageData(imageData, 0, 0);
+    // Paint to a temp canvas first, then swap — avoids the brief
+    // blank frame that ctx.clearRect alone would cause.
     ctx.clearRect(0, 0, w, h);
     ctx.drawImage(tmpCanvas, 0, 0);
 }
@@ -15216,6 +15757,7 @@ function drawLinkedCrosshairs(volX, volY, volZ, sourceAxis) {
         crossCanvas.style.top = offsetY + 'px';
         crossCanvas.style.display = 'block';
         crossCanvas.style.pointerEvents = 'none';
+        crossCanvas.style.zIndex = '6';
 
         const ctx = crossCanvas.getContext('2d');
         ctx.clearRect(0, 0, w, h);
@@ -15301,21 +15843,25 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
     if (!doseCanvas) {
         doseCanvas = document.createElement('canvas');
         doseCanvas.id = doseCanvasId;
-        // BUG FIX 2026-06-17 (dose map persistence): place the dose
-        // canvas as a SIBLING of the slice canvas (not wrapped). The
-        // previous wrapper approach failed because the slice canvas
-        // is position:absolute (set by renderSliceFromVolume), which
-        // collapses the wrapper to 0 height — making the dose canvas
-        // invisible. As a sibling, we sync its position from the
-        // slice canvas's computed display rectangle on every render.
+        // Place the dose canvas as a SIBLING of the slice canvas.
+        // The slice canvas is position:absolute, so we sync the dose
+        // canvas's position from the slice canvas's computed display
+        // rectangle on every render.
         const parent = sliceCanvas.parentElement;
         doseCanvas.style.cssText = 'position:absolute;pointer-events:none;z-index:5;display:block;';
         parent.appendChild(doseCanvas);
         sliceCanvas._doseCanvas = doseCanvas;
     }
-    // Match pixel dimensions to the CT slice
-    doseCanvas.width = sliceCanvas.width;
-    doseCanvas.height = sliceCanvas.height;
+    // Match pixel dimensions to the CT slice.
+    // Only update if changed — setting width/height clears the canvas,
+    // causing a visible flicker even when the new data is drawn
+    // immediately after.
+    const newW = sliceCanvas.width;
+    const newH = sliceCanvas.height;
+    if (doseCanvas.width !== newW || doseCanvas.height !== newH) {
+        doseCanvas.width = newW;
+        doseCanvas.height = newH;
+    }
     // Sync display position from the slice canvas so the dose
     // overlay exactly covers the CT even after pan/zoom/resize.
     const sw = sliceCanvas._displayW || sliceCanvas.offsetWidth;
@@ -15326,16 +15872,30 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
     doseCanvas.style.height = sh + 'px';
     doseCanvas.style.left = sx + 'px';
     doseCanvas.style.top = sy + 'px';
+    // Ensure dose canvas is visible
+    doseCanvas.style.display = 'block';
 
     const cacheKey = axis + '_' + sliceIndex;
     if (state.doseOverlay.slices[cacheKey]) {
-        try { renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, state.doseOverlay.slices[cacheKey]); } catch (_) {}
+        try { renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, state.doseOverlay.slices[cacheKey]); } catch (e) { console.warn(`[dose] render error for ${cacheKey}:`, e); }
     } else {
+        // Try to find nearest cached slice as placeholder while
+        // the actual data loads. This prevents the dose from
+        // disappearing entirely during async fetch.
+        const slices = state.doseOverlay.slices;
+        let nearestKey = null, nearestDist = Infinity;
+        for (const k in slices) {
+            if (!k.startsWith(axis + '_')) continue;
+            const dist = Math.abs(parseInt(k.split('_')[1]) - sliceIndex);
+            if (dist < nearestDist) { nearestDist = dist; nearestKey = k; }
+        }
+        if (nearestKey && nearestDist <= 5) {
+            try { renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, slices[nearestKey]); } catch (_) {}
+        }
+        // Fetch actual slice data from server
         fetchDoseOverlaySlice(axis, sliceIndex).then(sliceData => {
-            if (sliceData) {
-                if (state.slices[axis] === sliceIndex) {
-                    renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData);
-                }
+            if (sliceData && state.slices[axis] === sliceIndex) {
+                try { renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData); } catch (_) {}
             }
         });
         preloadDoseSlices(axis, sliceIndex);
@@ -15678,8 +16238,13 @@ function applyViewerTransform() {
             overlayDiv.style.transform = transform;
             overlayDiv.style.transformOrigin = 'center center';
         }
-        // Dose canvas is a child of the wrapper — it inherits the
-        // wrapper's transform automatically. No separate apply needed.
+        // Apply same transform to dose overlay canvas (sibling of
+        // slice canvas, NOT inside wrapper — must be explicit).
+        const doseCanvas = document.getElementById('doseOverlayCanvas' + capitalize(axis));
+        if (doseCanvas) {
+            doseCanvas.style.transform = transform;
+            doseCanvas.style.transformOrigin = 'center center';
+        }
     });
 }
 
@@ -15963,6 +16528,16 @@ function setupBasicInteractions(axis, canvas) {
     // Mouse wheel: scroll slices
     canvas.addEventListener('wheel', (e) => {
         e.preventDefault();
+        // Ctrl+scroll = zoom in/out
+        if (e.ctrlKey || e.metaKey) {
+            const delta = e.deltaY > 0 ? -0.1 : 0.1;
+            let newZoom = (state.viewerSettings.zoom || 1) + delta;
+            newZoom = Math.max(0.5, Math.min(3.0, newZoom));
+            state.viewerSettings.zoom = newZoom;
+            applyViewerTransform();
+            return;
+        }
+        // Normal scroll = slice navigation
         const slider = document.getElementById('slider' + capitalize(axis));
         if (!slider) return;
         const delta = e.deltaY > 0 ? 1 : -1;
@@ -16144,107 +16719,19 @@ function setupBasicInteractions(axis, canvas) {
 
 /******** 3D RENDERING ********/
 async function render3D() {
+    // LEGACY function — now delegates to the modern scene3D system.
+    // The old implementation created a brand-new THREE.Scene/renderer
+    // on every call, which wiped out all meshes loaded by
+    // loadCTVAndObstacleMeshes, loadSeeds3D, and loadAllIsoSurfaces.
+    // Now we just init (idempotent) and force a resize+fit.
     const canvas = document.getElementById('canvas3D');
-    canvas.innerHTML = '';
+    if (!canvas) return;
     if (!state.ctLoaded) {
         canvas.innerHTML = '<div class="viewer-no-data"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span>Load CT first</span></div>';
         return;
     }
-
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(canvas.clientWidth, canvas.clientHeight);
-    renderer.setClearColor(0x0a0a0a, 1);
-    canvas.appendChild(renderer.domElement);
-
-    // OrbitControls
-    const controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.1;
-
-    // Helper: build mesh from server response
-    function addMesh(data, color, opacity = 0.6, wireframe = false) {
-        if (!data || !data.vertices || !data.faces || data.vertices.length === 0) return null;
-        const geo = new THREE.BufferGeometry();
-        const verts = new Float32Array(data.vertices.flat());
-        const idx = new Uint32Array(data.faces.flat());
-        geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
-        geo.setIndex(new THREE.BufferAttribute(idx, 1));
-        geo.computeVertexNormals();
-        const mat = new THREE.MeshPhongMaterial({ color, opacity, transparent: opacity < 1, wireframe, side: THREE.DoubleSide });
-        const mesh = new THREE.Mesh(geo, mat);
-        scene.add(mesh);
-        return mesh;
-    }
-
-    // 1. Load CTV tumor mesh
-    try {
-        const ctvResp = await fetch(API + '/viewer/3d', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({source:'ctv'}) });
-        const ctvData = await ctvResp.json();
-        if (ctvData.success) addMesh(ctvData, 0x0ea5e9, 0.5);
-    } catch(e) { console.warn('CTV mesh failed:', e); }
-
-    // 2. Load non-traversable OAR meshes (artery=201, vein=202)
-    for (const [lid, color] of [[201, 0xff4444], [202, 0xff6666]]) {
-        try {
-            const resp = await fetch(API + '/viewer/3d_mask', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({label_id: lid, source: 'oar'}) });
-            const data = await resp.json();
-            if (data.success) addMesh(data, color, 0.4);
-        } catch(e) {}
-    }
-
-    // 3. Load seeds and needles
-    try {
-        const seedResp = await fetch(API + '/planning/seeds_3d');
-        const seedData = await seedResp.json();
-        if (seedData.success) {
-            // Seeds as small spheres
-            const seedGeo = new THREE.SphereGeometry(1.5, 8, 6);
-            const seedMat = new THREE.MeshBasicMaterial({ color: 0xffd700 });
-            (seedData.seeds || []).forEach(s => {
-                const m = new THREE.Mesh(seedGeo, seedMat);
-                m.position.set(s.position[0], s.position[1], s.position[2]);
-                scene.add(m);
-            });
-            // Needles as lines
-            (seedData.needles || []).forEach(n => {
-                if (n.points && n.points.length >= 2) {
-                    const pts = n.points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
-                    const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
-                    const lineMat = new THREE.LineBasicMaterial({ color: 0x88ccff, linewidth: 2 });
-                    scene.add(new THREE.Line(lineGeo, lineMat));
-                }
-            });
-        }
-    } catch(e) { console.warn('Seeds 3D failed:', e); }
-
-    // 4. Load dose isosurface (threshold=1.0 = prescription dose)
-    try {
-        const doseResp = await fetch(API + '/planning/dose_isosurface', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({threshold: 1.0}) });
-        const doseData = await doseResp.json();
-        if (doseData.success && doseData.vertices && doseData.vertices.length > 0) {
-            addMesh(doseData, 0x00ff88, 0.15);
-        }
-    } catch(e) { console.warn('Dose isosurface failed:', e); }
-
-    // Lighting
-    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-    dir.position.set(100, 100, 100);
-    scene.add(dir);
-
-    // Camera position
-    camera.position.set(200, 150, 200);
-    controls.target.set(0, 0, 0);
-    controls.update();
-
-    function animate() {
-        requestAnimationFrame(animate);
-        controls.update();
-        renderer.render(scene, camera);
-    }
-    animate();
+    init3DScene();
+    forceRender3DViewer();
     window.dose3D = true;
 }
 
@@ -16559,6 +17046,10 @@ function drawDVH() {
         displaylogo: false,
     });
 
+    // DVH tooltip fix: ensure hoverlayer stays within chart bounds.
+    // The parent containers (#metricsDVH, .right-panel) now have
+    // overflow:visible so the tooltip can display naturally.
+
     // Click-to-pick (2026-06-16 user request): single-click on a
     // curve drops a pinned marker at that point with a label showing
     // (dose, volume) AND the organ name. Multiple clicks add more
@@ -16715,6 +17206,12 @@ async function refreshPlanningUI() {
                 if (data.metrics && Object.keys(data.metrics).length > 0) {
                     updateMetrics(data.metrics);
                 }
+                // Merge top-level planning fields into state.metrics so
+                // reportAutoFill and other consumers can read them.
+                // total_seeds and num_trajectories are returned at the
+                // top level of /api/planning/results, not inside dose_metrics.
+                if (data.total_seeds !== undefined) state.metrics.total_seeds = data.total_seeds;
+                if (data.num_trajectories !== undefined) state.metrics.num_trajectories = data.num_trajectories;
 
                 // 2. DVH — store data and re-draw chart
                 if (data.dvh && Object.keys(data.dvh).length > 0) {
@@ -16825,43 +17322,40 @@ async function refreshPlanningUI() {
             } catch (e) { console.warn('Dose overlay auto-load failed:', e); }
         }
 
-        // 4d. Isodose surface auto-load — compute ALL prescription levels
-        //     from the freshly-loaded dose distribution. The level list,
-        //     colors, and opacities come from plans/config.json
-        //     → iso_dose_params.iso_dose_values / iso_colors / iso_opacities.
-        //     Without this, the data tree "Isosurfaces" branch never
-        //     populates after a chat-triggered planning run, and the 3D
-        //     viewer shows no isosurface clouds.
-        //
-        // 2026-06-16 fix: dropped `state.ctLoaded` gate. After a page
-        // refresh ctLoaded starts at false but the server already has
-        // the dose distribution; gating on ctLoaded meant the iso
-        // surfaces never auto-loaded until the user re-loaded CT
-        // client-side. Same pattern as the dose overlay fix.
+        // 4d-4f. Load 3D meshes in PARALLEL so slow OAR mesh generation
+        // doesn't block seeds/isosurfaces from appearing.
+        const _meshPromises = [];
+
+        // 4d. Isodose surface auto-load
         if (data.has_dose) {
-            try {
-                await loadAllIsoSurfaces();
-            } catch (e) { console.warn('Isosurface auto-load failed:', e); }
+            _meshPromises.push(
+                loadAllIsoSurfaces().catch(e => console.warn('Isosurface auto-load failed:', e))
+            );
         }
 
-        // 4e. CTV + non-traversable OAR 3D mesh auto-load.
-        try {
-            console.log('[3D auto-load] Starting CTV/obstacle mesh load...');
-            await loadCTVAndObstacleMeshes();
-            console.log('[3D auto-load] CTV/obstacle done. Meshes:', Object.keys(scene3D.meshes).length);
-        } catch (e) { console.warn('[3D auto-load] CTV/obstacle FAILED:', e); }
+        // 4e. CTV + non-traversable OAR 3D mesh auto-load
+        _meshPromises.push(
+            loadCTVAndObstacleMeshes()
+                .then(() => console.log('[3D auto-load] CTV/obstacle done. Meshes:', Object.keys(scene3D.meshes).length))
+                .catch(e => console.warn('[3D auto-load] CTV/obstacle FAILED:', e))
+        );
 
-        // 4f. Seeds + needles 3D load (always run if planning produced
-        //     them; the user said "no seeds/needles visible in 3D"
-        //     because this was being skipped when the viewers panel
-        //     wasn't the active panel at refresh time).
+        // 4f. Seeds + needles 3D load
         if (data.seeds && data.seeds.length > 0) {
-            try {
-                console.log('[3D auto-load] Loading seeds...');
-                await loadSeeds3D();
-                console.log('[3D auto-load] Seeds done. Meshes:', Object.keys(scene3D.meshes).length);
-            } catch (e) { console.warn('[3D auto-load] Seeds FAILED:', e); }
+            _meshPromises.push(
+                loadSeeds3D()
+                    .then(() => console.log('[3D auto-load] Seeds done. Meshes:', Object.keys(scene3D.meshes).length))
+                    .catch(e => console.warn('[3D auto-load] Seeds FAILED:', e))
+            );
         }
+
+        // Wait for all 3D mesh loads to complete
+        // Report auto-fill must run BEFORE awaiting mesh promises
+        // because loadCTVAndObstacleMeshes fetches 30+ OAR meshes
+        // sequentially and can take 30+ seconds, blocking everything.
+        try { if (typeof reportAutoFill === 'function') reportAutoFill(); } catch (_) {}
+
+        await Promise.all(_meshPromises);
 
         // 5. Data tree badges ("V100: 91.0%" / "13 seeds") — updateSeeds
         //    + updateMetrics already push the right state; this just
@@ -16900,11 +17394,6 @@ async function refreshPlanningUI() {
             console.log('[3D auto-load] forceRender3DViewer... initialized:', scene3D.initialized, 'meshes:', Object.keys(scene3D.meshes).length);
             forceRender3DViewer();
         } catch (e) { console.warn('[3D auto-load] forceRender3DViewer FAILED:', e); }
-
-        // 8. Auto-fill the report panel now that we have new metrics.
-        //    The report already has its own "auto-fill" UI; this just
-        //    re-runs it so the user sees fresh data.
-        try { if (typeof reportAutoFill === 'function') reportAutoFill(); } catch (_) {}
 
         // 9. Refresh the Image Analysis panel so the new metrics,
         //    CTV/OAR label counts, and per-label volumes show up.
@@ -19313,6 +19802,10 @@ function applyReportTemplate(templateKey) {
 
 // ----- 12. Auto-fill from NIfTI + planning data -----
 async function reportAutoFill() {
+    if (!window.reportForm) {
+        console.warn('[reportAutoFill] window.reportForm not initialized, skipping');
+        return;
+    }
     const f = window.reportForm;
     if (state.ctPath) f.case.patientId = state.ctPath.split(/[\/\\]/).pop().replace(/\.nii(\.gz)?$/i, '');
     // BUG FIX 2026-06-17: set segmentation model names dynamically
@@ -19337,7 +19830,17 @@ async function reportAutoFill() {
     }
     if (state.metrics) {
         const m = state.metrics;
-        if (m.total_seeds !== undefined) f.planning.totalSeeds = m.total_seeds;
+        if (m.total_seeds !== undefined) {
+            f.planning.totalSeeds = m.total_seeds;
+            // Auto-compute total activity from standard I-125 seed
+            // (0.5 mCi = 18.5 MBq per seed) if not already set.
+            if (f.planning.totalActivityMBq == null && m.total_seeds > 0) {
+                const seedActivityMBq = 18.5;
+                f.planning.totalActivityMBq = parseFloat((m.total_seeds * seedActivityMBq).toFixed(1));
+                f.planning.seedActivityMBq = seedActivityMBq;
+                if (!f.planning.seedModel) f.planning.seedModel = 'I-125 (0.5 mCi/seed)';
+            }
+        }
         if (m.num_trajectories !== undefined) f.planning.trajectoryCount = m.num_trajectories;
         if (m.ctv_voxels !== undefined && state.ctSpacing) {
             f.segmentation.ctvVoxels = m.ctv_voxels;
