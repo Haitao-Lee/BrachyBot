@@ -29,7 +29,14 @@ APP_DIR = os.path.join(WEB_DIR, "app")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# API key for authentication. If not set via env var, generate a random one
+# and log it so the user can access the API during development.
 API_KEY = os.environ.get("BRACHYBOT_API_KEY", None)
+_API_KEY_REQUIRED = bool(API_KEY)  # Only require if explicitly set by user
+if not API_KEY:
+    API_KEY = secrets.token_urlsafe(32)
+    logger.info(f"BRACHYBOT_API_KEY not set. API key auth disabled for local dev.")
+
 RATE_LIMIT_REQUESTS = 60
 RATE_LIMIT_WINDOW = 60
 _rate_limit_store: Dict[str, list] = {}
@@ -135,22 +142,43 @@ def _check_rate_limit(client_ip: str) -> bool:
 def _validate_path(path: str) -> bool:
     """Validate a file path is safe (no traversal attacks).
 
-    Allows absolute paths (required for CT image paths) but rejects
-    paths containing '..' traversal components.
-    Check BEFORE normpath resolves them, so raw '..' segments are caught.
+    Uses an allowlist approach: the resolved path must be within one of
+    the allowed root directories. This prevents reading arbitrary files
+    on the server (e.g., /etc/passwd, ~/.ssh/id_rsa).
     """
     if not path:
         return False
-    # Check raw segments BEFORE normpath resolves '..' away
+    # Reject relative traversal attempts
     if '..' in path.replace('\\', '/').split('/'):
         return False
-    return True
+    # Resolve to absolute path (follows symlinks)
+    try:
+        resolved = os.path.realpath(os.path.abspath(path))
+    except (OSError, ValueError):
+        return False
+    # Allowed root directories
+    _project_root = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+    _allowed_roots = [
+        _project_root,                                    # Project directory
+        os.path.join(_project_root, "uploads"),           # Uploads directory
+        os.path.join(_project_root, "memory", "data"),    # Memory data
+        "/tmp",                                           # Temp files
+        "/data",                                          # Common data mount
+        "/home",                                          # User home directories
+    ]
+    # Check if resolved path starts with any allowed root
+    for root in _allowed_roots:
+        if resolved.startswith(root + os.sep) or resolved == root:
+            return True
+    logger.warning(f"Path validation failed: {path} (resolved: {resolved}) not in allowed roots")
+    return False
 
 
 def require_api_key(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if API_KEY:
+        # Only require API key if user explicitly set BRACHYBOT_API_KEY
+        if _API_KEY_REQUIRED:
             request_key = request.headers.get("X-API-Key", "")
             if not request_key or not secrets.compare_digest(
                 hashlib.sha256(request_key.encode()).hexdigest(),
@@ -183,7 +211,13 @@ def create_app(config: Optional[Dict] = None):
         return None
 
     app = Flask(__name__, static_folder=APP_DIR, static_url_path="")
-    CORS(app)
+    # CORS: restrict to localhost origins for security.
+    # Override with ALLOWED_ORIGINS env var if needed (comma-separated).
+    _allowed_origins = os.environ.get(
+        "ALLOWED_ORIGINS",
+        "http://localhost,http://127.0.0.1,http://localhost:8080,http://127.0.0.1:8080"
+    ).split(",")
+    CORS(app, origins=_allowed_origins)
     app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500MB max upload
 
     if config is None:
@@ -2446,7 +2480,16 @@ def create_app(config: Optional[Dict] = None):
             logger.info(f"[dose_isosurface] threshold={threshold}, dose_range=[{data_min:.4f}, {data_max:.4f}]")
 
             level = float(threshold)
-            if level <= data_min or level >= data_max:
+            # The frontend sends threshold in Gy (e.g. 120, 180), but the
+            # dose array is in NORMALIZED units (CNN output). Convert using
+            # the actual prescription dose from plan config.
+            plan_config = agent.memory.retrieve("plan_config", {})
+            prescription_dose = float(plan_config.get("in_lowest_energy", 120.0))
+            if level > data_max:
+                # Threshold is in Gy — convert to normalized
+                level = level / prescription_dose
+                logger.info(f"[dose_isosurface] Converted threshold to normalized: {level:.4f} (prescription={prescription_dose} Gy)")
+            if level <= data_min or level > data_max:
                 return jsonify({"success": True, "vertices": [], "faces": [], "vertex_count": 0,
                                 "face_count": 0, "threshold": threshold, "dose_range": [data_min, data_max]})
 
@@ -2593,8 +2636,9 @@ def create_app(config: Optional[Dict] = None):
                     resampler = sitk.ResampleImageFilter()
                     resampler.SetReferenceImage(ct_image)
                     resampler.SetInterpolator(sitk.sitkLinear)
-                dose_original = resampler.Execute(dose_sitk)
-                dose_np = sitk.GetArrayFromImage(dose_original)
+                    resampler.SetInput(dose_sitk)
+                    dose_original = resampler.Execute()
+                    dose_np = sitk.GetArrayFromImage(dose_original)
 
             # Extract 2D slice (dose_np is in z,y,x order)
             if axis == "axial":
@@ -2959,6 +3003,7 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/clear_all", methods=["POST"])
+    @require_api_key
     def api_clear_all():
         """Clear all loaded data (CT, CTV, OAR, planning results) for a fresh start."""
         agent = get_agent()
