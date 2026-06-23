@@ -14552,38 +14552,47 @@ async function loadCTVAndObstacleMeshes() {
         nonTravIds.add(202); // vein (TotalSegmentator)
     }
     console.log('[loadCTVAndObstacle] Non-traversable OAR IDs:', [...nonTravIds], 'organs count:', dataTreeState.organs.length);
-    let oarMeshCount = 0;
-    for (const lid of nonTravIds) {
+
+    // Helper: parse organ color from data tree (handles #hex, rgb(), and fallback)
+    function _parseOrganColor(organ) {
+        if (!organ || !organ.color) return 0xff4444;
+        const c = organ.color;
+        if (c.startsWith('#') && c.length === 7) return parseInt(c.slice(1), 16);
+        const m = c.match(/(\d+)/g);
+        if (m && m.length >= 3) return (parseInt(m[0]) << 16) | (parseInt(m[1]) << 8) | parseInt(m[2]);
+        return 0xff4444;
+    }
+
+    // Load OAR meshes IN PARALLEL (34 meshes × ~5s each = ~170s sequential → ~10s parallel)
+    const oarPromises = [...nonTravIds].map(lid => (async () => {
         try {
             const res = await fetch(API + '/viewer/3d_mask', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ label_id: lid, source: 'oar', smoothing: 1 }),
             });
-            if (!res.ok) { console.log(`[loadCTVAndObstacle] OAR label ${lid}: HTTP ${res.status}`); continue; }
+            if (!res.ok) return null;
             const data = await res.json();
-            if (data && data.success && data.vertex_count > 0) {
-                // Color from data tree organ entry, else red-ish default
+            if (data && data.success && data.vertex_count > 0 && data.face_count <= 100000) {
                 const organ = dataTreeState.organs.find(o => o.labelId === lid);
-                if (organ && organ.color) {
-                    const hex = organ.color.replace('#', '');
-                    if (hex.length === 6) {
-                        data.color = parseInt(hex, 16);
-                    } else {
-                        data.color = 0xff4444;
-                    }
-                } else {
-                    data.color = 0xff4444;
-                }
+                data.color = _parseOrganColor(organ);
                 data.organ_id = `organ_${lid}`;
-                // BUG FIX: organ object uses 'label' not 'name'
-                data.label = (organ && organ.label) || `OAR ${lid}`;
+                data.label = (organ && (organ.label || organ.name)) || `OAR ${lid}`;
                 data.source = 'oar';
-                addMeshToScene(data);
-                oarMeshCount++;
+                // Apply data tree opacity if available
+                if (organ && typeof organ.opacity === 'number') {
+                    data.opacity = organ.opacity;
+                }
+                return data;
             }
-        } catch (e) { console.warn(`[loadCTVAndObstacle] OAR label ${lid} error:`, e); }
-    }
+        } catch (e) { /* skip failed meshes */ }
+        return null;
+    })());
+
+    const oarResults = await Promise.all(oarPromises);
+    let oarMeshCount = 0;
+    for (const data of oarResults) {
+        if (data) { addMeshToScene(data); oarMeshCount++; }
     console.log(`[loadCTVAndObstacle] OAR meshes added: ${oarMeshCount}. Total scene meshes: ${Object.keys(scene3D.meshes).length}`);
 }
 
