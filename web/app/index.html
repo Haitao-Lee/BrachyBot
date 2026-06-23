@@ -14386,11 +14386,13 @@ async function loadAllIsoSurfaces() {
             console.warn('loadAllIsoSurfaces: failed to fetch config, using defaults', e);
         }
     }
-    // Fallback defaults (matches the canonical plans/config.json entries)
+    // Fallback defaults: use fractions of Rx that typically have isosurfaces.
+    // 0.5×Rx (60 Gy), 0.75×Rx (90 Gy), 1.0×Rx (120 Gy) — skip higher
+    // levels (1.5×, 2×, 4×) as dose rarely reaches those in a continuous region.
     const params = window._isoDoseParams || {
-        iso_dose_values: [1.0, 1.5, 2.0, 4.0],
-        iso_colors: [[0, 1, 0], [0, 1, 1], [1, 1, 0], [1, 0.5, 0], [1, 0, 0], [1, 0, 1], [0.5, 0, 0.5], [0, 0.5, 1]],
-        iso_opacities: [0.3, 0.2, 0.1, 0.05],
+        iso_dose_values: [0.5, 0.75, 1.0],
+        iso_colors: [[0, 0.5, 1], [0, 1, 0], [1, 0.5, 0]],
+        iso_opacities: [0.15, 0.25, 0.35],
     };
     const values = params.iso_dose_values || [1.0];
     const colors = params.iso_colors || [[0, 1, 0]];
@@ -17473,8 +17475,9 @@ async function refreshPlanningUI() {
         }
 
         // 4f. CTV + non-traversable OAR 3D mesh auto-load
+        // 34 OAR meshes × ~5s each = ~170s. Use 300s timeout.
         _meshPromises.push(
-            _withTimeout(loadCTVAndObstacleMeshes(), 'CTV/OAR meshes')
+            _withTimeout(loadCTVAndObstacleMeshes(), 'CTV/OAR meshes', 300000)
                 .then(() => console.log('[3D auto-load] CTV/obstacle done. Meshes:', Object.keys(scene3D.meshes).length))
         );
 
