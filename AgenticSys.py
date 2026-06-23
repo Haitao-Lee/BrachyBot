@@ -1764,7 +1764,12 @@ class BrachyAgent:
                             except Exception:
                                 pass
                 # Also auto-fire oar if missing (planning also needs OAR for trajectory avoidance)
-                if self.memory.retrieve("oar_array") is None:
+                # Always check: oar_array might be stale from a previous CT.
+                # If the user requests step:"full", we need fresh OAR data.
+                oar_array = self.memory.retrieve("oar_array")
+                organ_names = self.memory.retrieve("organ_names")
+                oar_stale = oar_array is None or organ_names is None or (isinstance(organ_names, dict) and len(organ_names) < 3)
+                if oar_stale:
                     ct_path2 = self.memory.retrieve("ct_path")
                     if ct_path2:
                         logger.info(f"[auto-fix] No OAR map for {tool_name}; auto-firing oar_segmentation")
