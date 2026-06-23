@@ -17128,45 +17128,49 @@ function drawDVH() {
 
     // DVH tooltip fix: on every hover, clamp the SVG hoverlabel's
     // position so text never overflows the chart area. Plotly renders
-    // hoverlabels as SVG <g class='hovertext'> inside .hoverlayer.
-    // The <g> has a transform="translate(x,y)" that can push the
-    // text outside the chart bounds. We read the chart's bounding
-    // rect and clamp the translate so the tooltip stays inside.
+    // DVH tooltip clamping — keep hoverlabels inside the chart container.
+    // Plotly renders hoverlabels as SVG <g class='hovertext'> with a
+    // transform="translate(x,y)". The coordinates are in SVG user units,
+    // which map to the container's pixel dimensions via the viewBox.
+    // We clamp the translate so the tooltip never overflows the container.
     function _clampDvhTooltip() {
-        // Defer to next frame so Plotly has finished positioning the tooltip
         requestAnimationFrame(() => {
             const hl = dvhEl.querySelector('.hoverlayer');
             if (!hl) return;
             hl.style.overflow = 'visible';
+            // Get the container's pixel size (the visible chart area)
+            const rect = dvhEl.getBoundingClientRect();
+            const containerW = rect.width;
+            const containerH = rect.height;
+            // Get the SVG viewBox to compute the scale factor
+            const mainSvg = dvhEl.querySelector('.main-svg');
+            const vb = mainSvg ? mainSvg.viewBox.baseVal : null;
+            const svgW = vb && vb.width ? vb.width : containerW;
+            const svgH = vb && vb.height ? vb.height : containerH;
+            // Scale factor: SVG units per pixel
+            const scaleX = svgW / containerW;
+            const scaleY = svgH / containerH;
             const hovers = hl.querySelectorAll('.hovertext');
             hovers.forEach(g => {
                 const t = g.getAttribute('transform');
                 if (!t) return;
-                const m = t.match(/translate\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/);
+                const m = t.match(/translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/);
                 if (!m) return;
                 let x = parseFloat(m[1]);
                 let y = parseFloat(m[2]);
-                // Use the main-svg's viewBox to get the SVG coordinate bounds.
-                // Plotly's hoverlayer is a sibling of the plotarea, both inside
-                // the main-svg. The SVG viewBox defines the coordinate space.
-                const mainSvg = dvhEl.querySelector('.main-svg');
-                const vb = mainSvg ? mainSvg.viewBox.baseVal : null;
-                const svgW = vb && vb.width ? vb.width : (mainSvg ? mainSvg.clientWidth : 800);
-                const svgH = vb && vb.height ? vb.height : (mainSvg ? mainSvg.clientHeight : 400);
-                // Get the tooltip's own size in SVG units (approximate
-                // from the text bbox or fallback to 150×60)
+                // Tooltip size in SVG units
                 const textEl = g.querySelector('text');
-                let tw = 150, th = 60;
+                let tw = 150 * scaleX, th = 50 * scaleY;
                 if (textEl) {
                     try {
                         const bb = textEl.getBBox();
-                        tw = bb.width || 150;
-                        th = bb.height || 60;
+                        tw = (bb.width || 150) + 10;
+                        th = (bb.height || 50) + 10;
                     } catch (_) {}
                 }
-                // Clamp within the SVG bounds (with small margin)
-                x = Math.max(5, Math.min(x, svgW - tw - 10));
-                y = Math.max(5, Math.min(y, svgH - th - 10));
+                // Clamp within the SVG coordinate space
+                x = Math.max(5 * scaleX, Math.min(x, svgW - tw));
+                y = Math.max(5 * scaleY, Math.min(y, svgH - th));
                 g.setAttribute('transform', `translate(${x},${y})`);
             });
         });
