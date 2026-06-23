@@ -3661,7 +3661,7 @@ print(json.dumps(result))
                 else:
                     result_text = f"Unknown tool: {tool_name}. Available: {self.registry.tool_names}"
 
-                step_status = "done" if "Error" not in result_text and "Exception" not in result_text else "error"
+                step_status = "done" if "Error" not in result_text and "Exception" not in result_text and "错误" not in result_text else "error"
                 steps[-1]["status"] = step_status
                 steps[-1]["result"] = result_text[:200]
 
@@ -4846,7 +4846,7 @@ print(json.dumps(result))
                 else:
                     result_text = f"Unknown tool: {tool_name}. Available: {self.registry.tool_names}"
 
-                step_status = "done" if "Error" not in result_text and "Exception" not in result_text else "error"
+                step_status = "done" if "Error" not in result_text and "Exception" not in result_text and "错误" not in result_text else "error"
                 tool_step["status"] = step_status
                 # Use language-aware formatting for the step result
                 # instead of the raw English result.message
