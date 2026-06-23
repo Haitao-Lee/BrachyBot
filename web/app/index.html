@@ -2684,7 +2684,7 @@ body::before {
     border-radius: var(--radius-md);
     border: 1px solid var(--border-hairline);
     box-shadow: var(--inset-bottom), var(--shadow-xs);
-    overflow: visible;
+    overflow: hidden;  /* Clip Plotly hoverlabel to chart bounds */
     margin-bottom: 0.3rem;
     /* Do NOT use height:0 — it gives the container zero dimensions,
        causing Plotly's hover tooltip to misposition and overflow.
@@ -17129,57 +17129,10 @@ function drawDVH() {
         displaylogo: false,
     });
 
-    // DVH tooltip fix: on every hover, clamp the SVG hoverlabel's
-    // position so text never overflows the chart area. Plotly renders
-    // DVH tooltip clamping — keep hoverlabels inside the chart container.
-    // Plotly renders hoverlabels as SVG <g class='hovertext'> with a
-    // transform="translate(x,y)". The coordinates are in SVG user units,
-    // which map to the container's pixel dimensions via the viewBox.
-    // We clamp the translate so the tooltip never overflows the container.
-    function _clampDvhTooltip() {
-        requestAnimationFrame(() => {
-            const hl = dvhEl.querySelector('.hoverlayer');
-            if (!hl) return;
-            hl.style.overflow = 'visible';
-            // Get the container's pixel size (the visible chart area)
-            const rect = dvhEl.getBoundingClientRect();
-            const containerW = rect.width;
-            const containerH = rect.height;
-            // Get the SVG viewBox to compute the scale factor
-            const mainSvg = dvhEl.querySelector('.main-svg');
-            const vb = mainSvg ? mainSvg.viewBox.baseVal : null;
-            const svgW = vb && vb.width ? vb.width : containerW;
-            const svgH = vb && vb.height ? vb.height : containerH;
-            // Scale factor: SVG units per pixel
-            const scaleX = svgW / containerW;
-            const scaleY = svgH / containerH;
-            const hovers = hl.querySelectorAll('.hovertext');
-            hovers.forEach(g => {
-                const t = g.getAttribute('transform');
-                if (!t) return;
-                const m = t.match(/translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/);
-                if (!m) return;
-                let x = parseFloat(m[1]);
-                let y = parseFloat(m[2]);
-                // Tooltip size in SVG units
-                const textEl = g.querySelector('text');
-                let tw = 150 * scaleX, th = 50 * scaleY;
-                if (textEl) {
-                    try {
-                        const bb = textEl.getBBox();
-                        tw = (bb.width || 150) + 10;
-                        th = (bb.height || 50) + 10;
-                    } catch (_) {}
-                }
-                // Clamp within the SVG coordinate space
-                x = Math.max(5 * scaleX, Math.min(x, svgW - tw));
-                y = Math.max(5 * scaleY, Math.min(y, svgH - th));
-                g.setAttribute('transform', `translate(${x},${y})`);
-            });
-        });
-    }
-    dvhEl.on('plotly_afterplot', _clampDvhTooltip);
-    dvhEl.on('plotly_hover', _clampDvhTooltip);
+    // DVH tooltip: CSS-only clipping. No JS clamp needed —
+    // overflow:hidden on .dvh-container clips the hoverlayer.
+    // (Previous JS clamp was setting hl.style.overflow='visible'
+    // which overrode the CSS, making the tooltip escape again.)
 
     // Click-to-pick (2026-06-16 user request): single-click on a
     // curve drops a pinned marker at that point with a label showing
