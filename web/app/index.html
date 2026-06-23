@@ -991,14 +991,18 @@ body::before {
 }
 
 /* Links inside chat responses — clickable, styled, open in new tab */
-.chat-msg a[href], .md-table a[href] {
+.chat-msg a[href], .md-table a[href],
+.chat-msg li a, .chat-msg p a, .md-list a, .md-ordered-list a {
     color: #60a5fa;
     text-decoration: none;
     border-bottom: 1px solid rgba(96, 165, 250, 0.3);
     transition: color 0.15s, border-color 0.15s;
     word-break: break-all;
+    pointer-events: auto !important;
+    cursor: pointer;
 }
-.chat-msg a[href]:hover, .md-table a[href]:hover {
+.chat-msg a[href]:hover, .md-table a[href]:hover,
+.chat-msg li a:hover, .chat-msg p a:hover {
     color: #93c5fd;
     border-bottom-color: #93c5fd;
 }
@@ -2643,12 +2647,11 @@ body::before {
 /* ===========================================================
    DVH — sunken well
    =========================================================== */
-.dvh-container { padding: 0.95rem; flex: 1; overflow: visible; position: relative; }
-/* Plotly hover tooltip — allow overflow from the chart area.
-   The .metrics-section and .right-panel now use overflow:visible
-   so the hoverlayer can escape. The hoverlayer uses position:absolute
-   which is relative to .dvh-container (position:relative). */
-.dvh-container .hoverlayer { overflow: visible !important; pointer-events: none; z-index: 9999; }
+.dvh-container { padding: 0.95rem; flex: 1; overflow: hidden; position: relative; }
+/* Plotly hover tooltip — clip to chart container bounds.
+   The hoverlayer uses position:absolute relative to .dvh-container.
+   overflow:hidden clips the tooltip so it never escapes the chart. */
+.dvh-container .hoverlayer { overflow: hidden !important; pointer-events: none; z-index: 9999; }
 .dvh-container .hoverlayer .hovertext {
     max-width: 220px;
     min-width: 100px;
@@ -17484,6 +17487,16 @@ async function refreshPlanningUI() {
         try { if (typeof reportAutoFill === 'function') reportAutoFill(); } catch (_) {}
 
         await Promise.all(_meshPromises);
+
+        // 4f-1. Switch to viewers panel so the 3D canvas is visible.
+        // Without this, the canvas has 0×0 dimensions (panel is hidden)
+        // and the renderer can't draw anything — user sees a black screen.
+        try {
+            const viewersTab = document.querySelectorAll('.panel-tab')[3];
+            if (viewersTab && !viewersTab.classList.contains('active')) {
+                switchPanel('viewers', viewersTab);
+            }
+        } catch (_) {}
 
         // 4f-2. Re-capture 3D figure AFTER meshes are loaded.
         // autoCaptureReportFigures ran before mesh promises resolved,
