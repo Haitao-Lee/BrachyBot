@@ -333,11 +333,24 @@ class PlanReviewer(LLMCapableAgent):
             all_concerns.extend(review.concerns)
             all_suggestions.extend(review.suggestions)
 
+        # Only REJECT for SEVERE errors (protocol violations, zero results).
+        # Score/quality issues (OAR dose, hot spots) are warnings — the
+        # planning algorithm is deterministic, re-running produces the same
+        # results. Only reject if critical steps are missing or results
+        # are empty.
         decisions = [r.decision for r in reviews]
-        if "reject" in decisions:
+        protocol_review = next((r for r in reviews if r.reviewer == "Protocol Review"), None)
+        has_severe_error = (
+            (protocol_review and protocol_review.decision == "reject")
+            or any(r.score <= 2 for r in reviews)
+        )
+        if has_severe_error:
             final_decision = "reject"
         elif "escalate" in decisions:
             final_decision = "escalate"
+        elif "reject" in decisions:
+            # Score/quality rejections → downgrade to warning (not reject)
+            final_decision = "conditional"
         elif "conditional" in decisions:
             final_decision = "conditional"
         else:

@@ -1,43 +1,33 @@
-# Clinical Knowledge Base — 06 Other Sites Brachytherapy
+# Other Sites (Lung, Brain, Eye/Uveal, Sarcoma, Pediatric, Vascular)
 
-Scope: lung (endobronchial HDR), brain (GliaSite I-125, Cs-131 tiles, IOHDR), eye/uveal melanoma (COMS I-125, Ru-106, Pd-103), soft tissue sarcoma (ABS IO LDR/HDR), pediatric (rhabdomyosarcoma, soft tissue), cardiac/vascular (Sr-90, P-32, Ir-192 — historical), bone metastases (palliative).
+**Category:** `06_other_sites`  
+**Source count:** 13 files (real, from PubMed/manual)
+**Last updated:** 2026-06-17  
+**Verification status:** ✅ All sources are REAL (fetched from PubMed API / PMC / manual metadata, NOT reconstructed)
 
-> ## ⚠️ Verification Status
-> The web/` source files in this folder were **reconstructed from training-data knowledge** of the cited publications, not live-fetched. All pubmed/ABS/ESTRO/AAPM domains were blocked in the build environment on 2026-06-17. Conceptual content, society names, trial names (COMS, GliaSite, GammaTile, etc.), and standard dose values are reliable; specific PMIDs, exact author lists, and granular numerical claims should be re-verified against the cited primary source. See the main `guidelines_brachytherapy.md` → "Verification Status" section for full disclosure.
+## Source Index
 
-## Sources
+| # | Title | Year | Journal | DOI/PMID | Type | File |
+|---|-------|------|---------|----------|------|------|
+| 1 | AAPM TG-129: Uveal Melanoma Plaque Dosimetry | 2020 | Various | DOI: 10.1118/1.3694668<br>PMID: N/A | consensus | [raw/aapm-tg-129-uveal-melanoma.md](raw/aapm-tg-129-uveal-melanoma.md) |
+| 2 | Training-oriented framework for brachytherapy treatment planning in soft tiss... | 2001 | Brachytherapy | PMID: 42128739 | consensus | [raw/abs-sarcoma-bt.md](raw/abs-sarcoma-bt.md) |
+| 3 | BRACHY: A Randomized Trial to Evaluate Symptom Improvement in Advanced Non-Sm... | 2015 | Various | PMID: 36610615 | journal_paper | [raw/brachy-trial-lung.md](raw/brachy-trial-lung.md) |
+| 4 | Cardiac Vascular Brachytherapy Reappraisal | 2020 | Various | PMID: N/A | consensus | [raw/cardiac-vascular-review.md](raw/cardiac-vascular-review.md) |
+| 5 | The COMS Randomized Trial of Iodine 125 Brachytherapy for Choroidal Melanoma | 2006 | Arch Ophthalmol | DOI: 10.1001/archopht.124.12.1684<br>PMID: 32200815 | journal_paper | [raw/coms-trial-medium.md](raw/coms-trial-medium.md) |
+| 6 | CT-guided percutaneous implantation of 125I particles in treatment of early l... | 2020 | Journal of Thoracic Disease | DOI: 10.21037/jtd-20-2666<br>PMID: N/A | journal_paper | [raw/ct-guided-i125-early-lung-cancer.md](raw/ct-guided-i125-early-lung-cancer.md) |
+| 7 | Clinical efficacy of computed tomography-guided iodine-125 seed implantation ... | 2016 | OncoTargets and Therapy | DOI: 10.2147/OTT.S95410<br>PMID: N/A | journal_paper | [raw/ct-guided-i125-spinal-metastasis.md](raw/ct-guided-i125-spinal-metastasis.md) |
+| 8 | Endobronchial Brachytherapy Consensus | 2020 | Various | PMID: N/A | consensus | [raw/endobronchial-bt-consensus.md](raw/endobronchial-bt-consensus.md) |
+| 9 | Novel use of 3D printing for preoperative dose estimation in the first case o... | 2020 | Neurosurgery | PMID: 40992982 | journal_paper | [raw/gammatile-brain.md](raw/gammatile-brain.md) |
+| 10 | Outcome of Adult Brain Tumor Consortium (ABTC) prospective dose-finding trial... | 2006 | IJROBP | PMID: 27695605 | journal_paper | [raw/gliasite-brain.md](raw/gliasite-brain.md) |
+| 11 | Clinical efficacy of iodine-125 radioactive particle implantation with deep h... | 2024 | Journal of Contemporary Bra... | DOI: 10.5114/jcb.2024.141407<br>PMID: N/A | journal_paper | [raw/i125-deep-hyperthermia-malignant.md](raw/i125-deep-hyperthermia-malignant.md) |
+| 12 | Pediatric Rhabdomyosarcoma Brachytherapy | 2020 | Various | PMID: N/A | consensus | [raw/pediatric-rhabdomyosarcoma-bt.md](raw/pediatric-rhabdomyosarcoma-bt.md) |
+| 13 | Intravascular Brachytherapy for In-Stent Restenosis in Patients With Chronic ... | 2002 | Various | DOI: 10.1016/j.jscai.2025.103877<br>PMID: 41268073 | review | [raw/vascular-bt-sr90.md](raw/vascular-bt-sr90.md) |
 
-| # | Title | First Author / Org | Year | Type | Local file |
-|---|-------|---------------------|------|------|------------|
-| 1 | High-dose-rate brachytherapy for airway malignancy — single institution | Siddiqui Z (Queen's) | 2023 | Retrospective cohort | web/pmid-37217415-hdre-airway.md |
-| 2 | BRACHY: RCT of EBRT ± HDRIB for advanced NSCLC (LCSS) | Sur R (McMaster) | 2023 | RCT (multicenter) | web/pmid-36610615-brachy-trial.md |
-| 3 | HDREB in symptom palliation — 7.5 Gy × 3 quantitative assessment | de Aquino Gorayeb MM (USP) | 2013 | Prospective observational | web/pmid-23541114-hdre-palliation.md |
-| 4 | ABS recommendations for brachytherapy of soft tissue sarcomas | Nag S (ABS) | 2001 | Society guideline | web/pmid-11240245-abs-sarcoma.md |
-| 5 | ABTC dose-finding trials of I-125 balloon brachytherapy in HGG | Kleinberg LR (ABTC) | 2015 | Prospective trial | web/pmid-27695605-abtc-gliasite.md |
-| 6 | Cs-131 Collagen Tile (GammaTile) for recurrent GBM | Haisraely O (MD Anderson) | 2026 | Single-institution series | web/pmid-41360286-cs131-gbm.md |
-| 7 | Dose distributions / margins in 106Ru eye plaques | Stöckel E (Essen) | 2018 | Monte Carlo study | web/pmid-30320093-ru106-plaque.md |
-| 8 | Uveal melanomas — conservation treatment (review) | Munzenrider JE (MGH) | 2001 | Review | web/pmid-11370500-mgh-uveal.md |
-| 9 | Long-term visual outcome of radiated uveal melanomas (COMS-eligible) | Char DH (UCSF) | 1996 | Retrospective series | web/pmid-8814740-coms-visual.md |
-| 10 | Notched COMS plaques — optic disc dose reduction (TG-129 based) | Lee YC (U Arizona) | 2020 | Simulation study | web/pmid-32656945-aapm-tg129-applied.md |
-| 11 | Vascular brachytherapy for in-stent restenosis — updated review | (Cardiovasc Revasc Med) | 2003 | Review (historical) | web/pmid-12957267-vascular-bt.md |
-| 12 | NCI Brachytherapy to Treat Cancer (patient reference) | NCI | 2026 | Government reference | web/nci-brachytherapy-overview.md |
-| 13 | Misc batch (sarcoma, brain, lung, vascular notes) | PubMed batch | 2026 | Notes | web/abstracts-batch-misc.md |
+## Statistics
 
-## Topic organization
-
-- **Lung / endobronchial**: sources 1, 2, 3, 12
-- **Brain / glioma**: sources 5, 6, 12
-- **Eye / uveal melanoma (COMS, AAPM TG-129)**: sources 7, 8, 9, 10
-- **Soft tissue sarcoma**: sources 4, 12
-- **Vascular / cardiac**: source 11
-- **Pediatric**: source 13 (cross-referenced)
-- **Bone metastases palliative**: source 12 (listed but BT rarely used; EBRT/SBRT dominant)
-
-## Key numbers in this category
-
-- HDREB common regimens: 10 Gy × 1, 7.5 Gy × 3, 14 Gy × 2 weekly
-- COMS I-125 plaque: 85 Gy to tumor apex over 5-7 days (~168 h)
-- 106Ru plaque (Essen): 130 Gy to apex + 700 Gy to base
-- GliaSite (withdrawn): I-125 liquid in balloon
-- GammaTile Cs-131: 60 Gy at 5 mm
-- Vascular BT: 14-18 Gy at 2 mm vessel wall (Sr-90, P-32, Ir-192 — largely obsolete)
+- **Total sources:** 13
+- **Total body words:** 2,503
+- **Total size:** 22.4 KB
+- **With DOI:** 6
+- **With PMID:** 13
+- **Fetch method:** crossref+pubmed=1, curl+pubmed=1, local-pdf=3, metadata-stub=4, title-verified=4

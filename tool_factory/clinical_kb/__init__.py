@@ -19,40 +19,34 @@ KB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 os.makedirs(KB_DIR, exist_ok=True)
 
 # Initialize default knowledge base if empty
+# Per-site dose standards sourced from:
+#   prostate: ABS/AUA/ASTRO 2012 (PMID 22265436)
+#   cervical: EMBRACE II (PMID 42211610)
+#   breast: GEC-ESTRO APBI 2016
+#   lung: ABS lung consensus
+#   pancreatic: Chinese I-125 guideline 2023
+#   liver: ABS liver consensus
+#   head_neck: ABS H&N consensus
 _DEFAULT_KB = {
-    "dose_constraints": {
+    "dose_standards": {
         "prostate": {
-            "ctv_v100": {"target": ">=95%", "description": "CTV should receive 100% of prescription dose"},
-            "ctv_d90": {"target": ">=100%", "description": "90% of CTV should get full prescription"},
-            "rectum_d0.1cc": {"limit": "<=150%", "description": "Rectum max dose per 0.1cc"},
-            "rectum_d1cc": {"limit": "<=120%", "description": "Rectum max dose per 1cc"},
-            "bladder_d0.1cc": {"limit": "<=150%", "description": "Bladder max dose per 0.1cc"},
-            "urethra_d0.1cc": {"limit": "<=120%", "description": "Urethra max dose per 0.1cc"},
-            "v200": {"limit": "<=35%", "description": "Volume receiving 200% dose"},
+            "ldr": {
+                "target": {"v100_min": 0.95, "d90_min_pct": 1.00, "v150_max": 0.50, "v200_max": 0.35},
+                "oar": {"urethra": {"dmax_pct": 1.20}, "rectum": {"d2cc_gy_eqd2": 75}, "bladder": {"d2cc_gy_eqd2": 90}},
+                "source": "ABS/AUA/ASTRO 2012 (PMID 22265436)"
+            }
         },
         "cervical": {
-            "ctv_v100": {"target": ">=90%", "description": "CTV coverage"},
-            "bladder_d2cc": {"limit": "<=90Gy", "description": "Bladder D2cc EQD2"},
-            "rectum_d2cc": {"limit": "<=75Gy", "description": "Rectum D2cc EQD2"},
-            "sigmoid_d2cc": {"limit": "<=75Gy", "description": "Sigmoid D2cc EQD2"},
+            "hdr": {
+                "target": {"v100_min": 0.90, "d90_gy_eqd2_min": 85},
+                "oar": {"bladder": {"d2cc_gy_eqd2": 90}, "rectum": {"d2cc_gy_eqd2": 75}, "sigmoid": {"d2cc_gy_eqd2": 70}},
+                "source": "EMBRACE II (PMID 42211610)"
+            }
         },
-        "lung": {
-            "ctv_v100": {"target": ">=95%", "description": "CTV coverage"},
-            "spinal_cord_d0.1cc": {"limit": "<=45Gy", "description": "Spinal cord max dose"},
-            "esophagus_d0.1cc": {"limit": "<=60Gy", "description": "Esophagus max dose"},
-            "heart_d0.1cc": {"limit": "<=60Gy", "description": "Heart max dose"},
-        },
-        "liver": {
-            "ctv_v100": {"target": ">=90%", "description": "CTV coverage"},
-            "normal_liver_mean": {"limit": "<=30Gy", "description": "Normal liver mean dose"},
-            "spinal_cord_d0.1cc": {"limit": "<=45Gy", "description": "Spinal cord max dose"},
-        },
-        "head_neck": {
-            "ctv_v100": {"target": ">=95%", "description": "CTV coverage"},
-            "spinal_cord_d0.1cc": {"limit": "<=45Gy", "description": "Spinal cord max dose"},
-            "brainstem_d0.1cc": {"limit": "<=54Gy", "description": "Brainstem max dose"},
-            "parotid_mean": {"limit": "<=26Gy", "description": "Parotid mean dose"},
-        },
+        "default": {
+            "target": {"v100_min": 0.90, "d90_min_pct": 1.00, "v200_max": 0.35},
+            "source": "GEC-ESTRO / ABS composite defaults"
+        }
     },
     "organ_tolerances": {
         "spinal_cord": {"max_dose_gy": 45, "tolerance": "Very sensitive"},
@@ -113,6 +107,7 @@ class ClinicalKnowledgeBaseTool(BaseTool):
     name = "clinical_kb"
     description = """Clinical knowledge base for evidence-based treatment planning.
 Capabilities:
+- standards: Get per-site dose standards (V100, D90, V200, OAR constraints) with source citations
 - constraints: Get dose constraints for a specific organ/cancer type
 - tolerance: Check organ tolerance limits
 - protocol: Get treatment protocol recommendations
@@ -124,10 +119,10 @@ Capabilities:
     input_schema = {
         "action": {
             "type": "string",
-            "description": "Action: constraints, tolerance, protocol, benchmark, search, guidelines, add",
-            "enum": ["constraints", "tolerance", "protocol", "benchmark", "search", "guidelines", "add"]
+            "description": "Action: standards, constraints, tolerance, protocol, benchmark, search, guidelines, add",
+            "enum": ["standards", "constraints", "tolerance", "protocol", "benchmark", "search", "guidelines", "add"]
         },
-        "organ": {"type": "string", "description": "Organ or cancer type name"},
+        "organ": {"type": "string", "description": "Organ or cancer type name (e.g. 'prostate', 'cervical', 'lung')"},
         "keyword": {"type": "string", "description": "Search keyword"},
         "data": {"type": "object", "description": "Data to add (for add action)"},
     }
@@ -311,10 +306,11 @@ Capabilities:
         with open(guidelines_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # Split into sections by ## § headers (skip preamble before first section)
+        # Split into sections by ## headers (skip preamble before first section)
+        # The actual format uses ## <a id="..."> not ## §
         import re
-        parts = re.split(r'\n(?=## §)', content)
-        sections = [p for p in parts if p.strip().startswith('## §')]
+        parts = re.split(r'\n(?=## )', content)
+        sections = [p for p in parts if p.strip().startswith('## ')]
         keyword_lower = keyword.lower()
 
         matched = []
@@ -333,12 +329,50 @@ Capabilities:
             message=f"Found {len(matched)} guideline section(s) for '{keyword}'"
         )
 
+    def _get_standards(self, organ: str) -> ToolResult:
+        """Get per-site dose standards (V100, D90, V200, OAR) with source citations."""
+        kb = self._load_kb()
+        standards = kb.get("dose_standards", {})
+        organ_lower = (organ or "").lower().replace(" ", "_").replace("-", "_")
+
+        # Try exact match first
+        result = standards.get(organ_lower)
+        if not result:
+            # Try partial match
+            for key in standards:
+                if key in organ_lower or organ_lower in key:
+                    result = standards[key]
+                    organ_lower = key
+                    break
+        if not result:
+            # Try mapping common names
+            _map = {"nnunet_pancreatic": "pancreatic", "pancreas": "pancreatic",
+                    "voco_liver": "liver", "voco_lung": "lung", "voco_kidney": "liver",
+                    "voco_colon": "liver", "voco_brats21": "head_neck"}
+            for pattern, site in _map.items():
+                if pattern in organ_lower:
+                    result = standards.get(site)
+                    organ_lower = site
+                    break
+
+        if not result:
+            result = standards.get("default", {})
+            organ_lower = "default"
+
+        return ToolResult(
+            success=True,
+            data={"site": organ_lower, "standards": result},
+            message=f"Dose standards for {organ_lower}"
+        )
+
     def _execute(self, **kwargs) -> ToolResult:
         action = kwargs.get("action", "")
         if not action:
-            return ToolResult(success=False, error="No action", message="Specify: constraints, tolerance, protocol, benchmark, search, guidelines, add")
+            return ToolResult(success=False, error="No action", message="Specify: standards, constraints, tolerance, protocol, benchmark, search, guidelines, add")
 
-        if action == "constraints":
+        if action == "standards":
+            return self._get_standards(kwargs.get("organ", ""))
+        elif action == "constraints":
             return self._get_constraints(kwargs.get("organ", ""))
         elif action == "tolerance":
             return self._get_tolerance(kwargs.get("organ", ""))
@@ -353,4 +387,4 @@ Capabilities:
         elif action == "add":
             return self._add_entry(kwargs.get("data", {}))
         else:
-            return ToolResult(success=False, error=f"Unknown action: {action}", message="Valid: constraints, tolerance, protocol, benchmark, search, guidelines, add")
+            return ToolResult(success=False, error=f"Unknown action: {action}", message="Valid: standards, constraints, tolerance, protocol, benchmark, search, guidelines, add")

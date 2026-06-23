@@ -1170,52 +1170,35 @@ body::before {
     font-weight: 600;
     margin: 0.65rem 0 0.3rem;
     letter-spacing: -0.005em;
-    /* CONSISTENT ICON STYLE (2026-06-15): user complained that some
-       sibling headings had an emoji/icon (🎯, 🛠️, 💡...) and others
-       didn't, which made the layout look uneven. The fix is two-fold:
-
-       (1) NO leading emoji. The system prompt for the LLM now
-           explicitly says "do not use emojis in section headings" —
-           see config/prompts/system_prompt.md.
-       (2) Every H2/H3/H4 here gets a thin brand-colored vertical
-           bar on the left as the visual marker, so the heading
-           hierarchy is still scannable without depending on emojis. */
+    /* CLEAN HEADINGS (2026-06-22): ChatGPT-style clean headings.
+       Hierarchy through font size, weight, color, and spacing.
+       No left border bars, no injected emoji icons. H2 gets a
+       subtle bottom border for section separation. */
 }
 .md-h1 { font-size: 1.1rem; margin-top: 0.85rem; }
 .md-h2 {
     font-size: 0.95rem;
     margin-top: 0.85rem;
-    padding-left: 0.6rem;
-    border-left: 3px solid var(--primary);
     color: #d6e4ff;
+    border-bottom: 1px solid var(--border-soft);
+    padding-bottom: 0.2rem;
 }
 .md-h3 {
     font-size: 0.85rem;
     margin-top: 0.6rem;
-    padding-left: 0.5rem;
-    border-left: 2px solid var(--border-emphasis);
     color: #c8d2e3;
 }
 .md-h4 { font-size: 0.8rem; margin-top: 0.45rem; color: #b8c1d3; }
 .md-h5 { font-size: 0.78rem; margin-top: 0.35rem; color: var(--text-dim); }
 .md-h1:first-child, .md-h2:first-child, .md-h3:first-child, .md-h4:first-child, .md-h5:first-child { margin-top: 0; }
 
-/* ICON STYLING (2026-06-16, round 2): icons are now injected by the
-   marked Renderer with single-source-of-truth rules — every H1/H2/H3
-   gets a level-mapped icon (🎯/📌/🔹), and inline sentences get
-   semantic icons (💡/✅/⚠️/📊/🕐) only when matched. This selector
-   styles the leading icon character inside a heading with a tiny
-   right margin so it doesn't crowd the text. The .md-emoji-prefix
-   safety-net hide is REMOVED — there is no need to hide the LLM's
-   leading emoji because the Renderer strips it before injection. */
+/* Heading styling (2026-06-22): clean ChatGPT-style headings with no
+   left bars or injected icons. Hierarchy is communicated through font
+   size, weight, color, and spacing alone — no decorative borders. */
 .md-h1::first-letter,
 .md-h2::first-letter,
 .md-h3::first-letter,
-.md-h4::first-letter { font-weight: 500; }
-
-/* Inline-icon visual: a slight right margin to separate the icon
-   from the text. Uses `first-of-type` to avoid setting it on every
-   text node — the icon is always the first character. */
+.md-h4::first-letter { font-weight: 600; }
 .md-h2 + p, .md-h3 + p, .md-h4 + p { margin-top: 0.35rem; }
 
 .chat-row {
@@ -2060,7 +2043,8 @@ body::before {
     border-left: 1px solid var(--border-default);
     box-shadow: -1px 0 0 rgba(15, 23, 42, 0.04), var(--inset-top);
     display: flex; flex-direction: column;
-    overflow: hidden; flex-shrink: 0;
+    overflow: clip; overflow-clip-margin: 20px;
+    flex-shrink: 0;
     position: relative;
     z-index: 5;
 }
@@ -2414,7 +2398,7 @@ body::before {
     background: var(--bg-2);
     border: 1px solid var(--border-hairline);
     border-radius: var(--radius-md);
-    overflow: hidden;
+    overflow: visible;
     box-shadow: var(--inset-top), var(--shadow-elevated);
 }
 
@@ -2660,21 +2644,28 @@ body::before {
    DVH — sunken well
    =========================================================== */
 .dvh-container { padding: 0.95rem; flex: 1; overflow: visible; position: relative; }
-/* Plotly hover tooltip — keep text inside the tooltip box */
-.dvh-container .hoverlayer { overflow: visible !important; pointer-events: none; }
+/* Plotly hover tooltip — allow overflow from the chart area.
+   The .metrics-section and .right-panel now use overflow:visible
+   so the hoverlayer can escape. The hoverlayer uses position:absolute
+   which is relative to .dvh-container (position:relative). */
+.dvh-container .hoverlayer { overflow: visible !important; pointer-events: none; z-index: 9999; }
 .dvh-container .hoverlayer .hovertext {
     max-width: 220px;
     min-width: 100px;
     white-space: normal;
     word-wrap: break-word;
-    overflow: hidden !important;
 }
-/* Force SVG text elements to stay inside their bounding box */
-.dvh-container .hoverlayer svg text { overflow: hidden !important; }
-.dvh-container .hoverlayer .hovertext text { overflow: hidden !important; }
-.dvh-container .hoverlayer .hovertext rect {
-    rx: 4;
-    ry: 4;
+/* Force SVG text to stay inside the tooltip rect.
+   Plotly renders hoverlabels as SVG <g> with a <rect> bg and
+   <text> elements. The text can overflow the rect when using
+   CJK fonts due to different baseline metrics. We force
+   dominant-baseline and dy to anchor text inside the box. */
+.dvh-container .hoverlayer .hovertext text {
+    text-anchor: start !important;
+    dominant-baseline: central !important;
+}
+.dvh-container .hoverlayer .hovertext .nums > text {
+    dominant-baseline: central !important;
 }
 
 .dvh-container {
@@ -6086,17 +6077,9 @@ const STEP_ICONS = {
 //   - Code blocks / inline code
 //   - Strict medical / regulatory wording
 //   - Numeric metrics inside a sentence (e.g. "V100 = 97.6%")
-const _HEADING_ICONS = {
-    1: '🎯',  // top-level goal
-    2: '📌',  // section
-    3: '🔹',  // sub-section
-    4: '🔸',  // detail
-    5: '🔻',  // micro-note
-    6: '🔻',
-};
-function _headingIcon(level) {
-    return _HEADING_ICONS[level] || '';
-}
+// Heading icons removed (2026-06-22) — clean text-only headings.
+// const _HEADING_ICONS = { 1:'🎯', 2:'📌', 3:'🔹', 4:'🔸', 5:'🔻', 6:'🔻' };
+// function _headingIcon(level) { return _HEADING_ICONS[level] || ''; }
 
 // Strip any leading emoji characters from text (so the LLM's own
 // leading emoji doesn't fight the level-mapped icon we inject).
@@ -6162,25 +6145,13 @@ function renderMarkdown(text) {
                 };
                 const _h1 = R.heading.bind(R);
                 R.heading = function(text, level, raw, slugger) {
-                    // CONSISTENT ICON STYLE (2026-06-16, round 2):
-                    // The user previously complained that some sibling
-                    // headings had an emoji (🎯/🛠️/💡) and others didn't —
-                    // we solved that by stripping all leading emoji and
-                    // using a left bar as visual marker. Now the user
-                    // wants icons BACK, but consistently. The fix is to
-                    // never trust the LLM's leading emoji: we STRIP any
-                    // leading emoji the LLM might have added, then
-                    // INJECT our own icon based purely on heading level.
-                    // This way every H1/H2/H3/H4 has a single, predictable
-                    // icon regardless of what the LLM wrote.
+                    // CLEAN HEADINGS (2026-06-22): strip any leading
+                    // emoji the LLM may have added, but do NOT inject
+                    // any icon. Clean text-only headings look more
+                    // professional (ChatGPT style). Hierarchy is
+                    // communicated through font size/weight/color.
                     const cleaned = String(text).replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F2FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}]+\s*/u, '').trim();
-                    const icon = _headingIcon(level);
-                    const injected = icon ? (icon + ' ' + cleaned) : cleaned;
-                    const html = _h1(injected, level, raw, slugger);
-                    // marked@4.x emits `<h2 id="slug">…</h2>` (with
-                    // attributes), so we match `^<(h[1-6])` and insert
-                    // `class="md-hX"` right after the tag name. If the
-                    // class is already there we replace it.
+                    const html = _h1(cleaned, level, raw, slugger);
                     return html.replace(/^<(h[1-6])(\s)/, '<$1 class="md-$1"$2').replace(/^<(h[1-6]) class="md-(h[1-6])"(\s)/, '<$1 class="md-$2"$3');
                 };
                 const _ul = R.list.bind(R);
@@ -7039,7 +7010,15 @@ function showToolProgress(toolName, params) {
 
     const text = document.createElement('span');
     text.className = 'tool-progress-text';
-    text.innerHTML = '<strong>' + escHtml(toolName) + '</strong> running...';
+    const _zh = (window._uiLanguage === 'zh');
+    // Use i18n tool name if available
+    const _toolLabel = (function() {
+        try {
+            const i18n = _todoI18n();
+            return (i18n && i18n.tools && i18n.tools[toolName]) || toolName;
+        } catch (_) { return toolName; }
+    })();
+    text.innerHTML = '<strong>' + escHtml(_toolLabel) + '</strong> ' + (_zh ? '执行中...' : 'running...');
 
     div.appendChild(spinner);
     div.appendChild(text);
@@ -7057,10 +7036,17 @@ function updateToolProgress(el, toolName, status, result) {
     if (!el) return;
     const textEl = el.querySelector('.tool-progress-text');
     const spinner = el.querySelector('.spinner-ring');
+    const _zh = (window._uiLanguage === 'zh');
+    const _toolLabel = (function() {
+        try {
+            const i18n = _todoI18n();
+            return (i18n && i18n.tools && i18n.tools[toolName]) || toolName;
+        } catch (_) { return toolName; }
+    })();
     if (status === 'done') {
         if (spinner) spinner.remove();
         if (textEl) {
-            textEl.innerHTML = '<strong>' + escHtml(toolName) + '</strong> completed';
+            textEl.innerHTML = '<strong>' + escHtml(_toolLabel) + '</strong> ' + (_zh ? '已完成' : 'completed');
             el.style.background = 'rgba(16,185,129,0.1)';
             el.style.borderColor = 'rgba(16,185,129,0.3)';
             el.style.color = 'var(--success)';
@@ -7068,7 +7054,7 @@ function updateToolProgress(el, toolName, status, result) {
     } else if (status === 'error') {
         if (spinner) spinner.remove();
         if (textEl) {
-            textEl.innerHTML = '<strong>' + escHtml(toolName) + '</strong> failed';
+            textEl.innerHTML = '<strong>' + escHtml(_toolLabel) + '</strong> ' + (_zh ? '失败' : 'failed');
             el.style.background = 'rgba(239,68,68,0.1)';
             el.style.borderColor = 'rgba(239,68,68,0.3)';
             el.style.color = 'var(--danger)';
@@ -7440,8 +7426,32 @@ function _todoCreate() {
             _todoUpdateCount();
         },
         fold() {
-            // Final assistant response arrived — collapse to header only
-            // but keep it visible (so the user can re-expand).
+            // Final assistant response arrived — mark all remaining
+            // pending/active items as done so the count is accurate.
+            // Without this, items like web_search stay "spinning" in
+            // the dock even after the response is fully generated.
+            for (const it of api.items) {
+                if (it.status === 'pending' || it.status === 'active' || it.status === 'predicted') {
+                    if (it._timer) { clearInterval(it._timer); it._timer = null; }
+                    _todoStopGpuBadge(it);
+                    it.status = 'done';
+                    it.endedAt = Date.now();
+                    if (it.startedAt == null || it.startedAt <= 0 || it.startedAt > Date.now() + 60000) {
+                        it.startedAt = it.endedAt;
+                    }
+                    it.node.classList.remove('pending', 'active', 'predicted');
+                    it.node.classList.add('done');
+                    const dot = it.node.querySelector('.chat-todo-dot');
+                    if (dot) dot.textContent = '✓';
+                    const t = it.node.querySelector('.chat-todo-time');
+                    if (t) {
+                        const dur = (it.endedAt - it.startedAt) / 1000;
+                        t.textContent = (!isFinite(dur) || dur < 0 || dur > 86400) ? '—' : dur.toFixed(1) + 's';
+                    }
+                }
+            }
+            _todoUpdateCount();
+            // Collapse to header only but keep it visible (so the user can re-expand).
             root.classList.add('folded');
             const list = root.querySelector('.chat-todo-list');
             list.classList.add('collapsed');
@@ -7684,8 +7694,23 @@ function _todoUpdateFromStep(todo, step) {
             return false;
         });
         if (existing) {
-            if (step.status === 'done') todo.markDone(existing);
-            else if (step.status === 'pending') todo.markActive(existing);
+            // BUG FIX 2026-06-22: when CTV's done event arrives and
+            // finds the merged CTV+OAR item via dedup, it must go
+            // through the _mergedDone tracking (not call markDone
+            // directly). Otherwise the merge block's "both must be
+            // done" logic is bypassed and the item gets marked done
+            // when only OAR completed, leaving CTV stuck as "running".
+            if (step.status === 'done' && existing._mergedOAR) {
+                if (!existing._mergedDone) existing._mergedDone = {};
+                existing._mergedDone[step.tool] = true;
+                if (existing._mergedDone['ctv_segmentation'] && existing._mergedDone['oar_segmentation']) {
+                    todo.markDone(existing);
+                }
+            } else if (step.status === 'done') {
+                todo.markDone(existing);
+            } else if (step.status === 'pending') {
+                todo.markActive(existing);
+            }
             return existing;
         }
     }
@@ -8174,16 +8199,19 @@ async function sendChat(prefill) {
                             // would re-render every 200ms and the 3D viewer
                             // would re-init constantly — visible as the DVH
                             // flashing and the "Metrics panel sinking".
-                            const PLANNING_TOOLS = ['planning_pipeline', 'seed_planning', 'dose_calc', 'dose_eval', 'ctv_segmentation', 'oar_segmentation'];
-                            if (data.status === 'done' && data.tool && PLANNING_TOOLS.includes(data.tool)) {
+                            // Only trigger refreshPlanningUI on the FINAL
+                            // planning tool — not on every sub-step.
+                            // The planning_pipeline with step:full runs
+                            // CTV→OAR→trajectory→seed→dose internally.
+                            // Triggering on ctv_segmentation done (the
+                            // first to complete) would refresh before
+                            // dose data exists. We wait for the LAST
+                            // tool in the chain: planning_pipeline done
+                            // (which fires AFTER all sub-steps drain).
+                            const FINAL_PLANNING_TOOLS = ['planning_pipeline', 'dose_evaluation'];
+                            if (data.status === 'done' && data.tool && FINAL_PLANNING_TOOLS.includes(data.tool)) {
                                 if (typeof refreshPlanningUI === 'function' && !window._planningRefreshScheduled) {
                                     window._planningRefreshScheduled = true;
-                                    // 250ms lets the server's memory.store()s
-                                    // for the FINAL tool (usually the
-                                    // assistant's response) commit before
-                                    // we read them back. Waiting longer than
-                                    // the actual streaming time also means
-                                    // the last dose_eval data is in memory.
                                     setTimeout(() => {
                                         try { refreshPlanningUI(); } catch (_) {}
                                         window._planningRefreshScheduled = false;
@@ -10171,6 +10199,13 @@ function switchPanel(name, el) {
         loadAllSlices();
         // Delayed re-render to fix black screen when container size changes
         setTimeout(() => loadAllSlices(), 100);
+        // BUG FIX 2026-06-22: force 3D viewer re-render when panel
+        // becomes visible. The canvas was 0x0 while the panel was
+        // hidden (display:none), so the renderer had nothing to draw
+        // into. Now that the panel is visible, re-size and fit camera.
+        if (Object.keys(scene3D.meshes).length > 0) {
+            setTimeout(() => forceRender3DViewer(), 50);
+        }
     }
     // BUG FIX 2026-06-16 (report auto-screenshots): previously the
     // report panel opened with NO figures and the user had to
@@ -11751,7 +11786,12 @@ function openColorPicker(id, swatchEl) {
     else if (id === 'dose') itemState = dataTreeState.dose;
     else if (id === 'seeds') itemState = dataTreeState.seeds;
     else if (id === 'needles') itemState = dataTreeState.needles;
-    else if (id.startsWith('seed_')) {
+    else if (id.startsWith('ctv_')) {
+        // CTV sub-labels (tumor, artery, vein, pancreas, etc.)
+        if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
+        if (!dataTreeState.ctvLabels[id]) dataTreeState.ctvLabels[id] = { visible: true, opacity: 0.7, color: '#ef4444' };
+        itemState = dataTreeState.ctvLabels[id];
+    } else if (id.startsWith('seed_')) {
         itemState = dataTreeState.planning.seeds.find(s => s.id === id);
     } else if (id.startsWith('needle_')) {
         itemState = dataTreeState.planning.needles.find(n => n.id === id);
@@ -11905,6 +11945,17 @@ function openColorPicker(id, swatchEl) {
             const b = parseInt(pendingColor.slice(5,7), 16);
             labelColorLUT[labelId] = [r, g, b];
         }
+        // Update 3D mesh color if mesh exists
+        const mesh3d = scene3D.meshes[id];
+        if (mesh3d) {
+            const r = parseInt(pendingColor.slice(1,3), 16) / 255;
+            const g = parseInt(pendingColor.slice(3,5), 16) / 255;
+            const b = parseInt(pendingColor.slice(5,7), 16) / 255;
+            const target = mesh3d.surfaceMesh || mesh3d;
+            if (target && target.material) {
+                target.material.color.setRGB(r, g, b);
+            }
+        }
         // Redraw overlays (debounced)
         clearTimeout(window._colorOverlayTimer);
         window._colorOverlayTimer = setTimeout(() => {
@@ -11923,8 +11974,6 @@ function openColorPicker(id, swatchEl) {
     dialog.querySelector('#colorCancel').addEventListener('click', closeDialog);
     dialog.querySelector('#colorDialogClose').addEventListener('click', closeDialog);
     backdrop.addEventListener('click', closeDialog);
-
-    input.click();
 }
 
 function getItemGroup(id) {
@@ -13398,8 +13447,12 @@ async function reconstructOrgan3D(id, silent = false) {
 
         let label_id, source, color;
         if (id.startsWith('ctv_')) {
-            // Individual CTV label (e.g., ctv_2 = tumor)
+            // Individual CTV label. Label 1 = tumor (source='ctv'),
+            // labels 2+ = vessels/organs categorized as OAR (source='oar').
             label_id = parseInt(id.replace('ctv_', ''));
+            // Use 'ctv' for API fetch (mesh data is in CTV mask),
+            // but 'oar' for display source when label > 1 so
+            // addMeshToScene uses OAR opacity config.
             source = 'ctv';
             const c = labelColorLUT[label_id];
             color = c ? (c[0] << 16 | c[1] << 8 | c[2]) : 0xff6b6b;
@@ -13482,7 +13535,7 @@ function init3DScene() {
     scene3D.camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 5000);
     scene3D.camera.position.set(0, 0, 300);
 
-    scene3D.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    scene3D.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     scene3D.renderer.setSize(w, h);
     scene3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     scene3D.renderer.shadowMap.enabled = false;
@@ -14464,9 +14517,19 @@ async function loadAllIsoSurfaces() {
 // the data tree).
 async function loadCTVAndObstacleMeshes() {
     init3DScene();
-    // CTV: multi-label — labels 1..6 typically
-    const ctvLabelIds = (window._ctvLabelMap && Object.keys(window._ctvLabelMap).map(Number)) || [1, 2, 3, 4, 5, 6];
-    console.log('[loadCTVAndObstacle] CTV label IDs:', ctvLabelIds, 'ctvLabelMap:', window._ctvLabelMap);
+    // CTV multi-label segmentation produces labels 1..6.
+    // ALL labels use organ_id='ctv_${lid}' and source='ctv' to match
+    // reconstructOrgan3D('ctv') exactly. The Data Tree categorizes
+    // label 1 under CTV, labels 2-3 under OAR>Non-traversable,
+    // labels 4+ under OAR>Traversable — but the 3D mesh IDs are
+    // always 'ctv_${lid}' so the Data Tree's visibility toggles
+    // (which look for scene3D.meshes['ctv_2'] etc.) work correctly.
+    const ctvLabelMap = window._ctvLabelMap || {};
+    const ctvLabelIds = Object.keys(ctvLabelMap).map(Number).length > 0
+        ? Object.keys(ctvLabelMap).map(Number)
+        : [1, 2, 3, 4, 5, 6];
+    console.log('[loadCTVAndObstacle] CTV label IDs:', ctvLabelIds, 'ctvLabelMap:', ctvLabelMap);
+
     let ctvMeshCount = 0;
     for (const lid of ctvLabelIds) {
         try {
@@ -14480,27 +14543,33 @@ async function loadCTVAndObstacleMeshes() {
             if (data && data.success && data.vertex_count > 0) {
                 const c = labelColorLUT && labelColorLUT[lid];
                 data.color = c ? ((c[0] << 16) | (c[1] << 8) | c[2]) : 0xff6b6b;
+                // Use SAME organ_id as reconstructOrgan3D('ctv')
                 data.organ_id = `ctv_${lid}`;
-                data.label = (window._ctvLabelMap && window._ctvLabelMap[lid]) || `CTV Label ${lid}`;
+                data.label = ctvLabelMap[lid] || `CTV Label ${lid}`;
+                data.source = 'ctv';
                 addMeshToScene(data);
                 ctvMeshCount++;
             }
         } catch (e) { console.warn(`[loadCTVAndObstacle] CTV label ${lid} error:`, e); }
     }
     console.log(`[loadCTVAndObstacle] CTV meshes added: ${ctvMeshCount}`);
-    // Non-traversable OARs: arteries, veins, bones, etc. We derive the
-    // list from dataTreeState.organs where category === 'non_traversable'
-    // (set by classifyOrgan). Hard-coded fallback for label IDs 201, 202
-    // (TotalSegmentator artery/vein) is kept as a safety net.
+    // Non-traversable OARs from OAR segmentation (bones, major vessels, etc.).
+    // IMPORTANT: exclude CTV label IDs (already loaded above as ctv_* meshes)
+    // to avoid duplicate meshes (e.g. artery from CTV seg = ctv_2, artery from
+    // OAR seg = organ_201 — both are "artery" but from different sources).
+    const ctvIdSet = new Set(ctvLabelIds);
     const nonTravIds = new Set();
     if (dataTreeState && dataTreeState.organs) {
         dataTreeState.organs
-            .filter(o => o.category === 'non_traversable' && o.labelId !== undefined)
+            .filter(o => o.category === 'non_traversable'
+                         && o.labelId !== undefined
+                         && !ctvIdSet.has(o.labelId)  // skip CTV sub-labels
+                         && !(o.source === 'ctv'))     // skip organs sourced from CTV seg
             .forEach(o => nonTravIds.add(o.labelId));
     }
     if (nonTravIds.size === 0) {
-        nonTravIds.add(201); // artery
-        nonTravIds.add(202); // vein
+        nonTravIds.add(201); // artery (TotalSegmentator)
+        nonTravIds.add(202); // vein (TotalSegmentator)
     }
     console.log('[loadCTVAndObstacle] Non-traversable OAR IDs:', [...nonTravIds], 'organs count:', dataTreeState.organs.length);
     let oarMeshCount = 0;
@@ -14527,7 +14596,9 @@ async function loadCTVAndObstacleMeshes() {
                     data.color = 0xff4444;
                 }
                 data.organ_id = `organ_${lid}`;
-                data.label = (organ && organ.name) || `OAR ${lid}`;
+                // BUG FIX: organ object uses 'label' not 'name'
+                data.label = (organ && organ.label) || `OAR ${lid}`;
+                data.source = 'oar';
                 addMeshToScene(data);
                 oarMeshCount++;
             }
@@ -15837,6 +15908,7 @@ function getSliceCanvas(axis) {
 function renderDoseForCurrentSlice(axis, sliceIndex) {
     if (!state.doseOverlay || !state.doseOverlay.visible) return;
     const sliceCanvas = getSliceCanvas(axis);
+    console.log('[dose] renderDoseForCurrentSlice', axis, sliceIndex, !!sliceCanvas, state.doseOverlay.slices ? Object.keys(state.doseOverlay.slices).length : 0);
     if (!sliceCanvas) return;
     const doseCanvasId = 'doseOverlayCanvas' + capitalize(axis);
     let doseCanvas = document.getElementById(doseCanvasId);
@@ -17031,13 +17103,14 @@ function drawDVH() {
             bgcolor: 'rgba(15,23,42,0.95)',
             bordercolor: 'rgba(148,163,184,0.45)',
             font: {
-                family: 'Inter, "Space Grotesk", system-ui, sans-serif',
-                size: 9,
+                family: '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Inter, system-ui, sans-serif',
+                size: 11,
                 color: '#e2e8f0',
             },
             align: 'left',
-            namelength: 20,
-            pad: { t: 4, b: 4, l: 6, r: 6 },
+            namelength: -1,
+            split: true,
+            pad: { t: 6, b: 6, l: 8, r: 8 },
         },
     }, {
         responsive: true,
@@ -17046,9 +17119,53 @@ function drawDVH() {
         displaylogo: false,
     });
 
-    // DVH tooltip fix: ensure hoverlayer stays within chart bounds.
-    // The parent containers (#metricsDVH, .right-panel) now have
-    // overflow:visible so the tooltip can display naturally.
+    // DVH tooltip fix: on every hover, clamp the SVG hoverlabel's
+    // position so text never overflows the chart area. Plotly renders
+    // hoverlabels as SVG <g class='hovertext'> inside .hoverlayer.
+    // The <g> has a transform="translate(x,y)" that can push the
+    // text outside the chart bounds. We read the chart's bounding
+    // rect and clamp the translate so the tooltip stays inside.
+    function _clampDvhTooltip() {
+        // Defer to next frame so Plotly has finished positioning the tooltip
+        requestAnimationFrame(() => {
+            const hl = dvhEl.querySelector('.hoverlayer');
+            if (!hl) return;
+            hl.style.overflow = 'visible';
+            const hovers = hl.querySelectorAll('.hovertext');
+            hovers.forEach(g => {
+                const t = g.getAttribute('transform');
+                if (!t) return;
+                const m = t.match(/translate\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/);
+                if (!m) return;
+                let x = parseFloat(m[1]);
+                let y = parseFloat(m[2]);
+                // Use the main-svg's viewBox to get the SVG coordinate bounds.
+                // Plotly's hoverlayer is a sibling of the plotarea, both inside
+                // the main-svg. The SVG viewBox defines the coordinate space.
+                const mainSvg = dvhEl.querySelector('.main-svg');
+                const vb = mainSvg ? mainSvg.viewBox.baseVal : null;
+                const svgW = vb && vb.width ? vb.width : (mainSvg ? mainSvg.clientWidth : 800);
+                const svgH = vb && vb.height ? vb.height : (mainSvg ? mainSvg.clientHeight : 400);
+                // Get the tooltip's own size in SVG units (approximate
+                // from the text bbox or fallback to 150×60)
+                const textEl = g.querySelector('text');
+                let tw = 150, th = 60;
+                if (textEl) {
+                    try {
+                        const bb = textEl.getBBox();
+                        tw = bb.width || 150;
+                        th = bb.height || 60;
+                    } catch (_) {}
+                }
+                // Clamp within the SVG bounds (with small margin)
+                x = Math.max(5, Math.min(x, svgW - tw - 10));
+                y = Math.max(5, Math.min(y, svgH - th - 10));
+                g.setAttribute('transform', `translate(${x},${y})`);
+            });
+        });
+    }
+    dvhEl.on('plotly_afterplot', _clampDvhTooltip);
+    dvhEl.on('plotly_hover', _clampDvhTooltip);
 
     // Click-to-pick (2026-06-16 user request): single-click on a
     // curve drops a pinned marker at that point with a label showing
@@ -17357,6 +17474,39 @@ async function refreshPlanningUI() {
 
         await Promise.all(_meshPromises);
 
+        // 4f-2. Re-capture 3D figure AFTER meshes are loaded.
+        // autoCaptureReportFigures ran before mesh promises resolved,
+        // so the 3D canvas was empty. Now that meshes are in the
+        // scene, force a render and re-capture the 3D screenshot.
+        try {
+            forceRender3DViewer();
+            // Force an explicit render to ensure canvas has content
+            if (scene3D.renderer && scene3D.scene && scene3D.camera) {
+                scene3D.renderer.render(scene3D.scene, scene3D.camera);
+            }
+            await new Promise(r => requestAnimationFrame(r));
+            const canvas3d = document.querySelector('#canvas3D canvas');
+            if (canvas3d && window.reportForm && window.reportForm.figures) {
+                const dataUrl = canvas3d.toDataURL('image/png');
+                // Replace the blank 3D figure (if it exists) or add new
+                const existing3d = window.reportForm.figures.findIndex(f => f && f.axis === '3d');
+                const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
+                const _3dTitle = lang === 'zh' ? '三维规划方案' : '3D Planning';
+                const _3dCap = lang === 'zh' ? '针道轨迹（蓝色）、放射性粒子（黄色）与靶区/器官三维重建' : 'Needle trajectories (blue), radioactive seeds (yellow), and CTV/OAR 3D reconstruction';
+                if (existing3d >= 0) {
+                    window.reportForm.figures[existing3d].dataUrl = dataUrl;
+                    window.reportForm.figures[existing3d].capturedAt = new Date().toISOString();
+                } else {
+                    window.reportForm.figures.push({
+                        type: 'screenshot', title: _3dTitle,
+                        dataUrl, axis: '3d', sliceIdx: null,
+                        caption: _3dCap,
+                        capturedAt: new Date().toISOString(),
+                    });
+                }
+            }
+        } catch (e) { console.warn('[3D re-capture] failed:', e); }
+
         // 5. Data tree badges ("V100: 91.0%" / "13 seeds") — updateSeeds
         //    + updateMetrics already push the right state; this just
         //    re-renders the tree. Called once more after dose/iso loaded.
@@ -17411,6 +17561,17 @@ async function refreshPlanningUI() {
         //     LLM final reply still exists but now points at this
         //     panel for the structured data.
         try { if (typeof updateClinicalEvaluation === 'function') updateClinicalEvaluation(); } catch (_) {}
+
+        // 11. Auto-capture report figures (DVH, 3D, segmentation)
+        //    AFTER all meshes are loaded and DVH is drawn. Without
+        //    this, the report only gets figures when the user opens
+        //    the report panel or exports PDF.
+        try {
+            if (typeof autoCaptureReportFigures === 'function') {
+                await autoCaptureReportFigures();
+            }
+        } catch (_) {}
+
             } catch (e) {
                 if (e && e.name !== 'AbortError') console.warn('refreshPlanningUI failed:', e);
             } finally {
@@ -18129,7 +18290,7 @@ window.Report = (function () {
 
     // ---------- State (forward to window.reportForm) ----------
     const stateProxy = {
-        get language() { return (window.reportForm && window.reportForm.language) || 'zh'; },
+        get language() { return (window.reportForm && window.reportForm.language) || 'en'; },
         set language(v) { if (window.reportForm) window.reportForm.language = v; },
         get editedFields() { return (window.reportForm && window.reportForm.editedFields) || new Set(); },
         set editedFields(v) { if (window.reportForm) window.reportForm.editedFields = v; },
@@ -18441,7 +18602,7 @@ window.Report = (function () {
             if (!tags || Object.keys(tags).length === 0) return;
             const f = window.reportForm;
             if (!f) return;
-            const lang = f.language || 'zh';
+            const lang = (window._i18nLang) || f.language || 'en';
             const map = [];
             if (tags.patient_name)        map.push(['patient.name', tags.patient_name]);
             if (tags.patient_id)          map.push(['patient.id', tags.patient_id]);
@@ -18597,7 +18758,10 @@ window.Report = (function () {
                 const scope = (mm[1] || 'all').toLowerCase();
                 const valid = ['all', 'patient', 'metrics', 'oar', 'interpretation', 'safety'];
                 const finalScope = valid.includes(scope) ? scope : 'all';
-                await this.fillFromServer({ scope: finalScope, language: stateProxy.language });
+                // Use GLOBAL UI language, not stateProxy.language which
+                // may be stale from localStorage.
+                const _fillLang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
+                await this.fillFromServer({ scope: finalScope, language: _fillLang });
                 return true;
             }
             // /report export
@@ -18627,7 +18791,7 @@ window.Report = (function () {
             }
             return false;
         },
-        async fillFromServer({ scope = 'all', language = 'zh' } = {}) {
+        async fillFromServer({ scope = 'all', language = 'en' } = {}) {
             _setReportStatus('Filling from server…', 'info');
             try {
                 const r = await fetch('/api/report/auto-fill', {
@@ -18761,8 +18925,8 @@ window.Report = (function () {
             const list = this.list();
             const html = list.slice().reverse().slice(0, 100).map(e => {
                 const ts = new Date(e.t).toLocaleString();
-                return `<div style="padding:4px 0;border-bottom:1px solid #e2e8f0;font-size:0.7rem;">
-                    <span style="color:#94a3b8;">${ts}</span> · <b>${_escHtml(e.action)}</b> · ${_escHtml(e.key || '')}
+                return `<div style="padding:4px 0;border-bottom:1px solid var(--card-border,#334155);font-size:0.7rem;">
+                    <span style="color:var(--text-dim,#94a3b8);">${ts}</span> · <b style="color:var(--text,#e2e8f0);">${_escHtml(e.action)}</b> · <span style="color:var(--text-dim,#94a3b8);">${_escHtml(e.key || '')}</span>
                 </div>`;
             }).join('');
             _showModal('审计日志 / Audit log (' + list.length + ')', html || '<i>Empty</i>');
@@ -18806,8 +18970,8 @@ window.Report = (function () {
             const arr = this.list();
             const html = arr.slice().reverse().map((s, i) => {
                 const realIdx = arr.length - 1 - i;
-                return `<div style="display:flex;justify-content:space-between;padding:6px;border-bottom:1px solid #e2e8f0;font-size:0.7rem;">
-                    <span><b>${new Date(s.t).toLocaleString()}</b> · ${_escHtml(s.label || '(no label)')}</span>
+                return `<div style="display:flex;justify-content:space-between;padding:6px;border-bottom:1px solid var(--card-border,#334155);font-size:0.7rem;">
+                    <span><b style="color:var(--text,#e2e8f0);">${new Date(s.t).toLocaleString()}</b> · <span style="color:var(--text-dim,#94a3b8);">${_escHtml(s.label || '(no label)')}</span></span>
                     <button onclick="Report.snapshots.restore(${realIdx}); Report._closeModal();" style="background:#0ea5e9;color:#fff;border:none;padding:3px 10px;border-radius:3px;cursor:pointer;">Restore</button>
                 </div>`;
             }).join('');
@@ -18833,15 +18997,75 @@ window.Report = (function () {
     };
 
     // ---------- Validation (P13, P19) ----------
-    const THRESHOLDS = {
-        'metrics.v100': { ok: v => v >= 90, warn: v => v >= 80, unit: '%', label: 'V100' },
-        'metrics.d90':  { ok: v => v >= 100, warn: v => v >= 85, unit: 'Gy', label: 'D90' },
-        'metrics.v150': { ok: v => v <= 50, warn: v => v <= 70, unit: '%', label: 'V150' },
-        'metrics.v200': { ok: v => v <= 20, warn: v => v <= 30, unit: '%', label: 'V200' },
-        'metrics.ci':   { ok: v => v >= 0.6, warn: v => v >= 0.4, unit: '', label: 'CI' },
-        'metrics.hi':   { ok: v => v <= 0.35, warn: v => v <= 0.5, unit: '', label: 'HI' },
-        'metrics.score': { ok: v => v >= 80, warn: v => v >= 60, unit: '/100', label: 'Score' },
+    // Per-site dose constraints sourced from clinical_kb/guidelines_brachytherapy.md:
+    //   prostate: ABS/AUA/ASTRO 2012 (PMID 22265436) — V100≥95%, D90≥100%Rx, V200≤35%
+    //   cervical: EMBRACE II (PMID 42211610) — V100≥90%, D90≥85 Gy EQD2
+    //   breast: GEC-ESTRO APBI 2016 — D90≥90%Rx
+    //   lung: ABS lung consensus — V100≥95%, V200≤30%
+    //   pancreatic: Chinese I-125 guideline 2023 — V100≥90%
+    //   head_neck: ABS H&N — V100≥95%, V200≤25%
+    //   liver: ABS liver — V100≥90%
+    //   esophageal: ABS 2014 — V100≥90%
+    const _SITE_THRESHOLDS = {
+        prostate:   { v100_ok: 95, v100_warn: 90, v200_ok: 35, v200_warn: 45 },
+        cervical:   { v100_ok: 90, v100_warn: 80, v200_ok: 35, v200_warn: 45 },
+        breast:     { v100_ok: 90, v100_warn: 80, v200_ok: 30, v200_warn: 40 },
+        lung:       { v100_ok: 95, v100_warn: 90, v200_ok: 30, v200_warn: 40 },
+        pancreatic: { v100_ok: 90, v100_warn: 80, v200_ok: 30, v200_warn: 40 },
+        liver:      { v100_ok: 90, v100_warn: 80, v200_ok: 30, v200_warn: 40 },
+        head_neck:  { v100_ok: 95, v100_warn: 90, v200_ok: 25, v200_warn: 35 },
+        esophageal: { v100_ok: 90, v100_warn: 80, v200_ok: 30, v200_warn: 40 },
+        default:    { v100_ok: 90, v100_warn: 80, v200_ok: 35, v200_warn: 45 },
     };
+    function _getSiteThresholds() {
+        // Determine tumor site from multiple sources
+        let tt = '';
+        try {
+            tt = (state.metrics && state.metrics.tumor_type) || window._tumorSite || '';
+        } catch(_) {}
+        if (!tt) {
+            try {
+                const tr = window._lastToolResults;
+                if (tr && tr.ctv_segmentation && tr.ctv_segmentation.tumor_type)
+                    tt = tr.ctv_segmentation.tumor_type;
+            } catch(_) {}
+        }
+        if (!tt) {
+            try {
+                const f = window.reportForm;
+                if (f && f.study && f.study.diagnosis) tt = f.study.diagnosis;
+            } catch(_) {}
+        }
+        tt = (tt || '').toLowerCase().replace(/[\s-]/g, '_');
+        // Map common names
+        const _map = { nnunet_pancreatic: 'pancreatic', pancreas: 'pancreatic',
+            voco_liver: 'liver', voco_lung: 'lung', voco_kidney: 'liver',
+            voco_colon: 'liver', voco_brats21: 'head_neck' };
+        for (const [k, v] of Object.entries(_map)) { if (tt.includes(k)) return _SITE_THRESHOLDS[v]; }
+        for (const k of Object.keys(_SITE_THRESHOLDS)) { if (tt.includes(k)) return _SITE_THRESHOLDS[k]; }
+        return _SITE_THRESHOLDS.default;
+    }
+    function THRESHOLDS() {
+        // Dynamic thresholds based on current tumor site
+        const site = _getSiteThresholds();
+        // D90: ok = ≥100% of Rx, warn = ≥90% of Rx
+        // Rx dose comes from reportForm or defaults to 120 Gy (DOSE_SCALE)
+        let rxGy = 120;
+        try {
+            const f = window.reportForm;
+            if (f && f.planning && Number.isFinite(f.planning.prescriptionGy))
+                rxGy = f.planning.prescriptionGy;
+        } catch(_) {}
+        return {
+            'metrics.v100':  { ok: v => v >= site.v100_ok, warn: v => v >= site.v100_warn, unit: '%', label: 'V100' },
+            'metrics.d90':   { ok: v => v >= rxGy, warn: v => v >= rxGy * 0.90, unit: 'Gy', label: 'D90' },
+            'metrics.v150':  { ok: v => v <= 50, warn: v => v <= 70, unit: '%', label: 'V150' },
+            'metrics.v200':  { ok: v => v <= site.v200_ok, warn: v => v <= site.v200_warn, unit: '%', label: 'V200' },
+            'metrics.ci':    { ok: v => v >= 0.6, warn: v => v >= 0.4, unit: '', label: 'CI' },
+            'metrics.hi':    { ok: v => v <= 0.35, warn: v => v <= 0.5, unit: '', label: 'HI' },
+            'metrics.score': { ok: v => v >= 80, warn: v => v >= 60, unit: '/100', label: 'Score' },
+        };
+    }
     const validation = {
         check() {
             const f = window.reportForm;
@@ -18862,14 +19086,15 @@ window.Report = (function () {
         openModal() {
             const issues = this.check();
             const html = issues.length === 0
-                ? '<div style="color:#16a34a;padding:8px;">✅ All required fields present and within plausible ranges.</div>'
-                : issues.map(i => `<div style="padding:4px;border-left:3px solid #dc2626;background:#fef2f2;margin:4px 0;font-size:0.72rem;"><b>${_escHtml(i.key)}</b>: ${_escHtml(i.msg)}</div>`).join('');
+                ? '<div style="color:#4ade80;padding:8px;">✅ All required fields present and within plausible ranges.</div>'
+                : issues.map(i => `<div style="padding:4px;border-left:3px solid #ef4444;background:rgba(239,68,68,0.1);margin:4px 0;font-size:0.72rem;color:var(--text,#e2e8f0);"><b>${_escHtml(i.key)}</b>: ${_escHtml(i.msg)}</div>`).join('');
             _showModal('校验 / Validation', html);
         },
     };
 
     function metricBadge(key, val) {
-        const r = THRESHOLDS[key];
+        const T = THRESHOLDS();
+        const r = T[key];
         if (!r || val === null || val === undefined) return '';
         const cls = r.ok(val) ? 'pass' : r.warn(val) ? 'warn' : 'fail';
         const labels = { pass: 'PASS', warn: 'WARN', fail: 'FAIL' };
@@ -18881,13 +19106,13 @@ window.Report = (function () {
     // ---------- Modal helper ----------
     function _showModal(title, body) {
         const ov = document.createElement('div');
-        ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
-        ov.innerHTML = `<div style="background:#fff;border-radius:8px;max-width:600px;width:90%;max-height:80vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,0.3);">
-            <div style="padding:12px 16px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
-                <b style="font-size:0.85rem;">${_escHtml(title)}</b>
-                <button onclick="this.closest('[data-rp-modal]').remove()" style="background:none;border:none;font-size:1.1rem;cursor:pointer;color:#94a3b8;">✕</button>
+        ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+        ov.innerHTML = `<div style="background:var(--bg-2,#1e293b);border:1px solid var(--card-border,#334155);border-radius:8px;max-width:600px;width:90%;max-height:80vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,0.5);color:var(--text,#e2e8f0);">
+            <div style="padding:12px 16px;border-bottom:1px solid var(--card-border,#334155);display:flex;justify-content:space-between;align-items:center;">
+                <b style="font-size:0.85rem;color:var(--text,#e2e8f0);">${_escHtml(title)}</b>
+                <button onclick="this.closest('[data-rp-modal]').remove()" style="background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--text-dim,#94a3b8);">✕</button>
             </div>
-            <div style="padding:16px;">${body}</div>
+            <div style="padding:16px;color:var(--text,#e2e8f0);">${body}</div>
         </div>`;
         ov.setAttribute('data-rp-modal', '1');
         ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
@@ -19259,7 +19484,11 @@ function renderReportEditor() {
     if (!host) return;
     if (!window.reportForm) window.reportForm = _newEmptyReportForm();
     const f = window.reportForm;
-    const s = (typeof REPORT_STRINGS !== 'undefined') ? REPORT_STRINGS[f.language] : null;
+    // Always use the GLOBAL UI language for report labels, not
+    // f.language which may be stale from localStorage. The user's
+    // complaint: "report still shows Chinese even though global UI is English".
+    const _reportLang = (typeof window._i18nLang === 'string') ? window._i18nLang : (f.language || 'en');
+    const s = (typeof REPORT_STRINGS !== 'undefined') ? REPORT_STRINGS[_reportLang] : null;
     if (!s) return;
 
     let html = '';
@@ -19287,7 +19516,7 @@ function renderReportEditor() {
         ${_formField({key:'patient.department', label:s.department, value:f.patient.department, section:'patient'})}
     `);
     // Study info
-    html += _formSection('🩻 ' + (s.imagingSectionTitle || (f.language === 'zh' ? '影像学资料' : 'Imaging Data')), 'study', `
+    html += _formSection('🩻 ' + (s.imagingSectionTitle || (_reportLang === 'zh' ? '影像学资料' : 'Imaging Data')), 'study', `
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             ${_formField({key:'study.modality', label:s.modality, value:f.study.modality, section:'study'})}
             ${_formField({key:'study.scanDate', label:s.scanDate, value:f.study.scanDate, type:'date', section:'study'})}
@@ -19302,7 +19531,7 @@ function renderReportEditor() {
         ${_formField({key:'study.priorTreatment', label:s.priorTreatment, value:f.study.priorTreatment, type:'textarea', rows:2, section:'study'})}
     `);
     // Case summary
-    html += _formSection('📋 ' + (s.caseSectionTitle || (f.language === 'zh' ? '病例摘要' : 'Patient Summary')), 'case', `
+    html += _formSection('📋 ' + (s.caseSectionTitle || (_reportLang === 'zh' ? '病例摘要' : 'Patient Summary')), 'case', `
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             ${_formField({key:'case.patientId', label:s.id, value:f.case.patientId, section:'case'})}
             ${_formField({key:'case.tumorType', label:s.tumorType, value:f.case.tumorType, section:'case'})}
@@ -19317,7 +19546,7 @@ function renderReportEditor() {
         </div>
     `);
     // Planning
-    html += _formSection('🎯 ' + (s.planSectionTitle || (f.language === 'zh' ? '治疗计划' : 'Treatment Plan')), 'planning', `
+    html += _formSection('🎯 ' + (s.planSectionTitle || (_reportLang === 'zh' ? '治疗计划' : 'Treatment Plan')), 'planning', `
         ${_formField({key:'planning.technique', label:s.technique, value:f.planning.technique, type:'textarea', rows:2, section:'planning'})}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             ${_formField({key:'planning.prescriptionGy', label:s.prescription, value:f.planning.prescriptionGy, type:'number', step:'0.1', suffix:'Gy', section:'planning'})}
@@ -19612,7 +19841,8 @@ async function autoCaptureReportFigures() {
     // to English, so the report preview showed mismatched captions.
     // We look up labels from REPORT_STRINGS[lang] (already bilingual).
     const f = window.reportForm;
-    const lang = (f && f.language) || (window._i18nLang) || 'en';
+    // Use GLOBAL UI language first, not f.language which may be stale
+    const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : ((f && f.language) || 'en');
     const S = (window.REPORT_STRINGS && REPORT_STRINGS[lang]) || (REPORT_STRINGS && REPORT_STRINGS.en) || {};
     // Special anatomically-neutral terms stay as-is (axial, sagittal,
     // coronal, CTV, OAR, DVH — these are technical terms).
@@ -19681,16 +19911,24 @@ async function autoCaptureReportFigures() {
     }
 
     // 3. 3D planning view — needles, seeds, CTV/OAR mesh.
+    //    Force a render before capture so the canvas has content
+    //    even if the 3D panel was hidden (display:none).
     try {
+        if (scene3D.renderer && scene3D.scene && scene3D.camera) {
+            scene3D.renderer.render(scene3D.scene, scene3D.camera);
+        }
         const canvas3d = document.querySelector('#canvas3D canvas');
-        if (canvas3d) {
+        if (canvas3d && canvas3d.width > 0 && canvas3d.height > 0) {
             const dataUrl = canvas3d.toDataURL('image/png');
-            window.reportForm.figures.push({
-                type: 'screenshot', title: labels.plan3d,
-                dataUrl, axis: '3d', sliceIdx: null,
-                caption: labels.plan3dCap,
-                capturedAt: _ts(),
-            });
+            // Only add if the capture is not blank (check for non-trivial content)
+            if (dataUrl && dataUrl.length > 1000) {
+                window.reportForm.figures.push({
+                    type: 'screenshot', title: labels.plan3d,
+                    dataUrl, axis: '3d', sliceIdx: null,
+                    caption: labels.plan3dCap,
+                    capturedAt: _ts(),
+                });
+            }
         }
     } catch (e) { /* 3D capture failed — non-fatal */ }
 
@@ -19863,7 +20101,10 @@ async function reportAutoFill() {
             .sort((a, b) => (b.d2cc || 0) - (a.d2cc || 0)).slice(0, 12);
     }
     if (dataTreeState && dataTreeState.organs) f.case.oarCount = dataTreeState.organs.length || f.case.oarCount;
-    if (window._lastUserMessage) {
+    // BUG FIX 2026-06-22: respect global UI language first
+    if (typeof window._i18nLang === 'string') {
+        f.language = window._i18nLang;
+    } else if (window._lastUserMessage) {
         const detected = _detectLanguageFromText(window._lastUserMessage);
         if (detected) f.language = detected;
     }
@@ -19879,7 +20120,8 @@ async function reportAutoFill() {
 function _autoFillInterpretation() {
     const f = window.reportForm;
     const m = (window.state && window.state.metrics) || {};
-    const lang = f.language;
+    // Use GLOBAL UI language, not f.language which may be stale from localStorage
+    const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : (f.language || 'en');
     const v100 = m.v100 !== undefined ? m.v100 * 100 : null;
     const d90 = m.d90 || null;
     const score = m.plan_score;
@@ -20379,7 +20621,13 @@ function _renderInlineMd(text) {
 function refreshFinalReport() {
     if (window._reportCollapsed === undefined) window._reportCollapsed = {};
     if (!window.reportForm) window.reportForm = _newEmptyReportForm();
-    if (window._lastUserMessage && !window.reportForm.editedFields.has('language')) {
+    // BUG FIX 2026-06-22: respect the GLOBAL UI language first.
+    // Previously this detected language from the user's Chinese input
+    // and overrode the global English setting, causing the report to
+    // switch to Chinese after planning even when the UI was English.
+    if (typeof window._i18nLang === 'string') {
+        window.reportForm.language = window._i18nLang;
+    } else if (window._lastUserMessage && !window.reportForm.editedFields.has('language')) {
         const detected = _detectLanguageFromText(window._lastUserMessage);
         if (detected) window.reportForm.language = detected;
     }

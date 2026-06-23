@@ -93,7 +93,7 @@ def pad_to_original_size(cropped_image: sitk.Image,
     return padded_image
 
 if __name__ == "__main__":
-    ################################# 参数设定 ###################################
+    ########################### Parameter Setup ###########################
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     Dataset_root = 'D:\LJX_Data\dose_calculation\\train-data\\full-test-data'
     Dataset_image_path = os.path.join(Dataset_root, 'ct')
@@ -108,7 +108,7 @@ if __name__ == "__main__":
     stride = sub_patch_size = [32,32,32]
     Muti_GPU = False
    
-    ################################# 加载模型 ###################################
+    ########################### Load Model ###########################
   
     model = myDoseNet.myDoseNet(spatial_dims=3, in_channels= in_channels, out_channels=1, features=(16, 32, 64, 128, 256, 32))
     
