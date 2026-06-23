@@ -1478,11 +1478,23 @@ class WebSearchTool(BaseTool):
     """Multi-engine web search with intelligent query processing and result validation."""
 
     name = "web_search"
-    description = "Search the web for information. Supports clinical literature (PubMed), general web search (Bing, Sogou), and code search (GitHub)."
+    description = (
+        "Search the web for information using the appropriate search engine. "
+        "Choose search_type based on what the user is trying to find: "
+        "'general' for news/facts/information, "
+        "'clinical' for medical literature and clinical evidence, "
+        "'github_repos' for finding software/projects/source code, "
+        "'github_code' for finding code implementations."
+    )
     input_schema = {
-        "query": {"type": "string", "description": "Search query"},
-        "search_type": {"type": "string", "enum": ["general", "clinical", "github_repos", "github_code"], "default": "general"},
-        "max_results": {"type": "integer", "default": 5},
+        "query": {"type": "string", "description": "Search query. Use user's exact keywords."},
+        "search_type": {
+            "type": "string",
+            "enum": ["general", "clinical", "github_repos", "github_code"],
+            "default": "general",
+            "description": "Which search engine to use. Choose by intent: 'general' for facts/news, 'clinical' for medical papers, 'github_repos' for finding code/software, 'github_code' for code implementations."
+        },
+        "max_results": {"type": "integer", "default": 5, "description": "Maximum number of results to return"},
     }
 
     def __init__(self):

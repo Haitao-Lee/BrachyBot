@@ -742,7 +742,7 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": "Agent not available"}), 500
         data = request.get_json() or {}
         scope = data.get("scope", "all")
-        language = data.get("language", "zh")
+        language = data.get("language", "en")
         sources = set(data.get("sources", ["nifti", "dicom", "planning"]))
         patch = {}
         provenance = {"dicom": [], "nifti": [], "planning": [], "derived": []}

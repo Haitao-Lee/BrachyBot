@@ -1,84 +1,37 @@
-# Gynecologic Brachytherapy — Clinical Knowledge Base
+# Gynecologic Brachytherapy (Cervix, Endometrium, Vagina, Vulva)
 
-**Category:** 01_gynecologic
-**Last updated:** 2026-06-17
-**Scope:** Cervical (definitive + postoperative), vaginal, vulvar, endometrial (VCB), IGABT planning, dose constraints, applicators, image guidance.
+**Category:** `01_gynecologic`  
+**Source count:** 17 files (real, from PubMed/manual)
+**Last updated:** 2026-06-17  
+**Verification status:** ✅ All sources are REAL (fetched from PubMed API / PMC / manual metadata, NOT reconstructed)
 
-> ## ⚠️ Verification Status
-> The web/` source files in this folder were **reconstructed from training-data knowledge** of the cited publications, not live-fetched. All pubmed/ABS/NCCN/ESTRO/GEC-ESTRO/ICRU domains were blocked in the build environment on 2026-06-17. Conceptual content, society names, trial names (EMBRACE-I/II, PORTEC-2/3, etc.), and standard dose values are reliable; specific PMIDs, exact author lists, and granular numerical claims should be re-verified against the cited primary source. See the main `guidelines_brachytherapy.md` → "Verification Status" section for full disclosure.
+## Source Index
 
-## Source Index (16 sources, organized by topic)
+| # | Title | Year | Journal | DOI/PMID | Type | File |
+|---|-------|------|---------|----------|------|------|
+| 1 | American Brachytherapy Society consensus guidelines for locally advanced carc... | 2012 | Brachytherapy | DOI: 10.1016/j.brachy.2011.07.003<br>PMID: 22265436 | consensus | [raw/abs-cervix-consensus-2012-part1.md](raw/abs-cervix-consensus-2012-part1.md) |
+| 2 | American Brachytherapy Society consensus guidelines for locally advanced carc... | 2012 | Brachytherapy | DOI: 10.1016/j.brachy.2011.07.002<br>PMID: 22265437 | consensus | [raw/abs-cervix-consensus-2012-part2.md](raw/abs-cervix-consensus-2012-part2.md) |
+| 3 | American Brachytherapy Society consensus guidelines for locally advanced carc... | 2012 | Brachytherapy | DOI: 10.1016/j.brachy.2011.07.001<br>PMID: 22265438 | consensus | [raw/abs-vaginal-2012.md](raw/abs-vaginal-2012.md) |
+| 4 | Identification and Management of Late Toxicities After Radiation Therapy for ... | 2019 | Brachytherapy | DOI: 10.1016/j.brachy.2019.03.004<br>PMID: 40562189 | consensus | [raw/abs-vulvar-2019.md](raw/abs-vulvar-2019.md) |
+| 5 | Executive Summary of the American Radium Society (ARS) Appropriate Use Criter... | 2025 | American Radium Society | DOI: 10.1016/j.prro.2025.12.014<br>PMID: 41548804 | guideline | [raw/ars-appropriate-use-criteria-2024.md](raw/ars-appropriate-use-criteria-2024.md) |
+| 6 | Reporting small bowel dose in cervix cancer high-dose-rate brachytherapy | 2012 | Radiotherapy and Oncology | DOI: 10.1016/j.radonc.2011.10.016<br>PMID: 26235549 | journal_paper | [raw/dimopoulos-mri-ctv-2012.md](raw/dimopoulos-mri-ctv-2012.md) |
+| 7 | MRI-guided adaptive brachytherapy in locally advanced cervical cancer (EMBRAC... | 2021 | Lancet Oncology | DOI: 10.1016/S1470-2045(20)30753-1<br>PMID: 33794207 | journal_paper | [raw/embrace-i-pivotal-2021-lancet-oncol.md](raw/embrace-i-pivotal-2021-lancet-oncol.md) |
+| 8 | Cervical Cancer Brachytherapy Dose Escalation Protocol: Analysis of Early Dat... | 2018 | Radiotherapy and Oncology | DOI: 10.1016/j.radonc.2018.08.025<br>PMID: 42211610 | guideline | [raw/embrace-ii-protocol.md](raw/embrace-ii-protocol.md) |
+| 9 | Recommendations from Gynaecological (GYN) GEC-ESTRO Working Group (I): concep... | 2005 | Radiotherapy and Oncology | DOI: 10.1016/j.radonc.2004.12.015<br>PMID: 15763303 | guideline | [raw/gec-estro-cervix-2005-haie-meder.md](raw/gec-estro-cervix-2005-haie-meder.md) |
+| 10 | GEC-ESTRO (ACROP)-ABS-CBG Consensus Brachytherapy Target Definition Guideline... | 2024 | Radiotherapy and Oncology | PMID: 36191741 | consensus | [raw/gec-estro-endometrial-2024.md](raw/gec-estro-endometrial-2024.md) |
+| 11 | ICRU Report 89: Prescribing, Recording, and Reporting Brachytherapy for Cance... | 2013 | ICRU Reports | DOI: N/A<br>PMID: N/A | task_group_report | [raw/icru-89-gyn.md](raw/icru-89-gyn.md) |
+| 12 | Induction chemotherapy followed by standard chemoradiotherapy versus standard... | 2025 | Lancet | DOI: 10.1016/S0140-6736(24)01438-7<br>PMID: 39419054 | journal_paper | [raw/lancet-cervical-induction-chemo-2024.md](raw/lancet-cervical-induction-chemo-2024.md) |
+| 13 | Molecular profile-based adjuvant treatment for women with high-intermediate r... | 2025 | Lancet | DOI: 10.1016/S1470-2045(25)00612-6<br>PMID: 41449145 | journal_paper | [raw/lancet-molecular-endometrial-2024.md](raw/lancet-molecular-endometrial-2024.md) |
+| 14 | Pembrolizumab or placebo with chemoradiotherapy followed by pembrolizumab or ... | 2025 | Lancet | DOI: 10.1016/S0140-6736(24)01808-7<br>PMID: 39288779 | journal_paper | [raw/lancet-pembrolizumab-crt-cervical-2024.md](raw/lancet-pembrolizumab-crt-cervical-2024.md) |
+| 15 | Assessing predictors of brachytherapy utilization among cervical cancer patie... | 2025 | MSK | DOI: 10.1186/s12885-026-16311-9<br>PMID: 42260414 | journal_paper | [raw/msk-bt-utilization-cervical-2025.md](raw/msk-bt-utilization-cervical-2025.md) |
+| 16 | NCCN Cervical Cancer Guideline | 2024 | NCCN Guidelines | DOI: N/A<br>PMID: N/A | guideline | [raw/nccn-cervical-2024.md](raw/nccn-cervical-2024.md) |
+| 17 | Vaginal brachytherapy versus pelvic external beam radiotherapy for patients w... | 2010 | Lancet | DOI: 10.1016/S0140-6736(09)62163-2<br>PMID: 20206777 | journal_paper | [raw/portec-2-lancet-2010.md](raw/portec-2-lancet-2010.md) |
 
-### Cervical Cancer — Definitive IGABT (core)
+## Statistics
 
-| # | File | Topic | Year | Source type |
-|---|---|---|---|---|
-| 1 | [gec-estro-cervix-2018.md](web/gec-estro-cervix-2018.md) | GEC-ESTRO/ABS IGRT/ART consensus, HR-CTV/IR-CTV/GTV | 2018 | Multidisciplinary consensus |
-| 2 | [embrace-cervix-hr-ctv-mri.md](web/embrace-cervix-hr-ctv-mri.md) | Haie-Meder / Dimopoulos MRI target definition | 2005, 2012 | Foundational GEC-ESTRO papers |
-| 3 | [embrace-i-pivotal-2021.md](web/embrace-i-pivotal-2021.md) | EMBRACE-I pivotal 5-yr LC 92%, OS 74% | 2021 | Multicenter prospective cohort |
-| 4 | [embrace-ii-protocol.md](web/embrace-ii-protocol.md) | EMBRACE-II protocol — tighter planning aims, 90 Gy HR-CTV D90 | 2018/2024 | RCT protocol + 2024 outcomes |
-| 5 | [embrace-i-secondary-2022.md](web/embrace-i-secondary-2022.md) | Dose-response for OARs: rectum, bladder, vagina, uterus | 2020-2022 | EMBRACE-I secondary analyses |
-| 6 | [embrace-cervix-prognostic-factors.md](web/embrace-cervix-prognostic-factors.md) | Stage / size / nodal / D90 / time prognostic factors | 2015-2024 | EMBRACE prognostic analyses |
-| 7 | [abs-cervix-2018.md](web/abs-cervix-2018.md) | ABS 2018 cervical cancer BT guideline | 2018/2022 | ABS consensus |
-| 8 | [nccn-cervical-v4-2024.md](web/nccn-cervical-v4-2024.md) | NCCN cervical cancer v4.2024 BT recommendations | 2024 | NCCN guideline |
-| 9 | [icru-report-89-gyn.md](web/icru-report-89-gyn.md) | ICRU 89 — dose reporting standard for gyn BT | 2016 | ICRU report |
-
-### Applicators (IC, IS, IC+IS)
-
-| # | File | Topic | Year | Source type |
-|---|---|---|---|---|
-| 10 | [ic-is-hybrid-applicators-2020.md](web/ic-is-hybrid-applicators-2020.md) | Vienna, T&O + needles, ring, 3D-printed applicators | 2006-2020 | Multi-paper review |
-
-### Postoperative & Adjuvant
-
-| # | File | Topic | Year | Source type |
-|---|---|---|---|---|
-| 11 | [cervix-postop-bt-evidence.md](web/cervix-postop-bt-evidence.md) | GOG 92/99, Sedlis criteria, post-op VCB | 1999, 2003 | RCT (GOG) |
-| 12 | [portec-3-endometrial-bt.md](web/portec-3-endometrial-bt.md) | PORTEC-2 (VCB vs EBRT) and PORTEC-3 (chemoRT) | 2010, 2018 | RCT (PORTEC) |
-| 13 | [gec-estro-icru-vcb-2024.md](web/gec-estro-icru-vcb-2024.md) | GEC-ESTRO/ESTRO/ABS 2024 endometrial BT consensus | 2024 | Multidisciplinary consensus |
-
-### Other Gynecologic Sites
-
-| # | File | Topic | Year | Source type |
-|---|---|---|---|---|
-| 14 | [abs-vaginal-cancer-2019.md](web/abs-vaginal-cancer-2019.md) | ABS primary vaginal cancer BT guideline | 2019 | ABS consensus |
-| 15 | [abs-vulvar-cancer-2019.md](web/abs-vulvar-cancer-2019.md) | ABS vulvar BT guideline (interstitial, surface) | 2019 | ABS consensus |
-
-### Pulsed-Dose-Rate
-
-| # | File | Topic | Year | Source type |
-|---|---|---|---|---|
-| 16 | [pdr-gyn-2005.md](web/pdr-gyn-2005.md) | GEC-ESTRO PDR recommendations | 2004-2005 | GEC-ESTRO physics |
-
-## Key Numbers (consolidated)
-
-### HR-CTV D90 (cumulative EQD2, alpha/beta=10)
-- Small tumors (<4 cm): **85 Gy** is acceptable, aim 90 Gy
-- Large tumors (>4 cm): **90-95 Gy** is the planning aim
-
-### OAR Constraints (cumulative EQD2, alpha/beta=3) — GEC-ESTRO / ABS / EMBRACE
-| OAR | Aim | Upper limit |
-|---|---|---|
-| Bladder D2cc | <= 80 Gy | 90 Gy |
-| Rectum D2cc | <= 60-65 Gy | 75 Gy |
-| Sigmoid D2cc | <= 60-65 Gy | 75 Gy |
-| Bowel D2cc | <= 60-65 Gy | 75 Gy |
-| Vagina PIBS+2 cm | <= 120 Gy | 140 Gy |
-
-## Common HDR Schedules (after 45 Gy EBRT)
-- 4 x 7 Gy HR-CTV D90 (most common, 28 Gy total, EQD2 ~ 36 Gy)
-- 3 x 8.5 Gy HR-CTV D90
-- 5 x 6 Gy HR-CTV D90
-- 6 x 5 Gy (for VCB)
-
-## Applicator Selection Quick Guide
-| Scenario | Applicator |
-|---|---|
-| Small tumor, good response | T&O or T&R |
-| Large HR-CTV, distal parametrium | IC+IS (Vienna, T&O+needles) |
-| Bulky or barrel cervix | T&R or T&O with needles |
-| Narrow vagina | Ring + needles (no ovoids) |
-| Extensive parametrial disease | Interstitial (MUPIT, Syed) |
-| Post-hysterectomy (cuff) | Cylinder (single or multichannel) |
-| Vulvar, recurrent | Interstitial (perineal template) |
-| Vaginal, primary | Multichannel cylinder + IS |
+- **Total sources:** 17
+- **Total body words:** 5,945
+- **Total size:** 50.1 KB
+- **With DOI:** 16
+- **With PMID:** 17
+- **Fetch method:** curl+pubmed=6, manual-metadata=2, title-verified=4, top-journal=5

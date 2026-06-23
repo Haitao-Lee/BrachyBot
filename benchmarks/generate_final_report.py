@@ -144,7 +144,7 @@ def generate_final_report():
 
         f.write("### Key Test Material\n\n")
         f.write("- **CT File:** `/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii`\n")
-        f.write("- **Patient:** 胰腺癌 (pancreatic cancer)\n")
+        f.write("- **Patient:** Pancreatic cancer\n")
         f.write("- **Specs:** 48 × 512 × 512 voxels, 0.68 × 0.68 × 5.0 mm spacing\n\n")
 
         f.write("---\n\n")

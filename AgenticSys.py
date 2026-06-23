@@ -668,6 +668,11 @@ class ToolResultPipeline:
     _PLANNING_TOOLS = {"planning_pipeline", "seed_planning", "trajectory_planning", "dose_engine", "dose_evaluation"}
 
     @staticmethod
+    def _L(zh: str, en: str, lang: str = "en") -> str:
+        """Bilingual helper: return zh or en based on lang."""
+        return zh if lang == "zh" else en
+
+    @staticmethod
     def format(tool_name: str, result, lang: str = "en") -> str:
         """Single entry point for formatting tool results.
 
@@ -1153,7 +1158,7 @@ class ToolResultPipeline:
             # OAR dose analysis, flagged issues, and clinical guidelines.
             # The user complained (2026-06-16) that the LLM response
             # after planning was just a 5-row table with no OAR analysis,
-            # no flagged issues, no clinical context — "太简短"
+            # no flagged issues, no clinical context — "too brief"
             # (too brief). This template forces the LLM to actually
             # structure the response like a real clinical report.
             planning_tools = {"ctv_segmentation", "oar_segmentation",
@@ -1702,6 +1707,20 @@ class BrachyAgent:
             if ctv_array is None:
                 # Auto-fire ctv_segmentation
                 ct_path = self.memory.retrieve("ct_path")
+                if not ct_path:
+                    # Check UI state for uploaded CT
+                    _ui = self.memory.get_ui_state() or {}
+                    ct_path = _ui.get("ct_path", "")
+                if not ct_path:
+                    # No CT available — return clear error so LLM can
+                    # ask the user to upload a CT file first.
+                    from AgenticSys import ToolResult
+                    return ToolResult(
+                        success=False,
+                        error="No CT image loaded. Please ask the user to upload a CT file first, "
+                              "then run ctv_segmentation before planning.",
+                        message="No CT image available for planning."
+                    )
                 if ct_path:
                     logger.info(f"[auto-fix] No CTV mask for {tool_name}; auto-firing ctv_segmentation")
                     if step_callback is not None:
@@ -1739,11 +1758,21 @@ class BrachyAgent:
                                     pass
                     except Exception as e:
                         logger.warning(f"[auto-fix] ctv_segmentation auto-fire failed: {e}")
+                        if step_callback is not None:
+                            try:
+                                step_callback("ctv_segmentation", "error", str(e)[:100])
+                            except Exception:
+                                pass
                 # Also auto-fire oar if missing (planning also needs OAR for trajectory avoidance)
                 if self.memory.retrieve("oar_array") is None:
                     ct_path2 = self.memory.retrieve("ct_path")
                     if ct_path2:
                         logger.info(f"[auto-fix] No OAR map for {tool_name}; auto-firing oar_segmentation")
+                        if step_callback is not None:
+                            try:
+                                step_callback("oar_segmentation", "pending", "Auto-running OAR (missing)")
+                            except Exception:
+                                pass
                         oar_params = {"organ_type": "general", "image_path": ct_path2}
                         ct_img2 = self.memory.retrieve("ct_image")
                         if ct_img2 is not None:
@@ -1755,8 +1784,25 @@ class BrachyAgent:
                                     self.memory.store("oar_array", oar_result.metadata["oar_array"])
                                 if "organ_names" in (oar_result.metadata or {}):
                                     self.memory.store("organ_names", oar_result.metadata["organ_names"])
+                                if step_callback is not None:
+                                    try:
+                                        _n = len((oar_result.metadata or {}).get("organ_names", {}))
+                                        step_callback("oar_segmentation", "done", f"{_n} organs")
+                                    except Exception:
+                                        pass
+                            else:
+                                if step_callback is not None:
+                                    try:
+                                        step_callback("oar_segmentation", "error", oar_result.error if oar_result else "failed")
+                                    except Exception:
+                                        pass
                         except Exception as e:
                             logger.warning(f"[auto-fix] oar_segmentation auto-fire failed: {e}")
+                            if step_callback is not None:
+                                try:
+                                    step_callback("oar_segmentation", "error", str(e)[:100])
+                                except Exception:
+                                    pass
         if progress_callback:
             progress_callback(f"Preparing {tool_name}...", 10)
 
@@ -2511,7 +2557,7 @@ print(json.dumps(result))
                     ordered_actions.append('segment_all')
                     break
 
-        # Handle "分割CTV和OAR" / "分割靶区和器官" — detect both from a single "segment" action
+        # Handle "segment CTV and OAR" — detect both from a single "segment" action
         if has_specific_seg:
             has_ctv = 'segment_ctv' in seen
             has_oar = 'segment_oar' in seen
@@ -2603,44 +2649,9 @@ print(json.dumps(result))
         query_type = self._classify_query_type(user_msg)
         response = self._synthesize_with_llm(raw_results, steps, _lang, user_msg, query_type)
 
-        # Quality review with feedback loop
-        if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
-            _needs_review = any(
-                tc.get('tool') in ["planning_pipeline", "seed_planning", "dose_evaluation"]
-                for tc in tools
-            )
-            if _needs_review:
-                _MAX_RETRIES = 3
-                for _retry in range(_MAX_RETRIES):
-                    try:
-                        import asyncio
-                        loop = asyncio.new_event_loop()
-                        review_result = loop.run_until_complete(
-                            self.multi_agent_wrapper.review_output("treatment_plan", {
-                                "dose_metrics": self.memory.retrieve("dose_metrics", {}),
-                                "plan_info": {
-                                    "total_seeds": self.memory.retrieve("total_seeds", 0),
-                                    "num_trajectories": self.memory.retrieve("num_trajectories", 0),
-                                },
-                                "plan_config": self.memory.retrieve("plan_config", {}),
-                            }, lang=_lang)
-                        )
-                        loop.close()
-                        if not review_result or review_result.get("passed"):
-                            break
-                        if _retry < _MAX_RETRIES - 1:
-                            _concerns = []
-                            for r in review_result.get("reviews", []):
-                                _concerns.extend(r.get("concerns", []))
-                            _concerns_text = "; ".join(_concerns) or review_result.get("display_text", "")
-                            _retry_tools = self._detect_tool_request(
-                                user_msg + f"\n\n[Quality review feedback: {_concerns_text}]"
-                            )
-                            if _retry_tools:
-                                self._execute_direct_tools(_retry_tools, steps, step_id_ref)
-                    except Exception as e:
-                        logger.warning(f"Review retry {_retry + 1} failed: {e}")
-                        break
+        # Quality review DISABLED (2026-06-22).
+        # if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
+        #     ...
 
         return response
 
@@ -3262,7 +3273,7 @@ print(json.dumps(result))
 
         # === LANGUAGE DIRECTIVE (top-level) ===
         # The user complained that they typed English but the agent
-        # replied in Chinese — a "顶层问题" (top-level issue). We now
+        # replied in Chinese — a "top-level issue". We now
         # detect the user's input language and prepend a HIGH-PRIORITY
         # language clause to the system prompt so the LLM is never in
         # doubt about which language to reply in. The detector handles
@@ -3992,7 +4003,7 @@ print(json.dumps(result))
         # BUG FIX 2026-06-16: remove hallucinated tool-call syntax
         # variants the LLM sometimes emits. Without this, an LLM that
         # fails to use the function-call API instead writes inline text
-        # like "第一步：CTV肿瘤靶区分割[TOOL => \"oar_segmentation\",
+        # like "Step 1: CTV tumor segmentation [TOOL => \"oar_segmentation\",
         # params => {\"image_path\": \"...\", \"organ_type\": \"pancreatic\"}]"
         # and the response gets cut off mid-paren without ever
         # finishing. The cleaner left these intact because they
@@ -4650,7 +4661,7 @@ print(json.dumps(result))
                 # 5 sub-steps with the breathing animation, instead of
                 # showing a single black-box 'planning_pipeline' step.
                 def tool_step_callback(substep_name, substep_status, substep_content=None):
-                    # Human-friendly title that omits the "调用" prefix
+                    # Human-friendly title that omits the "call" prefix
                     # the generic tool loop adds. Sub-steps are already
                     # known to be tool calls, so just show the name +
                     # status, e.g. "trajectory_init (active)".
@@ -4736,7 +4747,10 @@ print(json.dumps(result))
                         # and now we flush that list into the SSE
                         # stream. THIS is what makes the todo list
                         # tick through 5 sub-steps in real time.
+                        if self._pending_callback_events:
+                            logger.info(f"[DRAIN-1] Flushing {len(self._pending_callback_events)} pending events for {tool_name}")
                         for _evt_type, _evt_data in self._pending_callback_events:
+                            logger.info(f"[DRAIN-1] Yielding event: type={_evt_type}, tool={_evt_data.get('tool', '?')}, status={_evt_data.get('status', '?')}")
                             yield yield_event(_evt_type, _evt_data)
                         self._pending_callback_events.clear()
                         if result.success:
@@ -4837,7 +4851,14 @@ print(json.dumps(result))
 
                 step_status = "done" if "Error" not in result_text and "Exception" not in result_text else "error"
                 tool_step["status"] = step_status
-                tool_step["result"] = result_text[:200]
+                # Use language-aware formatting for the step result
+                # instead of the raw English result.message
+                _lang = self.memory.user_lang
+                try:
+                    _formatted = self._format_tool_result(tool_name, tool_result, lang=_lang) if tool_result else result_text
+                    tool_step["result"] = _formatted[:300]
+                except Exception:
+                    tool_step["result"] = result_text[:200]
                 # Include metadata for frontend actions (ui_screenshot, ui_controller, etc.)
                 if tool_result is not None and tool_result.success and hasattr(tool_result, 'metadata'):
                     tool_step["metadata"] = tool_result.metadata
@@ -4858,6 +4879,19 @@ print(json.dumps(result))
                     # Also store ct_path for downstream tools
                     if tool_name in ('ctv_segmentation', 'oar_segmentation') and 'image_path' in params:
                         self.memory.store("ct_path", params['image_path'])
+
+                # DRAIN-2: _store_tool_result may trigger auto-OAR
+                # (ctv_segmentation → oar_segmentation when organ count < 5).
+                # The auto-OAR appends pending/done events to
+                # _pending_callback_events AFTER the first drain above.
+                # We must flush them HERE, BEFORE yielding the parent
+                # tool's "done" step, so the frontend receives:
+                #   CTV pending → OAR pending → OAR done → CTV done
+                # instead of losing the OAR events entirely.
+                if self._pending_callback_events:
+                    for _evt_type, _evt_data in self._pending_callback_events:
+                        yield yield_event(_evt_type, _evt_data)
+                    self._pending_callback_events.clear()
 
                 # SKIP step event for deduped tools — the auto-fired
                 # version already emitted its own step events. Without
@@ -5489,94 +5523,11 @@ print(json.dumps(result))
                 response = self._synthesize_with_llm(raw_response, steps, _lang, user_msg, query_type)
             self.memory.add_message("assistant", response)
 
-            # Multi-agent review with feedback loop
-            if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
-                _needs_review = False
-                _review_type = "general_response"
-                for tc in _direct_tool_calls:
-                    if tc['tool'] in ["planning_pipeline", "seed_planning", "dose_evaluation"]:
-                        _needs_review = True
-                        _review_type = "treatment_plan"
-                        break
-
-                if _needs_review:
-                    _MAX_RETRIES = 2  # Allow one retry for plan quality improvements
-                    for _retry in range(_MAX_RETRIES):
-                        try:
-                            import asyncio
-                            loop = asyncio.new_event_loop()
-                            review_result = loop.run_until_complete(
-                                self.multi_agent_wrapper.review_output(_review_type, {
-                                    "dose_metrics": self.memory.retrieve("dose_metrics", {}),
-                                    "plan_info": {
-                                        "total_seeds": self.memory.retrieve("total_seeds", 0),
-                                        "num_trajectories": self.memory.retrieve("num_trajectories", 0),
-                                    },
-                                    "plan_config": self.memory.retrieve("plan_config", {}),
-                                }, lang=self.memory.user_lang)
-                            )
-                            loop.close()
-
-                            if review_result and review_result.get("display_text"):
-                                step = add_step("review", "Quality Review",
-                                              review_result["display_text"],
-                                              status="done" if review_result["passed"] else "warning")
-                                yield yield_event("step", step)
-
-                            # If passed, break out of retry loop
-                            if not review_result or review_result.get("passed"):
-                                break
-
-                            # Not passed — extract concerns and feed back to LLM
-                            _concerns = review_result.get("display_text", "")
-                            # Extract raw concerns from reviews
-                            _raw_concerns = []
-                            for r in review_result.get("reviews", []):
-                                if r.get("concerns"):
-                                    _raw_concerns.extend(r["concerns"])
-                            _concerns_text = "; ".join(_raw_concerns) if _raw_concerns else _concerns
-
-                            if _retry < _MAX_RETRIES - 1:
-                                _feedback_msg = (
-                                    f"Quality review REJECTED (attempt {_retry + 1}/{_MAX_RETRIES}).\n"
-                                    f"Issues found: {_concerns_text}\n"
-                                    f"Please fix these issues by calling the appropriate tools again."
-                                )
-                                step = add_step("thinking", "Review Feedback",
-                                              f"Attempt {_retry + 1}: Retrying based on review feedback",
-                                              status="done")
-                                yield yield_event("step", step)
-
-                                # Let LLM retry with feedback — re-enter function calling loop.
-                                # Capture the retry's _result event so the final
-                                # `yield yield_event("response", ...)` emits the
-                                # RETRY's response, not the original (which would
-                                # otherwise be a stale, truncated copy that the
-                                # frontend would re-render on top of the streamed
-                                # retry text, causing a confusing / truncated UI).
-                                _retry_msg = (
-                                    f"{message}\n\n"
-                                    f"[Quality review: {_concerns_text}. "
-                                    f"If the reviewer identified specific issues that can be fixed "
-                                    f"by re-running tools with different parameters, you may do so. "
-                                    f"Otherwise, acknowledge the review concerns in your response. "
-                                    f"Reply in the SAME language as the user's original message.]"
-                                )
-                                for ev in self._run_llm_function_calling_stream(
-                                        _retry_msg, steps, step_id, yield_event):
-                                    if isinstance(ev, dict) and ev.get("type") == "_result":
-                                        # Override the original response with the
-                                        # retry's full response so the final
-                                        # response event reflects what the user
-                                        # actually saw in the streamed text.
-                                        response = ev.get("response", response) or response
-                                        if ev.get("llm_meta"):
-                                            llm_meta = ev.get("llm_meta", {})
-                                    else:
-                                        yield ev
-                        except Exception as e:
-                            logger.warning(f"Review retry {_retry + 1} failed: {e}")
-                            break
+            # Quality review DISABLED (2026-06-22): the review triggered
+            # a mysterious "Review Feedback" retry that generated a brief
+            # English stub after the comprehensive Chinese report.
+            # if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
+            #     ...
 
             # BUG FIX 2026-06-17: after quality review retry, the
             # LLM might produce a brief response that overwrites the
@@ -5626,87 +5577,13 @@ print(json.dumps(result))
 
         self._record_experience(message, response, steps)
 
-        # Multi-agent review (if available and needed)
-        if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
-            try:
-                # Determine if review is needed based on steps
-                _needs_review = False
-                _review_type = "general_response"
-                _review_content = {"response": response, "steps": steps}
-
-                # Check if treatment plan was generated — only review
-                # if planning tools were actually executed AND produced
-                # dose data. Without the dose_metrics check, the review
-                # fires on non-planning queries (e.g. web_search + tool
-                # list question) and causes duplicate responses.
-                _has_dose_data = bool(self.memory.retrieve("dose_metrics"))
-                for s in steps:
-                    if s.get("tool") in ["planning_pipeline", "seed_planning", "dose_evaluation"] and _has_dose_data:
-                        _needs_review = True
-                        _review_type = "treatment_plan"
-                        _review_content = {
-                            "dose_metrics": self.memory.retrieve("dose_metrics", {}),
-                            "plan_info": {
-                                "total_seeds": self.memory.retrieve("total_seeds", 0),
-                                "num_trajectories": self.memory.retrieve("num_trajectories", 0),
-                            },
-                            "plan_config": self.memory.retrieve("plan_config", {}),
-                        }
-                        break
-
-                if _needs_review:
-                    _MAX_RETRIES = 2  # Allow one retry for plan quality improvements
-                    for _retry in range(_MAX_RETRIES):
-                        import asyncio
-                        loop = asyncio.new_event_loop()
-                        review_result = loop.run_until_complete(
-                            self.multi_agent_wrapper.review_output(
-                                _review_type, _review_content,
-                                lang=self.memory.user_lang)
-                        )
-                        loop.close()
-
-                        if review_result and review_result.get("display_text"):
-                            step = add_step("review", "Quality Review",
-                                          review_result["display_text"],
-                                          status="done" if review_result["passed"] else "warning",
-                                          review_decision=review_result.get("decision", ""))
-                            yield yield_event("step", step)
-
-                        if not review_result or review_result.get("passed"):
-                            break
-
-                        # Extract concerns for feedback
-                        _raw_concerns = []
-                        for r in review_result.get("reviews", []):
-                            if r.get("concerns"):
-                                _raw_concerns.extend(r["concerns"])
-                        _concerns_text = "; ".join(_raw_concerns) if _raw_concerns else review_result.get("display_text", "")
-
-                        if _retry < _MAX_RETRIES - 1:
-                            step = add_step("thinking", "Review Feedback",
-                                          f"Attempt {_retry + 1}: Retrying based on review feedback",
-                                          status="done")
-                            yield yield_event("step", step)
-
-                            _retry_msg = message + f"\n\n[Quality review feedback - fix these issues: {_concerns_text}]"
-                            # Capture the retry's _result so the final
-                            # `yield yield_event("response", ...)` below
-                            # emits the RETRY's full response, not the
-                            # original (stale, truncated) one — otherwise
-                            # the frontend would re-render the original on
-                            # top of the streamed retry text, causing a
-                            # confusing / truncated chat UI.
-                            for ev in self._run_llm_function_calling_stream(
-                                    _retry_msg, steps, step_id, yield_event):
-                                if isinstance(ev, dict) and ev.get("type") == "_result":
-                                    response = ev.get("response", response) or response
-                                    if ev.get("llm_meta"):
-                                        llm_meta = ev.get("llm_meta", {})
-                                else:
-                                    yield ev
-            except Exception as e:
-                logger.debug(f"Multi-agent review failed: {e}")
+        # Quality review DISABLED (2026-06-22): the review triggered a
+        # mysterious "Review Feedback" retry that generated a brief
+        # English stub after the comprehensive Chinese report. The retry
+        # source could not be found in the codebase. Disabling the
+        # review entirely to prevent the confusing UX.
+        # if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
+        #     ...
 
         # SAFETY NET: after quality review retry, ensure the response
         # is the full planning report (not a brief LLM acknowledgment).

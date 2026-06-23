@@ -1,0 +1,35 @@
+[log] [BOOT] BrachyBot starting…
+[error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[log] Cleared planning data on page load
+[log] Default parameters loaded from config
+[log] [Session] Loaded 0 sessions from localStorage
+[log] [Session] Saved 1 sessions, active=sess_mqj6iylu5m841
+[log] [Session] Saved 1 sessions, active=sess_mqj6iylu5m841
+[log] [Session] Saved 1 sessions, active=sess_mqj6iylu5m841
+[log] Volume loaded: 48x512x512, 12582912 voxels
+[log] [Session] Saved 1 sessions, active=sess_mqj6iylu5m841
+[log] [Session] Saved 1 sessions, active=sess_mqj6iylu5m841
+[log] Label volumes loaded: CTV=false, OAR=false, 0 labels
+[log] [3D auto-load] Starting CTV/obstacle mesh load...
+[log] [loadCTVAndObstacle] CTV label IDs: [1] ctvLabelMap: {1: pancreatic tumor}
+[error] Failed to load resource: the server responded with a status of 400 (BAD REQUEST)
+[log] [loadCTVAndObstacle] CTV label 1: HTTP 400
+[log] [loadCTVAndObstacle] CTV meshes added: 0
+[log] [loadCTVAndObstacle] Non-traversable OAR IDs: [201, 202] organs count: 0
+[error] Failed to load resource: the server responded with a status of 400 (BAD REQUEST)
+[log] [loadCTVAndObstacle] OAR label 201: HTTP 400
+[error] Failed to load resource: the server responded with a status of 400 (BAD REQUEST)
+[log] [loadCTVAndObstacle] OAR label 202: HTTP 400
+[log] [loadCTVAndObstacle] OAR meshes added: 0. Total scene meshes: 0
+[log] [3D auto-load] CTV/obstacle done. Meshes: 0
+[log] [3D auto-load] forceRender3DViewer... initialized: true meshes: 0
+[log] [switchPanel] Switching to: metrics
+[log] [switchPanel] Panel activated: panelMetrics
+[log] [switchPanel] Switching to: viewers
+[log] [switchPanel] Panel activated: panelViewers
+[warning] [.WebGL-0x1d9400156a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+[warning] [.WebGL-0x1d9400156a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+[warning] [.WebGL-0x1d9400156a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+[warning] [.WebGL-0x1d9400156a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)

@@ -1,0 +1,156 @@
+Downloaded from http://journals.lww.com/cancerjournal by BhDMf5ePHKav1zEoum1tQfN4a+kJLhEZgbsIHo4XMi0 hCywCX1AWnYQp/IlQrHD3i3D0OdRyi7TvSFl4Cf3VC1y0abggQZXdgGj2MwlZLeI= on 08/30/2024
+
+Review Article
+
+Guidelines for permanent iodine-125 seed interstitial brachytherapy for pancreatic cancer (2023 edition): The Chinese expert consensus workshop report
+
+ABSTRACT The incidence of pancreatic cancer is increasing worldwide. Approximately, 60% of patients with pancreatic cancer have distant metastases at the time of diagnosis, of which only 10% can be removed using standard resection. Further, patients derive limited benefits from chemotherapy or radiotherapy. As such, alternative methods to achieve local control have emerged, including permanent iodine125 seed interstitial brachytherapy. In 2023, the Chinese College of Interventionalists, affiliated with the Chinese Medical Doctor Association, organized a group of multidisciplinary experts to compose guidelines for this treatment modality. The aim of this conference was to standardize the procedure for permanent iodine125 seed interstitial brachytherapy, including indications, contraindications, preprocedural preparation, procedural operations, complications, efficacy evaluation, and followup.
+KEY WORDS: Brachytherapy, guideline, iodine125, pancreatic cancer
+
+Among all malignant tumors, pancreatic cancer ranks 14th in terms of incidence and seventh in mortality worldwide.[1] Between 2015 and 2019, the incidence of pancreatic cancer in the United States increased by approximately 1% annually in both men and women, with the lowest survival rate of all cancers.[2] Approximately 47.1% of new cases and 48.1% of deaths worldwide occur in Asia, followed in incidence by Europe and North America.[3] A recent analysis of 48 countries[4] showed that the incidence of pancreatic cancer has significantly increased in men and women in 14 and 17 countries, respectively. Furthermore, increased mortality was observed in men in eight countries and in women in 14 countries. Concurrently, the percentage of the national population older than 50 years increased in 18 countries.
+Access this article online Quick Response Code:
+Website: https://journals.lww.com/cancerjournal
+DOI: 10.4103/jcrt.jcrt_2368_23
+
+Pancreatic cancer has a hidden onset with uncharacteristic clinical manifestations, leading to low rates of early diagnosis, low surgical resection rates, and low drug efficacy, known as the "three lows". Approximately 60% of patients with pancreatic cancer have distant metastases at the time of diagnosis, and only 10% can be resected using standard methods.[5] Furthermore, 30% of patients are in a locally advanced stage and are treated only palliatively, with a short median survival time of 6­9 months.[6] These patients achieve limited benefits from traditional radiotherapy and chemotherapy; as such, many new local treatment methods have emerged, including transarterial infusion chemotherapy,[7] permanent iodine125 seed interstitial brachytherapy,[811] highintensity focused ultrasound (HIFU) therapy,[12] and irreversible electroporation (IRE) ablation.[13] Permanent iodine125 seed interstitial brachytherapy has been used as a minimally
+This is an open access journal, and articles are distributed under the terms of the Creative Commons AttributionNonCommercialShareAlike 4.0 License, which allows others to remix, tweak, and build upon the work noncommercially, as long as appropriate credit is given and the new creations are licensed under the identical terms.
+For reprints contact: WKHLRPMedknow_reprints@wolterskluwer.com
+
+Cite this article as: Liu B, Huang W, Zhang F, Wang J, Guo J, Huang X, et al. Guidelines for permanent iodine-125 seed interstitial brachytherapy for pancreatic cancer (2023 edition): The Chinese expert consensus workshop report. J Can Res Ther 2024;20:1124-9.
+
+Bin Liu1,2, Wei Huang3, Fujun Zhang4, Junjie Wang5, Jinhe Guo6, Xuequan Huang7, Guangyan Lei8, Juan Wang9, Xin Ye10, Ruoyu Wang11, Baodong Gai12, Xiaokun Hu13, Maoquan Li14, Chengli Li15, Yueyong Xiao16, Zhengyu Lin17, Lizhi Niu18, Guangyu Zhu6, Fei Gao4, Hongxin Niu19, Hongtao Zhang9, Qing Wu20, Jijin Yang21, Hong Zhao22, Kaixian Zhang23, Zhijin Chen24, Tingsong Chen25, Haoren Zhang26, Zhongmin Wang3, Yuliang Li1,2
+1Department of Interventional and Minimal Invasive Oncology, The Second Hospital of Shandong University, Jinan, 2The Institute of Interventional Oncology, Shandong University, Jinan, 3Department of Interventional Radiology, Ruijin Hospital, Shanghai Jiao Tong University School of Medicine, Shanghai, 4Imaging and Interventional Center, Sun YatSen University Cancer Center, Guangzhou, 5Department of Radiation Oncology, Cancer Centre, Peking University Third Hospital, Beijing,
+Submitted: 31-Oct-2023
+Revised: 20-Dec-2023
+Accepted: 01-Apr-2024
+Published: 29-Aug-2024
+
+1124
+
+© 2024 Journal of Cancer Research and Therapeutics | Published by Wolters Kluwer - Medknow
+
+Downloaded from http://journals.lww.com/cancerjournal by BhDMf5ePHKav1zEoum1tQfN4a+kJLhEZgbsIHo4XMi0 hCywCX1AWnYQp/IlQrHD3i3D0OdRyi7TvSFl4Cf3VC1y0abggQZXdgGj2MwlZLeI= on 08/30/2024
+
+Liu, et al.: Brachytherapy for pancreatic cancer guidelines
+6Department of Radiology, Southeast University, Zhongda Hospital, Nanjing, 7Department of Interventional Medicine, The First Hospital Affiliated to AMU (Southeast Hospital), Chongqing, 8Department of Thoracic Surgery, Shaanxi Provincial Cancer Hospital, Xi'an, 9Department of Oncology, Hebei General Hospital, Shijiazhuang, 10Department of Oncology, Shandong Provincial Qianfoshan Hospital, Jinan, 11Department of Oncology, The Affiliated Zhongshan Hospital of Dalian University, Dalian, 12Department of Gastrointestinal and Colorectal Surgery, The Third Hospital of Jilin University, Changjun, 13Interventional Medical Center, The Affiliated Hospital of Qingdao University, Qingdao, 14Department of Interventional and Vascular Surgery, Affiliated Tenth People's Hospital of Tongji University, Interventional Vascular Institute of Tongji University, Shanghai, 15Department of Radiology, Shandong Provincial Hospital, Jinan, Shandong, 16Department of Radiology, First Medical Center, Chinese PLA General Hospital, Beijing, 17Department of Interventional Therapy, The First Affiliated Hospital of Fujian Medical University, 18Department of Surgical Oncology, Fuda Cancer Hospital, Guang Zhou, Guangzhou, 19Department of Interventional Radiology, Shandong Cancer Hospital, Jinan, 20Department of Oncology, Affiliated Longhua Hospital of Shanghai Traditional Chinese Medicine University, Shanghai, 21Department of Interventional Radiology, Shanghai Changhai Hospital, Shanghai, 22Department of Oncology, Huadong Hospital Affiliated to Fudan University, Shanghai, 23Department of Oncology, Tengzhou Central People's Hospital, Tengzhou, 24Department of Interventional Radiology, Luwan Branch of Ruijin Hospital, Shanghai Jiao Tong University School of Medicine, Shanghai, 25Department of Interventional Radiology, Shanghai Seventh People's Hospital, Shanghai, 26Present Office, True Health Medical Technology CO., LTD., Zhuhai, China
+For correspondence: Dr. Zhongmin Wang, No. 197, Ruijin Second Road, Shanghai (Yongjia Intersection), China. Email: wzm11896@rjh.com.cn Dr. Yuliang Li, No. 247, Beiyuan Street, Jinan, Shandong Province, China. Email: lyl.pro@sdu.edu.cn
+
+invasive technique in the treatment of pancreatic cancer, with the number of patients treated increasing annually.[8,1419]
+Owing to the unbalanced development of medical and healthcare services in different regions of China, diagnosis and treatment protocols, including permanent iodine125 seed interstitial brachytherapy, need to be standardized. Therefore, in 2023, the Chinese College of Interventionalists, affiliated with the Chinese Medical Doctor Association, organized a group of multidisciplinary experts to compose a consensus through repeated discussions and consultations. This consensus is only applicable to malignant tumors of pancreatic ductal epithelial origin.
+1. Concept and principles of permanent iodine125 seed interstitial brachytherapy.
+
+2.2 Percutaneous transhepatic implantation of a biliary stent loaded with iodine125 seeds or iodine125 seed strands: This implantation method is primarily used for patients with pancreatic head cancer and obstructive jaundice. Biliary stents loaded with iodine125 seeds have a more uniform dose distribution and are suitable for patients with tumors surrounding the bile duct.[24] The iodine125 seed strand has an eccentric dose distribution and is suitable for tumors located on one side.[14]
+2.3 Implantation during surgery: When a tumor is in close proximity to important structures, including the abdominal aorta, superior mesenteric artery, splenic artery, common bile duct, and duodenum, it cannot be radically removed. Under these conditions, iodine125 seeds can be implanted under US guidance.[25]
+
+Iodine125 seeds with a size of 4.5 mm × 0.8 mm covered with an envelope of nickel titanium alloy are implanted directly into the lesion under image guidance. The halflife of iodine125 seeds is 59.6 days, and they can emit rays with an average energy of 35.5 KeV as well as Xrays with energies of 27.4 KeV and 31.4 KeV. This irradiation can inhibit cell proliferation and angiogenesis, induce apoptosis, and kill tumor cells.[20,21]
+2. Implanting methods.
+2.1 Imageguided percutaneous implantation: Imageguided modalities include computed tomography (CT)[22] and endoscopic ultrasound (EUS).[23] Due to its limited scanning range, EUS is commonly used for small lesions around the gastrointestinal tract. CT is considered the most commonly used guiding modality because of its high resolution and extensive detection. Therefore, CT was used as the guiding modality for this consensus.
+
+3. Indications and contraindications.
+3.1 Indications:  Tumors invade important surrounding structures and cannot be resected[22];  patients cannot tolerate tracheal intubation, general anesthesia, or surgical resection due to poor cardiopulmonary reserve;  patients refuse surgical resection[16];  disease progression after systemic therapy or other local treatments occurs[17];  iodine125 seeds could be implanted in the residual lesions or tumor beds when the tumor could not be radically removed during surgery.[25]
+3.2 Relative contraindications:  concurrent distant metastasis: permanent iodine125 seed interstitial brachytherapy could be conducted to reduce tumor burden or alleviate pain[23];  obstructive jaundice: percutaneous transhepatic cholangiography drainage or biliary stent placement may be performed before the procedure, and permanent iodine125
+
+Journal of Cancer Research and Therapeutics - Volume 20 - Issue 4 - August 2024
+
+1125
+
+Liu, et al.: Brachytherapy for pancreatic cancer guidelines
+
+seed interstitial brachytherapy could be carried out when the jaundice is relieved[8];  tumor diameter >7 cm.[8]
+3.3 Absolute contraindications:  cachexia and severe organ dysfunction[15],  severe coagulation dysfunction with platelet count <50 * 109/L[15],  expected life span of less than 3 months[16],  Eastern Cooperative Oncology Group Performance Status (ECOG) score 3.[16]
+
+starting 2 hours before the procedure. Prophylactic antibiotics can be administered before the procedure, and first or secondgeneration cephalosporins, ceftriaxone, metronidazole, and cephamycin are recommended.
+
+Downloaded from http://journals.lww.com/cancerjournal by BhDMf5ePHKav1zEoum1tQfN4a+kJLhEZgbsIHo4XMi0 hCywCX1AWnYQp/IlQrHD3i3D0OdRyi7TvSFl4Cf3VC1y0abggQZXdgGj2MwlZLeI= on 08/30/2024
+
+4. Preprocedural preparation.
+
+4.1 Multidisciplinary treatment.
+
+Multidisciplinary treatment (MDT) consultation with physicians in the Department of Pancreatic Surgery, Gastroenterology, Oncology, Radiation Oncology, and Interventional Medicine was recommended to ensure that the patients received standardized treatment [Figure 1].
+
+4.2 Preprocedural evaluation and treatment planning system (TPS): The evaluation and TPS plan rely on a procedure based on standard pancreatic CT images. The scanning protocol parameters were as follows: multipleslice spiral CT (MSCT), slice thickness (0.5 mm), and an injection rate of 3­5 mL/s for iodine contrast agent. Images of the pancreatic parenchymal phase were obtained 40­50s following contrast agent injection, and images of the portal vein phase were obtained 65­70s after injection.[26] MSCT was used to demonstrate the tumor size, location, and relationship with adjacent organs or tissues (including the gastrointestinal tract, biliary tract, and blood vessels). Magnetic resonance imaging (MRI) or positron emission tomography (PET)­CT are recommended to detect or rule out distant metastasis.
+
+The activity of iodine125 seeds should be set to 0.3­0.8 mci. The planning target volume (PTV) should cover one more centimeter beyond the margin of the gross tumor volume (GTV). The prescribed dose was 110­130 Gy.[8]
+
+The CT images were imported into the TPS, and the PTV and organs at risk (OAR) near the tumor were delineated. The number of iodine125 seeds was calculated using the TPS to ensure the prescribed dose. A dose­volume histogram (DVH) is used for dose evaluation.
+
+4.3 Standard lab panel: complete blood count, coagulation function, liver and kidney function, blood glucose, CA199, electrocardiogram, and pulmonary function tests.
+
+4.4 Patient preparation: The patient should be maintained on a liquid diet for 18 hours preceding the procedure and take a laxative (such as polyethylene glycol electrolyte powder) 15 hours before the procedure to promote bowel movement. Fasting should be adhered to for 12 h before the procedure, and a nasogastric tube should be placed. Somatostatin should be intravenous injected continuously at a rate of 0.25 mg/h
+
+Figure 1: The flowchart of permanent iodine125 seeds interstitial brachytherapy for advanced pancreatic cancer
+
+1126
+
+Journal of Cancer Research and Therapeutics - Volume 20 - Issue 4 - August 2024
+
+Downloaded from http://journals.lww.com/cancerjournal by BhDMf5ePHKav1zEoum1tQfN4a+kJLhEZgbsIHo4XMi0 hCywCX1AWnYQp/IlQrHD3i3D0OdRyi7TvSFl4Cf3VC1y0abggQZXdgGj2MwlZLeI= on 08/30/2024
+
+Liu, et al.: Brachytherapy for pancreatic cancer guidelines
+
+4.5 Pathological diagnosis: If possible, an EUSguided fineneedle biopsy (FNB)[27] or percutaneous fineneedle aspiration biopsy (FNAB)[28] should be performed before the procedure to confirm the diagnosis.
+5. Procedural operation.
+5.1 Position fixation and anesthesia: The position of the patient should be selected according to the tumor location and patient's condition. The supine position is most commonly used. Intravenous general anesthesia and moderate sedation with a 0.1mg fentanyl bolus and dexmedetomidine infusion at a rate of 1.5 g/kg/h are recommended.
+5.2 Iodine125 seed implantation: CT should be performed with a slice thickness of 5 mm to demonstrate tumor location and size. The puncture plane (intercostal space) should be selected based on tumor location, size, and preprocedural TPS plan. The blood and bile ducts must be avoided. Iodine125 seeds should be implanted using an 18gauge puncture needle according to the TPS plan.[8] Fluorouracil with a 0.05ml bolus for one seed should be injected through the puncture needle to prevent tumor seeding. Upon completion of the procedure, abdominal CT should be performed to verify the distribution of the iodine125 seeds. The dosage should be verified to confirm whether it matches the preprocedural TPS plan.
+5.3 Intraprocedural monitoring: Vital signs such as heart rate, blood pressure, and blood oxygen saturation should be closely monitored during the procedure. Patient consciousness, abdominal pain, nausea, dyspnea, or difficulty in breathing should be noted.
+5.4 Postprocedural management: The implanted area was covered with a leadprotective pad with a halfvalue layer of 0.25 mm. Continuous electrocardiographic monitoring and oxygen supplementation should be provided until the patient's condition stabilized. After the patient's bowel movements have recovered, the gastric tube should be removed. Somatostatin and antibiotics must then be continued for 72 hours after the procedure. Complete blood count, coagulation function, liver and kidney function, blood glucose, CA199, blood, and urine amylase levels should be checked on the third day after the procedure. The clinical manifestations of pancreatitis should be closely monitored.
+6. Complications and treatment.
+6.1 Bleeding: When the tumor surrounds the celiac trunk, hepatic artery, superior mesenteric artery, or vein, the puncture needle may damage blood vessels.[29] If bleeding occurs, the needle core should be reinserted, slowly withdrawn (0.5 cm), and held for approximately 1 min before implanting 1­2 seeds. In most cases, bleeding can be stopped using this method; however, if the bleeding volume is large (>500 ml), blood transfusion is recommended. In such cases, arterial
+
+angiography can be performed to identify and embolize the responsible blood vessels.
+6.2 Pancreatitis and pancreatic fistula: These are rare but serious complications usually caused by damage to the pancreatic duct. If the patient experiences severe abdominal pain after the procedure, with signs of peritoneal irritation and elevated blood and urine amylase levels, abdominal CT is recommended to validate the diagnosis of pancreatitis and pancreatic fistulas. Drainage should be performed, and drugs that suppress pancreatic enzyme secretion should be used to relieve symptoms.
+6.3 Iodine125 seed displacement: Seeds may move after the procedure; migrate to the liver, spleen, and stomach; or become detached and free in the abdominal cavity.[29] A single seed causes very little damage to the surrounding tissue but should still be closely observed.
+7. Combined therapy.
+Pancreatic cancer is a malignant tumor that benefits from combination therapy, including intraarterial infusion chemotherapy combined with permanent iodine125 seed interstitial brachytherapy,[30,31] chemotherapy before and after local treatment/surgical resection,[32] poly (ADPribose) polymerase inhibitors,[33] and programmed death receptor1 inhibitors.[34] Li et al.[21] showed that gemcitabine plays a synergistic role in the apoptosis and cell cycle arrest of PANC1 cells induced by iodine125 seeds through increases in the Bax/Bcl2 ratio. Based on the results of basic research and clinical practice, Yuliang Li proposed the concept of regional concurrent chemoradiotherapy (RCCR), that is, permanent iodine-125 seed interstitial brachytherapy at first, and then trans-arterial infusion chemotherapy. Chemotherapeutic drugs (such as gemcitabine) concentrated in the tumor area are expected to enhance the killing effect of iodine125 seeds on pancreatic cancer cells, thereby representing a new comprehensive interventional treatment for pancreatic cancer.
+8. Efficacy evaluation and followup.
+8.1 Postoperative efficacy evaluation: Efficacy evaluation criteria version 1.1 for solid tumors.[35] Complete relief (CR): All target lesions disappear, no new lesions appear, and tumor markers are normal for at least 4 weeks. Partial relief (PR): The sum of the maximum diameters of the target lesions decreases by 30%, lasting for at least 4 weeks. Progressive disease (PD): The sum of the maximum diameters of the target lesions increases by 20%, or new lesions appear. Stable disease (SD): The degree of reduction in target lesions does not reach the level of PR, and the degree of increase does not reach the level of PD but falls between the two.
+9.2 Followup: Within 6 months of treatment, followup should be conducted every 2 months; within 6 months to
+
+Journal of Cancer Research and Therapeutics - Volume 20 - Issue 4 - August 2024
+
+1127
+
+Downloaded from http://journals.lww.com/cancerjournal by BhDMf5ePHKav1zEoum1tQfN4a+kJLhEZgbsIHo4XMi0 hCywCX1AWnYQp/IlQrHD3i3D0OdRyi7TvSFl4Cf3VC1y0abggQZXdgGj2MwlZLeI= on 08/30/2024
+
+Liu, et al.: Brachytherapy for pancreatic cancer guidelines
+
+2 years, followup should be conducted every 3 months; within 2 to 5 years, followup should be conducted every 6 months; and after 5 years, followup should be conducted annually. Followup should comprise a complete physical examination, a standard laboratory panel that included carbohydrate antigen199 (CA199) testing, CECT covering the chestabdomenpelvis, and dose verification by TPS.
+Financial support and sponsorship This research was supported by Program for Integrated Traditional Chinese and Western Medicine in Shandong Province of China (YXH2019ZXY007), National Natural Science Foundation of China (12171285&11971269) and Jinan New Support Projects for Universities (Talent Development Special Fund 20228118). These funders were not involved in the study design; collection, analysis, interpretation of data; writing of this article; or the decision to submit it for publication.
+Conflicts of interest There are no conflicts of interest.
+REFERENCES
+1. Bray F, Ferlay J, Soerjomataram I, Siegel RL, Torre LA, Jemal A. Global cancer statistics 2018: GLOBOCAN estimates of incidence and mortality worldwide for 36 cancers in 185 countries. CA Cancer J Clin 2018;68:394424.
+2. Siegel RL, Miller KD, Wagle NS, Jemal A. Cancer statistics, 2023. CA Cancer J Clin 2023;73:1748.
+3. Cai J, Chen H, Lu M, Zhang Y, Lu B, You L, et al. Advances in the epidemiology of pancreatic cancer: Trends, risk factors, screening, and prognosis. Cancer Lett 2021;520:111. doi: 10.1016/j.canlet. 2021.06.027.
+4. Huang J, Lok V, Ngai CH, Zhang L, Yuan J, Lao XQ, et al. Worldwide burden of, risk factors for, and trends in pancreatic cancer. Gastroenterology 2021;160:74454.
+5. Strobel O, Neoptolemos J, Jäger D, Büchler MW. Optimizing the outcomes of pancreatic cancer surgery. Nat Rev Clin Oncol 2019;16:1126.
+6. Witkowski ER, Smith JK, Tseng JF. Outcomes following resection of pancreatic cancer. J Surg Oncol 2013;107:97103.
+7. Qiu B, Zhang X, Tsauo J, Zhao H, Gong T, Li J, et al. Transcatheter arterial infusion for pancreatic cancer: A 10year National Cancer Center experience in 115 patients and literature review. Abdom Radiol (NY) 2019;44:28018.
+8. Chen C, Wang W, Wang W, Wang Y, Yu Z, Li Y. Locally advanced pancreatic carcinoma with jaundice: The benefit of a sequential treatment with stenting followed by CTguided (125)I seeds implantation. Eur Radiol 2021;31:650010.
+9. Gai B, Zhang F. Chinese expert consensus on radioactive (125)I seeds interstitial implantation brachytherapy for pancreatic cancer. J Cancer Res Ther 2018;14:145562.
+10. Li Q, Liang Y, Zhao Y, Gai B. Interpretation of adverse reactions and complications in Chinese expert consensus of Iodine125 brachytherapy for pancreatic cancer. J Cancer Res Ther 2019;15:7514.
+11. Hertzanu Y, Ye X. A valuable guideline of radioactive (125)I seeds interstitial implantation brachytherapy for pancreatic cancer. J Cancer Res Ther 2018;14:14534.
+12. Sebeke LC, Rademann P, Maul AC, SchubertQuecke C, Annecke T, Yeo SY, et al. Feasibility study of MRguided pancreas ablation using highintensity focused ultrasound in a healthy swine model. Int J
+
+Hyperthermia 2020;37:78698. 13. Kwon W, Thomas A, Kluger MD. Irreversible electroporation of locally
+advanced pancreatic cancer. Semin Oncol 2021;48:8494. 14. Li J, Yu T, Zhang L, Yang M, Gao S, Pu N, et al. An iodine125 seed
+strand combined with a metal stent versus a metal stent alone for obstructive jaundice caused by pancreatic ductal adenocarcinoma. Brachytherapy 2021;20:44653. 15. Chi Z, Chen L, Huang J, Jiang N, Zheng Q, Huang N, et al. A novel combination of percutaneous stenting with iodine125 seed implantation and chemotherapy for the treatment of pancreatic head cancer with obstructive jaundice. Brachytherapy 2021;20:21825. 16. Zhou L, Yang H, Xie L, Sun J, Qian J, Zhu L. Comparison of imageguided iodine125 seed interstitial brachytherapy and local chemotherapy perfusion in treatment of advanced pancreatic cancer. J Invest Surg 2022;35:16. doi: 10.1080/08941939.2020.1805057. 17. Zhao GS, Liu S, Yang L, Li C, Wang RY, Zhou J, et al. Evaluation of radioactive (125)I seed implantation for the treatment of refractory malignant tumours based on a CTguided 3D templateassisted technique: Efficacy and safety. BMC Cancer 2020;20:718. 18. Jia SN, Wen FX, Gong TT, Li X, Wang HJ, Sun YM, et al. A review on the efficacy and safety of iodine125 seed implantation in unresectable pancreatic cancers. Int J Radiat Biol 2020;96:3839. 19. Li W, Wang X, Wang Z, Zhang T, Cai F, Tang P, et al. The role of seed implantation in patients with unresectable pancreatic carcinoma after relief of obstructive jaundice using ERCP. Brachytherapy 2020;19:97103. 20. Narra VR, Howell RW, Harapanhalli RS, Sastry KS, Rao DV. Radiotoxicity of some iodine123, iodine125 and iodine131labeled compounds in mouse testes: Implications for radiopharmaceutical design. J Nucl Med 1992;33:2196201. 21. Li D, Jia YM, Cao PK, Wang W, Liu B, Li YL. Combined effect of (125) I and gemcitabine on PANC1 cells: Cellular apoptosis and cell cycle arrest. J Cancer Res Ther 2018;14:147681. 22. Liu B, Zhou T, Geng J, Zhang F, Wang J, Li Y. Percutaneous computed tomographyguided iodine125 seeds implantation for unresectable pancreatic cancer. Indian J Cancer 2015;52(Suppl 2):e6974. 23. Wang KX, Jin ZD, Du YQ, Zhan XB, Zou DW, Liu Y, et al. EUSguided celiac ganglion irradiation with iodine125 seeds for pain control in pancreatic carcinoma: A prospective pilot study. Gastrointest Endosc 2012;76:94552. 24. Zhu HD, Guo JH, Zhu GY, He SC, Fang W, Deng G, et al. A novel biliary stent loaded with (125)I seeds in patients with malignant biliary obstruction: Preliminary results versus a conventional biliary stent. J Hepatol 2012;56:110411. 25. Wang J, Jiang Y, Li J, Tian S, Ran W, Xiu D. Intraoperative ultrasoundguided iodine125 seed implantation for unresectable pancreatic carcinoma. J Exp Clin Cancer Res 2009;28:88. 26. AlHawary MM, Francis IR, Chari ST, Fishman EK, Hough DM, Lu DS, et al. Pancreatic ductal adenocarcinoma radiology reporting template: Consensus statement of the society of abdominal radiology and the american pancreatic association. Gastroenterology 2014;146:291304.e1. 27. Crinò SF, Di Mitri R, Nguyen NQ, Tarantino I, de Nucci G, Deprez PH, et al. Endoscopic ultrasoundguided fineneedle biopsy with or without rapid onsite evaluation for diagnosis of solid pancreatic lesions: A randomized controlled noninferiority trial. Gastroenterology 2021;161:899909.e5. 28. IshikawaKakiya Y, Maruyama H, Kinoshita Y, Hayashi K, Yamamura M, Tanoue K, et al. The usefulness of serial pancreatic juice aspiration cytological examination for pancreatic cancer not diagnosed by EUSFNAB. Clin J Gastroenterol 2020;13:136772. 29. Huang W, Lu J, Chen KM, Wu ZY, Wang QB, Liu JJ, et al. Preliminary application of 3Dprinted coplanar template for iodine125 seed implantation therapy in patients with advanced pancreatic cancer. World J Gastroenterol 2018;24:52807. 30. Han S, Cao C, Yuan Y, Chen J, Yin L, Xu H, et al. Transcatheter arterial infusion combined with radioactive particles in the treatment of
+
+1128
+
+Journal of Cancer Research and Therapeutics - Volume 20 - Issue 4 - August 2024
+
+Liu, et al.: Brachytherapy for pancreatic cancer guidelines
+
+advanced body/tail pancreatic cancer: A retrospective cohort study. Pancreas 2021;50:8226. 31. Yang L, Li C, Wang Z, Wu J, Zhou J, Wang R. The clinical efficacy of computed tomographyguided (125)I particle implantation combined with arterial infusion chemotherapy in the treatment of pancreatic cancer. J Cancer Res Ther 2021;17:7205. 32. Uesaka K, Boku N, Fukutomi A, Okamura Y, Konishi M, Matsumoto I, et al. Adjuvant chemotherapy of S1 versus gemcitabine for resected pancreatic cancer: A phase 3, openlabel, randomised, noninferiority
+
+trial (JASPAC 01). Lancet 2016;388:24857. 33. Golan T, Hammel P, Reni M, Van Cutsem E, Macarulla T, Hall MJ,
+et al. Maintenance olaparib for germline BRCAmutated metastatic pancreatic cancer. N Engl J Med 2019;381:31727. 34. Feng M, Xiong G, Cao Z, Yang G, Zheng S, Song X, et al. PD1/PDL1 and immunotherapy for pancreatic cancer. Cancer Lett 2017;407:5765. 35. Schwartz LH, Litière S, de Vries E, Ford R, Gwyther S, Mandrekar S, et al. RECIST 1.1Update and clarification: From the RECIST committee. Eur J Cancer 2016;62:1327.
+
+Downloaded from http://journals.lww.com/cancerjournal by BhDMf5ePHKav1zEoum1tQfN4a+kJLhEZgbsIHo4XMi0 hCywCX1AWnYQp/IlQrHD3i3D0OdRyi7TvSFl4Cf3VC1y0abggQZXdgGj2MwlZLeI= on 08/30/2024
+
+Journal of Cancer Research and Therapeutics - Volume 20 - Issue 4 - August 2024
+
+1129
+
+

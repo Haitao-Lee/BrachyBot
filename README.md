@@ -610,6 +610,21 @@ export BRACHY_LLM_PROVIDER="qwen"
 export BRACHY_LLM_PROVIDER="ollama"
 ```
 
+### Step 3: Configure Security (Recommended for Production)
+
+```bash
+# API key for web server authentication
+# If not set, a random key will be generated and printed to console
+export BRACHYBOT_API_KEY="your-secure-key"
+
+# API key for the brain/LLM system
+export BRACHYBOT_LLM_API_KEY="your-llm-api-key"
+
+# CORS allowed origins (comma-separated)
+# Default: http://localhost, http://127.0.0.1
+export ALLOWED_ORIGINS="http://localhost,http://127.0.0.1"
+```
+
 ### Step 3: Download Pre-trained Models (Optional)
 
 VoCo segmentation model weights are not included in the repository due to size (~18GB). To use VoCo models:
@@ -1345,6 +1360,13 @@ OPENAI_API_KEY="sk-..."           # OpenAI key
 ANTHROPIC_API_KEY="sk-..."        # Anthropic key
 QWEN_API_KEY="sk-..."             # Qwen key
 
+# BrachyBot LLM API Key (for brain system)
+BRACHYBOT_LLM_API_KEY="your-key"  # API key for the default LLM provider
+
+# Server Security
+BRACHYBOT_API_KEY="your-key"      # API key for web server authentication
+ALLOWED_ORIGINS="http://localhost,http://127.0.0.1"  # CORS allowed origins (comma-separated)
+
 # Server
 BRACHY_PORT=8080                  # Web server port
 BRACHY_HOST="0.0.0.0"             # Web server host
@@ -1402,6 +1424,38 @@ Single-page HTML interface at `web/app/index.html`:
 ---
 
 ## 🔍 Code Quality
+
+### Security Review (2026-06-18)
+
+A comprehensive security and correctness review was conducted across the entire project. **15 issues** were identified and verified using Code Graph analysis and source code inspection.
+
+| Severity | Count | Key Findings |
+|----------|-------|--------------|
+| 🔴 Critical | 7 | API key leak, path traversal, CORS/XSS, PHI persistence, retry logic, auth bypass |
+| 🟠 High | 6 | Plan reviewer design, pancreas bias, dose calculation bugs, KB content, regex failure |
+| 🟡 Medium | 2 | UnboundLocalError, variable initialization |
+
+**10 issues fixed** (2026-06-18):
+
+| # | Finding | Fix Applied |
+|---|---------|-------------|
+| 1 | Hardcoded API key | Changed to `os.environ.get("BRACHYBOT_LLM_API_KEY")` |
+| 2 | Path traversal | Added allowlist-based path validation |
+| 3 | CORS/Authentication | Auto-generate API key, restrict CORS origins, add auth to `api_clear_all` |
+| 7 | Retry logic | Changed `_MAX_RETRIES` to 2, removed "DO NOT re-run" restriction |
+| 11 | `direction[3]` typo | Fixed to `np.linalg.norm(direction)` |
+| 12 | Dose conversion | Use actual prescription dose, fix boundary comparison |
+| 14 | Search regex | Updated to match actual `## ` headers |
+| 15 | UnboundLocalError | Initialize `_tool_results_to_store` in non-streaming path |
+
+**5 issues pending** (require frontend changes or larger refactoring):
+- XSS via innerHTML (needs DOMPurify)
+- PHI encryption (needs encryption logic)
+- I-125 hardcoded (needs frontend modification)
+- KB content recovery (needs git history or PubMed re-fetch)
+- Pancreas bias (needs anatomy detection)
+
+See [`docs/BRACHYBOT_PROJECT_REVIEW_2026-06-18.md`](docs/BRACHYBOT_PROJECT_REVIEW_2026-06-18.md) for the full review report.
 
 ### Code Review (2026-06-01)
 

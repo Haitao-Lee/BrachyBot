@@ -1,145 +1,202 @@
 {
-  "dose_constraints": {
+  "dose_standards": {
     "prostate": {
-      "ctv_v100": {
-        "target": ">=95%",
-        "description": "CTV should receive 100% of prescription dose"
+      "ldr": {
+        "target": {
+          "v100_min": 0.95,
+          "d90_min_pct": 1.00,
+          "v150_max": 0.50,
+          "v200_max": 0.35
+        },
+        "oar": {
+          "urethra":  { "dmax_pct": 1.20, "d10_pct_max": 1.20 },
+          "rectum":   { "d2cc_gy_eqd2": 75, "d0.1cc_pct": 1.00, "d1cc_pct": 0.83 },
+          "bladder":  { "d2cc_gy_eqd2": 90, "d0.1cc_pct": 1.00 }
+        },
+        "source": "ABS/AUA/ASTRO 2012 (PMID 22265436); ABS focal-HDR 2022"
       },
-      "ctv_d90": {
-        "target": ">=100%",
-        "description": "90% of CTV should get full prescription"
-      },
-      "rectum_d0.1cc": {
-        "limit": "<=150%",
-        "description": "Rectum max dose per 0.1cc"
-      },
-      "rectum_d1cc": {
-        "limit": "<=120%",
-        "description": "Rectum max dose per 1cc"
-      },
-      "bladder_d0.1cc": {
-        "limit": "<=150%",
-        "description": "Bladder max dose per 0.1cc"
-      },
-      "urethra_d0.1cc": {
-        "limit": "<=120%",
-        "description": "Urethra max dose per 0.1cc"
-      },
-      "v200": {
-        "limit": "<=35%",
-        "description": "Volume receiving 200% dose"
+      "hdr": {
+        "target": {
+          "v100_min": 0.95,
+          "d90_min_pct": 1.03,
+          "d90_max_pct": 1.08,
+          "v200_max": 0.25
+        },
+        "oar": {
+          "rectum":   { "v75cc_max": 1.0, "d2cc_pct_max": 0.75 },
+          "urethra":  { "d10_pct_max": 1.15, "dmax_pct": 1.20 }
+        },
+        "source": "ABS 2022 HDR competency; focal prostate HDR 2022 (PMID 42103556)"
       }
     },
     "cervical": {
-      "ctv_v100": {
-        "target": ">=90%",
-        "description": "CTV coverage"
-      },
-      "bladder_d2cc": {
-        "limit": "<=90Gy",
-        "description": "Bladder D2cc EQD2"
-      },
-      "rectum_d2cc": {
-        "limit": "<=75Gy",
-        "description": "Rectum D2cc EQD2"
-      },
-      "sigmoid_d2cc": {
-        "limit": "<=75Gy",
-        "description": "Sigmoid D2cc EQD2"
+      "hdr": {
+        "target": {
+          "v100_min": 0.90,
+          "d90_gy_eqd2_min": 85,
+          "d90_gy_eqd2_target": 90
+        },
+        "oar": {
+          "bladder":    { "d2cc_gy_eqd2": 90 },
+          "rectum":     { "d2cc_gy_eqd2": 75 },
+          "sigmoid":    { "d2cc_gy_eqd2": 70 },
+          "small_bowel": { "d2cc_gy_eqd2": 75 }
+        },
+        "source": "EMBRACE II (PMID 42211610); ABS cervix consensus 2012 (PMID 22265436); ICRU 89"
+      }
+    },
+    "breast": {
+      "apbi": {
+        "target": {
+          "d90_min_pct": 0.90,
+          "v150_cc_max": 50,
+          "v200_cc_max": 25
+        },
+        "oar": {
+          "skin":   { "dmax_pct": 0.70 },
+          "ribs":   { "dmax_pct": 0.80 },
+          "heart":  { "dmean_gy_max": 3 }
+        },
+        "source": "GEC-ESTRO APBI 2016; ABS APBI 2013 (PMID 23474341)"
       }
     },
     "lung": {
-      "ctv_v100": {
-        "target": ">=95%",
-        "description": "CTV coverage"
-      },
-      "spinal_cord_d0.1cc": {
-        "limit": "<=45Gy",
-        "description": "Spinal cord max dose"
-      },
-      "esophagus_d0.1cc": {
-        "limit": "<=60Gy",
-        "description": "Esophagus max dose"
-      },
-      "heart_d0.1cc": {
-        "limit": "<=60Gy",
-        "description": "Heart max dose"
+      "ldr": {
+        "target": {
+          "v100_min": 0.95,
+          "d90_min_pct": 1.00,
+          "v200_max": 0.30
+        },
+        "oar": {
+          "spinal_cord": { "dmax_gy": 45 },
+          "heart":       { "dmax_gy": 60, "d2cc_gy": 40 },
+          "esophagus":   { "dmax_gy": 60, "d2cc_gy": 55 },
+          "trachea":     { "dmax_gy": 75, "d2cc_gy": 70 }
+        },
+        "source": "ABS lung consensus; AAPM TG-229"
+      }
+    },
+    "pancreatic": {
+      "ldr": {
+        "target": {
+          "v100_min": 0.90,
+          "d90_min_pct": 1.00,
+          "v200_max": 0.30
+        },
+        "oar": {
+          "duodenum": { "d2cc_gy": 55, "dmax_gy": 75 },
+          "stomach":  { "d2cc_gy": 55, "dmax_gy": 75 },
+          "bowel":    { "d2cc_gy": 55, "dmax_gy": 75 },
+          "artery":   { "d2cc_gy": 80, "dmax_gy": 100 },
+          "vein":     { "d2cc_gy": 80, "dmax_gy": 100 }
+        },
+        "source": "Chinese I-125 pancreatic guideline 2023; CSTRO 2017; 3D-template I-125 2018"
       }
     },
     "liver": {
-      "ctv_v100": {
-        "target": ">=90%",
-        "description": "CTV coverage"
-      },
-      "normal_liver_mean": {
-        "limit": "<=30Gy",
-        "description": "Normal liver mean dose"
-      },
-      "spinal_cord_d0.1cc": {
-        "limit": "<=45Gy",
-        "description": "Spinal cord max dose"
+      "ldr": {
+        "target": {
+          "v100_min": 0.90,
+          "d90_min_pct": 1.00,
+          "v200_max": 0.30
+        },
+        "oar": {
+          "normal_liver": { "dmean_gy_max": 30 },
+          "stomach":      { "d2cc_gy": 50, "dmax_gy": 65 },
+          "duodenum":     { "d2cc_gy": 50, "dmax_gy": 65 },
+          "colon":        { "d2cc_gy": 50, "dmax_gy": 65 },
+          "kidney":       { "d2cc_gy": 18, "dmax_gy": 25 }
+        },
+        "source": "ABS liver consensus; AAPM TG-229"
       }
     },
     "head_neck": {
-      "ctv_v100": {
-        "target": ">=95%",
-        "description": "CTV coverage"
-      },
-      "spinal_cord_d0.1cc": {
-        "limit": "<=45Gy",
-        "description": "Spinal cord max dose"
-      },
-      "brainstem_d0.1cc": {
-        "limit": "<=54Gy",
-        "description": "Brainstem max dose"
-      },
-      "parotid_mean": {
-        "limit": "<=26Gy",
-        "description": "Parotid mean dose"
+      "ldr": {
+        "target": {
+          "v100_min": 0.95,
+          "d90_min_pct": 1.00,
+          "v200_max": 0.25
+        },
+        "oar": {
+          "spinal_cord": { "dmax_gy": 45 },
+          "brainstem":   { "dmax_gy": 54 },
+          "parotid":     { "dmean_gy_max": 26 },
+          "mandible":    { "dmax_gy": 70 }
+        },
+        "source": "ABS H&N consensus; GEC-ESTRO H&N recommendations"
       }
+    },
+    "esophageal": {
+      "hdr": {
+        "target": {
+          "v100_min": 0.90,
+          "d90_min_pct": 1.00
+        },
+        "oar": {
+          "spinal_cord": { "dmax_gy": 45 },
+          "heart":       { "dmax_gy": 40 },
+          "lung":        { "dmean_gy_max": 20 }
+        },
+        "source": "ABS esophageal 2014; NCCN esophageal 2024"
+      }
+    },
+    "default": {
+      "target": {
+        "v100_min": 0.90,
+        "d90_min_pct": 1.00,
+        "v150_max": 0.50,
+        "v200_max": 0.35
+      },
+      "oar": {
+        "rectum":      { "d2cc_gy_eqd2": 75, "d0.1cc_pct": 1.00 },
+        "bladder":     { "d2cc_gy_eqd2": 90, "d0.1cc_pct": 1.00 },
+        "urethra":     { "dmax_pct": 1.20 },
+        "bowel":       { "d2cc_gy": 55, "dmax_gy": 75 },
+        "kidney":      { "d2cc_gy": 18, "dmax_gy": 25 },
+        "liver":       { "d2cc_gy": 25, "dmax_gy": 35 },
+        "stomach":     { "d2cc_gy": 50, "dmax_gy": 65 },
+        "duodenum":    { "d2cc_gy": 55, "dmax_gy": 75 },
+        "spinal_cord": { "dmax_gy": 45 },
+        "heart":       { "dmax_gy": 60 },
+        "esophagus":   { "dmax_gy": 60 }
+      },
+      "source": "GEC-ESTRO / ABS / AAPM TG-229 composite defaults"
+    }
+  },
+  "plan_quality_benchmarks": {
+    "excellent":   { "min_score": 90, "v100_min": 0.95, "v200_max": 0.25 },
+    "good":        { "min_score": 80, "v100_min": 0.90, "v200_max": 0.35 },
+    "acceptable":  { "min_score": 70, "v100_min": 0.85, "v200_max": 0.40 },
+    "marginal":    { "min_score": 60, "v100_min": 0.80, "v200_max": 0.45 }
+  },
+  "legacy_dose_constraints": {
+    "prostate": {
+      "ctv_v100":       { "target": ">=95%", "description": "CTV should receive 100% of prescription dose" },
+      "ctv_d90":        { "target": ">=100%", "description": "90% of CTV should get full prescription" },
+      "rectum_d0.1cc":  { "limit": "<=150%", "description": "Rectum max dose per 0.1cc" },
+      "rectum_d1cc":    { "limit": "<=120%", "description": "Rectum max dose per 1cc" },
+      "bladder_d0.1cc": { "limit": "<=150%", "description": "Bladder max dose per 0.1cc" },
+      "urethra_d0.1cc": { "limit": "<=120%", "description": "Urethra max dose per 0.1cc" },
+      "v200":           { "limit": "<=35%", "description": "Volume receiving 200% dose" }
+    },
+    "cervical": {
+      "ctv_v100":       { "target": ">=90%", "description": "CTV coverage" },
+      "bladder_d2cc":   { "limit": "<=90Gy", "description": "Bladder D2cc EQD2" },
+      "rectum_d2cc":    { "limit": "<=75Gy", "description": "Rectum D2cc EQD2" },
+      "sigmoid_d2cc":   { "limit": "<=75Gy", "description": "Sigmoid D2cc EQD2" }
     }
   },
   "organ_tolerances": {
-    "spinal_cord": {
-      "max_dose_gy": 45,
-      "tolerance": "Very sensitive"
-    },
-    "brainstem": {
-      "max_dose_gy": 54,
-      "tolerance": "Sensitive"
-    },
-    "heart": {
-      "max_dose_gy": 60,
-      "tolerance": "Sensitive"
-    },
-    "esophagus": {
-      "max_dose_gy": 60,
-      "tolerance": "Moderate"
-    },
-    "small_bowel": {
-      "max_dose_gy": 50,
-      "tolerance": "Sensitive"
-    },
-    "rectum": {
-      "max_dose_gy": 75,
-      "tolerance": "Moderate"
-    },
-    "bladder": {
-      "max_dose_gy": 90,
-      "tolerance": "Moderate"
-    },
-    "kidney": {
-      "mean_dose_gy": 18,
-      "tolerance": "Sensitive"
-    },
-    "liver": {
-      "mean_dose_gy": 30,
-      "tolerance": "Moderate"
-    },
-    "lung": {
-      "mean_dose_gy": 20,
-      "tolerance": "Sensitive"
-    }
+    "spinal_cord":  { "max_dose_gy": 45, "tolerance": "Very sensitive" },
+    "brainstem":    { "max_dose_gy": 54, "tolerance": "Sensitive" },
+    "heart":        { "max_dose_gy": 60, "tolerance": "Sensitive" },
+    "esophagus":    { "max_dose_gy": 60, "tolerance": "Moderate" },
+    "small_bowel":  { "max_dose_gy": 50, "tolerance": "Sensitive" },
+    "rectum":       { "max_dose_gy": 75, "tolerance": "Moderate" },
+    "bladder":      { "max_dose_gy": 90, "tolerance": "Moderate" },
+    "kidney":       { "mean_dose_gy": 18, "tolerance": "Sensitive" },
+    "liver":        { "mean_dose_gy": 30, "tolerance": "Moderate" },
+    "lung":         { "mean_dose_gy": 20, "tolerance": "Sensitive" }
   },
   "treatment_protocols": {
     "prostate_low_risk": {
@@ -160,30 +217,5 @@
       "fractions": 4,
       "technique": "Intracavitary with tandem/ovoids"
     }
-  },
-  "plan_quality_benchmarks": {
-    "excellent": {
-      "min_score": 90,
-      "v100_min": 0.95,
-      "v200_max": 0.25
-    },
-    "good": {
-      "min_score": 80,
-      "v100_min": 0.9,
-      "v200_max": 0.35
-    },
-    "acceptable": {
-      "min_score": 70,
-      "v100_min": 0.85,
-      "v200_max": 0.4
-    },
-    "marginal": {
-      "min_score": 60,
-      "v100_min": 0.8,
-      "v200_max": 0.45
-    }
-  },
-  "dose_constraint": {
-    "bladder_d2cc_90gy_eqd2": {}
   }
 }

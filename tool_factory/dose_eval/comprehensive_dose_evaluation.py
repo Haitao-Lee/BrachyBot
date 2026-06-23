@@ -179,7 +179,8 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
                                 "constraint": constraint,
                             })
 
-        plan_score = self._compute_plan_score(target_metrics, prescribed_dose, oar_violations)
+        tumor_type = kwargs.get("tumor_type", "")
+        plan_score = self._compute_plan_score(target_metrics, prescribed_dose, oar_violations, tumor_type)
 
         message = f"Comprehensive evaluation complete for {len(masks)} structure(s). "
         if target_metrics:
@@ -198,7 +199,30 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
             },
         )
 
-    def _compute_plan_score(self, target_metrics, prescribed_dose, oar_violations):
+    # Per-site V100 thresholds for scoring.
+    # Sources: prostate ABS 2012, cervical EMBRACE II, breast GEC-ESTRO,
+    # lung ABS, pancreatic Chinese I-125 2023.
+    _SITE_V100_THRESHOLDS = {
+        "prostate": {"excellent": 0.95, "good": 0.90, "marginal": 0.80},
+        "lung":     {"excellent": 0.95, "good": 0.90, "marginal": 0.80},
+        "head_neck": {"excellent": 0.95, "good": 0.90, "marginal": 0.80},
+        "cervical": {"excellent": 0.90, "good": 0.85, "marginal": 0.75},
+        "pancreatic": {"excellent": 0.90, "good": 0.85, "marginal": 0.75},
+        "liver":    {"excellent": 0.90, "good": 0.85, "marginal": 0.75},
+        "breast":   {"excellent": 0.90, "good": 0.85, "marginal": 0.75},
+        "esophageal": {"excellent": 0.90, "good": 0.85, "marginal": 0.75},
+        "default":  {"excellent": 0.90, "good": 0.85, "marginal": 0.75},
+    }
+    # Per-site V200 max thresholds for scoring.
+    _SITE_V200_THRESHOLDS = {
+        "prostate": {"good": 0.35, "ok": 0.45},
+        "head_neck": {"good": 0.25, "ok": 0.35},
+        "lung":     {"good": 0.30, "ok": 0.40},
+        "pancreatic": {"good": 0.30, "ok": 0.40},
+        "default":  {"good": 0.35, "ok": 0.45},
+    }
+
+    def _compute_plan_score(self, target_metrics, prescribed_dose, oar_violations, tumor_type=""):
         if target_metrics is None:
             return 0.0
 
@@ -208,15 +232,35 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
         v200 = target_metrics.get("V200", 0)
         d90 = target_metrics.get("D90", 0)
 
-        if v100 >= 0.95:
+        # Normalize tumor_type to site key
+        tt = (tumor_type or "").lower().replace(" ", "_").replace("-", "_")
+        site = "default"
+        for key in self._SITE_V100_THRESHOLDS:
+            if key in tt or tt in key:
+                site = key
+                break
+        _map = {"nnunet_pancreatic": "pancreatic", "pancreas": "pancreatic",
+                "voco_liver": "liver", "voco_lung": "lung", "voco_kidney": "liver",
+                "voco_colon": "liver", "voco_brats21": "head_neck"}
+        for pattern, mapped_site in _map.items():
+            if pattern in tt:
+                site = mapped_site
+                break
+
+        v100_t = self._SITE_V100_THRESHOLDS.get(site, self._SITE_V100_THRESHOLDS["default"])
+        v200_t = self._SITE_V200_THRESHOLDS.get(site, self._SITE_V200_THRESHOLDS["default"])
+
+        # V100 scoring (40 pts max) — per-site thresholds
+        if v100 >= v100_t["excellent"]:
             score += 40
-        elif v100 >= 0.90:
+        elif v100 >= v100_t["good"]:
             score += 30
-        elif v100 >= 0.80:
+        elif v100 >= v100_t["marginal"]:
             score += 20
         else:
             score += 10
 
+        # V150 homogeneity (20 pts max)
         if 0.30 <= v150 <= 0.60:
             score += 20
         elif v150 < 0.70:
@@ -224,16 +268,19 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
         else:
             score += 5
 
-        if v200 <= 0.20:
+        # V200 hot spots (10 pts max) — per-site thresholds
+        if v200 <= v200_t["good"]:
             score += 10
-        elif v200 <= 0.35:
+        elif v200 <= v200_t["ok"]:
             score += 5
 
-        if d90 >= prescribed_dose:
+        # D90 scoring (20 pts max) — based on % of prescription
+        d90_pct = d90 / prescribed_dose if prescribed_dose > 0 else 0
+        if d90_pct >= 1.0:
             score += 20
-        elif d90 >= 0.9 * prescribed_dose:
+        elif d90_pct >= 0.9:
             score += 15
-        elif d90 >= 0.8 * prescribed_dose:
+        elif d90_pct >= 0.8:
             score += 10
 
         score -= len(oar_violations) * 10

@@ -104,11 +104,11 @@ def _parse_setup(setup_text):
 
 
 _SETUP_PROMPTS = {
-    "ct":   "请加载CT文件 {ct_path}",
-    "seg":  "请执行CTV和OAR分割",
-    "plan": "请生成治疗计划",
-    "dose": "请计算剂量",
-    "eval": "请评估剂量分布",
+    "ct":   "Load CT file {ct_path}",
+    "seg":  "Segment CTV and OAR",
+    "plan": "Generate treatment plan",
+    "dose": "Calculate dose",
+    "eval": "Evaluate dose distribution",
 }
 
 

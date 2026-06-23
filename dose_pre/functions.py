@@ -77,7 +77,7 @@ def position_soft_method(seed, image_origin, image_size, image_spacing):
 
 
 def line_source_map(seed, direction, image_origin, image_size, image_spacing):
-     # seed 粒子坐标，direction 粒子方向向量
+     # seed: seed coordinates, direction: seed direction vector
         x = image_origin[0] + np.arange(image_size[0]) * image_spacing[0]
         y = image_origin[1] + np.arange(image_size[1]) * image_spacing[1]
         z = image_origin[2] + np.arange(image_size[2]) * image_spacing[2]
@@ -95,17 +95,17 @@ def line_source_map(seed, direction, image_origin, image_size, image_spacing):
         
         norm_direction_vector = direction / np.linalg.norm(direction)
         norm_direction_vector = np.array([norm_direction_vector[0], norm_direction_vector[1], -norm_direction_vector[2]])
-        # 计算两个点的坐标
+        # Compute coordinates of two endpoints
         A_prime = seed[0:3] - L/2 * norm_direction_vector
         B_prime = seed[0:3] + L/2 * norm_direction_vector
         V_PA = np.array([X - A_prime[0], Y - A_prime[1], Z - A_prime[2]])
         V_PB = np.array([X - B_prime[0], Y - B_prime[1], Z - B_prime[2]])
 
-        # 计算向量的长度
+        # Compute vector magnitudes
         V_PA_magnitude = np.sqrt(np.sum(V_PA**2, axis=0))
         V_PB_magnitude = np.sqrt(np.sum(V_PB**2, axis=0))
 
-        # 计算向量之间的夹角
+        # Compute angle between vectors
         dot_product = np.sum(V_PA * V_PB, axis=0)
         cos_beta = np.abs(dot_product / (V_PA_magnitude * V_PB_magnitude))
         beta = np.arccos(np.clip(cos_beta, -1.0, 1.0))

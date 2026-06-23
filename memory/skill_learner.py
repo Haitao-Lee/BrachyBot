@@ -2,7 +2,7 @@
 Skill Learner
 =============
 Analyzes interaction patterns to learn and generate new skills
-that match user习惯 (user habits/preferences).
+that match user habits/preferences.
 """
 
 import os
