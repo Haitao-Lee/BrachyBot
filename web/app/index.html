@@ -7935,6 +7935,8 @@ async function sendChat(prefill) {
         try { chatAbortController.abort(); } catch (_) {}
         window._chatStreaming = false;
         setStreamingState(false);
+        // Notify server to stop processing and clean up conversation
+        try { fetch(API + '/chat/abort', { method: 'POST' }); } catch (_) {}
         return;
     }
     window._chatStreaming = false;
@@ -8408,7 +8410,12 @@ async function sendChat(prefill) {
         }
     } catch (e) {
         if (typeof addChat === 'function') {
-            addChat('error', 'Send failed: ' + e.message);
+            // Don't show error for user-initiated abort (clicking stop button)
+            if (e.name === 'AbortError' || /abort/i.test(e.message)) {
+                addChat('system', '⏹ Stopped.');
+            } else {
+                addChat('error', 'Send failed: ' + e.message);
+            }
         } else {
             console.error('sendChat failed and addChat missing:', e);
         }
