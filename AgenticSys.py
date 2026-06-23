@@ -4385,6 +4385,7 @@ print(json.dumps(result))
 
                 # Use streaming LLM call with tools
                 prev_cleaned_len = 0
+                _buffered_text = ""  # Buffer text; only flush when no tool calls
                 for chunk in self.brain_router.chat_messages_stream(messages=messages, tools=tools_for_llm):
                     if isinstance(chunk, str):
                         # Text chunk from LLM
@@ -4396,17 +4397,13 @@ print(json.dumps(result))
                         if cleaned_content and len(cleaned_content) > prev_cleaned_len:
                             new_text = cleaned_content[prev_cleaned_len:]
                             # Don't yield if new text starts with tool_call patterns
-                            # Use specific patterns to avoid filtering legitimate text like [type something]
-                            # BUG FIX 2026-06-17: also skip <tool_call>...</tool_call>
-                            # (the format the LLM actually emits, not the
-                            # <minimax:tool_call> prefix that wasn't matched).
                             if not re.match(r'(\[\s*\{\s*["\']type["\']\s*:\s*["\']tool_use|```tool_call|<tool_call>|<minimax:tool_call>|\[\s*TOOL_CALL\s*\])', new_text):
-                                # Yield text chunks IMMEDIATELY for
-                                # real-time streaming. Don't buffer —
-                                # the user sees each token as it arrives.
-                                yield yield_event("text_chunk", {"text": new_text})
+                                # BUFFER text instead of yielding immediately.
+                                # If the LLM emits tool calls in this same
+                                # response, the text is premature and should
+                                # not reach the user until all tools complete.
+                                _buffered_text += new_text
                             # Always advance offset so tool_call text is consumed
-                            # and doesn't block future chunks when _clean_response_text removes it
                             prev_cleaned_len = len(cleaned_content)
                     elif isinstance(chunk, dict):
                         if chunk.get("type") == "final":
@@ -4495,6 +4492,13 @@ print(json.dumps(result))
                     logger.info(f"[LLM loop] Incomplete tool call detected, retrying iteration={iteration}")
                     messages.append({"role": "user", "content": "Your tool call was incomplete. Please call the next tool in the workflow (e.g., oar_segmentation, planning_pipeline). Use the proper tool call format."})
                     continue  # Retry without breaking
+
+                # FLUSH buffered text — this is the final response, no more tools.
+                # Previously text was yielded during streaming even when tool
+                # calls followed, causing premature display of incomplete answers.
+                if _buffered_text:
+                    yield yield_event("text_chunk", {"text": _buffered_text})
+                    _buffered_text = ""
 
                 # BUG FIX 2026-06-17 (LLM response still brief):
                 # the LLM keeps producing a 5-row summary table even
