@@ -14593,6 +14593,7 @@ async function loadCTVAndObstacleMeshes() {
     let oarMeshCount = 0;
     for (const data of oarResults) {
         if (data) { addMeshToScene(data); oarMeshCount++; }
+    }
     console.log(`[loadCTVAndObstacle] OAR meshes added: ${oarMeshCount}. Total scene meshes: ${Object.keys(scene3D.meshes).length}`);
 }
 
