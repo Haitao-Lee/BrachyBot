@@ -7650,43 +7650,10 @@ function _todoUpdateFromStep(todo, step) {
     //    bottom). _todoFindPredicted matches status === 'predicted' —
     //    once a predicted item has been activated, we fall through
     //    to the dedup check below to find the same item by tool name.
-    // 0. MERGE CTV+OAR when auto-fired inside planning pipeline.
-    //    When oar_segmentation has parent_tool === "ctv_segmentation",
-    //    merge it into the CTV item instead of creating a separate
-    //    OAR row. The label becomes "CTV + OAR segmentation".
-    //    When CTV or OAR is called individually (no parent_tool), they
-    //    stay as separate items.
-    if (step.tool === 'oar_segmentation' && step.parent_tool === 'ctv_segmentation') {
-        const ctvItem = todo.items.find(i => {
-            if (i.predicted && i.predictedTool === 'ctv_segmentation') return true;
-            if (i.toolName === 'ctv_segmentation') return true;
-            if (i.step && i.step.tool === 'ctv_segmentation') return true;
-            return false;
-        });
-        if (ctvItem) {
-            const i18n = _todoI18n();
-            const mergedLabel = (i18n.tools.ctv_segmentation || 'CTV segmentation') + ' + ' + (i18n.tools.oar_segmentation || 'OAR segmentation');
-            const lbl = ctvItem.node.querySelector('.chat-todo-label');
-            if (lbl) lbl.textContent = mergedLabel;
-            ctvItem._mergedOAR = true;
-            // Remove the predicted OAR item since it's merged into CTV
-            const predOAR = todo.items.find(i => i.predicted && i.predictedTool === 'oar_segmentation');
-            if (predOAR && predOAR !== ctvItem) {
-                predOAR.node.remove();
-                todo.items = todo.items.filter(i => i !== predOAR);
-            }
-            if (step.status === 'done') {
-                // Mark done — this is the OAR completion event
-                todo.markDone(ctvItem);
-            } else if (step.status === 'pending' && ctvItem.status !== 'done') {
-                // Only activate if NOT already done. When CTV done + OAR
-                // pending arrive in the same batch, reactivating a done
-                // item makes it stuck as "running".
-                todo.markActive(ctvItem);
-            }
-            return ctvItem;
-        }
-    }
+    // 0. CTV+OAR are kept as SEPARATE todo items (no merge).
+    //    Merging caused timing issues when CTV done + OAR pending
+    //    arrived in the same SSE batch — the merged item would show
+    //    incorrect states. Separate items give clear per-tool status.
 
     let item = _todoFindPredicted(todo, step);
     // 2. Try by id (for re-emission of the same step)
@@ -7704,19 +7671,7 @@ function _todoUpdateFromStep(todo, step) {
             return false;
         });
         if (existing) {
-            // BUG FIX 2026-06-22: when CTV's done event arrives and
-            // finds the merged CTV+OAR item via dedup, it must go
-            // through the _mergedDone tracking (not call markDone
-            // directly). Otherwise the merge block's "both must be
-            // done" logic is bypassed and the item gets marked done
-            // when only OAR completed, leaving CTV stuck as "running".
-            if (step.status === 'done' && existing._mergedOAR) {
-                if (!existing._mergedDone) existing._mergedDone = {};
-                existing._mergedDone[step.tool] = true;
-                if (existing._mergedDone['ctv_segmentation'] && existing._mergedDone['oar_segmentation']) {
-                    todo.markDone(existing);
-                }
-            } else if (step.status === 'done') {
+            if (step.status === 'done') {
                 todo.markDone(existing);
             } else if (step.status === 'pending') {
                 todo.markActive(existing);
@@ -7731,27 +7686,7 @@ function _todoUpdateFromStep(todo, step) {
     if (step.status === 'pending') {
         todo.markActive(item);
     } else if (step.status === 'done') {
-        // If this item is a merged CTV+OAR, only mark done when
-        // BOTH tools are done. Track which tools have completed.
-        if (item._mergedOAR) {
-            if (!item._mergedDone) item._mergedDone = {};
-            item._mergedDone[step.tool] = true;
-            // Mark done only when both ctv_segmentation AND oar_segmentation are done
-            if (item._mergedDone['ctv_segmentation'] && item._mergedDone['oar_segmentation']) {
-                todo.markDone(item);
-            }
-            // If only one is done, just update timing display
-            else if (step.tool === 'ctv_segmentation') {
-                // CTV done but OAR still running — show elapsed time
-                const t = item.node.querySelector('.chat-todo-time');
-                if (t && item.startedAt) {
-                    const dur = (Date.now() - item.startedAt) / 1000;
-                    t.textContent = dur.toFixed(1) + 's';
-                }
-            }
-        } else {
-            todo.markDone(item);
-        }
+        todo.markDone(item);
     } else if (step.status === 'error') {
         todo.markDone(item, step.error || 'failed');
     }
