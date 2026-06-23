@@ -13964,7 +13964,17 @@ function addMeshToScene(meshData) {
 function fitCameraToScene() {
     if (!scene3D.camera || !scene3D.controls) return;
     const box = new THREE.Box3();
-    Object.values(scene3D.meshes).forEach(m => { if (m) box.expandByObject(m); });
+    // Skip meshes with NaN in position to prevent camera NaN
+    Object.values(scene3D.meshes).forEach(m => {
+        if (!m) return;
+        const pos = m.geometry?.attributes?.position;
+        if (pos) {
+            for (let i = 0; i < Math.min(pos.array.length, 100); i++) {
+                if (isNaN(pos.array[i])) return; // skip this mesh
+            }
+        }
+        box.expandByObject(m);
+    });
     if (scene3D.skinMesh) box.expandByObject(scene3D.skinMesh);
     if (box.isEmpty()) {
         // Default view for empty scene
@@ -14188,6 +14198,9 @@ async function loadSeeds3D() {
             const points = needle.points.map(p => new THREE.Vector3(...p));
 
             try {
+                // Filter out NaN points from needle trajectory
+                points = points.filter(p => !isNaN(p.x) && !isNaN(p.y) && !isNaN(p.z));
+                if (points.length < 2) return;
                 let tube;
                 if (points.length === 2) {
                     // For 2-point lines, create a CylinderGeometry along
@@ -14489,6 +14502,7 @@ async function loadCTVAndObstacleMeshes() {
 
     let ctvMeshCount = 0;
     for (const lid of ctvLabelIds) {
+        if (lid === 0) continue; // Skip background label
         try {
             const res = await fetch(API + '/viewer/3d_mask', {
                 method: 'POST',
@@ -14498,6 +14512,11 @@ async function loadCTVAndObstacleMeshes() {
             if (!res.ok) { console.log(`[loadCTVAndObstacle] CTV label ${lid}: HTTP ${res.status}`); continue; }
             const data = await res.json();
             if (data && data.success && data.vertex_count > 0) {
+                // Skip meshes with >100K faces (background, huge organs)
+                if (data.face_count > 100000) {
+                    console.warn(`[loadCTVAndObstacle] CTV label ${lid}: skipping (${data.face_count} faces > 100K limit)`);
+                    continue;
+                }
                 const c = labelColorLUT && labelColorLUT[lid];
                 data.color = c ? ((c[0] << 16) | (c[1] << 8) | c[2]) : 0xff6b6b;
                 // Use SAME organ_id as reconstructOrgan3D('ctv')
