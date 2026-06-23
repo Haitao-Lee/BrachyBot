@@ -13925,6 +13925,7 @@ function addMeshToScene(meshData) {
 
     scene3D.scene.add(mesh);
     scene3D.meshes[id] = mesh;
+    console.log('[addMeshToScene] Added mesh:', id, 'vertices:', meshData.vertex_count, 'total meshes:', Object.keys(scene3D.meshes).length);
 
     // Mirror this mesh into the data tree so the user can see all 3D
     // meshes (CTV/OAR/dose/etc.) listed with their own visibility toggle.
@@ -17076,7 +17077,9 @@ function drawDVH() {
     // This repositions the SVG <g> so it stays inside the container.
     (function _setupDvhTooltipClamp() {
         const hl = dvhEl.querySelector('.hoverlayer');
-        if (!hl) return;
+        if (!hl) { console.warn('[DVH clamp] hoverlayer NOT FOUND'); return; }
+        console.log('[DVH clamp] hoverlayer found, setting up MutationObserver');
+        let _clampCount = 0;
         function clamp() {
             const hovers = hl.querySelectorAll('.hovertext');
             if (!hovers.length) return;
@@ -17102,6 +17105,10 @@ function drawDVH() {
                 let cx = Math.max(4, Math.min(x, svgW - tw));
                 let cy = Math.max(4, Math.min(y, svgH - th));
                 if (cx !== x || cy !== y) {
+                    if (_clampCount < 5) {
+                        console.log(`[DVH clamp] Repositioning: (${x.toFixed(0)},${y.toFixed(0)}) → (${cx.toFixed(0)},${cy.toFixed(0)}) svgW=${svgW.toFixed(0)} svgH=${svgH.toFixed(0)} tw=${tw.toFixed(0)} th=${th.toFixed(0)}`);
+                        _clampCount++;
+                    }
                     g.setAttribute('transform', `translate(${cx},${cy})`);
                 }
             });
@@ -17249,7 +17256,33 @@ dvhEl.on('plotly_doubleclick', function() {
 // and 3D viewer "sinking" effects.
 let _refreshDebounce = null;
 let _refreshInflight = null;
+// DEBUG: global diagnostic function — call from browser console
+window._debugBrachy = function() {
+    const canvas = document.getElementById('canvas3D');
+    const dvhEl = document.getElementById('dvhChart');
+    const panels = document.querySelectorAll('.panel-content');
+    const activePanel = document.querySelector('.panel-content.active');
+    console.log('=== BrachyBot Debug ===');
+    console.log('3D canvas:', canvas ? `${canvas.clientWidth}x${canvas.clientHeight}` : 'NOT FOUND');
+    console.log('3D canvas display:', canvas ? getComputedStyle(canvas).display : 'N/A');
+    console.log('3D canvas parent display:', canvas ? getComputedStyle(canvas.parentElement).display : 'N/A');
+    console.log('scene3D initialized:', scene3D.initialized);
+    console.log('scene3D meshes:', Object.keys(scene3D.meshes));
+    console.log('scene3D renderer:', scene3D.renderer ? `${scene3D.renderer.domElement.width}x${scene3D.renderer.domElement.height}` : 'NONE');
+    console.log('Active panel:', activePanel ? activePanel.id : 'NONE');
+    console.log('Panel tabs:', [...document.querySelectorAll('.panel-tab')].map((t,i) => `[${i}]${t.classList.contains('active')?'*':''} ${t.textContent.trim()}`));
+    console.log('DVH container:', dvhEl ? `${dvhEl.clientWidth}x${dvhEl.clientHeight}` : 'NOT FOUND');
+    console.log('DVH overflow:', dvhEl ? getComputedStyle(dvhEl).overflow : 'N/A');
+    const hl = dvhEl?.querySelector('.hoverlayer');
+    console.log('DVH hoverlayer:', hl ? `overflow=${getComputedStyle(hl).overflow}` : 'NOT FOUND');
+    console.log('state.ctPath:', state.ctPath);
+    console.log('state.ctLoaded:', state.ctLoaded);
+    console.log('state.metrics keys:', state.metrics ? Object.keys(state.metrics) : 'null');
+    return { canvas, scene3D, activePanel, dvhEl };
+};
+
 async function refreshPlanningUI() {
+    console.log('[refreshPlanningUI] CALLED');
     // Cancel any in-flight fetch — we'll issue a fresh one.
     if (_refreshInflight) { try { _refreshInflight.abort(); } catch (_) {} }
     if (_refreshDebounce) clearTimeout(_refreshDebounce);
@@ -17260,10 +17293,11 @@ async function refreshPlanningUI() {
                 const ctrl = new AbortController();
                 _refreshInflight = ctrl;
                 const res = await fetch(API + '/planning/results', { signal: ctrl.signal });
-                if (!res.ok) { _refreshInflight = null; return resolve(); }
+                if (!res.ok) { console.warn('[refreshPlanningUI] /planning/results failed:', res.status); _refreshInflight = null; return resolve(); }
                 const data = await res.json();
                 _refreshInflight = null;
-                if (!data || !data.success) return resolve();
+                if (!data || !data.success) { console.warn('[refreshPlanningUI] data not success:', data); return resolve(); }
+                console.log('[refreshPlanningUI] data received, has_dose:', data.has_dose, 'seeds:', data.seeds?.length);
 
                 // 1. Metrics cards (V100, D90, etc.) + summary
                 if (data.metrics && Object.keys(data.metrics).length > 0) {
@@ -17419,6 +17453,7 @@ async function refreshPlanningUI() {
         try { if (typeof reportAutoFill === 'function') reportAutoFill(); } catch (_) {}
 
         await Promise.all(_meshPromises);
+        console.log('[refreshPlanningUI] Mesh promises done. scene3D.meshes:', Object.keys(scene3D.meshes));
 
         // 4f-1. Switch to viewers panel so the 3D canvas is visible.
         // Without this, the canvas has 0×0 dimensions (panel is hidden)
@@ -17426,10 +17461,12 @@ async function refreshPlanningUI() {
         // Tab order: Input[0] Analysis[1] Viewers[2] Report[3]
         try {
             const viewersTab = document.querySelectorAll('.panel-tab')[2];
+            console.log('[refreshPlanningUI] viewersTab:', viewersTab ? viewersTab.textContent.trim() : 'NOT FOUND', 'active:', viewersTab?.classList.contains('active'));
             if (viewersTab && !viewersTab.classList.contains('active')) {
                 switchPanel('viewers', viewersTab);
+                console.log('[refreshPlanningUI] switchPanel viewers DONE');
             }
-        } catch (_) {}
+        } catch (e) { console.warn('[refreshPlanningUI] switchPanel FAILED:', e); }
 
         // 4f-2. Re-capture 3D figure AFTER meshes are loaded.
         // autoCaptureReportFigures ran before mesh promises resolved,
