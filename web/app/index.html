@@ -13878,6 +13878,10 @@ function addMeshToScene(meshData) {
     const geometry = new THREE.BufferGeometry();
     const vertices = new Float32Array(meshData.vertices.flat());
     const indices = new Uint32Array(meshData.faces.flat());
+    // Validate: skip meshes with NaN vertices (corrupted server data)
+    let hasNaN = false;
+    for (let i = 0; i < vertices.length; i++) { if (isNaN(vertices[i])) { hasNaN = true; break; } }
+    if (hasNaN) { console.warn('[addMeshToScene] Skipping mesh with NaN vertices:', id); return; }
     geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     geometry.computeVertexNormals();
@@ -17421,28 +17425,33 @@ async function refreshPlanningUI() {
 
         // 4d-4f. Load 3D meshes in PARALLEL so slow OAR mesh generation
         // doesn't block seeds/isosurfaces from appearing.
+        // Each promise has a 60s timeout to prevent infinite hangs.
         const _meshPromises = [];
+        function _withTimeout(promise, name, ms = 60000) {
+            return Promise.race([
+                promise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error(`${name} timeout after ${ms/1000}s`)), ms))
+            ]).catch(e => console.warn(`[3D auto-load] ${name}:`, e.message));
+        }
 
         // 4d. Isodose surface auto-load
         if (data.has_dose) {
             _meshPromises.push(
-                loadAllIsoSurfaces().catch(e => console.warn('Isosurface auto-load failed:', e))
+                _withTimeout(loadAllIsoSurfaces(), 'Isosurfaces')
             );
         }
 
         // 4e. CTV + non-traversable OAR 3D mesh auto-load
         _meshPromises.push(
-            loadCTVAndObstacleMeshes()
+            _withTimeout(loadCTVAndObstacleMeshes(), 'CTV/OAR meshes')
                 .then(() => console.log('[3D auto-load] CTV/obstacle done. Meshes:', Object.keys(scene3D.meshes).length))
-                .catch(e => console.warn('[3D auto-load] CTV/obstacle FAILED:', e))
         );
 
         // 4f. Seeds + needles 3D load
         if (data.seeds && data.seeds.length > 0) {
             _meshPromises.push(
-                loadSeeds3D()
+                _withTimeout(loadSeeds3D(), 'Seeds')
                     .then(() => console.log('[3D auto-load] Seeds done. Meshes:', Object.keys(scene3D.meshes).length))
-                    .catch(e => console.warn('[3D auto-load] Seeds FAILED:', e))
             );
         }
 
