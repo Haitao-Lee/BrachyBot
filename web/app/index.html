@@ -14168,7 +14168,9 @@ async function loadSeeds3D() {
         const seedLength = 4.5;
         data.seeds.forEach(seed => {
             const pos = new THREE.Vector3(...seed.position);
-            const dir = new THREE.Vector3(...seed.direction).normalize();
+            // direction may be [[x,y,z]] (nested) or [x,y,z] (flat) — flatten it
+            const rawDir = Array.isArray(seed.direction[0]) ? seed.direction[0] : seed.direction;
+            const dir = new THREE.Vector3(...rawDir).normalize();
 
             const geometry = new THREE.CylinderGeometry(seedRadius, seedRadius, seedLength, 16);
             const material = new THREE.MeshPhysicalMaterial({
