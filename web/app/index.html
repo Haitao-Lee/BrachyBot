@@ -2647,11 +2647,11 @@ body::before {
 /* ===========================================================
    DVH — sunken well
    =========================================================== */
-.dvh-container { padding: 0.95rem; flex: 1; overflow: hidden; position: relative; }
-/* Plotly hover tooltip — clip to chart container bounds.
-   The hoverlayer uses position:absolute relative to .dvh-container.
-   overflow:hidden clips the tooltip so it never escapes the chart. */
-.dvh-container .hoverlayer { overflow: hidden !important; pointer-events: none; z-index: 9999; }
+.dvh-container { padding: 0.95rem; flex: 1; overflow: visible; position: relative; }
+/* Plotly hover tooltip — visible but repositioned by JS clamp.
+   overflow:visible lets the tooltip render fully; JS repositions it
+   when it would overflow the container bounds. */
+.dvh-container .hoverlayer { overflow: visible !important; pointer-events: none; z-index: 9999; }
 .dvh-container .hoverlayer .hovertext {
     max-width: 220px;
     min-width: 100px;
@@ -2684,7 +2684,7 @@ body::before {
     border-radius: var(--radius-md);
     border: 1px solid var(--border-hairline);
     box-shadow: var(--inset-bottom), var(--shadow-xs);
-    overflow: hidden;  /* Clip Plotly hoverlabel to chart bounds */
+    overflow: visible;  /* Allow Plotly hoverlabel to render; JS clamp repositions */
     margin-bottom: 0.3rem;
     /* Do NOT use height:0 — it gives the container zero dimensions,
        causing Plotly's hover tooltip to misposition and overflow.
@@ -13458,7 +13458,7 @@ async function reconstructOrgan3D(id, silent = false) {
             if (successCount === 0 && !silent) {
                 addChat('error', 'No CTV labels found for 3D reconstruction');
             }
-            if (!silent) switchPanel('viewers', document.querySelectorAll('.panel-tab')[3]);
+            if (!silent) switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
             return;
         }
 
@@ -13508,7 +13508,7 @@ async function reconstructOrgan3D(id, silent = false) {
             data.organ_id = id;
             state.mesh3D = data;
             render3DMesh(data);
-            switchPanel('viewers', document.querySelectorAll('.panel-tab')[3]);
+            switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
         }
     } catch (e) {
         addChat('error', '3D reconstruction failed: ' + e.message);
@@ -17136,10 +17136,47 @@ function drawDVH() {
         displaylogo: false,
     });
 
-    // DVH tooltip: CSS-only clipping. No JS clamp needed —
-    // overflow:hidden on .dvh-container clips the hoverlayer.
-    // (Previous JS clamp was setting hl.style.overflow='visible'
-    // which overrode the CSS, making the tooltip escape again.)
+    // DVH tooltip clamp — MutationObserver fires immediately when
+    // Plotly positions the tooltip, BEFORE the browser paints.
+    // This repositions the SVG <g> so it stays inside the container.
+    (function _setupDvhTooltipClamp() {
+        const hl = dvhEl.querySelector('.hoverlayer');
+        if (!hl) return;
+        function clamp() {
+            const hovers = hl.querySelectorAll('.hovertext');
+            if (!hovers.length) return;
+            const rect = dvhEl.getBoundingClientRect();
+            hovers.forEach(g => {
+                const t = g.getAttribute('transform');
+                if (!t) return;
+                const m = t.match(/translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/);
+                if (!m) return;
+                let x = parseFloat(m[1]), y = parseFloat(m[2]);
+                // Get SVG scale: Plotly SVG viewBox maps to container pixels
+                const mainSvg = dvhEl.querySelector('.main-svg');
+                const vb = mainSvg ? mainSvg.viewBox.baseVal : null;
+                const svgW = vb && vb.width ? vb.width : rect.width;
+                const svgH = vb && vb.height ? vb.height : rect.height;
+                const sx = svgW / (rect.width || 1);
+                const sy = svgH / (rect.height || 1);
+                // Tooltip size estimate (SVG units)
+                const textEl = g.querySelector('text');
+                let tw = 120 * sx, th = 40 * sy;
+                if (textEl) { try { const bb = textEl.getBBox(); tw = bb.width + 10; th = bb.height + 10; } catch(_){} }
+                // Clamp: keep tooltip inside SVG coordinate space
+                let cx = Math.max(4, Math.min(x, svgW - tw));
+                let cy = Math.max(4, Math.min(y, svgH - th));
+                if (cx !== x || cy !== y) {
+                    g.setAttribute('transform', `translate(${cx},${cy})`);
+                }
+            });
+        }
+        // MutationObserver fires when Plotly modifies the hoverlayer
+        const obs = new MutationObserver(clamp);
+        obs.observe(hl, { childList: true, subtree: true, attributes: true, attributeFilter: ['transform'] });
+        // Also clamp on hover (for browsers that batch mutations)
+        dvhEl.addEventListener('mousemove', () => requestAnimationFrame(clamp));
+    })();
 
     // Click-to-pick (2026-06-16 user request): single-click on a
     // curve drops a pinned marker at that point with a label showing
@@ -17451,8 +17488,9 @@ async function refreshPlanningUI() {
         // 4f-1. Switch to viewers panel so the 3D canvas is visible.
         // Without this, the canvas has 0×0 dimensions (panel is hidden)
         // and the renderer can't draw anything — user sees a black screen.
+        // Tab order: Input[0] Analysis[1] Viewers[2] Report[3]
         try {
-            const viewersTab = document.querySelectorAll('.panel-tab')[3];
+            const viewersTab = document.querySelectorAll('.panel-tab')[2];
             if (viewersTab && !viewersTab.classList.contains('active')) {
                 switchPanel('viewers', viewersTab);
             }
