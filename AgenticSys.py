@@ -4385,7 +4385,6 @@ print(json.dumps(result))
 
                 # Use streaming LLM call with tools
                 prev_cleaned_len = 0
-                _buffered_text = ""  # Buffer text; only flush when no tool calls
                 for chunk in self.brain_router.chat_messages_stream(messages=messages, tools=tools_for_llm):
                     if isinstance(chunk, str):
                         # Text chunk from LLM
@@ -4398,11 +4397,8 @@ print(json.dumps(result))
                             new_text = cleaned_content[prev_cleaned_len:]
                             # Don't yield if new text starts with tool_call patterns
                             if not re.match(r'(\[\s*\{\s*["\']type["\']\s*:\s*["\']tool_use|```tool_call|<tool_call>|<minimax:tool_call>|\[\s*TOOL_CALL\s*\])', new_text):
-                                # BUFFER text instead of yielding immediately.
-                                # If the LLM emits tool calls in this same
-                                # response, the text is premature and should
-                                # not reach the user until all tools complete.
-                                _buffered_text += new_text
+                                # Yield text chunks IMMEDIATELY for real-time streaming.
+                                yield yield_event("text_chunk", {"text": new_text})
                             # Always advance offset so tool_call text is consumed
                             prev_cleaned_len = len(cleaned_content)
                     elif isinstance(chunk, dict):
@@ -4480,10 +4476,14 @@ print(json.dumps(result))
             if not tool_calls:
                 tool_calls = self._parse_tool_calls(content)
 
-            # FLUSH or DISCARD buffered text chunks. If the LLM
-            # emitted tool calls, the text is premature (tools
-            # Text chunks are yielded immediately during streaming.
-            # If tool calls exist, just discard any leftover buffer.
+            # If tool calls were found, the text from this iteration is
+            # premature (intermediate commentary, not the final answer).
+            # Reset accumulated_text so it doesn't leak into the final
+            # response displayed to the user after all tools complete.
+            if tool_calls and accumulated_text:
+                logger.info(f"[LLM loop] Discarding intermediate text ({len(accumulated_text)} chars) — tools will execute next")
+                accumulated_text = ""
+
             _pending_text_chunks.clear()
 
             if not tool_calls:
@@ -4492,13 +4492,6 @@ print(json.dumps(result))
                     logger.info(f"[LLM loop] Incomplete tool call detected, retrying iteration={iteration}")
                     messages.append({"role": "user", "content": "Your tool call was incomplete. Please call the next tool in the workflow (e.g., oar_segmentation, planning_pipeline). Use the proper tool call format."})
                     continue  # Retry without breaking
-
-                # FLUSH buffered text — this is the final response, no more tools.
-                # Previously text was yielded during streaming even when tool
-                # calls followed, causing premature display of incomplete answers.
-                if _buffered_text:
-                    yield yield_event("text_chunk", {"text": _buffered_text})
-                    _buffered_text = ""
 
                 # BUG FIX 2026-06-17 (LLM response still brief):
                 # the LLM keeps producing a 5-row summary table even
