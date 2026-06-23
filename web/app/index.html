@@ -14563,37 +14563,37 @@ async function loadCTVAndObstacleMeshes() {
         return 0xff4444;
     }
 
-    // Load OAR meshes IN PARALLEL (34 meshes × ~5s each = ~170s sequential → ~10s parallel)
+    // Load OAR meshes in batches of 5 (server can't handle 34 parallel requests)
     const oarIds = [...nonTravIds];
-    console.log(`[loadCTVAndObstacle] Loading ${oarIds.length} OAR meshes in parallel...`);
-    const oarPromises = oarIds.map(lid => (async () => {
-        try {
-            const res = await fetch(API + '/viewer/3d_mask', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ label_id: lid, source: 'oar', smoothing: 1 }),
-            });
-            if (!res.ok) { console.log(`[OAR] label ${lid}: HTTP ${res.status}`); return null; }
-            const data = await res.json();
-            if (data && data.success && data.vertex_count > 0 && data.face_count <= 100000) {
-                const organ = dataTreeState.organs.find(o => o.labelId === lid);
-                data.color = _parseOrganColor(organ);
-                data.organ_id = `organ_${lid}`;
-                data.label = (organ && (organ.label || organ.name)) || `OAR ${lid}`;
-                data.source = 'oar';
-                if (organ && typeof organ.opacity === 'number') data.opacity = organ.opacity;
-                console.log(`[OAR] label ${lid}: OK (${data.vertex_count} verts, ${data.face_count} faces)`);
-                return data;
-            }
-            console.log(`[OAR] label ${lid}: no data (verts=${data.vertex_count})`);
-        } catch (e) { console.warn(`[OAR] label ${lid} error:`, e.message); }
-        return null;
-    })());
-
-    const oarResults = await Promise.all(oarPromises);
+    console.log(`[loadCTVAndObstacle] Loading ${oarIds.length} OAR meshes in batches of 5...`);
     let oarMeshCount = 0;
-    for (const data of oarResults) {
-        if (data) { addMeshToScene(data); oarMeshCount++; }
+    const BATCH = 5;
+    for (let i = 0; i < oarIds.length; i += BATCH) {
+        const batch = oarIds.slice(i, i + BATCH);
+        const batchResults = await Promise.all(batch.map(lid => (async () => {
+            try {
+                const res = await fetch(API + '/viewer/3d_mask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ label_id: lid, source: 'oar', smoothing: 1 }),
+                });
+                if (!res.ok) return null;
+                const data = await res.json();
+                if (data && data.success && data.vertex_count > 0 && data.face_count <= 100000) {
+                    const organ = dataTreeState.organs.find(o => o.labelId === lid);
+                    data.color = _parseOrganColor(organ);
+                    data.organ_id = `organ_${lid}`;
+                    data.label = (organ && (organ.label || organ.name)) || `OAR ${lid}`;
+                    data.source = 'oar';
+                    if (organ && typeof organ.opacity === 'number') data.opacity = organ.opacity;
+                    return data;
+                }
+            } catch (e) { /* skip */ }
+            return null;
+        })()));
+        for (const data of batchResults) {
+            if (data) { addMeshToScene(data); oarMeshCount++; }
+        }
     }
     console.log(`[loadCTVAndObstacle] OAR meshes added: ${oarMeshCount}/${oarIds.length}. Total scene meshes: ${Object.keys(scene3D.meshes).length}`);
 }
