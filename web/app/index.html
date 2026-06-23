@@ -7672,8 +7672,15 @@ function _todoUpdateFromStep(todo, step) {
                 predOAR.node.remove();
                 todo.items = todo.items.filter(i => i !== predOAR);
             }
-            if (step.status === 'done') todo.markDone(ctvItem);
-            else if (step.status === 'pending') todo.markActive(ctvItem);
+            if (step.status === 'done') {
+                // Mark done — this is the OAR completion event
+                todo.markDone(ctvItem);
+            } else if (step.status === 'pending' && ctvItem.status !== 'done') {
+                // Only activate if NOT already done. When CTV done + OAR
+                // pending arrive in the same batch, reactivating a done
+                // item makes it stuck as "running".
+                todo.markActive(ctvItem);
+            }
             return ctvItem;
         }
     }
