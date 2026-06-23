@@ -17423,9 +17423,19 @@ async function refreshPlanningUI() {
             } catch (e) { console.warn('Dose overlay auto-load failed:', e); }
         }
 
-        // 4d-4f. Load 3D meshes in PARALLEL so slow OAR mesh generation
-        // doesn't block seeds/isosurfaces from appearing.
-        // Each promise has a 60s timeout to prevent infinite hangs.
+        // 4d. Switch to viewers panel FIRST so canvas has proper dimensions.
+        // Mesh loading needs a visible canvas (non-zero width/height) to render.
+        // Tab order: Input[0] Analysis[1] Viewers[2] Report[3]
+        try {
+            const viewersTab = document.querySelectorAll('.panel-tab')[2];
+            if (viewersTab && !viewersTab.classList.contains('active')) {
+                switchPanel('viewers', viewersTab);
+                // Wait one frame for layout to settle after panel switch
+                await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+            }
+        } catch (e) { console.warn('[refreshPlanningUI] switchPanel FAILED:', e); }
+
+        // 4e-4g. Now load 3D meshes (canvas is visible, has proper dimensions).
         const _meshPromises = [];
         function _withTimeout(promise, name, ms = 60000) {
             return Promise.race([
@@ -17434,20 +17444,20 @@ async function refreshPlanningUI() {
             ]).catch(e => console.warn(`[3D auto-load] ${name}:`, e.message));
         }
 
-        // 4d. Isodose surface auto-load
+        // 4e. Isodose surface auto-load
         if (data.has_dose) {
             _meshPromises.push(
                 _withTimeout(loadAllIsoSurfaces(), 'Isosurfaces')
             );
         }
 
-        // 4e. CTV + non-traversable OAR 3D mesh auto-load
+        // 4f. CTV + non-traversable OAR 3D mesh auto-load
         _meshPromises.push(
             _withTimeout(loadCTVAndObstacleMeshes(), 'CTV/OAR meshes')
                 .then(() => console.log('[3D auto-load] CTV/obstacle done. Meshes:', Object.keys(scene3D.meshes).length))
         );
 
-        // 4f. Seeds + needles 3D load
+        // 4g. Seeds + needles 3D load
         if (data.seeds && data.seeds.length > 0) {
             _meshPromises.push(
                 _withTimeout(loadSeeds3D(), 'Seeds')
@@ -17456,26 +17466,10 @@ async function refreshPlanningUI() {
         }
 
         // Wait for all 3D mesh loads to complete
-        // Report auto-fill must run BEFORE awaiting mesh promises
-        // because loadCTVAndObstacleMeshes fetches 30+ OAR meshes
-        // sequentially and can take 30+ seconds, blocking everything.
         try { if (typeof reportAutoFill === 'function') reportAutoFill(); } catch (_) {}
 
         await Promise.all(_meshPromises);
         console.log('[refreshPlanningUI] Mesh promises done. scene3D.meshes:', Object.keys(scene3D.meshes));
-
-        // 4f-1. Switch to viewers panel so the 3D canvas is visible.
-        // Without this, the canvas has 0×0 dimensions (panel is hidden)
-        // and the renderer can't draw anything — user sees a black screen.
-        // Tab order: Input[0] Analysis[1] Viewers[2] Report[3]
-        try {
-            const viewersTab = document.querySelectorAll('.panel-tab')[2];
-            console.log('[refreshPlanningUI] viewersTab:', viewersTab ? viewersTab.textContent.trim() : 'NOT FOUND', 'active:', viewersTab?.classList.contains('active'));
-            if (viewersTab && !viewersTab.classList.contains('active')) {
-                switchPanel('viewers', viewersTab);
-                console.log('[refreshPlanningUI] switchPanel viewers DONE');
-            }
-        } catch (e) { console.warn('[refreshPlanningUI] switchPanel FAILED:', e); }
 
         // 4f-2. Re-capture 3D figure AFTER meshes are loaded.
         // autoCaptureReportFigures ran before mesh promises resolved,
