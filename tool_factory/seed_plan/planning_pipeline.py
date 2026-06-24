@@ -1522,7 +1522,13 @@ class PlanningPipelineTool(BaseTool):
         def _notify(substep_name, status, content=None):
             """Forward a sub-step transition to the agent. Errors are
             swallowed (callback is best-effort telemetry, must never
-            break the tool)."""
+            break the tool).
+
+            For 'done' events, includes elapsed_ms in the content so
+            the frontend can display the REAL execution time instead of
+            measuring wall-clock time between SSE events (which can be
+            wrong when multiple events arrive in the same batch).
+            """
             if step_callback is None:
                 return
             try:
@@ -1537,7 +1543,7 @@ class PlanningPipelineTool(BaseTool):
         traj_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent)
         substep_timings["trajectory_init"] = round(time.time() - t0, 2)
         _notify("trajectory_init", "done" if traj_result.success else "error",
-                f"{len(traj_result.metadata.get('trajectories', []))} trajectories")
+                f"{len(traj_result.metadata.get('trajectories', []))} trajectories | elapsed_ms={int(substep_timings['trajectory_init']*1000)}")
         if not traj_result.success:
             return traj_result
         results["trajectories"] = traj_result.metadata.get("trajectories", [])
@@ -1548,7 +1554,8 @@ class PlanningPipelineTool(BaseTool):
         t0 = time.time()
         refine_result = self._step_trajectory_refine(ct_image, ctv_mask, oar_mask, agent)
         substep_timings["trajectory_refine"] = round(time.time() - t0, 2)
-        _notify("trajectory_refine", "done" if refine_result.success else "error")
+        _notify("trajectory_refine", "done" if refine_result.success else "error",
+                f"elapsed_ms={int(substep_timings['trajectory_refine']*1000)}")
         if not refine_result.success:
             return refine_result
         results["refined_trajectories"] = refine_result.metadata.get("refined_trajectories", [])
@@ -1560,7 +1567,7 @@ class PlanningPipelineTool(BaseTool):
         seed_result = self._step_seed_planning(ct_image, ctv_mask, oar_mask, mode, agent_config, agent)
         substep_timings["seed_planning"] = round(time.time() - t0, 2)
         _notify("seed_planning", "done" if seed_result.success else "error",
-                f"{seed_result.metadata.get('total_seeds', 0)} seeds")
+                f"{seed_result.metadata.get('total_seeds', 0)} seeds | elapsed_ms={int(substep_timings['seed_planning']*1000)}")
         if not seed_result.success:
             return seed_result
         results["seed_plan"] = seed_result.metadata.get("seed_plan", [])
@@ -1572,7 +1579,8 @@ class PlanningPipelineTool(BaseTool):
         t0 = time.time()
         dose_result = self._step_dose_calc(ct_image, ctv_mask, oar_mask, agent_config, agent)
         substep_timings["dose_calc"] = round(time.time() - t0, 2)
-        _notify("dose_calc", "done" if dose_result.success else "error")
+        _notify("dose_calc", "done" if dose_result.success else "error",
+                f"elapsed_ms={int(substep_timings['dose_calc']*1000)}")
         if dose_result.success:
             results["dose_distribution"] = dose_result.data
 
@@ -1582,7 +1590,8 @@ class PlanningPipelineTool(BaseTool):
         t0 = time.time()
         eval_result = self._step_dose_eval(ctv_mask, oar_mask, agent)
         substep_timings["dose_eval"] = round(time.time() - t0, 2)
-        _notify("dose_eval", "done" if eval_result.success else "error")
+        _notify("dose_eval", "done" if eval_result.success else "error",
+                f"elapsed_ms={int(substep_timings['dose_eval']*1000)}")
         if eval_result.success:
             results["dose_metrics"] = eval_result.metadata
 
