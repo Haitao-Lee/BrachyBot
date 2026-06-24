@@ -297,8 +297,8 @@ Capabilities:
             message=f"Added '{key}' to '{category}'"
         )
 
-    def _search_guidelines(self, keyword: str) -> ToolResult:
-        """Search the guidelines markdown file by keyword, returning only matching sections."""
+    def _search_guidelines(self, keyword: str, organ: str = None) -> ToolResult:
+        """Search the guidelines markdown file by keyword, returning matching sections with citations."""
         guidelines_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "clinical_kb", "guidelines_brachytherapy.md")
         if not os.path.exists(guidelines_path):
             return ToolResult(success=False, message="Guidelines file not found")
@@ -306,18 +306,41 @@ Capabilities:
         with open(guidelines_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # Split into sections by ## headers (skip preamble before first section)
-        # The actual format uses ## <a id="..."> not ## §
+        # Split into sections by ## headers
         import re
         parts = re.split(r'\n(?=## )', content)
         sections = [p for p in parts if p.strip().startswith('## ')]
+
+        # Search by keyword AND organ (if provided)
         keyword_lower = keyword.lower()
+        organ_lower = (organ or "").lower()
 
         matched = []
         for section in sections:
-            if keyword_lower in section.lower():
-                # Trim to reasonable length
-                trimmed = section[:2000] if len(section) > 2000 else section
+            section_lower = section.lower()
+            # Match keyword
+            kw_match = keyword_lower in section_lower if keyword_lower else True
+            # Match organ (check section header or content)
+            org_match = organ_lower in section_lower if organ_lower else True
+            if kw_match and org_match:
+                # Extract citations (PMID, DOI, URL) from the section
+                pmids = re.findall(r'\*\*PMID:\*\*\s*(\d+)', section)
+                dois = re.findall(r'\*\*DOI:\*\*\s*([^\s\n]+)', section)
+                urls = re.findall(r'\*\*URL:\*\*\s*(https?://[^\s\n]+)', section)
+                pubmed_links = re.findall(r'\(https://pubmed\.ncbi\.nlm\.nih\.gov/(\d+)/?\)', section)
+
+                citation = ""
+                if pmids:
+                    citation += f" PMID: {', '.join(pmids)}" + "".join(f" (https://pubmed.ncbi.nlm.nih.gov/{p}/)" for p in pmids)
+                if dois:
+                    citation += f" DOI: {', '.join(dois)}"
+                if urls and not pmids:
+                    citation += f" URL: {', '.join(urls)}"
+
+                # Trim section but ensure citations are included
+                trimmed = section[:3000] if len(section) > 3000 else section
+                if citation:
+                    trimmed += f"\n**Citations:**{citation}"
                 matched.append(trimmed)
 
         if not matched:
@@ -325,7 +348,7 @@ Capabilities:
 
         return ToolResult(
             success=True,
-            data={"keyword": keyword, "results": matched[:3], "total": len(matched)},
+            data={"keyword": keyword, "organ": organ, "results": matched[:5], "total": len(matched)},
             message=f"Found {len(matched)} guideline section(s) for '{keyword}'"
         )
 
@@ -383,7 +406,7 @@ Capabilities:
         elif action == "search":
             return self._search_kb(kwargs.get("keyword", ""))
         elif action == "guidelines":
-            return self._search_guidelines(kwargs.get("keyword", ""))
+            return self._search_guidelines(kwargs.get("keyword", ""), kwargs.get("organ", ""))
         elif action == "add":
             return self._add_entry(kwargs.get("data", {}))
         else:
