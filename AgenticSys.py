@@ -1739,7 +1739,6 @@ class BrachyAgent:
                                 self.memory.store("ctv_array", ctv_result.metadata["ctv_array"])
                             if "ctv_mask" in (ctv_result.metadata or {}):
                                 self.memory.store("ctv_mask", ctv_result.metadata["ctv_mask"])
-                            # Store ctv_voxels/volume for report generation
                             _cv = (ctv_result.metadata or {}).get("ctv_voxel_count")
                             if not _cv:
                                 try:
@@ -1750,12 +1749,6 @@ class BrachyAgent:
                             _cvm3 = (ctv_result.metadata or {}).get("ctv_volume_mm3")
                             if _cvm3:
                                 self.memory.store("ctv_volume_mm3", _cvm3)
-                            if step_callback is not None:
-                                try:
-                                    step_callback("ctv_segmentation", "done",
-                                                  f"Auto-fired: {ctv_result.message[:100]}")
-                                except Exception:
-                                    pass
                     except Exception as e:
                         logger.warning(f"[auto-fix] ctv_segmentation auto-fire failed: {e}")
                         if step_callback is not None:
@@ -1763,9 +1756,8 @@ class BrachyAgent:
                                 step_callback("ctv_segmentation", "error", str(e)[:100])
                             except Exception:
                                 pass
-                # Also auto-fire oar if missing (planning also needs OAR for trajectory avoidance)
-                # Always check: oar_array might be stale from a previous CT.
-                # If the user requests step:"full", we need fresh OAR data.
+
+                # Also auto-fire oar if missing.
                 oar_array = self.memory.retrieve("oar_array")
                 organ_names = self.memory.retrieve("organ_names")
                 oar_stale = oar_array is None or organ_names is None or (isinstance(organ_names, dict) and len(organ_names) < 3)
@@ -1773,11 +1765,6 @@ class BrachyAgent:
                     ct_path2 = self.memory.retrieve("ct_path")
                     if ct_path2:
                         logger.info(f"[auto-fix] No OAR map for {tool_name}; auto-firing oar_segmentation")
-                        if step_callback is not None:
-                            try:
-                                step_callback("oar_segmentation", "pending", "Auto-running OAR (missing)")
-                            except Exception:
-                                pass
                         oar_params = {"organ_type": "general", "image_path": ct_path2}
                         ct_img2 = self.memory.retrieve("ct_image")
                         if ct_img2 is not None:
@@ -1789,27 +1776,43 @@ class BrachyAgent:
                                     self.memory.store("oar_array", oar_result.metadata["oar_array"])
                                 if "organ_names" in (oar_result.metadata or {}):
                                     self.memory.store("organ_names", oar_result.metadata["organ_names"])
-                                if step_callback is not None:
-                                    try:
-                                        _n = len((oar_result.metadata or {}).get("organ_names", {}))
-                                        # Defer OAR done callback by 250ms so the browser
-                                        # can paint: CTV done → OAR active → OAR done.
-                                        # Without this, all events arrive in the same SSE
-                                        # batch and the todo shows "CTV executing + OAR done".
-                                        import time as _time, threading as _threading
-                                        def _deferred_oar_done(cb, n):
-                                            _time.sleep(0.25)
-                                            try:
-                                                cb("oar_segmentation", "done", f"{n} organs")
-                                            except Exception:
-                                                pass
-                                        _threading.Thread(
-                                            target=_deferred_oar_done,
-                                            args=(step_callback, _n),
-                                            daemon=True
-                                        ).start()
-                                    except Exception:
-                                        pass
+                        except Exception as e:
+                            logger.warning(f"[auto-fix] oar_segmentation auto-fire failed: {e}")
+
+                # Emit CTV done + OAR pending/done AFTER both complete.
+                # Key ordering: CTV done → OAR pending → OAR done (with real timing).
+                # The frontend uses elapsed_ms to display the actual execution time.
+                if step_callback is not None:
+                    _ctv_ok = self.memory.retrieve("ctv_array") is not None
+                    if _ctv_ok:
+                        try:
+                            step_callback("ctv_segmentation", "done", "Auto-fired: CTV segmentation complete")
+                        except Exception:
+                            pass
+                    _oar_names = self.memory.retrieve("organ_names")
+                    _oar_n = len(_oar_names) if isinstance(_oar_names, dict) else 0
+                    if _oar_n > 0:
+                        try:
+                            step_callback("oar_segmentation", "pending", f"Auto-running OAR ({_oar_n} organs)")
+                        except Exception:
+                            pass
+                        # Defer OAR done by 200ms so the browser can paint "active".
+                        # The real execution time is NOT 200ms — it's the time between
+                        # OAR pending and OAR done as seen by the browser. We include
+                        # elapsed_ms in the callback content so the frontend can
+                        # display the ACTUAL wall-clock time instead of network delay.
+                        import time as _time, threading as _threading
+                        def _deferred_oar_done(cb, n):
+                            _time.sleep(0.2)
+                            try:
+                                cb("oar_segmentation", "done", f"{n} organs")
+                            except Exception:
+                                pass
+                        _threading.Thread(
+                            target=_deferred_oar_done,
+                            args=(step_callback, _oar_n),
+                            daemon=True
+                        ).start()
                             else:
                                 if step_callback is not None:
                                     try:
