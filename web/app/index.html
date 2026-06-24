@@ -2423,10 +2423,8 @@ body::before {
     height: 480px;          /* generous default — fits 8 DVH curves comfortably */
     max-height: none;       /* no upper cap — user can drag up to 900px and
                                the outer scrollbar takes care of the rest */
-    overflow: visible;      /* CRITICAL: allow Plotly hover tooltip to escape
-                               the section boundary. Without this, the
-                               hoverlabel is clipped by the parent's
-                               overflow:hidden. */
+    overflow: hidden;       /* Plotly hoverlabel is disabled; overflow
+                               hidden prevents any tooltip leakage. */
 }
 #metricsOAR {
     /* Natural height — the table sets its own size based on row count.
@@ -2648,27 +2646,16 @@ body::before {
    DVH — sunken well
    =========================================================== */
 .dvh-container { padding: 0.95rem; flex: 1; overflow: hidden; position: relative; }
-/* Plotly hoverlabel is disabled (hoverlabel.visible=false in layout).
-   DVH tooltip uses a mousemove-based approach with a fixed-position div
-   appended to document.body, so no overflow hacks are needed. */
-.dvh-container .hoverlayer { pointer-events: none; }
-.dvh-container .hoverlayer .hovertext {
-    max-width: 220px;
-    min-width: 100px;
-    white-space: normal;
-    word-wrap: break-word;
-}
-/* Force SVG text to stay inside the tooltip rect.
-   Plotly renders hoverlabels as SVG <g> with a <rect> bg and
-   <text> elements. The text can overflow the rect when using
-   CJK fonts due to different baseline metrics. We force
-   dominant-baseline and dy to anchor text inside the box. */
+/* DVH tooltip uses a mousemove-based approach with a fixed-position div
+   appended to document.body. Plotly's native hoverlabel is fully disabled. */
+.dvh-container .hoverlayer,
+.dvh-container .hoverlayer *,
+.dvh-container .hoverlayer .hovertext,
 .dvh-container .hoverlayer .hovertext text {
-    text-anchor: start !important;
-    dominant-baseline: central !important;
-}
-.dvh-container .hoverlayer .hovertext .nums > text {
-    dominant-baseline: central !important;
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    opacity: 0 !important;
 }
 
 .dvh-container {
@@ -14419,23 +14406,24 @@ async function loadAllIsoSurfaces() {
         dataTreeState.planning.doseLevels = [];
     }
 
-    // The dose_distribution array is in NORMALIZED units (0 to ~1.0,
-    // where 1.0 = prescription dose). The dose_isosurface endpoint
-    // expects normalized thresholds. The config values [0.5, 0.75, 1.0]
-    // are already in normalized units — send them directly.
+    // The dose_distribution array is in ABSOLUTE Gy units (values up
+    // to ~11000 Gy near seeds). The config iso_dose_values [0.5, 0.75,
+    // 1.0] are RELATIVE multipliers of the prescription dose. Convert
+    // to absolute Gy: 0.5×120=60, 0.75×120=90, 1.0×120=120 Gy.
+    const rxGy = (window.reportForm && window.reportForm.planning
+        && window.reportForm.planning.prescriptionGy) || 120;
     for (let i = 0; i < values.length; i++) {
         const v_rel = values[i];
-        // Use relative value directly (normalized units, matching dose array)
-        const v = parseFloat(v_rel.toFixed(4));
-        // Color: pick the i-th color from the config array. With 4 levels
-        // and 8 colors, the inner 2 levels reuse colors 4-5 (orange→red).
+        const v = parseFloat((v_rel * rxGy).toFixed(2));
+        const absGy = v.toFixed(0);
+        // Color: pick the i-th color from the config array.
         const c = colors[i] || colors[colors.length - 1] || [0, 1, 0];
         const color = ((c[0] * 255) << 16) | ((c[1] * 255) << 8) | (c[2] * 255);
         const opacity = (opacities[i] !== undefined) ? opacities[i] : 0.3;
         try {
-            console.log(`[IsoSurf] Loading ${v} normalized (${absGy} Gy) (color=${color.toString(16)}, opacity=${opacity})...`);
+            console.log(`[IsoSurf] Loading ${v} Gy (color=${color.toString(16)}, opacity=${opacity})...`);
             await loadDoseIsosurface(v, color);
-            console.log(`[IsoSurf] ${v} normalized: mesh=${scene3D.meshes['dose_iso_'+v] ? 'loaded' : 'FAILED'}`);
+            console.log(`[IsoSurf] ${v} Gy: mesh=${scene3D.meshes['dose_iso_'+v] ? 'loaded' : 'FAILED'}`);
             // Override the just-added mesh's opacity with the per-level
             // config value (loadDoseIsosurface uses a hard-coded 0.3).
             const mesh = scene3D.meshes[`dose_iso_${v}`];
@@ -14443,23 +14431,9 @@ async function loadAllIsoSurfaces() {
                 mesh.material.opacity = opacity;
             }
             // Mirror into data tree with the config opacity.
-            // 2026-06-16 fix: check for an existing level with this
-            // threshold BEFORE pushing — loadDoseIsosurface above
-            // already pushed a baseline entry; without this guard
-            // we'd get two entries per level (the user reported
-            // "每个剂量下都有两个名字颜色原因 label image 重复").
-            // Also: store the level in ABSOLUTE Gy (multiplied by
-            // prescription) so the data tree label can show "120 Gy"
-            // rather than the raw "1.0× Rx" multiplier that confused
-            // the user.
             if (dataTreeState && dataTreeState.planning) {
                 const existing = dataTreeState.planning.doseLevels
                     .find(d => Math.abs(d.threshold - v) < 1e-6);
-                // v is in normalized units (0.5, 0.75, 1.0).
-                // Convert to Gy for display label: v × 120 = 60, 90, 120 Gy.
-                const rxDisplay = (window.reportForm && window.reportForm.planning
-                    && window.reportForm.planning.prescriptionGy) || 120;
-                const absGy = (v * rxDisplay).toFixed(0);
                 if (!existing) {
                     dataTreeState.planning.doseLevels.push({
                         threshold: v,
