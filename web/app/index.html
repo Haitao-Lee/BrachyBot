@@ -13496,17 +13496,18 @@ function init3DScene() {
 
     // OrbitControls: 3D Slicer style — left=rotate, right=pan, scroll=zoom
     scene3D.controls = new THREE.OrbitControls(scene3D.camera, scene3D.renderer.domElement);
+    // 3D Slicer-like interaction: responsive rotation, low inertia, fast zoom
     scene3D.controls.enableDamping = true;
-    scene3D.controls.dampingFactor = 0.15;
-    scene3D.controls.rotateSpeed = 0.5;
-    scene3D.controls.zoomSpeed = 1.5;
-    scene3D.controls.panSpeed = 1.0;
+    scene3D.controls.dampingFactor = 0.08;     // Low inertia — more direct response
+    scene3D.controls.rotateSpeed = 1.2;        // Fast rotation
+    scene3D.controls.zoomSpeed = 2.0;          // Fast zoom
+    scene3D.controls.panSpeed = 1.5;           // Fast pan
     scene3D.controls.screenSpacePanning = true;
     scene3D.controls.enablePan = true;
     scene3D.controls.enableZoom = true;
     scene3D.controls.enableRotate = true;
-    scene3D.controls.minDistance = 10;
-    scene3D.controls.maxDistance = 2000;
+    scene3D.controls.minDistance = 5;
+    scene3D.controls.maxDistance = 3000;
     scene3D.controls.mouseButtons = {
         LEFT: THREE.MOUSE.ROTATE,
         MIDDLE: THREE.MOUSE.DOLLY,

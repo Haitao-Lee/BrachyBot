@@ -1939,27 +1939,51 @@ def create_app(config: Optional[Dict] = None):
                 logger.warning("[seeds_3d] No resampled_ct found, returning raw coordinates")
 
             def _voxel_to_world(voxel_pos):
-                """Convert planning grid voxel coords to world coords."""
+                """Convert planning grid voxel coords to world coords.
+
+                Seeds from get_close_points use np.argwhich which returns
+                (i,j,k) order — same as SimpleITK (X,Y,Z). The position_transform
+                function assumes (k,j,i) and reverses, so we must NOT use it.
+                Instead, apply spacing + direction + origin directly.
+                """
                 if resampled_ct is None:
                     return voxel_pos.tolist()
-                from plans.utilizations import position_transform
                 try:
-                    world = position_transform(resampled_ct, np.array(voxel_pos).reshape(-1))
-                    return world[0].tolist() if len(world.shape) > 1 else world.tolist()
+                    import numpy as _np
+                    origin = _np.array(resampled_ct.GetOrigin())
+                    spacing = _np.array(resampled_ct.GetSpacing())
+                    direction = _np.array(resampled_ct.GetDirection()).reshape(3, 3)
+                    # Seeds are already in (i,j,k) = (X,Y,Z) order — no reversal needed
+                    pt = _np.array(voxel_pos, dtype=_np.float64).flatten()[:3]
+                    world = (pt * spacing) @ direction.T + origin
+                    return world.tolist()
                 except Exception as e:
-                    logger.warning(f"[seeds_3d] position_transform failed: {e}")
+                    logger.warning(f"[seeds_3d] voxel_to_world failed: {e}")
                     return voxel_pos.tolist()
 
             def _voxel_dir_to_world(voxel_dir):
-                """Convert planning grid voxel direction to world direction."""
+                """Convert planning grid voxel direction to world direction.
+
+                Directions are vectors (not positions) — apply direction matrix
+                and spacing but NOT origin offset. Same (i,j,k) convention
+                as positions.
+                """
                 if resampled_ct is None:
                     return voxel_dir.tolist()
-                from plans.utilizations import direction_transform
                 try:
-                    world_dir = direction_transform(resampled_ct, np.array(voxel_dir).reshape(-1))
+                    import numpy as _np
+                    spacing = _np.array(resampled_ct.GetSpacing())
+                    direction = _np.array(resampled_ct.GetDirection()).reshape(3, 3)
+                    # Directions: scale by spacing + apply direction, no origin
+                    d = _np.array(voxel_dir, dtype=_np.float64).flatten()[:3]
+                    world_dir = (d * spacing) @ direction.T
+                    # Normalize
+                    norm = _np.linalg.norm(world_dir)
+                    if norm > 1e-10:
+                        world_dir = world_dir / norm
                     return world_dir.tolist()
                 except Exception as e:
-                    logger.warning(f"[seeds_3d] direction_transform failed: {e}")
+                    logger.warning(f"[seeds_3d] direction transform failed: {e}")
                     return voxel_dir.tolist()
 
             seeds = []
@@ -1986,6 +2010,8 @@ def create_app(config: Optional[Dict] = None):
 
                     if i == 0 and j == 0:
                         logger.info(f"[seeds_3d] first seed: voxel={pos_voxel.tolist()}, world={pos_world}")
+                        if resampled_ct is not None:
+                            logger.info(f"[seeds_3d] resampled_ct: size={resampled_ct.GetSize()}, spacing={resampled_ct.GetSpacing()}, origin={resampled_ct.GetOrigin()}, direction={resampled_ct.GetDirection()}")
 
                     seed_data = {
                         "id": f"seed_{i}_{j}",
