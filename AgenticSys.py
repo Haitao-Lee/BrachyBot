@@ -1813,19 +1813,6 @@ class BrachyAgent:
                             args=(step_callback, _oar_n),
                             daemon=True
                         ).start()
-                            else:
-                                if step_callback is not None:
-                                    try:
-                                        step_callback("oar_segmentation", "error", oar_result.error if oar_result else "failed")
-                                    except Exception:
-                                        pass
-                        except Exception as e:
-                            logger.warning(f"[auto-fix] oar_segmentation auto-fire failed: {e}")
-                            if step_callback is not None:
-                                try:
-                                    step_callback("oar_segmentation", "error", str(e)[:100])
-                                except Exception:
-                                    pass
         if progress_callback:
             progress_callback(f"Preparing {tool_name}...", 10)
 
