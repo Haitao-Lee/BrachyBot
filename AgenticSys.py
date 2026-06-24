@@ -3314,6 +3314,18 @@ print(json.dumps(result))
             enhanced_context += "YOU MAY use clinical_kb (for clinical knowledge queries)\n"
             enhanced_context += "For in-app Report panel requests, call report_auto_fill; for file export, call report_generator.\n"
             enhanced_context += "Provide comprehensive, detailed clinical responses.\n\n"
+        # === ROUTING INTENT CLAUSE ===
+        # When the router classifies the intent as "follow_up" (user asks
+        # for detail/clarification about an existing plan), tell the LLM
+        # to use existing data and NOT re-run planning tools. Without this,
+        # the LLM sees planning keywords and re-executes the pipeline.
+        _routing_intent = getattr(self.memory, '_last_routing_intent', None)
+        if _routing_intent == 'follow_up':
+            enhanced_context += "\n### ⚠️ ROUTING: FOLLOW-UP REQUEST\n"
+            enhanced_context += "This is a follow-up question about an EXISTING plan. "
+            enhanced_context += "The planning results are already in memory. "
+            enhanced_context += "DO NOT call planning_pipeline, ctv_segmentation, or oar_segmentation.\n"
+            enhanced_context += "Use existing data to answer. You may call clinical_kb for reference data.\n\n"
         if self.enhanced:
             try:
                 pre_ctx = self.enhanced.pre_task_hook(message)
@@ -4151,6 +4163,18 @@ print(json.dumps(result))
             enhanced_context += "YOU MAY use clinical_kb (for clinical knowledge queries)\n"
             enhanced_context += "For in-app Report panel requests, call report_auto_fill; for file export, call report_generator.\n"
             enhanced_context += "Provide comprehensive, detailed clinical responses.\n\n"
+        # === ROUTING INTENT CLAUSE ===
+        # When the router classifies the intent as "follow_up" (user asks
+        # for detail/clarification about an existing plan), tell the LLM
+        # to use existing data and NOT re-run planning tools. Without this,
+        # the LLM sees planning keywords and re-executes the pipeline.
+        _routing_intent = getattr(self.memory, '_last_routing_intent', None)
+        if _routing_intent == 'follow_up':
+            enhanced_context += "\n### ⚠️ ROUTING: FOLLOW-UP REQUEST\n"
+            enhanced_context += "This is a follow-up question about an EXISTING plan. "
+            enhanced_context += "The planning results are already in memory. "
+            enhanced_context += "DO NOT call planning_pipeline, ctv_segmentation, or oar_segmentation.\n"
+            enhanced_context += "Use existing data to answer. You may call clinical_kb for reference data.\n\n"
         if self.enhanced:
             try:
                 pre_ctx = self.enhanced.pre_task_hook(message)
@@ -5441,6 +5465,8 @@ print(json.dumps(result))
                 loop.close()
                 _ma_routing = ma_result.get("routing")
                 if _ma_routing:
+                    # Store routing intent for context building
+                    self.memory._last_routing_intent = _ma_routing.intent
                     step = add_step("thinking", "Multi-Agent Router",
                                   f"Intent: {_ma_routing.intent}, Complexity: {_ma_routing.complexity}, "
                                   f"Review: {'Required' if _ma_routing.requires_review else 'Optional'}")
