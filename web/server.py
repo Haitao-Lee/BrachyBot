@@ -2071,30 +2071,52 @@ def create_app(config: Optional[Dict] = None):
                     seeds.append(seed_data)
                     needle_seeds.append(pos_world)
 
-                # Create needle trajectory line (extended beyond seeds)
-                if trajectory is not None and len(trajectory) >= 2:
-                    traj_start = np.array(trajectory[0], dtype=np.float64).flatten()[:3]
-                    traj_dir = np.array(trajectory[1], dtype=np.float64).flatten()[:3]
-                    traj_start_world = _voxel_to_world(traj_start)
-                    traj_dir_world = _voxel_dir_to_world(traj_dir)
+                # Build needle line from SEED POSITIONS (matching ref.py).
+                # ref.py constructs needle lines by projecting seeds onto
+                # the direction vector, finding shallow/deep extremes, and
+                # extending beyond. We do the same using world-coordinate
+                # seed positions — this avoids trajectory coordinate system
+                # mismatches.
+                if len(needle_seeds) >= 2:
+                    positions = np.array(needle_seeds, dtype=np.float64)
+                    # Use the seed direction (already in world coords) for extension
+                    dir_vec = np.array(direc_world, dtype=np.float64)
+                    dir_norm = np.linalg.norm(dir_vec)
+                    if dir_norm > 1e-10:
+                        dir_vec = dir_vec / dir_norm
+                    else:
+                        dir_vec = np.array([0.0, 0.0, 1.0])
 
-                    # Extend trajectory line through and beyond seed positions
-                    all_points = [traj_start_world]
-                    all_points.extend(needle_seeds)
-                    # Add extension point beyond last seed
-                    if needle_seeds and traj_dir_world:
-                        last = np.array(needle_seeds[-1])
-                        ext = last + np.array(traj_dir_world) * 20  # 20mm extension
-                        all_points.append(ext.tolist())
+                    p0 = positions[0]
+                    # Project all seeds onto direction to find extent
+                    t_values = np.dot(positions - p0, dir_vec)
+                    t_min = float(np.min(t_values))
+                    t_max = float(np.max(t_values))
+                    shallow_center = p0 + t_min * dir_vec
+                    deep_center = p0 + t_max * dir_vec
+
+                    # Extend: needle tail (entry point) 100mm behind shallowest seed
+                    DIRECTION_EXTENSION = 100.0
+                    start_point = shallow_center - DIRECTION_EXTENSION * dir_vec
+                    # Needle tip: 2mm beyond deepest seed
+                    SEED_LENGTH = 4.5
+                    end_point = deep_center + (SEED_LENGTH / 2.0) * dir_vec
+
+                    all_points = [end_point.tolist(), start_point.tolist()]
                     needles.append({
                         "id": f"needle_{i}",
                         "points": all_points,
                         "trajectory_id": i,
                     })
-                elif len(needle_seeds) >= 2:
+                elif len(needle_seeds) == 1:
+                    sp = np.array(needle_seeds[0], dtype=np.float64)
+                    dir_vec = np.array(direc_world, dtype=np.float64)
+                    dn = np.linalg.norm(dir_vec)
+                    if dn > 1e-10: dir_vec = dir_vec / dn
+                    else: dir_vec = np.array([0.0, 0.0, 1.0])
                     needles.append({
                         "id": f"needle_{i}",
-                        "points": needle_seeds,
+                        "points": [(sp + dir_vec * 10).tolist(), (sp - dir_vec * 100).tolist()],
                         "trajectory_id": i,
                     })
 
