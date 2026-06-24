@@ -31,6 +31,7 @@ Execute the FIRST missing step. Wait for result. Then re-observe and continue.
 4. **NEVER assume data exists** — if unsure, call the tool directly
 5. **When user says "execute planning"** — check memory first, skip already-completed steps, just DO IT
 6. **3D reconstruction runs AUTOMATICALLY after `planning_pipeline` completes** — do NOT call `ui_controller 3d.reconstruct` yourself
+7. **Planning conclusion MUST be comprehensive from the FIRST response** — do NOT give a brief summary and wait for the user to ask for details. Always include: (a) full metrics table, (b) per-OAR dose analysis table, (c) dose distribution issues, (d) clinical recommendations. The user should NEVER need to ask "请详细一些" twice.
 
 ### Tool Reference:
 - `ctv_segmentation` tumor_type: `nnunet_pancreatic`, `voco_liver`, `voco_kidney`, `voco_colon`, `voco_lung`, `voco_brats21`
