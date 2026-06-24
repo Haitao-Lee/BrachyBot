@@ -60,18 +60,13 @@
         "device": "cuda"
     },
     "iso_dose_params": {
-        "iso_dose_values": [1.0, 1.5, 2.0, 4.0],
+        "iso_dose_values": [0.5, 0.75, 1.0],
         "iso_colors": [
+            [0, 0.5, 1],
             [0, 1, 0],
-            [0, 1, 1],
-            [1, 1, 0],
-            [1, 0.5, 0],
-            [1, 0, 0],
-            [1, 0, 1],
-            [0.5, 0, 0.5],
-            [0, 0.5, 1]
+            [1, 0.5, 0]
         ],
-        "iso_opacities": [0.3, 0.2, 0.1, 0.05],
+        "iso_opacities": [0.15, 0.25, 0.35],
         "num_iterations": 50,
         "rela_factor": 0.1,
         "iso_opacity": 0.3
