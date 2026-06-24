@@ -147,6 +147,15 @@ class AgentMemory:
         self.deviation_threshold_mm: float = 2.0
         self._ui_state: Dict = {}
         self.user_lang: str = "en"  # Detected once per message, used everywhere
+        # Structured conversation state — tracks what has been done
+        # so the router and context builder can make state-aware decisions.
+        self.conversation_state: Dict = {
+            "ctv_segmented": False,
+            "oar_segmented": False,
+            "planning_completed": False,
+            "last_tool_calls": [],
+            "data_available": [],
+        }
 
         # Smart context manager for intelligent context selection
         try:
@@ -2486,6 +2495,21 @@ class BrachyAgent:
         elif tool_name == "trajectory_planning" and "trajectories" in meta:
             self.memory.store("trajectories", meta["trajectories"])
 
+        # Update structured conversation state after every successful tool.
+        # This drives the router's state-aware classification and the
+        # context builder's structured summary.
+        cs = self.memory.conversation_state
+        if tool_name == "ctv_segmentation":
+            cs["ctv_segmented"] = True
+        elif tool_name == "oar_segmentation":
+            cs["oar_segmented"] = True
+        elif tool_name == "planning_pipeline":
+            cs["planning_completed"] = True
+        if tool_name not in cs["last_tool_calls"]:
+            cs["last_tool_calls"].append(tool_name)
+        # Keep only last 10 tool calls
+        cs["last_tool_calls"] = cs["last_tool_calls"][-10:]
+
     @staticmethod
     def _format_tool_result(tool_name: str, result, lang: str = "en") -> str:
         """Format tool result for display. Uses result.display, then auto-generates from metadata."""
@@ -3314,18 +3338,6 @@ print(json.dumps(result))
             enhanced_context += "YOU MAY use clinical_kb (for clinical knowledge queries)\n"
             enhanced_context += "For in-app Report panel requests, call report_auto_fill; for file export, call report_generator.\n"
             enhanced_context += "Provide comprehensive, detailed clinical responses.\n\n"
-        # === ROUTING INTENT CLAUSE ===
-        # When the router classifies the intent as "follow_up" (user asks
-        # for detail/clarification about an existing plan), tell the LLM
-        # to use existing data and NOT re-run planning tools. Without this,
-        # the LLM sees planning keywords and re-executes the pipeline.
-        _routing_intent = getattr(self.memory, '_last_routing_intent', None)
-        if _routing_intent == 'follow_up':
-            enhanced_context += "\n### ⚠️ ROUTING: FOLLOW-UP REQUEST\n"
-            enhanced_context += "This is a follow-up question about an EXISTING plan. "
-            enhanced_context += "The planning results are already in memory. "
-            enhanced_context += "DO NOT call planning_pipeline, ctv_segmentation, or oar_segmentation.\n"
-            enhanced_context += "Use existing data to answer. You may call clinical_kb for reference data.\n\n"
         if self.enhanced:
             try:
                 pre_ctx = self.enhanced.pre_task_hook(message)
@@ -3409,6 +3421,21 @@ print(json.dumps(result))
         if self.memory.smart_context:
             # Get relevant context based on the current message
             smart_context_messages = self.memory.smart_context.get_relevant_context(message)
+            # Add structured conversation state so the LLM knows what
+            # data is available WITHOUT having to parse raw conversation.
+            cs = self.memory.conversation_state
+            state_lines = []
+            if cs.get("ctv_segmented"):
+                state_lines.append("- CTV segmentation: completed")
+            if cs.get("oar_segmented"):
+                state_lines.append("- OAR segmentation: completed")
+            if cs.get("planning_completed"):
+                state_lines.append("- Treatment planning: completed")
+            if cs.get("last_tool_calls"):
+                state_lines.append(f"- Recent tools: {', '.join(cs['last_tool_calls'][-5:])}")
+            if state_lines:
+                state_summary = "[Conversation State — what has been done]\n" + "\n".join(state_lines)
+                messages.append({"role": "system", "content": state_summary})
             for msg in smart_context_messages:
                 content = msg.get("content", "")
                 role = msg.get("role", "user")
@@ -3418,11 +3445,8 @@ print(json.dumps(result))
                     content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
                     if not content or len(content) < 10:
                         continue
-                # Label as prior context. The LLM must USE this data for
-                # follow-up questions (e.g. "请详细一些"), NOT re-run tools.
-                # Previous label "ignore for current task" caused the LLM
-                # to discard planning results and re-execute planning_pipeline.
-                messages.append({"role": role, "content": f"[Prior context — use this data, do NOT re-run tools]\n{content}"})
+                # Prior context — included as reference data, not instructions.
+                messages.append({"role": role, "content": content})
         else:
             # Fallback: use last 12 messages
             msg_history = self.memory.conversation[-12:]
@@ -4163,18 +4187,6 @@ print(json.dumps(result))
             enhanced_context += "YOU MAY use clinical_kb (for clinical knowledge queries)\n"
             enhanced_context += "For in-app Report panel requests, call report_auto_fill; for file export, call report_generator.\n"
             enhanced_context += "Provide comprehensive, detailed clinical responses.\n\n"
-        # === ROUTING INTENT CLAUSE ===
-        # When the router classifies the intent as "follow_up" (user asks
-        # for detail/clarification about an existing plan), tell the LLM
-        # to use existing data and NOT re-run planning tools. Without this,
-        # the LLM sees planning keywords and re-executes the pipeline.
-        _routing_intent = getattr(self.memory, '_last_routing_intent', None)
-        if _routing_intent == 'follow_up':
-            enhanced_context += "\n### ⚠️ ROUTING: FOLLOW-UP REQUEST\n"
-            enhanced_context += "This is a follow-up question about an EXISTING plan. "
-            enhanced_context += "The planning results are already in memory. "
-            enhanced_context += "DO NOT call planning_pipeline, ctv_segmentation, or oar_segmentation.\n"
-            enhanced_context += "Use existing data to answer. You may call clinical_kb for reference data.\n\n"
         if self.enhanced:
             try:
                 pre_ctx = self.enhanced.pre_task_hook(message)
@@ -4258,6 +4270,21 @@ print(json.dumps(result))
         if self.memory.smart_context:
             # Get relevant context based on the current message
             smart_context_messages = self.memory.smart_context.get_relevant_context(message)
+            # Add structured conversation state so the LLM knows what
+            # data is available WITHOUT having to parse raw conversation.
+            cs = self.memory.conversation_state
+            state_lines = []
+            if cs.get("ctv_segmented"):
+                state_lines.append("- CTV segmentation: completed")
+            if cs.get("oar_segmented"):
+                state_lines.append("- OAR segmentation: completed")
+            if cs.get("planning_completed"):
+                state_lines.append("- Treatment planning: completed")
+            if cs.get("last_tool_calls"):
+                state_lines.append(f"- Recent tools: {', '.join(cs['last_tool_calls'][-5:])}")
+            if state_lines:
+                state_summary = "[Conversation State — what has been done]\n" + "\n".join(state_lines)
+                messages.append({"role": "system", "content": state_summary})
             for msg in smart_context_messages:
                 content = msg.get("content", "")
                 role = msg.get("role", "user")
@@ -4267,11 +4294,8 @@ print(json.dumps(result))
                     content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
                     if not content or len(content) < 10:
                         continue
-                # Label as prior context. The LLM must USE this data for
-                # follow-up questions (e.g. "请详细一些"), NOT re-run tools.
-                # Previous label "ignore for current task" caused the LLM
-                # to discard planning results and re-execute planning_pipeline.
-                messages.append({"role": role, "content": f"[Prior context — use this data, do NOT re-run tools]\n{content}"})
+                # Prior context — included as reference data, not instructions.
+                messages.append({"role": role, "content": content})
         else:
             # Fallback: use last 12 messages
             msg_history = self.memory.conversation[-12:]
@@ -5461,7 +5485,9 @@ print(json.dumps(result))
             try:
                 import asyncio
                 loop = asyncio.new_event_loop()
-                ma_result = loop.run_until_complete(self.multi_agent_wrapper.process_request(message))
+                ma_result = loop.run_until_complete(
+                    self.multi_agent_wrapper.process_request(message, self.memory.conversation_state)
+                )
                 loop.close()
                 _ma_routing = ma_result.get("routing")
                 if _ma_routing:

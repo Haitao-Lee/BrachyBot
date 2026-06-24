@@ -128,8 +128,9 @@ class RouterAgent(LLMCapableAgent):
         """
         user_input = message.content if isinstance(message.content, str) else str(message.content)
 
-        # Try quick pattern matching first
-        routing = self._quick_route(user_input)
+        # Try quick pattern matching first (with conversation state awareness)
+        conversation_state = getattr(self, '_conversation_state', None)
+        routing = self._quick_route(user_input, conversation_state)
 
         # If no clear match, use LLM for complex routing
         if routing.confidence < 0.6 and self.llm_callback:
@@ -143,12 +144,18 @@ class RouterAgent(LLMCapableAgent):
             reasoning=routing.reasoning if hasattr(routing, 'reasoning') else "",
         )
 
-    def _quick_route(self, user_input: str) -> RoutingDecision:
+    def _quick_route(self, user_input: str, conversation_state: dict = None) -> RoutingDecision:
         """
-        Quick pattern-based routing.
+        Quick pattern-based routing, aware of conversation state.
+
+        When planning is already completed and the user asks something
+        that matches planning keywords but also contains clarification
+        keywords (详细, 为什么, etc.), classify as follow_up — not
+        clinical_planning. This prevents the LLM from re-running tools.
 
         Args:
             user_input: User's input text
+            conversation_state: Structured state from AgentMemory
 
         Returns:
             RoutingDecision
@@ -176,13 +183,30 @@ class RouterAgent(LLMCapableAgent):
 
         if best_match and best_score > 0:
             config = best_match["config"]
+            intent = best_match["intent"]
+
+            # STATE-AWARE OVERRIDE: if planning is already completed,
+            # any planning-keyword match that ALSO has clarification
+            # keywords should be classified as follow_up. This is the
+            # structural fix for "规划的结论可以详细一些吗" being
+            # misclassified as clinical_planning.
+            cs = conversation_state or {}
+            if intent == "clinical_planning" and cs.get("planning_completed"):
+                clarification_keywords = ["详细", "具体", "解释", "为什么", "原因",
+                                          "意义", "more detail", "explain", "why"]
+                has_clarification = any(k in input_lower for k in clarification_keywords)
+                if has_clarification:
+                    intent = "follow_up"
+                    config = self.INTENT_PATTERNS["follow_up"]
+                    best_match["matched_keywords"] = [k for k in clarification_keywords if k in input_lower]
+
             return RoutingDecision(
-                intent=best_match["intent"],
+                intent=intent,
                 complexity=config["complexity"],
                 agents_needed=config["agents"],
                 requires_review=config["requires_review"],
                 context={"matched_keywords": best_match["matched_keywords"]},
-                reasoning=f"Pattern match: {best_match['intent']} "
+                reasoning=f"Pattern match: {intent} "
                          f"(keywords: {', '.join(best_match['matched_keywords'])})",
                 confidence=min(0.5 + best_score * 0.15, 0.95),
             )

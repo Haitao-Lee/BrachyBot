@@ -53,12 +53,13 @@ class BrachyAgentMultiAgentWrapper:
         self._enabled = value
         logger.info(f"Multi-agent review {'enabled' if value else 'disabled'}")
 
-    async def process_request(self, user_input: str) -> Dict[str, Any]:
+    async def process_request(self, user_input: str, conversation_state: dict = None) -> Dict[str, Any]:
         """
         Process a user request through the multi-agent system.
 
         Args:
             user_input: User's input text
+            conversation_state: Structured state from AgentMemory
 
         Returns:
             Dict with routing decision and any pre-context
@@ -67,6 +68,9 @@ class BrachyAgentMultiAgentWrapper:
             return {"routing": None, "pre_context": None}
 
         try:
+            # Store conversation_state on the router for state-aware routing
+            if conversation_state and hasattr(self.orchestrator, 'router'):
+                self.orchestrator.router._conversation_state = conversation_state
             # Route the request
             routing = await self.orchestrator.route_request(user_input)
 
