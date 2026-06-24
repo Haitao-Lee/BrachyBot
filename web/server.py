@@ -1941,20 +1941,31 @@ def create_app(config: Optional[Dict] = None):
             def _voxel_to_world(voxel_pos):
                 """Convert planning grid voxel coords to world coords.
 
-                Seeds from get_close_points use np.argwhich which returns
-                (i,j,k) order — same as SimpleITK (X,Y,Z). The position_transform
-                function assumes (k,j,i) and reverses, so we must NOT use it.
-                Instead, apply spacing + direction + origin directly.
+                The planning algorithm may output coords in either voxel or
+                world space depending on the code path. We detect which by
+                checking if the coordinates fall within the CT bounding box.
                 """
                 if resampled_ct is None:
                     return voxel_pos.tolist()
                 try:
                     import numpy as _np
+                    pt = _np.array(voxel_pos, dtype=_np.float64).flatten()[:3]
                     origin = _np.array(resampled_ct.GetOrigin())
                     spacing = _np.array(resampled_ct.GetSpacing())
                     direction = _np.array(resampled_ct.GetDirection()).reshape(3, 3)
-                    # Seeds are already in (i,j,k) = (X,Y,Z) order — no reversal needed
-                    pt = _np.array(voxel_pos, dtype=_np.float64).flatten()[:3]
+                    # Compute CT bounding box in world coords
+                    size = _np.array(resampled_ct.GetSize())
+                    corners = _np.array([[0,0,0],[size[0],0,0],[0,size[1],0],[0,0,size[2]],
+                                          [size[0],size[1],0],[size[0],0,size[2]],
+                                          [0,size[1],size[2]],[size[0],size[1],size[2]]])
+                    world_corners = (corners * spacing) @ direction.T + origin
+                    bb_min = world_corners.min(axis=0)
+                    bb_max = world_corners.max(axis=0)
+                    # If seed is already within CT bounds, it's in world coords
+                    in_bounds = _np.all(pt >= bb_min - 50) and _np.all(pt <= bb_max + 50)
+                    if in_bounds:
+                        return pt.tolist()
+                    # Otherwise, transform from voxel to world
                     world = (pt * spacing) @ direction.T + origin
                     return world.tolist()
                 except Exception as e:
@@ -1964,23 +1975,29 @@ def create_app(config: Optional[Dict] = None):
             def _voxel_dir_to_world(voxel_dir):
                 """Convert planning grid voxel direction to world direction.
 
-                Directions are vectors (not positions) — apply direction matrix
-                and spacing but NOT origin offset. Same (i,j,k) convention
-                as positions.
+                Directions are vectors (not positions). If the seed position
+                was already in world coords, the direction is likely also
+                in world coords and needs no transformation.
                 """
                 if resampled_ct is None:
                     return voxel_dir.tolist()
                 try:
                     import numpy as _np
+                    d = _np.array(voxel_dir, dtype=_np.float64).flatten()[:3]
+                    norm = _np.linalg.norm(d)
+                    if norm > 1e-10:
+                        d = d / norm
+                    # If direction magnitude is ~1 (unit vector in world space),
+                    # it's likely already in world coords
+                    if 0.8 < norm < 1.2:
+                        return d.tolist()
+                    # Otherwise, transform from voxel to world
                     spacing = _np.array(resampled_ct.GetSpacing())
                     direction = _np.array(resampled_ct.GetDirection()).reshape(3, 3)
-                    # Directions: scale by spacing + apply direction, no origin
-                    d = _np.array(voxel_dir, dtype=_np.float64).flatten()[:3]
                     world_dir = (d * spacing) @ direction.T
-                    # Normalize
-                    norm = _np.linalg.norm(world_dir)
-                    if norm > 1e-10:
-                        world_dir = world_dir / norm
+                    n = _np.linalg.norm(world_dir)
+                    if n > 1e-10:
+                        world_dir = world_dir / n
                     return world_dir.tolist()
                 except Exception as e:
                     logger.warning(f"[seeds_3d] direction transform failed: {e}")
@@ -2012,6 +2029,14 @@ def create_app(config: Optional[Dict] = None):
                         logger.info(f"[seeds_3d] first seed: voxel={pos_voxel.tolist()}, world={pos_world}")
                         if resampled_ct is not None:
                             logger.info(f"[seeds_3d] resampled_ct: size={resampled_ct.GetSize()}, spacing={resampled_ct.GetSpacing()}, origin={resampled_ct.GetOrigin()}, direction={resampled_ct.GetDirection()}")
+                            # Debug: show the actual transform
+                            import numpy as _np
+                            pt = _np.array(pos_voxel, dtype=_np.float64).flatten()[:3]
+                            sp = _np.array(resampled_ct.GetSpacing())
+                            or_ = _np.array(resampled_ct.GetOrigin())
+                            dr = _np.array(resampled_ct.GetDirection()).reshape(3, 3)
+                            logger.info(f"[seeds_3d] DEBUG: pt={pt}, sp={sp}, or={or_}, dr={dr.tolist()}")
+                            logger.info(f"[seeds_3d] DEBUG: pt*sp={pt*sp}, (pt*sp)@dr.T={(pt*sp)@dr.T}, +or={(pt*sp)@dr.T + or_}")
 
                     seed_data = {
                         "id": f"seed_{i}_{j}",
