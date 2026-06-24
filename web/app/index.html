@@ -7407,7 +7407,13 @@ function _todoCreate() {
             }
             const t = item.node.querySelector('.chat-todo-time');
             if (t) {
-                const dur = (item.endedAt - item.startedAt) / 1000;
+                // Use real execution time from backend if available.
+                // _realElapsedMs is set from "elapsed_ms=XXXX" in the
+                // done event content. This gives the ACTUAL wall-clock
+                // time the operation took, not the network delay.
+                const dur = item._realElapsedMs != null
+                    ? item._realElapsedMs / 1000
+                    : (item.endedAt - item.startedAt) / 1000;
                 // Final defensive clamp: never display a duration
                 // larger than 24h (the user can see something has
                 // gone wrong; we just refuse to show "1.7e9s").
@@ -7494,12 +7500,15 @@ function _todoCreate() {
     function _todoStartTimer(item) {
         if (item._timer) clearInterval(item._timer);
         const t = item.node.querySelector('.chat-todo-time');
+        // If we already know the real elapsed time (from backend),
+        // use it as the starting display value.
+        if (item._realElapsedMs != null && t) {
+            t.textContent = (item._realElapsedMs / 1000).toFixed(1) + 's';
+        }
         item._timer = setInterval(() => {
             if (!t) return;
             const elapsed = ((Date.now() - item.startedAt) / 1000);
-            // Defensive: clamp displayed elapsed to 24h max — if
-            // startedAt is bad the user shouldn't see a 9-figure
-            // number ticking up in the dock.
+            // Defensive: clamp displayed elapsed to 24h max.
             if (!isFinite(elapsed) || elapsed < 0 || elapsed > 86400) {
                 t.textContent = '—';
             } else {
@@ -7673,6 +7682,14 @@ function _todoUpdateFromStep(todo, step) {
     // 4. Create a new item if no match
     if (!item) {
         item = todo.addPending(step);
+    }
+    // Extract real execution time from backend content.
+    // The backend includes "elapsed_ms=1234" in done event content so
+    // the frontend can display the ACTUAL wall-clock time instead of
+    // measuring network delay between SSE events.
+    if (step.content && step.status === 'done') {
+        const emMatch = step.content.match(/elapsed_ms=(\d+)/);
+        if (emMatch) item._realElapsedMs = parseInt(emMatch[1]);
     }
     if (step.status === 'pending') {
         todo.markActive(item);
