@@ -17526,30 +17526,43 @@ async function refreshPlanningUI() {
         // so the 3D canvas was empty. Now that meshes are in the
         // scene, force a render and re-capture the 3D screenshot.
         try {
+            // Fit camera to show all meshes, then render multiple frames
+            // to ensure the canvas has actual pixel content.
+            if (scene3D.scene && Object.keys(scene3D.meshes).length > 0) {
+                fitCameraToScene();
+            }
             forceRender3DViewer();
-            // Force an explicit render to ensure canvas has content
+            // Render 3 frames to ensure GPU pipeline finishes
             if (scene3D.renderer && scene3D.scene && scene3D.camera) {
                 scene3D.renderer.render(scene3D.scene, scene3D.camera);
+                await new Promise(r => requestAnimationFrame(() => {
+                    scene3D.renderer.render(scene3D.scene, scene3D.camera);
+                    requestAnimationFrame(r);
+                }));
             }
-            await new Promise(r => requestAnimationFrame(r));
             const canvas3d = document.querySelector('#canvas3D canvas');
             if (canvas3d && window.reportForm && window.reportForm.figures) {
                 const dataUrl = canvas3d.toDataURL('image/png');
-                // Replace the blank 3D figure (if it exists) or add new
-                const existing3d = window.reportForm.figures.findIndex(f => f && f.axis === '3d');
-                const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
-                const _3dTitle = lang === 'zh' ? '三维规划方案' : '3D Planning';
-                const _3dCap = lang === 'zh' ? '针道轨迹（蓝色）、放射性粒子（黄色）与靶区/器官三维重建' : 'Needle trajectories (blue), radioactive seeds (yellow), and CTV/OAR 3D reconstruction';
-                if (existing3d >= 0) {
-                    window.reportForm.figures[existing3d].dataUrl = dataUrl;
-                    window.reportForm.figures[existing3d].capturedAt = new Date().toISOString();
+                // Only use if not blank (>5KB indicates real content)
+                if (dataUrl && dataUrl.length > 5000) {
+                    const existing3d = window.reportForm.figures.findIndex(f => f && f.axis === '3d');
+                    const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
+                    const _3dTitle = lang === 'zh' ? '三维规划方案' : '3D Planning';
+                    const _3dCap = lang === 'zh' ? '针道轨迹（蓝色）、放射性粒子（黄色）与靶区/器官三维重建' : 'Needle trajectories (blue), radioactive seeds (yellow), and CTV/OAR 3D reconstruction';
+                    if (existing3d >= 0) {
+                        window.reportForm.figures[existing3d].dataUrl = dataUrl;
+                        window.reportForm.figures[existing3d].capturedAt = new Date().toISOString();
+                    } else {
+                        window.reportForm.figures.push({
+                            type: 'screenshot', title: _3dTitle,
+                            dataUrl, axis: '3d', sliceIdx: null,
+                            caption: _3dCap,
+                            capturedAt: new Date().toISOString(),
+                        });
+                    }
+                    console.log('[3D re-capture] Captured 3D screenshot:', dataUrl.length, 'bytes');
                 } else {
-                    window.reportForm.figures.push({
-                        type: 'screenshot', title: _3dTitle,
-                        dataUrl, axis: '3d', sliceIdx: null,
-                        caption: _3dCap,
-                        capturedAt: new Date().toISOString(),
-                    });
+                    console.warn('[3D re-capture] Canvas blank, skipping capture');
                 }
             }
         } catch (e) { console.warn('[3D re-capture] failed:', e); }
@@ -17616,6 +17629,15 @@ async function refreshPlanningUI() {
         try {
             if (typeof autoCaptureReportFigures === 'function') {
                 await autoCaptureReportFigures();
+            }
+        } catch (_) {}
+
+        // 12. Auto-fill report form with planning data.
+        //     Previously the user had to manually click "Auto-fill"
+        //     after every planning run. Now we trigger it automatically.
+        try {
+            if (typeof Report !== 'undefined' && Report.autoFill && Report.autoFill.fromAll) {
+                Report.autoFill.fromAll();
             }
         } catch (_) {}
 
