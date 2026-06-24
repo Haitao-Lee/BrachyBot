@@ -1792,7 +1792,22 @@ class BrachyAgent:
                                 if step_callback is not None:
                                     try:
                                         _n = len((oar_result.metadata or {}).get("organ_names", {}))
-                                        step_callback("oar_segmentation", "done", f"{_n} organs")
+                                        # Defer OAR done callback by 250ms so the browser
+                                        # can paint: CTV done → OAR active → OAR done.
+                                        # Without this, all events arrive in the same SSE
+                                        # batch and the todo shows "CTV executing + OAR done".
+                                        import time as _time, threading as _threading
+                                        def _deferred_oar_done(cb, n):
+                                            _time.sleep(0.25)
+                                            try:
+                                                cb("oar_segmentation", "done", f"{n} organs")
+                                            except Exception:
+                                                pass
+                                        _threading.Thread(
+                                            target=_deferred_oar_done,
+                                            args=(step_callback, _n),
+                                            daemon=True
+                                        ).start()
                                     except Exception:
                                         pass
                             else:
