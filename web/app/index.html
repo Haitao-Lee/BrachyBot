@@ -16925,11 +16925,43 @@ function drawDVH() {
         // Use legendgroup = name so Plotly's legend click toggles
         // the trace visibility (the data tree can also call
         // setGroupVisibility for the same effect).
+        // Smooth the curve using cubic spline interpolation.
+        // DVH data can be sparse (few dose bins), causing jagged
+        //折线感. Spline smoothing makes the curves clinically
+        // readable while preserving the original data shape.
+        const smoothX = [], smoothY = [];
+        if (doseBins.length >= 4) {
+            // Interpolate to ~200 points using cubic Hermite spline
+            const n = Math.min(200, doseBins.length * 5);
+            for (let k = 0; k < n; k++) {
+                const t = k / (n - 1);
+                const idx = t * (doseBins.length - 1);
+                const i0 = Math.floor(idx);
+                const i1 = Math.min(i0 + 1, doseBins.length - 1);
+                const frac = idx - i0;
+                // Cubic Hermite interpolation (Catmull-Rom)
+                const p0 = volPcts[Math.max(0, i0 - 1)] || volPcts[i0];
+                const p1 = volPcts[i0];
+                const p2 = volPcts[i1];
+                const p3 = volPcts[Math.min(doseBins.length - 1, i1 + 1)] || volPcts[i1];
+                const t2 = frac * frac, t3 = t2 * frac;
+                const v = 0.5 * ((2 * p1) +
+                    (-p0 + p2) * frac +
+                    (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+                    (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+                smoothX.push(doseBins[i0] + frac * (doseBins[i1] - doseBins[i0]));
+                smoothY.push(Math.max(0, Math.min(100, v)));
+            }
+        } else {
+            // Too few points for smoothing — use raw data
+            smoothX.push(...doseBins);
+            smoothY.push(...volPcts);
+        }
         traces.push({
-            x: doseBins,
-            y: volPcts,
+            x: smoothX,
+            y: smoothY,
             type: 'scatter', mode: 'lines', name: name,
-            line: { color, width: name === ctvName ? 2.6 : 1.4 },
+            line: { color, width: name === ctvName ? 2.6 : 1.4, shape: 'spline', smoothing: 1.0 },
             fill: name === ctvName ? 'tozeroy' : 'none',
             fillcolor: name === ctvName ? 'rgba(14,165,233,0.10)' : undefined,
             hovertemplate: `<b>${name}</b><br>Dose: %{x:.2f} Gy<br>Volume: %{y:.1f}%<extra></extra>`,
@@ -19911,143 +19943,127 @@ async function autoCaptureReportFigures() {
     if (!window.reportForm) return;
     if (!window.reportForm.figures) window.reportForm.figures = [];
 
-    // BUG FIX 2026-06-17: previously we skipped capture if
-    // figures existed. But if the user re-runs planning AFTER
-    // capturing figures, the old figures become stale. We now
-    // check if there are stale auto-captured figures (those
-    // with type='screenshot' AND capturedAt older than the
-    // latest planning run). If so, drop them and re-capture.
-    // User-uploaded figures (type='upload') are always kept.
+    // Drop stale auto-captured figures (user-uploads are kept).
     try {
         const _lastPlan = window.state && window.state.lastPlanTimestamp;
         if (_lastPlan && window.reportForm.figures) {
             const _ts = new Date(_lastPlan).getTime();
             window.reportForm.figures = window.reportForm.figures.filter(f => {
                 if (!f) return false;
-                if (f.type === 'upload') return true;  // keep user uploads
-                // Drop auto-captured if older than the last plan
+                if (f.type === 'upload') return true;
                 const fts = f.capturedAt ? new Date(f.capturedAt).getTime() : 0;
                 return fts >= _ts;
             });
         }
     } catch (_) {}
 
-    // Only auto-capture if no figures exist yet (don't duplicate
-    // user-added figures).
     if (window.reportForm.figures.length > 0) return;
 
-    // BUG FIX 2026-06-16 (report screenshots + bilingual): figure
-    // captions are now language-aware. The previous version hard-
-    // coded Chinese text and never updated when the user switched
-    // to English, so the report preview showed mismatched captions.
-    // We look up labels from REPORT_STRINGS[lang] (already bilingual).
+    // Language-aware labels
     const f = window.reportForm;
-    // Use GLOBAL UI language first, not f.language which may be stale
     const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : ((f && f.language) || 'en');
-    const S = (window.REPORT_STRINGS && REPORT_STRINGS[lang]) || (REPORT_STRINGS && REPORT_STRINGS.en) || {};
-    // Special anatomically-neutral terms stay as-is (axial, sagittal,
-    // coronal, CTV, OAR, DVH — these are technical terms).
     const labels = (lang === 'zh') ? {
-        seg: '靶区与危及器官分割重建',
-        segCap: 'CTV（红色轮廓）及 OAR 器官分割结果叠加于 CT 切片',
-        dose: '剂量分布热图',
-        doseCap: '处方剂量分布叠加于 CT 切片（暖色=高剂量，冷色=低剂量）',
-        plan3d: '三维规划方案',
-        plan3dCap: '针道轨迹（蓝色）、放射性粒子（黄色）与靶区/器官三维重建',
-        dvh: 'DVH 剂量体积直方图',
-        dvhCap: 'CTV 及各 OAR 的剂量-体积曲线（横轴: 剂量 Gy，纵轴: 体积 %）',
+        seg3d: '三维靶区重建', seg3dCap: 'CTV 靶区（红色）三维表面重建',
+        seed3d: '粒子植入方案', seed3dCap: '穿刺针道（红色）、放射性粒子（黄色）与 CTV（半透明红色）三维重建',
+        doseAxial: '轴位剂量分布', doseAxialCap: '最大剂量层面的轴位 CT 叠加剂量热图',
+        doseSagittal: '矢状位剂量分布', doseSagittalCap: '最大剂量层面的矢状位 CT 叠加剂量热图',
+        doseCoronal: '冠状位剂量分布', doseCoronalCap: '最大剂量层面的冠状位 CT 叠加剂量热图',
+        dvh: 'DVH 剂量体积直方图', dvhCap: 'CTV 及各 OAR 的剂量-体积曲线',
     } : {
-        seg: 'CTV and OAR segmentation overlay',
-        segCap: 'CTV (red contour) and OAR segmentation superimposed on CT slice',
-        dose: 'Dose distribution heatmap',
-        doseCap: 'Prescription dose distribution overlaid on CT slice (warm = high, cool = low)',
-        plan3d: '3D treatment plan',
-        plan3dCap: 'Needle trajectories (blue), radioactive seeds (yellow), and CTV/OAR 3D reconstruction',
-        dvh: 'DVH — Dose Volume Histogram',
-        dvhCap: 'Dose–volume curves for CTV and all OARs (x-axis: dose Gy, y-axis: volume %)',
+        seg3d: '3D CTV Reconstruction', seg3dCap: 'CTV tumor (red) 3D surface reconstruction',
+        seed3d: 'Seed Implant Plan', seed3dCap: 'Needle paths (red), radioactive seeds (yellow), and CTV (translucent red) 3D view',
+        doseAxial: 'Axial Dose Distribution', doseAxialCap: 'Axial CT with dose heatmap at peak dose slice',
+        doseSagittal: 'Sagittal Dose Distribution', doseSagittalCap: 'Sagittal CT with dose heatmap at peak dose slice',
+        doseCoronal: 'Coronal Dose Distribution', doseCoronalCap: 'Coronal CT with dose heatmap at peak dose slice',
+        dvh: 'DVH — Dose Volume Histogram', dvhCap: 'Dose–volume curves for CTV and all OARs',
     };
 
     const _ts = () => new Date().toISOString();
+    const _push = (title, caption, dataUrl, axis, extra) => {
+        if (!dataUrl || dataUrl.length < 1000) return;
+        window.reportForm.figures.push({
+            type: 'screenshot', title, dataUrl, axis: axis || '3d',
+            sliceIdx: null, caption, capturedAt: _ts(), ...extra,
+        });
+    };
 
-    // 1. Segmentation overlay — capture the first visible 2D viewer
-    //    (axial preferred) which shows CTV/OAR contour overlays.
-    const axes = ['axial', 'sagittal', 'coronal'];
-    for (const ax of axes) {
-        const card = document.getElementById('viewer' + ax.charAt(0).toUpperCase() + ax.slice(1));
-        if (card && card.offsetParent !== null) {
-            const composite = _composite2DViewerCanvas(ax);
-            if (composite) {
-                window.reportForm.figures.push({
-                    type: 'screenshot', title: labels.seg,
-                    dataUrl: composite, axis: ax,
-                    sliceIdx: (state.slices && state.slices[ax]) || 0,
-                    caption: labels.segCap,
-                    capturedAt: _ts(),
-                });
-                break; // one 2D view is enough for segmentation
-            }
+    // ─── 1. 3D CTV RECONSTRUCTION (zoomed to tumor) ───
+    try {
+        // Find CTV mesh and zoom camera to it
+        const ctvMesh = scene3D.meshes['ctv'] || Object.values(scene3D.meshes).find(m => m?.userData?.type === 'ctv');
+        if (ctvMesh && scene3D.camera && scene3D.controls) {
+            const box = new THREE.Box3().setFromObject(ctvMesh);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const dist = maxDim * 2.5;
+            scene3D.controls.target.copy(center);
+            scene3D.camera.position.set(center.x + dist * 0.6, center.y + dist * 0.4, center.z + dist * 0.7);
+            scene3D.camera.updateProjectionMatrix();
+            scene3D.controls.update();
+            await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+            scene3D.renderer.render(scene3D.scene, scene3D.camera);
+            await new Promise(r => requestAnimationFrame(r));
+            const c = document.querySelector('#canvas3D canvas');
+            if (c) _push(labels.seg3d, labels.seg3dCap, c.toDataURL('image/png'), '3d_ctv');
+        }
+    } catch (e) { console.warn('[Report] 3D CTV capture failed:', e); }
+
+    // ─── 2. 3D SEED IMPLANT PLAN (overview with seeds+needles) ───
+    try {
+        fitCameraToScene();
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        scene3D.renderer.render(scene3D.scene, scene3D.camera);
+        await new Promise(r => requestAnimationFrame(r));
+        const c = document.querySelector('#canvas3D canvas');
+        if (c) _push(labels.seed3d, labels.seed3dCap, c.toDataURL('image/png'), '3d_seeds');
+    } catch (e) { console.warn('[Report] 3D seeds capture failed:', e); }
+
+    // ─── 3. 2D DOSE SLICES (all 3 views with dose overlay) ───
+    if (state.doseOverlay && state.doseOverlay.active) {
+        const axesCfg = [
+            { ax: 'axial', title: labels.doseAxial, cap: labels.doseAxialCap, axis: 'dose_axial' },
+            { ax: 'sagittal', title: labels.doseSagittal, cap: labels.doseSagittalCap, axis: 'dose_sagittal' },
+            { ax: 'coronal', title: labels.doseCoronal, cap: labels.doseCoronalCap, axis: 'dose_coronal' },
+        ];
+        for (const cfg of axesCfg) {
+            try {
+                await new Promise(r => setTimeout(r, 100)); // ensure slice is rendered
+                const composite = _composite2DViewerCanvas(cfg.ax);
+                if (composite) _push(cfg.title, cfg.cap, composite, cfg.axis);
+            } catch (e) { console.warn(`[Report] ${cfg.ax} dose capture failed:`, e); }
         }
     }
 
-    // 2. Dose distribution heatmap — capture a 2D viewer that has
-    //    dose overlay enabled. Uses the same composite function;
-    //    if dose overlay is active, the canvas already includes it.
-    if (state.doseOverlay && state.doseOverlay.active) {
-        for (const ax of axes) {
-            const card = document.getElementById('viewer' + ax.charAt(0).toUpperCase() + ax.slice(1));
-            if (card && card.offsetParent !== null) {
-                const composite = _composite2DViewerCanvas(ax);
-                if (composite) {
-                    window.reportForm.figures.push({
-                        type: 'screenshot', title: labels.dose,
-                        dataUrl: composite, axis: ax,
-                        sliceIdx: (state.slices && state.slices[ax]) || 0,
-                        caption: labels.doseCap,
-                        capturedAt: _ts(),
-                    });
-                    break;
+    // ─── 4. DVH CURVE ───
+    try {
+        const dvhEl = document.getElementById('dvhChart');
+        if (dvhEl && typeof Plotly !== 'undefined') {
+            // Ensure DVH is fully rendered before capture
+            await new Promise(r => setTimeout(r, 300));
+            if (typeof Plotly.toImage === 'function') {
+                const imgData = await Plotly.toImage(dvhEl, { format: 'png', width: 900, height: 450 });
+                _push(labels.dvh, labels.dvhCap, imgData, 'dvh');
+            } else {
+                // Fallback: capture via canvas
+                const c = dvhEl.querySelector('.main-svg');
+                if (c) {
+                    const out = document.createElement('canvas');
+                    out.width = c.clientWidth || 900; out.height = c.clientHeight || 450;
+                    const ctx = out.getContext('2d');
+                    const data = new XMLSerializer().serializeToString(c);
+                    const img = new Image();
+                    img.onload = () => { ctx.drawImage(img, 0, 0); _push(labels.dvh, labels.dvhCap, out.toDataURL('image/png'), 'dvh'); };
+                    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(data)));
                 }
             }
         }
-    }
+    } catch (e) { console.warn('[Report] DVH capture failed:', e); }
 
-    // 3. 3D planning view — needles, seeds, CTV/OAR mesh.
-    //    Force a render before capture so the canvas has content
-    //    even if the 3D panel was hidden (display:none).
-    try {
-        if (scene3D.renderer && scene3D.scene && scene3D.camera) {
-            scene3D.renderer.render(scene3D.scene, scene3D.camera);
-        }
-        const canvas3d = document.querySelector('#canvas3D canvas');
-        if (canvas3d && canvas3d.width > 0 && canvas3d.height > 0) {
-            const dataUrl = canvas3d.toDataURL('image/png');
-            // Only add if the capture is not blank (check for non-trivial content)
-            if (dataUrl && dataUrl.length > 1000) {
-                window.reportForm.figures.push({
-                    type: 'screenshot', title: labels.plan3d,
-                    dataUrl, axis: '3d', sliceIdx: null,
-                    caption: labels.plan3dCap,
-                    capturedAt: _ts(),
-                });
-            }
-        }
-    } catch (e) { /* 3D capture failed — non-fatal */ }
+    // Restore camera to overview after captures
+    try { fitCameraToScene(); } catch (_) {}
 
-    // 4. DVH curve — use Plotly.toImage if available.
-    try {
-        const dvhEl = document.getElementById('dvhChart');
-        if (dvhEl && typeof Plotly !== 'undefined' && typeof Plotly.toImage === 'function') {
-            const imgData = await Plotly.toImage(dvhEl, { format: 'png', width: 800, height: 400 });
-            window.reportForm.figures.push({
-                type: 'screenshot', title: labels.dvh,
-                dataUrl: imgData, axis: 'dvh', sliceIdx: null,
-                caption: labels.dvhCap,
-                capturedAt: _ts(),
-            });
-        }
-    } catch (e) { /* DVH capture failed — non-fatal */ }
-
-    // Re-render editor + preview so the new figures appear.
+    // Re-render editor + preview
     if (window.reportForm.figures.length > 0) {
         renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();
     }
