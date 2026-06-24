@@ -7677,7 +7677,20 @@ function _todoUpdateFromStep(todo, step) {
     if (step.status === 'pending') {
         todo.markActive(item);
     } else if (step.status === 'done') {
-        todo.markDone(item);
+        // If item is still 'predicted' (never went through 'pending'),
+        // force it through 'active' first so the user sees the breathing
+        // animation before the ✓ appears. Without this, predicted→done
+        // happens in one frame and the user sees "CTV executing + OAR done"
+        // because OAR never visually became "active".
+        if (item.status === 'predicted') {
+            todo.markActive(item);
+            // Minimum 250ms visible active state before marking done
+            setTimeout(() => {
+                if (item.status === 'active') todo.markDone(item);
+            }, 250);
+        } else {
+            todo.markDone(item);
+        }
     } else if (step.status === 'error') {
         todo.markDone(item, step.error || 'failed');
     }
