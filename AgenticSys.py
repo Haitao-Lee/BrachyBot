@@ -3406,10 +3406,11 @@ print(json.dumps(result))
                     content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
                     if not content or len(content) < 10:
                         continue
-                # Label as past context so the LLM knows this is prior
-                # conversation, NOT the current task. Avoid "historical
-                # reference" — the LLM was echoing that phrase back.
-                messages.append({"role": role, "content": f"[Earlier conversation — ignore for current task]\n{content}"})
+                # Label as prior context. The LLM must USE this data for
+                # follow-up questions (e.g. "请详细一些"), NOT re-run tools.
+                # Previous label "ignore for current task" caused the LLM
+                # to discard planning results and re-execute planning_pipeline.
+                messages.append({"role": role, "content": f"[Prior context — use this data, do NOT re-run tools]\n{content}"})
         else:
             # Fallback: use last 12 messages
             msg_history = self.memory.conversation[-12:]
@@ -3935,12 +3936,14 @@ print(json.dumps(result))
         # eating legitimate text like "[NCCN guidelines]".
         content = re.sub(r'^\[Historical reference[^\]]*\]\s*', '', content)
         content = re.sub(r'^\[Earlier conversation[^\]]*\]\s*', '', content)
+        content = re.sub(r'^\[Prior context[^\]]*\]\s*', '', content)
         content = re.sub(r'^\[MANDATORY:[^\]]*\]\s*', '', content)
         # Also strip if these appear IMMEDIATELY after a leading
         # newline or whitespace (LLM may echo them with a blank
         # line first). Still anchored, not greedy.
         content = re.sub(r'^\s*\[Historical reference[^\]]*\]\s*', '', content)
         content = re.sub(r'^\s*\[Earlier conversation[^\]]*\]\s*', '', content)
+        content = re.sub(r'^\s*\[Prior context[^\]]*\]\s*', '', content)
         content = re.sub(r'^\s*\[MANDATORY:[^\]]*\]\s*', '', content)
         stripped = content.strip()
 
@@ -4240,10 +4243,11 @@ print(json.dumps(result))
                     content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
                     if not content or len(content) < 10:
                         continue
-                # Label as past context so the LLM knows this is prior
-                # conversation, NOT the current task. Avoid "historical
-                # reference" — the LLM was echoing that phrase back.
-                messages.append({"role": role, "content": f"[Earlier conversation — ignore for current task]\n{content}"})
+                # Label as prior context. The LLM must USE this data for
+                # follow-up questions (e.g. "请详细一些"), NOT re-run tools.
+                # Previous label "ignore for current task" caused the LLM
+                # to discard planning results and re-execute planning_pipeline.
+                messages.append({"role": role, "content": f"[Prior context — use this data, do NOT re-run tools]\n{content}"})
         else:
             # Fallback: use last 12 messages
             msg_history = self.memory.conversation[-12:]
