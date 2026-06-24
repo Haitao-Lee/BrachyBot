@@ -2647,11 +2647,11 @@ body::before {
 /* ===========================================================
    DVH — sunken well
    =========================================================== */
-.dvh-container { padding: 0.95rem; flex: 1; overflow: visible; position: relative; }
-/* Plotly hover tooltip — visible but repositioned by JS clamp.
-   overflow:visible lets the tooltip render fully; JS repositions it
-   when it would overflow the container bounds. */
-.dvh-container .hoverlayer { overflow: visible !important; pointer-events: none; z-index: 9999; }
+.dvh-container { padding: 0.95rem; flex: 1; overflow: hidden; position: relative; }
+/* Plotly hoverlabel is disabled (hoverlabel.visible=false in layout).
+   DVH tooltip uses a mousemove-based approach with a fixed-position div
+   appended to document.body, so no overflow hacks are needed. */
+.dvh-container .hoverlayer { pointer-events: none; }
 .dvh-container .hoverlayer .hovertext {
     max-width: 220px;
     min-width: 100px;
@@ -7375,19 +7375,23 @@ function _todoCreate() {
             _todoStartGpuBadge(item);
         },
         markDone(item, errMsg) {
-            // If the item was just activated in the same tick (pending+done
-            // in same batch), skip the defer and mark done immediately.
-            // The old 800ms defer caused items to stay stuck in "active"
-            // when both events arrived in the same SSE batch.
+            // Always ensure at least one browser paint frame shows the
+            // "active" breathing state before transitioning to done.
+            // When pending+done arrive in the same SSE batch (e.g. OAR
+            // auto-fire), sinceActive ≈ 0 and the old code skipped the
+            // defer — the user saw "CTV executing + OAR completed"
+            // instead of "CTV done → OAR executing → OAR done".
             const sinceActive = item._activatedAt ? (Date.now() - item._activatedAt) : 9999;
-            // If sinceActive is 0 or very small (<50ms), both events
-            // arrived in the same tick — skip defer entirely.
-            if (item.status === 'active' && sinceActive > 50) {
-                const delay = Math.max(0, 500 - sinceActive);
-                setTimeout(() => {
-                    if (item.status === 'active') this.markDone(item, errMsg);
-                }, delay);
-                return;
+            if (item.status === 'active') {
+                // Minimum 120ms visible active state (~2 frames at 60fps).
+                // If already visible for longer, transition immediately.
+                const delay = Math.max(0, 120 - sinceActive);
+                if (delay > 0) {
+                    setTimeout(() => {
+                        if (item.status === 'active') this.markDone(item, errMsg);
+                    }, delay);
+                    return;
+                }
             }
             if (item._timer) { clearInterval(item._timer); item._timer = null; }
             _todoStopGpuBadge(item);
@@ -14415,27 +14419,23 @@ async function loadAllIsoSurfaces() {
         dataTreeState.planning.doseLevels = [];
     }
 
-    // Read prescription once so we can convert relative iso
-    // multipliers (1.0, 1.5, 2.0, 4.0) to absolute Gy. The server
-    // expects Gy in find_contours and the dose-isosurface endpoint,
-    // and the data tree mesh id (`dose_iso_${v}`) uses Gy.
-    const rxGy = (window.reportForm && window.reportForm.planning
-        && window.reportForm.planning.prescriptionGy) || 120;
+    // The dose_distribution array is in NORMALIZED units (0 to ~1.0,
+    // where 1.0 = prescription dose). The dose_isosurface endpoint
+    // expects normalized thresholds. The config values [0.5, 0.75, 1.0]
+    // are already in normalized units — send them directly.
     for (let i = 0; i < values.length; i++) {
         const v_rel = values[i];
-        // Convert relative multiplier → absolute Gy. Pass the Gy
-        // value to the server and store it as threshold so the data
-        // tree, mesh id, and 2D contour labels are all consistent.
-        const v = parseFloat((v_rel * rxGy).toFixed(2));
+        // Use relative value directly (normalized units, matching dose array)
+        const v = parseFloat(v_rel.toFixed(4));
         // Color: pick the i-th color from the config array. With 4 levels
         // and 8 colors, the inner 2 levels reuse colors 4-5 (orange→red).
         const c = colors[i] || colors[colors.length - 1] || [0, 1, 0];
         const color = ((c[0] * 255) << 16) | ((c[1] * 255) << 8) | (c[2] * 255);
         const opacity = (opacities[i] !== undefined) ? opacities[i] : 0.3;
         try {
-            console.log(`[IsoSurf] Loading ${v} Gy (color=${color.toString(16)}, opacity=${opacity})...`);
+            console.log(`[IsoSurf] Loading ${v} normalized (${absGy} Gy) (color=${color.toString(16)}, opacity=${opacity})...`);
             await loadDoseIsosurface(v, color);
-            console.log(`[IsoSurf] ${v} Gy: mesh=${scene3D.meshes['dose_iso_'+v] ? 'loaded' : 'FAILED'}`);
+            console.log(`[IsoSurf] ${v} normalized: mesh=${scene3D.meshes['dose_iso_'+v] ? 'loaded' : 'FAILED'}`);
             // Override the just-added mesh's opacity with the per-level
             // config value (loadDoseIsosurface uses a hard-coded 0.3).
             const mesh = scene3D.meshes[`dose_iso_${v}`];
@@ -14455,13 +14455,11 @@ async function loadAllIsoSurfaces() {
             if (dataTreeState && dataTreeState.planning) {
                 const existing = dataTreeState.planning.doseLevels
                     .find(d => Math.abs(d.threshold - v) < 1e-6);
-                // BUG FIX 2026-06-16: `v` is ALREADY in absolute Gy
-                // (computed above as v_rel × rxGy). The previous
-                // version multiplied AGAIN by rxGy here, producing
-                // labels like "14400 Gy" for 1.0×Rx@120Gy. The user
-                // reported "iso surface 命名多乘了一个 120". Use `v`
-                // directly.
-                const absGy = v.toFixed(0);
+                // v is in normalized units (0.5, 0.75, 1.0).
+                // Convert to Gy for display label: v × 120 = 60, 90, 120 Gy.
+                const rxDisplay = (window.reportForm && window.reportForm.planning
+                    && window.reportForm.planning.prescriptionGy) || 120;
+                const absGy = (v * rxDisplay).toFixed(0);
                 if (!existing) {
                     dataTreeState.planning.doseLevels.push({
                         threshold: v,
@@ -17098,44 +17096,107 @@ function drawDVH() {
         displaylogo: false,
     });
 
-    // Custom HTML DVH tooltip — replaces Plotly's SVG hoverlabel which has
-    // persistent positioning issues (text floats in/out, overflows container).
-    // We disable Plotly's hoverlabel (hoverlabel.visible=false) and build
-    // our own absolutely-positioned div that follows the mouse.
+    // Custom HTML DVH tooltip — mousemove-based (NOT Plotly hover-based).
+    // Previous approaches using plotly_hover/plotly_unhover had persistent
+    // positioning issues (text floats in/out, SVG coordinate mismatch).
+    // This approach uses raw mousemove events and manually finds the
+    // nearest data point by converting pixel→data coordinates via
+    // Plotly's _fullLayout axis maps. The tooltip is positioned at the
+    // cursor using fixed positioning (relative to viewport), which
+    // eliminates all overflow/clamping issues.
     (function _setupDvhTooltip() {
         const tip = document.createElement('div');
         tip.className = 'dvh-custom-tooltip';
-        tip.style.cssText = 'position:absolute;display:none;pointer-events:none;z-index:10000;' +
+        tip.style.cssText = 'position:fixed;display:none;pointer-events:none;z-index:100000;' +
             'background:rgba(15,23,42,0.95);border:1px solid rgba(148,163,184,0.45);border-radius:6px;' +
             'padding:6px 10px;font-size:11px;color:#e2e8f0;font-family:Inter,system-ui,sans-serif;' +
-            'white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.4);max-width:220px;';
-        dvhEl.style.position = 'relative';
-        dvhEl.appendChild(tip);
+            'white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.4);max-width:260px;' +
+            'transition:none;';
+        document.body.appendChild(tip);
 
-        dvhEl.on('plotly_hover', function(data) {
-            if (!data || !data.points || !data.points.length) return;
-            const pt = data.points[0];
-            const traceName = pt.data.name || '';
-            const dose = pt.x != null ? pt.x.toFixed(1) : '';
-            const vol = pt.y != null ? pt.y.toFixed(1) : '';
-            const color = pt.data.line ? (pt.data.line.color || '#e2e8f0') : '#e2e8f0';
+        dvhEl.addEventListener('mousemove', function(ev) {
+            const layout = dvhEl._fullLayout;
+            if (!layout || !layout.xaxis || !layout.yaxis) return;
+            const xa = layout.xaxis;
+            const ya = layout.yaxis;
+
+            // Convert pixel coords to data coords using Plotly's axis maps
+            const plotRect = dvhEl.querySelector('.plot-container,.svg-container,.main-svg');
+            if (!plotRect) return;
+            // Use Plotly's internal l2p (layout-to-pixel) inverse
+            // xa.p2d(x) converts pixel → data, but it's internal.
+            // Instead, use the range + domain mapping:
+            const plotArea = layout._size || {};
+            const plotLeft = plotArea.l || 0;
+            const plotTop = plotArea.t || 0;
+            const plotW = plotArea.w || 1;
+            const plotH = plotArea.h || 1;
+
+            // Mouse position relative to the SVG element
+            const svgEl = dvhEl.querySelector('svg.main-svg');
+            if (!svgEl) return;
+            const svgRect = svgEl.getBoundingClientRect();
+            const mx = ev.clientX - svgRect.left;
+            const my = ev.clientY - svgRect.top;
+
+            // Check if mouse is within the plot area
+            if (mx < plotLeft || mx > plotLeft + plotW || my < plotTop || my > plotTop + plotH) {
+                tip.style.display = 'none';
+                return;
+            }
+
+            // Convert pixel → data coordinates
+            const xFrac = (mx - plotLeft) / plotW;
+            const yFrac = 1 - (my - plotTop) / plotH;  // Y is inverted
+            const xData = xa.range[0] + xFrac * (xa.range[1] - xa.range[0]);
+            const yData = ya.range[0] + yFrac * (ya.range[1] - ya.range[0]);
+
+            // Find nearest point across all traces
+            let bestDist = Infinity, bestTrace = null, bestIdx = -1;
+            const traces = dvhEl.data || [];
+            for (let t = 0; t < traces.length; t++) {
+                const trace = traces[t];
+                if (!trace.x || !trace.y) continue;
+                for (let i = 0; i < trace.x.length; i++) {
+                    const dx = trace.x[i] - xData;
+                    const dy = trace.y[i] - yData;
+                    const dist = dx * dx + dy * dy;
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestTrace = trace;
+                        bestIdx = i;
+                    }
+                }
+            }
+
+            if (!bestTrace || bestIdx < 0 || bestDist > 400) {
+                tip.style.display = 'none';
+                return;
+            }
+
+            const traceName = bestTrace.name || '';
+            const dose = bestTrace.x[bestIdx] != null ? bestTrace.x[bestIdx].toFixed(1) : '';
+            const vol = bestTrace.y[bestIdx] != null ? bestTrace.y[bestIdx].toFixed(1) : '';
+            const color = bestTrace.line ? (bestTrace.line.color || '#e2e8f0') : '#e2e8f0';
             tip.innerHTML = `<div style="color:${color};font-weight:600;margin-bottom:2px">${traceName}</div>` +
                 `<div>Dose: ${dose} Gy</div><div>Volume: ${vol}%</div>`;
             tip.style.display = 'block';
-            // Position near mouse, clamped within container
-            const ev = pt.event || {};
-            let x = (ev.offsetX || ev.layerX || 0) + 15;
-            let y = (ev.offsetY || ev.layerY || 0) - 10;
+
+            // Position tooltip at cursor (with offset), using fixed viewport coords
+            let tx = ev.clientX + 15;
+            let ty = ev.clientY - 10;
             const tipW = tip.offsetWidth || 150;
             const tipH = tip.offsetHeight || 50;
-            const cw = dvhEl.clientWidth, ch = dvhEl.clientHeight;
-            if (x + tipW > cw - 5) x = x - tipW - 30;
-            if (y + tipH > ch - 5) y = ch - tipH - 5;
-            if (y < 5) y = 5;
-            tip.style.left = x + 'px';
-            tip.style.top = y + 'px';
+            if (tx + tipW > window.innerWidth - 10) tx = ev.clientX - tipW - 15;
+            if (ty + tipH > window.innerHeight - 10) ty = window.innerHeight - tipH - 10;
+            if (ty < 10) ty = 10;
+            tip.style.left = tx + 'px';
+            tip.style.top = ty + 'px';
         });
-        dvhEl.on('plotly_unhover', function() { tip.style.display = 'none'; });
+
+        dvhEl.addEventListener('mouseleave', function() {
+            tip.style.display = 'none';
+        });
     })();
 
     // Click-to-pick (2026-06-16 user request): single-click on a
