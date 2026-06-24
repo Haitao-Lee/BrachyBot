@@ -2520,6 +2520,16 @@ def create_app(config: Optional[Dict] = None):
                         file_config = _json.load(f)
                     iso_params = file_config.get("iso_dose_params", {})
 
+            # Read display_3d settings from default_params.json
+            # This has the actual Gy thresholds for isosurfaces.
+            display_3d = {}
+            import json as _json
+            dp_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "default_params.json")
+            if os.path.exists(dp_path):
+                with open(dp_path, "r") as f:
+                    dp_config = _json.load(f)
+                display_3d = dp_config.get("display_3d", {})
+
             return jsonify({
                 "success": True,
                 "iso_dose_params": iso_params or {
@@ -2527,6 +2537,7 @@ def create_app(config: Optional[Dict] = None):
                     "iso_colors": [[0,1,0],[0,1,1],[1,1,0],[1,0.5,0],[1,0,0],[1,0,1],[0.5,0,0.5],[0,0.5,1]],
                     "iso_opacities": [0.3, 0.2, 0.1, 0.05],
                 },
+                "display_3d": display_3d,
                 "in_lowest_energy": config.get("in_lowest_energy", 1.0),
             })
         except Exception as e:
@@ -2552,7 +2563,13 @@ def create_app(config: Optional[Dict] = None):
             import numpy as np
             from skimage import measure
 
-            dose_array = agent.memory.retrieve("dose_distribution")
+            # Prefer dose_distribution_gy (resampled to CT space, higher
+            # dose values matching DVH metrics) over dose_distribution
+            # (planning grid, lower range). The Gy version is needed for
+            # isosurfaces at clinical dose levels (50-300 Gy).
+            dose_array = agent.memory.retrieve("dose_distribution_gy")
+            if dose_array is None:
+                dose_array = agent.memory.retrieve("dose_distribution")
             if dose_array is None:
                 return jsonify({"error": "No dose distribution available"}), 400
 
@@ -2576,10 +2593,14 @@ def create_app(config: Optional[Dict] = None):
             logger.info(f"[dose_isosurface] threshold={threshold}, dose_range=[{data_min:.4f}, {data_max:.4f}]")
 
             level = float(threshold)
-            # The frontend sends threshold in Gy (e.g. 60, 90, 120).
-            # The dose array is in ABSOLUTE Gy (values up to ~11000).
-            # No conversion needed — the threshold is already in the same
-            # units as the dose array. Just check if it's within range.
+            # The frontend sends threshold in Gy (e.g. 50, 100, 145).
+            # The dose array is in NORMALIZED units (0-94 range), and
+            # dose_eval multiplies by DOSE_SCALE=120 to get Gy. So we
+            # must divide by 120 to match the dose array's range.
+            DOSE_SCALE = 120.0
+            level_normalized = level / DOSE_SCALE
+            logger.info(f"[dose_isosurface] {level} Gy -> {level_normalized:.4f} normalized (data range: {data_min:.4f}-{data_max:.4f})")
+            level = level_normalized
             if level <= data_min or level > data_max:
                 return jsonify({"success": True, "vertices": [], "faces": [], "vertex_count": 0,
                                 "face_count": 0, "threshold": threshold, "dose_range": [data_min, data_max]})
