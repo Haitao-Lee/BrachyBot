@@ -14407,10 +14407,14 @@ async function loadAllIsoSurfaces() {
     }
     display3d = display3d || {};
 
-    // Use Gy values directly from config (no relative→Gy conversion)
-    const values = display3d.iso_dose_values_gy || [50, 100, 145, 200, 300];
-    const hexColors = display3d.iso_surface_colors || ['#7dd3fc', '#22c55e', '#facc15', '#f97316', '#dc2626'];
-    const opacities = display3d.iso_surface_opacities || [0.25, 0.30, 0.35, 0.40, 0.45];
+    // iso_dose_values are RELATIVE multipliers (e.g. [1.0, 1.5, 2.0, 4.0]).
+    // Multiply by prescription dose to get Gy thresholds.
+    // ref.py: args.iso_dose_params['iso_dose_values'] = inLowestEnergy * np.array(iso_dose_values)
+    const relValues = display3d.iso_dose_values || [1.0, 1.5, 2.0, 4.0];
+    const hexColors = display3d.iso_surface_colors || ['#7dd3fc', '#22c55e', '#facc15', '#f97316'];
+    const opacities = display3d.iso_surface_opacities || [0.15, 0.25, 0.35, 0.45];
+    const rxGy = (window.reportForm && window.reportForm.planning
+        && window.reportForm.planning.prescriptionGy) || 120;
 
     // Wipe any prior isosurface meshes
     Object.keys(scene3D.meshes || {}).forEach(id => {
@@ -14427,9 +14431,9 @@ async function loadAllIsoSurfaces() {
         dataTreeState.planning.doseLevels = [];
     }
 
-    // values are already in Gy — send directly to server
-    for (let i = 0; i < values.length; i++) {
-        const v = values[i];
+    // Convert relative multipliers → Gy (e.g. 1.0×120=120, 1.5×120=180)
+    for (let i = 0; i < relValues.length; i++) {
+        const v = parseFloat((relValues[i] * rxGy).toFixed(2));
         const absGy = v.toFixed(0);
         // Parse hex color string to RGB int
         const hexStr = hexColors[i] || hexColors[hexColors.length - 1] || '#22c55e';
