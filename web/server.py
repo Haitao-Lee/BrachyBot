@@ -1975,21 +1975,41 @@ def create_app(config: Optional[Dict] = None):
             def _voxel_dir_to_world(voxel_dir):
                 """Convert planning grid voxel direction to world direction.
 
-                Directions are vectors (not positions). If the seed position
-                was already in world coords, the direction is likely also
-                in world coords and needs no transformation.
+                The planning algorithm outputs directions in RAS coordinates.
+                The CT data (and our web viewer) use LPS coordinates.
+                We apply the same RAS→LPS reversal used in ref.py:
+                flip X and Y components, keep Z.
+
+                ref.py line 4957: DIRECTION_REVERSAL_SIGN = -1
+                    direction = [SIGN * d[0], SIGN * d[1], d[2]]
                 """
                 if resampled_ct is None:
-                    return voxel_dir.tolist()
+                    d = _np.array(voxel_dir, dtype=_np.float64).flatten()[:3]
+                    # Apply RAS→LPS even without CT metadata
+                    d[0] = -d[0]
+                    d[1] = -d[1]
+                    n = _np.linalg.norm(d)
+                    if n > 1e-10:
+                        d = d / n
+                    return d.tolist()
                 try:
                     import numpy as _np
                     d = _np.array(voxel_dir, dtype=_np.float64).flatten()[:3]
                     norm = _np.linalg.norm(d)
                     if norm > 1e-10:
                         d = d / norm
-                    # If direction magnitude is ~1 (unit vector in world space),
-                    # it's likely already in world coords
+
+                    # Apply RAS→LPS reversal (matching ref.py DIRECTION_REVERSAL_SIGN)
+                    # The planning grid uses RAS; CT/web viewer use LPS.
+                    d[0] = -d[0]
+                    d[1] = -d[1]
+
+                    # If direction was already unit-length in world coords,
+                    # the reversal is sufficient — no need for matrix transform
                     if 0.8 < norm < 1.2:
+                        n2 = _np.linalg.norm(d)
+                        if n2 > 1e-10:
+                            d = d / n2
                         return d.tolist()
                     # Otherwise, transform from voxel to world
                     spacing = _np.array(resampled_ct.GetSpacing())
@@ -2777,12 +2797,11 @@ def create_app(config: Optional[Dict] = None):
                     prescription_gy = float(rf["planning"]["prescriptionGy"])
             except Exception:
                 pass
-            # Convert relative multipliers → absolute Gy for find_contours
-            iso_values_gy = [float(v) * prescription_gy for v in iso_values_rel]
-            # Return absolute Gy as `level` so the frontend label
-            # shows the actual dose in Gy (was previously the
-            # relative multiplier, e.g. "1.0" instead of "120").
-            iso_labels_gy = iso_values_gy
+            # The dose array is in NORMALIZED units (0 to ~1.0, where
+            # 1.0 = prescription dose). Use relative values directly
+            # for find_contours — they match the dose array's range.
+            # Still compute Gy labels for display.
+            iso_labels_gy = [float(v) * prescription_gy for v in iso_values_rel]
 
             # Extract 2D slice from 3D dose array
             if axis == 'axial' or axis == 'z':
@@ -2799,12 +2818,11 @@ def create_app(config: Optional[Dict] = None):
             d_max = float(dose_np.max())
 
             # Filter iso_values to those within the dose range of this slice.
-            # Use the absolute-Gy levels (iso_values_gy) for the
-            # comparison — slice_2d is in Gy.
+            # Use RELATIVE levels (matching normalized dose array).
             s_min = float(slice_2d.min())
             s_max = float(slice_2d.max())
-            valid_levels = [(g, r) for g, r in zip(iso_values_gy, iso_values_rel)
-                            if s_min < g < s_max]
+            valid_levels = [(r, g) for r, g in zip(iso_values_rel, iso_labels_gy)
+                            if s_min < r < s_max]
 
             if not valid_levels:
                 return jsonify({
@@ -2816,9 +2834,9 @@ def create_app(config: Optional[Dict] = None):
 
             # Generate contour lines using marching squares
             contours_data = []
-            for i, (level_gy, level_rel) in enumerate(valid_levels):
+            for i, (level_rel, level_gy) in enumerate(valid_levels):
                 try:
-                    contours = ski_measure.find_contours(slice_2d, level=level_gy)
+                    contours = ski_measure.find_contours(slice_2d, level=level_rel)
                     # Convert to list of [row, col] coordinate arrays
                     contour_lines = []
                     for contour in contours:
