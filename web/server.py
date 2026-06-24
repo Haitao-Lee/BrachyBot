@@ -1944,6 +1944,11 @@ def create_app(config: Optional[Dict] = None):
                 The planning algorithm may output coords in either voxel or
                 world space depending on the code path. We detect which by
                 checking if the coordinates fall within the CT bounding box.
+
+                When transformation is needed, uses the same voxel→world
+                transform as plans/geometry.py voxel_to_world: reverse
+                coordinates (numpy z,y,x → SimpleITK x,y,z), scale by
+                spacing, apply direction matrix, add origin.
                 """
                 if resampled_ct is None:
                     return voxel_pos.tolist()
@@ -1966,7 +1971,9 @@ def create_app(config: Optional[Dict] = None):
                     if in_bounds:
                         return pt.tolist()
                     # Otherwise, transform from voxel to world
-                    world = (pt * spacing) @ direction.T + origin
+                    # Reverse (z,y,x) → (x,y,z) matching geometry.py voxel_to_world
+                    pt_rev = pt[::-1].copy()
+                    world = (pt_rev * spacing) @ direction.T + origin
                     return world.tolist()
                 except Exception as e:
                     logger.warning(f"[seeds_3d] voxel_to_world failed: {e}")
@@ -1975,49 +1982,45 @@ def create_app(config: Optional[Dict] = None):
             def _voxel_dir_to_world(voxel_dir):
                 """Convert planning grid voxel direction to world direction.
 
-                The planning algorithm outputs directions in RAS coordinates.
-                The CT data (and our web viewer) use LPS coordinates.
-                We apply the same RAS→LPS reversal used in ref.py:
-                flip X and Y components, keep Z.
+                The planning algorithm (cal_next_seed_direc) outputs directions
+                in planning grid voxel space with numpy (z,y,x) indexing.
+                We must convert to world coordinates using the same transform
+                as plans/utilizations.py direction_transform():
+                  1. Reverse coordinates (z,y,x → x,y,z) — matching SimpleITK ordering
+                  2. Scale by spacing
+                  3. Apply direction matrix
+                  4. Normalize
 
-                ref.py line 4957: DIRECTION_REVERSAL_SIGN = -1
-                    direction = [SIGN * d[0], SIGN * d[1], d[2]]
+                Then apply RAS→LPS sign flip on X,Y (matching ref.py
+                DIRECTION_REVERSAL_SIGN = -1) since the planning algorithm
+                operates in RAS space.
                 """
                 if resampled_ct is None:
                     d = _np.array(voxel_dir, dtype=_np.float64).flatten()[:3]
-                    # Apply RAS→LPS even without CT metadata
-                    d[0] = -d[0]
-                    d[1] = -d[1]
+                    d[0] = -d[0]; d[1] = -d[1]
                     n = _np.linalg.norm(d)
-                    if n > 1e-10:
-                        d = d / n
+                    if n > 1e-10: d = d / n
                     return d.tolist()
                 try:
                     import numpy as _np
                     d = _np.array(voxel_dir, dtype=_np.float64).flatten()[:3]
-                    norm = _np.linalg.norm(d)
-                    if norm > 1e-10:
-                        d = d / norm
-
-                    # Apply RAS→LPS reversal (matching ref.py DIRECTION_REVERSAL_SIGN)
-                    # The planning grid uses RAS; CT/web viewer use LPS.
-                    d[0] = -d[0]
-                    d[1] = -d[1]
-
-                    # If direction was already unit-length in world coords,
-                    # the reversal is sufficient — no need for matrix transform
-                    if 0.8 < norm < 1.2:
-                        n2 = _np.linalg.norm(d)
-                        if n2 > 1e-10:
-                            d = d / n2
-                        return d.tolist()
-                    # Otherwise, transform from voxel to world
+                    # Step 1: Reverse (z,y,x) → (x,y,z) for SimpleITK ordering
+                    d = d[::-1].copy()
+                    # Step 2+3: Scale by spacing and apply direction matrix
                     spacing = _np.array(resampled_ct.GetSpacing())
                     direction = _np.array(resampled_ct.GetDirection()).reshape(3, 3)
                     world_dir = (d * spacing) @ direction.T
+                    # Step 4: Normalize
                     n = _np.linalg.norm(world_dir)
                     if n > 1e-10:
                         world_dir = world_dir / n
+                    # RAS→LPS flip (matching ref.py DIRECTION_REVERSAL_SIGN)
+                    world_dir[0] = -world_dir[0]
+                    world_dir[1] = -world_dir[1]
+                    # Re-normalize after sign flip
+                    n2 = _np.linalg.norm(world_dir)
+                    if n2 > 1e-10:
+                        world_dir = world_dir / n2
                     return world_dir.tolist()
                 except Exception as e:
                     logger.warning(f"[seeds_3d] direction transform failed: {e}")
@@ -2551,15 +2554,10 @@ def create_app(config: Optional[Dict] = None):
             logger.info(f"[dose_isosurface] threshold={threshold}, dose_range=[{data_min:.4f}, {data_max:.4f}]")
 
             level = float(threshold)
-            # The frontend sends threshold in Gy (e.g. 120, 180), but the
-            # dose array is in NORMALIZED units (CNN output). Convert using
-            # the actual prescription dose from plan config.
-            plan_config = agent.memory.retrieve("plan_config", {})
-            prescription_dose = float(plan_config.get("in_lowest_energy", 120.0))
-            if level > data_max:
-                # Threshold is in Gy — convert to normalized
-                level = level / prescription_dose
-                logger.info(f"[dose_isosurface] Converted threshold to normalized: {level:.4f} (prescription={prescription_dose} Gy)")
+            # The frontend sends threshold in Gy (e.g. 60, 90, 120).
+            # The dose array is in ABSOLUTE Gy (values up to ~11000).
+            # No conversion needed — the threshold is already in the same
+            # units as the dose array. Just check if it's within range.
             if level <= data_min or level > data_max:
                 return jsonify({"success": True, "vertices": [], "faces": [], "vertex_count": 0,
                                 "face_count": 0, "threshold": threshold, "dose_range": [data_min, data_max]})
@@ -2797,11 +2795,9 @@ def create_app(config: Optional[Dict] = None):
                     prescription_gy = float(rf["planning"]["prescriptionGy"])
             except Exception:
                 pass
-            # The dose array is in NORMALIZED units (0 to ~1.0, where
-            # 1.0 = prescription dose). Use relative values directly
-            # for find_contours — they match the dose array's range.
-            # Still compute Gy labels for display.
-            iso_labels_gy = [float(v) * prescription_gy for v in iso_values_rel]
+            # The dose array is in ABSOLUTE Gy units (values up to ~11000).
+            # Convert relative multipliers → absolute Gy for find_contours.
+            iso_values_gy = [float(v) * prescription_gy for v in iso_values_rel]
 
             # Extract 2D slice from 3D dose array
             if axis == 'axial' or axis == 'z':
@@ -2818,11 +2814,11 @@ def create_app(config: Optional[Dict] = None):
             d_max = float(dose_np.max())
 
             # Filter iso_values to those within the dose range of this slice.
-            # Use RELATIVE levels (matching normalized dose array).
+            # Use Gy levels (matching Gy dose array).
             s_min = float(slice_2d.min())
             s_max = float(slice_2d.max())
-            valid_levels = [(r, g) for r, g in zip(iso_values_rel, iso_labels_gy)
-                            if s_min < r < s_max]
+            valid_levels = [(g, r) for g, r in zip(iso_values_gy, iso_values_rel)
+                            if s_min < g < s_max]
 
             if not valid_levels:
                 return jsonify({
@@ -2834,9 +2830,9 @@ def create_app(config: Optional[Dict] = None):
 
             # Generate contour lines using marching squares
             contours_data = []
-            for i, (level_rel, level_gy) in enumerate(valid_levels):
+            for i, (level_gy, level_rel) in enumerate(valid_levels):
                 try:
-                    contours = ski_measure.find_contours(slice_2d, level=level_rel)
+                    contours = ski_measure.find_contours(slice_2d, level=level_gy)
                     # Convert to list of [row, col] coordinate arrays
                     contour_lines = []
                     for contour in contours:
