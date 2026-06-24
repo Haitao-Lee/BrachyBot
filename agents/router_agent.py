@@ -28,10 +28,25 @@ class RouterAgent(LLMCapableAgent):
     4. Decide if quality review is required
     """
 
-    # Intent patterns for quick matching
+    # Intent patterns for quick matching.
+    # ORDER MATERS: first match wins. "follow_up" must come before
+    # "clinical_planning" so that requests like "规划的结论可以详细一些吗"
+    # (which contains "规划") are classified as follow-up, not planning.
     INTENT_PATTERNS = {
+        "follow_up": {
+            # Requests for more detail, clarification, or modification
+            # of an EXISTING plan. These should NOT trigger re-planning.
+            "keywords": ["详细", "具体", "解释", "为什么", "原因", "意义",
+                         "more detail", "explain", "why", "clarify",
+                         "修改", "调整", "改", "modify", "adjust",
+                         "对比", "比较", "compare", "different"],
+            "complexity": "low",
+            "agents": [AgentRole.KNOWLEDGE],
+            "requires_review": False,
+        },
         "clinical_planning": {
-            "keywords": ["计划", "规划", "plan", "planning", "植入", "implant", "粒子", "seed"],
+            "keywords": ["计划", "规划", "plan", "planning", "植入", "implant", "粒子", "seed",
+                         "执行", "开始", "运行", "execute", "run", "start"],
             "complexity": "high",
             "agents": [AgentRole.CLINICAL_EXECUTOR, AgentRole.KNOWLEDGE],
             "requires_review": True,
