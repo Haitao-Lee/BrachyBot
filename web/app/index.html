@@ -14413,8 +14413,18 @@ async function loadAllIsoSurfaces() {
     const relValues = display3d.iso_dose_values || [1.0, 1.5, 2.0, 4.0];
     const hexColors = display3d.iso_surface_colors || ['#7dd3fc', '#22c55e', '#facc15', '#f97316'];
     const opacities = display3d.iso_surface_opacities || [0.15, 0.25, 0.35, 0.45];
-    const rxGy = (window.reportForm && window.reportForm.planning
-        && window.reportForm.planning.prescriptionGy) || 120;
+    // Read prescription dose from multiple sources (in priority order):
+    // 1. Config endpoint in_lowest_energy (most reliable, from server config)
+    // 2. UI input field (user-editable)
+    // 3. reportForm.prescriptionGy (report module)
+    // 4. Default 120 Gy
+    const configRx = window._display3dConfig && window._display3dConfig._prescriptionGy;
+    const rxInput = document.getElementById('inLowestEnergy');
+    const rxFromInput = rxInput ? parseFloat(rxInput.value) : NaN;
+    const rxGy = (isFinite(configRx) && configRx > 0) ? configRx
+        : (isFinite(rxFromInput) && rxFromInput > 0) ? rxFromInput
+        : ((window.reportForm && window.reportForm.planning
+            && window.reportForm.planning.prescriptionGy) || 120);
 
     // Wipe any prior isosurface meshes
     Object.keys(scene3D.meshes || {}).forEach(id => {

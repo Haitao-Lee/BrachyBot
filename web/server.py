@@ -2521,7 +2521,7 @@ def create_app(config: Optional[Dict] = None):
                     iso_params = file_config.get("iso_dose_params", {})
 
             # Read display_3d settings from default_params.json
-            # This has the actual Gy thresholds for isosurfaces.
+            # This has the relative isosurface multipliers and display settings.
             display_3d = {}
             import json as _json
             dp_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "default_params.json")
@@ -2529,6 +2529,13 @@ def create_app(config: Optional[Dict] = None):
                 with open(dp_path, "r") as f:
                     dp_config = _json.load(f)
                 display_3d = dp_config.get("display_3d", {})
+            # Include the prescription dose so the frontend can compute
+            # absolute Gy from relative multipliers. The planning pipeline
+            # uses DOSE_SCALE=120 to convert normalized→Gy in dose_eval.
+            # in_lowest_energy is the normalized threshold (default 1.0),
+            # so prescription_gy = in_lowest_energy * DOSE_SCALE.
+            _ile = config.get("in_lowest_energy", 1.0)
+            display_3d["_prescriptionGy"] = float(_ile) * 120.0
 
             return jsonify({
                 "success": True,
