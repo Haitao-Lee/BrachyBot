@@ -17084,26 +17084,10 @@ function drawDVH() {
         // the click-to-pick flow.
         hovermode: 'closest',
         dragmode: 'zoom',
-        // BUG FIX 2026-06-16 (DVH hover): the user reported the
-        // hover tooltip showing as a "gray-white box with incomplete
-        // text". Plotly's default hoverlabel uses white text on
-        // white-ish bg, which on our deep-dark theme makes organ
-        // names invisible. We force an explicit dark-bg + bright-
-        // text style for ALL hover tooltip variants. The user can
-        // also see the dose/volume + organ name clearly.
-        hoverlabel: {
-            bgcolor: 'rgba(15,23,42,0.95)',
-            bordercolor: 'rgba(148,163,184,0.45)',
-            font: {
-                family: '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Inter, system-ui, sans-serif',
-                size: 11,
-                color: '#e2e8f0',
-            },
-            align: 'left',
-            namelength: -1,
-            split: true,
-            pad: { t: 6, b: 6, l: 8, r: 8 },
-        },
+        // Disable Plotly's built-in hoverlabel — we use a custom HTML tooltip
+        // instead, because Plotly's SVG hoverlabel has persistent positioning
+        // issues (text floats in/out, overflows container, coordinate mismatch).
+        hoverlabel: { visible: false },
     }, {
         responsive: true,
         displayModeBar: true,
@@ -17111,52 +17095,44 @@ function drawDVH() {
         displaylogo: false,
     });
 
-    // DVH tooltip clamp — MutationObserver fires immediately when
-    // Plotly positions the tooltip, BEFORE the browser paints.
-    // This repositions the SVG <g> so it stays inside the container.
-    (function _setupDvhTooltipClamp() {
-        const hl = dvhEl.querySelector('.hoverlayer');
-        if (!hl) { console.warn('[DVH clamp] hoverlayer NOT FOUND'); return; }
-        console.log('[DVH clamp] hoverlayer found, setting up MutationObserver');
-        let _clampCount = 0;
-        function clamp() {
-            const hovers = hl.querySelectorAll('.hovertext');
-            if (!hovers.length) return;
-            const rect = dvhEl.getBoundingClientRect();
-            hovers.forEach(g => {
-                const t = g.getAttribute('transform');
-                if (!t) return;
-                const m = t.match(/translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/);
-                if (!m) return;
-                let x = parseFloat(m[1]), y = parseFloat(m[2]);
-                // Get SVG scale: Plotly SVG viewBox maps to container pixels
-                const mainSvg = dvhEl.querySelector('.main-svg');
-                const vb = mainSvg ? mainSvg.viewBox.baseVal : null;
-                const svgW = vb && vb.width ? vb.width : rect.width;
-                const svgH = vb && vb.height ? vb.height : rect.height;
-                const sx = svgW / (rect.width || 1);
-                const sy = svgH / (rect.height || 1);
-                // Tooltip size estimate (SVG units)
-                const textEl = g.querySelector('text');
-                let tw = 120 * sx, th = 40 * sy;
-                if (textEl) { try { const bb = textEl.getBBox(); tw = bb.width + 10; th = bb.height + 10; } catch(_){} }
-                // Clamp: keep tooltip inside SVG coordinate space
-                let cx = Math.max(4, Math.min(x, svgW - tw));
-                let cy = Math.max(4, Math.min(y, svgH - th));
-                if (cx !== x || cy !== y) {
-                    if (_clampCount < 5) {
-                        console.log(`[DVH clamp] Repositioning: (${x.toFixed(0)},${y.toFixed(0)}) → (${cx.toFixed(0)},${cy.toFixed(0)}) svgW=${svgW.toFixed(0)} svgH=${svgH.toFixed(0)} tw=${tw.toFixed(0)} th=${th.toFixed(0)}`);
-                        _clampCount++;
-                    }
-                    g.setAttribute('transform', `translate(${cx},${cy})`);
-                }
-            });
-        }
-        // MutationObserver fires when Plotly modifies the hoverlayer
-        const obs = new MutationObserver(clamp);
-        obs.observe(hl, { childList: true, subtree: true, attributes: true, attributeFilter: ['transform'] });
-        // Also clamp on hover (for browsers that batch mutations)
-        dvhEl.addEventListener('mousemove', () => requestAnimationFrame(clamp));
+    // Custom HTML DVH tooltip — replaces Plotly's SVG hoverlabel which has
+    // persistent positioning issues (text floats in/out, overflows container).
+    // We disable Plotly's hoverlabel (hoverlabel.visible=false) and build
+    // our own absolutely-positioned div that follows the mouse.
+    (function _setupDvhTooltip() {
+        const tip = document.createElement('div');
+        tip.className = 'dvh-custom-tooltip';
+        tip.style.cssText = 'position:absolute;display:none;pointer-events:none;z-index:10000;' +
+            'background:rgba(15,23,42,0.95);border:1px solid rgba(148,163,184,0.45);border-radius:6px;' +
+            'padding:6px 10px;font-size:11px;color:#e2e8f0;font-family:Inter,system-ui,sans-serif;' +
+            'white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.4);max-width:220px;';
+        dvhEl.style.position = 'relative';
+        dvhEl.appendChild(tip);
+
+        dvhEl.on('plotly_hover', function(data) {
+            if (!data || !data.points || !data.points.length) return;
+            const pt = data.points[0];
+            const traceName = pt.data.name || '';
+            const dose = pt.x != null ? pt.x.toFixed(1) : '';
+            const vol = pt.y != null ? pt.y.toFixed(1) : '';
+            const color = pt.data.line ? (pt.data.line.color || '#e2e8f0') : '#e2e8f0';
+            tip.innerHTML = `<div style="color:${color};font-weight:600;margin-bottom:2px">${traceName}</div>` +
+                `<div>Dose: ${dose} Gy</div><div>Volume: ${vol}%</div>`;
+            tip.style.display = 'block';
+            // Position near mouse, clamped within container
+            const ev = pt.event || {};
+            let x = (ev.offsetX || ev.layerX || 0) + 15;
+            let y = (ev.offsetY || ev.layerY || 0) - 10;
+            const tipW = tip.offsetWidth || 150;
+            const tipH = tip.offsetHeight || 50;
+            const cw = dvhEl.clientWidth, ch = dvhEl.clientHeight;
+            if (x + tipW > cw - 5) x = x - tipW - 30;
+            if (y + tipH > ch - 5) y = ch - tipH - 5;
+            if (y < 5) y = 5;
+            tip.style.left = x + 'px';
+            tip.style.top = y + 'px';
+        });
+        dvhEl.on('plotly_unhover', function() { tip.style.display = 'none'; });
     })();
 
     // Click-to-pick (2026-06-16 user request): single-click on a
