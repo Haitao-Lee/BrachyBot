@@ -14289,9 +14289,10 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ threshold }),
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) { console.warn(`[loadDoseIsosurface] ${threshold} Gy: HTTP ${res.status}`); return; }
         const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Failed to load dose isosurface');
+        if (!data.success) { console.warn(`[loadDoseIsosurface] ${threshold} Gy: ${data.error}`); return; }
+        if (!data.vertex_count || data.vertex_count === 0) { console.log(`[loadDoseIsosurface] ${threshold} Gy: 0 vertices, skipping`); return; }
 
         init3DScene();
 
@@ -14432,7 +14433,9 @@ async function loadAllIsoSurfaces() {
         const color = ((c[0] * 255) << 16) | ((c[1] * 255) << 8) | (c[2] * 255);
         const opacity = (opacities[i] !== undefined) ? opacities[i] : 0.3;
         try {
+            console.log(`[IsoSurf] Loading ${v} Gy (color=${color.toString(16)}, opacity=${opacity})...`);
             await loadDoseIsosurface(v, color);
+            console.log(`[IsoSurf] ${v} Gy: mesh=${scene3D.meshes['dose_iso_'+v] ? 'loaded' : 'FAILED'}`);
             // Override the just-added mesh's opacity with the per-level
             // config value (loadDoseIsosurface uses a hard-coded 0.3).
             const mesh = scene3D.meshes[`dose_iso_${v}`];
