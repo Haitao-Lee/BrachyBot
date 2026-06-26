@@ -1,8 +1,8 @@
 # BrachyBot Self-Evolution System Specification
 
-**Version:** 5.0
-**Last Updated:** 2026-06-13
-**Based on:** v2 benchmark testing with **411 test cases across 27 categories**
+**Version:** 5.1
+**Last Updated:** 2026-06-23
+**Based on:** v2 benchmark testing with **475 test cases across 30 categories**
 (+ 32-case smoke subset)
 
 > **2026-06-13 update**: this spec was updated to match the rewritten
@@ -22,6 +22,14 @@
 >   pipeline`.
 > - For the per-category case counts and full file tree, see
 >   `benchmarks/README.md` (top-level) and `benchmarks/v2/README.md`.
+
+> **2026-06-23 update**: expanded benchmark with 3 new categories + bug-specific regressions.
+>
+> - 3 new categories (28-30): UI/Viewer rendering (15 cases), SSE streaming (10 cases), E2E clinical validation (10 cases).
+> - 19_regression.json rewritten: each case now corresponds to a specific bug fix (mask orientation, dose overlay scroll, plan_mode checkbox, DVH flicker, 3D pipeline, etc.).
+> - 27_tool_availability.json expanded: 6 → 15 cases covering all real tools + 2 fake tool refusal tests.
+> - 07_safety.json + 15_safety.json expanded: 5→15 and 10→15 cases with additional clinical safety scenarios.
+> - Every new test case has `_comment` in format: "测试目的 + 考核机制 + 验证方式".
 
 ---
 
@@ -60,7 +68,7 @@ New fields vs the old schema (v4.x):
 | `expected_answer` | str/number | Verbatim value the response must contain (T2.2) |
 | `pass_threshold` | float | Per-case threshold; default 0.6 (T3.1) |
 
-### 2.2 v2 Categories (27 active, 411 cases)
+### 2.2 v2 Categories (30 active, 475 cases)
 
 #### Core Functionality (Categories 01-08)
 
@@ -72,7 +80,7 @@ New fields vs the old schema (v4.x):
 | 04 | dose_engine | 8 | Dose calculation |
 | 05 | context | 7 | Multi-turn context |
 | 06 | dose_evaluation | 8 | Dose evaluation |
-| 07 | safety | 5 | Safety constraints |
+| 07 | safety | 15 | Safety constraints (expanded 2026-06-23) |
 | 08 | error_recovery | 6 | Error handling |
 
 #### Tool-Specific Tests (Categories 09-10)
@@ -90,7 +98,7 @@ New fields vs the old schema (v4.x):
 | 12 | language | 15 | Language consistency |
 | 13 | context | 10 | Context retention |
 | 14 | response_quality | 10 | Response formatting |
-| 15 | safety | 10 | Safety validation |
+| 15 | safety | 15 | Safety validation (expanded 2026-06-23) |
 | 16 | error_recovery | 10 | Error handling |
 
 #### Workflow Tests (Categories 17-20)
@@ -99,7 +107,7 @@ New fields vs the old schema (v4.x):
 |---|----------|-------|-------------|
 | 17 | advanced_workflows | 15 | Complex workflows |
 | 18 | edge_cases | 15 | Edge cases |
-| 19 | regression | 15 | Regression tests |
+| 19 | regression | 20 | Bug-specific regressions (each case = one real fix) |
 | 20 | clinical_scenarios | 15 | Clinical scenarios (verified against `clinical_standards`) |
 
 #### Input Variation Tests (Categories 21-22)
@@ -108,6 +116,14 @@ New fields vs the old schema (v4.x):
 |---|----------|-------|-------------|
 | 21 | input_variations | 66 | Same intent, different phrasings (was 112) |
 | 22 | input_variations_all | 78 | Comprehensive variations (was 111) |
+
+#### UI/Streaming/E2E Tests (Categories 28-30) — added 2026-06-23
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 28 | ui_viewer | 15 | 2D/3D viewer rendering, dose overlay, mask display |
+| 29 | streaming_sse | 10 | SSE streaming, tool-call events, todo list |
+| 30 | e2e_clinical_validation | 10 | End-to-end clinical validation (V100, D90, OAR) |
 
 #### NEW Core-Capability Tests (Categories 23-27) — added 2026-06-13
 
@@ -378,11 +394,135 @@ docs/benchmark_result/screenshots/
 ![Case ID](../screenshots/XX_CASE_ID.png)
 ```
 
+### 7.4 Screenshot-Report Correspondence Rules (MANDATORY)
+
+> **Core principle:** Every test case MUST appear in the report with its
+> screenshot. No exceptions. No placeholders. No "see folder".
+
+#### Rule 1: One screenshot per test case — no missing, no extra
+
+| Test type | Screenshot naming | Report reference |
+|-----------|-------------------|------------------|
+| Single-turn | `{cat:02d}_{case_id}.png` | `![{case_id}](../screenshots/{cat:02d}_{case_id}.png)` |
+| Multi-turn (N turns) | `{cat:02d}_{case_id}_turn{K}.png` | Each turn gets its own `![Turn K](../screenshots/…_turn{K}.png)` |
+
+#### Rule 2: Screenshot must capture the EXACT response
+
+- Screenshot is taken **AFTER** the bot response completes (text > 50 chars,
+  + 3 s render wait).
+- `full_page=True` — captures the entire chat history including setup commands
+  and the actual test Q&A.
+- The screenshot must contain the **test input question** and the **bot response
+  that was scored**. If the screenshot shows a different response or a blank
+  page, it is INVALID.
+
+#### Rule 3: Report must embed screenshots inline — not as links to folder
+
+**Correct** (inline image):
+```markdown
+![TC001](../screenshots/01_TC001.png)
+```
+
+**Wrong** (just a file path, reader cannot see the image):
+```markdown
+Screenshot: docs/benchmark_result/screenshots_v2/01_TC001.png
+```
+
+#### Rule 4: Every case in the report must have a screenshot — zero tolerance
+
+- If a case appears in the report's "Detailed Results" section without a
+  screenshot reference, the report is **INVALID** and must be regenerated.
+- The report generator MUST loop through ALL results and emit a screenshot
+  reference for each one. Do NOT skip cases that failed to screenshot —
+  instead, report the missing screenshot as a `screenshot_missing` error.
+
+#### Rule 5: Screenshot file must exist and be valid
+
+- File size > 1 KB (a blank page is typically < 5 KB; a real full-page
+  screenshot is 50–500 KB).
+- File is a valid PNG (starts with `\x89PNG`).
+- If the screenshot file is missing or corrupt, the report MUST flag it
+  explicitly:
+
+```markdown
+**Screenshot:** ⚠️ MISSING — test case TC001 did not produce a screenshot.
+```
+
+### 7.5 Two-Layer Report Architecture
+
+Reports are generated in two layers. Both must be correct.
+
+#### Layer 1: Per-Category Report (auto-generated by `aligned_benchmark.py`)
+
+```
+docs/benchmark_result/reports_v2/agent{N}_{cat:02d}_{cat_name}.md
+```
+
+**Must contain:**
+1. Executive Summary (Total / Passed / Failed / Pass Rate / Avg Score)
+2. Root Cause Breakdown table (cause / count / % / severity)
+3. Detailed Results — **every test case** with:
+   - Case ID + ✅/❌ status
+   - Input text (≤ 500 chars)
+   - Response text (≤ 1000 chars)
+   - Seven-dimension scores
+   - **Inline screenshot reference** (§7.4 Rule 3)
+   - For failures: Root Cause + Description
+4. Multi-turn tests: each turn listed separately with its own screenshot
+
+#### Layer 2: Final Summary Report (auto-generated by `generate_final_report.py`)
+
+```
+docs/benchmark_result/reports_v2/final_report.md
+```
+
+**Must contain:**
+1. Executive Summary (overall totals across all agents)
+2. Agent Performance Summary table
+3. Merged Failure Root Causes table
+4. Key Findings (27 categories overview + CT material info)
+5. Data Sources (agent report paths)
+
+**Current gap:** `generate_final_report.py` does NOT embed per-case
+screenshots or detailed results — it only aggregates statistics. If the
+final report must also show individual test case screenshots, the script
+needs to be extended to parse and inline the detailed results from each
+per-category report.
+
+### 7.6 Report Integrity Checklist
+
+Before declaring a report complete, verify ALL of the following:
+
+| # | Check | How to verify |
+|---|-------|---------------|
+| 1 | Every test case has a screenshot reference in the report | Grep report for `![` — count must equal number of test cases |
+| 2 | Every referenced screenshot file exists on disk | `ls` each referenced path |
+| 3 | Screenshot files are valid PNG and > 1 KB | `file` command + size check |
+| 4 | Screenshot filename matches case ID | Parse filename, compare to report case ID |
+| 5 | Multi-turn cases have per-turn screenshots | Check `_turn{N}` suffix count == turn count |
+| 6 | Report scores match scoring engine output | Compare report scores to `results.json` |
+| 7 | Root cause labels are valid (from §4) | Check against allowed label list |
+| 8 | No placeholder text like "TODO" or "N/A" | `grep -i "todo\|N/A\|placeholder"` |
+
+### 7.7 Screenshot Capture Timing — What Must Be Visible
+
+When the screenshot is taken, the browser page MUST show:
+
+1. ✅ The test input question (typed by the agent)
+2. ✅ The complete bot response (not truncated, not streaming)
+3. ✅ The response text must match what was extracted for scoring
+
+The screenshot MUST NOT show:
+1. ❌ A different test case's response (wrong correspondenc)
+2. ❌ A blank or partially loaded page
+3. ❌ A browser error page (timeout, crash, etc.)
+4. ❌ Only the setup commands without the actual test Q&A
+
 ---
 
 ## 8. Category System (v2)
 
-### 8.1 Categories (27 active, 411 test cases + 32 smoke)
+### 8.1 Categories (30 active, 475 test cases + 32 smoke)
 
 #### Core Functionality (Categories 01-08)
 
@@ -394,7 +534,7 @@ docs/benchmark_result/screenshots/
 | 04 | dose_engine | 8 | Dose calculation |
 | 05 | context | 7 | Multi-turn context |
 | 06 | dose_evaluation | 8 | Dose evaluation |
-| 07 | safety | 5 | Safety constraints |
+| 07 | safety | 15 | Safety constraints (expanded 2026-06-23) |
 | 08 | error_recovery | 6 | Error handling |
 
 #### Tool-Specific Tests (Categories 09-10)
@@ -412,7 +552,7 @@ docs/benchmark_result/screenshots/
 | 12 | language | 15 | Language consistency |
 | 13 | context | 10 | Context retention |
 | 14 | response_quality | 10 | Response formatting |
-| 15 | safety | 10 | Safety validation |
+| 15 | safety | 15 | Safety validation (expanded 2026-06-23) |
 | 16 | error_recovery | 10 | Error handling |
 
 #### Workflow Tests (Categories 17-20)
@@ -421,7 +561,7 @@ docs/benchmark_result/screenshots/
 |---|----------|-------|-------------|
 | 17 | advanced_workflows | 15 | Complex workflows |
 | 18 | edge_cases | 15 | Edge cases |
-| 19 | regression | 15 | Regression tests |
+| 19 | regression | 20 | Bug-specific regressions (each case = one real fix) |
 | 20 | clinical_scenarios | 15 | Clinical scenarios |
 
 #### Input Variation Tests (Categories 21-22)
@@ -431,7 +571,7 @@ docs/benchmark_result/screenshots/
 | 21 | input_variations | 66 | Same intent, different phrasings (was 112) |
 | 22 | input_variations_all | 78 | Comprehensive variations (was 111) |
 
-#### Core-Capability Tests (Categories 23-27) — added 2026-06-13
+#### Core-Capability Tests (Categories 23-27)
 
 | # | Category | Cases | Description |
 |---|----------|-------|-------------|
@@ -439,7 +579,15 @@ docs/benchmark_result/screenshots/
 | 24 | reference_direction | 8 | Organ-specific ref_direc (pancreas→posterior) |
 | 25 | clinical_oar_constraints | 10 | Per-organ OAR limits (clinical_standards verified) |
 | 26 | skill_selection | 8 | Right skill picked (Standard/Liver/Lung) |
-| 27 | tool_availability | 6 | LLM doesn't hallucinate non-existent tools |
+| 27 | tool_availability | 15 | Tool existence (expanded: 15 real + 2 fake tools) |
+
+#### UI/Streaming/E2E Tests (Categories 28-30) — added 2026-06-23
+
+| # | Category | Cases | Description |
+|---|----------|-------|-------------|
+| 28 | ui_viewer | 15 | 2D/3D viewer rendering, dose overlay, mask display, DVH |
+| 29 | streaming_sse | 10 | SSE streaming, tool-call events, todo list |
+| 30 | e2e_clinical_validation | 10 | End-to-end clinical validation (V100, D90, OAR, report) |
 
 #### Quarantined: `v2/_legacy/` (NOT run, preserved for reference)
 
@@ -481,7 +629,7 @@ benchmarks/
 ├── generate_final_report.py     # Report generation (v2)
 ├── run_aligned_agents.sh        # Run 4 agents in parallel
 ├── v1/                          # v1 benchmark (36 categories, READ-ONLY)
-├── v2/                          # v2 benchmark (27 categories, 411 cases + 32 smoke)
+├── v2/                          # v2 benchmark (30 categories, 470 cases + 32 smoke)
 │   ├── README.md                # v2 documentation
 │   ├── 01_ct_analysis.json      # 15 cases
 │   ├── 02_ctv_segmentation.json # 10 cases
@@ -489,7 +637,7 @@ benchmarks/
 │   ├── 04_dose_engine.json      # 8 cases
 │   ├── 05_context.json          # 7 cases
 │   ├── 06_dose_evaluation.json  # 8 cases
-│   ├── 07_safety.json           # 5 cases
+│   ├── 07_safety.json           # 15 cases (expanded 2026-06-23)
 │   ├── 08_error_recovery.json   # 6 cases
 │   ├── 09_knowledge_tools.json  # 15 cases
 │   ├── 10_web_search.json       # 10 cases
@@ -497,19 +645,22 @@ benchmarks/
 │   ├── 12_language.json         # 15 cases
 │   ├── 13_context.json          # 10 cases
 │   ├── 14_response_quality.json # 10 cases
-│   ├── 15_safety.json           # 10 cases
+│   ├── 15_safety.json           # 15 cases (expanded 2026-06-23)
 │   ├── 16_error_recovery.json   # 10 cases
 │   ├── 17_advanced_workflows.json # 15 cases
 │   ├── 18_edge_cases.json       # 15 cases
-│   ├── 19_regression.json       # 15 cases
+│   ├── 19_regression.json       # 20 cases (rewritten: bug-specific 2026-06-23)
 │   ├── 20_clinical_scenarios.json # 15 cases
 │   ├── 21_input_variations.json # 66 cases  (was 112)
 │   ├── 22_input_variations_all.json # 78 cases  (was 111)
-│   ├── 23_planning_pipeline_stages.json # 10 cases  (NEW 2026-06-13)
-│   ├── 24_reference_direction.json     #  8 cases  (NEW)
-│   ├── 25_clinical_oar_constraints.json # 10 cases  (NEW)
-│   ├── 26_skill_selection.json         #  8 cases  (NEW)
-│   ├── 27_tool_availability.json       #  6 cases  (NEW)
+│   ├── 23_planning_pipeline_stages.json # 10 cases
+│   ├── 24_reference_direction.json     #  8 cases
+│   ├── 25_clinical_oar_constraints.json # 10 cases
+│   ├── 26_skill_selection.json         #  8 cases
+│   ├── 27_tool_availability.json       # 15 cases (expanded 2026-06-23)
+│   ├── 28_ui_viewer.json              # 15 cases  (NEW 2026-06-23)
+│   ├── 29_streaming_sse.json          # 10 cases  (NEW 2026-06-23)
+│   ├── 30_e2e_clinical_validation.json # 10 cases  (NEW 2026-06-23)
 │   ├── _legacy/                # 8 v1-of-v2 files (NOT run; preserved for ref)
 │   │   ├── 01_tool_calling.json
 │   │   ├── 02_multi_step.json

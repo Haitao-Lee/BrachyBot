@@ -1,0 +1,56 @@
+{
+  "1": {
+    "agent_id": 1,
+    "cat_num": 1,
+    "n": 1,
+    "passed": 0,
+    "pass_rate": 0.0,
+    "avg_score": 0.625,
+    "timestamp": "2026-06-25T13:35:47.962626"
+  },
+  "2": {
+    "agent_id": 1,
+    "cat_num": 2,
+    "n": 2,
+    "passed": 0,
+    "pass_rate": 0.0,
+    "avg_score": 0.6,
+    "timestamp": "2026-06-25T13:43:56.591602"
+  },
+  "3": {
+    "agent_id": 1,
+    "cat_num": 3,
+    "n": 2,
+    "passed": 1,
+    "pass_rate": 0.5,
+    "avg_score": 0.675,
+    "timestamp": "2026-06-25T17:34:36.466523"
+  },
+  "4": {
+    "agent_id": 1,
+    "cat_num": 4,
+    "n": 5,
+    "passed": 1,
+    "pass_rate": 0.2,
+    "avg_score": 0.715,
+    "timestamp": "2026-06-25T14:01:28.631220"
+  },
+  "5": {
+    "agent_id": 1,
+    "cat_num": 5,
+    "n": 1,
+    "passed": 1,
+    "pass_rate": 1.0,
+    "avg_score": 0.9625,
+    "timestamp": "2026-06-25T14:08:29.918936"
+  },
+  "6": {
+    "agent_id": 1,
+    "cat_num": 6,
+    "n": 4,
+    "passed": 1,
+    "pass_rate": 0.25,
+    "avg_score": 0.7749999999999999,
+    "timestamp": "2026-06-25T14:18:03.524688"
+  }
+}
