@@ -1044,6 +1044,8 @@ def create_app(config: Optional[Dict] = None):
                 "success": True,
                 "slices": slices,
                 "spacing": [float(spacing[0]), float(spacing[1]), float(spacing[2])],
+                "origin": [float(origin[0]), float(origin[1]), float(origin[2])],
+                "direction": [float(d) for d in direction],
                 "shape": [int(shape[0]), int(shape[1]), int(shape[2])],
                 "hu_range": [float(ct_data.min()), float(ct_data.max())],
                 "dicom": dicom_tags,
@@ -1941,14 +1943,18 @@ def create_app(config: Optional[Dict] = None):
             def _voxel_to_world(voxel_pos):
                 """Convert planning grid voxel coords to world coords.
 
-                The planning algorithm may output coords in either voxel or
-                world space depending on the code path. We detect which by
-                checking if the coordinates fall within the CT bounding box.
-
-                When transformation is needed, uses the same voxel→world
-                transform as plans/geometry.py voxel_to_world: reverse
-                coordinates (numpy z,y,x → SimpleITK x,y,z), scale by
+                Uses the canonical transform from plans/geometry.py voxel_to_world:
+                reverse coordinates (numpy z,y,x → SimpleITK x,y,z), scale by
                 spacing, apply direction matrix, add origin.
+
+                CRITICAL: Always transform — the planning algorithm ALWAYS
+                outputs in planning grid voxel space. The old heuristic
+                (checking if coords fall within CT bounding box) was wrong:
+                planning grid indices like (64, 64, 30) are small numbers
+                that DO fall within the large CT bounding box range
+                (-174 to +175), so the heuristic incorrectly skipped
+                the transform, leaving seeds in voxel space while CT/OAR
+                meshes were in world space — causing the misalignment.
                 """
                 if resampled_ct is None:
                     return voxel_pos.tolist()
@@ -1958,20 +1964,9 @@ def create_app(config: Optional[Dict] = None):
                     origin = _np.array(resampled_ct.GetOrigin())
                     spacing = _np.array(resampled_ct.GetSpacing())
                     direction = _np.array(resampled_ct.GetDirection()).reshape(3, 3)
-                    # Compute CT bounding box in world coords
-                    size = _np.array(resampled_ct.GetSize())
-                    corners = _np.array([[0,0,0],[size[0],0,0],[0,size[1],0],[0,0,size[2]],
-                                          [size[0],size[1],0],[size[0],0,size[2]],
-                                          [0,size[1],size[2]],[size[0],size[1],size[2]]])
-                    world_corners = (corners * spacing) @ direction.T + origin
-                    bb_min = world_corners.min(axis=0)
-                    bb_max = world_corners.max(axis=0)
-                    # If seed is already within CT bounds, it's in world coords
-                    in_bounds = _np.all(pt >= bb_min - 50) and _np.all(pt <= bb_max + 50)
-                    if in_bounds:
-                        return pt.tolist()
-                    # Otherwise, transform from voxel to world
-                    # Reverse (z,y,x) → (x,y,z) matching geometry.py voxel_to_world
+                    # Canonical transform: reverse (z,y,x) → (x,y,z),
+                    # scale by spacing, apply direction matrix, add origin.
+                    # Same as plans/geometry.py voxel_to_world.
                     pt_rev = pt[::-1].copy()
                     world = (pt_rev * spacing) @ direction.T + origin
                     return world.tolist()
@@ -2041,30 +2036,21 @@ def create_app(config: Optional[Dict] = None):
                     if not isinstance(seed, (list, tuple)) or len(seed) < 2:
                         continue
 
-                    pos_voxel = np.array(seed[0], dtype=np.float64).flatten()[:3]
-                    direc_voxel = np.array(seed[1], dtype=np.float64).flatten()[:3]
-
-                    # Convert from planning grid voxel coords to world coords
-                    pos_world = _voxel_to_world(pos_voxel)
-                    direc_world = _voxel_dir_to_world(direc_voxel)
+                    # CRITICAL: optimal_plan() in plans/core.py ALREADY converts
+                    # seeds from voxel to world coordinates using position_transform().
+                    # The seed[0] and seed[1] are therefore ALREADY in world coords.
+                    # Do NOT apply _voxel_to_world again — that would double-transform
+                    # and place seeds far from the correct position.
+                    pos_world = np.array(seed[0], dtype=np.float64).flatten()[:3]
+                    direc_world = np.array(seed[1], dtype=np.float64).flatten()[:3]
 
                     if i == 0 and j == 0:
-                        logger.info(f"[seeds_3d] first seed: voxel={pos_voxel.tolist()}, world={pos_world}")
-                        if resampled_ct is not None:
-                            logger.info(f"[seeds_3d] resampled_ct: size={resampled_ct.GetSize()}, spacing={resampled_ct.GetSpacing()}, origin={resampled_ct.GetOrigin()}, direction={resampled_ct.GetDirection()}")
-                            # Debug: show the actual transform
-                            import numpy as _np
-                            pt = _np.array(pos_voxel, dtype=_np.float64).flatten()[:3]
-                            sp = _np.array(resampled_ct.GetSpacing())
-                            or_ = _np.array(resampled_ct.GetOrigin())
-                            dr = _np.array(resampled_ct.GetDirection()).reshape(3, 3)
-                            logger.info(f"[seeds_3d] DEBUG: pt={pt}, sp={sp}, or={or_}, dr={dr.tolist()}")
-                            logger.info(f"[seeds_3d] DEBUG: pt*sp={pt*sp}, (pt*sp)@dr.T={(pt*sp)@dr.T}, +or={(pt*sp)@dr.T + or_}")
+                        logger.info(f"[seeds_3d] first seed (already world): pos={pos_world.tolist()}, dir={direc_world.tolist()}")
 
                     seed_data = {
                         "id": f"seed_{i}_{j}",
-                        "position": pos_world,
-                        "direction": direc_world,
+                        "position": pos_world.tolist(),
+                        "direction": direc_world.tolist(),
                         "trajectory_id": i,
                         "seed_index": j,
                     }
@@ -2239,15 +2225,9 @@ def create_app(config: Optional[Dict] = None):
                     for j, seed in enumerate(seed_list or []):
                         if not isinstance(seed, (list, tuple)) or len(seed) < 2:
                             continue
-                        pos_voxel = np.array(seed[0], dtype=np.float64).flatten()[:3]
-                        if resampled_ct is not None:
-                            try:
-                                from plans.utilizations import position_transform
-                                pos_world = position_transform(resampled_ct, pos_voxel)[0].tolist()
-                            except Exception:
-                                pos_world = pos_voxel.tolist()
-                        else:
-                            pos_world = pos_voxel.tolist()
+                        # Seeds from optimal_plan() are ALREADY in world coordinates.
+                        # Do NOT apply position_transform again (double-transform bug).
+                        pos_world = np.array(seed[0], dtype=np.float64).flatten()[:3].tolist()
                         seeds.append({
                             "id": f"seed_{i + 1}_{j + 1}",
                             "pos": pos_world,
@@ -2575,21 +2555,43 @@ def create_app(config: Optional[Dict] = None):
             # (planning grid, lower range). The Gy version is needed for
             # isosurfaces at clinical dose levels (50-300 Gy).
             dose_array = agent.memory.retrieve("dose_distribution_gy")
+            dose_in_original_ct_space = dose_array is not None
             if dose_array is None:
                 dose_array = agent.memory.retrieve("dose_distribution")
             if dose_array is None:
                 return jsonify({"error": "No dose distribution available"}), 400
 
-            # Use resampled_ct for coordinate transforms
-            resampled_ct = agent.memory.retrieve("resampled_ct")
-            if resampled_ct is not None:
-                spacing = resampled_ct.GetSpacing()
-                origin = resampled_ct.GetOrigin()
-                direction = resampled_ct.GetDirection()
+            # CRITICAL: coordinate transform depends on which dose array we have.
+            # - dose_distribution_gy: resampled to ORIGINAL CT space by _step_dose_calc
+            #   → use ct_image spacing/origin/direction
+            # - dose_distribution (fallback): still in PLANNING GRID space
+            #   → use resampled_ct spacing/origin/direction
+            # Using the wrong spacing causes isosurfaces to be offset by hundreds of mm.
+            if dose_in_original_ct_space:
+                ct_image = agent.memory.retrieve("ct_image")
+                if ct_image is not None:
+                    spacing = ct_image.GetSpacing()
+                    origin = ct_image.GetOrigin()
+                    direction = ct_image.GetDirection()
+                    logger.info(f"[dose_isosurface] Using ct_image (original CT space) spacing={spacing}, origin={origin}")
+                else:
+                    spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
+                    origin = agent.memory.retrieve("ct_origin") or (0.0, 0.0, 0.0)
+                    direction = agent.memory.retrieve("ct_direction") or (1, 0, 0, 0, 1, 0, 0, 0, 1)
+                    logger.info(f"[dose_isosurface] Using fallback spacing={spacing}")
             else:
-                spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
-                origin = agent.memory.retrieve("ct_origin") or (0.0, 0.0, 0.0)
-                direction = agent.memory.retrieve("ct_direction") or (1, 0, 0, 0, 1, 0, 0, 0, 1)
+                # dose_distribution is in planning grid space — use resampled_ct
+                resampled_ct = agent.memory.retrieve("resampled_ct")
+                if resampled_ct is not None:
+                    spacing = resampled_ct.GetSpacing()
+                    origin = resampled_ct.GetOrigin()
+                    direction = resampled_ct.GetDirection()
+                    logger.info(f"[dose_isosurface] Using resampled_ct (planning grid) spacing={spacing}")
+                else:
+                    spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
+                    origin = agent.memory.retrieve("ct_origin") or (0.0, 0.0, 0.0)
+                    direction = agent.memory.retrieve("ct_direction") or (1, 0, 0, 0, 1, 0, 0, 0, 1)
+                    logger.info(f"[dose_isosurface] Using fallback spacing={spacing}")
 
             dose_np = np.array(dose_array)
             if dose_np.ndim != 3:
@@ -2597,7 +2599,8 @@ def create_app(config: Optional[Dict] = None):
 
             data_min = float(dose_np.min())
             data_max = float(dose_np.max())
-            logger.info(f"[dose_isosurface] threshold={threshold}, dose_range=[{data_min:.4f}, {data_max:.4f}]")
+            logger.info(f"[dose_isosurface] threshold={threshold}, dose_range=[{data_min:.4f}, {data_max:.4f}], "
+                        f"dose_shape={dose_np.shape}, spacing={spacing}, origin={origin}")
 
             level = float(threshold)
             # The frontend sends threshold in Gy (e.g. 50, 100, 145).
@@ -2700,6 +2703,10 @@ def create_app(config: Optional[Dict] = None):
                 ct_spacing = [0.68, 0.68, 5.0]
                 ct_origin = [0.0, 0.0, 0.0]
 
+            # Compute peak voxel (single maximum dose point across entire volume)
+            peak_flat_idx = int(np.argmax(dose_np))
+            peak_z, peak_y, peak_x = np.unravel_index(peak_flat_idx, dose_np.shape)
+
             return jsonify({
                 "success": True,
                 "dose_shape": list(dose_np.shape),
@@ -2708,6 +2715,11 @@ def create_app(config: Optional[Dict] = None):
                 "ct_spacing": ct_spacing,
                 "ct_origin": ct_origin,
                 "ct_size": ct_size,
+                "peak_voxel": {
+                    "x": int(peak_x),
+                    "y": int(peak_y),
+                    "z": int(peak_z),
+                },
             })
         except Exception as e:
             logger.error(f"Dose overlay data failed: {e}")

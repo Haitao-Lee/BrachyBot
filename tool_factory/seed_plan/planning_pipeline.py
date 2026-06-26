@@ -1416,7 +1416,7 @@ class PlanningPipelineTool(BaseTool):
             ctv_pcts = []
             target_doses_gy = target_doses * DOSE_SCALE
             for d in dose_centers:
-                pct = float(np.sum(target_doses_gy >= d) / len(target_doses_gy) * 100.0)
+                pct = min(100.0, max(0.0, float(np.sum(target_doses_gy >= d) / len(target_doses_gy) * 100.0)))
                 ctv_pcts.append(pct)
             dvh_data["CTV"] = {
                 "dose_bins": dose_centers.tolist(),
@@ -1435,7 +1435,7 @@ class PlanningPipelineTool(BaseTool):
                     if len(oar_doses_arr) > 0:
                         oar_pcts = []
                         for d in dose_centers:
-                            pct = float(np.sum(oar_doses_arr >= d) / len(oar_doses_arr) * 100.0)
+                            pct = min(100.0, max(0.0, float(np.sum(oar_doses_arr >= d) / len(oar_doses_arr) * 100.0)))
                             oar_pcts.append(pct)
                         # Try both int and string keys for organ_names
                         oar_name = None

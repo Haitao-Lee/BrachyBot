@@ -22,7 +22,7 @@ from tool_factory import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
 
-# Valid screenshot targets
+# Valid screenshot targets — must match frontend _SCREENSHOT_TARGET_MAP
 SCREENSHOT_TARGETS = {
     "viewer-axial": "Axial viewer panel (2D slice view)",
     "viewer-sagittal": "Sagittal viewer panel",
@@ -34,6 +34,7 @@ SCREENSHOT_TARGETS = {
     "input": "Input panel (file loading, configuration)",
     "seeds": "Seeds panel (seed planning results)",
     "planning": "Planning panel (step-by-step planning tools)",
+    "report": "Report panel (report editor and preview)",
     "full": "Full page screenshot",
     "overlay-controls": "Overlay control area (opacity sliders, toggles)",
 }

@@ -28,8 +28,8 @@ CONTROL_REGISTRY = {
     # ── Panel switching ──
     "panel": {
         "commands": ["switch"],
-        "values": ["input", "metrics", "seeds", "viewers", "report"],
-        "description": "Switch between UI panels/tabs"
+        "values": ["input", "metrics", "viewers", "report"],
+        "description": "Switch between UI panels/tabs (input, metrics, viewers, report)"
     },
     # ── Viewer settings ──
     "viewer.window": {
@@ -64,6 +64,10 @@ CONTROL_REGISTRY = {
     "viewer.reset": {
         "commands": ["run"],
         "description": "Reset all viewer settings (window/level/zoom/pan) to defaults"
+    },
+    "viewer.fit_all": {
+        "commands": ["run"],
+        "description": "Fit all 2D viewers to show the full image"
     },
     "viewer.preset": {
         "commands": ["set"],
@@ -311,6 +315,10 @@ CONTROL_REGISTRY = {
         "commands": ["run"],
         "description": "Fit camera to show all 3D meshes"
     },
+    "3d.reset": {
+        "commands": ["run"],
+        "description": "Reset 3D camera to default position and zoom"
+    },
     "3d.show_all": {
         "commands": ["run"],
         "description": "Show all 3D meshes"
@@ -514,6 +522,7 @@ class UIControllerTool(BaseTool):
         if target == "viewer.threshold": return f"HU threshold set to {value}"
         if target == "viewer.fullscreen": return f"{value} viewer fullscreen toggled"
         if target == "viewer.reset": return "Viewer settings reset to defaults"
+        if target == "viewer.fit_all": return "All viewers fitted to image"
         if target == "viewer.preset": return f"Applied {value} window preset"
 
         # Overlay controls
@@ -606,6 +615,7 @@ class UIControllerTool(BaseTool):
         if target == "3d.skin": return f"3D skin surface {value}"
         if target == "3d.dose_opacity": return f"3D dose opacity set to {value}%"
         if target == "3d.fit": return "Camera fitted to all 3D meshes"
+        if target == "3d.reset": return "3D camera reset to default"
         if target == "3d.show_all": return "All 3D meshes shown"
         if target == "3d.hide_all": return "All 3D meshes hidden"
 
