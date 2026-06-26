@@ -673,8 +673,9 @@ class ToolResultPipeline:
     # Tool name → display category mapping
     _SEGMENTATION_TOOLS = {"ctv_segmentation", "oar_segmentation", "seed_segmentation"}
     _ANALYSIS_TOOLS = {"code_executor"}
-    _UI_TOOLS = {"ui_controller"}
+    _UI_TOOLS = {"ui_controller", "ui_screenshot"}
     _PLANNING_TOOLS = {"planning_pipeline", "seed_planning", "trajectory_planning", "dose_engine", "dose_evaluation"}
+    _LOCALIZABLE_TOOLS = {"filesystem_browser", "shell_executor", "code_executor"}
 
     @staticmethod
     def _L(zh: str, en: str, lang: str = "en") -> str:
@@ -711,8 +712,19 @@ class ToolResultPipeline:
         if display_msg:
             return display_msg
 
-        # 4. Fallback to message
-        return result.message or f"{tool_name} completed."
+        # 4. Fallback to message — localize error/success prefix
+        msg = result.message or f"{tool_name} completed."
+        if lang == "zh":
+            # Localize common English prefixes so Chinese users never see raw English
+            msg = msg.replace("Error: ", "错误: ").replace("Command executed successfully", "命令执行成功")
+            msg = msg.replace("Command executed with return code 0 successfully", "命令执行成功（返回码 0）")
+            msg = msg.replace("Command failed with return code ", "命令执行失败（返回码 ")
+            if msg.endswith(")"):
+                msg += ")"
+            msg = msg.replace("Listed ", "已列出 ").replace(" items in ", " 个项目，路径: ")
+            msg = msg.replace("File info for ", "文件信息: ")
+            msg = msg.replace("Filesystem browse failed: ", "文件浏览失败: ")
+        return msg
 
     @staticmethod
     def _format_segmentation(tool_name: str, result, meta: dict, lang: str) -> str:
@@ -2433,10 +2445,12 @@ class BrachyAgent:
         ct_image = self.memory.retrieve("ct_image")
         if tool_name == "ctv_segmentation" and "ctv_array" in meta:
             print(f"[STORE] Storing ctv_array, shape={meta['ctv_array'].shape if hasattr(meta['ctv_array'], 'shape') else 'N/A'}, ct_image={'exists' if ct_image is not None else 'None'}")
-            if ct_image is not None:
-                self._store_label_with_metadata(meta["ctv_array"], ct_image, "ctv_array")
-            else:
-                self.memory.store("ctv_array", meta["ctv_array"])
+            # Store as plain numpy array (like OAR) — do NOT wrap in SimpleITK
+            # with LPI metadata. The 3D mask endpoint uses ct_spacing/ct_origin/
+            # ct_direction for the world transform, and DICOMOrient('LPI') in
+            # _get_label_array would reorient the array, causing a mismatch
+            # between the array orientation and the metadata.
+            self.memory.store("ctv_array", meta["ctv_array"])
             if "label_stats" in meta:
                 self.memory.store("ctv_label_stats", meta["label_stats"])
             if "label_map" in meta:
@@ -2464,10 +2478,11 @@ class BrachyAgent:
             logger.info(f"[STORE] ctv_segmentation: ctv_voxels={_cv}, ctv_volume_mm3={_cvm3}, tumor_type={meta.get('tumor_type')}")
         elif tool_name == "oar_segmentation":
             if "oar_array" in meta:
-                if ct_image is not None:
-                    self._store_label_with_metadata(meta["oar_array"], ct_image, "oar_array")
-                else:
-                    self.memory.store("oar_array", meta["oar_array"])
+                # Store as plain numpy array (like CTV) — do NOT wrap in SimpleITK
+                # with LPI metadata. The 3D mask endpoint uses ct_spacing/ct_origin/
+                # ct_direction for the world transform, and DICOMOrient('LPI') in
+                # _get_label_array would reorient the array, causing a mismatch.
+                self.memory.store("oar_array", meta["oar_array"])
             if "organ_names" in meta:
                 self.memory.store("organ_names", meta["organ_names"])
             if "organ_counts" in meta:
@@ -2558,7 +2573,11 @@ print(json.dumps(result))
             (r'(分割|segment).{0,8}(ctv|靶区|临床靶区|病灶|肿瘤|tumor|lesion)', 'segment_ctv'),
             (r'(oar|危及器官|器官).{0,5}(分割|segment)', 'segment_oar'),
             (r'(分割|segment).{0,5}(oar|危及器官|器官)', 'segment_oar'),
-            (r'(剂量|dose|计算剂量)', 'dose'),
+            # NOTE: "剂量" alone is too broad — "截图查看剂量分布" should
+            # route to ui_screenshot, not dose_engine. Only match when
+            # the user explicitly asks to COMPUTE/EXECUTE dose, not when
+            # they want to VIEW/SCREENSHOT existing dose results.
+            (r'(计算剂量|计算.*剂量|剂量.*计算|执行.*剂量|dose.*(calc|comput|run)|calc.*dose|comput.*dose|run.*dose)', 'dose'),
             (r'(切换|switch).{0,10}(viewer|查看|浏览|视图)', 'ui:panel:viewers'),
             (r'(切换|switch).{0,10}(input|输入)', 'ui:panel:input'),
             (r'(切换|switch).{0,10}(metrics|指标)', 'ui:panel:metrics'),
@@ -3303,7 +3322,13 @@ print(json.dumps(result))
 
         enhanced_context = ""
         ui_state_for_override = self.memory.get_ui_state()
-        _no_files_loaded = not AgentMemory.is_ct_loaded(ui_state_for_override)
+        # ALSO check server-side agent memory — the frontend's ct_path
+        # may persist from a previous session even when no CT is loaded
+        # in the current conversation. Without this, the LLM sees
+        # "crystallized skill: planning_pipeline" and tries to run
+        # planning on stale/missing data.
+        _ct_in_memory = self.memory.retrieve("ct_image") is not None
+        _no_files_loaded = not AgentMemory.is_ct_loaded(ui_state_for_override) and not _ct_in_memory
 
         # === LANGUAGE DIRECTIVE (top-level) ===
         # The user complained that they typed English but the agent
@@ -3330,25 +3355,30 @@ print(json.dumps(result))
         except Exception as _e:
             logger.debug(f"language detection failed: {_e}")
         if _no_files_loaded:
-            enhanced_context += "\n### ⚠️ OVERRIDE: NO FILES LOADED - LIMITED TOOLS\n"
-            enhanced_context += "No CT files are loaded. You MUST answer directly from medical knowledge.\n"
-            enhanced_context += "DO NOT call segmentation, dose, seed, or analysis tools.\n"
-            enhanced_context += "YOU MAY use report_generator (to generate reports, summaries, DVH analysis, JSON/Markdown export)\n"
-            enhanced_context += "YOU MAY use report_auto_fill (in-app Report panel — fills patient/metrics/OAR/narrative from current data)\n"
-            enhanced_context += "YOU MAY use clinical_kb (for clinical knowledge queries)\n"
-            enhanced_context += "For in-app Report panel requests, call report_auto_fill; for file export, call report_generator.\n"
-            enhanced_context += "Provide comprehensive, detailed clinical responses.\n\n"
+            enhanced_context += "\n### ⚠️ OVERRIDE: NO CT FILES LOADED — DO NOT USE TOOLS\n"
+            enhanced_context += "CRITICAL: No CT image is loaded in this session. You MUST NOT call any planning, segmentation, dose, or analysis tools.\n"
+            enhanced_context += "Instead, respond DIRECTLY to the user in their language with a helpful message explaining that a CT image needs to be uploaded first.\n"
+            enhanced_context += "For example: tell them to upload a CT file using the input panel, or explain what brachytherapy planning requires.\n"
+            enhanced_context += "Provide useful clinical context about the procedure they requested.\n\n"
         if self.enhanced:
             try:
                 pre_ctx = self.enhanced.pre_task_hook(message)
-                if pre_ctx.get("reflexion_warnings") and not _no_files_loaded:
+                if pre_ctx.get("reflexion_warnings") and self.memory.retrieve("ct_image") is not None:
                     enhanced_context += "\n### Past Experience Warnings\n" + pre_ctx["reflexion_warnings"]
-                if pre_ctx.get("matched_sop") and not _no_files_loaded:
+                if pre_ctx.get("matched_sop") and self.memory.retrieve("ct_image") is not None:
                     sop = pre_ctx["matched_sop"]
                     enhanced_context += f"\n### Matched SOP: {sop['name']} (success: {sop['success_rate']:.0%})\n"
                     enhanced_context += f"Recommended chain: {' -> '.join(sop['steps'])}\n"
                     enhanced_context += "NOTE: Only follow when user's message requests this action.\n"
-                if pre_ctx.get("crystallized_skill") and not _no_files_loaded:
+                # Don't inject planning skill if planning already completed,
+                # or if user is asking for screenshot/view, or if user is
+                # asking a simple question that doesn't need tools.
+                _planning_done = self.memory.retrieve("dose_metrics") is not None
+                _simple_question = not self._detect_tool_request(message) and not any(
+                    kw in message for kw in ['分割', 'segment', '规划', 'plan', '剂量', 'dose',
+                                               '截图', 'screenshot', '分析', 'analyze', '加载', 'load']
+                )
+                if pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and not _planning_done and not _simple_question:
                     sk = pre_ctx["crystallized_skill"]
                     # Skip skill if it doesn't match what the user actually wants
                     _direct = self._detect_tool_request(message)
@@ -3366,14 +3396,26 @@ print(json.dumps(result))
                             enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
                             if len(_filtered) < len(sk['tool_chain']):
                                 enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
+                            # If planning_pipeline is in the remaining chain,
+                            # remind the LLM to continue with rule_based mode.
+                            if 'planning_pipeline' in _filtered:
+                                enhanced_context += "NOTE: Use mode='rule_based' (NOT 'rl') when calling planning_pipeline.\n"
                     else:
-                        _filtered = [s for s in sk['tool_chain']
-                                     if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
-                                     and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None)]
-                        enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
-                        enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
-                        if len(_filtered) < len(sk['tool_chain']):
-                            enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
+                        # Don't inject planning skill when user asks for
+                        # screenshot/view — the LLM would re-run planning
+                        # instead of just capturing the UI.
+                        _is_view_request = any(kw in message for kw in [
+                            '截图', 'screenshot', '查看', 'view', '显示', 'display',
+                            '看看', 'show', '展示', '观察', 'inspect',
+                        ])
+                        if not _is_view_request:
+                            _filtered = [s for s in sk['tool_chain']
+                                         if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
+                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None)]
+                            enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
+                            enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
+                            if len(_filtered) < len(sk['tool_chain']):
+                                enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
                 if pre_ctx.get("user_preferences"):
                     prefs = pre_ctx["user_preferences"]
                     if prefs:
@@ -4158,7 +4200,13 @@ print(json.dumps(result))
 
         enhanced_context = ""
         ui_state_for_override = self.memory.get_ui_state()
-        _no_files_loaded = not AgentMemory.is_ct_loaded(ui_state_for_override)
+        # ALSO check server-side agent memory — the frontend's ct_path
+        # may persist from a previous session even when no CT is loaded
+        # in the current conversation. Without this, the LLM sees
+        # "crystallized skill: planning_pipeline" and tries to run
+        # planning on stale/missing data.
+        _ct_in_memory = self.memory.retrieve("ct_image") is not None
+        _no_files_loaded = not AgentMemory.is_ct_loaded(ui_state_for_override) and not _ct_in_memory
 
         # === LANGUAGE DIRECTIVE (top-level) ===
         # Detect user input language and inject a HIGH-PRIORITY
@@ -4171,6 +4219,7 @@ print(json.dumps(result))
             from memory.language import detect as _lang_detect, system_prompt_clause as _lang_clause
             _ui_lang = (ui_state_for_override or {}).get("language") or None
             _lang_info = _lang_detect(message, explicit=_ui_lang)
+            logger.info(f"[LANG] Detected: {_lang_info['code']} (source={_lang_info['source']}, explicit={_ui_lang}), msg='{message[:50]}'")
             enhanced_context += "\n" + _lang_clause(_lang_info) + "\n"
             try:
                 self.memory.store("session_language", _lang_info)
@@ -4179,25 +4228,30 @@ print(json.dumps(result))
         except Exception as _e:
             logger.debug(f"language detection failed: {_e}")
         if _no_files_loaded:
-            enhanced_context += "\n### ⚠️ OVERRIDE: NO FILES LOADED - LIMITED TOOLS\n"
-            enhanced_context += "No CT files are loaded. You MUST answer directly from medical knowledge.\n"
-            enhanced_context += "DO NOT call segmentation, dose, seed, or analysis tools.\n"
-            enhanced_context += "YOU MAY use report_generator (to generate reports, summaries, DVH analysis, JSON/Markdown export)\n"
-            enhanced_context += "YOU MAY use report_auto_fill (in-app Report panel — fills patient/metrics/OAR/narrative from current data)\n"
-            enhanced_context += "YOU MAY use clinical_kb (for clinical knowledge queries)\n"
-            enhanced_context += "For in-app Report panel requests, call report_auto_fill; for file export, call report_generator.\n"
-            enhanced_context += "Provide comprehensive, detailed clinical responses.\n\n"
+            enhanced_context += "\n### ⚠️ OVERRIDE: NO CT FILES LOADED — DO NOT USE TOOLS\n"
+            enhanced_context += "CRITICAL: No CT image is loaded in this session. You MUST NOT call any planning, segmentation, dose, or analysis tools.\n"
+            enhanced_context += "Instead, respond DIRECTLY to the user in their language with a helpful message explaining that a CT image needs to be uploaded first.\n"
+            enhanced_context += "For example: tell them to upload a CT file using the input panel, or explain what brachytherapy planning requires.\n"
+            enhanced_context += "Provide useful clinical context about the procedure they requested.\n\n"
         if self.enhanced:
             try:
                 pre_ctx = self.enhanced.pre_task_hook(message)
-                if pre_ctx.get("reflexion_warnings") and not _no_files_loaded:
+                if pre_ctx.get("reflexion_warnings") and self.memory.retrieve("ct_image") is not None:
                     enhanced_context += "\n### Past Experience Warnings\n" + pre_ctx["reflexion_warnings"]
-                if pre_ctx.get("matched_sop") and not _no_files_loaded:
+                if pre_ctx.get("matched_sop") and self.memory.retrieve("ct_image") is not None:
                     sop = pre_ctx["matched_sop"]
                     enhanced_context += f"\n### Matched SOP: {sop['name']} (success: {sop['success_rate']:.0%})\n"
                     enhanced_context += f"Recommended chain: {' -> '.join(sop['steps'])}\n"
                     enhanced_context += "NOTE: Only follow when user's message requests this action.\n"
-                if pre_ctx.get("crystallized_skill") and not _no_files_loaded:
+                # Don't inject planning skill if planning already completed,
+                # or if user is asking for screenshot/view, or if user is
+                # asking a simple question that doesn't need tools.
+                _planning_done = self.memory.retrieve("dose_metrics") is not None
+                _simple_question = not self._detect_tool_request(message) and not any(
+                    kw in message for kw in ['分割', 'segment', '规划', 'plan', '剂量', 'dose',
+                                               '截图', 'screenshot', '分析', 'analyze', '加载', 'load']
+                )
+                if pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and not _planning_done and not _simple_question:
                     sk = pre_ctx["crystallized_skill"]
                     # Skip skill if it doesn't match what the user actually wants
                     _direct = self._detect_tool_request(message)
@@ -4215,14 +4269,26 @@ print(json.dumps(result))
                             enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
                             if len(_filtered) < len(sk['tool_chain']):
                                 enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
+                            # If planning_pipeline is in the remaining chain,
+                            # remind the LLM to continue with rule_based mode.
+                            if 'planning_pipeline' in _filtered:
+                                enhanced_context += "NOTE: Use mode='rule_based' (NOT 'rl') when calling planning_pipeline.\n"
                     else:
-                        _filtered = [s for s in sk['tool_chain']
-                                     if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
-                                     and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None)]
-                        enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
-                        enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
-                        if len(_filtered) < len(sk['tool_chain']):
-                            enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
+                        # Don't inject planning skill when user asks for
+                        # screenshot/view — the LLM would re-run planning
+                        # instead of just capturing the UI.
+                        _is_view_request = any(kw in message for kw in [
+                            '截图', 'screenshot', '查看', 'view', '显示', 'display',
+                            '看看', 'show', '展示', '观察', 'inspect',
+                        ])
+                        if not _is_view_request:
+                            _filtered = [s for s in sk['tool_chain']
+                                         if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
+                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None)]
+                            enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
+                            enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
+                            if len(_filtered) < len(sk['tool_chain']):
+                                enhanced_context += "NOTE: CTV/OAR already in memory — skipped those steps.\n"
                 if pre_ctx.get("user_preferences"):
                     prefs = pre_ctx["user_preferences"]
                     if prefs:
@@ -4582,6 +4648,12 @@ print(json.dumps(result))
                     final_response = accumulated_text or self._clean_response_text(content)
                     if not final_response:
                         final_response = content  # Fallback to raw if cleaning removed everything
+                    # If STILL empty (LLM generated no text and no tools),
+                    # retry once with an explicit "just answer" prompt.
+                    if not final_response or not final_response.strip():
+                        logger.info(f"[LLM loop] Empty response, retrying with explicit prompt")
+                        messages.append({"role": "user", "content": "Please respond directly to the user's message in their language. Do not call any tools — just answer based on your knowledge."})
+                        continue
                 thinking_step["status"] = "done"
                 thinking_step["content"] = "Response generated"
                 logger.info(f"[LLM loop] No tool calls found. Iteration={iteration}, content_len={len(content)}, cleaned_len={len(final_response)}, tools_executed={tools_executed}")
@@ -4630,6 +4702,10 @@ print(json.dumps(result))
                         continue
                 if _tn == "planning_pipeline" and _planning_ran_this_turn:
                     logger.info(f"[HARD-BLOCK] Skipping redundant planning_pipeline (already ran this turn)")
+                    continue
+                # Also block if planning already completed in a PREVIOUS turn
+                if _tn == "planning_pipeline" and self.memory.retrieve("dose_metrics") is not None:
+                    logger.info(f"[HARD-BLOCK] Skipping planning_pipeline (dose_metrics already in memory)")
                     continue
                 _filtered_again.append(tc)
             valid_tool_calls = _filtered_again
@@ -5351,7 +5427,8 @@ print(json.dumps(result))
             self.enhanced.pre_task_hook(message)
 
         if self.brain_available:
-            response, _ = self._run_llm_function_calling(message, [], [0])
+            _result = self._run_llm_function_calling(message, [], [0])
+            response = _result[0] if isinstance(_result, tuple) else _result
         else:
             response = self._rule_based_chat(message)
 
@@ -5394,7 +5471,7 @@ print(json.dumps(result))
             if pre_ctx.get("matched_sop"):
                 sop = pre_ctx["matched_sop"]
                 add_step("memory", "Matched SOP", f"{sop['name']} ({sop['success_rate']:.0%} success): {' -> '.join(sop['steps'])}")
-            if pre_ctx.get("crystallized_skill"):
+            if pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and self.memory.retrieve("dose_metrics") is None:
                 sk = pre_ctx["crystallized_skill"]
                 add_step("memory", "Crystallized Skill", f"{sk['name']} ({sk['success_rate']:.0%}): {' -> '.join(sk['tool_chain'])}")
             if pre_ctx.get("reflexion_warnings"):
@@ -5403,7 +5480,14 @@ print(json.dumps(result))
         if self.brain_available:
             add_step("thinking", "LLM Brain", "Using AI brain system with function calling...")
             try:
-                response, llm_meta = self._run_llm_function_calling(message, steps, step_id)
+                _result = self._run_llm_function_calling(message, steps, step_id)
+                # _run_llm_function_calling may return a tuple (response, llm_meta)
+                # or a single string (from _execute_direct_tools path).
+                if isinstance(_result, tuple) and len(_result) >= 2:
+                    response, llm_meta = _result[0], _result[1]
+                else:
+                    response = _result
+                    llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
             except Exception as e:
                 import traceback as _tb
                 logger.error(f"LLM function calling failed: {e}\n{_tb.format_exc()}")
@@ -5611,7 +5695,7 @@ print(json.dumps(result))
                 sop = pre_ctx["matched_sop"]
                 step = add_step("memory", "Matched SOP", f"{sop['name']} ({sop['success_rate']:.0%} success): {' -> '.join(sop['steps'])}")
                 yield yield_event("step", step)
-            if pre_ctx.get("crystallized_skill"):
+            if pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None:
                 sk = pre_ctx["crystallized_skill"]
                 step = add_step("memory", "Crystallized Skill", f"{sk['name']} ({sk['success_rate']:.0%}): {' -> '.join(sk['tool_chain'])}")
                 yield yield_event("step", step)

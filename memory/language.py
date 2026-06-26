@@ -123,13 +123,17 @@ def system_prompt_clause(lang_info: Dict[str, str]) -> str:
         f"## Language directive (HIGHEST PRIORITY)\n"
         f"**All your replies to the user MUST be written in {name}.** "
         f"This applies to every text_chunk, every assistant message, "
-        f"every clinical explanation, every markdown heading, and every "
-        f"table cell. If the user typed in {name}, you reply in {name} — "
+        f"every clinical explanation, every markdown heading, every "
+        f"table cell, and EVERY tool result you present to the user. "
+        f"If the user typed in {name}, you reply in {name} — "
         f"no translation, no code-switching to another language, no "
         f"bilingual summaries. The user's language choice is the single "
         f"source of truth for output language. If the user's input is "
         f"ambiguous (e.g. mostly numbers, code, or proper nouns), "
-        f"default to {name}.\n"
+        f"default to {name}. "
+        f"CRITICAL: Even when reporting tool errors or technical output, "
+        f"you MUST wrap them in {name} text. Never output raw English "
+        f"error messages to a {name}-speaking user.\n"
     )
 
 

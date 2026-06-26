@@ -4544,16 +4544,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
         <!-- Tabs -->
         <div class="panel-tabs">
-            <div class="panel-tab active" onclick="switchPanel('input', this)">
+            <div class="panel-tab active" data-panel="input" onclick="switchPanel('input', this)">
                 <span>&#9881;</span> <span data-i18n-zh="输入" data-i18n-en="Input">Input</span>
             </div>
-            <div class="panel-tab" onclick="switchPanel('metrics', this)">
+            <div class="panel-tab" data-panel="metrics" onclick="switchPanel('metrics', this)">
                 <span>&#128200;</span> <span data-i18n-zh="分析" data-i18n-en="Analysis">Analysis</span>
             </div>
-            <div class="panel-tab" onclick="switchPanel('viewers', this)">
+            <div class="panel-tab" data-panel="viewers" onclick="switchPanel('viewers', this)">
                 <span>&#9638;</span> <span data-i18n-zh="视图" data-i18n-en="Viewers">Viewers</span>
             </div>
-            <div class="panel-tab" onclick="switchPanel('report', this)">
+            <div class="panel-tab" data-panel="report" onclick="switchPanel('report', this)">
                 <span>&#128203;</span> <span data-i18n-zh="报告" data-i18n-en="Report">Report</span>
             </div>
         </div>
@@ -6036,6 +6036,55 @@ const STEP_ICONS = {
     review:    '&#128269;',   // 🔍 magnifier
 };
 
+// i18n for thinking chain labels — matches _TODO_I18N pattern.
+// Used by appendStepToChain, createLiveThinkingChain, updateChainHeader.
+const _CHAIN_I18N = {
+    en: {
+        header: 'Execution Trace',
+        thinking: 'Thinking',
+        steps_suffix: ' steps',
+        llm_call: 'LLM Call',
+        calling: 'Calling',
+        user_input: 'User Input',
+        pending: 'pending',
+        done: 'done',
+        error: 'error',
+    },
+    zh: {
+        header: '执行追踪',
+        thinking: '思考中',
+        steps_suffix: ' 步',
+        llm_call: 'LLM 调用',
+        calling: '调用',
+        user_input: '用户输入',
+        pending: '等待中',
+        done: '完成',
+        error: '错误',
+    },
+};
+function _chainI18n(key) {
+    const lang = window._uiLanguage || window._i18nLang || 'en';
+    return (_CHAIN_I18N[lang] || _CHAIN_I18N.en)[key] || (_CHAIN_I18N.en[key] || key);
+}
+// Localize a step title: "LLM Call 1" → "LLM 调用 1", "Calling foo" → "调用 foo"
+function _localizeStepTitle(title) {
+    if (!title) return '';
+    const lang = window._uiLanguage || window._i18nLang || 'en';
+    if (lang === 'en') return title;
+    // "LLM Call N" → "LLM 调用 N"
+    title = title.replace(/^LLM Call (\d+)/, _chainI18n('llm_call') + ' $1');
+    // "Calling tool_name" → "调用 tool_name"
+    title = title.replace(/^Calling /, _chainI18n('calling') + ' ');
+    // "User Input" → "用户输入"
+    title = title.replace(/^User Input$/, _chainI18n('user_input'));
+    return title;
+}
+// Localize step status: "pending" → "等待中", "done" → "完成"
+function _localizeStepStatus(status) {
+    if (!status) return '';
+    return _chainI18n(status) || status;
+}
+
 // Safe markdown renderer — uses the global `marked` (loaded from CDN) if
 // available, with a plain-escape fallback otherwise.
 
@@ -6591,8 +6640,8 @@ function renderThinkingChain(steps) {
     header.onclick = () => toggleThinkingChain(wrapper, steps);
     header.innerHTML = `
         <span class="thinking-toggle" id="tt_${Date.now()}">&#9654;</span>
-        <span class="thinking-label">Execution Trace</span>
-        <span class="thinking-count">${doneSteps}/${totalSteps} steps</span>
+        <span class="thinking-label">${escHtml(_chainI18n('header'))}</span>
+        <span class="thinking-count">${doneSteps}/${totalSteps}${escHtml(_chainI18n('steps_suffix'))}</span>
     `;
     wrapper.appendChild(header);
 
@@ -6627,8 +6676,8 @@ function renderThinkingChain(steps) {
             block.innerHTML =
                 '<div class="step-header" onclick="toggleStep(\'step_body_' + idx + '\')">' +
                     '<span class="step-icon ' + escHtml(step.type || '') + '">' + icon + '</span>' +
-                    '<span class="step-title">' + escHtml(step.title || '') + '</span>' +
-                    '<span class="step-status ' + escHtml(step.status || '') + '">' + escHtml(step.status || '') + '</span>' +
+                    '<span class="step-title">' + escHtml(_localizeStepTitle(step.title || '')) + '</span>' +
+                    '<span class="step-status ' + escHtml(step.status || '') + '">' + escHtml(_localizeStepStatus(step.status || '')) + '</span>' +
                 '</div>' +
                 '<div class="step-body" id="step_body_' + idx + '">' +
                     toolName + params + contentHtml + resultHtml +
@@ -6672,8 +6721,8 @@ function createLiveThinkingChain() {
     // usage-bar footer at the end of the response.
     header.innerHTML =
         '<span class="thinking-toggle expanded">&#9654;</span>' +
-        '<span class="thinking-label">Thinking</span>' +
-        '<span class="thinking-count">0 steps</span>' +
+        '<span class="thinking-label">' + escHtml(_chainI18n('thinking')) + '</span>' +
+        '<span class="thinking-count">0' + escHtml(_chainI18n('steps_suffix')) + '</span>' +
         '<span class="thinking-time" style="margin-left:auto;font-size:0.62rem;color:var(--text-dim);font-variant-numeric:tabular-nums;">0.0s</span>';
     header.onclick = () => toggleThinkingChain(wrapper, []);
     wrapper.appendChild(header);
@@ -6788,8 +6837,8 @@ function appendStepToChain(stepsDiv, step, idx) {
     const bodyHtml =
         '<div class="step-header" onclick="toggleStep(\'step_body_' + idx + '\')">' +
             '<span class="step-icon ' + escHtml(step.type || '') + '">' + icon + '</span>' +
-            '<span class="step-title">' + escHtml(step.title || '') + '</span>' +
-            '<span class="step-status ' + escHtml(step.status || '') + '">' + escHtml(step.status || '') + '</span>' +
+            '<span class="step-title">' + escHtml(_localizeStepTitle(step.title || '')) + '</span>' +
+            '<span class="step-status ' + escHtml(step.status || '') + '">' + escHtml(_localizeStepStatus(step.status || '')) + '</span>' +
         '</div>' +
         '<div class="step-body' + bodyExpanded + '" id="step_body_' + idx + '">' +
             toolName + params + contentHtml + resultHtml +
@@ -6822,7 +6871,7 @@ function updateChainHeader(headerEl, steps) {
     if (!headerEl) return;
     const countEl = headerEl.querySelector('.thinking-count');
     const doneSteps = steps.filter(s => s.status === 'done').length;
-    if (countEl) countEl.textContent = doneSteps + '/' + steps.length + ' steps';
+    if (countEl) countEl.textContent = doneSteps + '/' + steps.length + _chainI18n('steps_suffix');
 }
 
 function finalizeThinkingChain(chainEl, headerEl, steps) {
@@ -6834,7 +6883,7 @@ function finalizeThinkingChain(chainEl, headerEl, steps) {
     chainEl.dataset.finalized = '1';
     chainEl.removeAttribute('id');
     const labelEl = headerEl && headerEl.querySelector('.thinking-label');
-    if (labelEl) labelEl.textContent = 'Execution Trace';
+    if (labelEl) labelEl.textContent = _chainI18n('header');
     updateChainHeader(headerEl, steps);
     if (headerEl && headerEl._timer) {
         clearInterval(headerEl._timer);
@@ -8129,18 +8178,39 @@ async function sendChat(prefill) {
                                 updateToolProgress(progressEl, lastToolName, data.status, data.result);
                             }
                             // Execute UI controller actions
-                            if (data.status === 'done' && data.tool === 'ui_controller' && data.result) {
+                            // Actions live in data.metadata.actions (from ToolResult.metadata),
+                            // NOT in data.result (which is the human-readable message string).
+                            if (data.status === 'done' && data.tool === 'ui_controller') {
                                 try {
                                     let actions = null;
-                                    if (typeof data.result === 'string') {
-                                        actions = JSON.parse(data.result).actions;
-                                    } else if (data.result.actions) {
+                                    const md = data.metadata || {};
+                                    if (Array.isArray(md.actions)) {
+                                        actions = md.actions;
+                                    } else if (typeof data.result === 'string') {
+                                        // Fallback: try parsing result as JSON
+                                        const parsed = JSON.parse(data.result);
+                                        if (Array.isArray(parsed.actions)) actions = parsed.actions;
+                                    } else if (data.result && Array.isArray(data.result.actions)) {
                                         actions = data.result.actions;
                                     }
-                                    if (Array.isArray(actions)) {
+                                    if (Array.isArray(actions) && actions.length > 0) {
+                                        console.log('[SSE-UI] Executing', actions.length, 'UI actions');
                                         actions.forEach(a => _executeUIAction(a));
                                     }
-                                } catch (_) {}
+                                } catch (e) { console.warn('[SSE-UI] Failed to parse ui_controller result:', e); }
+                            }
+                            // Intercept ui_screenshot: capture the target element,
+                            // upload to server, and display in chat.
+                            if (data.status === 'done' && data.tool === 'ui_screenshot' && data.metadata) {
+                                const _ssCmd = data.metadata.screenshot_command || data.metadata;
+                                const _ssTarget = _ssCmd.target || 'full';
+                                const _ssQuestion = _ssCmd.question || '';
+                                console.log('[SSE-STEP] Intercepting ui_screenshot, target:', _ssTarget);
+                                try {
+                                    _interceptScreenshot(_ssTarget, _ssQuestion);
+                                } catch (e) {
+                                    console.warn('[SSE-STEP] Screenshot interception failed:', e);
+                                }
                             }
                             // Count completed tool calls for the usage-bar
                             // footer. We count BOTH done and error because
@@ -8177,13 +8247,31 @@ async function sendChat(prefill) {
                             // tool in the chain: planning_pipeline done
                             // (which fires AFTER all sub-steps drain).
                             const FINAL_PLANNING_TOOLS = ['planning_pipeline', 'dose_evaluation'];
+                            const SEG_TOOLS = ['ctv_segmentation', 'oar_segmentation'];
+                            console.log('[SSE-STEP]', 'type:', data.type, 'tool:', data.tool, 'status:', data.status, 'in FINAL:', FINAL_PLANNING_TOOLS.includes(data.tool));
                             if (data.status === 'done' && data.tool && FINAL_PLANNING_TOOLS.includes(data.tool)) {
+                                console.log('[SSE-STEP] FINAL tool done:', data.tool, '- scheduling refreshPlanningUI');
                                 if (typeof refreshPlanningUI === 'function' && !window._planningRefreshScheduled) {
                                     window._planningRefreshScheduled = true;
                                     setTimeout(() => {
-                                        try { refreshPlanningUI(); } catch (_) {}
+                                        console.log('[SSE-STEP] Calling refreshPlanningUI now');
+                                        try { refreshPlanningUI(); } catch (e) { console.error('[SSE-STEP] refreshPlanningUI ERROR:', e); }
                                         window._planningRefreshScheduled = false;
                                     }, 250);
+                                } else {
+                                    console.log('[SSE-STEP] refreshPlanningUI NOT scheduled:', typeof refreshPlanningUI, '_scheduled:', window._planningRefreshScheduled);
+                                }
+                            }
+                            // SEGMENTATION TOOLS: after CTV/OAR seg completes,
+                            // load label volumes so masks appear in viewer + data tree.
+                            // Without this, masks are stored server-side but never
+                            // fetched by the frontend.
+                            if (data.status === 'done' && data.tool && SEG_TOOLS.includes(data.tool)) {
+                                console.log('[SSE-STEP] Segmentation done:', data.tool, '- loading label volumes');
+                                if (typeof loadLabelVolumes === 'function') {
+                                    loadLabelVolumes().then(() => {
+                                        if (typeof renderDataTree === 'function') renderDataTree();
+                                    }).catch(e => console.warn('[SSE-STEP] loadLabelVolumes failed:', e));
                                 }
                             }
                         }
@@ -8283,6 +8371,22 @@ async function sendChat(prefill) {
                                 window.state.lastPlanTimestamp = new Date().toISOString();
                             }
                         } catch (_) {}
+                        // FALLBACK: if planning tools ran but
+                        // refreshPlanningUI was never triggered (e.g.
+                        // the FINAL_PLANNING_TOOLS check didn't fire
+                        // because the step event format changed),
+                        // trigger a refresh now on stream completion.
+                        const _planningToolsInSteps = steps.filter(s => s.type === 'tool' && s.status === 'done'
+                            && ['planning_pipeline', 'dose_evaluation', 'seed_planning'].includes(s.tool));
+                        console.log('[SSE-done] planning tools in steps:', _planningToolsInSteps.map(s => s.tool));
+                        if (_planningToolsInSteps.length > 0 && !window._planningRefreshScheduled) {
+                            console.log('[SSE-done] Triggering fallback refreshPlanningUI');
+                            window._planningRefreshScheduled = true;
+                            setTimeout(() => {
+                                try { refreshPlanningUI(); } catch (e) { console.error('[SSE-done] refreshPlanningUI ERROR:', e); }
+                                window._planningRefreshScheduled = false;
+                            }, 500);
+                        }
                     }
                 }
             }
@@ -8430,6 +8534,10 @@ const state = {
     ctPath: null,
     ctLoaded: false,
     ctShape: null,
+    ctSpacing: null,
+    ctOrigin: null,
+    ctDirection: null,
+    seedsOverlay: null,  // { seeds: [...], needles: [...] } in world coords
     slices: { axial: 0, sagittal: 0, coronal: 0 },
     doseOpacity: 0.4,
     viewerSettings: {
@@ -8895,6 +9003,8 @@ async function loadCTToViewers(ctPath) {
             state.ctLoaded = true;
             state.ctShape = data.shape;
             state.ctSpacing = data.spacing;
+            state.ctOrigin = data.origin;
+            state.ctDirection = data.direction;
             state.ctHURange = data.hu_range;
 
             // Update slice sliders
@@ -9064,24 +9174,33 @@ async function init() {
         });
         scene3D.meshes = {};
     }
-    // Clear dose overlay
-    state.doseOverlay = null;
-    Object.keys(_doseContourCache).forEach(key => delete _doseContourCache[key]);
-    // Clear 2D viewer canvases and dose overlay canvases
-    ['axial', 'sagittal', 'coronal'].forEach(axis => {
-        const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
-        if (canvas) {
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            canvas.style.display = 'none';
-        }
-        const doseCanvas = document.getElementById('doseOverlayCanvas' + capitalize(axis));
-        if (doseCanvas) { doseCanvas.remove(); }
-        const contourCanvas = document.getElementById('contourCanvas' + capitalize(axis));
-        if (contourCanvas) { contourCanvas.remove(); }
-    });
-    // Show "No CT data" placeholders
-    document.querySelectorAll('.viewer-no-data').forEach(el => { el.style.display = ''; });
+    // Clear dose overlay ONLY if CT is not loaded (new session / CT changed).
+    // Previously this ran on EVERY updateImageAnalysis() call, which destroyed
+    // the dose overlay that refreshPlanningUI() had just loaded — causing the
+    // "dose map doesn't update on slice drag" bug.
+    if (!state.ctLoaded) {
+        state.doseOverlay = null;
+        Object.keys(_doseContourCache).forEach(key => delete _doseContourCache[key]);
+        // Clear 2D viewer canvases and dose overlay canvases
+        ['axial', 'sagittal', 'coronal'].forEach(axis => {
+            const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                canvas.style.display = 'none';
+            }
+            const doseCanvas = document.getElementById('doseOverlayCanvas' + capitalize(axis));
+            if (doseCanvas) { doseCanvas.remove(); }
+            const contourCanvas = document.getElementById('contourCanvas' + capitalize(axis));
+            if (contourCanvas) { contourCanvas.remove(); }
+        });
+    }
+    // Show "No CT data" placeholders ONLY when CT is not loaded.
+    // Previously this ran on EVERY updateImageAnalysis() call, which
+    // re-showed placeholders over the already-rendered CT slices.
+    if (!state.ctLoaded) {
+        document.querySelectorAll('.viewer-no-data').forEach(el => { el.style.display = ''; });
+    }
     // Update UI
     updateSeeds([]);
     updateMetrics({});
@@ -9754,8 +9873,10 @@ function _executeUIActionRaw(a) {
     try {
         // ── Panel switching ──
         if (target === 'panel' && command === 'switch') {
-            const tab = document.querySelector(`.panel-tab[onclick*="${value}"]`);
+            const tab = document.querySelector(`.panel-tab[data-panel="${value}"]`)
+                     || document.querySelector(`.panel-tab[onclick*="${value}"]`);
             if (tab) switchPanel(value, tab);
+            else console.warn('[UIAction] Panel tab not found:', value);
             return;
         }
         // ── Viewer settings ──
@@ -9808,6 +9929,10 @@ function _executeUIActionRaw(a) {
             document.getElementById('viewerWindow').value = 400;
             document.getElementById('viewerLevel').value = 40;
             applyViewerTransform(); loadAllSlices(); return;
+        }
+        if (target === 'viewer.fit_all') {
+            state.viewerSettings.zoom = 1; state.viewerSettings.panX = 0; state.viewerSettings.panY = 0;
+            applyViewerTransform(); if (state.ctLoaded) loadAllSlices(); return;
         }
         if (target === 'viewer.preset') {
             const pp = document.getElementById('windowPreset');
@@ -9981,8 +10106,17 @@ function _executeUIActionRaw(a) {
         if (target === 'session.delete') { deleteSession(value); return; }
         if (target === 'session.clear_all') { clearLocalChatData(); return; }
         // ── Planning ──
-        if (target === 'plan.run') { runPlanning(); return; }
-        if (target === 'plan.reset') { resetSession(); return; }
+        if (target === 'plan.run') {
+            // Send "plan" through the chat system to trigger LLM planning
+            const chatInput = document.getElementById('chatInput');
+            if (chatInput) { chatInput.value = 'plan'; sendChat(); }
+            return;
+        }
+        if (target === 'plan.reset') {
+            resetAllState();
+            if (typeof addChat === 'function') addChat('system', 'Planning session reset.');
+            return;
+        }
         // ── Report ──
         if (target === 'report.autofill') {
             if (typeof Report !== 'undefined' && Report.autoFill) Report.autoFill.fromAll();
@@ -10060,6 +10194,11 @@ function _executeUIActionRaw(a) {
             return;
         }
         if (target === '3d.fit') { fitCameraToScene(); return; }
+        if (target === '3d.reset') {
+            if (typeof reset3DView === 'function') reset3DView();
+            else fitCameraToScene();
+            return;
+        }
         if (target === '3d.show_all') {
             Object.values(scene3D.meshes).forEach(m => { if (m) m.visible = true; });
             return;
@@ -10071,8 +10210,7 @@ function _executeUIActionRaw(a) {
         // ── Chat ──
         if (target === 'chat.language') { setUiLanguage(value); return; }
         if (target === 'chat.clear_history') {
-            const chatArea = document.getElementById('chatMessages');
-            if (chatArea) chatArea.innerHTML = '';
+            clearLocalChatData();
             return;
         }
         if (target === 'chat.sidebar.toggle') { toggleSessionSidebar(); return; }
@@ -10087,31 +10225,14 @@ function _executeUIActionRaw(a) {
     }
 }
 
-// Screenshot capture
+// Screenshot capture — uses unified target map
 function _captureScreenshot(view) {
-    const targets = {
-        'axial': '#sliceCanvasAxial',
-        'sagittal': '#sliceCanvasSagittal',
-        'coronal': '#sliceCanvasCoronal',
-        '3d': '#canvas3D',
-        'dvh': '#dvhChart',
-    };
-    if (view === 'full') {
-        // Capture entire page
-        if (typeof html2canvas !== 'undefined') {
-            html2canvas(document.body).then(canvas => {
-                const link = document.createElement('a');
-                link.download = `brachybot_screenshot_${Date.now()}.png`;
-                link.href = canvas.toDataURL();
-                link.click();
-            });
-        }
-        return;
-    }
-    const selector = targets[view];
-    if (!selector) return;
-    const el = document.querySelector(selector);
-    if (!el) return;
+    // Normalize legacy short names to full target names
+    const ALIAS = { 'axial': 'viewer-axial', 'sagittal': 'viewer-sagittal',
+                    'coronal': 'viewer-coronal', '3d': 'viewer-3d', 'dvh': 'metrics' };
+    const target = ALIAS[view] || view;
+    const el = _resolveScreenshotTarget(target);
+    if (!el) { console.warn('[screenshot] Target not found:', view); return; }
     if (typeof html2canvas !== 'undefined') {
         html2canvas(el).then(canvas => {
             const link = document.createElement('a');
@@ -10129,6 +10250,116 @@ function _captureScreenshot(view) {
             link.click();
         }
     }
+}
+
+// ── Unified screenshot target resolver ──
+// Single source of truth for ALL screenshot targets. Both
+// _interceptScreenshot (SSE-driven) and _captureScreenshot (direct)
+// use this to find the DOM element to capture.
+const _SCREENSHOT_TARGET_MAP = {
+    'viewer-axial':     '#sliceCanvasAxial',
+    'viewer-sagittal':  '#sliceCanvasSagittal',
+    'viewer-coronal':   '#sliceCanvasCoronal',
+    'viewer-3d':        '#canvas3D',
+    'data-tree':        '#dataTreeBody',
+    'chat':             '#chatMessages',
+    'metrics':          '#panelMetrics',
+    'input':            '#panelInput',
+    'seeds':            '#panelViewers',      // seeds are inside viewers panel
+    'planning':         '#panelInput',        // planning controls are in input panel
+    'report':           '#panelReport',
+    'overlay-controls': '.viewers-toolbar',
+    'full':             null,                 // null → document.body
+};
+// Panels that must be active for the target to be visible
+const _SCREENSHOT_PANEL_MAP = {
+    'viewer-axial': 'viewers', 'viewer-sagittal': 'viewers', 'viewer-coronal': 'viewers',
+    'viewer-3d': 'viewers', 'data-tree': 'viewers', 'overlay-controls': 'viewers',
+    'seeds': 'viewers',
+    'metrics': 'metrics', 'input': 'input', 'planning': 'input',
+    'report': 'report',
+};
+function _resolveScreenshotTarget(target) {
+    const selector = _SCREENSHOT_TARGET_MAP[target];
+    let el = null;
+    if (selector) el = document.querySelector(selector);
+    if (!el && target === 'full') el = document.body;
+    // Auto-switch panel if target is hidden
+    if (!el) {
+        const panelName = _SCREENSHOT_PANEL_MAP[target];
+        if (panelName) {
+            const tab = document.querySelector(`.panel-tab[data-panel="${panelName}"]`)
+                     || document.querySelector(`.panel-tab[onclick*="${panelName}"]`);
+            if (tab && !tab.classList.contains('active')) {
+                switchPanel(panelName, tab);
+                // Retry after panel switch
+                if (selector) el = document.querySelector(selector);
+            }
+        }
+    }
+    return el;
+}
+
+// Intercept ui_screenshot: capture the target element, upload to server,
+// and display the image in the chat. This bridges the gap between the
+// LLM's ui_screenshot tool call and the frontend's actual capture.
+function _interceptScreenshot(target, question) {
+    // Unified screenshot target map — single source of truth for both
+    // _interceptScreenshot (SSE-driven) and _captureScreenshot (direct).
+    console.log('[screenshot] Capturing target:', target);
+    const el = _resolveScreenshotTarget(target);
+    if (!el) {
+        console.warn('[screenshot] Target element not found:', target);
+        if (typeof addChat === 'function') addChat('error', `截图失败：未找到目标元素 "${target}"`);
+        return;
+    }
+    if (typeof html2canvas === 'undefined') {
+        console.warn('[screenshot] html2canvas not loaded');
+        if (typeof addChat === 'function') addChat('error', '截图失败：html2canvas 库未加载');
+        return;
+    }
+    // Panel switch is handled by _resolveScreenshotTarget above.
+    // Small delay to let panel render
+    setTimeout(() => {
+        console.log('[screenshot] Capturing element:', el.tagName, el.id || el.className);
+        html2canvas(el, { useCORS: true, allowTaint: true, scale: 1 }).then(canvas => {
+            console.log('[screenshot] Canvas size:', canvas.width, 'x', canvas.height);
+            const dataUrl = canvas.toDataURL('image/png');
+            console.log('[screenshot] Data URL size:', Math.round(dataUrl.length / 1024), 'KB');
+            // Upload to server
+            fetch(API + '/screenshot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    image: dataUrl,
+                    target: target,
+                    description: question || `Screenshot of ${target}`,
+                }),
+            }).then(res => res.json()).then(data => {
+                console.log('[screenshot] Server response:', data);
+                if (data.url) {
+                    // Display in chat as a bot message with markdown image
+                    // Use HTML img tag directly for reliable rendering
+                    if (typeof addChat === 'function') {
+                        addChat('bot', `<img src="${data.url}" style="max-width:100%;border-radius:8px;" alt="${target}">\n\n${question || ''}`);
+                    }
+                    console.log('[screenshot] Captured and uploaded:', data.url);
+                } else {
+                    console.warn('[screenshot] No URL in response:', data);
+                    if (typeof addChat === 'function') addChat('error', '截图上传失败：服务器未返回URL');
+                }
+            }).catch(e => {
+                console.warn('[screenshot] Upload failed:', e);
+                // Fallback: display locally as data URL
+                if (typeof addChat === 'function') {
+                    addChat('bot', `<img src="${dataUrl}" style="max-width:100%;border-radius:8px;" alt="${target}">\n\n${question || ''}`);
+                }
+            });
+        }).catch(e => {
+            console.warn('[screenshot] html2canvas failed:', e);
+            if (typeof addChat === 'function') addChat('error', `截图捕获失败: ${e.message}`);
+        });
+    }, 500);
 }
 
 /******** PANEL SWITCHING ********/
@@ -10191,10 +10422,22 @@ function switchPanel(name, el) {
     if (name === 'report' && window.state && window.state.ctLoaded) {
         try {
             if (typeof autoCaptureReportFigures === 'function') {
-                // Don't await — let the panel render immediately and
-                // fill in figures asynchronously when the canvases
-                // finish compositing.
-                setTimeout(() => autoCaptureReportFigures(), 50);
+                // Wait for 3D meshes and DVH to be ready before capturing.
+                // Retry up to 5 times with increasing delays.
+                let _attempts = 0;
+                const _tryCapture = () => {
+                    _attempts++;
+                    const _meshCount = Object.keys(scene3D.meshes).length;
+                    const _hasDvh = !!state.dvhData;
+                    const _hasDose = !!(state.doseOverlay && state.doseOverlay.peakVoxel);
+                    console.log(`[Report] Capture attempt ${_attempts}: meshes=${_meshCount} dvh=${_hasDvh} dose=${_hasDose}`);
+                    if (_meshCount > 0 || _hasDvh || _hasDose || _attempts >= 5) {
+                        autoCaptureReportFigures();
+                    } else {
+                        setTimeout(_tryCapture, 500);
+                    }
+                };
+                setTimeout(_tryCapture, 100);
             }
         } catch (_) { /* best-effort */ }
     }
@@ -11072,6 +11315,10 @@ function updateSlice(view, val) {
     if (state.doseOverlay && state.doseOverlay.visible) {
         renderDoseForCurrentSlice(view, sliceIndex);
         triggerDoseContourRender(view, sliceIndex);
+    }
+    // Seed/needle 2D overlay — render on every slice change
+    if (state.seedsOverlay) {
+        renderSeedsOverlay(view, sliceIndex);
     }
 }
 
@@ -14146,6 +14393,9 @@ async function loadSeeds3D() {
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Failed to load seeds');
 
+        // Store seed/needle data in state for 2D overlay rendering
+        state.seedsOverlay = { seeds: data.seeds || [], needles: data.needles || [] };
+
         init3DScene();
 
         // Clear existing seed/needle meshes
@@ -14734,6 +14984,7 @@ async function loadDoseOverlay() {
                 sagittal: (data.dose_shape?.[1] || 200) - 1,
                 coronal: (data.dose_shape?.[2] || 200) - 1,
             },
+            peakVoxel: data.peak_voxel || null,
         };
 
         renderDataTree();
@@ -14897,7 +15148,10 @@ function renderDoseOverlayOnCanvas(canvas, sliceIndex, axis) {
 // This prevents the CT's putImageData from clearing the old dose.
 function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
     if (!state.doseOverlay || !state.doseOverlay.visible || !sliceData) return;
-    if (state.slices[axis] !== undefined && state.slices[axis] !== sliceIndex) return;
+    // NOTE: staleness guard removed — the caller (renderDoseForCurrentSlice)
+    // already ensures sliceIndex matches state.slices[axis]. Keeping the
+    // guard caused a race condition where async fetch callbacks were
+    // silently skipped when the user scrolled rapidly.
 
     const ctx = doseCanvas.getContext('2d');
     const w = doseCanvas.width;
@@ -15058,6 +15312,11 @@ function setDoseOverlayOpacity(val) {
     // Update label
     const label = document.getElementById('doseOpacityVal');
     if (label) label.textContent = val + '%';
+    // Force re-render by clearing the "last rendered" tracker
+    // (otherwise the cache check skips re-render when slice hasn't changed)
+    _doseLastRendered.axial = -1;
+    _doseLastRendered.sagittal = -1;
+    _doseLastRendered.coronal = -1;
     // Re-render current slices
     updateSlice('axial', state.slices.axial);
     updateSlice('coronal', state.slices.coronal);
@@ -15904,37 +16163,30 @@ function getSliceCanvas(axis) {
 // position (this also picks up pan/zoom transforms that the inline
 // left/top no longer represent — applyViewerTransform overrides
 // those via transform).
+// Track last-rendered slice per axis to avoid redundant re-renders
+// and to detect stale canvases that need re-painting.
+const _doseLastRendered = { axial: -1, sagittal: -1, coronal: -1 };
+
 function renderDoseForCurrentSlice(axis, sliceIndex) {
     if (!state.doseOverlay || !state.doseOverlay.visible) return;
     const sliceCanvas = getSliceCanvas(axis);
-    console.log('[dose] renderDoseForCurrentSlice', axis, sliceIndex, !!sliceCanvas, state.doseOverlay.slices ? Object.keys(state.doseOverlay.slices).length : 0);
     if (!sliceCanvas) return;
     const doseCanvasId = 'doseOverlayCanvas' + capitalize(axis);
     let doseCanvas = document.getElementById(doseCanvasId);
     if (!doseCanvas) {
         doseCanvas = document.createElement('canvas');
         doseCanvas.id = doseCanvasId;
-        // Place the dose canvas as a SIBLING of the slice canvas.
-        // The slice canvas is position:absolute, so we sync the dose
-        // canvas's position from the slice canvas's computed display
-        // rectangle on every render.
         const parent = sliceCanvas.parentElement;
         doseCanvas.style.cssText = 'position:absolute;pointer-events:none;z-index:5;display:block;';
         parent.appendChild(doseCanvas);
         sliceCanvas._doseCanvas = doseCanvas;
     }
-    // Match pixel dimensions to the CT slice.
-    // Only update if changed — setting width/height clears the canvas,
-    // causing a visible flicker even when the new data is drawn
-    // immediately after.
     const newW = sliceCanvas.width;
     const newH = sliceCanvas.height;
     if (doseCanvas.width !== newW || doseCanvas.height !== newH) {
         doseCanvas.width = newW;
         doseCanvas.height = newH;
     }
-    // Sync display position from the slice canvas so the dose
-    // overlay exactly covers the CT even after pan/zoom/resize.
     const sw = sliceCanvas._displayW || sliceCanvas.offsetWidth;
     const sh = sliceCanvas._displayH || sliceCanvas.offsetHeight;
     const sx = sliceCanvas._offsetX || parseFloat(sliceCanvas.style.left) || 0;
@@ -15943,16 +16195,21 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
     doseCanvas.style.height = sh + 'px';
     doseCanvas.style.left = sx + 'px';
     doseCanvas.style.top = sy + 'px';
-    // Ensure dose canvas is visible
     doseCanvas.style.display = 'block';
 
     const cacheKey = axis + '_' + sliceIndex;
     if (state.doseOverlay.slices[cacheKey]) {
-        try { renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, state.doseOverlay.slices[cacheKey]); } catch (e) { console.warn(`[dose] render error for ${cacheKey}:`, e); }
+        // Cache hit — render, but skip if this exact slice was already
+        // painted on this canvas (prevents redundant work on rapid
+        // scroll events that call us multiple times for the same slice).
+        if (_doseLastRendered[axis] !== sliceIndex) {
+            try { renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, state.doseOverlay.slices[cacheKey]); } catch (e) { console.warn(`[dose] render error for ${cacheKey}:`, e); }
+            _doseLastRendered[axis] = sliceIndex;
+        }
     } else {
-        // Try to find nearest cached slice as placeholder while
-        // the actual data loads. This prevents the dose from
-        // disappearing entirely during async fetch.
+        // Cache miss — show nearest cached slice as placeholder, then
+        // fetch the actual data from the server.
+        _doseLastRendered[axis] = -1; // mark canvas as stale
         const slices = state.doseOverlay.slices;
         let nearestKey = null, nearestDist = Infinity;
         for (const k in slices) {
@@ -15963,13 +16220,164 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
         if (nearestKey && nearestDist <= 5) {
             try { renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, slices[nearestKey]); } catch (_) {}
         }
-        // Fetch actual slice data from server
         fetchDoseOverlaySlice(axis, sliceIndex).then(sliceData => {
             if (sliceData && state.slices[axis] === sliceIndex) {
-                try { renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData); } catch (_) {}
+                try {
+                    renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData);
+                    _doseLastRendered[axis] = sliceIndex;
+                } catch (e) { console.warn(`[dose] render error after fetch:`, e); }
+            } else {
+                console.log(`[dose] fetch callback skipped: sliceData=${!!sliceData}, axis=${axis}, requested=${sliceIndex}, current=${state.slices[axis]}`);
             }
         });
         preloadDoseSlices(axis, sliceIndex);
+    }
+}
+
+// ==================== SEED/NEEDLE 2D OVERLAY ====================
+// Renders seed positions and needle paths as overlays on 2D CT slices.
+// Seeds are drawn as yellow circles, needles as red lines.
+
+function _worldToIndex(wx, wy, wz) {
+    // Convert world coordinates (LPS) to CT array index (Z, Y, X)
+    // using the inverse of the voxel_to_world transform:
+    //   world = (idx[::-1] * spacing) @ direction.T + origin
+    //   idx[::-1] = (world - origin) @ direction / spacing
+    if (!state.ctOrigin || !state.ctDirection || !state.ctSpacing) return null;
+    const origin = state.ctOrigin;
+    const spacing = state.ctSpacing;
+    const dir = state.ctDirection;
+    // Direction matrix 3x3
+    const d00=dir[0], d01=dir[1], d02=dir[2];
+    const d10=dir[3], d11=dir[4], d12=dir[5];
+    const d20=dir[6], d21=dir[7], d22=dir[8];
+    // (world - origin)
+    const dx = wx - origin[0];
+    const dy = wy - origin[1];
+    const dz = wz - origin[2];
+    // Inverse direction matrix (direction is orthogonal, so inverse = transpose)
+    // (dx,dy,dz) @ D^T = (ix*spacing_x, iy*spacing_y, iz*spacing_z) in reversed order
+    const r0 = dx*d00 + dy*d10 + dz*d20;
+    const r1 = dx*d01 + dy*d11 + dz*d21;
+    const r2 = dx*d02 + dy*d12 + dz*d22;
+    // Divide by spacing and reverse (x,y,z) → (z,y,x) for numpy array indexing
+    const idx_x = r0 / spacing[0];
+    const idx_y = r1 / spacing[1];
+    const idx_z = r2 / spacing[2];
+    return [idx_z, idx_y, idx_x]; // numpy (Z, Y, X) order
+}
+
+function renderSeedsOverlay(axis, sliceIndex) {
+    if (!state.seedsOverlay || !state.ctShape) return;
+    const sliceCanvas = getSliceCanvas(axis);
+    if (!sliceCanvas) return;
+
+    const canvasId = 'seedsOverlayCanvas' + capitalize(axis);
+    let canvas = document.getElementById(canvasId);
+    if (!canvas) {
+        canvas = document.createElement('canvas');
+        canvas.id = canvasId;
+        canvas.style.cssText = 'position:absolute;pointer-events:none;z-index:6;display:block;';
+        sliceCanvas.parentElement.appendChild(canvas);
+    }
+    const w = sliceCanvas.width;
+    const h = sliceCanvas.height;
+    if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+    }
+    // Match dose overlay positioning
+    const sw = sliceCanvas._displayW || sliceCanvas.offsetWidth;
+    const sh = sliceCanvas._displayH || sliceCanvas.offsetHeight;
+    const sx = sliceCanvas._offsetX || parseFloat(sliceCanvas.style.left) || 0;
+    const sy = sliceCanvas._offsetY || parseFloat(sliceCanvas.style.top) || 0;
+    canvas.style.width = sw + 'px';
+    canvas.style.height = sh + 'px';
+    canvas.style.left = sx + 'px';
+    canvas.style.top = sy + 'px';
+    canvas.style.display = 'block';
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+
+    const [Z, Y, X] = state.ctShape;
+    // CRITICAL: CT rendering uses Z-flip: srcSliceIdx = (Z-1) - sliceIndex
+    // This means slider 0 = feet (last z), slider N-1 = head (first z).
+    // We must apply the same flip when comparing seed z-indices to sliceIndex.
+    //
+    // Axis mapping (matching renderSliceFromVolume):
+    //   axial:   slice along Z, display X×Y, Z is flipped
+    //   sagittal: slice along X, display Y×Z_resampled, Z is flipped on display Y
+    //   coronal:  slice along Y, display X×Z_resampled, Z is flipped on display Y
+    let axisIdx, dimA, dimB, sizeA, sizeB, zFlipped;
+    if (axis === 'axial') {
+        axisIdx = 0; dimA = 2; dimB = 1; sizeA = X; sizeB = Y; zFlipped = true;
+    } else if (axis === 'sagittal') {
+        axisIdx = 2; dimA = 1; dimB = 0; sizeA = Y; sizeB = Z; zFlipped = true;
+    } else { // coronal
+        axisIdx = 1; dimA = 2; dimB = 0; sizeA = X; sizeB = Z; zFlipped = true;
+    }
+
+    const scaleX = w / sizeA;
+    const scaleY = h / sizeB;
+    const tolerance = 3.0; // mm tolerance for "on this slice"
+
+    // Draw seeds as yellow circles
+    const seeds = state.seedsOverlay.seeds || [];
+    for (const seed of seeds) {
+        const pos = seed.position;
+        if (!pos || pos.length < 3) continue;
+        const idx = _worldToIndex(pos[0], pos[1], pos[2]);
+        if (!idx) continue;
+        // Apply Z-flip to match CT rendering convention
+        const flippedIdx = [Z - 1 - idx[0], idx[1], idx[2]];
+        const slicePos = flippedIdx[axisIdx];
+        const dist = Math.abs(slicePos - sliceIndex);
+        if (dist > tolerance) continue;
+        const alpha = Math.max(0.3, 1 - dist / tolerance);
+        const cx = flippedIdx[dimA] * scaleX;
+        const cy = flippedIdx[dimB] * scaleY;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = `rgba(255, 204, 0, ${alpha})`;
+        ctx.fill();
+        ctx.strokeStyle = `rgba(255, 160, 0, ${alpha})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    }
+
+    // Draw needles as red lines
+    const needles = state.seedsOverlay.needles || [];
+    for (const needle of needles) {
+        const pts = needle.points;
+        if (!pts || pts.length < 2) continue;
+        const idx0_raw = _worldToIndex(pts[0][0], pts[0][1], pts[0][2]);
+        const idx1_raw = _worldToIndex(pts[1][0], pts[1][1], pts[1][2]);
+        if (!idx0_raw || !idx1_raw) continue;
+        // Apply Z-flip
+        const idx0 = [Z - 1 - idx0_raw[0], idx0_raw[1], idx0_raw[2]];
+        const idx1 = [Z - 1 - idx1_raw[0], idx1_raw[1], idx1_raw[2]];
+        const s0 = idx0[axisIdx];
+        const s1 = idx1[axisIdx];
+        const sMin = Math.min(s0, s1);
+        const sMax = Math.max(s0, s1);
+        if (sliceIndex < sMin - tolerance || sliceIndex > sMax + tolerance) continue;
+        const t = (sMax === sMin) ? 0.5 : (sliceIndex - sMin) / (sMax - sMin);
+        const aX = idx0[dimA] + t * (idx1[dimA] - idx0[dimA]);
+        const aY = idx0[dimB] + t * (idx1[dimB] - idx0[dimB]);
+        const cx = aX * scaleX;
+        const cy = aY * scaleY;
+        ctx.beginPath();
+        ctx.moveTo(cx - 6, cy); ctx.lineTo(cx + 6, cy);
+        ctx.moveTo(cx, cy - 6); ctx.lineTo(cx, cy + 6);
+        ctx.strokeStyle = 'rgba(255, 34, 102, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy, 4, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(255, 34, 102, 0.6)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
     }
 }
 
@@ -16867,8 +17275,9 @@ function _dvhDefaultDticks(xRange, yRange) {
 }
 
 function drawDVH() {
+    console.log('[drawDVH] called, dvhData:', !!state.dvhData, 'keys:', state.dvhData ? Object.keys(state.dvhData).length : 0);
     const placeholder = document.getElementById('dvhPlaceholder');
-    if (!state.dvhData || Object.keys(state.dvhData).length === 0) return;
+    if (!state.dvhData || Object.keys(state.dvhData).length === 0) { console.log('[drawDVH] NO DATA, returning'); return; }
     placeholder.style.display = 'none';
 
     // Skip re-render if the data hasn't actually changed. This prevents
@@ -16876,7 +17285,8 @@ function drawDVH() {
     // when refreshPlanningUI fires multiple times in quick succession
     // (e.g. once per SSE step event during planning).
     const _newSig = Object.keys(state.dvhData).sort().join('|');
-    if (drawDVH._lastSig === _newSig) return;
+    if (drawDVH._lastSig === _newSig) { console.log('[drawDVH] Same signature, skipping'); return; }
+    console.log('[drawDVH] Rendering DVH with keys:', Object.keys(state.dvhData).slice(0, 5));
     drawDVH._lastSig = _newSig;
 
     // Cap the number of DVH curves rendered. Previously 8 — the user
@@ -16955,7 +17365,7 @@ function drawDVH() {
         } else {
             // Too few points for smoothing — use raw data
             smoothX.push(...doseBins);
-            smoothY.push(...volPcts);
+            smoothY.push(...volPcts.map(v => Math.max(0, Math.min(100, v))));
         }
         traces.push({
             x: smoothX,
@@ -17032,12 +17442,12 @@ function drawDVH() {
     const annotations = [];
     if (rxGy > 0 && rxGy <= xRange[1] * 1.5) {
         shapes.push({
-            type: 'line', x0: rxGy, x1: rxGy, y0: 0, y1: 100,
+            type: 'line', x0: rxGy, x1: rxGy, y0: 0, y1: 110,
             xref: 'x', yref: 'y',
             line: { color: '#facc15', width: 1.5, dash: 'dash' },
         });
         annotations.push({
-            x: rxGy, y: 100,
+            x: rxGy, y: 108,
             xref: 'x', yref: 'y',
             text: `Rx ${rxGy.toFixed(1)} Gy`,
             showarrow: false,
@@ -17093,7 +17503,7 @@ function drawDVH() {
             gridcolor: '#334155', linecolor: '#475569', tickcolor: '#475569',
             titlefont: { color: '#cbd5e1', size: 10 },
             tickfont: { size: 9, color: '#cbd5e1' },
-            range: [0, 105],
+            range: [0, 110],
             // User requested 10% ticks (0, 10, 20, ..., 100). The
             // adaptive relayout handler will only adjust this when the
             // user zooms the y-axis (so the ticks stay 10% at the
@@ -17399,7 +17809,7 @@ window._debugBrachy = function() {
 };
 
 async function refreshPlanningUI() {
-    console.log('[refreshPlanningUI] CALLED');
+    console.log('[refreshPlanningUI] CALLED, ctLoaded:', state.ctLoaded, 'stack:', new Error().stack?.split('\n').slice(1,3).join(' | '));
     // Cancel any in-flight fetch — we'll issue a fresh one.
     if (_refreshInflight) { try { _refreshInflight.abort(); } catch (_) {} }
     if (_refreshDebounce) clearTimeout(_refreshDebounce);
@@ -17414,7 +17824,7 @@ async function refreshPlanningUI() {
                 const data = await res.json();
                 _refreshInflight = null;
                 if (!data || !data.success) { console.warn('[refreshPlanningUI] data not success:', data); return resolve(); }
-                console.log('[refreshPlanningUI] data received, has_dose:', data.has_dose, 'seeds:', data.seeds?.length);
+                console.log('[refreshPlanningUI] data received, has_dose:', data.has_dose, 'seeds:', data.seeds?.length, 'has_dvh:', !!data.dvh, 'dvh_keys:', data.dvh ? Object.keys(data.dvh).length : 0, 'metrics_keys:', data.metrics ? Object.keys(data.metrics).length : 0);
 
                 // 1. Metrics cards (V100, D90, etc.) + summary
                 if (data.metrics && Object.keys(data.metrics).length > 0) {
@@ -17428,53 +17838,57 @@ async function refreshPlanningUI() {
                 if (data.num_trajectories !== undefined) state.metrics.num_trajectories = data.num_trajectories;
 
                 // 2. DVH — store data and re-draw chart
+                console.log('[refreshPlanningUI] DVH check:', !!data.dvh, 'keys:', data.dvh ? Object.keys(data.dvh).length : 0);
                 if (data.dvh && Object.keys(data.dvh).length > 0) {
                     state.dvhData = data.dvh;
-                    try { drawDVH(); } catch (e) { console.warn('drawDVH failed:', e); }
+                    console.log('[refreshPlanningUI] Calling drawDVH()');
+                    try { drawDVH(); } catch (e) { console.warn('[refreshPlanningUI] drawDVH failed:', e); }
+                } else {
+                    console.warn('[refreshPlanningUI] NO DVH data received');
                 }
 
-                // 1b. Re-fetch the IMAGE ANALYSIS panel from /api/header/info.
-                // The analysis panel was previously only populated at CT
-                // load time, so planning / OAR seg events never refreshed
-                // it. Re-pull the header on every planning refresh so the
-                // panel shows fresh HU stats, slice counts, and source
-                // metadata.
-                try {
-                    const headerResp = await fetch(API + '/header/info', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ ct_path: state.ctPath || '' }),
-                    });
-                    if (headerResp.ok) {
-                        const hdata = await headerResp.json();
-                        if (hdata && hdata.success) {
-                            // Mirror into state + imageAnalysisData
-                            if (typeof state !== 'undefined') {
-                                state.ctDicomTags = hdata.tags || {};
-                                state.ctSourceKind = hdata.kind || state.ctSourceKind;
-                                state.ctSourceMeta = hdata.meta || {};
-                            }
-                            // Force the analysis panel to re-render. The
-                            // helper handles null-safe updates.
-                            try { pullHeaderInfo(state.ctPath || ''); } catch (e) { /* tolerate */ }
-                        }
+        // 1b. Re-fetch the IMAGE ANALYSIS panel from /api/header/info.
+        // The analysis panel was previously only populated at CT
+        // load time, so planning / OAR seg events never refreshed
+        // it. Re-pull the header on every planning refresh so the
+        // panel shows fresh HU stats, slice counts, and source
+        // metadata.
+        try {
+            const headerResp = await fetch(API + '/header/info', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ct_path: state.ctPath || '' }),
+            });
+            if (headerResp.ok) {
+                const hdata = await headerResp.json();
+                if (hdata && hdata.success) {
+                    // Mirror into state + imageAnalysisData
+                    if (typeof state !== 'undefined') {
+                        state.ctDicomTags = hdata.tags || {};
+                        state.ctSourceKind = hdata.kind || state.ctSourceKind;
+                        state.ctSourceMeta = hdata.meta || {};
                     }
-                } catch (_) { /* analysis is best-effort */ }
-
-                // 1c. Re-load CTV/OAR LABEL VOLUMES (the masks). The
-                // server stores them in agent memory when the
-                // segmentation tools run; loadLabelVolumes() reads them
-                // back and writes to ctvLabelData/oarLabelData, which
-                // the slice overlays + data tree + 3D rendering depend
-                // on. Without this re-fetch, the CTV/OAR masks from a
-                // chat-triggered planning flow never appear on the
-                // viewers and the data tree never marks them loaded.
-                if (typeof loadLabelVolumes === 'function') {
-                    try { await loadLabelVolumes(); } catch (e) { console.warn('loadLabelVolumes failed:', e); }
+                    // Force the analysis panel to re-render. The
+                    // helper handles null-safe updates.
+                    try { pullHeaderInfo(state.ctPath || ''); } catch (e) { /* tolerate */ }
                 }
-                // Make sure the data tree reflects whatever labels we
-                // now have. Don't clobber the analysis content with a
-                // re-render here — that helper handles its own state.
+            }
+        } catch (_) { /* analysis is best-effort */ }
+
+        // 1c. Re-load CTV/OAR LABEL VOLUMES (the masks). The
+        // server stores them in agent memory when the
+        // segmentation tools run; loadLabelVolumes() reads them
+        // back and writes to ctvLabelData/oarLabelData, which
+        // the slice overlays + data tree + 3D rendering depend
+        // on. Without this re-fetch, the CTV/OAR masks from a
+        // chat-triggered planning flow never appear on the
+        // viewers and the data tree never marks them loaded.
+        if (typeof loadLabelVolumes === 'function') {
+            try { await loadLabelVolumes(); } catch (e) { console.warn('loadLabelVolumes failed:', e); }
+        }
+        // Make sure the data tree reflects whatever labels we
+        // now have. Don't clobber the analysis content with a
+        // re-render here — that helper handles its own state.
 
         // 3. OAR dose table (uses metrics.oar_metrics)
         if (data.metrics && data.metrics.oar_metrics) {
@@ -17494,29 +17908,28 @@ async function refreshPlanningUI() {
             try { updateTrajectories(data.trajectories); } catch (e) { console.warn('updateTrajectories failed:', e); }
         }
 
-        // 4c. Dose overlay auto-load — pull the dose distribution from
-        //     the server and render it on the 2D slice canvases. This is
-        //     the SINGLE source of truth for the dose overlay: chat-driven
-        //     planning now also lands here, so the dose appears in the
-        //     same way as a manual `/api/planning/run_step` call.
-        //
-        // 2026-06-16 fix: previously required `state.ctLoaded` too.
-        // After a page refresh, ctLoaded starts at false (the CT is
-        // stored on the server but not yet re-fetched client-side),
-        // so dose was silently skipped — the user saw the dose map
-        // "disappear" after refresh even though has_dose=true. We now
-        // trust the server's has_dose signal alone. If the CT isn't
-        // loaded yet, updateSlice calls further down will not be able
-        // to draw, but the dose canvas and colorbar will at least be
-        // created and ready for when CT is loaded.
+        // ═══════════════════════════════════════════════════════════
+        // CRITICAL: Switch to viewers panel FIRST so canvas has
+        // proper dimensions. Everything below depends on a visible
+        // canvas (CT rendering, dose overlay, 3D meshes).
+        // ═══════════════════════════════════════════════════════════
+        try {
+            const viewersTab = document.querySelectorAll('.panel-tab')[2];
+            if (viewersTab && !viewersTab.classList.contains('active')) {
+                switchPanel('viewers', viewersTab);
+                await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+            }
+        } catch (e) { console.warn('[refreshPlanningUI] switchPanel FAILED:', e); }
+
+        // ═══════════════════════════════════════════════════════════
+        // DOSE OVERLAY: fire-and-forget (non-blocking). The dose
+        // data loads asynchronously; the user can start dragging
+        // slices immediately — the overlay appears once loaded.
+        // ═══════════════════════════════════════════════════════════
         if (data.has_dose) {
-            try {
-                const ov = await loadDoseOverlay();
+            loadDoseOverlay().then(ov => {
                 if (ov && ov.shape) {
-                    // Make the 2D viewer switch to overlay mode so the
-                    // user actually SEES the dose on their first look.
-                    // Also enable the CTV/OAR overlay checkboxes (idempotent).
-                    if (typeof state !== 'undefined' && state.viewerSettings) {
+                    if (state.viewerSettings) {
                         state.viewerSettings.displayMode = 'overlay';
                         state.viewerSettings.showCTV = true;
                         state.viewerSettings.showOAR = true;
@@ -17525,7 +17938,6 @@ async function refreshPlanningUI() {
                         dataTreeState.ctv.visible = true;
                         dataTreeState.oar.visible = true;
                     }
-                    // Sync the displayMode select if it exists
                     const dm = document.getElementById('displayMode');
                     if (dm) dm.value = 'overlay';
                     const oarCb = document.getElementById('overlayOAR');
@@ -17533,23 +17945,18 @@ async function refreshPlanningUI() {
                     const ctvCb = document.getElementById('overlayCTV');
                     if (ctvCb) ctvCb.checked = true;
                 }
-            } catch (e) { console.warn('Dose overlay auto-load failed:', e); }
+            }).catch(e => console.warn('Dose overlay auto-load failed:', e));
         }
 
-        // 4d. Switch to viewers panel FIRST so canvas has proper dimensions.
-        // Mesh loading needs a visible canvas (non-zero width/height) to render.
-        // Tab order: Input[0] Analysis[1] Viewers[2] Report[3]
-        try {
-            const viewersTab = document.querySelectorAll('.panel-tab')[2];
-            if (viewersTab && !viewersTab.classList.contains('active')) {
-                switchPanel('viewers', viewersTab);
-                // Wait one frame for layout to settle after panel switch
-                await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-            }
-        } catch (e) { console.warn('[refreshPlanningUI] switchPanel FAILED:', e); }
+        // ═══════════════════════════════════════════════════════════
+        // 3D MESHES: run ALL in parallel with a loading indicator.
+        // Show a temporary status bar so the user knows 3D is building.
+        // ═══════════════════════════════════════════════════════════
+        const _3dStatusBar = document.createElement('div');
+        _3dStatusBar.style.cssText = 'position:fixed;bottom:60px;right:20px;background:rgba(15,23,42,0.9);color:#94a3b8;padding:8px 16px;border-radius:8px;font-size:0.75rem;z-index:9999;display:flex;align-items:center;gap:8px;';
+        _3dStatusBar.innerHTML = '<div class="spinner-ring" style="width:12px;height:12px;border-width:2px;"></div><span>3D 重建中...</span>';
+        document.body.appendChild(_3dStatusBar);
 
-        // 4e-4g. Now load 3D meshes (canvas is visible, has proper dimensions).
-        const _meshPromises = [];
         function _withTimeout(promise, name, ms = 60000) {
             return Promise.race([
                 promise,
@@ -17557,21 +17964,17 @@ async function refreshPlanningUI() {
             ]).catch(e => console.warn(`[3D auto-load] ${name}:`, e.message));
         }
 
-        // 4e. Isodose surface auto-load
+        const _meshPromises = [];
+        // Isodose surfaces
         if (data.has_dose) {
-            _meshPromises.push(
-                _withTimeout(loadAllIsoSurfaces(), 'Isosurfaces')
-            );
+            _meshPromises.push(_withTimeout(loadAllIsoSurfaces(), 'Isosurfaces'));
         }
-
-        // 4f. CTV + non-traversable OAR 3D mesh auto-load
-        // 34 OAR meshes × ~5s each = ~170s. Use 300s timeout.
+        // CTV + OAR meshes
         _meshPromises.push(
             _withTimeout(loadCTVAndObstacleMeshes(), 'CTV/OAR meshes', 300000)
                 .then(() => console.log('[3D auto-load] CTV/obstacle done. Meshes:', Object.keys(scene3D.meshes).length))
         );
-
-        // 4g. Seeds + needles 3D load
+        // Seeds + needles
         if (data.seeds && data.seeds.length > 0) {
             _meshPromises.push(
                 _withTimeout(loadSeeds3D(), 'Seeds')
@@ -17584,51 +17987,78 @@ async function refreshPlanningUI() {
 
         await Promise.all(_meshPromises);
         console.log('[refreshPlanningUI] Mesh promises done. scene3D.meshes:', Object.keys(scene3D.meshes));
+        // Remove 3D loading indicator
+        try { _3dStatusBar.remove(); } catch (_) {}
 
-        // 4f-2. Re-capture 3D figure AFTER meshes are loaded.
+        // 4f-2. Re-capture 3D figures AFTER meshes are loaded.
         // autoCaptureReportFigures ran before mesh promises resolved,
         // so the 3D canvas was empty. Now that meshes are in the
-        // scene, force a render and re-capture the 3D screenshot.
+        // scene, re-capture both CTV-zoomed and seeds-overview.
         try {
-            // Fit camera to show all meshes, then render multiple frames
-            // to ensure the canvas has actual pixel content.
-            if (scene3D.scene && Object.keys(scene3D.meshes).length > 0) {
-                fitCameraToScene();
-            }
-            forceRender3DViewer();
-            // Render 3 frames to ensure GPU pipeline finishes
-            if (scene3D.renderer && scene3D.scene && scene3D.camera) {
-                scene3D.renderer.render(scene3D.scene, scene3D.camera);
-                await new Promise(r => requestAnimationFrame(() => {
-                    scene3D.renderer.render(scene3D.scene, scene3D.camera);
-                    requestAnimationFrame(r);
-                }));
-            }
-            const canvas3d = document.querySelector('#canvas3D canvas');
-            if (canvas3d && window.reportForm && window.reportForm.figures) {
-                const dataUrl = canvas3d.toDataURL('image/png');
-                // Only use if not blank (>5KB indicates real content)
-                if (dataUrl && dataUrl.length > 5000) {
-                    const existing3d = window.reportForm.figures.findIndex(f => f && f.axis === '3d');
-                    const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
-                    const _3dTitle = lang === 'zh' ? '三维规划方案' : '3D Planning';
-                    const _3dCap = lang === 'zh' ? '针道轨迹（蓝色）、放射性粒子（黄色）与靶区/器官三维重建' : 'Needle trajectories (blue), radioactive seeds (yellow), and CTV/OAR 3D reconstruction';
-                    if (existing3d >= 0) {
-                        window.reportForm.figures[existing3d].dataUrl = dataUrl;
-                        window.reportForm.figures[existing3d].capturedAt = new Date().toISOString();
-                    } else {
-                        window.reportForm.figures.push({
-                            type: 'screenshot', title: _3dTitle,
-                            dataUrl, axis: '3d', sliceIdx: null,
-                            caption: _3dCap,
-                            capturedAt: new Date().toISOString(),
-                        });
-                    }
-                    console.log('[3D re-capture] Captured 3D screenshot:', dataUrl.length, 'bytes');
+            const _hasFigures = window.reportForm && window.reportForm.figures;
+            const _replaceOrCreate = (axis, title, caption, dataUrl) => {
+                if (!_hasFigures || !dataUrl || dataUrl.length < 5000) return;
+                const idx = window.reportForm.figures.findIndex(f => f && f.axis === axis);
+                const entry = { type: 'screenshot', title, dataUrl, axis, sliceIdx: null, caption, capturedAt: new Date().toISOString() };
+                if (idx >= 0) {
+                    window.reportForm.figures[idx].dataUrl = dataUrl;
+                    window.reportForm.figures[idx].capturedAt = entry.capturedAt;
                 } else {
-                    console.warn('[3D re-capture] Canvas blank, skipping capture');
+                    window.reportForm.figures.push(entry);
+                }
+            };
+            const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
+            const _ctvTitle = lang === 'zh' ? '三维靶区重建' : '3D CTV Reconstruction';
+            const _ctvCap = lang === 'zh' ? 'CTV 靶区（红色）三维表面重建' : 'CTV tumor (red) 3D surface reconstruction';
+            const _seedTitle = lang === 'zh' ? '粒子植入方案' : 'Seed Implant Plan';
+            const _seedCap = lang === 'zh' ? '穿刺针道（红色）、放射性粒子（黄色）与 CTV（半透明红色）三维重建' : 'Needle paths (red), radioactive seeds (yellow), and CTV (translucent red) 3D view';
+
+            forceRender3DViewer();
+
+            // 4f-2a. CTV zoomed capture (hide non-CTV meshes)
+            const ctvMesh = scene3D.meshes['ctv'] || Object.values(scene3D.meshes).find(m => m?.userData?.type === 'ctv');
+            if (ctvMesh && scene3D.camera && scene3D.controls) {
+                const _savedVis = {};
+                for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                    if (!mesh || id === 'ctv') continue;
+                    _savedVis[id] = mesh.visible;
+                    mesh.visible = false;
+                }
+                if (scene3D.skinMesh) { _savedVis['__skin__'] = scene3D.skinMesh.visible; scene3D.skinMesh.visible = false; }
+
+                const box = new THREE.Box3().setFromObject(ctvMesh);
+                const center = box.getCenter(new THREE.Vector3());
+                const size = box.getSize(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const dist = maxDim * 2.5;
+                scene3D.controls.target.copy(center);
+                scene3D.camera.position.set(center.x + dist * 0.6, center.y + dist * 0.4, center.z + dist * 0.7);
+                scene3D.camera.updateProjectionMatrix();
+                scene3D.controls.update();
+                await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+                scene3D.renderer.render(scene3D.scene, scene3D.camera);
+                await new Promise(r => requestAnimationFrame(r));
+                const c = document.querySelector('#canvas3D canvas');
+                if (c) _replaceOrCreate('3d_ctv', _ctvTitle, _ctvCap, c.toDataURL('image/png'));
+
+                for (const [id, vis] of Object.entries(_savedVis)) {
+                    if (id === '__skin__') { if (scene3D.skinMesh) scene3D.skinMesh.visible = vis; continue; }
+                    const mesh = scene3D.meshes[id];
+                    if (mesh) mesh.visible = vis;
                 }
             }
+
+            // 4f-2b. Seeds overview capture
+            fitCameraToScene();
+            await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+            scene3D.renderer.render(scene3D.scene, scene3D.camera);
+            await new Promise(r => requestAnimationFrame(r));
+            const c2 = document.querySelector('#canvas3D canvas');
+            if (c2) _replaceOrCreate('3d_seeds', _seedTitle, _seedCap, c2.toDataURL('image/png'));
+
+            // Restore overview camera
+            fitCameraToScene();
+            console.log('[3D re-capture] Re-captured CTV + seeds figures');
         } catch (e) { console.warn('[3D re-capture] failed:', e); }
 
         // 5. Data tree badges ("V100: 91.0%" / "13 seeds") — updateSeeds
@@ -17641,6 +18071,87 @@ async function refreshPlanningUI() {
         //    together (the inline compositing path re-runs on every call).
         if (state.ctLoaded && (ctvLabelData || oarLabelData)) {
             try { loadAllSlices(); } catch (e) { console.warn('loadAllSlices (post-dose) failed:', e); }
+        }
+
+        // 6b. Re-capture 2D dose figures at peak dose voxel after dose
+        //     overlay is loaded (autoCaptureReportFigures may have run
+        //     before dose data was available).
+        if (state.doseOverlay && state.doseOverlay.visible && window.reportForm && window.reportForm.figures) {
+            try {
+                const pv = state.doseOverlay.peakVoxel;
+                if (pv) {
+                    const axesCfg = [
+                        { ax: 'axial', slice: pv.z, axis: 'dose_axial', titleKey: 'doseAxial', capKey: 'doseAxialCap' },
+                        { ax: 'sagittal', slice: pv.x, axis: 'dose_sagittal', titleKey: 'doseSagittal', capKey: 'doseSagittalCap' },
+                        { ax: 'coronal', slice: pv.y, axis: 'dose_coronal', titleKey: 'doseCoronal', capKey: 'doseCoronalCap' },
+                    ];
+                    const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
+                    const labels = (lang === 'zh') ? {
+                        doseAxial: '轴位剂量分布', doseAxialCap: '最大剂量层面的轴位 CT 叠加剂量热图',
+                        doseSagittal: '矢状位剂量分布', doseSagittalCap: '最大剂量层面的矢状位 CT 叠加剂量热图',
+                        doseCoronal: '冠状位剂量分布', doseCoronalCap: '最大剂量层面的冠状位 CT 叠加剂量热图',
+                    } : {
+                        doseAxial: 'Axial Dose Distribution', doseAxialCap: 'Axial CT with dose heatmap at peak dose slice',
+                        doseSagittal: 'Sagittal Dose Distribution', doseSagittalCap: 'Sagittal CT with dose heatmap at peak dose slice',
+                        doseCoronal: 'Coronal Dose Distribution', doseCoronalCap: 'Coronal CT with dose heatmap at peak dose slice',
+                    };
+
+                    const origSlices = { axial: state.slices.axial, sagittal: state.slices.sagittal, coronal: state.slices.coronal };
+                    const origOpacity = state.doseOverlay.opacity;
+                    state.doseOverlay.opacity = 0.75;
+
+                    for (const cfg of axesCfg) {
+                        const slider = document.getElementById('slider' + cfg.ax.charAt(0).toUpperCase() + cfg.ax.slice(1));
+                        const maxVal = slider ? parseInt(slider.max) : 200;
+                        const clampedSlice = Math.max(0, Math.min(maxVal, Math.round(cfg.slice)));
+                        if (slider) slider.value = clampedSlice;
+                        updateSlice(cfg.ax, clampedSlice);
+                    }
+                    await new Promise(r => setTimeout(r, 400));
+
+                    for (const cfg of axesCfg) {
+                        const composite = _composite2DViewerCanvas(cfg.ax);
+                        if (composite && composite.length > 1000) {
+                            const idx = window.reportForm.figures.findIndex(f => f && f.axis === cfg.axis);
+                            const entry = { type: 'screenshot', title: labels[cfg.titleKey], dataUrl: composite, axis: cfg.axis, sliceIdx: Math.round(cfg.slice), caption: labels[cfg.capKey], capturedAt: new Date().toISOString() };
+                            if (idx >= 0) {
+                                window.reportForm.figures[idx].dataUrl = composite;
+                                window.reportForm.figures[idx].capturedAt = entry.capturedAt;
+                                window.reportForm.figures[idx].sliceIdx = entry.sliceIdx;
+                            } else {
+                                window.reportForm.figures.push(entry);
+                            }
+                        }
+                    }
+
+                    state.doseOverlay.opacity = origOpacity;
+                    for (const [ax, sl] of Object.entries(origSlices)) {
+                        const slider = document.getElementById('slider' + ax.charAt(0).toUpperCase() + ax.slice(1));
+                        if (slider) slider.value = sl;
+                        updateSlice(ax, sl);
+                    }
+                    await new Promise(r => setTimeout(r, 100));
+                }
+
+                // Also re-capture DVH if available
+                const dvhEl = document.getElementById('dvhChart');
+                if (dvhEl && typeof Plotly !== 'undefined' && typeof Plotly.toImage === 'function') {
+                    const imgData = await Plotly.toImage(dvhEl, { format: 'png', width: 900, height: 450 });
+                    if (imgData && imgData.length > 1000) {
+                        const dvhIdx = window.reportForm.figures.findIndex(f => f && f.axis === 'dvh');
+                        const dvhEntry = { type: 'screenshot', title: lang === 'zh' ? 'DVH 剂量体积直方图' : 'DVH — Dose Volume Histogram', dataUrl: imgData, axis: 'dvh', sliceIdx: null, caption: lang === 'zh' ? 'CTV 及各 OAR 的剂量-体积曲线' : 'Dose–volume curves for CTV and all OARs', capturedAt: new Date().toISOString() };
+                        if (dvhIdx >= 0) {
+                            window.reportForm.figures[dvhIdx].dataUrl = imgData;
+                            window.reportForm.figures[dvhIdx].capturedAt = dvhEntry.capturedAt;
+                        } else {
+                            window.reportForm.figures.push(dvhEntry);
+                        }
+                    }
+                }
+                // Re-render report if figures changed
+                if (typeof renderReportEditor === 'function') renderReportEditor();
+                if (typeof _updateReportPreview === 'function') _updateReportPreview();
+            } catch (e) { console.warn('[Report] 2D/DVH re-capture failed:', e); }
         }
 
         // 7. 3D viewer force-re-size + camera-fit. The previous version
@@ -19935,12 +20446,24 @@ function removeReportFigure(idx) {
     renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();
 }
 
-// Auto-capture visual evidence for the report (2026-06-15).
+// Auto-capture visual evidence for the report (2026-06-15, rewritten 2026-06-26).
 // Captures segmentation overlay, dose heatmap, DVH curves, and 3D
 // planning view — each as a figure with a descriptive caption.
 // Called before PDF export so the report always has evidence.
+//
+// FIGURE 1: 3D Seed Implant Plan (composite)
+//   Left:  Front-facing panoramic with all OARs (semi-transparent),
+//          needle paths (red), radioactive seeds (yellow), CTV
+//   Right: Camera aimed at translucent CTV tumor showing internal
+//          3D seed distribution
+//
+// FIGURE 2: Dose Distribution & DVH (composite)
+//   Top:   Axial / Sagittal / Coronal CT with dose heatmap at
+//          peak dose voxel, arranged in a row
+//   Bottom: DVH curve (CTV + OARs)
 async function autoCaptureReportFigures() {
-    if (!window.reportForm) return;
+    console.log('[Report] autoCaptureReportFigures called');
+    if (!window.reportForm) { console.warn('[Report] No reportForm, skipping'); return; }
     if (!window.reportForm.figures) window.reportForm.figures = [];
 
     // Drop stale auto-captured figures (user-uploads are kept).
@@ -19948,124 +20471,437 @@ async function autoCaptureReportFigures() {
         const _lastPlan = window.state && window.state.lastPlanTimestamp;
         if (_lastPlan && window.reportForm.figures) {
             const _ts = new Date(_lastPlan).getTime();
+            const _before = window.reportForm.figures.length;
             window.reportForm.figures = window.reportForm.figures.filter(f => {
                 if (!f) return false;
                 if (f.type === 'upload') return true;
                 const fts = f.capturedAt ? new Date(f.capturedAt).getTime() : 0;
                 return fts >= _ts;
             });
+            const _after = window.reportForm.figures.length;
+            if (_before !== _after) console.log(`[Report] Dropped ${_before - _after} stale figures`);
         }
     } catch (_) {}
 
-    if (window.reportForm.figures.length > 0) return;
+    if (window.reportForm.figures.length > 0) {
+        console.log('[Report] Figures already exist:', window.reportForm.figures.length, '- skipping');
+        return;
+    }
+    console.log('[Report] Starting capture, 3D meshes:', Object.keys(scene3D.meshes).length,
+        'doseOverlay:', !!state.doseOverlay, 'dvhData:', !!state.dvhData);
 
     // Language-aware labels
-    const f = window.reportForm;
-    const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : ((f && f.language) || 'en');
+    const _f = window.reportForm;
+    const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : ((_f && _f.language) || 'en');
     const labels = (lang === 'zh') ? {
-        seg3d: '三维靶区重建', seg3dCap: 'CTV 靶区（红色）三维表面重建',
-        seed3d: '粒子植入方案', seed3dCap: '穿刺针道（红色）、放射性粒子（黄色）与 CTV（半透明红色）三维重建',
-        doseAxial: '轴位剂量分布', doseAxialCap: '最大剂量层面的轴位 CT 叠加剂量热图',
-        doseSagittal: '矢状位剂量分布', doseSagittalCap: '最大剂量层面的矢状位 CT 叠加剂量热图',
-        doseCoronal: '冠状位剂量分布', doseCoronalCap: '最大剂量层面的冠状位 CT 叠加剂量热图',
-        dvh: 'DVH 剂量体积直方图', dvhCap: 'CTV 及各 OAR 的剂量-体积曲线',
+        seed3d: '粒子植入方案',
+        seed3dCap: '左：正面全景含穿刺针道（红色）、放射性粒子（黄色）、CTV 及所有危及器官；右：半透明 CTV 肿瘤内部三维粒子分布',
+        doseDvh: '剂量分布与DVH',
+        doseDvhCap: '上方：最大剂量层面轴位/矢状位/冠状位 CT 叠加剂量热图；下方：CTV 及各 OAR 的剂量-体积曲线',
+        lblFront: '正面全景（含危及器官）',
+        lblInside: '半透明肿瘤内部（粒子分布）',
+        lblAxial: '轴位', lblSagittal: '矢状位', lblCoronal: '冠状位',
     } : {
-        seg3d: '3D CTV Reconstruction', seg3dCap: 'CTV tumor (red) 3D surface reconstruction',
-        seed3d: 'Seed Implant Plan', seed3dCap: 'Needle paths (red), radioactive seeds (yellow), and CTV (translucent red) 3D view',
-        doseAxial: 'Axial Dose Distribution', doseAxialCap: 'Axial CT with dose heatmap at peak dose slice',
-        doseSagittal: 'Sagittal Dose Distribution', doseSagittalCap: 'Sagittal CT with dose heatmap at peak dose slice',
-        doseCoronal: 'Coronal Dose Distribution', doseCoronalCap: 'Coronal CT with dose heatmap at peak dose slice',
-        dvh: 'DVH — Dose Volume Histogram', dvhCap: 'Dose–volume curves for CTV and all OARs',
+        seed3d: 'Seed Implant Plan',
+        seed3dCap: 'Left: Front view with needle paths (red), seeds (yellow), CTV, and all OARs; Right: Translucent CTV showing internal 3D seed distribution',
+        doseDvh: 'Dose Distribution & DVH',
+        doseDvhCap: 'Top: Axial/Sagittal/Coronal CT with dose heatmap at peak dose voxel; Bottom: Dose-volume histogram for CTV and OARs',
+        lblFront: 'Front view (with OARs)',
+        lblInside: 'Translucent tumor (seed distribution)',
+        lblAxial: 'Axial', lblSagittal: 'Sagittal', lblCoronal: 'Coronal',
     };
 
     const _ts = () => new Date().toISOString();
     const _push = (title, caption, dataUrl, axis, extra) => {
-        if (!dataUrl || dataUrl.length < 1000) return;
+        if (!dataUrl || dataUrl.length < 1000) {
+            console.warn('[Report] Figure skipped: dataUrl too short or null');
+            return;
+        }
         window.reportForm.figures.push({
             type: 'screenshot', title, dataUrl, axis: axis || '3d',
             sliceIdx: null, caption, capturedAt: _ts(), ...extra,
         });
+        console.log('[Report] Figure captured:', title, Math.round(dataUrl.length / 1024), 'KB');
     };
 
-    // ─── 1. 3D CTV RECONSTRUCTION (zoomed to tumor) ───
-    try {
-        // Find CTV mesh and zoom camera to it
-        const ctvMesh = scene3D.meshes['ctv'] || Object.values(scene3D.meshes).find(m => m?.userData?.type === 'ctv');
-        if (ctvMesh && scene3D.camera && scene3D.controls) {
-            const box = new THREE.Box3().setFromObject(ctvMesh);
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const dist = maxDim * 2.5;
-            scene3D.controls.target.copy(center);
-            scene3D.camera.position.set(center.x + dist * 0.6, center.y + dist * 0.4, center.z + dist * 0.7);
-            scene3D.camera.updateProjectionMatrix();
-            scene3D.controls.update();
-            await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-            scene3D.renderer.render(scene3D.scene, scene3D.camera);
-            await new Promise(r => requestAnimationFrame(r));
-            const c = document.querySelector('#canvas3D canvas');
-            if (c) _push(labels.seg3d, labels.seg3dCap, c.toDataURL('image/png'), '3d_ctv');
-        }
-    } catch (e) { console.warn('[Report] 3D CTV capture failed:', e); }
+    // Helper: wait for render
+    const _waitFrames = (n = 2) => new Promise(r => {
+        let count = 0;
+        const tick = () => { if (++count >= n) r(); else requestAnimationFrame(tick); };
+        requestAnimationFrame(tick);
+    });
 
-    // ─── 2. 3D SEED IMPLANT PLAN (overview with seeds+needles) ───
-    try {
-        fitCameraToScene();
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-        scene3D.renderer.render(scene3D.scene, scene3D.camera);
-        await new Promise(r => requestAnimationFrame(r));
-        const c = document.querySelector('#canvas3D canvas');
-        if (c) _push(labels.seed3d, labels.seed3dCap, c.toDataURL('image/png'), '3d_seeds');
-    } catch (e) { console.warn('[Report] 3D seeds capture failed:', e); }
-
-    // ─── 3. 2D DOSE SLICES (all 3 views with dose overlay) ───
-    if (state.doseOverlay && state.doseOverlay.active) {
-        const axesCfg = [
-            { ax: 'axial', title: labels.doseAxial, cap: labels.doseAxialCap, axis: 'dose_axial' },
-            { ax: 'sagittal', title: labels.doseSagittal, cap: labels.doseSagittalCap, axis: 'dose_sagittal' },
-            { ax: 'coronal', title: labels.doseCoronal, cap: labels.doseCoronalCap, axis: 'dose_coronal' },
-        ];
-        for (const cfg of axesCfg) {
-            try {
-                await new Promise(r => setTimeout(r, 100)); // ensure slice is rendered
-                const composite = _composite2DViewerCanvas(cfg.ax);
-                if (composite) _push(cfg.title, cfg.cap, composite, cfg.axis);
-            } catch (e) { console.warn(`[Report] ${cfg.ax} dose capture failed:`, e); }
-        }
+    // Helper: draw image onto canvas context, returns Promise
+    function _drawImg(ctx, dataUrl, dx, dy, maxW, maxH) {
+        return new Promise(resolve => {
+            if (!dataUrl) { resolve(false); return; }
+            const img = new Image();
+            img.onload = () => {
+                const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+                const w = img.width * scale, h = img.height * scale;
+                ctx.drawImage(img, dx + (maxW - w) / 2, dy + (maxH - h) / 2, w, h);
+                resolve(true);
+            };
+            img.onerror = () => resolve(false);
+            img.src = dataUrl;
+        });
     }
 
-    // ─── 4. DVH CURVE ───
+    // Helper: draw a label centered below an image area
+    function _drawLabel(ctx, text, cx, y, maxW) {
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '12px Inter, system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(text, cx, y, maxW);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // FIGURE 1: 3D SEED IMPLANT PLAN — COMPOSITE
+    //   Left: Front-facing with all OARs + needles + seeds
+    //   Right: Translucent tumor showing seeds inside
+    //   Combined into a single side-by-side image
+    // ═══════════════════════════════════════════════════════════
     try {
-        const dvhEl = document.getElementById('dvhChart');
-        if (dvhEl && typeof Plotly !== 'undefined') {
-            // Ensure DVH is fully rendered before capture
-            await new Promise(r => setTimeout(r, 300));
-            if (typeof Plotly.toImage === 'function') {
-                const imgData = await Plotly.toImage(dvhEl, { format: 'png', width: 900, height: 450 });
-                _push(labels.dvh, labels.dvhCap, imgData, 'dvh');
-            } else {
-                // Fallback: capture via canvas
-                const c = dvhEl.querySelector('.main-svg');
-                if (c) {
-                    const out = document.createElement('canvas');
-                    out.width = c.clientWidth || 900; out.height = c.clientHeight || 450;
-                    const ctx = out.getContext('2d');
-                    const data = new XMLSerializer().serializeToString(c);
-                    const img = new Image();
-                    img.onload = () => { ctx.drawImage(img, 0, 0); _push(labels.dvh, labels.dvhCap, out.toDataURL('image/png'), 'dvh'); };
-                    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(data)));
+        const _meshCount = Object.keys(scene3D.meshes).length;
+        if (scene3D.camera && scene3D.controls && scene3D.renderer && _meshCount > 0) {
+            console.log('[Report] Figure 1: starting 3D capture, meshes:', _meshCount);
+
+            // Save all visibility and opacity states
+            const _saved = {};
+            const _savedOpacities = {};
+            for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                if (!mesh) continue;
+                _saved[id] = mesh.visible;
+                if (mesh.material) _savedOpacities[id] = mesh.material.opacity;
+            }
+
+            // Helper: compute bounding box of all visible meshes
+            function _computeSceneBox() {
+                const box = new THREE.Box3();
+                for (const mesh of Object.values(scene3D.meshes)) {
+                    if (mesh && mesh.visible) {
+                        try { box.expandByObject(mesh); } catch (_) {}
+                    }
+                }
+                return box;
+            }
+
+            // Helper: render and capture 3D canvas
+            async function _capture3D(label) {
+                await _waitFrames(3);
+                scene3D.renderer.render(scene3D.scene, scene3D.camera);
+                await _waitFrames(2);
+                // The actual WebGL canvas is scene3D.renderer.domElement (child of #canvas3D)
+                const c = scene3D.renderer.domElement;
+                if (!c) { console.warn('[Report] 3D canvas not found for', label); return null; }
+                try {
+                    const url = c.toDataURL('image/png');
+                    console.log('[Report] 3D capture', label, ':', Math.round(url.length / 1024), 'KB');
+                    return url;
+                } catch (e) {
+                    console.warn('[Report] 3D toDataURL failed:', e);
+                    return null;
                 }
             }
-        }
-    } catch (e) { console.warn('[Report] DVH capture failed:', e); }
 
-    // Restore camera to overview after captures
-    try { fitCameraToScene(); } catch (_) {}
+            // ── View A: Front-facing with all OARs ──
+            // Show everything
+            for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                if (mesh) mesh.visible = true;
+            }
+            // OARs semi-transparent (not seeds, needles, dose, or CTV)
+            for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                if (mesh?.material && !id.startsWith('seed_') && !id.startsWith('needle_')
+                    && !id.startsWith('dose_iso_') && !id.startsWith('ctv_') && id !== 'ctv') {
+                    mesh.material.opacity = 0.15;
+                    mesh.material.transparent = true;
+                }
+            }
+            // CTV semi-transparent
+            const ctvMesh = scene3D.meshes['ctv']
+                || Object.values(scene3D.meshes).find(m => m?.userData?.source === 'ctv');
+            if (ctvMesh?.material) { ctvMesh.material.opacity = 0.3; ctvMesh.material.transparent = true; }
+
+            fitCameraToScene();
+            await _waitFrames(2);
+            const boxA = _computeSceneBox();
+            if (boxA.min.x < boxA.max.x) {
+                const centerA = boxA.getCenter(new THREE.Vector3());
+                const sizeA = boxA.getSize(new THREE.Vector3());
+                const distA = Math.max(sizeA.x, sizeA.y, sizeA.z) * 2.2;
+                scene3D.controls.target.copy(centerA);
+                scene3D.camera.position.set(centerA.x, centerA.y + distA * 0.3, centerA.z + distA * 0.8);
+                scene3D.camera.updateProjectionMatrix();
+                scene3D.controls.update();
+            }
+            const imgA = await _capture3D('View A (front+OARs)');
+
+            // ── View B: Translucent tumor, seeds visible inside ──
+            // Hide non-essential OARs, keep CTV + seeds + needles only
+            for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                if (!mesh) continue;
+                const isCtv = id === 'ctv' || id.startsWith('ctv_');
+                const isSeed = id.startsWith('seed_');
+                const isNeedle = id.startsWith('needle_');
+                mesh.visible = isCtv || isSeed || isNeedle;
+            }
+            // CTV very translucent so seeds inside are visible
+            if (ctvMesh?.material) { ctvMesh.material.opacity = 0.12; ctvMesh.material.transparent = true; }
+            // Seeds bright and opaque
+            for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                if (id.startsWith('seed_') && mesh?.material) { mesh.material.opacity = 1.0; }
+            }
+            // Needles visible but thin
+            for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                if (id.startsWith('needle_') && mesh?.material) { mesh.material.opacity = 0.8; }
+            }
+
+            fitCameraToScene();
+            await _waitFrames(2);
+            const boxB = _computeSceneBox();
+            if (boxB.min.x < boxB.max.x) {
+                const centerB = boxB.getCenter(new THREE.Vector3());
+                const sizeB = boxB.getSize(new THREE.Vector3());
+                const distB = Math.max(sizeB.x, sizeB.y, sizeB.z) * 1.8;
+                // Closer view, slightly rotated to see inside the tumor
+                scene3D.controls.target.copy(centerB);
+                scene3D.camera.position.set(
+                    centerB.x + distB * 0.4,
+                    centerB.y + distB * 0.2,
+                    centerB.z + distB * 0.6
+                );
+                scene3D.camera.updateProjectionMatrix();
+                scene3D.controls.update();
+            }
+            const imgB = await _capture3D('View B (translucent tumor)');
+
+            // ── Composite: side by side ──
+            if (imgA || imgB) {
+                const W = 1200, halfW = 560, gap = 40, titleH = 44, labelH = 28, pad = 20;
+                const compCanvas = document.createElement('canvas');
+                compCanvas.width = W;
+                compCanvas.height = titleH + pad + halfW + labelH;
+                const ctx = compCanvas.getContext('2d');
+
+                // Background
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(0, 0, W, compCanvas.height);
+
+                // Title
+                ctx.fillStyle = '#e2e8f0';
+                ctx.font = 'bold 16px Inter, system-ui, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(labels.seed3d, W / 2, 30);
+
+                // Draw View A (left)
+                await _drawImg(ctx, imgA, pad, titleH, halfW, halfW);
+                _drawLabel(ctx, labels.lblFront, pad + halfW / 2, titleH + halfW + 18, halfW);
+
+                // Draw View B (right)
+                await _drawImg(ctx, imgB, pad + halfW + gap, titleH, halfW, halfW);
+                _drawLabel(ctx, labels.lblInside, pad + halfW + gap + halfW / 2, titleH + halfW + 18, halfW);
+
+                // Thin separator line between views
+                ctx.strokeStyle = 'rgba(148,163,184,0.2)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(W / 2, titleH + 10);
+                ctx.lineTo(W / 2, titleH + halfW - 10);
+                ctx.stroke();
+
+                _push(labels.seed3d, labels.seed3dCap, compCanvas.toDataURL('image/png'), '3d_seeds');
+            }
+
+            // Restore all states
+            for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                if (!mesh) continue;
+                if (_saved[id] !== undefined) mesh.visible = _saved[id];
+                if (mesh.material && _savedOpacities[id] !== undefined) mesh.material.opacity = _savedOpacities[id];
+            }
+            fitCameraToScene();
+            await _waitFrames(2);
+        } else {
+            console.warn('[Report] Figure 1 skipped: 3D scene not ready', {
+                camera: !!scene3D.camera, controls: !!scene3D.controls,
+                renderer: !!scene3D.renderer, meshes: _meshCount
+            });
+        }
+    } catch (e) { console.warn('[Report] Figure 1 (3D seed plan) capture failed:', e); }
+
+    // ═══════════════════════════════════════════════════════════
+    // FIGURE 2: DOSE + DVH COMPOSITE
+    //   Top row: Axial + Sagittal + Coronal CT with dose heatmap
+    //            at peak dose voxel (3 views side by side)
+    //   Bottom: DVH curve
+    //   Combined into a single image
+    // ═══════════════════════════════════════════════════════════
+    try {
+        // Check for dose data existence, NOT just visibility — the user may
+        // not have toggled dose on yet, but we still need to capture it.
+        const hasDose = state.doseOverlay && state.doseOverlay.peakVoxel
+            && state.doseOverlay.shape && state.doseOverlay.data;
+        if (hasDose) {
+            const pv = state.doseOverlay.peakVoxel;
+            console.log('[Report] Figure 2: starting dose+DVH capture, peak voxel:', pv);
+
+            // Save original slices and opacity
+            const origSlices = {
+                axial: state.slices.axial,
+                sagittal: state.slices.sagittal,
+                coronal: state.slices.coronal,
+            };
+            const origOpacity = state.doseOverlay.opacity;
+            const origVisible = state.doseOverlay.visible;
+
+            // Ensure dose overlay is visible and high opacity for screenshot
+            state.doseOverlay.visible = true;
+            state.doseOverlay.opacity = 0.75;
+
+            // Navigate all 3 views to peak dose voxel
+            const axesCfg = [
+                { ax: 'axial', slice: pv.z, cap: labels.lblAxial },
+                { ax: 'sagittal', slice: pv.x, cap: labels.lblSagittal },
+                { ax: 'coronal', slice: pv.y, cap: labels.lblCoronal },
+            ];
+            for (const cfg of axesCfg) {
+                const slider = document.getElementById('slider' + cfg.ax.charAt(0).toUpperCase() + cfg.ax.slice(1));
+                const maxVal = slider ? parseInt(slider.max) : 200;
+                const clampedSlice = Math.max(0, Math.min(maxVal, Math.round(cfg.slice)));
+                if (slider) slider.value = clampedSlice;
+                updateSlice(cfg.ax, clampedSlice);
+            }
+            // Wait for all 3 views + dose overlay to render
+            await _waitFrames(8);
+
+            // Capture all 3 views
+            const doseImages = [];
+            for (const cfg of axesCfg) {
+                const composite = _composite2DViewerCanvas(cfg.ax);
+                if (composite) {
+                    doseImages.push({ dataUrl: composite, label: cfg.cap });
+                    console.log('[Report] Captured', cfg.cap, 'dose view:', Math.round(composite.length / 1024), 'KB');
+                }
+            }
+
+            // Restore original slices and opacity
+            state.doseOverlay.opacity = origOpacity;
+            state.doseOverlay.visible = origVisible;
+            for (const [ax, sl] of Object.entries(origSlices)) {
+                const slider = document.getElementById('slider' + ax.charAt(0).toUpperCase() + ax.slice(1));
+                if (slider) slider.value = sl;
+                updateSlice(ax, sl);
+            }
+            await _waitFrames(2);
+
+            // Capture DVH chart — try Plotly.toImage first, fallback to html2canvas
+            let dvhDataUrl = null;
+            const dvhEl = document.getElementById('dvhChart');
+            if (dvhEl) {
+                // Try Plotly export (vector-quality)
+                if (typeof Plotly !== 'undefined' && typeof Plotly.toImage === 'function') {
+                    try {
+                        await new Promise(r => setTimeout(r, 500)); // let Plotly finish rendering
+                        dvhDataUrl = await Plotly.toImage(dvhEl, { format: 'png', width: 1200, height: 400 });
+                        console.log('[Report] DVH captured via Plotly:', Math.round(dvhDataUrl.length / 1024), 'KB');
+                    } catch (e) {
+                        console.warn('[Report] Plotly.toImage failed:', e);
+                    }
+                }
+                // Fallback: html2canvas
+                if (!dvhDataUrl && typeof html2canvas !== 'undefined') {
+                    try {
+                        const canvas = await html2canvas(dvhEl, { useCORS: true, scale: 2 });
+                        dvhDataUrl = canvas.toDataURL('image/png');
+                        console.log('[Report] DVH captured via html2canvas:', Math.round(dvhDataUrl.length / 1024), 'KB');
+                    } catch (e) {
+                        console.warn('[Report] html2canvas DVH failed:', e);
+                    }
+                }
+            }
+
+            // Compose into single image
+            if (doseImages.length > 0 || dvhDataUrl) {
+                const W = 1200;
+                const pad = 20;
+                const viewW = Math.floor((W - pad * 2 - 20) / 3);  // 3 views with gaps
+                const viewH = viewW;  // square-ish
+                const dvhH = 380;
+                const gap = 12;
+                const titleH = 44;
+                const labelH = 28;
+
+                const compositeCanvas = document.createElement('canvas');
+                compositeCanvas.width = W;
+                compositeCanvas.height = titleH + labelH + viewH + gap + dvhH + pad;
+                const ctx = compositeCanvas.getContext('2d');
+
+                // Background
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(0, 0, compositeCanvas.width, compositeCanvas.height);
+
+                // Title
+                ctx.fillStyle = '#e2e8f0';
+                ctx.font = 'bold 16px Inter, system-ui, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(labels.doseDvh, W / 2, 30);
+
+                // Draw 3 dose views in a row (top)
+                let xPos = pad;
+                for (let i = 0; i < doseImages.length; i++) {
+                    const entry = doseImages[i];
+                    await _drawImg(ctx, entry.dataUrl, xPos, titleH, viewW, viewH);
+                    _drawLabel(ctx, entry.label, xPos + viewW / 2, titleH + viewH + 18, viewW);
+                    xPos += viewW + 10;
+                }
+
+                // Draw thin separator line
+                const sepY = titleH + viewH + labelH + 4;
+                ctx.strokeStyle = 'rgba(148,163,184,0.15)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(pad, sepY);
+                ctx.lineTo(W - pad, sepY);
+                ctx.stroke();
+
+                // DVH section label
+                ctx.fillStyle = '#64748b';
+                ctx.font = '11px Inter, system-ui, sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText('DVH — Dose Volume Histogram', pad, sepY + 16);
+
+                // Draw DVH chart (bottom)
+                if (dvhDataUrl) {
+                    const dvhY = sepY + 22;
+                    await _drawImg(ctx, dvhDataUrl, pad, dvhY, W - pad * 2, dvhH);
+                } else {
+                    // No DVH available — draw placeholder
+                    ctx.fillStyle = 'rgba(148,163,184,0.1)';
+                    const dvhY = sepY + 22;
+                    ctx.fillRect(pad, dvhY, W - pad * 2, dvhH);
+                    ctx.fillStyle = '#64748b';
+                    ctx.font = '14px Inter, system-ui, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('DVH chart not available', W / 2, dvhY + dvhH / 2);
+                }
+
+                _push(labels.doseDvh, labels.doseDvhCap, compositeCanvas.toDataURL('image/png'), 'dose_dvh_composite');
+            }
+        } else {
+            console.warn('[Report] Figure 2 skipped: no dose overlay data', {
+                hasOverlay: !!state.doseOverlay,
+                hasPeakVoxel: !!(state.doseOverlay && state.doseOverlay.peakVoxel),
+                hasShape: !!(state.doseOverlay && state.doseOverlay.shape),
+                hasData: !!(state.doseOverlay && state.doseOverlay.data),
+            });
+        }
+    } catch (e) { console.warn('[Report] Figure 2 (dose+DVH) capture failed:', e); }
 
     // Re-render editor + preview
     if (window.reportForm.figures.length > 0) {
+        console.log('[Report] Total figures captured:', window.reportForm.figures.length);
         renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();
+    } else {
+        console.warn('[Report] No figures were captured');
     }
 }
 
