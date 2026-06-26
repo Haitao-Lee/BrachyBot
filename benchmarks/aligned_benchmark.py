@@ -9,8 +9,8 @@ import json, os, sys, time, glob, re
 from datetime import datetime
 from pathlib import Path
 
-SCREENSHOT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots_v2"
-REPORT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/reports_v2"
+SCREENSHOT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/run_20260624/screenshots"
+REPORT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/run_20260624/reports"
 BENCHMARK_DIR = "/home/lht/snap/brachyplan/BrachyBot/benchmarks/v2"
 BASE_URL = "http://localhost:8080"
 
@@ -388,6 +388,15 @@ def run_test_with_aligned_screenshot(test_case, cat_num, agent_id, case_index):
             page.goto(BASE_URL, timeout=30000, wait_until='networkidle')
             time.sleep(2)
 
+            # 0. Clear ALL context — prevents session pollution between tests
+            try:
+                page.evaluate("""async () => {
+                    await fetch('/api/clear_all', {method: 'POST'});
+                }""")
+                time.sleep(3)
+            except Exception:
+                pass
+
             # 2. Setup required state based on `setup` field.
             #    The new _parse_setup() handles 'NO plan' / 'NO seg' / 'full pipeline'
             #    consistently, fixing the P0-4 (hallucination category setup bug)
@@ -401,6 +410,25 @@ def run_test_with_aligned_screenshot(test_case, cat_num, agent_id, case_index):
             for action, do_it in steps:
                 if not do_it:
                     continue
+                # CT upload: use Browse button — DON'T send chat message
+                if action == "ct":
+                    try:
+                        file_input = page.locator('#fileCT')
+                        file_input.set_input_files(ct_path)
+                        # Wait for upload confirmation message to appear
+                        try:
+                            page.wait_for_function("""() => {
+                                const body = document.body.innerText || '';
+                                return /Uploaded|CT loaded|Loading CT/i.test(body);
+                            }""", timeout=60000)
+                        except Exception:
+                            pass
+                        time.sleep(30)  # Wait for processing to complete before next message
+                        print(f"    ✅ CT uploaded via Browse", flush=True)
+                    except Exception as e:
+                        print(f"    ❌ CT upload failed: {e}", flush=True)
+                    continue
+                # Non-CT steps: send chat message
                 prompt = _SETUP_PROMPTS[action].format(ct_path=ct_path)
                 page.fill(input_selector, prompt)
                 time.sleep(0.5)
@@ -409,31 +437,75 @@ def run_test_with_aligned_screenshot(test_case, cat_num, agent_id, case_index):
 
             # 3. Find input box and type the test question
             page.wait_for_selector(input_selector, timeout=10000)
-            page.wait_for_selector(input_selector, timeout=10000)
             page.fill(input_selector, input_text)
             time.sleep(0.5)
 
-            # 3. Click send button
+            # 4. Click send button
             send_button = page.locator('.chat-send')
             send_button.click()
 
-            # 4. Wait for bot response to appear
-            page.wait_for_selector('.chat-msg.bot-response', timeout=60000)
+            # 5. Wait for bot response to appear (poll every 5s, total 5min)
+            for _wait_attempt in range(60):  # 60 × 5s = 300s max
+                try:
+                    page.wait_for_selector('.chat-msg.bot-response', timeout=5000)
+                    break
+                except Exception:
+                    if _wait_attempt >= 59:
+                        raise  # Final attempt — let it error
+                    time.sleep(5)  # Wait and retry
 
-            # 5. Wait for response to complete (check for thinking chain or text)
+            # 6. Wait for UI response to FULLY complete
+            #    - Thinking chain: ALL steps DONE (no PENDING)
+            #    - No running/pending/spinner indicators
+            #    - Response text stable for 4+ seconds
+            #    - Chat input re-enabled
             page.wait_for_function(
                 """() => {
-                    const msgs = document.querySelectorAll('.chat-msg.bot-response');
-                    const lastMsg = msgs[msgs.length - 1];
-                    return lastMsg && lastMsg.textContent.length > 50;
+                    return new Promise((resolve) => {
+                        let lastLen = 0;
+                        let stableCount = 0;
+                        const check = () => {
+                            const msgs = document.querySelectorAll('.chat-msg.bot-response');
+                            const lastMsg = msgs[msgs.length - 1];
+                            const currentLen = lastMsg ? lastMsg.textContent.length : 0;
+
+                            // Check thinking chain for pending/running steps (case-insensitive!)
+                            const thinkingChain = document.querySelector('.thinking-chain, .execution-trace, [class*="thinking"], [class*="trace"]');
+                            let thinkingComplete = true;
+                            if (thinkingChain && thinkingChain.offsetParent !== null) {
+                                const thinkText = thinkingChain.textContent || '';
+                                // Case-insensitive: match "pending", "PENDING", "running", "Running", etc.
+                                thinkingComplete = !/pending/i.test(thinkText) && !/running/i.test(thinkText) && !/waiting/i.test(thinkText);
+                            }
+
+                            // Check streaming indicators (case-insensitive)
+                            const bodyText = document.body.innerText || '';
+                            const isStreaming = /running/i.test(bodyText) || /pending/i.test(bodyText) ||
+                                /thinking/i.test(bodyText) || /waiting for ai/i.test(bodyText) ||
+                                document.querySelector('.spinner, .loading, .animate-spin') !== null || !thinkingComplete;
+
+                            // Check input enabled
+                            const chatInput = document.querySelector('#chatInput, [placeholder*="Describe"]');
+                            const inputEnabled = chatInput && !chatInput.disabled;
+                            const hasStopped = /stopped\.|llm error/i.test(bodyText);
+
+                            if (currentLen > 0 && currentLen === lastLen && !isStreaming && thinkingComplete && (inputEnabled || hasStopped)) {
+                                stableCount++;
+                                if (stableCount >= 8) { resolve(true); return; }
+                            } else { stableCount = 0; }
+                            lastLen = currentLen;
+                            setTimeout(check, 500);
+                        };
+                        check();
+                    });
                 }""",
-                timeout=60000
+                timeout=240000
             )
 
-            # 6. Wait a bit more for any final rendering
+            # 7. Final stabilization
             time.sleep(3)
 
-            # 7. Extract response text FROM THE UI
+            # 8. Extract response text FROM THE UI
             response_text = page.evaluate("""
                 () => {
                     const msgs = document.querySelectorAll('.chat-msg.bot-response');
@@ -442,7 +514,12 @@ def run_test_with_aligned_screenshot(test_case, cat_num, agent_id, case_index):
                 }
             """)
 
-            # 8. Take screenshot with response visible
+            # 9. Take COMPLETE screenshot — scroll to show question + full response
+            page.evaluate("""() => {
+                const userMsgs = document.querySelectorAll('.chat-msg.user, [class*="user-msg"]');
+                if (userMsgs.length > 0) userMsgs[userMsgs.length - 1].scrollIntoView({block: 'start'});
+            }""")
+            time.sleep(0.5)
             page.screenshot(path=screenshot_path, full_page=True)
 
             browser.close()
@@ -611,6 +688,15 @@ def run_multi_turn_test(test_case, cat_num, agent_id, case_index):
             # 1. Navigate to BrachyBot
             page.goto(BASE_URL, timeout=30000, wait_until='networkidle')
             time.sleep(2)
+
+            # 0. Clear ALL context — prevents session pollution between tests
+            try:
+                page.evaluate("""async () => {
+                    await fetch('/api/clear_all', {method: 'POST'});
+                }""")
+                time.sleep(3)
+            except Exception:
+                pass
 
             # 2. Setup required state based on `setup` field.
             #    Multi-turn: lift turn-level setup from the FIRST turn if top-level is empty.

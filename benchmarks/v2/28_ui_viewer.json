@@ -1,0 +1,142 @@
+{
+  "category": "ui_viewer",
+  "description": "Tests 2D/3D viewer rendering, dose overlay, mask display, and UI interaction. These cover bugs that were actually found and fixed (dose overlay scroll, LPI mask orientation, DVH flicker, 3D pipeline).",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "UV001",
+      "input": "Is the dose overlay visible on the current slice?",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["dose", "overlay", "visible"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证2D dose layer渲染正常。考核机制：dose overlay在CT上叠加显示。验证方式：检查响应中dose overlay可见性描述。这是2026-06-15修复的dose overlay scroll bug的核心功能。"
+    },
+    {
+      "id": "UV002",
+      "input": "What does the 3D view show after planning?",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["3D", "CTV", "mesh"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证3D scene正确加载CTV mesh。考核机制：3D viewer显示肿瘤和种子点。验证方式：检查响应中3D/CTV/mesh关键词。"
+    },
+    {
+      "id": "UV003",
+      "input": "Change the dose opacity to 0.8",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["opacity", "0.8", "dose"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证剂量透明度可调。考核机制：用户可控制dose overlay的显示透明度。验证方式：检查响应中opacity参数被设置的确认。"
+    },
+    {
+      "id": "UV004",
+      "input": "Are the mask labels showing in the correct anatomical direction?",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["axial", "sagittal", "coronal"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证LPI方向mask标签正确。考核机制：三个解剖方向标签(axial/sagittal/coronal)正确显示。验证方式：检查响应中三个方向标签。这是2026-06-13验证的mask orientation功能。"
+    },
+    {
+      "id": "UV005",
+      "input": "Show me the DVH chart",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["DVH", "curve", "dose"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证DVH曲线显示。考核机制：DVH panel展示多个器官的剂量体积直方图。验证方式：检查响应中DVH相关描述。"
+    },
+    {
+      "id": "UV006",
+      "input": "What is the current slice position in all three views?",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["axial", "sagittal", "coronal"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证三视图slice同步。考核机制：三个方向的viewer显示当前slice位置。验证方式：检查响应中包含三个方向的slice信息。"
+    },
+    {
+      "id": "UV007",
+      "input": "Show me the data tree for this case",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["data", "tree", "organ"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证数据树面板显示。考核机制：数据树展示organ列表和控制选项。验证方式：检查响应中数据树相关描述。"
+    },
+    {
+      "id": "UV008",
+      "input": "What organs are shown in the data tree?",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["organ", "liver", "pancreas"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证organ控制面板有真实器官数据。考核机制：数据树列出至少3个真实器官名。验证方式：检查响应中包含liver/pancreas等实际器官名。"
+    },
+    {
+      "id": "UV009",
+      "input": "Is the colorbar visible with the dose overlay?",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["colorbar", "dose", "Gy"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证colorbar显示。考核机制：dose overlay旁有colorbar显示剂量范围。验证方式：检查响应中colorbar和Gy单位。"
+    },
+    {
+      "id": "UV010",
+      "input": "What is the dose range shown in the colorbar?",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["Gy", "min", "max"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证colorbar范围合理。考核机制：colorbar显示具体剂量范围值。验证方式：检查响应中有min/max的Gy数值。"
+    },
+    {
+      "id": "UV011",
+      "input": "Can I toggle individual organ visibility in the data tree?",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["toggle", "visibility", "organ"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证organ toggle功能存在。考核机制：数据树中每个organ有可见性开关。验证方式：检查响应中toggle/visibility相关描述。"
+    },
+    {
+      "id": "UV012",
+      "input": "Show the CTV mask overlay on the CT",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["CTV", "mask", "overlay"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证CTV mask叠加显示。考核机制：CTV mask在CT上正确叠加。验证方式：检查响应中CTV mask overlay描述。"
+    },
+    {
+      "id": "UV013",
+      "input": "Reset the viewer to default settings",
+      "setup": "Upload CT",
+      "expected_keywords": ["reset", "default", "viewer"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证viewer重置功能。考核机制：用户可将viewer参数恢复默认。验证方式：检查响应中reset/default确认。"
+    },
+    {
+      "id": "UV014",
+      "input": "Segment and show me the 3D reconstruction",
+      "setup": "Upload CT",
+      "expected_keywords": ["segmentation", "3D", "reconstruction"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证segmentation后3D重建。考核机制：segmentation完成后自动/手动触发3D重建。验证方式：检查响应中segmentation和3D重建描述。"
+    },
+    {
+      "id": "UV015",
+      "input": "What is the current window width and level?",
+      "setup": "Upload CT",
+      "expected_keywords": ["window", "width", "level"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证窗宽窗位显示。考核机制：显示当前CT viewer的window width/level参数。验证方式：检查响应中有window/width/level关键词。"
+    }
+  ]
+}

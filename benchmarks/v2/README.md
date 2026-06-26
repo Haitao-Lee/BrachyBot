@@ -1,7 +1,7 @@
 # BrachyBot Benchmark v2 — Testing Guide
 
-**Updated:** 2026-06-13
-**Total:** 27 active categories, 411 cases (plus 32-case smoke subset)
+**Updated:** 2026-06-23
+**Total:** 30 active categories, 475 cases (plus 32-case smoke subset)
 
 ## Purpose
 
@@ -117,8 +117,8 @@ python3 benchmarks/aligned_benchmark.py 1 7 8 11 12
 # Smoke subset (fast feedback for PRs)
 python3 benchmarks/aligned_benchmark.py 1 99    # cat_num 99 = smoke
 
-# All 22 categories
-python3 benchmarks/aligned_benchmark.py 1 $(seq 1 22 | tr '\n' ' ')
+# All 30 categories
+python3 benchmarks/aligned_benchmark.py 1 $(seq 1 30 | tr '\n' ' ')
 ```
 
 After each run, the runner writes:
@@ -193,7 +193,7 @@ AND keyword ≥ 30% AND language > 0.
 |---|---|---|---|
 | 17 | 17_advanced_workflows.json | 15 | Multi-step pipelines |
 | 18 | 18_edge_cases.json | 15 | Unusual inputs, abbreviations, mixed lang |
-| 19 | 19_regression.json | 15 | Specific bug regressions (comment-tracked) |
+| 19 | 19_regression.json | 20 | Bug-specific regressions (each case = one real bug fix, comment-tracked) |
 | 20 | 20_clinical_scenarios.json | 15 | Real clinical queries (verified against clinical_standards) |
 
 ### Input variation (21-22)
@@ -216,7 +216,15 @@ AND keyword ≥ 30% AND language > 0.
 | 24 | 24_reference_direction.json | 8 | Organ-specific ref direction (pancreas→posterior, lung→anterior) |
 | 25 | 25_clinical_oar_constraints.json | 10 | Per-organ OAR limits (prostate, pancreas, liver, lung) |
 | 26 | 26_skill_selection.json | 8 | Right skill picked (StandardPlanning / LiverFull / LungFull) |
-| 27 | 27_tool_availability.json | 6 | LLM doesn't hallucinate non-existent tools |
+| 27 | 27_tool_availability.json | 15 | LLM doesn't hallucinate non-existent tools (covers 15 real + 2 fake tools) |
+
+### NEW UI/Streaming/E2E categories (28-30) — added 2026-06-23
+
+| # | File | Cases | Description |
+|---|---|---|---|
+| 28 | 28_ui_viewer.json | 15 | 2D/3D viewer rendering, dose overlay, mask display, DVH, colorbar |
+| 29 | 29_streaming_sse.json | 10 | SSE streaming, tool-call events, todo list, multi-tool orchestration |
+| 30 | 30_e2e_clinical_validation.json | 10 | End-to-end clinical validation (V100, D90, OAR constraints, report) |
 
 ## Failure Root Causes
 
@@ -239,10 +247,11 @@ AND keyword ≥ 30% AND language > 0.
 4. If the test requires pre-state, write `setup` using the patterns above.
 5. If the test is unsafe or out-of-scope, also add `forbidden_keywords` (word-boundary match — `done` / `set` / `changed` / `ignore` are not allowed in `forbidden_keywords` as they cause false positives).
 6. If the test is a clinical fact, add `expected_answer` for the runner to verify against `clinical_standards`.
-7. Run the test → it should fail.
-8. Fix the code.
-9. Run the test → it should pass.
-10. Commit the test alongside the fix.
+7. **Every test MUST have `_comment`** in the format: `"测试目的：... 考核机制：... 验证方式：..."` (test purpose, verification mechanism, how to verify).
+8. Run the test → it should fail.
+9. Fix the code.
+10. Run the test → it should pass.
+11. Commit the test alongside the fix.
 
 ## Recent Changes (2026-06-13)
 

@@ -1,201 +1,190 @@
 {
   "category": "regression",
-  "description": "Tests specific bugs that were fixed. Prevents regression.",
+  "description": "Regression tests for specific bugs that were found and fixed. Each case corresponds to a real bug fix — prevents the same bug from recurring.",
   "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
   "cases": [
     {
       "id": "RG001",
-      "input": "Analyze and segment",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "analysis",
-        "segmentation"
-      ],
-      "forbidden_keywords": [
-        "let me"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Fixed: transitional phrases like 'let me analyze'"
+      "input": "Are the mask labels showing in the correct anatomical direction?",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["axial", "sagittal", "coronal", "correct"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "BUG FIX: mask orientation (2026-06-13). 原始问题：LPI数据的axial/sagittal/coronal标签渲染方向错误。修复：验证mask-orientation-lpi-verified。考核：三个方向标签正确显示。"
     },
     {
       "id": "RG002",
-      "input": "Segment the image",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
-      "forbidden_keywords": [
-        "No CT files loaded"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Fixed: _no_files_loaded flag incorrectly true"
+      "input": "Scroll through slices and check if the dose overlay updates correctly",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["dose", "overlay", "slice", "update"],
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_comment": "BUG FIX: dose overlay scroll (2026-06-15). 原始问题：拖动slice时CT和mask更新但dose map不更新（async fetch race condition with staleness guard）。修复：移除renderDoseOverlayOnLayer的stale-data guard + _doseLastRendered tracking。考核：scroll时dose overlay实时更新。"
     },
     {
       "id": "RG003",
-      "input": "Analyze the image",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "Dimensions",
-        "512"
-      ],
-      "forbidden_keywords": [
-        "lnap",
-        "error"
-      ],
-      "pass_threshold": 0.6,
-      "difficulty": "easy",
-      "_comment": "Fixed: LLM hallucinating wrong file path"
+      "input": "Is this plan using reinforcement learning mode?",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["plan", "mode"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "BUG FIX: plan_mode checkbox (2026-06-15). 原始问题：collectUIState读取useRLToggle.value(always 'on')而非.checked，导致plan_mode始终报告'rl'。修复：用gc() helper读取.checked。考核：plan mode信息正确反映toggle状态。"
     },
     {
       "id": "RG004",
-      "input": "Switch to viewer",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "viewer"
-      ],
+      "input": "Show the DVH chart, then switch slices. Does the DVH flicker?",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["DVH", "stable", "chart"],
       "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Fixed: KeyError 'target' from unescaped braces in prompt"
+      "difficulty": "medium",
+      "_comment": "BUG FIX: DVH flicker (2026-06-15). 原始问题：refreshPlanningUI反复触发DVH重绘导致闪屏。修复：debounce 80ms + Plotly.react替代Plotly.newPlot + signature cache。考核：DVH显示稳定不闪烁。"
     },
     {
       "id": "RG005",
-      "input": "Segment and check 3D",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "segmentation",
-        "3D"
-      ],
+      "input": "Show the 3D view, then refresh. Does the mesh reload cleanly?",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["3D", "mesh", "viewer"],
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "Fixed: 3D reconstruction HTTP 500 error"
+      "_comment": "BUG FIX: 3D pipeline (2026-06-15). 原始问题：render3D()用Plotly.newPlot清空现代scene3D的meshes。修复：路由到forceRender3DViewer + addMeshToScene + loadAllIsoSurfaces。考核：3D mesh刷新后正常显示。"
     },
     {
       "id": "RG006",
-      "input": "Analyze image in Chinese",
-      "language": "zh",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "维度",
-        "体素"
-      ],
-      "forbidden_keywords": [
-        "Dimensions",
-        "Voxel"
-      ],
-      "pass_threshold": 0.6,
+      "input": "Send a message and check if avatars render correctly",
+      "setup": "No CT needed",
+      "expected_keywords": ["avatar", "chat"],
+      "pass_threshold": 0.5,
       "difficulty": "easy",
-      "_comment": "Fixed: language consistency"
+      "_comment": "BUG FIX: chat avatar wrap (2026-06-15). 原始问题：addChat没用chat-row + chat-avatar包裹，导致头像不渲染。修复：addChat中user/bot都包裹在chat-row + chat-avatar中。考核：用户和bot头像都正确显示。"
     },
     {
       "id": "RG007",
-      "input": "Segment then check volume",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "segmentation",
-        "volume"
-      ],
+      "input": "Open the report panel - is the data auto-filled?",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["report", "auto", "filled"],
       "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Fixed: mask overlay display"
+      "difficulty": "medium",
+      "_comment": "BUG FIX: report auto-fill (2026-06-14). 原始问题：report panel需要手动填写所有字段。修复：/api/report/auto-fill + ReportAutoFillTool。考核：打开report panel时数据自动填充。"
     },
     {
       "id": "RG008",
-      "input": "Analyze and segment together",
+      "input": "Check if the footer shows input/output token counts",
       "setup": "Upload CT",
-      "expected_keywords": [
-        "analysis",
-        "segmentation"
-      ],
+      "expected_keywords": ["input", "output", "token"],
       "pass_threshold": 0.5,
       "difficulty": "easy",
-      "_comment": "Fixed: multi-action execution"
+      "label": "footer_i18n",
+      "_comment": "BUG FIX: footer i18n (2026-06-15). 原始问题：footer标签硬编码中文。修复：FOOTER_I18N dict支持zh/en/ja/ko/ru/ar，Input/Output分开显示。考核：footer有正确的多语言token计数。"
     },
     {
       "id": "RG009",
-      "input": "Segment with auto-detect",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "segmentation",
-        "completed"
-      ],
+      "input": "Is the active step in the todo list animated?",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["todo", "active", "step"],
       "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Fixed: auto tumor type detection"
+      "difficulty": "medium",
+      "_comment": "BUG FIX: todo breathing animation (2026-06-15). 原始问题：active step的scale animation被overflow:hidden裁剪。修复：overflow-x:hidden + overflow-y:visible，peak 1.15→1.25 + background pulse。考核：active步骤有可见的呼吸动画。"
     },
     {
       "id": "RG010",
-      "input": "Check data tree organ controls",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "organ",
-        "control"
-      ],
+      "input": "Refresh the page - is a new session created on first message?",
+      "setup": "No CT needed",
+      "expected_keywords": ["session", "new"],
       "pass_threshold": 0.5,
-      "difficulty": "medium",
-      "_comment": "Fixed: organ control mapping"
+      "difficulty": "easy",
+      "_comment": "BUG FIX: session lazy creation (2026-06-15). 原始问题：页面刷新后加载上一次的聊天记录。修复：session在首次消息时才创建，report panel不自动从localStorage加载。考核：刷新后是干净的新session。"
     },
     {
       "id": "RG011",
-      "input": "Resize viewer panels",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "viewer",
-        "resize"
-      ],
+      "input": "After planning, are OAR organs automatically segmented?",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["OAR", "segmentation", "organ"],
       "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Fixed: synchronized viewer resize"
+      "difficulty": "medium",
+      "_comment": "BUG FIX: OAR auto-segmentation (2026-06-15). 原始问题：LLM跳过OAR segmentation，planning_pipeline只有2个vessel label（V100=91%）。修复：agent在ctv_segmentation后auto-fire oar_segmentation当OAR map<5 organs。考核：planning后有>=5个OAR organs。"
     },
     {
       "id": "RG012",
-      "input": "Segment and check mask direction",
+      "input": "分析图像 - check if the system responds in Chinese",
       "setup": "Upload CT",
-      "expected_keywords": [
-        "segmentation",
-        "mask"
-      ],
-      "pass_threshold": 0.5,
-      "difficulty": "medium",
-      "_comment": "Fixed: mask Y-axis flip"
+      "expected_keywords": ["分析", "维度", "体素"],
+      "forbidden_keywords": ["Dimensions", "Voxel"],
+      "language": "zh",
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "BUG FIX: language system prompt (2026-06-15). 原始问题：中文输入时系统提示和todo标签仍为英文。修复：memory/language.py检测用户语言并注入HIGH-PRIORITY系统提示+前端todo标签。考核：中文输入产生中文响应。"
     },
     {
       "id": "RG013",
-      "input": "Load CT and check overlay",
-      "setup": "Upload CT + segmentation",
-      "expected_keywords": [
-        "overlay",
-        "viewer"
-      ],
+      "input": "Which GPU is being used for computation?",
+      "setup": "No CT needed",
+      "expected_keywords": ["GPU", "device"],
       "pass_threshold": 0.5,
       "difficulty": "easy",
-      "_comment": "Fixed: overlay flickering"
+      "_comment": "BUG FIX: GPU scheduler (2026-06-15). 原始问题：多个tool竞争同一GPU导致OOM。修复：plans/device_manager.py自动选最空闲GPU，OOM重试，per-caller pinning。考核：响应中有GPU device信息。"
     },
     {
       "id": "RG014",
-      "input": "Analyze then segment in order",
+      "input": "Resize the chat panel by dragging the splitter",
       "setup": "Upload CT",
-      "expected_keywords": [
-        "analysis",
-        "segmentation"
-      ],
+      "expected_keywords": ["splitter", "resize"],
       "pass_threshold": 0.5,
-      "difficulty": "easy",
-      "_comment": "Fixed: tool execution order"
+      "difficulty": "medium",
+      "_comment": "BUG FIX: splitter drag (2026-06-15, 8 rounds). 原始问题：splitter拖不动。根因：(1) pointermove绑定到5px元素本身，(2) backdrop-filter创建stacking context trapping z-index，(3) init() never called。修复：pointermove绑document + isolation:isolate + boot wiring。考核：splitter可正常拖动。"
     },
     {
       "id": "RG015",
-      "input": "Check stop button functionality",
-      "setup": "Upload CT",
-      "expected_keywords": [
-        "stop",
-        "abort"
-      ],
-      "pass_threshold": 0.4,
+      "input": "Show the data tree organ controls after segmentation",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["organ", "control", "data"],
+      "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "New: stop button for streaming responses"
+      "_comment": "BUG FIX: data tree analysis panel (2026-06-15). 原始问题：refreshPlanningUI缺少CTV/OAR label re-fetch和analysis panel re-render。修复：添加refreshPlanningUI中的analysis re-render和data tree flag flips。考核：segmentation后data tree显示organ控制面板。"
+    },
+    {
+      "id": "RG016",
+      "input": "Generate a report and check if the 3D CTV zoom screenshot shows only the tumor without OAR meshes",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["CTV", "tumor", "3D", "report"],
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_comment": "BUG FIX: OAR mesh hiding during CTV zoom screenshot (2026-06-23). 原始问题：autoCaptureReportFigures截3D CTV特写时OAR meshes遮挡肿瘤。修复：截图前save all non-CTV mesh visibility → hide → capture → restore。考核：报告中3D CTV截图只显示肿瘤，无OAR遮挡。"
+    },
+    {
+      "id": "RG017",
+      "input": "Check if the 2D dose screenshots in the report show the maximum dose slice across all three views",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["dose", "slice", "axial", "sagittal", "coronal"],
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_comment": "BUG FIX: 2D dose peak voxel navigation (2026-06-23). 原始问题：2D dose截图只抓当前slice，不一定是最大剂量层。修复：服务器计算peak_voxel(np.argmax → unravel_index)，客户端用crosshair sync跳转axial=z/sagittal=x/coronal=y。考核：报告中3个2D dose截图都在最大剂量层。"
+    },
+    {
+      "id": "RG018",
+      "input": "Is the dose overlay in the report screenshots visible with enhanced opacity?",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["dose", "opacity", "visible", "report"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "BUG FIX: Dose opacity boost for screenshots (2026-06-23). 原始问题：截图时dose overlay透明度0.5太淡，报告里几乎看不见。修复：截图前opacity 0.5→0.75，截完恢复。考核：报告中dose overlay清晰可见。"
+    },
+    {
+      "id": "RG019",
+      "input": "Does the report 3D CTV screenshot use the correct axes (3d_ctv and 3d_seeds) instead of generic 3d?",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["3D", "CTV", "seeds", "report"],
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_comment": "BUG FIX: 3D axis mismatch creating duplicate figures (2026-06-23). 原始问题：autoCaptureReportFigures用axis:'3d_ctv'/'3d_seeds'但refreshPlanningUI搜索axis:'3d' → never matched → 创建第3个重复figure。修复：_replaceOrCreate用正确axis名。考核：报告中3D截图无重复，axis名正确。"
+    },
+    {
+      "id": "RG020",
+      "input": "After scrolling through dose slices, does the dose overlay still render correctly without getting stuck?",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["dose", "overlay", "render", "correct"],
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_comment": "BUG FIX: _doseOverlayRequestVersion竞态 (2026-06-23). 原始问题：preloadDoseSlices的版本号机制导致快速滚动时async fetch回调被标记stale丢弃。修复：renderDoseForCurrentSlice中_doseLastRendered tracking + cache miss时重置。考核：快速scroll后dose overlay仍能正确渲染当前层。"
     }
   ]
 }

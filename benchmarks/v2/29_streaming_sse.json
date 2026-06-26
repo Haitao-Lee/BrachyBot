@@ -1,0 +1,100 @@
+{
+  "category": "streaming_sse",
+  "description": "Tests SSE streaming responses, tool-call event chains, and streaming completion. Covers the todo list, step events, and multi-tool orchestration.",
+  "ct_file": "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii",
+  "cases": [
+    {
+      "id": "ST001",
+      "input": "Hello, who are you?",
+      "setup": "No CT needed",
+      "expected_keywords": ["BrachyBot", "Hello"],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "测试目的：验证基础streaming响应（无tool调用）。考核机制：简单问候能完整流式返回。验证方式：检查响应包含BrachyBot自我介绍。"
+    },
+    {
+      "id": "ST002",
+      "input": "Segment the CTV",
+      "setup": "Upload CT",
+      "expected_keywords": ["CTV", "segmentation", "completed"],
+      "expected_tool": "ctv_segmentation",
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证tool调用时SSE包含step事件。考核机制：ctv_segmentation tool被调用且输出marker出现。验证方式：检查响应中CTV segmentation完成确认。"
+    },
+    {
+      "id": "ST003",
+      "input": "Run the complete brachytherapy planning pipeline",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["trajectory", "seed", "dose", "evaluation"],
+      "expected_tool": "planning_pipeline",
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_comment": "测试目的：验证5-step pipeline的SSE事件流。考核机制：planning_pipeline tool被调用，5个sub-step都有事件。验证方式：检查响应中包含5个阶段的关键词。"
+    },
+    {
+      "id": "ST004",
+      "input": "Analyze the image in detail",
+      "setup": "Upload CT",
+      "expected_keywords": ["Dimensions", "512", "HU"],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "测试目的：验证流式完成后response不截断。考核机制：完整分析结果被返回。验证方式：检查响应包含Dimensions/512/HU等完整分析数据。"
+    },
+    {
+      "id": "ST005",
+      "input": "Segment CTV then calculate dose",
+      "setup": "Upload CT + segmentation",
+      "expected_keywords": ["segmentation", "dose", "completed"],
+      "pass_threshold": 0.5,
+      "difficulty": "hard",
+      "_comment": "测试目的：验证多tool顺序调用的事件流。考核机制：两个tool依次执行并各自返回结果。验证方式：检查响应中segmentation和dose都完成。"
+    },
+    {
+      "id": "ST006",
+      "input": "Analyze this CT comprehensively and generate a full report",
+      "setup": "Upload CT + full pipeline",
+      "expected_keywords": ["analysis", "report", "comprehensive"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证长响应不截断。考核机制：完整分析+报告内容被返回（>500 chars）。验证方式：检查响应有analysis和report两部分内容。"
+    },
+    {
+      "id": "ST007",
+      "input": "Switch to viewer",
+      "setup": "Upload CT",
+      "expected_keywords": ["viewer", "switch"],
+      "pass_threshold": 0.6,
+      "difficulty": "easy",
+      "_comment": "测试目的：验证简单tool快速响应。考核机制：viewer切换指令被快速处理。验证方式：检查响应中viewer切换确认。"
+    },
+    {
+      "id": "ST008",
+      "input": "分析图像并分割",
+      "setup": "Upload CT",
+      "expected_keywords": ["分析", "分割", "完成"],
+      "language": "zh",
+      "pass_threshold": 0.6,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证中文streaming输出。考核机制：中文输入产生中文流式响应。验证方式：检查响应为中文且包含分析和分割结果。"
+    },
+    {
+      "id": "ST009",
+      "input": "What tools do you have available?",
+      "setup": "No CT needed",
+      "expected_keywords": ["tool", "available", "segmentation"],
+      "pass_threshold": 0.5,
+      "difficulty": "easy",
+      "_comment": "测试目的：验证非tool调用的列表响应。考核机制：返回可用工具列表而非尝试执行。验证方式：检查响应包含多个工具名。"
+    },
+    {
+      "id": "ST010",
+      "input": "Segment the image and show me the 3D view",
+      "setup": "Upload CT",
+      "expected_keywords": ["segmentation", "3D", "viewer"],
+      "pass_threshold": 0.5,
+      "difficulty": "medium",
+      "_comment": "测试目的：验证组合tool事件流。考核机制：segmentation + 3D显示两个操作依次执行。验证方式：检查响应中segmentation完成和3D viewer确认。"
+    }
+  ]
+}
