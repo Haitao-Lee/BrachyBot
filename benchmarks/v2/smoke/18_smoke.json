@@ -5,12 +5,12 @@
   "cases": [
     {
       "id": "EC006",
-      "input": "分割一下",
+      "input": "Segment it",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [
-        "分割",
-        "完成"
+        "segmentation",
+        "completed"
       ],
       "pass_threshold": 0.5,
       "difficulty": "easy",

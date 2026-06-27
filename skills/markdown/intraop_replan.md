@@ -4,11 +4,10 @@ description: Intraoperative replanning when seed deviation detected
 category: intraoperative
 triggers:
   - intraop
-  - 术中
+  - intraoperative
   - replan
-  - 重新计划
+  - replanning
   - deviation
-  - 偏差
 tool_sequence:
   - seed_segmentation
   - dose_engine

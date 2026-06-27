@@ -158,17 +158,17 @@ class SkillCrystallizer:
 
     def _generate_skill_name(self, task_desc: str, chain: list) -> str:
         task_lower = task_desc.lower()
-        if "pancreas" in task_lower or "胰腺" in task_lower:
+        if "pancreas" in task_lower:
             base = "Pancreas"
-        elif "prostate" in task_lower or "前列腺" in task_lower:
+        elif "prostate" in task_lower:
             base = "Prostate"
         elif "ctv" in task_lower:
             base = "CTV"
-        elif "plan" in task_lower or "规划" in task_lower:
+        elif "plan" in task_lower or "planning" in task_lower:
             base = "Planning"
-        elif "dose" in task_lower or "剂量" in task_lower:
+        elif "dose" in task_lower or "dosimetry" in task_lower:
             base = "DoseEval"
-        elif "seg" in task_lower or "分割" in task_lower:
+        elif "seg" in task_lower or "segment" in task_lower:
             base = "Segmentation"
         else:
             base = "Workflow"
@@ -183,7 +183,7 @@ class SkillCrystallizer:
         medical_terms = [
             "pancreas", "prostate", "ctv", "oar", "dose", "plan", "seg",
             "brachy", "seed", "trajectory", "eval", "quality",
-            "胰腺", "前列腺", "剂量", "规划", "分割", "评估",
+            "pancreas", "prostate", "dose", "plan", "segment", "eval",
         ]
         for term in medical_terms:
             if term in task_lower:

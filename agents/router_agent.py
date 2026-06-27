@@ -29,22 +29,25 @@ class RouterAgent(LLMCapableAgent):
     """
 
     # Intent patterns for quick matching.
-    # ORDER MATERS: first match wins. "follow_up" must come before
-    # "clinical_planning" so that requests like "规划的结论可以详细一些吗"
-    # (which contains "规划") are classified as follow-up, not planning.
+    # ORDER MATTERS: first match wins. "follow_up" must come before
+    # "clinical_planning" so that requests like "can you elaborate on
+    # the planning conclusions" (which contains "planning") are
+    # classified as follow-up, not planning.
     INTENT_PATTERNS = {
         "follow_up": {
             # Requests for more detail, clarification, or modification
             # of an EXISTING plan. These should NOT trigger re-planning.
+            # Bilingual: Chinese terms match Chinese user input.
             "keywords": ["详细", "具体", "解释", "为什么", "原因", "意义",
                          "more detail", "explain", "why", "clarify",
-                         "修改", "调整", "改", "modify", "adjust",
+                         "修改", "调整", "modify", "adjust",
                          "对比", "比较", "compare", "different"],
             "complexity": "low",
             "agents": [AgentRole.KNOWLEDGE],
             "requires_review": False,
         },
         "clinical_planning": {
+            # Bilingual: 计划=plan, 规划=planning, 植入=implant, 粒子=seed
             "keywords": ["计划", "规划", "plan", "planning", "植入", "implant", "粒子", "seed",
                          "执行", "开始", "运行", "execute", "run", "start"],
             "complexity": "high",
@@ -52,18 +55,21 @@ class RouterAgent(LLMCapableAgent):
             "requires_review": True,
         },
         "segmentation": {
+            # Bilingual: 分割=segment, 器官=organ, 肿瘤=tumor
             "keywords": ["分割", "segment", "ctv", "oar", "器官", "organ", "肿瘤", "tumor"],
             "complexity": "medium",
             "agents": [AgentRole.CLINICAL_EXECUTOR],
             "requires_review": False,
         },
         "dose_evaluation": {
-            "keywords": ["计算剂量", "evaluate dose", "评估剂量", "dose calc", "dvh分析", "DVH分析", "dose_engine", "dose_evaluation"],
+            # Bilingual: 计算剂量=calculate dose, 评估剂量=evaluate dose
+            "keywords": ["计算剂量", "evaluate dose", "评估剂量", "dose calc", "dvh analysis", "dose_engine", "dose_evaluation"],
             "complexity": "medium",
             "agents": [AgentRole.CLINICAL_EXECUTOR],
             "requires_review": True,
         },
         "knowledge_query": {
+            # Bilingual: 什么是=what is, 指南=guide, 标准=standard, etc.
             "keywords": ["什么是", "解释", "指南", "guide", "标准", "standard", "what is", "explain",
                          "查询", "query", "介绍", "introduce", "了解", "learn", "知识", "knowledge",
                          "约束", "constraint", "限制", "limit", "耐受", "tolerance",
@@ -75,13 +81,13 @@ class RouterAgent(LLMCapableAgent):
             "requires_review": False,
         },
         # BUG FIX 2026-06-16 (web search quality): the user asked
-        # "请你全网搜索权威指南，各个部位的肿瘤处方剂量应该如何设计"
-        # and the previous router matched "剂量" → dose_engine (a
-        # computation tool), which then errored. Add explicit
-        # web_search intent for any query mentioning "search",
-        # "guideline", "PubMed", "NCCN", "ESTRO", "ICRU",
-        # "文献", "联网", "指南", etc. — anything that sounds
-        # like a literature lookup rather than a computation.
+        # "please search authoritative guidelines for prescription
+        # dose design across all tumor sites" and the previous router
+        # matched "dose" to dose_engine (a computation tool), which
+        # then errored. Add explicit web_search intent for any query
+        # mentioning "search", "guideline", "PubMed", "NCCN", "ESTRO",
+        # "ICRU", "literature", etc. — anything that sounds like a
+        # literature lookup rather than a computation.
         "web_search": {
             "keywords": [
                 "search", "搜索", "检索", "联网", "全网", "online",
@@ -128,13 +134,24 @@ class RouterAgent(LLMCapableAgent):
         """
         user_input = message.content if isinstance(message.content, str) else str(message.content)
 
-        # Try quick pattern matching first (with conversation state awareness)
+        # Prioritize LLM-based routing for better semantic understanding
+        if self.llm_callback:
+            try:
+                routing = await self._llm_route(user_input)
+                if routing.confidence >= 0.6:
+                    return AgentResponse(
+                        agent_role=self.role,
+                        success=True,
+                        result=routing,
+                        confidence=routing.confidence,
+                        reasoning=routing.reasoning if hasattr(routing, 'reasoning') else "",
+                    )
+            except Exception as e:
+                logger.debug(f"LLM routing failed, falling back to pattern matching: {e}")
+
+        # Fallback: pattern-based routing (with conversation state awareness)
         conversation_state = getattr(self, '_conversation_state', None)
         routing = self._quick_route(user_input, conversation_state)
-
-        # If no clear match, use LLM for complex routing
-        if routing.confidence < 0.6 and self.llm_callback:
-            routing = await self._llm_route(user_input)
 
         return AgentResponse(
             agent_role=self.role,
@@ -150,7 +167,7 @@ class RouterAgent(LLMCapableAgent):
 
         When planning is already completed and the user asks something
         that matches planning keywords but also contains clarification
-        keywords (详细, 为什么, etc.), classify as follow_up — not
+        keywords (detail, why, etc.), classify as follow_up — not
         clinical_planning. This prevents the LLM from re-running tools.
 
         Args:
@@ -188,8 +205,8 @@ class RouterAgent(LLMCapableAgent):
             # STATE-AWARE OVERRIDE: if planning is already completed,
             # any planning-keyword match that ALSO has clarification
             # keywords should be classified as follow_up. This is the
-            # structural fix for "规划的结论可以详细一些吗" being
-            # misclassified as clinical_planning.
+            # structural fix for "can you elaborate on the planning
+            # conclusions" being misclassified as clinical_planning.
             cs = conversation_state or {}
             if intent == "clinical_planning" and cs.get("planning_completed"):
                 clarification_keywords = ["详细", "具体", "解释", "为什么", "原因",

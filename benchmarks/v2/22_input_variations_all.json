@@ -536,7 +536,7 @@
     },
     {
       "id": "IV140",
-      "input": "做3D重建",
+      "input": "Do 3D reconstruction",
       "language": "zh",
       "setup": "Upload CT + segmentation",
       "expected_keywords": [
@@ -549,7 +549,7 @@
     },
     {
       "id": "IV141",
-      "input": "显示3D重建",
+      "input": "show3Dreconstruction",
       "language": "zh",
       "setup": "Upload CT + segmentation",
       "expected_keywords": [
@@ -562,7 +562,7 @@
     },
     {
       "id": "IV142",
-      "input": "看看3D效果",
+      "input": "Check the 3D effect",
       "language": "zh",
       "setup": "Upload CT + segmentation",
       "expected_keywords": [
@@ -575,7 +575,7 @@
     },
     {
       "id": "IV143",
-      "input": "导出DICOM",
+      "input": "exportDICOM",
       "language": "zh",
       "setup": "Upload CT + full pipeline",
       "expected_keywords": [
@@ -588,7 +588,7 @@
     },
     {
       "id": "IV144",
-      "input": "导出为DICOM格式",
+      "input": "Export as DICOM format",
       "language": "zh",
       "setup": "Upload CT + full pipeline",
       "expected_keywords": [
@@ -601,7 +601,7 @@
     },
     {
       "id": "IV145",
-      "input": "把计划导出成DICOM",
+      "input": "Export the plan as DICOM",
       "language": "zh",
       "setup": "Upload CT + full pipeline",
       "expected_keywords": [
@@ -614,7 +614,7 @@
     },
     {
       "id": "IV146",
-      "input": "帮我查一下DeepRare",
+      "input": "Look up DeepRare for me",
       "language": "zh",
       "setup": "No CT needed",
       "expected_keywords": [
@@ -626,7 +626,7 @@
     },
     {
       "id": "IV147",
-      "input": "搜索DeepRare",
+      "input": "Search for DeepRare",
       "language": "zh",
       "setup": "No CT needed",
       "expected_keywords": [
@@ -638,7 +638,7 @@
     },
     {
       "id": "IV148",
-      "input": "DeepRare是什么？",
+      "input": "DeepRarewhat is？",
       "language": "zh",
       "setup": "No CT needed",
       "expected_keywords": [
@@ -650,7 +650,7 @@
     },
     {
       "id": "IV149",
-      "input": "请计算剂量分布",
+      "input": "Please calculate the dose distribution",
       "language": "zh",
       "setup": "Upload CT + segmentation + seed planning",
       "expected_keywords": [
@@ -664,7 +664,7 @@
     },
     {
       "id": "IV150",
-      "input": "计算剂量",
+      "input": "calculationdose",
       "language": "zh",
       "setup": "Upload CT + segmentation + seed planning",
       "expected_keywords": [
@@ -678,7 +678,7 @@
     },
     {
       "id": "IV151",
-      "input": "帮我算一下剂量",
+      "input": "Calculate the dose for me",
       "language": "zh",
       "setup": "Upload CT + segmentation + seed planning",
       "expected_keywords": [
@@ -692,7 +692,7 @@
     },
     {
       "id": "IV152",
-      "input": "前列腺的剂量约束是什么？",
+      "input": "prostateWhat are the dose constraints？",
       "language": "zh",
       "setup": "No CT needed",
       "expected_keywords": [
@@ -706,7 +706,7 @@
     },
     {
       "id": "IV153",
-      "input": "前列腺癌的处方剂量是多少？",
+      "input": "What is the prescription dose for prostate cancer?",
       "language": "zh",
       "setup": "No CT needed",
       "expected_keywords": [
@@ -720,7 +720,7 @@
     },
     {
       "id": "IV154",
-      "input": "告诉我I-125的处方剂量",
+      "input": "Tell me the I-125 prescription dose",
       "language": "zh",
       "setup": "No CT needed",
       "expected_keywords": [
@@ -734,7 +734,7 @@
     },
     {
       "id": "IV155",
-      "input": "把膀胱剂量限制调到100Gy",
+      "input": "Adjust bladder dose limit to 100 Gy",
       "language": "zh",
       "setup": "Upload CT + full pipeline",
       "expected_keywords": [
@@ -753,7 +753,7 @@
     },
     {
       "id": "IV156",
-      "input": "膀胱D2cc改成100Gy",
+      "input": "Change bladder D2cc to 100 Gy",
       "language": "zh",
       "setup": "Upload CT + full pipeline",
       "expected_keywords": [
@@ -772,7 +772,7 @@
     },
     {
       "id": "IV157",
-      "input": "我想把膀胱限制设为100Gy",
+      "input": "I want to set the bladder limit to 100 Gy",
       "language": "zh",
       "setup": "Upload CT + full pipeline",
       "expected_keywords": [
@@ -791,7 +791,7 @@
     },
     {
       "id": "IV158",
-      "input": "保存这个病例",
+      "input": "Save this case",
       "language": "zh",
       "setup": "Upload CT + segmentation",
       "expected_keywords": [
@@ -804,7 +804,7 @@
     },
     {
       "id": "IV159",
-      "input": "存到病例库",
+      "input": "Save to case library",
       "language": "zh",
       "setup": "Upload CT + segmentation",
       "expected_keywords": [
@@ -817,7 +817,7 @@
     },
     {
       "id": "IV160",
-      "input": "记住这个病例",
+      "input": "Remember this case",
       "language": "zh",
       "setup": "Upload CT + segmentation",
       "expected_keywords": [
@@ -830,7 +830,7 @@
     },
     {
       "id": "IV161",
-      "input": "检查计划是否安全",
+      "input": "Check if the plan is safe",
       "language": "zh",
       "setup": "Upload CT + full pipeline",
       "expected_keywords": [
@@ -843,7 +843,7 @@
     },
     {
       "id": "IV162",
-      "input": "运行安全验证",
+      "input": "Run safety validation",
       "language": "zh",
       "setup": "Upload CT + full pipeline",
       "expected_keywords": [
@@ -856,7 +856,7 @@
     },
     {
       "id": "IV163",
-      "input": "这个计划安全吗？",
+      "input": "Is this plan safe?",
       "language": "zh",
       "setup": "Upload CT + full pipeline",
       "expected_keywords": [
@@ -869,7 +869,7 @@
     },
     {
       "id": "IV164",
-      "input": "对比两个计划",
+      "input": "Compare two plans",
       "language": "zh",
       "setup": "Upload CT + two plans",
       "expected_keywords": [
@@ -882,7 +882,7 @@
     },
     {
       "id": "IV165",
-      "input": "哪个计划更好？",
+      "input": "Which plan is better?",
       "language": "zh",
       "setup": "Upload CT + two plans",
       "expected_keywords": [
@@ -895,7 +895,7 @@
     },
     {
       "id": "IV166",
-      "input": "比较一下这两个方案",
+      "input": "Compare these two plans",
       "language": "zh",
       "setup": "Upload CT + two plans",
       "expected_keywords": [
@@ -908,7 +908,7 @@
     },
     {
       "id": "IV167",
-      "input": "评估剂量分布",
+      "input": "Evaluate dose distribution",
       "language": "zh",
       "setup": "Upload CT + full pipeline",
       "expected_keywords": [
@@ -921,7 +921,7 @@
     },
     {
       "id": "IV168",
-      "input": "看一下DVH",
+      "input": "Check the DVH",
       "language": "zh",
       "setup": "Upload CT + full pipeline",
       "expected_keywords": [
@@ -934,7 +934,7 @@
     },
     {
       "id": "IV169",
-      "input": "评估一下计划质量",
+      "input": "Evaluate plan quality",
       "language": "zh",
       "setup": "Upload CT + full pipeline",
       "expected_keywords": [
@@ -947,7 +947,7 @@
     },
     {
       "id": "IV170",
-      "input": "没有计划就计算剂量",
+      "input": "Calculate dose even without a plan",
       "language": "zh",
       "setup": "Upload CT + segmentation, NO plan",
       "expected_keywords": [
@@ -962,7 +962,7 @@
     },
     {
       "id": "IV171",
-      "input": "没有种子计划，算一下剂量",
+      "input": "No seed plan yet, calculate dose",
       "language": "zh",
       "setup": "Upload CT + segmentation, NO plan",
       "expected_keywords": [
@@ -977,7 +977,7 @@
     },
     {
       "id": "IV172",
-      "input": "我想算剂量但是没有计划",
+      "input": "I want to calculate dose but there is no plan",
       "language": "zh",
       "setup": "Upload CT + segmentation, NO plan",
       "expected_keywords": [
@@ -992,7 +992,7 @@
     },
     {
       "id": "IV173",
-      "input": "请规划一下",
+      "input": "Please do planning",
       "language": "zh",
       "setup": "Upload CT + segmentation",
       "expected_keywords": [
@@ -1005,7 +1005,7 @@
     },
     {
       "id": "IV174",
-      "input": "生成治疗计划",
+      "input": "Generate treatment plan",
       "language": "zh",
       "setup": "Upload CT + segmentation",
       "expected_keywords": [
@@ -1018,7 +1018,7 @@
     },
     {
       "id": "IV175",
-      "input": "帮我做个计划",
+      "input": "Create a plan for me",
       "language": "zh",
       "setup": "Upload CT + segmentation",
       "expected_keywords": [
@@ -1031,7 +1031,7 @@
     },
     {
       "id": "IV176",
-      "input": "生成报告",
+      "input": "Generate report",
       "language": "zh",
       "setup": "Upload CT + full pipeline",
       "expected_keywords": [
@@ -1043,7 +1043,7 @@
     },
     {
       "id": "IV177",
-      "input": "帮我做个报告",
+      "input": "Generate a report for me",
       "language": "zh",
       "setup": "Upload CT + full pipeline",
       "expected_keywords": [
@@ -1055,7 +1055,7 @@
     },
     {
       "id": "IV178",
-      "input": "出一份报告",
+      "input": "Generate a report",
       "language": "zh",
       "setup": "Upload CT + full pipeline",
       "expected_keywords": [

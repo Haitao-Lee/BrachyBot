@@ -3,10 +3,10 @@ name: dose_evaluation
 description: Standard dose evaluation with metrics
 category: evaluation
 triggers:
-  - 评估
+  - evaluation
   - dose eval
   - metrics
-  - 剂量评估
+  - dose evaluation
 tool_sequence:
   - dose_evaluation
   - oar_constraint_checker

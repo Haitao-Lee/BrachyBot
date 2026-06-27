@@ -103,7 +103,7 @@ class TestBrachyAgent(unittest.TestCase):
         from AgenticSys import BrachyAgent
 
         agent = BrachyAgent(session_id="test")
-        response = agent.chat("工具列表")
+        response = agent.chat("list tools")
         self.assertIsInstance(response, str)
         self.assertIn("Available tools", response)
 

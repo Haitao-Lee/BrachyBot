@@ -7,149 +7,217 @@
       "id": "TA001",
       "input": "Compute the DVH curve for the CTV",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": ["DVH", "curve", "bin"],
+      "expected_keywords": [
+        "DVH",
+        "curve",
+        "bin"
+      ],
       "expected_tool": "dvh_curve",
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证dvh_curve工具存在。考核机制：dvh_curve是auto-generated tool，应被识别。验证方式：检查响应中DVH curve计算结果。"
+      "_comment": "Purpose: Verify dvh_curve tool exists. Mechanism: dvh_curve is an auto-generated tool, should be recognized. Verification: Check DVH curve calculation result in response."
     },
     {
       "id": "TA002",
       "input": "Use the super_planner tool to make a comprehensive plan",
       "setup": "Upload CT + segmentation",
-      "expected_keywords": ["not available", "not found", "unknown"],
-      "forbidden_keywords": ["using super_planner", "called super_planner"],
+      "expected_keywords": [
+        "not available",
+        "not found",
+        "unknown"
+      ],
+      "forbidden_keywords": [
+        "using super_planner",
+        "called super_planner"
+      ],
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证bot拒绝不存在的工具。考核机制：super_planner不存在，必须拒绝。验证方式：检查响应中not available/not found。"
+      "_comment": "Purpose: Verify bot rejects non-existent tools. Mechanism: super_planner does not exist, must refuse. Verification: Check not available/not found in response."
     },
     {
       "id": "TA003",
       "input": "List all the brachytherapy tools available in this system",
       "setup": "No CT needed",
-      "expected_keywords": ["ctv_segmentation", "oar_segmentation", "dose_engine"],
+      "expected_keywords": [
+        "ctv_segmentation",
+        "oar_segmentation",
+        "dose_engine"
+      ],
       "pass_threshold": 0.4,
       "difficulty": "medium",
-      "_comment": "测试目的：验证工具列表包含真实工具。考核机制：应提及至少3个真实tool name。验证方式：检查响应中有tool_factory中的工具名。"
+      "_comment": "Purpose: Verify tool list contains real tools. Mechanism: Should mention at least 3 real tool names. Verification: Check response contains tool names from tool_factory."
     },
     {
       "id": "TA004",
       "input": "Check OAR constraints using the constraint checker",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": ["OAR", "constraint", "check", "violation"],
+      "expected_keywords": [
+        "OAR",
+        "constraint",
+        "check",
+        "violation"
+      ],
       "expected_tool": "oar_constraint_checker",
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证oar_constraint_checker工具存在。考核机制：oar_constraint_checker是真实tool。验证方式：检查响应中OAR constraint检查结果。"
+      "_comment": "Purpose: Verify oar_constraint_checker tool exists. Mechanism: oar_constraint_checker is a real tool. Verification: Check OAR constraint check result in response."
     },
     {
       "id": "TA005",
       "input": "Run trajectory initialization",
       "setup": "Upload CT + segmentation",
-      "expected_keywords": ["trajectory", "candidates", "needle"],
+      "expected_keywords": [
+        "trajectory",
+        "candidates",
+        "needle"
+      ],
       "expected_tool": "trajectory_init",
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证trajectory_init工具存在。考核机制：TrajectoryInitTool是真实tool。验证方式：检查响应中trajectory初始化结果。"
+      "_comment": "Purpose: Verify trajectory_init tool exists. Mechanism: TrajectoryInitTool is a real tool. Verification: Check trajectory initialization result in response."
     },
     {
       "id": "TA006",
       "input": "What tools can I use for OAR analysis on this case?",
       "setup": "Upload CT + segmentation",
-      "expected_keywords": ["OAR", "segmentation", "constraint", "check"],
+      "expected_keywords": [
+        "OAR",
+        "segmentation",
+        "constraint",
+        "check"
+      ],
       "pass_threshold": 0.4,
       "difficulty": "medium",
-      "_comment": "测试目的：验证OAR相关工具列表完整。考核机制：应提及oar_segmentation, oar_constraint_checker, plan_quality_scorer。验证方式：检查响应中有多个OAR工具名。"
+      "_comment": "Purpose: Verify OAR-related tool list is complete. Mechanism: Should mention oar_segmentation, oar_constraint_checker, plan_quality_scorer. Verification: Check response contains multiple OAR tool names."
     },
     {
       "id": "TA007",
       "input": "Segment the CTV for this pancreatic case",
       "setup": "Upload CT",
-      "expected_keywords": ["CTV", "segmentation", "completed"],
+      "expected_keywords": [
+        "CTV",
+        "segmentation",
+        "completed"
+      ],
       "expected_tool": "ctv_segmentation",
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证ctv_segmentation工具存在。考核机制：ctv_segmentation是真实tool。验证方式：检查响应中CTV segmentation完成确认。"
+      "_comment": "Purpose: Verify ctv_segmentation tool exists. Mechanism: ctv_segmentation is a real tool. Verification: Check CTV segmentation completion confirmation in response."
     },
     {
       "id": "TA008",
       "input": "Segment the OAR organs",
       "setup": "Upload CT + segmentation",
-      "expected_keywords": ["OAR", "segmentation", "organ"],
+      "expected_keywords": [
+        "OAR",
+        "segmentation",
+        "organ"
+      ],
       "expected_tool": "oar_segmentation",
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证oar_segmentation工具存在。考核机制：oar_segmentation是真实tool。验证方式：检查响应中OAR segmentation完成确认。"
+      "_comment": "Purpose: Verify oar_segmentation tool exists. Mechanism: oar_segmentation is a real tool. Verification: Check OAR segmentation completion confirmation in response."
     },
     {
       "id": "TA009",
       "input": "Refine the trajectory candidates",
       "setup": "Upload CT + segmentation",
-      "expected_keywords": ["trajectory", "refine", "constraint"],
+      "expected_keywords": [
+        "trajectory",
+        "refine",
+        "constraint"
+      ],
       "expected_tool": "trajectory_refine",
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证trajectory_refine工具存在。考核机制：trajectory_refine是真实tool。验证方式：检查响应中trajectory refinement结果。"
+      "_comment": "Purpose: Verify trajectory_refine tool exists. Mechanism: trajectory_refine is a real tool. Verification: Check trajectory refinement result in response."
     },
     {
       "id": "TA010",
       "input": "Calculate the dose distribution",
       "setup": "Upload CT + segmentation + seed planning",
-      "expected_keywords": ["dose", "calculated", "Gy"],
+      "expected_keywords": [
+        "dose",
+        "calculated",
+        "Gy"
+      ],
       "expected_tool": "dose_engine",
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证dose_engine工具存在。考核机制：dose_engine是真实tool。验证方式：检查响应中dose calculation结果。"
+      "_comment": "Purpose: Verify dose_engine tool exists. Mechanism: dose_engine is a real tool. Verification: Check dose calculation result in response."
     },
     {
       "id": "TA011",
       "input": "Evaluate the dose against clinical constraints",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": ["DVH", "D2cc", "constraint"],
+      "expected_keywords": [
+        "DVH",
+        "D2cc",
+        "constraint"
+      ],
       "expected_tool": "dose_evaluation",
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证dose_evaluation工具存在。考核机制：dose_evaluation是真实tool。验证方式：检查响应中dose evaluation结果。"
+      "_comment": "Purpose: Verify dose_evaluation tool exists. Mechanism: dose_evaluation is a real tool. Verification: Check dose evaluation result in response."
     },
     {
       "id": "TA012",
       "input": "Generate a comprehensive treatment report",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": ["report", "treatment", "comprehensive"],
+      "expected_keywords": [
+        "report",
+        "treatment",
+        "comprehensive"
+      ],
       "expected_tool": "report_generator",
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证report_generator工具存在。考核机制：report_generator是真实tool。验证方式：检查响应中treatment report。"
+      "_comment": "Purpose: Verify report_generator tool exists. Mechanism: report_generator is a real tool. Verification: Check treatment report in response."
     },
     {
       "id": "TA013",
       "input": "Score the plan quality",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": ["score", "quality", "plan"],
+      "expected_keywords": [
+        "score",
+        "quality",
+        "plan"
+      ],
       "expected_tool": "plan_quality_scorer",
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证plan_quality_scorer工具存在。考核机制：plan_quality_scorer是真实tool。验证方式：检查响应中plan quality score。"
+      "_comment": "Purpose: Verify plan_quality_scorer tool exists. Mechanism: plan_quality_scorer is a real tool. Verification: Check plan quality score in response."
     },
     {
       "id": "TA014",
       "input": "Search for clinical guidelines on brachytherapy",
       "setup": "No CT needed",
-      "expected_keywords": ["search", "guideline", "brachytherapy"],
+      "expected_keywords": [
+        "search",
+        "guideline",
+        "brachytherapy"
+      ],
       "expected_tool": "web_search",
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证web_search工具存在。考核机制：web_search是真实tool。验证方式：检查响应中搜索结果。"
+      "_comment": "Purpose: Verify web_search tool exists. Mechanism: web_search is a real tool. Verification: Check search results in response."
     },
     {
       "id": "TA015",
       "input": "Use the phantom_planner tool to create a test plan",
       "setup": "Upload CT + segmentation",
-      "expected_keywords": ["not available", "not found", "unknown"],
-      "forbidden_keywords": ["using phantom_planner", "called phantom_planner"],
+      "expected_keywords": [
+        "not available",
+        "not found",
+        "unknown"
+      ],
+      "forbidden_keywords": [
+        "using phantom_planner",
+        "called phantom_planner"
+      ],
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证bot拒绝另一个不存在的工具。考核机制：phantom_planner不存在，必须拒绝。验证方式：检查响应中not available/not found。"
+      "_comment": "Purpose: Verify bot rejects another non-existent tool. Mechanism: phantom_planner does not exist, must refuse. Verification: Check not available/not found in response."
     }
   ]
 }

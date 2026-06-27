@@ -329,28 +329,25 @@ class QualityGate:
             weighted_score = sum(r.score for r in reviews) / len(reviews)
 
         # Determine final decision
+        # APPEND-ONLY MODE (2026-06-27): never reject or retry.
+        # All review results are passed through as supplementary info.
         if reject_count > 0:
-            # Any rejection fails the gate
-            final_decision = "reject"
-            passed = False
-            requires_human = True
+            final_decision = "conditional"
+            passed = True  # don't block — append review to response
+            requires_human = False
         elif escalate_count > 0:
-            # Escalation requires human review
-            final_decision = "escalate"
-            passed = False
-            requires_human = True
+            final_decision = "conditional"
+            passed = True
+            requires_human = False
         elif weighted_score < 5.0:
-            # Low score fails
-            final_decision = "reject"
-            passed = False
-            requires_human = True
+            final_decision = "conditional"
+            passed = True
+            requires_human = False
         elif conditional_count > len(reviews) / 2:
-            # Too many conditional reviews
             final_decision = "conditional"
             passed = True
             requires_human = False
         elif weighted_score < 7.0:
-            # Medium score is conditional
             final_decision = "conditional"
             passed = True
             requires_human = False

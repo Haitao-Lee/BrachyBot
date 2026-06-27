@@ -7,7 +7,7 @@ BASE = "http://127.0.0.1:5000"
 # Send planning request via SSE
 print("Sending planning request...")
 resp = requests.post(f"{BASE}/api/chat", json={
-    "message": "请执行放射性粒子植入规划，这是一名胰腺肿瘤患者",
+    "message": "Perform brachytherapy planning for a pancreatic tumor patient",
     "stream": True,
 }, stream=True, timeout=300)
 

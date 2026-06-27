@@ -6,7 +6,7 @@ BrachyBot's agent historically had a Chinese-only UI bias: even
 when the user typed English, the LLM was prompted to reply in
 Chinese (because the system_prompt.md was authored in Chinese
 and the i18n module defaulted to 'zh'). The user complained that
-this is a "顶层问题" (top-level issue) — they want the WHOLE
+this is a "top-level issue" — they want the WHOLE
 pipeline to follow their input language, not just patches here
 and there.
 

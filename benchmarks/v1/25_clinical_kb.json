@@ -64,26 +64,26 @@
     },
     {
       "id": "CK004",
-      "input": "前列腺癌近距离治疗的V100目标是多少？",
+      "input": "What is the V100 target for prostate brachytherapy?",
       "expected_keywords": [
         "V100",
-        "前列腺",
+        "prostate",
         "95"
       ],
       "forbidden_keywords": [
         "clinical_kb",
-        "我来搜索",
-        "让我查一下"
+        "let me search",
+        "let me look up"
       ],
       "hallucination_keywords": [
-        "我不知道",
-        "不确定",
-        "无法验证"
+        "I don't know",
+        "I'm not sure",
+        "I cannot verify"
       ],
       "pass_threshold": 0.6,
       "difficulty": "medium",
       "user_type": "chinese",
-      "_comment": "Chinese user asks about V100 target. System should respond in Chinese with correct clinical value (V100 ≥ 95%)."
+      "_comment": "Chinese user asks about V100 target. System should respond in Chinese with correct clinical value (V100 >= 95%)."
     },
     {
       "id": "CK006",
@@ -110,21 +110,21 @@
     },
     {
       "id": "CK007",
-      "input": "宫颈癌HDR的OAR约束标准是什么？",
+      "input": "What are the OAR constraint standards for cervical cancer HDR?",
       "expected_keywords": [
         "OAR",
-        "宫颈",
-        "剂量"
+        "cervical",
+        "dose"
       ],
       "forbidden_keywords": [
         "clinical_kb",
-        "我来搜索",
-        "让我查一下"
+        "let me search",
+        "let me look up"
       ],
       "hallucination_keywords": [
-        "我不知道",
-        "不确定",
-        "无法验证"
+        "I don't know",
+        "I'm not sure",
+        "I cannot verify"
       ],
       "pass_threshold": 0.6,
       "difficulty": "medium",
@@ -178,21 +178,21 @@
     },
     {
       "id": "CK011",
-      "input": "肝脏近距离治疗的正常肝平均剂量限制是多少？",
+      "input": "What is the normal liver mean dose limit for liver brachytherapy?",
       "expected_keywords": [
-        "肝",
-        "剂量",
-        "平均"
+        "liver",
+        "dose",
+        "mean"
       ],
       "forbidden_keywords": [
         "clinical_kb",
-        "我来搜索",
-        "让我查一下"
+        "let me search",
+        "let me look up"
       ],
       "hallucination_keywords": [
-        "我不知道",
-        "不确定",
-        "无法验证"
+        "I don't know",
+        "I'm not sure",
+        "I cannot verify"
       ],
       "pass_threshold": 0.6,
       "difficulty": "hard",

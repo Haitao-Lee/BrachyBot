@@ -3,9 +3,8 @@ name: prostate_segmentation
 description: Prostate tumor and OAR segmentation
 category: segmentation
 triggers:
-  - 前列腺
   - prostate
-  - 前列腺癌
+  - prostate cancer
 tool_sequence:
   - ctv_segmentation
   - oar_segmentation

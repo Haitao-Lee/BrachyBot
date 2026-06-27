@@ -2,8 +2,6 @@ import os
 import sys
 import time
 import logging
-import traceback as _tb
-logging.info("[BRACHY_PLAN_V2] Module loaded from: " + os.path.abspath(__file__))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from . import config
 from . import core
@@ -15,7 +13,6 @@ try:
     import slicer
 except ImportError:
     from . import slicer_mock as slicer
-
 
 
 def brachy_plan(ctimage, ctvimage, oarimage, dose_model, args, progressDialog):
@@ -43,11 +40,10 @@ def brachy_plan(ctimage, ctvimage, oarimage, dose_model, args, progressDialog):
     try:
         
         
-
-        
         dose_image = utilizations.normalize_dose_image(ctimage, args.image_normalize[0], args.image_normalize[1], args.image_normalize[0], args.image_normalize[1])
         
     except Exception as e:
+        pass
         
         raise
 
@@ -68,12 +64,10 @@ def brachy_plan(ctimage, ctvimage, oarimage, dose_model, args, progressDialog):
         _target_count = int(np.sum(radiation_volume == args.radiation_array_params['target_value']))
         _obstacle_count = int(np.sum(radiation_volume == args.radiation_array_params['obstacle_value']))
         _bg_count = int(np.sum(radiation_volume == args.radiation_array_params['background_value']))
-        _logger.info(f"[brachy_plan] radiation_volume: target={_target_count}, obstacle={_obstacle_count}, bg={_bg_count}, shape={radiation_volume.shape}")
-        _logger.info(f"[brachy_plan] dose_image: size={dose_image.GetSize()}, spacing={dose_image.GetSpacing()}")
         # Check if radiation_volume has any non-zero target voxels in the resampled grid
         _nz_z, _nz_y, _nz_x = np.where(radiation_volume == args.radiation_array_params['target_value'])
         if len(_nz_z) > 0:
-            _logger.info(f"[brachy_plan] target Z range: {_nz_z.min()}-{_nz_z.max()}, Y: {_nz_y.min()}-{_nz_y.max()}, X: {_nz_x.min()}-{_nz_x.max()}")
+            pass
     except Exception as e:
         raise
 
@@ -86,7 +80,6 @@ def brachy_plan(ctimage, ctvimage, oarimage, dose_model, args, progressDialog):
             ref_direc = np.array(args.reference_direc).reshape(-1)
         else:
             ref_direc = np.array(utilizations.get_reference_direction(radiation_volume, args.radiation_array_params['target_value'])).reshape(-1)
-        _logger.info(f"[brachy_plan] ref_direc={ref_direc}, direc_resolution={args.direc_resolution}, min_depth={args.radiation_array_params.get('min_depth', 1)}")
     except Exception as e:
         raise
 
@@ -111,6 +104,7 @@ def brachy_plan(ctimage, ctvimage, oarimage, dose_model, args, progressDialog):
         )
         
     except Exception as e:
+        pass
         
         raise
 
@@ -145,7 +139,6 @@ def brachy_plan(ctimage, ctvimage, oarimage, dose_model, args, progressDialog):
         )
         
     except Exception as e:
-        print(f"Optimal planning failed with error: {e}")
         raise
     
     planned_seeds = []
@@ -187,15 +180,13 @@ def brachy_plan_rf(ctimage, ctvimage, oarimage, dose_model, args, progressDialog
     """
     
     
-
     try:
         
         dose_image = utilizations.normalize_dose_image(ctimage, args.image_normalize[0], args.image_normalize[1], args.image_normalize[0], args.image_normalize[1])
         
     except Exception as e:
+        pass
         
-        print(f"brachy_plan_rf normalize_dose_image error: {str(e)}")
-        print(_tb.format_exc())
         dose_image = sitk.GetArrayFromImage(ctimage).astype(np.float32)
 
     progressDialog.setValue(25)
@@ -213,9 +204,8 @@ def brachy_plan_rf(ctimage, ctvimage, oarimage, dose_model, args, progressDialog
         )
         
     except Exception as e:
+        pass
         
-        print(f"brachy_plan_rf get_planning_volume_array error: {str(e)}")
-        print(_tb.format_exc())
         return [], np.array([]), dose_image
 
     progressDialog.setValue(30)
@@ -230,9 +220,8 @@ def brachy_plan_rf(ctimage, ctvimage, oarimage, dose_model, args, progressDialog
             ref_direc = np.array(utilizations.direction_transform(ctvimage, utilizations.get_reference_direction(radiation_volume, args.radiation_array_params['target_value']))).reshape(-1)
         
     except Exception as e:
+        pass
         
-        print(f"brachy_plan_rf reference direction error: {str(e)}")
-        print(_tb.format_exc())
         ref_direc = np.array([0, 0, 1])
 
     progressDialog.setValue(30)
@@ -256,8 +245,6 @@ def brachy_plan_rf(ctimage, ctvimage, oarimage, dose_model, args, progressDialog
         )
         
     except Exception as e:
-        print(f"brachy_plan_rf init_plan error: {str(e)}")
-        print(_tb.format_exc())
         return [], np.array([]), dose_image
     
     progressDialog.setValue(50)
@@ -287,9 +274,8 @@ def brachy_plan_rf(ctimage, ctvimage, oarimage, dose_model, args, progressDialog
         )
         
     except Exception as e:
+        pass
         
-        print(f"brachy_plan_rf optimal_plan_rf error: {str(e)}")
-        print(_tb.format_exc())
         plan_res = []
     
     planned_seeds = []
@@ -299,7 +285,7 @@ def brachy_plan_rf(ctimage, ctvimage, oarimage, dose_model, args, progressDialog
             planned_seeds.append(res[1])
             planned_seed_doses.append(res[2])
     except Exception as e:
-        print(f"brachy_plan_rf extract seeds error: {str(e)}")
+        pass
 
     sum_array = np.zeros_like(radiation_volume).astype(np.float32)
 
@@ -308,7 +294,7 @@ def brachy_plan_rf(ctimage, ctvimage, oarimage, dose_model, args, progressDialog
             for j, _ in enumerate(seeds):
                 sum_array += planned_seed_doses[i][j]
     except Exception as e:
-        print(f"brachy_plan_rf sum doses error: {str(e)}")
+        pass
 
     return plan_res, sum_array, dose_image
 
@@ -372,7 +358,6 @@ def replan_single_needle(new_trajectory, other_needles_data, radiation_volume,
     start_val = None
     if all(0 <= pt_int[d] < radiation_volume.shape[d] for d in range(3)):
         start_val = radiation_volume[pt_int[0], pt_int[1], pt_int[2]]
-    print(f"[REPLAN DEBUG] new_point: {new_point}, start_val: {start_val}, direction: {new_direction}")
 
     # Step 2: Walk along the trajectory to find the CTV segment
     # and pick the deepest interior point (maximizes forward depth)
@@ -392,7 +377,6 @@ def replan_single_needle(new_trajectory, other_needles_data, radiation_volume,
     if entry_step >= 0:
         # Found CTV entry. Now walk forward from entry to find the full CTV segment.
         entry_point = np.round(new_point - entry_step * step_dir).astype(np.float64)
-        print(f"[REPLAN DEBUG] CTV entry at back step {entry_step}: {entry_point.astype(int)}")
 
         # Walk forward from entry to find the extent of CTV along trajectory
         ctv_segment = []
@@ -413,17 +397,14 @@ def replan_single_needle(new_trajectory, other_needles_data, radiation_volume,
             # the dosimetric goal is met or no valid positions remain.
             new_point = entry_point
             new_trajectory[0] = new_point.tolist()
-            print(f"[REPLAN DEBUG] CTV segment: steps {ctv_segment[0]} to {ctv_segment[-1]}, "
-                  f"length={len(ctv_segment)}, using entry point")
-            print(f"[REPLAN DEBUG] Entry start point: {new_point.astype(int)}")
         else:
-            print(f"[REPLAN DEBUG] No CTV segment found along trajectory")
+            pass
     else:
         # No CTV found backward, check if start is inside
         if start_val == target_value:
-            print(f"[REPLAN DEBUG] Start is inside CTV, using as-is")
+            pass
         else:
-            print(f"[REPLAN DEBUG] No CTV found along trajectory")
+            pass
 
     # Step 3: Compute depths along the ORIGINAL direction
     # get_depthInfo_from_point only walks FORWARD and records target/background depths.
@@ -433,29 +414,24 @@ def replan_single_needle(new_trajectory, other_needles_data, radiation_volume,
         new_point, radiation_volume, new_direction,
         target_value, background_value, obstacle_value
     )
-    print(f"[REPLAN DEBUG] target_depths: {target_depths}, background_depths: {background_depths}, total={sum(target_depths)}")
 
     # If the CTV segment we found is longer than what get_depthInfo_from_point reports,
     # use the CTV segment length as the target depth.
     # This handles the case where get_depthInfo_from_point exits the CTV early
     # due to the trajectory direction not aligning with the CTV's longest extent.
     if len(ctv_segment) > sum(target_depths) and len(ctv_segment) >= 3:
-        print(f"[REPLAN DEBUG] CTV segment ({len(ctv_segment)}) > target_depths ({sum(target_depths)}), using CTV segment length")
         target_depths = [len(ctv_segment)]
         background_depths = []
 
     # Step 4: If depth is too small, leave empty (don't change direction)
     if sum(target_depths) < 3:
-        print(f"[REPLAN DEBUG] Depth too small ({target_depths}), leaving empty")
+        pass
 
     # Update trajectory with recomputed depths
     new_trajectory[2] = target_depths
     new_trajectory[3] = background_depths
 
     total_depth = sum(target_depths) + sum(background_depths)
-    print(f"[REPLAN DEBUG] final target_depths: {target_depths}")
-    print(f"[REPLAN DEBUG] final background_depths: {background_depths}")
-    print(f"[REPLAN DEBUG] total_depth: {total_depth}, has_obstacle: {has_obstacle}")
 
     # Compute distance map for seed placement constraints
     from scipy.ndimage import distance_transform_edt
@@ -473,17 +449,12 @@ def replan_single_needle(new_trajectory, other_needles_data, radiation_volume,
     traj_dir = np.array(new_trajectory[1]).reshape(-1)
     ctv_mask = (radiation_volume == target_value)
     ctv_voxels = np.sum(ctv_mask)
-    print(f"[REPLAN DEBUG] trajectory start: {traj_start}")
-    print(f"[REPLAN DEBUG] trajectory dir: {traj_dir}")
-    print(f"[REPLAN DEBUG] radiation_volume shape: {radiation_volume.shape}")
-    print(f"[REPLAN DEBUG] target_value: {target_value}, CTV voxels: {ctv_voxels}")
-    print(f"[REPLAN DEBUG] dose_image size: {dose_image.GetSize()}, spacing: {dose_image.GetSpacing()}")
 
     # Check if trajectory start is near CTV
     start_int = np.round(traj_start).astype(int)
     for d in range(3):
         if start_int[d] < 0 or start_int[d] >= radiation_volume.shape[d]:
-            print(f"[REPLAN DEBUG] START OUT OF BOUNDS dim {d}: {start_int[d]} vs {radiation_volume.shape[d]}")
+            pass
     # Sample points along trajectory to find CTV overlap
     point = traj_start.copy()
     max_idx = np.argmax(np.abs(traj_dir))
@@ -496,8 +467,6 @@ def replan_single_needle(new_trajectory, other_needles_data, radiation_volume,
             val = radiation_volume[test_pt[0], test_pt[1], test_pt[2]]
             if val == target_value:
                 ctv_hits += 1
-    print(f"[REPLAN DEBUG] CTV hits along trajectory (20 steps): {ctv_hits}")
-    print(f"[REPLAN DEBUG] distance_map at start: {distance_map[start_int[0], start_int[1], start_int[2]] if all(0 <= start_int[d] < radiation_volume.shape[d] for d in range(3)) else 'OUT OF BOUNDS'}")
 
     # Replan the dragged needle using put_seeds
     new_seeds_voxel, dvvh_rate, new_seed_radiations = utilizations.put_seeds(
@@ -508,7 +477,6 @@ def replan_single_needle(new_trajectory, other_needles_data, radiation_volume,
         dose_context=dose_context
     )
 
-    print(f"[REPLAN DEBUG] put_seeds returned {len(new_seeds_voxel) if new_seeds_voxel else 0} seeds, success={bool(new_seeds_voxel)}")
 
     if not new_seeds_voxel:
         return None, None, False

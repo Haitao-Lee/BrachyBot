@@ -4,12 +4,9 @@ description: Control the CT viewer (window/level, slice navigation, overlays)
 category: viewer
 triggers:
   - viewer
-  - 窗口
   - window
   - slice
-  - 切片
   - overlay
-  - 叠加
 tool_sequence:
   - code_executor
 parameters:

@@ -60,7 +60,7 @@ D90 is ALWAYS expressed as % of prescription dose. D90≥100% means D90≥Rx dos
 | "Hello" | No | No | Answer directly |
 | "What is radiotherapy" | No | No | Answer directly |
 | "History of seed implant" | No | No | Answer directly |
-| "详细介绍放射性粒子植入" | Maybe | Maybe | `clinical_kb(guidelines)` |
-| "前列腺V100要求是多少" | Yes | Yes | `clinical_kb(standards)` |
+| "Introduce radioactive seed implant in detail" | Maybe | Maybe | `clinical_kb(guidelines)` |
+| "What is the V100 requirement for prostate?" | Yes | Yes | `clinical_kb(standards)` |
 | "Is this plan acceptable?" | Yes | Yes | `clinical_kb(standards)` + `safety_validator` |
 | "Latest immunotherapy + BT" | Maybe | Maybe | `clinical_kb` + `web_search` |

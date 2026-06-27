@@ -160,11 +160,11 @@ class UserProfile:
     def record_interaction(self, user_input: str, agent_response: str, success: bool):
         self.total_interactions += 1
 
-        if "plan" in user_input.lower() or "规划" in user_input:
+        if "plan" in user_input.lower() or "planning" in user_input:
             self._detect_planning_preference(user_input)
-        if "dose" in user_input.lower() or "剂量" in user_input:
+        if "dose" in user_input.lower() or "dosimetry" in user_input:
             self._detect_dose_preference(user_input)
-        if "seg" in user_input.lower() or "分割" in user_input:
+        if "seg" in user_input.lower() or "segment" in user_input:
             self._detect_segmentation_preference(user_input)
 
         pattern_key = self._classify_interaction(user_input)
@@ -180,15 +180,15 @@ class UserProfile:
         self.save()
 
     def _detect_planning_preference(self, input_text: str):
-        if any(w in input_text.lower() for w in ["quick", "fast", "简单", "快速"]):
+        if any(w in input_text.lower() for w in ["quick", "fast", "simple", "rapid"]):
             self.observe_behavior(input_text, "prefers_quick_planning", "planning")
-        if any(w in input_text.lower() for w in ["detailed", "thorough", "详细", "完整"]):
+        if any(w in input_text.lower() for w in ["detailed", "thorough", "complete", "comprehensive"]):
             self.observe_behavior(input_text, "prefers_detailed_planning", "planning")
-        if any(w in input_text.lower() for w in ["rl", "reinforcement", "优化"]):
+        if any(w in input_text.lower() for w in ["rl", "reinforcement", "optimize"]):
             self.observe_behavior(input_text, "prefers_rl_optimization", "planning")
 
     def _detect_dose_preference(self, input_text: str):
-        if any(w in input_text.lower() for w in ["CNN", "myDoseNet", "深度学习", "deep learning"]):
+        if any(w in input_text.lower() for w in ["CNN", "myDoseNet", "deep learning"]):
             self.observe_behavior(input_text, "prefers_cnn_dose", "dose")
 
     def _detect_segmentation_preference(self, input_text: str):
@@ -199,15 +199,15 @@ class UserProfile:
 
     def _classify_interaction(self, input_text: str) -> str:
         lower = input_text.lower()
-        if "plan" in lower or "规划" in lower:
+        if "plan" in lower or "planning" in lower:
             return "planning"
-        if "seg" in lower or "分割" in lower:
+        if "seg" in lower or "segment" in lower:
             return "segmentation"
-        if "dose" in lower or "剂量" in lower:
+        if "dose" in lower or "dosimetry" in lower:
             return "dose_evaluation"
-        if "eval" in lower or "评估" in lower:
+        if "eval" in lower or "evaluation" in lower:
             return "evaluation"
-        if "export" in lower or "导出" in lower:
+        if "export" in lower:
             return "export"
         return "general"
 

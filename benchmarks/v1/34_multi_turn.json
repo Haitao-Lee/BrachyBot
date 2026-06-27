@@ -11,15 +11,26 @@
       "turns": [
         {
           "input": "What is the prescription dose for I-125 prostate brachytherapy?",
-          "expected_keywords": ["145", "Gy"],
-          "forbidden_keywords": ["clinical_kb"],
+          "expected_keywords": [
+            "145",
+            "Gy"
+          ],
+          "forbidden_keywords": [
+            "clinical_kb"
+          ],
           "pass_threshold": 0.6,
           "difficulty": "easy"
         },
         {
           "input": "And what about for Pd-103?",
-          "expected_keywords": ["Pd-103", "dose", "Gy"],
-          "forbidden_keywords": ["clinical_kb"],
+          "expected_keywords": [
+            "Pd-103",
+            "dose",
+            "Gy"
+          ],
+          "forbidden_keywords": [
+            "clinical_kb"
+          ],
           "pass_threshold": 0.6,
           "difficulty": "medium",
           "_comment": "Context-dependent: 'what about' refers to prescription dose from previous turn"
@@ -37,20 +48,31 @@
       "turns": [
         {
           "input": "What V100 should I aim for in prostate brachytherapy?",
-          "expected_keywords": ["V100", "95"],
+          "expected_keywords": [
+            "V100",
+            "95"
+          ],
           "pass_threshold": 0.6,
           "difficulty": "easy"
         },
         {
           "input": "My plan has V100=93%, is that acceptable?",
-          "expected_keywords": ["93", "V100", "acceptable"],
+          "expected_keywords": [
+            "93",
+            "V100",
+            "acceptable"
+          ],
           "pass_threshold": 0.6,
           "difficulty": "medium",
           "_comment": "Uses the V100 target from previous turn to evaluate a specific plan"
         },
         {
           "input": "What can I do to improve it?",
-          "expected_keywords": ["improve", "coverage", "seed"],
+          "expected_keywords": [
+            "improve",
+            "coverage",
+            "seed"
+          ],
           "pass_threshold": 0.5,
           "difficulty": "medium",
           "_comment": "Follow-up on how to improve the plan with V100=93%"
@@ -68,13 +90,21 @@
       "turns": [
         {
           "input": "What is the rectal dose constraint for prostate brachytherapy?",
-          "expected_keywords": ["rectum", "dose", "constraint"],
+          "expected_keywords": [
+            "rectum",
+            "dose",
+            "constraint"
+          ],
           "pass_threshold": 0.6,
           "difficulty": "easy"
         },
         {
           "input": "My plan has D2cc=75 Gy for the rectum. Is that safe?",
-          "expected_keywords": ["75", "rectum", "D2cc"],
+          "expected_keywords": [
+            "75",
+            "rectum",
+            "D2cc"
+          ],
           "pass_threshold": 0.6,
           "difficulty": "medium",
           "_comment": "Applies the constraint from previous turn to evaluate a specific case"
@@ -91,14 +121,21 @@
       "description": "Language consistency across turns",
       "turns": [
         {
-          "input": "前列腺癌的处方剂量是多少？",
-          "expected_keywords": ["145", "Gy", "前列腺"],
+          "input": "What is the prescription dose for prostate cancer?",
+          "expected_keywords": [
+            "145",
+            "Gy",
+            "prostate"
+          ],
           "pass_threshold": 0.6,
           "difficulty": "easy"
         },
         {
-          "input": "那V100目标呢？",
-          "expected_keywords": ["V100", "95"],
+          "input": "What is the V100 target?",
+          "expected_keywords": [
+            "V100",
+            "95"
+          ],
           "pass_threshold": 0.6,
           "difficulty": "easy",
           "_comment": "Should respond in Chinese (matching first turn's language)"
@@ -116,16 +153,29 @@
       "turns": [
         {
           "input": "What is the prescription dose for I-125 prostate brachytherapy?",
-          "expected_keywords": ["145", "Gy"],
-          "forbidden_keywords": ["I don't know"],
+          "expected_keywords": [
+            "145",
+            "Gy"
+          ],
+          "forbidden_keywords": [
+            "I don't know"
+          ],
           "pass_threshold": 0.6,
           "difficulty": "easy",
           "_comment": "Should answer confidently - this is well-established"
         },
         {
           "input": "What about the 5-year survival rate at Memorial Hospital?",
-          "expected_keywords": ["don't have", "not available", "cannot provide"],
-          "forbidden_keywords": ["85%", "72%", "68%"],
+          "expected_keywords": [
+            "don't have",
+            "not available",
+            "cannot provide"
+          ],
+          "forbidden_keywords": [
+            "85%",
+            "72%",
+            "68%"
+          ],
           "pass_threshold": 0.6,
           "difficulty": "hard",
           "_comment": "Should admit uncertainty - specific hospital data not available"
@@ -143,14 +193,20 @@
       "turns": [
         {
           "input": "What is V100?",
-          "expected_keywords": ["V100", "coverage"],
+          "expected_keywords": [
+            "V100",
+            "coverage"
+          ],
           "pass_threshold": 0.6,
           "difficulty": "easy",
           "max_response_time_ms": 5000
         },
         {
           "input": "And D90?",
-          "expected_keywords": ["D90", "dose"],
+          "expected_keywords": [
+            "D90",
+            "dose"
+          ],
           "pass_threshold": 0.6,
           "difficulty": "easy",
           "_comment": "Should be concise - just define D90, don't repeat V100 info"
@@ -168,20 +224,32 @@
       "turns": [
         {
           "input": "What is the prostate dose constraint?",
-          "expected_keywords": ["145", "Gy", "prostate"],
+          "expected_keywords": [
+            "145",
+            "Gy",
+            "prostate"
+          ],
           "pass_threshold": 0.6,
           "difficulty": "easy"
         },
         {
           "input": "Now let's talk about cervical cancer. What is the HDR fractionation?",
-          "expected_keywords": ["HDR", "cervical", "fraction"],
+          "expected_keywords": [
+            "HDR",
+            "cervical",
+            "fraction"
+          ],
           "pass_threshold": 0.6,
           "difficulty": "medium",
           "_comment": "Explicitly switches topic - should not reference prostate"
         },
         {
           "input": "What about the OAR constraints for that?",
-          "expected_keywords": ["OAR", "cervical", "constraint"],
+          "expected_keywords": [
+            "OAR",
+            "cervical",
+            "constraint"
+          ],
           "pass_threshold": 0.5,
           "difficulty": "medium",
           "_comment": "'that' refers to cervical cancer HDR from previous turn, not prostate"

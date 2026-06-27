@@ -247,7 +247,7 @@ AND keyword ≥ 30% AND language > 0.
 4. If the test requires pre-state, write `setup` using the patterns above.
 5. If the test is unsafe or out-of-scope, also add `forbidden_keywords` (word-boundary match — `done` / `set` / `changed` / `ignore` are not allowed in `forbidden_keywords` as they cause false positives).
 6. If the test is a clinical fact, add `expected_answer` for the runner to verify against `clinical_standards`.
-7. **Every test MUST have `_comment`** in the format: `"测试目的：... 考核机制：... 验证方式：..."` (test purpose, verification mechanism, how to verify).
+7. **Every test MUST have `_comment`** in the format: `"Purpose: ... Mechanism: ... Verification: ..."` (test purpose, verification mechanism, how to verify).
 8. Run the test → it should fail.
 9. Fix the code.
 10. Run the test → it should pass.

@@ -219,18 +219,18 @@
       "description": "Language consistency across turns",
       "turns": [
         {
-          "input": "分析图像",
+          "input": "Analyze the image",
           "language": "zh",
           "setup": "Upload CT",
           "expected_keywords": [
-            "分析"
+            "analysis"
           ]
         },
         {
-          "input": "再帮我分割一下",
+          "input": "Segment it for me again",
           "language": "zh",
           "expected_keywords": [
-            "分割"
+            "segmentation"
           ]
         }
       ]

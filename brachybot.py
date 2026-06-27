@@ -105,16 +105,16 @@ def _run_chat(session_id):
 def _run_server(port):
     import web.server
 
-    # Auto-detect MiniMax proxy config from environment
-    minimax_base = os.environ.get("ANTHROPIC_BASE_URL", "")
-    minimax_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "") or os.environ.get("ANTHROPIC_API_KEY", "")
-    if minimax_base and minimax_token:
-        os.environ["ANTHROPIC_BASE_URL"] = minimax_base
-        os.environ["ANTHROPIC_AUTH_TOKEN"] = minimax_token
-        os.environ["ANTHROPIC_MODEL"] = os.environ.get("ANTHROPIC_MODEL", "MiniMax-M2.7-highspeed")
-        os.environ["BRACHY_LLM_PROVIDER"] = "anthropic"
-        print(f"Using MiniMax proxy: {minimax_base}")
-        print(f"Model: {os.environ['ANTHROPIC_MODEL']}")
+    # Auto-detect LLM provider from environment
+    # Supports: ANTHROPIC_*, OPENAI_*, QWEN_*, OPENROUTER_*
+    _anthropic_base = os.environ.get("ANTHROPIC_BASE_URL", "")
+    _anthropic_key = os.environ.get("ANTHROPIC_AUTH_TOKEN", "") or os.environ.get("ANTHROPIC_API_KEY", "")
+    if _anthropic_base and _anthropic_key:
+        print(f"Using Anthropic-compatible provider: {_anthropic_base}")
+        print(f"Model: {os.environ.get('ANTHROPIC_MODEL', 'default')}")
+    elif os.environ.get("OPENAI_API_KEY"):
+        print(f"Using OpenAI provider")
+        print(f"Model: {os.environ.get('OPENAI_MODEL', 'gpt-4o')}")
 
     print(f"\nStarting BrachyBot web server on port {port}...")
     print(f"Open http://localhost:{port} in your browser")

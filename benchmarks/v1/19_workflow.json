@@ -146,7 +146,7 @@
     },
     {
       "id": "Q1006",
-      "input": "A 70-year-old male with locally advanced rectal cancer (cT3N1M0,距肛缘4 cm) completed neoadjuvant CRT 50.4 Gy with capecitabine. At 8-week MRI, there is a 1.5 cm equivocal residual area. He strongly prefers organ preservation. What brachytherapy options could be considered, and what would be the complete workflow including applicator selection, imaging, dose constraints, and follow-up?",
+      "input": "A 70-year-old male with locally advanced rectal cancer (cT3N1M0,4 cm from the anal verge) completed neoadjuvant CRT 50.4 Gy with capecitabine. At 8-week MRI, there is a 1.5 cm equivocal residual area. He strongly prefers organ preservation. What brachytherapy options could be considered, and what would be the complete workflow including applicator selection, imaging, dose constraints, and follow-up?",
       "expected_keywords": [
         "endorectal",
         "brachytherapy",

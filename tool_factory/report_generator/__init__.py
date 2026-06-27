@@ -95,6 +95,9 @@ Capabilities:
         v150 = metrics.get("v150", 0)
         v200 = metrics.get("v200", 0)
         d90 = metrics.get("d90", 0)
+        rx_gy = plan.get("prescription_dose_gy", 120)  # Default I-125 pancreatic
+        if not isinstance(rx_gy, (int, float)) or rx_gy <= 0:
+            rx_gy = 120
 
         def status(val, target, op=">="):
             if not val: return "N/A"
@@ -105,7 +108,7 @@ Capabilities:
         lines.append(f"| V100 | {v100:.1%} | ≥90% | {status(v100, 0.90)} |")
         lines.append(f"| V150 | {v150:.1%} | ≤60% | {status(v150, 0.60, '<=')} |")
         lines.append(f"| V200 | {v200:.1%} | ≤35% | {status(v200, 0.35, '<=')} |")
-        lines.append(f"| D90 | {d90:.1f}% | ≥95% | {status(d90, 95)} |")
+        lines.append(f"| D90 | {d90:.1f} Gy | ≥{rx_gy:.0f} Gy | {status(d90, rx_gy)} |")
         lines.append(f"| Plan Score | {metrics.get('plan_score', 0):.1f}/100 | ≥80 | {status(metrics.get('plan_score', 0), 80)} |")
 
         oar_violations = metrics.get("oar_violations", [])
@@ -115,13 +118,13 @@ Capabilities:
                 "## ⚠️ OAR Violations",
             ]
             for ov in oar_violations:
-                lines.append(f"- **{ov.get('organ', 'Unknown')}:** {ov.get('dose', 0):.1f}% (limit: {ov.get('limit', 0):.1f}%)")
+                lines.append(f"- **{ov.get('organ', 'Unknown')}:** {ov.get('dose', 0):.1f} Gy (limit: {ov.get('limit', 0):.1f} Gy)")
 
         lines += [
             "",
             "## DVH Summary",
-            f"- **CTV D90:** {d90:.1f}%",
-            f"- **CTV D100:** {metrics.get('d100', 0):.1f}%",
+            f"- **CTV D90:** {d90:.1f} Gy",
+            f"- **CTV D100:** {metrics.get('d100', 0):.1f} Gy",
             f"- **OAR Max Dose:** {metrics.get('oar_max_dose', 'N/A')}",
             "",
             "---",

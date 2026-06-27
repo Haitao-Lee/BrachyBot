@@ -985,7 +985,12 @@ class PlanningPipelineTool(BaseTool):
 
         if not trajectories:
             logger.info("No trajectories found, running trajectory_init + refine first...")
-            init_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, [0, 1, 0], agent_config, agent)
+            # Use organ-aware direction resolution instead of hardcoded anterior [0,1,0]
+            ref_direc_input = agent_config.get("reference_direc") if agent_config else None
+            if ref_direc_input is None:
+                ref_direc_input = CONFIG.get("reference_direc", "auto")
+            auto_ref_direc = _resolve_ref_direc(ref_direc_input, ct_image, ctv_mask, agent)
+            init_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, auto_ref_direc, agent_config, agent)
             if not init_result.success:
                 return ToolResult(success=False, error=f"[seed_planning] Cannot generate trajectories: {init_result.error}")
             refine_result = self._step_trajectory_refine(ct_image, ctv_mask, oar_mask, agent)
@@ -1053,7 +1058,7 @@ class PlanningPipelineTool(BaseTool):
         trajectories = agent.memory.retrieve("refined_trajectories") or agent.memory.retrieve("trajectories") if agent else None
         if not trajectories:
             logger.warning("[seed_planning] No trajectories found in memory, running trajectory_init...")
-            init_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent)
+            init_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, "auto", agent_config, agent)
             if init_result.success:
                 trajectories = init_result.metadata.get("trajectories", [])
 
@@ -1289,7 +1294,15 @@ class PlanningPipelineTool(BaseTool):
             logger.info(f"[dose_eval] oar_mask shape: {oar_mask.shape}, unique labels: {np.unique(oar_mask).tolist()}")
 
         # Compute DVH metrics (reference: Zhiyuan BrachyPlan.calculate_dvh)
-        # Dose values are normalized; multiply by DOSE_SCALE (120) to get Gy
+        #
+        # DOSE_SCALE (120.0): the myDoseNet CNN dose prediction model was
+        # trained with ground-truth labels where model output 1.0 = 120 Gy.
+        # All internal dose values live in "normalized" space:
+        #   - CNN raw output: 0 ~ 255 (uint8 image_normalize_scale)
+        #   - After normalization: 0 ~ 1.0 (prescription = 1.0)
+        #   - To convert to Gy: dose_normalized × 120.0
+        # This constant appears in planning_pipeline.py, web/server.py,
+        # and AgenticSys.py. Keep them in sync if the model changes.
         DOSE_SCALE = 120.0
         target_mask = ctv_mask > 0
         target_doses = dose_distribution[target_mask]

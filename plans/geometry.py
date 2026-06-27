@@ -200,10 +200,11 @@ def calculate_surface_normals(image_array, sigma=None):
     # Compute magnitude of gradient
     grad_magnitude = np.sqrt(grad_x**2 + grad_y**2 + grad_z**2 + 1e-6)
 
-    # Normalize the gradients to create unit normal vectors, adding a small epsilon to avoid division by zero
-    grad_x /= grad_magnitude + 1e-6
-    grad_y /= grad_magnitude + 1e-6
-    grad_z /= grad_magnitude + 1e-6
+    # Normalize the gradients to create unit normal vectors
+    # (grad_magnitude already has epsilon from sqrt, no need to add again)
+    grad_x /= grad_magnitude
+    grad_y /= grad_magnitude
+    grad_z /= grad_magnitude
 
     # Flip normals that are inward (facing target area), assuming higher values indicate inside
     normals = np.stack((grad_x, grad_y, grad_z), axis=-1)
@@ -476,7 +477,11 @@ def generate_dense_rays_from_foreground_with_normals(mask, theta_step, phi_step,
         
         # Return the normalized normal vector
         normal = np.array([grad_x, grad_y, grad_z])
-        return normal / np.linalg.norm(normal)  # Normalize the vector
+        norm = np.linalg.norm(normal)
+        if norm < 1e-8:
+            # Flat region (gradient ≈ 0) — return a default direction
+            return np.array([0.0, 0.0, 1.0])
+        return normal / norm
 
     # Iterate through all foreground voxels to generate rays
     for voxel in foreground_indices:
@@ -1458,7 +1463,7 @@ def distance_filter(x, x1, x2, k):
         float: The filtered output value based on the input `x`.
     """
     if x < x1:
-        return 0 # Return a very small constant value if x is less than x1
+        return 1e-6  # Return a very small constant value if x is less than x1
     else:
         # Smooth decreasing output for x between x1 and x2
         return 1 + k - (min(x, x2) - x1) / (x2 - x1)

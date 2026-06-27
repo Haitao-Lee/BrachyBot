@@ -151,15 +151,15 @@ class SkillLearner:
         content_lower = content.lower()
 
         keyword_map = {
-            "分割": ["ctv_segmentation", "oar_segmentation", "segment"],
-            "肿瘤": ["ctv_segmentation"],
-            "器官": ["oar_segmentation"],
-            "规划": ["seed_planning", "trajectory_planning"],
-            "种子": ["seed_planning"],
-            "轨迹": ["trajectory_planning"],
-            "剂量": ["dose_evaluation", "dose_engine"],
-            "评估": ["dose_evaluation"],
-            "优化": ["plan_refinement"],
+            "segment": ["ctv_segmentation", "oar_segmentation", "segment"],
+            "tumor": ["ctv_segmentation"],
+            "organ": ["oar_segmentation"],
+            "plan": ["seed_planning", "trajectory_planning"],
+            "seed": ["seed_planning"],
+            "trajectory": ["trajectory_planning"],
+            "dose": ["dose_evaluation", "dose_engine"],
+            "eval": ["dose_evaluation"],
+            "optimize": ["plan_refinement"],
             "OAR": ["oar_segmentation", "oar_constraint_checker"],
             "D90": ["dose_evaluation"],
             "V100": ["dose_evaluation"],
@@ -257,12 +257,12 @@ class SkillLearner:
         description = f"Auto-learned sequence: {' -> '.join(pattern)}"
 
         trigger_map = {
-            "ctv_segmentation": ["肿瘤", "分割", "target"],
-            "oar_segmentation": ["器官", "OAR", "organ"],
-            "trajectory_planning": ["轨迹", "trajectory"],
-            "seed_planning": ["种子", "seed", "规划"],
-            "dose_engine": ["剂量", "dose"],
-            "dose_evaluation": ["评估", "eval", "D90", "V100"],
+            "ctv_segmentation": ["tumor", "segment", "target"],
+            "oar_segmentation": ["organ", "OAR", "segment"],
+            "trajectory_planning": ["trajectory", "needle"],
+            "seed_planning": ["seed", "plan", "planning"],
+            "dose_engine": ["dose", "dosimetry"],
+            "dose_evaluation": ["eval", "evaluation", "D90", "V100"],
         }
 
         trigger_patterns = []

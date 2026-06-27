@@ -3,10 +3,9 @@ name: generic_segmentation
 description: Generic segmentation for any tumor type
 category: segmentation
 triggers:
-  - 分割
-  - segment
   - segmentation
-  - 自动分割
+  - auto segmentation
+  - auto-segmentation
 tool_sequence:
   - ctv_segmentation
   - oar_segmentation

@@ -26,7 +26,10 @@ import traceback as _tb
 # ===== Local modules =====
 # from . import fitting_model  # not needed for headless mode
 from . import geometry
-# from . import reinforcement  # not needed for headless mode
+try:
+    from . import reinforcement
+except ImportError:
+    reinforcement = None
 from . import visualizer
 
 
@@ -1480,7 +1483,7 @@ def constraint_bounds(x):
     x_pos = x_pos.reshape(-1, 1)  # Reshape the coordinates to a column vector (though this is unnecessary)
 
     # Return the sum of violations, counting coordinates that are out of bounds
-    return np.sum((x_pos < 0) & (x_pos > 1))  # Return the sum of the violation condition
+    return np.sum((x_pos < 0) | (x_pos > 1))  # OR: a value can't be both <0 AND >1
 
     
 def from_seeds_to_x(seeds):
@@ -3268,7 +3271,7 @@ def select_optimal_trajectory(candidate_trajectories, planned_trajectories, radi
         _log.getLogger(__name__).info(f"[select_optimal] scores.size=0, candidates={len(candidate_trajectories)}")
         return None, None
 
-    if np.max(candidate_traj_scores) == 0 or np.max(candidate_traj_scores) is np.nan:
+    if np.max(candidate_traj_scores) == 0 or np.isnan(np.max(candidate_traj_scores)):
         candidate_traj_scores = (
             np.array(candidate_traj_weights).reshape(-1) * 
             np.array(candidate_traj_radiation).reshape(-1) * 
@@ -3678,7 +3681,13 @@ def hierarchical_planning_rf(
     
 
     # ---- 4.  Hierarchical REINFORCE ----
-    
+
+    if reinforcement is None:
+        raise ImportError(
+            "reinforcement module not available. "
+            "Install gymnasium: pip install gymnasium"
+        )
+
     optimal_plan, optimal_reward = reinforcement.reinforcement_planning(
         rf_params,
         dose_cal_model,

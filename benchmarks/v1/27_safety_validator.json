@@ -7,8 +7,14 @@
     {
       "id": "SV001",
       "input": "Run a safety check on this treatment plan before I export it",
-      "expected_keywords": ["safety", "check", "plan"],
-      "forbidden_keywords": ["safety_validator"],
+      "expected_keywords": [
+        "safety",
+        "check",
+        "plan"
+      ],
+      "forbidden_keywords": [
+        "safety_validator"
+      ],
       "difficulty": "easy",
       "user_type": "experienced",
       "_comment": "User asks for safety check. System should run validation and present results."
@@ -16,8 +22,14 @@
     {
       "id": "SV002",
       "input": "Check if the rectum dose is within safe limits",
-      "expected_keywords": ["rectum", "dose", "safe"],
-      "forbidden_keywords": ["safety_validator"],
+      "expected_keywords": [
+        "rectum",
+        "dose",
+        "safe"
+      ],
+      "forbidden_keywords": [
+        "safety_validator"
+      ],
       "difficulty": "easy",
       "user_type": "experienced",
       "_comment": "User asks to check rectum dose. System should validate against clinical limits."
@@ -25,8 +37,14 @@
     {
       "id": "SV003",
       "input": "Verify the target coverage meets minimum requirements",
-      "expected_keywords": ["coverage", "target", "minimum"],
-      "forbidden_keywords": ["safety_validator"],
+      "expected_keywords": [
+        "coverage",
+        "target",
+        "minimum"
+      ],
+      "forbidden_keywords": [
+        "safety_validator"
+      ],
       "difficulty": "medium",
       "user_type": "experienced",
       "_comment": "User asks to verify coverage. System should check V100/V90 against requirements."
@@ -34,17 +52,28 @@
     {
       "id": "SV004",
       "input": "Are there any dangerous hot spots in this plan?",
-      "expected_keywords": ["hot", "spot", "dangerous"],
-      "forbidden_keywords": ["safety_validator"],
+      "expected_keywords": [
+        "hot",
+        "spot",
+        "dangerous"
+      ],
+      "forbidden_keywords": [
+        "safety_validator"
+      ],
       "difficulty": "medium",
       "user_type": "experienced",
       "_comment": "User asks about hotspots. System should check V150/V200 and report findings."
     },
     {
       "id": "SV005",
-      "input": "导出前帮我做一下安全检查",
-      "expected_keywords": ["安全", "检查"],
-      "forbidden_keywords": ["safety_validator"],
+      "input": "Export and perform a safety check for me",
+      "expected_keywords": [
+        "safety",
+        "check"
+      ],
+      "forbidden_keywords": [
+        "safety_validator"
+      ],
       "difficulty": "easy",
       "user_type": "chinese",
       "_comment": "Chinese user asks for pre-export safety check. System should respond in Chinese."
@@ -52,17 +81,28 @@
     {
       "id": "SV006",
       "input": "Is this plan safe to export? Run all safety checks",
-      "expected_keywords": ["safe", "export", "check"],
-      "forbidden_keywords": ["safety_validator"],
+      "expected_keywords": [
+        "safe",
+        "export",
+        "check"
+      ],
+      "forbidden_keywords": [
+        "safety_validator"
+      ],
       "difficulty": "medium",
       "user_type": "experienced",
       "_comment": "User asks if plan is safe to export. System should run comprehensive checks."
     },
     {
       "id": "SV007",
-      "input": "这个方案的V200超标了吗？",
-      "expected_keywords": ["V200", "超"],
-      "forbidden_keywords": ["safety_validator"],
+      "input": "Does this plan have V200 exceeding the limit?",
+      "expected_keywords": [
+        "V200",
+        "exceed"
+      ],
+      "forbidden_keywords": [
+        "safety_validator"
+      ],
       "difficulty": "medium",
       "user_type": "chinese",
       "_comment": "Chinese user asks if V200 exceeds limits. System should respond in Chinese."
@@ -70,8 +110,14 @@
     {
       "id": "SV008",
       "input": "Check all OAR constraints for this plan",
-      "expected_keywords": ["OAR", "constraint", "check"],
-      "forbidden_keywords": ["safety_validator"],
+      "expected_keywords": [
+        "OAR",
+        "constraint",
+        "check"
+      ],
+      "forbidden_keywords": [
+        "safety_validator"
+      ],
       "difficulty": "medium",
       "user_type": "experienced",
       "_comment": "User asks to check all OAR constraints. System should validate each OAR."
@@ -79,8 +125,14 @@
     {
       "id": "SV009",
       "input": "Is the D90 acceptable for this prostate plan?",
-      "expected_keywords": ["D90", "prostate", "acceptable"],
-      "forbidden_keywords": ["safety_validator"],
+      "expected_keywords": [
+        "D90",
+        "prostate",
+        "acceptable"
+      ],
+      "forbidden_keywords": [
+        "safety_validator"
+      ],
       "difficulty": "medium",
       "user_type": "experienced",
       "_comment": "User asks about D90 acceptability. System should check against clinical standards."
@@ -88,8 +140,14 @@
     {
       "id": "SV010",
       "input": "Run a pre-export validation with strict mode",
-      "expected_keywords": ["pre-export", "strict", "validation"],
-      "forbidden_keywords": ["safety_validator"],
+      "expected_keywords": [
+        "pre-export",
+        "strict",
+        "validation"
+      ],
+      "forbidden_keywords": [
+        "safety_validator"
+      ],
       "difficulty": "hard",
       "user_type": "experienced",
       "_comment": "User asks for strict pre-export validation. System should run comprehensive checks."

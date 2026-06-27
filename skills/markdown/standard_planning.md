@@ -3,10 +3,9 @@ name: standard_planning
 description: Standard brachytherapy treatment planning workflow
 category: planning
 triggers:
-  - 规划
-  - 标准计划
+  - planning
+  - standard plan
   - treatment plan
-  - 计划
   - plan
 tool_sequence:
   - ctv_segmentation

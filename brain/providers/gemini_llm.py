@@ -104,9 +104,28 @@ class GeminiLLM(BaseLLM):
                     "total_tokens": response.usage_metadata.total_token_count,
                 }
 
+            # Extract text content and tool calls from response parts
+            content = ""
+            tool_calls = []
+            if hasattr(response, 'candidates') and response.candidates:
+                parts = response.candidates[0].content.parts
+                for part in parts:
+                    if hasattr(part, 'text') and part.text:
+                        content += part.text
+                    elif hasattr(part, 'function_call') and part.function_call:
+                        fc = part.function_call
+                        tool_calls.append({
+                            "id": f"gemini_{fc.name}_{len(tool_calls)}",
+                            "name": fc.name,
+                            "arguments": dict(fc.args) if hasattr(fc, 'args') and fc.args else {},
+                        })
+            # Fallback: response.text if no parts parsed
+            if not content and not tool_calls:
+                content = response.text or ""
+
             return LLMResponse(
-                content=response.text or "",
-                tool_calls=[],
+                content=content,
+                tool_calls=tool_calls,
                 usage=usage,
                 model=self.model,
                 latency_ms=latency_ms,

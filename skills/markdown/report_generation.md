@@ -4,8 +4,7 @@ description: Generate treatment plan report
 category: export
 triggers:
   - report
-  - 报告
-  - 生成报告
+  - generate report
 tool_sequence:
   - report_generator
 parameters:

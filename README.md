@@ -473,7 +473,7 @@ Task: "Generate prostate plan"
 BrachyBot's LLM can **see and annotate** the UI in real-time:
 
 ```
-User: "帮我看看当前分割效果"
+User: "Show me the current segmentation result"
   → LLM calls ui_screenshot(target="viewer-axial")
   → Frontend captures viewer via html2canvas
   → Image uploaded to server, displayed in chat
@@ -487,8 +487,8 @@ User: "帮我看看当前分割效果"
 
 **Use Cases:**
 - `/help` — LLM screenshots each UI area with numbered annotations
-- "看看分割效果" — Navigate + screenshot + annotate key features
-- "3D重建怎么样" — Capture 3D view, mark issues
+- "Check segmentation" — Navigate + screenshot + annotate key features
+- "How does 3D look" — Capture 3D view, mark issues
 - After any tool execution — Visual result display
 
 ### 🌐 Internet Search Capability (28 Specialized Engines)

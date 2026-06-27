@@ -7,8 +7,14 @@
     {
       "id": "RG001",
       "input": "Generate a full clinical report for this treatment plan",
-      "expected_keywords": ["report", "clinical", "plan"],
-      "forbidden_keywords": ["report_generator"],
+      "expected_keywords": [
+        "report",
+        "clinical",
+        "plan"
+      ],
+      "forbidden_keywords": [
+        "report_generator"
+      ],
       "difficulty": "easy",
       "user_type": "experienced",
       "_comment": "User asks for a full clinical report. System should generate and present the report."
@@ -16,8 +22,13 @@
     {
       "id": "RG002",
       "input": "Give me a brief summary of this plan",
-      "expected_keywords": ["summary", "plan"],
-      "forbidden_keywords": ["report_generator"],
+      "expected_keywords": [
+        "summary",
+        "plan"
+      ],
+      "forbidden_keywords": [
+        "report_generator"
+      ],
       "difficulty": "easy",
       "user_type": "experienced",
       "_comment": "User asks for a brief summary. System should generate a concise summary."
@@ -25,8 +36,14 @@
     {
       "id": "RG003",
       "input": "Generate a DVH analysis report",
-      "expected_keywords": ["DVH", "analysis", "report"],
-      "forbidden_keywords": ["report_generator"],
+      "expected_keywords": [
+        "DVH",
+        "analysis",
+        "report"
+      ],
+      "forbidden_keywords": [
+        "report_generator"
+      ],
       "difficulty": "medium",
       "user_type": "experienced",
       "_comment": "User asks for DVH analysis. System should generate DVH report with metrics."
@@ -34,26 +51,42 @@
     {
       "id": "RG004",
       "input": "Export this plan as a JSON file",
-      "expected_keywords": ["export", "JSON"],
-      "forbidden_keywords": ["report_generator"],
+      "expected_keywords": [
+        "export",
+        "JSON"
+      ],
+      "forbidden_keywords": [
+        "report_generator"
+      ],
       "difficulty": "easy",
       "user_type": "experienced",
       "_comment": "User asks to export as JSON. System should generate JSON export."
     },
     {
       "id": "RG005",
-      "input": "把这个治疗计划导出为Markdown格式的报告",
-      "expected_keywords": ["导出", "Markdown"],
-      "forbidden_keywords": ["report_generator"],
+      "input": "Export this treatment plan as a Markdown report",
+      "expected_keywords": [
+        "export",
+        "Markdown"
+      ],
+      "forbidden_keywords": [
+        "report_generator"
+      ],
       "difficulty": "medium",
       "user_type": "chinese",
       "_comment": "Chinese user asks to export as Markdown. System should respond in Chinese."
     },
     {
       "id": "RG006",
-      "input": "帮我生成一份完整的临床报告，包含患者信息",
-      "expected_keywords": ["临床", "报告", "患者"],
-      "forbidden_keywords": ["report_generator"],
+      "input": "Generate a complete clinical report with patient info",
+      "expected_keywords": [
+        "clinical",
+        "report",
+        "patient"
+      ],
+      "forbidden_keywords": [
+        "report_generator"
+      ],
       "difficulty": "medium",
       "user_type": "chinese",
       "_comment": "Chinese user asks for a full clinical report. System should respond in Chinese."
@@ -61,8 +94,14 @@
     {
       "id": "RG007",
       "input": "Write a treatment summary for the referring physician",
-      "expected_keywords": ["treatment", "summary", "physician"],
-      "forbidden_keywords": ["report_generator"],
+      "expected_keywords": [
+        "treatment",
+        "summary",
+        "physician"
+      ],
+      "forbidden_keywords": [
+        "report_generator"
+      ],
       "difficulty": "medium",
       "user_type": "experienced",
       "_comment": "User asks for a summary for a physician. System should generate professional summary."
@@ -70,8 +109,14 @@
     {
       "id": "RG008",
       "input": "Create a report with all dose metrics",
-      "expected_keywords": ["report", "dose", "metrics"],
-      "forbidden_keywords": ["report_generator"],
+      "expected_keywords": [
+        "report",
+        "dose",
+        "metrics"
+      ],
+      "forbidden_keywords": [
+        "report_generator"
+      ],
       "difficulty": "medium",
       "user_type": "experienced",
       "_comment": "User asks for a report with dose metrics. System should include V100, D90, etc."
@@ -79,8 +124,14 @@
     {
       "id": "RG009",
       "input": "Generate a quality assurance report",
-      "expected_keywords": ["quality", "assurance", "report"],
-      "forbidden_keywords": ["report_generator"],
+      "expected_keywords": [
+        "quality",
+        "assurance",
+        "report"
+      ],
+      "forbidden_keywords": [
+        "report_generator"
+      ],
       "difficulty": "hard",
       "user_type": "experienced",
       "_comment": "User asks for QA report. System should generate comprehensive QA report."
@@ -88,8 +139,14 @@
     {
       "id": "RG010",
       "input": "Export all plan data as structured JSON",
-      "expected_keywords": ["export", "JSON", "structured"],
-      "forbidden_keywords": ["report_generator"],
+      "expected_keywords": [
+        "export",
+        "JSON",
+        "structured"
+      ],
+      "forbidden_keywords": [
+        "report_generator"
+      ],
       "difficulty": "medium",
       "user_type": "experienced",
       "_comment": "User asks to export structured data. System should generate well-formatted JSON."

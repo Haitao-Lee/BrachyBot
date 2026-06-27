@@ -141,7 +141,7 @@ class QueryProcessor:
         """Extract the core search term from a query with domain noise.
 
         Pattern: LLM adds domain context after the core term.
-        E.g., "DeepRare 深度学习 放疗 医学图像" → "DeepRare"
+        E.g., "DeepRare deep learning radiotherapy medical image" -> "DeepRare"
         E.g., "ZygoPlanner brachytherapy treatment planning" → "ZygoPlanner"
 
         Returns None if no domain noise detected (query is clean).
@@ -289,9 +289,9 @@ def _search_weather(query: str, max_results: int = 5) -> List[Dict]:
     """Weather via wttr.in API. Supports any city name — no hardcoded mapping."""
     # Extract city name: remove weather-related keywords, keep the city
     weather_noise = [
-        '天气', 'weather', '气温', '温度', 'temperature', 'forecast',
-        '今日', '今天', '明天', 'yesterday', 'today', 'tomorrow',
-        '怎么样', '如何', '查询', '帮我查询', '帮我', '请',
+        'weather', 'temperature', 'forecast',
+        'yesterday', 'today', 'tomorrow',
+        'how is', 'what is', 'check', 'please check', 'please',
     ]
     # English noise words — use word-boundary regex to avoid breaking "Beijing" (contains "in")
     en_noise = ['how', 'what', 'the', 'in', 'at', 'for', 'is', 'of']
@@ -325,13 +325,13 @@ def _search_exchange_rate(query: str, max_results: int = 5) -> List[Dict]:
     currencies = re.findall(r'(USD|EUR|GBP|JPY|CNY|HKD|KRW|CAD|AUD|CHF)', query.upper())
     if len(currencies) >= 2:
         base, target = currencies[0], currencies[1]
-    elif any(kw in query for kw in ['美元', 'dollar', 'usd']):
+    elif any(kw in query for kw in ['dollar', 'usd']):
         base, target = 'USD', 'CNY'
-    elif any(kw in query for kw in ['欧元', 'euro', 'eur']):
+    elif any(kw in query for kw in ['euro', 'eur']):
         base, target = 'EUR', 'CNY'
-    elif any(kw in query for kw in ['日元', 'yen', 'jpy']):
+    elif any(kw in query for kw in ['yen', 'jpy']):
         base, target = 'JPY', 'CNY'
-    elif any(kw in query for kw in ['英镑', 'pound', 'gbp']):
+    elif any(kw in query for kw in ['pound', 'gbp']):
         base, target = 'GBP', 'CNY'
     else:
         base, target = 'USD', 'CNY'
@@ -511,7 +511,7 @@ def _optimize_github(query: str) -> str:
             'and', 'or', 'but', 'not', 'no', 'what', 'how', 'why', 'when', 'where',
             'this', 'that', 'these', 'those', 'it', 'its', 'my', 'your', 'his', 'her',
             'about', 'latest', 'research', 'code', 'implementation', 'system', 'technical',
-            '请', '帮我', '查', '搜索', '一下'}
+            'please', 'help', 'search', 'look up'}
     key = [w for w in words if w.lower() not in stop and len(w) > 1]
     if key:
         return ' '.join(key[:3])
@@ -522,7 +522,7 @@ def _optimize_pubmed(query: str) -> str:
     """PubMed works best with medical terms, no natural language filler."""
     # Remove common question patterns
     noise = ['what is', 'what are', 'how to', 'tell me about', 'please', 'can you',
-             '什么是', '介绍一下', '告诉我', '请问', '帮我查']
+             'what is', 'tell me about', 'introduce', 'please', 'help me find']
     q = query
     for n in noise:
         q = re.sub(re.escape(n), '', q, flags=re.IGNORECASE)
@@ -532,7 +532,7 @@ def _optimize_pubmed(query: str) -> str:
 def _optimize_arxiv(query: str) -> str:
     """arXiv works best with technical terms."""
     noise = ['what is', 'tell me about', 'find papers on', 'search for',
-             '介绍一下', '查找', '搜索']
+             'introduce', 'find', 'search']
     q = query
     for n in noise:
         q = re.sub(re.escape(n), '', q, flags=re.IGNORECASE)
@@ -946,92 +946,74 @@ def _search_iop(query: str, max_results: int = 5) -> List[Dict]:
 
 
 # Registry of specialized engines
-    """Wanfang Data — Chinese academic database."""
-    results = []
-    try:
-        resp = requests.get(f"https://s.wanfangdata.com.cn/paper",
-                            params={"q": query}, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-        if resp.status_code == 200:
-            entries = re.findall(r'<div class="normal-list"[^>]*>(.*?)</div>', resp.text, re.DOTALL)
-            for entry in entries[:max_results]:
-                title_m = re.search(r'<a[^>]*>(.*?)</a>', entry)
-                if title_m:
-                    title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip()
-                    results.append({"title": title, "snippet": "", "url": f"https://s.wanfangdata.com.cn/paper?q={requests.utils.quote(query)}", "source": "Wanfang"})
-    except Exception as e:
-        logger.warning(f"Wanfang error: {e}")
-    return results
-
-
-# Registry of specialized engines
 SPECIALIZED_ENGINES = [
     # Real-time data
-    SpecializedEngine("Weather", ["天气", "weather", "气温", "temperature", "forecast"],
+    SpecializedEngine("Weather", ["weather", "temperature", "forecast"],
                       _search_weather, "Real-time weather via wttr.in API"),
-    SpecializedEngine("Exchange Rate", ["汇率", "exchange rate", "美元", "欧元", "日元", "英镑", "usd", "eur"],
+    SpecializedEngine("Exchange Rate", ["exchange rate", "usd", "eur", "dollar", "euro", "yen", "pound"],
                       _search_exchange_rate, "Live exchange rates via open.er-api.com"),
 
     # Medical guidelines & knowledge
-    SpecializedEngine("NCCN Guidelines", ["nccn", "指南", "guideline", "治疗规范"],
+    SpecializedEngine("NCCN Guidelines", ["nccn", "guideline", "clinical practice"],
                       _search_nccn, "NCCN clinical practice guidelines"),
-    SpecializedEngine("Radiopaedia", ["radiopaedia", "影像学", "radiology", "影像诊断"],
+    SpecializedEngine("Radiopaedia", ["radiopaedia", "radiology", "imaging diagnosis"],
                       _search_radiopaedia, "Radiology knowledge base with cases"),
-    SpecializedEngine("ICD Codes", ["icd", "疾病编码", "诊断编码", "disease code"],
+    SpecializedEngine("ICD Codes", ["icd", "disease code", "diagnosis code"],
                       _search_icd, "ICD-11 disease classification codes (WHO)"),
-    SpecializedEngine("OMIM", ["omim", "遗传病", "genetic disorder", "基因突变"],
+    SpecializedEngine("OMIM", ["omim", "genetic disorder", "gene mutation"],
                       _search_omim, "Online Mendelian Inheritance in Man (genetic disorders)"),
 
     # Clinical research
-    SpecializedEngine("Clinical Trials", ["临床试验", "clinical trial", "clinicaltrials.gov"],
+    SpecializedEngine("Clinical Trials", ["clinical trial", "clinicaltrials.gov"],
                       _search_clinical_trials, "Clinical trial data from ClinicalTrials.gov API"),
-    SpecializedEngine("FDA Drugs", ["fda", "药物批准", "drug approval", "药物安全"],
+    SpecializedEngine("FDA Drugs", ["fda", "drug approval", "drug safety"],
                       _search_fda, "FDA drug labels and approvals"),
-    SpecializedEngine("PubMed", ["pubmed", "医学文献", "临床研究", "clinical study"],
+    SpecializedEngine("PubMed", ["pubmed", "medical literature", "clinical study"],
                       _search_pubmed_direct, "Clinical literature via PubMed E-utilities",
                       optimize_fn=_optimize_pubmed),
-    SpecializedEngine("Semantic Scholar", ["论文", "paper", "publication", "引用", "citation"],
+    SpecializedEngine("Semantic Scholar", ["paper", "publication", "citation"],
                       _search_semantic_scholar, "Academic papers via Semantic Scholar API"),
-    SpecializedEngine("CrossRef", ["doi", "crossref", "期刊论文", "journal article"],
+    SpecializedEngine("CrossRef", ["doi", "crossref", "journal article"],
                       _search_crossref, "Universal DOI metadata for all publishers"),
-    SpecializedEngine("OpenAlex", ["openalex", "学术数据库", "citation count", "被引"],
+    SpecializedEngine("OpenAlex", ["openalex", "citation count", "academic database"],
                       _search_openalex, "Open academic database with full-text links"),
-    SpecializedEngine("arXiv", ["arxiv", "预印本", "preprint"],
+    SpecializedEngine("arXiv", ["arxiv", "preprint"],
                       _search_arxiv, "arXiv preprints", optimize_fn=_optimize_arxiv),
-    SpecializedEngine("bioRxiv", ["biorxiv", "medrxiv", "生物学预印本", "医学预印本"],
+    SpecializedEngine("bioRxiv", ["biorxiv", "medrxiv", "biology preprint", "medical preprint"],
                       _search_biorxiv, "bioRxiv/medRxiv preprints"),
-    SpecializedEngine("Springer Nature", ["springer", "nature", "springer nature", "施普林格"],
+    SpecializedEngine("Springer Nature", ["springer", "nature", "springer nature"],
                       _search_springer, "Springer Nature journal articles"),
-    SpecializedEngine("IEEE Xplore", ["ieee xplore", "ieee论文", "ieee transactions"],
+    SpecializedEngine("IEEE Xplore", ["ieee xplore", "ieee transactions", "ieee paper"],
                       _search_ieee_xplore, "IEEE engineering and medical imaging papers"),
-    SpecializedEngine("Europe PMC", ["europepmc", "欧洲pmc", "europe pubmed"],
+    SpecializedEngine("Europe PMC", ["europepmc", "europe pubmed"],
                       _search_europepmc, "European PubMed Central — open access biomedical literature"),
-    SpecializedEngine("Lens.org", ["lens.org", "scholarly search", "学术搜索"],
+    SpecializedEngine("Lens.org", ["lens.org", "scholarly search"],
                       _search_lens, "Lens.org — scholarly patents and literature"),
-    SpecializedEngine("MeSH", ["mesh", "医学主题词", "medical subject heading"],
+    SpecializedEngine("MeSH", ["mesh", "medical subject heading"],
                       _search_mesh, "Medical Subject Headings (NCBI controlled vocabulary)"),
     SpecializedEngine("AAPM Reports", ["aapm", "tg-43", "tg-186", "tg-229", "medical physics report"],
                       _search_aapm, "AAPM task group reports and guidelines"),
-    SpecializedEngine("IOP Physics Med Biol", ["physics in medicine", "phys med biol", "物理学与医学"],
+    SpecializedEngine("IOP Physics Med Biol", ["physics in medicine", "phys med biol"],
                       _search_iop, "IOP Publishing — Physics in Medicine & Biology"),
 
     # Patents
-    SpecializedEngine("Google Patents", ["专利", "patent", "发明专利", "实用新型"],
+    SpecializedEngine("Google Patents", ["patent", "invention patent", "utility model"],
                       _search_google_patents, "Google Patents search"),
-    SpecializedEngine("CNIPA", ["cnipa", "中国专利", "国家知识产权局"],
+    SpecializedEngine("CNIPA", ["cnipa", "chinese patent", "cnipa patent"],
                       _search_cnipa, "China National Intellectual Property Administration"),
 
     # Chinese academic
-    SpecializedEngine("CNKI", ["cnki", "知网", "中国知网", "中文文献"],
+    SpecializedEngine("CNKI", ["cnki", "china national knowledge"],
                       _search_cnki, "China National Knowledge Infrastructure"),
-    SpecializedEngine("Wanfang", ["万方", "wanfang", "万方数据"],
+    SpecializedEngine("Wanfang", ["wanfang", "wanfang data"],
                       _search_wanfang, "Wanfang Chinese academic database"),
 
     # Technical
-    SpecializedEngine("Stack Overflow", ["stackoverflow", "编程", "programming", "代码问题"],
+    SpecializedEngine("Stack Overflow", ["stackoverflow", "programming", "code question"],
                       _search_stackoverflow, "Programming Q&A via Stack Overflow API"),
-    SpecializedEngine("Papers With Code", ["代码实现", "implementation", "papers with code", "benchmark"],
+    SpecializedEngine("Papers With Code", ["implementation", "papers with code", "benchmark"],
                       _search_papers_with_code, "ML papers with code implementations"),
-    SpecializedEngine("GitHub", ["github", "代码库", "repository", "开源项目"],
+    SpecializedEngine("GitHub", ["github", "repository", "open source"],
                       _search_github_repos, "GitHub repository search",
                       optimize_fn=_optimize_github),
 ]
@@ -1288,11 +1270,11 @@ class ResultValidator:
         'who', 'whom', 'this', 'that', 'these', 'those', 'i', 'me', 'my',
         'we', 'our', 'you', 'your', 'he', 'him', 'his', 'she', 'her', 'it',
         'its', 'they', 'them', 'their', 'and', 'or', 'but', 'if', 'while',
-        '最新', '查询', '搜索', '查',
+        'latest', 'query', 'search', 'look up',
         # Domain noise that LLMs often add to queries (should not affect relevance)
-        '深度学习', '放疗', '放射治疗', '医学图像', '医学', '医疗',
-        '人工智能', '机器学习', '图像分析', '诊断', '治疗', '研究', '论文',
-        '算法', '模型', '框架', '工具', '软件', '平台', '系统', '技术', '方法',
+        'deep learning', 'radiotherapy', 'radiation therapy', 'medical image', 'medical', 'healthcare',
+        'artificial intelligence', 'machine learning', 'image analysis', 'diagnosis', 'treatment', 'research', 'paper',
+        'algorithm', 'model', 'framework', 'tool', 'software', 'platform', 'system', 'technology', 'method',
         'deep', 'learning', 'machine', 'medical', 'image', 'analysis',
         'diagnosis', 'treatment', 'research', 'algorithm', 'model',
         'framework', 'tool', 'software', 'platform', 'system', 'technology',

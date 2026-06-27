@@ -1360,24 +1360,44 @@ class BrachyAgent:
 
             llm_config = self.config.get("llm", {})
             if not llm_config:
-                # Default: Anthropic-compatible provider.
-                # base_url points to the proxy; model/api_key are
-                # configurable. Works with any Anthropic-protocol endpoint.
-                # API key must be provided via environment variable.
-                _api_key = os.environ.get("BRACHYBOT_LLM_API_KEY", "")
-                if not _api_key:
+                # Auto-detect LLM provider from environment variables.
+                # Supports all 15 built-in providers + any OpenAI-compatible API.
+                #
+                # Usage: set the provider-specific env vars and the system
+                # auto-selects. No code changes needed.
+                #
+                # ┌─────────────────────────────────────────────────────────────┐
+                # │ Provider      │ Env vars (set at least *_API_KEY)           │
+                # ├─────────────────────────────────────────────────────────────┤
+                # │ Anthropic     │ ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL,     │
+                # │               │ ANTHROPIC_MODEL                             │
+                # │ OpenAI        │ OPENAI_API_KEY, OPENAI_MODEL                │
+                # │ Qwen          │ QWEN_API_KEY (or DASHSCOPE_API_KEY),        │
+                # │               │ QWEN_MODEL                                  │
+                # │ OpenRouter    │ OPENROUTER_API_KEY, OPENROUTER_MODEL        │
+                # │ DeepSeek      │ DEEPSEEK_API_KEY, DEEPSEEK_MODEL            │
+                # │ Kimi          │ KIMI_API_KEY, KIMI_MODEL                    │
+                # │ GLM           │ GLM_API_KEY, GLM_MODEL                      │
+                # │ Gemini        │ GEMINI_API_KEY, GEMINI_MODEL                │
+                # │ Groq          │ GROQ_API_KEY, GROQ_MODEL                    │
+                # │ Grok          │ GROK_API_KEY, GROK_MODEL                    │
+                # │ MiniMax       │ MINIMAX_API_KEY, MINIMAX_MODEL              │
+                # │ Tencent       │ TENCENT_API_KEY, TENCENT_MODEL              │
+                # │ Ollama        │ OLLAMA_BASE_URL (default localhost:11434),   │
+                # │               │ OLLAMA_MODEL                                │
+                # │ Any OpenAI-   │ LLM_BASE_URL, LLM_API_KEY, LLM_MODEL       │
+                # │ compatible    │ (generic fallback for any /v1/chat/ API)    │
+                # └─────────────────────────────────────────────────────────────┘
+
+                llm_config = self._auto_detect_llm_provider()
+
+                if not llm_config:
                     logger.warning(
-                        "No LLM API key found. Set BRACHYBOT_LLM_API_KEY env var. "
-                        "Brain system will be unavailable."
+                        "No LLM provider detected from environment. "
+                        "Set *_API_KEY for your provider (e.g. OPENAI_API_KEY, "
+                        "ANTHROPIC_API_KEY, DEEPSEEK_API_KEY) or use generic: "
+                        "LLM_BASE_URL + LLM_API_KEY + LLM_MODEL"
                     )
-                llm_config = {
-                    "anthropic": {
-                        "enabled": True,
-                        "model": "mimo-v2.5",
-                        "base_url": "https://token-plan-cn.xiaomimimo.com/anthropic",
-                        "api_key": _api_key,
-                    }
-                }
 
             self.brain_router = LLMRouter(llm_config)
             self.brain_rag = get_rag()
@@ -1413,6 +1433,192 @@ class BrachyAgent:
             logger.warning(f"Brain system not available: {e}")
         except Exception as e:
             logger.warning(f"Brain system initialization failed: {e}")
+
+    def _auto_detect_llm_provider(self) -> Dict:
+        """Auto-detect LLM provider from environment variables.
+
+        Returns a config dict suitable for LLMRouter, or {} if no
+        provider is detected.  Each provider is keyed by its name
+        in brain/core/router.py::_create_llm().
+        """
+        # ── Anthropic / Anthropic-compatible proxy ──────────────────
+        if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_BASE_URL"):
+            _base = os.environ.get("ANTHROPIC_BASE_URL", "")
+            _key = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+            _model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+
+            # Auto-detect API format from URL:
+            #   - Contains "/anthropic" or "anthropic" in host → Anthropic SDK
+            #   - Otherwise → OpenAI-compatible (generic provider)
+            # This lets users switch base_url between Anthropic and
+            # OpenAI endpoints without changing code.
+            _is_anthropic_format = (
+                "anthropic" in _base.lower()
+                or _base.rstrip("/").endswith("/v1/messages")
+                or not _base  # no base_url = direct Anthropic API
+            )
+
+            if _is_anthropic_format:
+                return {
+                    "anthropic": {
+                        "enabled": True,
+                        "model": _model,
+                        "base_url": _base or None,
+                        "api_key": _key,
+                    }
+                }
+            else:
+                # base_url looks OpenAI-compatible (e.g. /v1/chat/completions)
+                # Use generic provider instead of Anthropic SDK.
+                if not _base.rstrip("/").endswith("/v1"):
+                    _base = _base.rstrip("/") + "/v1"
+                return {
+                    "generic": {
+                        "enabled": True,
+                        "type": "openai_compat",
+                        "model": _model,
+                        "api_key": _key,
+                        "base_url": _base,
+                    }
+                }
+
+        # ── OpenAI ──────────────────────────────────────────────────
+        if os.environ.get("OPENAI_API_KEY"):
+            return {
+                "openai": {
+                    "enabled": True,
+                    "model": os.environ.get("OPENAI_MODEL", "gpt-4o"),
+                    "api_key": os.environ["OPENAI_API_KEY"],
+                }
+            }
+
+        # ── DeepSeek ────────────────────────────────────────────────
+        if os.environ.get("DEEPSEEK_API_KEY"):
+            return {
+                "deepseek": {
+                    "enabled": True,
+                    "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
+                    "api_key": os.environ["DEEPSEEK_API_KEY"],
+                }
+            }
+
+        # ── Qwen (DashScope) ────────────────────────────────────────
+        if os.environ.get("QWEN_API_KEY") or os.environ.get("DASHSCOPE_API_KEY"):
+            return {
+                "qwen": {
+                    "enabled": True,
+                    "model": os.environ.get("QWEN_MODEL", "qwen-plus"),
+                    "api_key": os.environ.get("QWEN_API_KEY", "") or os.environ.get("DASHSCOPE_API_KEY", ""),
+                }
+            }
+
+        # ── Kimi (Moonshot) ─────────────────────────────────────────
+        if os.environ.get("KIMI_API_KEY") or os.environ.get("MOONSHOT_API_KEY"):
+            return {
+                "kimi": {
+                    "enabled": True,
+                    "model": os.environ.get("KIMI_MODEL", "kimi-k2.6"),
+                    "api_key": os.environ.get("KIMI_API_KEY", "") or os.environ.get("MOONSHOT_API_KEY", ""),
+                }
+            }
+
+        # ── GLM (Zhipu) ────────────────────────────────────────────
+        if os.environ.get("GLM_API_KEY") or os.environ.get("ZHIPU_API_KEY"):
+            return {
+                "glm": {
+                    "enabled": True,
+                    "model": os.environ.get("GLM_MODEL", "glm-4"),
+                    "api_key": os.environ.get("GLM_API_KEY", "") or os.environ.get("ZHIPU_API_KEY", ""),
+                }
+            }
+
+        # ── Gemini ──────────────────────────────────────────────────
+        if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+            return {
+                "gemini": {
+                    "enabled": True,
+                    "model": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
+                    "api_key": os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", ""),
+                }
+            }
+
+        # ── Groq ────────────────────────────────────────────────────
+        if os.environ.get("GROQ_API_KEY"):
+            return {
+                "groq": {
+                    "enabled": True,
+                    "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
+                    "api_key": os.environ["GROQ_API_KEY"],
+                }
+            }
+
+        # ── Grok (xAI) ──────────────────────────────────────────────
+        if os.environ.get("GROK_API_KEY") or os.environ.get("XAI_API_KEY"):
+            return {
+                "grok": {
+                    "enabled": True,
+                    "model": os.environ.get("GROK_MODEL", "grok-2"),
+                    "api_key": os.environ.get("GROK_API_KEY", "") or os.environ.get("XAI_API_KEY", ""),
+                }
+            }
+
+        # ── MiniMax ─────────────────────────────────────────────────
+        if os.environ.get("MINIMAX_API_KEY"):
+            return {
+                "minimax": {
+                    "enabled": True,
+                    "model": os.environ.get("MINIMAX_MODEL", "minimax-m2.7-20260318"),
+                    "api_key": os.environ["MINIMAX_API_KEY"],
+                }
+            }
+
+        # ── Tencent ─────────────────────────────────────────────────
+        if os.environ.get("TENCENT_API_KEY"):
+            return {
+                "tencent": {
+                    "enabled": True,
+                    "model": os.environ.get("TENCENT_MODEL", "hy3-preview"),
+                    "api_key": os.environ["TENCENT_API_KEY"],
+                }
+            }
+
+        # ── OpenRouter ──────────────────────────────────────────────
+        if os.environ.get("OPENROUTER_API_KEY"):
+            return {
+                "openrouter": {
+                    "enabled": True,
+                    "type": "openai_compat",
+                    "model": os.environ.get("OPENROUTER_MODEL", "anthropic/claude-sonnet-4"),
+                    "api_key": os.environ["OPENROUTER_API_KEY"],
+                    "base_url": "https://openrouter.ai/api/v1",
+                }
+            }
+
+        # ── Ollama (local) ──────────────────────────────────────────
+        if os.environ.get("OLLAMA_BASE_URL") or os.environ.get("OLLAMA_MODEL"):
+            return {
+                "ollama": {
+                    "enabled": True,
+                    "model": os.environ.get("OLLAMA_MODEL", "qwen2.5:14b"),
+                    "base_url": os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+                }
+            }
+
+        # ── Generic OpenAI-compatible (ANY API) ─────────────────────
+        # Fallback for any provider with /v1/chat/completions endpoint.
+        # Set LLM_BASE_URL, LLM_API_KEY, LLM_MODEL.
+        if os.environ.get("LLM_BASE_URL") and os.environ.get("LLM_API_KEY"):
+            return {
+                "generic": {
+                    "enabled": True,
+                    "type": "openai_compat",
+                    "model": os.environ.get("LLM_MODEL", "default"),
+                    "api_key": os.environ["LLM_API_KEY"],
+                    "base_url": os.environ["LLM_BASE_URL"],
+                }
+            }
+
+        return {}
 
     def _init_self_evolution(self):
         """Initialize self-evolution system."""
@@ -1735,7 +1941,7 @@ class BrachyAgent:
                 if not ct_path:
                     # No CT available — return clear error so LLM can
                     # ask the user to upload a CT file first.
-                    from AgenticSys import ToolResult
+                    from tool_factory import ToolResult
                     return ToolResult(
                         success=False,
                         error="No CT image loaded. Please ask the user to upload a CT file first, "
@@ -2567,16 +2773,19 @@ print(json.dumps(result))
             ct_path = (self.memory.get_ui_state() or {}).get("ct_path", "")
 
         # Find action keywords and their positions to preserve user's intended order
+        # Bilingual patterns: Chinese terms match Chinese user input.
+        # zh: 分割=segment, 靶区=target, 肿瘤=tumor, 器官=organ, 危及器官=OAR
         ACTION_PATTERNS = [
             (r'(分析|analyze)', 'analyze'),
             (r'(ctv|靶区|临床靶区|病灶|肿瘤|tumor|lesion).{0,8}(分割|segment)', 'segment_ctv'),
             (r'(分割|segment).{0,8}(ctv|靶区|临床靶区|病灶|肿瘤|tumor|lesion)', 'segment_ctv'),
             (r'(oar|危及器官|器官).{0,5}(分割|segment)', 'segment_oar'),
             (r'(分割|segment).{0,5}(oar|危及器官|器官)', 'segment_oar'),
-            # NOTE: "剂量" alone is too broad — "截图查看剂量分布" should
-            # route to ui_screenshot, not dose_engine. Only match when
-            # the user explicitly asks to COMPUTE/EXECUTE dose, not when
-            # they want to VIEW/SCREENSHOT existing dose results.
+            # NOTE: "dose" alone is too broad — "screenshot to view dose
+            # distribution" should route to ui_screenshot, not dose_engine.
+            # Only match when the user explicitly asks to COMPUTE/EXECUTE
+            # dose, not when they want to VIEW/SCREENSHOT existing dose
+            # results.
             (r'(计算剂量|计算.*剂量|剂量.*计算|执行.*剂量|dose.*(calc|comput|run)|calc.*dose|comput.*dose|run.*dose)', 'dose'),
             (r'(切换|switch).{0,10}(viewer|查看|浏览|视图)', 'ui:panel:viewers'),
             (r'(切换|switch).{0,10}(input|输入)', 'ui:panel:input'),
@@ -2777,11 +2986,24 @@ print(json.dumps(result))
             vol_mm3 = ctv_voxels * sx * sy * sz
             ctv_vol_cm3 = vol_mm3 / 1000.0
 
-        # Extract prescription
-        rx_gy = 120  # default
+        # Extract prescription dose in Gy.
+        #
+        # DOSE_SCALE (120.0): the dose prediction model (myDoseNet) was
+        # trained with labels where model output 1.0 = 120 Gy.  All
+        # internal dose values are in "normalized" units (0~1.0 for
+        # prescription, 0~255 for raw CNN output).  To convert to Gy:
+        #   dose_gy = dose_normalized * DOSE_SCALE
+        # This factor is the same as in planning_pipeline.py and
+        # web/server.py where it is called DOSE_SCALE = 120.0.
+        DOSE_SCALE = 120.0
+        rx_gy = DOSE_SCALE  # default: 1.0 * 120 = 120 Gy
         try:
-            if self.memory.retrieve("plan_config"):
-                rx_gy = self.memory.retrieve("plan_config", {}).get("prescription_dose", 1.0) * 120
+            _plan_cfg = self.memory.retrieve("plan_config") or {}
+            # "in_lowest_energy" is the normalized prescription (typically 1.0).
+            # "prescription_dose" is a legacy key — both map to the same value.
+            _rx_norm = _plan_cfg.get("in_lowest_energy",
+                         _plan_cfg.get("prescription_dose", 1.0))
+            rx_gy = float(_rx_norm) * DOSE_SCALE
         except Exception:
             pass
 
@@ -2990,55 +3212,228 @@ print(json.dumps(result))
     # Patterns for each query type
     _REALTIME_PATTERNS = [
         # Impact factors, journal metrics
-        (r'(影响因子|impact\s*factor|cite\s*score|JCR|分区)', 'journal_metric'),
+        (r'(影响因子|impact\s*factor|cite\s*score|JCR|分区)', 'journal_metric'),   # impact factor
         # Financial data
-        (r'(股价|市值|行情|汇率|利率|stock|price)', 'financial'),
+        (r'(股价|市值|行情|汇率|利率|stock|price)', 'financial'),   # stock/price
         # Weather
-        (r'(天气|气温|下雨|weather|temperature)', 'weather'),
+        (r'(天气|气温|下雨|weather|temperature)', 'weather'),   # weather
         # Time/date
-        (r'(今天|今日|现在|当前|几点|时间|日期|current.*time|current.*date)', 'datetime'),
+        (r'(今天|今日|现在|当前|几点|时间|日期|current.*time|current.*date)', 'datetime'),   # today/now/time
         # News
-        (r'(最新新闻|今日新闻|latest.*news|headline)', 'news'),
+        (r'(最新新闻|latest.*news|headline)', 'news'),   # latest news
         # Rankings, scores
-        (r'(排名|排行|ranking|score|得分)', 'ranking'),
+        (r'(排名|排行|ranking|score|得分)', 'ranking'),   # ranking
         # Version numbers, releases
-        (r'(最新版|最新版本|latest.*version|release)', 'version'),
+        (r'(最新版本|latest.*version|release)', 'version'),   # latest version
         # Statistics that change
-        (r'(发病率|患病率|死亡率|mortality|prevalence|incidence)', 'epidemiology'),
+        (r'(发病率|mortality|prevalence|incidence)', 'epidemiology'),   # mortality/prevalence
     ]
 
     _KNOWLEDGE_PATTERNS = [
         # Medical knowledge
-        (r'(什么是|是什么|定义|definition|explain|介绍|原理|mechanism)', 'definition'),
+        (r'(什么是|definition|explain|原理|mechanism)', 'definition'),   # what is/definition
         # Guidelines, protocols
-        (r'(指南|规范|protocol|guideline|standard|TG-\d+|AAPM|ABS|ESTRO)', 'guideline'),
+        (r'(指南|protocol|guideline|standard|TG-\d+|AAPM|ABS|ESTRO)', 'guideline'),   # guideline
         # Dose, technique
-        (r'(剂量|dose|technique|方法|method|procedure)', 'technique'),
+        (r'(剂量|dose|technique|方法|method|procedure)', 'technique'),   # dose/technique
         # Anatomy
-        (r'(解剖|anatomy|organ|器官|structure)', 'anatomy'),
+        (r'(解剖|anatomy|organ|器官|structure)', 'anatomy'),   # anatomy/organ
         # Drug, treatment
-        (r'(药物|治疗|treatment|therapy|drug)', 'treatment'),
+        (r'(药物|treatment|therapy|drug)', 'treatment'),   # treatment/drug
     ]
 
     _ANALYSIS_PATTERNS = [
         # Comparison
-        (r'(比较|对比|compare|versus|vs|哪个好|which.*better)', 'comparison'),
+        (r'(比较|compare|versus|vs|which.*better)', 'comparison'),   # compare
         # Opinion, recommendation
-        (r'(建议|推荐|recommend|opinion|观点|应该)', 'recommendation'),
+        (r'(建议|recommend|opinion|should)', 'recommendation'),   # recommend
         # Pros/cons
-        (r'(优缺点|利弊|pros.*cons|advantage|disadvantage)', 'evaluation'),
+        (r'(优缺点|pros.*cons|advantage|disadvantage)', 'evaluation'),   # pros/cons
     ]
 
     _SYSTEM_PATTERNS = [
         # Internal state
-        (r'(刚才|之前|上一|已.*分割|已.*分析|当前.*状态|what.*done)', 'state'),
+        (r'(刚才|之前|已.*分割|已.*分析|当前.*状态|what.*done)', 'state'),   # previous/current state
         # List/show results
-        (r'(列.*表|显示.*结果|show.*result|list|display)', 'display'),
+        (r'(列.*表|显示.*结果|show.*result|list|display)', 'display'),   # show/list
         # File/system operations
-        (r'(保存|导出|加载|save|export|load|upload)', 'file_op'),
+        (r'(保存|导出|加载|save|export|load|upload)', 'file_op'),   # save/export/load
         # Tool operations (analyze image, segment, etc.)
-        (r'(分析.*图像|分割.*图像|analyze.*image|segment.*image|计算.*剂量)', 'tool_op'),
+        (r'(分析.*图像|分割.*图像|analyze.*image|segment.*image|计算.*剂量)', 'tool_op'),   # analyze/segment image
     ]
+
+    def _prepare_fact_check_brief(self, result_text: str, sources: list = None) -> list:
+        """Use LLM to intelligently select claims for FactChecker verification.
+
+        Instead of regex patterns, let LLM understand context and prioritize
+        claims that FactChecker should verify. Falls back to regex if LLM fails.
+
+        Returns a list of claims (max 7) for FactChecker to verify.
+        """
+        # Try LLM-based extraction first
+        if self.llm_callback:
+            try:
+                prompt = f"""You are preparing claims for a medical fact-checker agent.
+
+From the following text, identify the MOST IMPORTANT claims that need verification.
+Prioritize in this order:
+1. Suspicious assertions (fabricated studies, findings, placeholder references)
+2. Clinical guidelines (NCCN, AAPM, ASTRO, ICRU recommendations)
+3. Literature citations (PMID, study references, trial names)
+4. Numerical claims (doses, percentages, metrics like V100, D90)
+
+Return a JSON array of up to 7 claims as strings, in priority order (most important first).
+Only include claims that are factually verifiable.
+
+Text to analyze:
+{result_text}
+
+Output (JSON array of strings):"""
+
+                response = self.llm_callback(prompt)
+                # Parse JSON response
+                import json
+                claims = json.loads(response.strip())
+                if isinstance(claims, list) and len(claims) > 0:
+                    logger.debug(f"LLM extracted {len(claims)} claims for FactChecker")
+                    return claims[:7]
+            except Exception as e:
+                logger.debug(f"LLM claim extraction failed, using regex fallback: {e}")
+
+        # Fallback: regex-based extraction (original implementation)
+        return self._prepare_fact_check_brief_regex(result_text, sources)
+
+    def _prepare_fact_check_brief_regex(self, result_text: str, sources: list = None) -> list:
+        """Fallback: regex-based claim extraction (original implementation)."""
+        claims = []
+        text_lower = result_text.lower()
+
+        # 1. Suspicious assertions (HIGHEST priority - FactChecker's specialty)
+        suspicious_patterns = [
+            (r'according to (?:a|our)\s+(?:study|research|data)', 'Potential fabricated study'),
+            (r'(?:we|I)\s+(?:found|discovered|demonstrated)\s+that', 'Potential fabricated finding'),
+            (r'(?:my|our)\s+(?:research|data)\s+shows', 'Potential fabricated research'),
+            (r'recently published in\s+\[', 'Placeholder journal'),
+            (r'Dr\.\s+[A-Z][a-z]+\s+(?:from|at)\s+\[', 'Placeholder institution'),
+        ]
+        for pattern, desc in suspicious_patterns:
+            if re.search(pattern, result_text, re.IGNORECASE):
+                # Extract the suspicious sentence
+                for sentence in re.split(r'[.。]', result_text):
+                    if re.search(pattern, sentence, re.IGNORECASE):
+                        claim = f"[{desc}] {sentence.strip()}"
+                        if claim not in claims and len(claims) < 7:
+                            claims.append(claim)
+                        break
+
+        # 2. Clinical guideline references (high priority)
+        guideline_orgs = ['NCCN', 'AAPM', 'ASTRO', 'ICRU', 'WHO', 'ESTRO']
+        for org in guideline_orgs:
+            if org.lower() in text_lower:
+                # Extract sentence containing the org
+                for sentence in re.split(r'[.。]', result_text):
+                    if org.lower() in sentence.lower() and len(sentence) > 15:
+                        claim = sentence.strip()
+                        if claim not in claims and len(claims) < 7:
+                            claims.append(claim)
+                        break  # Only first occurrence per org
+
+        # 3. Literature citations (PMID, study references)
+        pmid_pattern = r'PMID:\s*(\d+)'
+        pmids = re.findall(pmid_pattern, result_text, re.IGNORECASE)
+        for pmid in pmids[:2]:
+            claim = f"PMID: {pmid}"
+            if claim not in claims and len(claims) < 7:
+                claims.append(claim)
+
+        # Study reference patterns
+        study_patterns = [
+            r'(?:study|trial|research)\s+(?:ID|number|#)\s*[\w-]+',
+        ]
+        for pattern in study_patterns:
+            matches = re.findall(pattern, result_text, re.IGNORECASE)
+            for match in matches[:1]:
+                if match not in claims and len(claims) < 7:
+                    claims.append(match.strip())
+
+        # 4. Numerical claims (important for fact-checking)
+        # Only add if we have room and they're not already covered by guideline sentences
+        if len(claims) < 5:
+            numerical_patterns = [
+                r'(V\d+|D\d+)\s*[<>=]+\s*\d+\.?\d*\s*%?',  # V100 > 95%, D90 = 145
+                r'prescription\s+(?:dose\s+)?(?:is|of)\s+\d+\s*Gy',  # prescription is 120 Gy
+            ]
+            for pattern in numerical_patterns:
+                matches = re.findall(pattern, result_text, re.IGNORECASE)
+                for match in matches[:2]:
+                    # Get the full sentence containing this match
+                    for sentence in re.split(r'[.。]', result_text):
+                        if match in sentence and len(sentence) > 10:
+                            claim = sentence.strip()
+                            if claim not in claims and len(claims) < 7:
+                                claims.append(claim)
+                            break
+
+        # 5. Fallback: key factual statements with clinical data
+        if len(claims) < 3:
+            sentences = re.split(r'[.。!！?？\n]', result_text)
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if len(sentence) < 15 or len(sentence) > 200:
+                    continue
+                # Check if sentence contains specific clinical data
+                has_dose_metric = bool(re.search(r'(V\d+|D\d+|dose|volume)\s*\d', sentence, re.IGNORECASE))
+                has_percentage = bool(re.search(r'\d+\.?\d*\s*%', sentence))
+                if (has_dose_metric or has_percentage) and sentence not in claims and len(claims) < 7:
+                    claims.append(sentence)
+
+        return claims[:7]
+
+    def _check_search_reliability(self, tool_name: str, result_text: str,
+                                     sources: list = None) -> str:
+        """Run FactChecker on search results and append reliability note.
+
+        Called after web_search/web_fetch/web_access tool execution.
+        The note is appended to the tool result so the LLM sees it
+        and can decide whether to re-search with better keywords.
+
+        Returns the result_text with reliability note appended.
+        """
+        if not self.multi_agent_wrapper or not self.multi_agent_wrapper.enabled:
+            return result_text
+
+        # Intelligently extract claims for FactChecker
+        claims = self._prepare_fact_check_brief(result_text, sources)
+        if not claims:
+            return result_text
+
+        # Extract sources if not provided
+        if sources is None:
+            sources = []
+            url_pattern = r'https?://[^\s\])<>"]+'
+            found_urls = re.findall(url_pattern, result_text)
+            sources.extend(found_urls[:5])
+
+        try:
+            import asyncio
+            loop = asyncio.new_event_loop()
+            try:
+                # skip_distill=True because we're in a sync context
+                # (inside run_until_complete) and nested event loops
+                # would cause issues. FactChecker is fast anyway.
+                note = loop.run_until_complete(
+                    self.multi_agent_wrapper.review_facts_append(
+                        claims, sources, "en", skip_distill=True
+                    )
+                )
+                if note:
+                    return result_text + f"\n\n{note}"
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.debug(f"Search reliability check skipped: {e}")
+
+        return result_text
 
     def _classify_query_type(self, message: str) -> str:
         """Classify query into: realtime, knowledge, analysis, system.
@@ -3120,31 +3515,32 @@ print(json.dumps(result))
         "pulmonary_embolism": "voco_fumpe",
         "covid": "voco_covid",
         "aorta": "voco_aorta",
-        # Chinese names — pancreatic uses nnUNet
-        "胰腺癌": "nnunet_pancreatic",
-        "胰腺肿瘤": "nnunet_pancreatic",
-        "胰腺": "nnunet_pancreatic",
-        "肝癌": "voco_liver",
-        "肝肿瘤": "voco_liver",
-        "肝脏": "voco_liver",
-        "肾癌": "voco_kidney",
-        "肾肿瘤": "voco_kidney",
-        "肾脏": "voco_kidney",
-        "结肠癌": "voco_colon",
-        "结肠": "voco_colon",
-        "肺癌": "voco_lung",
-        "肺部": "voco_lung",
-        "脑肿瘤": "voco_brats21",
-        "脑癌": "voco_brats21",
-        "肺栓塞": "voco_fumpe",
-        "新冠": "voco_covid",
-        "主动脉": "voco_aorta",
-        "胰腺癌患者": "voco_pancreatic",
-        "肝癌患者": "voco_liver",
-        "肾癌患者": "voco_kidney",
-        "肺癌患者": "voco_lung",
-        "结肠癌患者": "voco_colon",
-        "脑肿瘤患者": "voco_brats21",
+        # Chinese aliases — pancreatic uses nnUNet (more accurate)
+        # These Chinese keys match user input for tumor type detection.
+        "胰腺癌": "nnunet_pancreatic",       # pancreatic cancer
+        "胰腺肿瘤": "nnunet_pancreatic",     # pancreatic tumor
+        "胰腺": "nnunet_pancreatic",          # pancreas
+        "肝癌": "voco_liver",                 # liver cancer
+        "肝肿瘤": "voco_liver",              # liver tumor
+        "肝脏": "voco_liver",                # liver
+        "肾癌": "voco_kidney",               # kidney cancer
+        "肾肿瘤": "voco_kidney",             # kidney tumor
+        "肾脏": "voco_kidney",               # kidney
+        "结肠癌": "voco_colon",              # colon cancer
+        "结肠": "voco_colon",                # colon
+        "肺癌": "voco_lung",                 # lung cancer
+        "肺部": "voco_lung",                 # lung
+        "脑肿瘤": "voco_brats21",            # brain tumor
+        "脑癌": "voco_brats21",              # brain cancer
+        "肺栓塞": "voco_fumpe",              # pulmonary embolism
+        "新冠": "voco_covid",                # covid
+        "主动脉": "voco_aorta",              # aorta
+        "胰腺癌患者": "voco_pancreatic",     # pancreatic cancer patient
+        "肝癌患者": "voco_liver",            # liver cancer patient
+        "肾癌患者": "voco_kidney",           # kidney cancer patient
+        "肺癌患者": "voco_lung",             # lung cancer patient
+        "结肠癌患者": "voco_colon",          # colon cancer patient
+        "脑肿瘤患者": "voco_brats21",        # brain tumor patient
     }
 
     def _map_tumor_type(self, tumor_type: str) -> str:
@@ -3183,18 +3579,18 @@ print(json.dumps(result))
         # Patterns that require real-time search
         # Weather queries are handled by specialized engine — just detect the intent
         realtime_patterns = [
-            (r'(今天|今日|明天|昨天|本周|目前|当前|现在).*(天气|气温|温度|下雨|晴)', True),
-            (r'(天气|气温|温度).*(如何|怎么样|怎样|多少|预报)', True),
+            (r'(今天|today|明天|tomorrow|昨天|yesterday|本周|this week|当前|now).*(天气|天气|气温|temperature|下雨|rain|晴|sunny)', True),   # weather queries
+            (r'(天气|weather|气温|temperature).*(如何|怎么样|how|多少|what|预报|forecast)', True),   # weather queries
             (r'(weather|temperature|forecast)', True),
-            (r'(现在|当前|今天|几点|时间|日期)', False),
+            (r'(现在|now|今天|today|几点|time|日期|date)', False),   # time/date
             (r'(what time|current time|what date)', False),
-            (r'(最新|最近|今日|今天的).*(新闻|消息|头条)', False),
+            (r'(最新|latest|最近|recent|今日|today).*(新闻|news|消息|headline|头条)', False),   # news
             (r'(news|headline|latest news)', False),
-            (r'(nba|NBA|篮球).*(总决赛|季后赛|比赛|赛事|结果)', False),
-            (r'(足球|世界杯|欧冠|英超|中超).*(比赛|赛事|结果|比分)', False),
-            (r'(股价|股票|市值|行情)', False),
-            (r'(汇率|美元|欧元|人民币)', False),
-            (r'(疫情|新冠|病例)', False),
+            (r'(nba|NBA|basketball).*(finals|playoffs|game|result)', False),   # NBA
+            (r'(soccer|football|world cup|champions league|premier league).*(game|match|result|score)', False),   # soccer
+            (r'(stock|股价|市值|market cap)', False),   # stock
+            (r'(exchange rate|汇率|dollar|euro|rmb)', False),   # exchange rate
+            (r'(pandemic|疫情|covid|case count)', False),   # pandemic
         ]
         for pattern, is_weather in realtime_patterns:
             if re.search(pattern, msg, re.IGNORECASE):
@@ -3375,8 +3771,8 @@ print(json.dumps(result))
                 # asking a simple question that doesn't need tools.
                 _planning_done = self.memory.retrieve("dose_metrics") is not None
                 _simple_question = not self._detect_tool_request(message) and not any(
-                    kw in message for kw in ['分割', 'segment', '规划', 'plan', '剂量', 'dose',
-                                               '截图', 'screenshot', '分析', 'analyze', '加载', 'load']
+                    kw in message for kw in ['segment', 'plan', 'dose',
+                                               'screenshot', 'analyze', 'load']
                 )
                 if pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and not _planning_done and not _simple_question:
                     sk = pre_ctx["crystallized_skill"]
@@ -3405,8 +3801,8 @@ print(json.dumps(result))
                         # screenshot/view — the LLM would re-run planning
                         # instead of just capturing the UI.
                         _is_view_request = any(kw in message for kw in [
-                            '截图', 'screenshot', '查看', 'view', '显示', 'display',
-                            '看看', 'show', '展示', '观察', 'inspect',
+                            'screenshot', 'view', 'display',
+                            'show', 'inspect', 'capture',
                         ])
                         if not _is_view_request:
                             _filtered = [s for s in sk['tool_chain']
@@ -3542,6 +3938,7 @@ print(json.dumps(result))
                 # Build result text from search results
                 result_text = ""
                 first_url = ""
+                page_content = ""
                 if search_result and search_result.success:
                     data = search_result.data or {}
                     results = data.get("results", [])
@@ -3550,11 +3947,12 @@ print(json.dumps(result))
                     for i, r in enumerate(results[:5], 1):
                         title = r.get("title", "")
                         snippet = r.get("snippet", "")[:300]
-                        page_content = r.get("page_content", "")
+                        _pc = r.get("page_content", "")
                         url = r.get("url", "")
                         result_text += f"{i}. {title}\n   {snippet}\n"
-                        if page_content:
-                            result_text += f"   [Full page content]: {page_content[:1000]}\n"
+                        if _pc:
+                            result_text += f"   [Full page content]: {_pc[:1000]}\n"
+                            page_content = _pc  # keep last non-empty
                         result_text += f"   URL: {url}\n\n"
                 else:
                     result_text = "No real-time results found."
@@ -3733,9 +4131,9 @@ print(json.dumps(result))
                     "params": params,
                 })
 
-                if tool_name in ("self_evolve", "evolve", "进化", "总结经验"):
+                if tool_name in ("self_evolve", "evolve"):
                     result_text = self._handle_self_evolution()
-                elif tool_name in ("code_writer", "write_tool", "create_tool", "写工具", "新工具"):
+                elif tool_name in ("code_writer", "write_tool", "create_tool"):
                     result_text = self._handle_code_writing(params)
                 elif tool_name in self.registry.tool_names:
                     logger.info(f"[TOOL-LOOP] About to execute {tool_name}, params_keys={list(params.keys())}")
@@ -3750,7 +4148,7 @@ print(json.dumps(result))
                 else:
                     result_text = f"Unknown tool: {tool_name}. Available: {self.registry.tool_names}"
 
-                step_status = "done" if "Error" not in result_text and "Exception" not in result_text and "错误" not in result_text else "error"
+                step_status = "done" if "Error" not in result_text and "Exception" not in result_text and "error" not in result_text.lower() else "error"
                 steps[-1]["status"] = step_status
                 steps[-1]["result"] = result_text[:200]
 
@@ -3758,6 +4156,13 @@ print(json.dumps(result))
                 if result_text and ("Found 0" in result_text or "0 match" in result_text or "No results" in result_text):
                     _failed_tools.add(_tool_key)
                     logger.info(f"Tool {tool_name} returned 0 results, marking as failed")
+
+                # Inject FactChecker feedback for search tools so the
+                # LLM sees source reliability info and can decide to
+                # re-search with better keywords if needed.
+                _fc_text = result_text
+                if tool_name in ("web_search", "web_fetch", "web_access"):
+                    _fc_text = self._check_search_reliability(tool_name, result_text)
 
                 # Append tool call and result to messages in Anthropic-compatible format
                 tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
@@ -3770,12 +4175,12 @@ print(json.dumps(result))
                 messages.append({
                     "role": "user",
                     "content": [
-                        {"type": "tool_result", "tool_use_id": tool_id, "content": result_text[:4000]}
+                        {"type": "tool_result", "tool_use_id": tool_id, "content": _fc_text[:4000]}
                     ]
                 })
                 # Store in conversation memory for context persistence
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
-                self.memory.add_message("user", f"[Tool result: {result_text[:500]}]")
+                self.memory.add_message("user", f"[Tool result: {_fc_text[:500]}]")
 
             # BATCH STORE: Store all tool results after the loop.
             # This is done AFTER the for-loop to avoid yield-related
@@ -3839,7 +4244,7 @@ print(json.dumps(result))
                     _present_instruction = (
                         "All workflow tools completed. Now produce your FINAL summary in this exact format:\n"
                         "1. One short paragraph (≤ 3 sentences) describing what was completed.\n"
-                        "2. A markdown table with columns | 指标 | 数值 | for the planning results (seeds, V100, D90, score, etc.).\n"
+                        "2. A markdown table with columns | Metric | Value | for the planning results (seeds, V100, D90, score, etc.).\n"
                         "3. One final sentence confirming completion.\n\n"
                         "DO NOT exceed this format. The 3D viewer is rebuilt automatically — do NOT ask the user to do it.\n"
                         "CRITICAL: Your ENTIRE response must be in the SAME language as the user's original question."
@@ -3860,10 +4265,10 @@ print(json.dumps(result))
             # Sentence terminators: 。！？.!?\n and ：(Chinese colon when used as terminator)
             sentences = re.split(r'(?<=[。！？.!?\n：])\s*', final_response.strip())
             _transitional_keywords = [
-                '我来', '让我', '好的', '我帮你', '为您', '我直接',
-                '搜索', '查询', '抓取', '获取', '访问', '查看', '读取',
-                '页面内容', '知识库', '没有匹配', '没有找到',
                 'let me', 'i\'ll', 'i will', 'allow me', 'sure',
+                'okay', 'here you go', 'certainly', 'of course',
+                'searching', 'fetching', 'retrieving', 'accessing',
+                'reading', 'looking up', 'checking', 'browsing',
             ]
             substantive = []
             for s in sentences:
@@ -4248,8 +4653,8 @@ print(json.dumps(result))
                 # asking a simple question that doesn't need tools.
                 _planning_done = self.memory.retrieve("dose_metrics") is not None
                 _simple_question = not self._detect_tool_request(message) and not any(
-                    kw in message for kw in ['分割', 'segment', '规划', 'plan', '剂量', 'dose',
-                                               '截图', 'screenshot', '分析', 'analyze', '加载', 'load']
+                    kw in message for kw in ['segment', 'plan', 'dose',
+                                               'screenshot', 'analyze', 'load']
                 )
                 if pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and not _planning_done and not _simple_question:
                     sk = pre_ctx["crystallized_skill"]
@@ -4278,8 +4683,8 @@ print(json.dumps(result))
                         # screenshot/view — the LLM would re-run planning
                         # instead of just capturing the UI.
                         _is_view_request = any(kw in message for kw in [
-                            '截图', 'screenshot', '查看', 'view', '显示', 'display',
-                            '看看', 'show', '展示', '观察', 'inspect',
+                            'screenshot', 'view', 'display',
+                            'show', 'inspect', 'capture',
                         ])
                         if not _is_view_request:
                             _filtered = [s for s in sk['tool_chain']
@@ -4410,6 +4815,7 @@ print(json.dumps(result))
 
                 result_text = ""
                 first_url = ""
+                page_content = ""
                 if search_result and search_result.success:
                     data = search_result.data or {}
                     results = data.get("results", [])
@@ -4418,11 +4824,12 @@ print(json.dumps(result))
                     for i, r in enumerate(results[:5], 1):
                         title = r.get("title", "")
                         snippet = r.get("snippet", "")[:300]
-                        page_content = r.get("page_content", "")
+                        _pc = r.get("page_content", "")
                         url = r.get("url", "")
                         result_text += f"{i}. {title}\n   {snippet}\n"
-                        if page_content:
-                            result_text += f"   [Full page content]: {page_content[:1000]}\n"
+                        if _pc:
+                            result_text += f"   [Full page content]: {_pc[:1000]}\n"
+                            page_content = _pc
                         result_text += f"   URL: {url}\n\n"
                 else:
                     logger.warning(f"Forced search failed: {search_result.error if search_result else 'no tool'}")
@@ -4846,9 +5253,9 @@ print(json.dumps(result))
                             self._pending_callback_events.append(("step", substep_step))
 
                 tool_result = None  # Track result for metadata
-                if tool_name in ("self_evolve", "evolve", "进化", "总结经验"):
+                if tool_name in ("self_evolve", "evolve"):
                     result_text = self._handle_self_evolution()
-                elif tool_name in ("code_writer", "write_tool", "create_tool", "写工具", "新工具"):
+                elif tool_name in ("code_writer", "write_tool", "create_tool"):
                     result_text = self._handle_code_writing(params)
                 elif tool_name in self.registry.tool_names:
                     logger.info(f"[TOOL-LOOP] About to execute {tool_name}, params_keys={list(params.keys())}")
@@ -4984,7 +5391,7 @@ print(json.dumps(result))
                 else:
                     result_text = f"Unknown tool: {tool_name}. Available: {self.registry.tool_names}"
 
-                step_status = "done" if "Error" not in result_text and "Exception" not in result_text and "错误" not in result_text else "error"
+                step_status = "done" if "Error" not in result_text and "Exception" not in result_text and "error" not in result_text.lower() else "error"
                 tool_step["status"] = step_status
                 # Use language-aware formatting for the step result
                 # instead of the raw English result.message
@@ -5060,6 +5467,11 @@ print(json.dumps(result))
                                 f"Downstream planning may fail with 'No CT image available'."
                             )
 
+                # Inject FactChecker feedback for search tools
+                _fc_text = result_text
+                if tool_name in ("web_search", "web_fetch", "web_access"):
+                    _fc_text = self._check_search_reliability(tool_name, result_text)
+
                 # Append tool call and result to messages in Anthropic-compatible format
                 tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
                 messages.append({
@@ -5071,12 +5483,12 @@ print(json.dumps(result))
                 messages.append({
                     "role": "user",
                     "content": [
-                        {"type": "tool_result", "tool_use_id": tool_id, "content": result_text[:4000]}
+                        {"type": "tool_result", "tool_use_id": tool_id, "content": _fc_text[:4000]}
                     ]
                 })
                 # Store in conversation memory for context persistence
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
-                self.memory.add_message("user", f"[Tool result: {result_text[:500]}]")
+                self.memory.add_message("user", f"[Tool result: {_fc_text[:500]}]")
 
             # BATCH STORE: Store all tool results after the loop.
             # This is done AFTER the for-loop to avoid yield-related
@@ -5140,7 +5552,7 @@ print(json.dumps(result))
                     _present_instruction = (
                         "All workflow tools completed. Now produce your FINAL summary in this exact format:\n"
                         "1. One short paragraph (≤ 3 sentences) describing what was completed.\n"
-                        "2. A markdown table with columns | 指标 | 数值 | for the planning results (seeds, V100, D90, score, etc.).\n"
+                        "2. A markdown table with columns | Metric | Value | for the planning results (seeds, V100, D90, score, etc.).\n"
                         "3. One final sentence confirming completion.\n\n"
                         "DO NOT exceed this format. The 3D viewer is rebuilt automatically — do NOT ask the user to do it.\n"
                         "CRITICAL: Your ENTIRE response must be in the SAME language as the user's original question."
@@ -5569,10 +5981,12 @@ print(json.dumps(result))
             try:
                 import asyncio
                 loop = asyncio.new_event_loop()
-                ma_result = loop.run_until_complete(
-                    self.multi_agent_wrapper.process_request(message, self.memory.conversation_state)
-                )
-                loop.close()
+                try:
+                    ma_result = loop.run_until_complete(
+                        self.multi_agent_wrapper.process_request(message, self.memory.conversation_state)
+                    )
+                finally:
+                    loop.close()
                 _ma_routing = ma_result.get("routing")
                 if _ma_routing:
                     # Store routing intent for context building
@@ -5612,7 +6026,11 @@ print(json.dumps(result))
                     if tool_obj:
                         result = tool_obj.execute(**tc['params'])
                         step["status"] = "done"
-                        step["result"] = self._format_tool_result(tc['tool'], result, lang=_lang)
+                        # Inject FactChecker feedback for search tools
+                        _fmt = self._format_tool_result(tc['tool'], result, lang=_lang)
+                        if tc['tool'] in ("web_search", "web_fetch", "web_access") and result.success:
+                            _fmt = self._check_search_reliability(tc['tool'], _fmt)
+                        step["result"] = _fmt
                         step["metadata"] = result.metadata if result.success else {}
                         yield yield_event("step", step)
                         if result.success:
@@ -5753,6 +6171,168 @@ print(json.dumps(result))
                         response = _full_report
                 except Exception as e:
                     logger.warning(f"[chat_with_stream] Safety net report generation failed: {e}")
+
+        # ── Review phase (append-only, NO retries) ──────────────────
+        # Runs PlanReviewer + CompletenessChecker.
+        # FactChecker runs DURING tool execution (injected into search
+        # results), not here. Results are appended to the response as
+        # supplementary sections. Never triggers re-execution.
+        #
+        # SMART REVIEW: Only run review phase when needed:
+        # - If RouterAgent says review is required (_ma_routing.requires_review)
+        # - If planning tools were used (_has_plan) → always review plan quality
+        # - If complexity is "high" or "medium" → review for quality
+        # - Skip for "low" complexity or simple Q&A → save latency + tokens
+        review_sections = []
+        _needs_review = False
+        _review_reason = ""
+
+        # Check if review is needed based on routing decision
+        if _ma_routing and hasattr(_ma_routing, 'requires_review'):
+            _needs_review = _ma_routing.requires_review
+            _review_reason = f"routing.requires_review={_ma_routing.requires_review}"
+        elif _ma_routing and hasattr(_ma_routing, 'complexity'):
+            # If no explicit requires_review, use complexity as proxy
+            _needs_review = _ma_routing.complexity in ("medium", "high")
+            _review_reason = f"routing.complexity={_ma_routing.complexity}"
+        else:
+            # No routing decision available, default to reviewing
+            # (conservative: better to review than miss issues)
+            _needs_review = True
+            _review_reason = "no_routing_decision"
+
+        # Always review if planning tools were used (plan quality is critical)
+        _plan_tools = {"planning_pipeline", "seed_planning",
+                       "dose_evaluation", "dose_calc"}
+        _has_plan = any(s.get("tool") in _plan_tools
+                        for s in steps if s.get("type") == "tool")
+        if _has_plan:
+            _needs_review = True
+            _review_reason = f"{_review_reason} + has_plan"
+
+        if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled and _needs_review:
+            logger.info(f"[Review phase] Running review: {_review_reason}")
+            _lang = self.memory.user_lang
+            try:
+                import asyncio
+                _loop = asyncio.new_event_loop()
+
+                # Inject global context so sub-agents have full
+                # situational awareness. Only include decision-relevant
+                # info — skip large dicts (organ_names) and paths.
+                _oar_names = self.memory.retrieve("organ_names", {}) or {}
+                _oar_count = len(_oar_names)
+                _top_oars = sorted(
+                    _oar_names.values(),
+                    key=lambda n: (self.memory.retrieve("organ_counts", {}) or {}).get(n, 0),
+                    reverse=True
+                )[:10] if _oar_names else []
+
+                self.multi_agent_wrapper.update_global_context({
+                    "patient_info": {
+                        "tumor_type": self.memory.retrieve("tumor_type_used", ""),
+                    },
+                    "segmentation": {
+                        "ctv_voxels": self.memory.retrieve("ctv_voxels", 0),
+                        "ctv_volume_mm3": self.memory.retrieve("ctv_volume_mm3", 0),
+                        "oar_count": _oar_count,
+                        "top_oars": _top_oars,
+                    },
+                    "planning": {
+                        "total_seeds": self.memory.retrieve("total_seeds", 0),
+                        "num_trajectories": self.memory.retrieve("num_trajectories", 0),
+                    },
+                    "conversation_state": dict(self.memory.conversation_state),
+                    "user_message": message,
+                    "tool_history": [
+                        s.get("tool") for s in steps if s.get("type") == "tool"
+                    ],
+                    "lang": _lang,
+                })
+
+                # 1. Emit step events for todo list
+                _review_step = None
+                _cc_step = None
+
+                if _has_plan:
+                    step_id[0] += 1
+                    _review_step = {
+                        "id": step_id[0], "type": "tool",
+                        "title": "Quality Check", "tool": "plan_reviewer",
+                        "content": "Reviewing plan metrics...",
+                        "status": "pending",
+                    }
+                    steps.append(_review_step)
+                    yield yield_event("step", _review_step)
+
+                step_id[0] += 1
+                _cc_step = {
+                    "id": step_id[0], "type": "tool",
+                    "title": "Completeness Check", "tool": "completeness_checker",
+                    "content": "Checking requirement coverage...",
+                    "status": "pending",
+                }
+                steps.append(_cc_step)
+                yield yield_event("step", _cc_step)
+
+                # 2. Run reviews IN PARALLEL (asyncio.gather)
+                async def _run_plan_review():
+                    if not _has_plan:
+                        return ""
+                    _metrics = self.memory.retrieve("metrics", {}) or {}
+                    _config = self.memory.retrieve("plan_config", {}) or {}
+                    _plan_info = {"total_seeds": self.memory.retrieve("total_seeds", 0)}
+                    return await self.multi_agent_wrapper.review_plan_append(
+                        _metrics, _plan_info, _config, _lang
+                    )
+
+                async def _run_completeness():
+                    return await self.multi_agent_wrapper.check_completeness_append(
+                        message, response, steps, _lang
+                    )
+
+                try:
+                    _results = _loop.run_until_complete(
+                        asyncio.gather(
+                            _run_plan_review(),
+                            _run_completeness(),
+                            return_exceptions=True,
+                        )
+                    )
+                    _plan_result, _cc_result = _results
+
+                    if isinstance(_plan_result, str) and _plan_result:
+                        review_sections.append(_plan_result)
+                    if _review_step:
+                        _review_step["status"] = "done"
+                        _review_step["content"] = "Reviewed"
+                        yield yield_event("step", _review_step)
+
+                    if isinstance(_cc_result, str) and _cc_result:
+                        review_sections.append(_cc_result)
+                    _cc_step["status"] = "done"
+                    _cc_step["content"] = "Checked" if not (isinstance(_cc_result, str) and _cc_result) else "Issues found"
+                    yield yield_event("step", _cc_step)
+
+                except Exception as e:
+                    logger.debug(f"Review phase failed: {e}")
+                    if _review_step:
+                        _review_step["status"] = "done"
+                        _review_step["content"] = "Skipped"
+                    _cc_step["status"] = "done"
+                    _cc_step["content"] = "Skipped"
+
+            except Exception as e:
+                logger.debug(f"Review phase skipped: {e}")
+            finally:
+                try:
+                    _loop.close()
+                except Exception:
+                    pass
+
+        # Append review sections to response
+        if review_sections:
+            response += "\n\n---\n" + "\n\n".join(review_sections)
 
         # Final response
         yield yield_event("response", {"response": response, "steps": steps, "llm_meta": llm_meta})

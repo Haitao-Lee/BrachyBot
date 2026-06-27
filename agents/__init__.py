@@ -9,6 +9,7 @@ from .router_agent import RouterAgent
 from .plan_reviewer import PlanReviewer
 from .fact_checker import FactChecker
 from .safety_guardian import SafetyGuardian
+from .completeness_checker import CompletenessChecker
 from .orchestrator import MultiAgentOrchestrator
 from .brachy_agent_wrapper import BrachyAgentMultiAgentWrapper
 
@@ -19,6 +20,7 @@ __all__ = [
     "PlanReviewer",
     "FactChecker",
     "SafetyGuardian",
+    "CompletenessChecker",
     "MultiAgentOrchestrator",
     "BrachyAgentMultiAgentWrapper",
 ]

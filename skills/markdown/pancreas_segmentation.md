@@ -3,9 +3,8 @@ name: pancreas_segmentation
 description: Pancreas tumor and OAR segmentation
 category: segmentation
 triggers:
-  - 胰腺
   - pancreas
-  - 胰腺癌
+  - pancreatic cancer
 tool_sequence:
   - ctv_segmentation
   - oar_segmentation

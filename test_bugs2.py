@@ -32,7 +32,7 @@ def run():
         print("\n=== PHASE 2: Run planning via chat ===")
         chat_input = page.query_selector('#chatInput')
         if chat_input:
-            chat_input.fill("请执行放射性粒子植入规划，这是一名胰腺肿瘤患者")
+            chat_input.fill("Perform brachytherapy planning for a pancreatic tumor patient")
             chat_input.press("Enter")
             print("Sent planning request")
         else:

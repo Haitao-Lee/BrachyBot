@@ -11,6 +11,34 @@ try:
     from . import _reward_core
 except ImportError:
     _reward_core = None
+
+
+def _dvh_oar_jit_fallback(dose_flat, target_idx, non_target_idx,
+                          in_lowest_dose, out_highest_dose, count_out=False):
+    """Pure numpy fallback for _reward_core._dvh_oar_jit when JIT extension unavailable.
+
+    Returns (dvh_rate, out_damage):
+      dvh_rate: fraction of target voxels with dose >= in_lowest_dose
+      out_damage: if count_out, penalty for non-target voxels exceeding out_highest_dose;
+                  else 0.0
+    """
+    target_doses = dose_flat[target_idx]
+    n_target = len(target_doses)
+    if n_target == 0:
+        return 0.0, 0.0
+    covered = np.count_nonzero(target_doses >= in_lowest_dose)
+    dvh_rate = float(covered) / float(n_target)
+
+    if not count_out:
+        return dvh_rate, 0.0
+
+    non_target_doses = dose_flat[non_target_idx]
+    exceed_count = np.count_nonzero(non_target_doses > out_highest_dose)
+    if exceed_count == 0:
+        out_damage = 0.0
+    else:
+        out_damage = float(n_target) * dvh_rate / float(exceed_count)
+    return dvh_rate, out_damage
 from typing import Tuple
 try:
     import slicer
@@ -240,14 +268,16 @@ class SeedPlacementReward:
             non_target_idx_c = np.ascontiguousarray(self.non_target_idx, dtype=np.int32)
 
             if not protect_OAR:
-                cur_DVH_rate, out_damage = _reward_core._dvh_oar_jit(
+                _fn = _reward_core._dvh_oar_jit if _reward_core is not None else _dvh_oar_jit_fallback
+                cur_DVH_rate, out_damage = _fn(
                     dose_flat, target_idx_c, non_target_idx_c,
                     float(self.in_lowest_dose), float(self.out_highest_dose),
                     count_out=False
                 )
                 reward = cur_DVH_rate
             else:
-                cur_DVH_rate, out_damage = _reward_core._dvh_oar_jit(
+                _fn = _reward_core._dvh_oar_jit if _reward_core is not None else _dvh_oar_jit_fallback
+                cur_DVH_rate, out_damage = _fn(
                     dose_flat, target_idx_c, non_target_idx_c,
                     float(self.in_lowest_dose), float(self.out_highest_dose),
                     count_out=True
@@ -257,7 +287,6 @@ class SeedPlacementReward:
 
             return reward, cur_radiation, cur_DVH_rate, cur_seed_radiation
         except Exception as e:
-            print(f"SeedPlacementReward.forward error: {str(e)}")
             return 0.0, cur_radiation, 0.0, np.zeros_like(cur_radiation)
 
 
@@ -644,13 +673,11 @@ class HighLevelEnv(gym.Env):
                     else:
                         low_env.done = True
                 except Exception as e:
-                    print(f"HighLevelEnv low-level step error: {str(e)}")
                     low_env.done = True
 
             planned_res = self.planned_position2planned_res()
             return total_reward, planned_res, cur_DVH_rate, mask, self.group_idx, self.low_level_state_space, low_env, low_agent
         except Exception as e:
-            print(f"HighLevelEnv.step error: {str(e)}")
             planned_res = self.planned_position2planned_res() if self.group_idx is not None else []
             return -np.inf, planned_res, 0.0, None, self.group_idx, self.low_level_state_space if hasattr(self, 'low_level_state_space') else [], LowLevelEnv([]), REINFORCE(1)
 
@@ -699,15 +726,22 @@ def DVH2Rewards(plan_res, radiation_volume, target_value, out_highest_dose, cur_
             total_radiation += single_seed_radiation
 
     # Compute DVH rate
+    # mask_volume is 0.0/1.0 (float), use == 0 to find non-target voxels
     mask_volume = (radiation_volume == target_value).astype(float)
-    non_target_idx = np.where(mask_volume != target_value)
-    target_idx = np.where(mask_volume == target_value)
+    non_target_idx = np.where(mask_volume == 0)
+    target_idx = np.where(mask_volume == 1)
 
     non_target_voxels = total_radiation[non_target_idx]
-    out_damage = target_idx.size * cur_DVH_rate / np.count_nonzero(non_target_voxels > out_highest_dose)
+    exceed_count = np.count_nonzero(non_target_voxels > out_highest_dose)
 
-    reward = min(cur_DVH_rate, DVH_rate) + ((cur_DVH_rate - DVH_rate) >= 0) * ((out_damage))
-    
+    # Guard against division by zero: no voxels exceed threshold = no damage
+    if exceed_count == 0:
+        out_damage = 0.0
+    else:
+        out_damage = len(target_idx[0]) * cur_DVH_rate / exceed_count
+
+    reward = min(cur_DVH_rate, DVH_rate) + ((cur_DVH_rate - DVH_rate) >= 0) * out_damage
+
     return reward
 
 
@@ -758,7 +792,6 @@ def reinforcement_planning(
     Hierarchical reinforcement learning driver for a single patient case.
     Logic preserved; internal calls use optimized env and caches.
     """
-    import traceback as _tb
     try:
         device = next(dose_cal_model.parameters()).device
 
@@ -791,7 +824,6 @@ def reinforcement_planning(
         best_low_agent = None
         best_D90 = 0
     
-        print("Baseline planning...")
         for idx, elem in enumerate(target_level_traj):
             try:
                 progressDialog.setValue(65)
@@ -826,7 +858,6 @@ def reinforcement_planning(
                     best_D90 = D90
                 del trajs_radiations
             except Exception as e:
-                print(f"Baseline planning error at trajectory {idx}: {str(e)}")
                 continue
 
         best_low_env = LowLevelEnv(best_low_level_state_space)
@@ -860,7 +891,6 @@ def reinforcement_planning(
                     
                     low_agent.finish_episode()
                 except Exception as e:
-                    print(f"Global optimization episode error: {str(e)}")
                     try:
                         low_agent.finish_episode()
                     except Exception:
@@ -956,7 +986,6 @@ def reinforcement_planning(
                             else:
                                 best_low_env.done = True
                         except Exception as e:
-                            print(f"Local refinement step error: {str(e)}")
                             best_low_env.done = True
 
                     planned_res = []
@@ -988,7 +1017,6 @@ def reinforcement_planning(
                     del cur_radiation
                     best_low_agent.finish_episode()
                 except Exception as e:
-                    print(f"Local refinement episode error: {str(e)}")
                     try:
                         best_low_agent.finish_episode()
                     except Exception:
@@ -1017,19 +1045,15 @@ def reinforcement_planning(
 
                     low_agent.finish_episode()
                 except Exception as e:
-                    print(f"Standard optimization episode error: {str(e)}")
                     try:
                         low_agent.finish_episode()
                     except Exception:
                         pass
                     continue
         end_time = time.time()
-        print(f"Total time for reinforcement learning: {end_time - start_time:.2f} seconds")
                 
         return best_plan, best_reward
     except Exception as e:
-        print(f"Reinforcement planning error: {str(e)}")
-        print(_tb.format_exc())
         if best_plan is not None:
             return best_plan, best_reward
         return [], -np.inf
