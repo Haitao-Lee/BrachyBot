@@ -7,94 +7,132 @@
       "id": "EV001",
       "input": "What is the V100 of this plan?",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": ["V100", "%"],
+      "expected_keywords": [
+        "V100",
+        "%"
+      ],
       "expected_answer": "90",
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证V100在临床合理范围（>90%）。考核机制：V100>90%表示剂量充分覆盖靶区。验证方式：检查响应中V100数值>90%。这是临床计划可接受性的核心指标。"
+      "_comment": "Purpose: Verify V100 is in clinically acceptable range (>90%). Mechanism: V100>90% indicates adequate dose coverage of target. Verification: Check V100 value >90% in response. This is the core indicator of clinical plan acceptability."
     },
     {
       "id": "EV002",
       "input": "What is the D90 value?",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": ["D90", "Gy"],
+      "expected_keywords": [
+        "D90",
+        "Gy"
+      ],
       "expected_answer": "100",
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证D90在临床合理范围（>100 Gy）。考核机制：D90>100 Gy表示靶区最低90%体积接受足够剂量。验证方式：检查响应中D90数值>100 Gy。"
+      "_comment": "Purpose: Verify D90 is in clinically acceptable range (>100 Gy). Mechanism: D90>100 Gy indicates the lowest 90% of target volume receives sufficient dose. Verification: Check D90 value >100 Gy in response."
     },
     {
       "id": "EV003",
       "input": "Does the dose cover the CTV adequately?",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": ["coverage", "CTV", "dose"],
+      "expected_keywords": [
+        "coverage",
+        "CTV",
+        "dose"
+      ],
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证剂量覆盖CTV的评估。考核机制：bot评估CTV coverage并给出结论。验证方式：检查响应中有coverage评估和CTV描述。"
+      "_comment": "Purpose: Verify dose coverage assessment for CTV. Mechanism: Bot evaluates CTV coverage and provides conclusion. Verification: Check response has coverage assessment and CTV description."
     },
     {
       "id": "EV004",
       "input": "Are any OAR constraints violated in this plan?",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": ["constraint", "OAR", "check"],
+      "expected_keywords": [
+        "constraint",
+        "OAR",
+        "check"
+      ],
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证OAR约束检查结果合理。考核机制：bot检查OAR约束并报告违规情况。验证方式：检查响应中有具体OAR名和约束值。"
+      "_comment": "Purpose: Verify OAR constraint check results are reasonable. Mechanism: Bot checks OAR constraints and reports violations. Verification: Check response has specific OAR names and constraint values."
     },
     {
       "id": "EV005",
       "input": "What is the plan quality score?",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": ["score", "quality", "plan"],
+      "expected_keywords": [
+        "score",
+        "quality",
+        "plan"
+      ],
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证plan quality评分存在且合理。考核机制：plan_quality_scorer返回具体分数。验证方式：检查响应中有quality score描述。"
+      "_comment": "Purpose: Verify plan quality score exists and is reasonable. Mechanism: plan_quality_scorer returns specific score. Verification: Check response has quality score description."
     },
     {
       "id": "EV006",
       "input": "Show me the DVH data for all organs",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": ["DVH", "organ", "dose"],
+      "expected_keywords": [
+        "DVH",
+        "organ",
+        "dose"
+      ],
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证DVH数据包含多个器官。考核机制：DVH曲线数据覆盖CTV和至少3个OAR。验证方式：检查响应中多个organ的DVH描述。"
+      "_comment": "Purpose: Verify DVH data contains multiple organs. Mechanism: DVH curve data covers CTV and at least 3 OARs. Verification: Check response has DVH descriptions for multiple organs."
     },
     {
       "id": "EV007",
       "input": "What approach direction was used for this pancreatic case?",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": ["posterior", "pancreas", "approach"],
+      "expected_keywords": [
+        "posterior",
+        "pancreas",
+        "approach"
+      ],
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证胰腺病例使用posterior approach。考核机制：ref_direc=[0,-1,0] posterior方向被正确应用。验证方式：检查响应中有posterior和pancreas描述。这是2026-06-13修复的关键bug。"
+      "_comment": "Purpose: Verify pancreatic case uses posterior approach. Mechanism: ref_direc=[0,-1,0] posterior direction is correctly applied. Verification: Check response has posterior and pancreas description. This was a critical bug fixed on 2026-06-13."
     },
     {
       "id": "EV008",
       "input": "How many seeds were placed in this plan?",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": ["seed", "placed", "number"],
+      "expected_keywords": [
+        "seed",
+        "placed",
+        "number"
+      ],
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证seed数量>0。考核机制：seed_planning成功放置种子点。验证方式：检查响应中有seed数量且>0。"
+      "_comment": "Purpose: Verify seed count >0. Mechanism: seed_planning successfully placed seed points. Verification: Check response has seed count >0."
     },
     {
       "id": "EV009",
       "input": "Generate a comprehensive treatment report",
       "setup": "Upload CT + full pipeline",
-      "expected_keywords": ["report", "treatment", "comprehensive"],
+      "expected_keywords": [
+        "report",
+        "treatment",
+        "comprehensive"
+      ],
       "expected_tool": "report_generator",
       "pass_threshold": 0.5,
       "difficulty": "medium",
-      "_comment": "测试目的：验证完整报告包含所有阶段。考核机制：report_generator生成包含分析/分割/计划/剂量/评估的综合报告。验证方式：检查响应中report包含多阶段内容。"
+      "_comment": "Purpose: Verify complete report contains all stages. Mechanism: report_generator generates comprehensive report with analysis/segmentation/planning/dose/evaluation. Verification: Check response report contains multi-stage content."
     },
     {
       "id": "EV010",
       "input": "Run the complete pipeline and tell me if the plan is clinically acceptable",
       "setup": "Upload CT + segmentation",
-      "expected_keywords": ["plan", "acceptable", "clinical"],
+      "expected_keywords": [
+        "plan",
+        "acceptable",
+        "clinical"
+      ],
       "pass_threshold": 0.5,
       "difficulty": "hard",
-      "_comment": "测试目的：验证端到端临床可用性评估。考核机制：从CT到report的完整pipeline执行，且bot给出临床可接受性结论。验证方式：检查响应中有clinical acceptability判断。"
+      "_comment": "Purpose: Verify end-to-end clinical usability assessment. Mechanism: Full pipeline from CT to report executes, and bot provides clinical acceptability conclusion. Verification: Check response has clinical acceptability judgment."
     }
   ]
 }

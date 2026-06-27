@@ -45,9 +45,16 @@ class PlanningNode:
 
     @property
     def ucb_score(self) -> float:
+        """Fallback UCB without tree context — uses own visits as approximation."""
         if self.visits == 0:
             return float("inf")
-        parent_visits = 1
+        # Without parent reference, use own visits as proxy (log(N)/n ≈ log(n)/n)
+        return self.value + 1.4 * math.sqrt(math.log(max(self.visits, 2)) / self.visits)
+
+    def ucb_score_with_parent(self, parent_visits: int) -> float:
+        """Standard UCB1: value + c * sqrt(ln(N) / n) where N = parent visits, n = own visits."""
+        if self.visits == 0:
+            return float("inf")
         return self.value + 1.4 * math.sqrt(math.log(max(parent_visits, 2)) / self.visits)
 
 
@@ -111,10 +118,11 @@ class PlanningTreeSearch:
         while current.children and not current.is_terminal:
             best_child = None
             best_score = -1
+            parent_visits = current.visits  # Use actual parent visit count for UCB1
             for child_id in current.children:
                 child = self._find_node(child_id)
-                if child and child.ucb_score > best_score:
-                    best_score = child.ucb_score
+                if child and child.ucb_score_with_parent(parent_visits) > best_score:
+                    best_score = child.ucb_score_with_parent(parent_visits)
                     best_child = child
             if best_child:
                 current = best_child

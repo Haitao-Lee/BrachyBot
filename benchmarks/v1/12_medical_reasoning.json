@@ -523,7 +523,7 @@
     },
     {
       "id": "Q0831",
-      "input": "A multidisciplinary team is treating a 60-year-old woman with locally advanced vulvar cancer. The tumor is 4 cm and involves the clitoris and urethral meatus. Standard surgical treatment would require radical vulvectomy with尿流改道. The team is considering neoadjuvant chemoradiation followed by conservative surgery, or primary chemoradiation with brachytherapy boost. Analyze the decision-making process for this complex case.",
+      "input": "A multidisciplinary team is treating a 60-year-old woman with locally advanced vulvar cancer. The tumor is 4 cm and involves the clitoris and urethral meatus. Standard surgical treatment would require radical vulvectomy withurinary diversion. The team is considering neoadjuvant chemoradiation followed by conservative surgery, or primary chemoradiation with brachytherapy boost. Analyze the decision-making process for this complex case.",
       "expected_keywords": [
         "vulvar cancer",
         "urethral involvement",

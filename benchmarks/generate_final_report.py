@@ -5,8 +5,9 @@ Generate final benchmark report from all agent reports.
 import os, glob, re
 from datetime import datetime
 
-REPORT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/reports_v2"
-FINAL_REPORT = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/reports_v2/final_report.md"
+_ROOT = str(Path(__file__).resolve().parent.parent)
+REPORT_DIR = os.path.join(_ROOT, "docs", "benchmark_result", "reports_v2")
+FINAL_REPORT = os.path.join(REPORT_DIR, "final_report.md")
 
 def parse_agent_report(report_path):
     """Parse an agent report and extract key metrics."""

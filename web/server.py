@@ -643,6 +643,8 @@ def create_app(config: Optional[Dict] = None):
         hi = m.get("hi")
         gi = m.get("gi")
         score = m.get("plan_score")
+        # Default 120 Gy: I-125 prescription for pancreatic brachytherapy.
+        # Matches DOSE_SCALE (model output 1.0 = 120 Gy).
         prescribed = m.get("prescribed_dose", 120.0)
         if language == "zh":
             lines = ["**剂量学评估与临床解读**"]
@@ -2510,10 +2512,13 @@ def create_app(config: Optional[Dict] = None):
                     dp_config = _json.load(f)
                 display_3d = dp_config.get("display_3d", {})
             # Include the prescription dose so the frontend can compute
-            # absolute Gy from relative multipliers. The planning pipeline
-            # uses DOSE_SCALE=120 to convert normalized→Gy in dose_eval.
-            # in_lowest_energy is the normalized threshold (default 1.0),
-            # so prescription_gy = in_lowest_energy * DOSE_SCALE.
+            # absolute Gy from relative multipliers.
+            #
+            # DOSE_SCALE (120.0): the myDoseNet dose prediction model was
+            # trained with labels where output 1.0 = 120 Gy.  All internal
+            # dose values are in normalized units; multiply by 120 to get Gy.
+            # This constant is shared with planning_pipeline.py and
+            # AgenticSys.py — keep them in sync if the model changes.
             _ile = config.get("in_lowest_energy", 1.0)
             display_3d["_prescriptionGy"] = float(_ile) * 120.0
 
@@ -2842,8 +2847,9 @@ def create_app(config: Optional[Dict] = None):
             # Read prescription in Gy: prefer memory dose_metrics
             # (already in normalized units * DOSE_SCALE) then fall
             # back to reportForm, then default 120 Gy.
+            # DOSE_SCALE: myDoseNet model output 1.0 = 120 Gy.
             DOSE_SCALE = 120.0
-            prescription_gy = 120.0
+            prescription_gy = 120.0  # I-125 pancreatic default
             try:
                 dm = agent.memory.retrieve("dose_metrics") or {}
                 pnorm = dm.get("prescribed_dose")
@@ -2857,9 +2863,12 @@ def create_app(config: Optional[Dict] = None):
                     prescription_gy = float(rf["planning"]["prescriptionGy"])
             except Exception:
                 pass
-            # The dose array is in ABSOLUTE Gy units (values up to ~11000).
-            # Convert relative multipliers → absolute Gy for find_contours.
-            iso_values_gy = [float(v) * prescription_gy for v in iso_values_rel]
+            # The dose array is in NORMALIZED units (model output, where 1.0 ≈ prescription dose).
+            # iso_values_rel are relative multipliers (e.g. 1.0, 1.5, 2.0 × Rx).
+            # Since the dose array is already in the same normalized space, use iso_values_rel directly.
+            # DOSE_SCALE=120 converts normalized→Gy for display labels only, NOT for contour levels.
+            iso_values_gy = [float(v) * prescription_gy for v in iso_values_rel]  # Gy for labels
+            iso_values_contour = [float(v) for v in iso_values_rel]  # normalized for find_contours
 
             # Extract 2D slice from 3D dose array
             if axis == 'axial' or axis == 'z':
@@ -2876,11 +2885,11 @@ def create_app(config: Optional[Dict] = None):
             d_max = float(dose_np.max())
 
             # Filter iso_values to those within the dose range of this slice.
-            # Use Gy levels (matching Gy dose array).
+            # Use normalized levels (matching normalized dose array).
             s_min = float(slice_2d.min())
             s_max = float(slice_2d.max())
-            valid_levels = [(g, r) for g, r in zip(iso_values_gy, iso_values_rel)
-                            if s_min < g < s_max]
+            valid_levels = [(c, g, r) for c, g, r in zip(iso_values_contour, iso_values_gy, iso_values_rel)
+                            if s_min < c < s_max]
 
             if not valid_levels:
                 return jsonify({
@@ -2892,9 +2901,9 @@ def create_app(config: Optional[Dict] = None):
 
             # Generate contour lines using marching squares
             contours_data = []
-            for i, (level_gy, level_rel) in enumerate(valid_levels):
+            for i, (level_contour, level_gy, level_rel) in enumerate(valid_levels):
                 try:
-                    contours = ski_measure.find_contours(slice_2d, level=level_gy)
+                    contours = ski_measure.find_contours(slice_2d, level=level_contour)
                     # Convert to list of [row, col] coordinate arrays
                     contour_lines = []
                     for contour in contours:

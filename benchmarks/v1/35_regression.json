@@ -7,25 +7,25 @@
     {
       "id": "REG001",
       "type": "regression",
-      "input": "你好",
+      "input": "Hello",
       "expected_keywords": [
-        "你好",
-        "您好",
         "hello",
-        "hi"
+        "hi",
+        "Hello",
+        "Hi"
       ],
       "forbidden_keywords": [
         "clinical_kb",
         "search",
         "urethra",
-        "让我搜索"
+        "let me search"
       ],
       "related_fix": "commit a526f39",
       "description": "Greeting should NOT trigger clinical_kb tool",
       "pass_threshold": 0.7,
       "difficulty": "easy",
       "user_type": "beginner",
-      "_comment": "REGRESSION: Previously, saying '你好' caused the system to search clinical_kb for 'urethra'. This was fixed by removing the 'TOP PRIORITY' section from the system prompt."
+      "_comment": "REGRESSION: Previously, saying a Chinese greeting caused the system to search clinical_kb for 'urethra'. This was fixed by removing the 'TOP PRIORITY' section from the system prompt."
     },
     {
       "id": "REG003",
@@ -39,7 +39,7 @@
       "forbidden_keywords": [
         "clinical_kb",
         "search",
-        "让我"
+        "let me"
       ],
       "related_fix": "commit a526f39",
       "description": "New user greeting should be natural, not tool-focused",

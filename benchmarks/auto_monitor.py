@@ -9,10 +9,11 @@ import os, sys, time, subprocess, signal, json, glob, re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-SCREENSHOT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots_v2"
-REPORT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/reports_v2"
-BENCHMARK_DIR = "/home/lht/snap/brachyplan/BrachyBot/benchmarks/v2"
-LOG_FILE = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/auto_monitor_v2.log"
+_ROOT = str(Path(__file__).resolve().parent.parent)
+SCREENSHOT_DIR = os.path.join(_ROOT, "docs", "benchmark_result", "screenshots_v2")
+REPORT_DIR = os.path.join(_ROOT, "docs", "benchmark_result", "reports_v2")
+BENCHMARK_DIR = os.path.join(_ROOT, "benchmarks", "v2")
+LOG_FILE = os.path.join(_ROOT, "docs", "benchmark_result", "auto_monitor_v2.log")
 
 # Agent configuration (v2: 8 categories)
 AGENTS = {
@@ -31,14 +32,14 @@ def log_message(message, level="INFO"):
     try:
         with open(LOG_FILE, 'a', encoding='utf-8') as f:
             f.write(log_line + '\n')
-    except:
+    except Exception:
         pass
 
 def get_screenshot_count():
     """Count total screenshots."""
     try:
         return len(glob.glob(f"{SCREENSHOT_DIR}/*.png"))
-    except:
+    except Exception:
         return 0
 
 def get_agent_processes():
@@ -57,7 +58,7 @@ def get_agent_processes():
                             agent_id = int(arg)
                             processes[agent_id] = pid
         return processes
-    except:
+    except Exception:
         return {}
 
 def check_agent_progress(agent_id, last_check_time, last_screenshot_count):
@@ -101,7 +102,7 @@ def check_compliance(agent_id):
             if safety_leak_count > 0:
                 return False, f"Safety leak detected: {safety_leak_count}"
 
-        except:
+        except Exception:
             pass
 
     return True, "Compliant"
@@ -122,7 +123,7 @@ def stop_agent(agent_id):
                     # Force kill if still running
                     try:
                         os.kill(int(pid), signal.SIGKILL)
-                    except:
+                    except Exception:
                         pass
                     return True
     except Exception as e:

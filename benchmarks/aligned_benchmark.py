@@ -9,10 +9,11 @@ import json, os, sys, time, glob, re
 from datetime import datetime
 from pathlib import Path
 
-SCREENSHOT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/run_20260624/screenshots"
-REPORT_DIR = "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/run_20260624/reports"
-BENCHMARK_DIR = "/home/lht/snap/brachyplan/BrachyBot/benchmarks/v2"
-BASE_URL = "http://localhost:8080"
+_BRACHYBOT_ROOT = str(Path(__file__).resolve().parent.parent)
+SCREENSHOT_DIR = os.path.join(_BRACHYBOT_ROOT, "docs", "benchmark_result", "latest", "screenshots")
+REPORT_DIR = os.path.join(_BRACHYBOT_ROOT, "docs", "benchmark_result", "latest", "reports")
+BENCHMARK_DIR = os.path.join(_BRACHYBOT_ROOT, "benchmarks", "v2")
+BASE_URL = os.environ.get("BRACHY_BASE_URL", "http://localhost:8080")
 
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 os.makedirs(REPORT_DIR, exist_ok=True)
@@ -181,18 +182,18 @@ def check_language_consistency(input_text, response_text):
 # contain for us to credit the tool as "called". Conservative — false negatives
 # are safer than false positives.
 _TOOL_MARKERS = {
-    "ctv_segmentation":  [r"CTV.{0,30}(?:volume|体积).{0,20}\d", r"segmentation completed", r"CTV 体积"],
-    "oar_segmentation":  [r"\d+\s*(?:organs|器官)", r"OAR.{0,20}segmented", r"OAR 分割"],
+    "ctv_segmentation":  [r"CTV.{0,30}(?:volume|体积).{0,20}\d", r"segmentation completed", r"CTV (?:体积|volume)"],
+    "oar_segmentation":  [r"\d+\s*(?:organs|器官)", r"OAR.{0,20}segmented", r"OAR (?:分割|segmented)"],
     "dose_engine":       [r"\bD90\b", r"\bV100\b", r"\bGy\b.{0,30}\b(CTV|PTV|target)"],
     "dose_evaluation":   [r"DVH", r"D2cc", r"constraint"],
-    "trajectory_init":   [r"trajectory", r"needle", r"轨迹", r"candidates"],
+    "trajectory_init":   [r"trajectory", r"needle", r"(?:轨迹|trajectory)", r"candidates"],
     "trajectory_refine": [r"refine", r"trajectory", r"collision", r"constraint"],
-    "seed_planning":     [r"seed", r"plan", r"(?:种植|植入)"],
+    "seed_planning":     [r"seed", r"plan", r"(?:种植|植入|implant|placed)"],
     "planning_pipeline": [r"trajectory", r"seed", r"dose", r"evaluation"],
     "dvh_curve":         [r"bin_centers", r"cumulative", r"DVH"],
     "knowledge_query":   [r"ABS", r"GEC-ESTRO", r"QUANTEC", r"guideline"],
     "web_search":        [r"http", r"source", r"search", r"PMID|doi"],
-    "case_memory":       [r"saved", r"case", r"记忆"],
+    "case_memory":       [r"saved", r"case", r"(?:记忆|memory|record)"],
     "plan_comparator":   [r"compare", r"better", r"recommend"],
     "plan_quality_scorer": [r"composite", r"score", r"coverage", r"homogeneity"],
     "oar_constraint_checker": [r"OAR", r"constraint", r"violation", r"D2cc"],
@@ -405,7 +406,7 @@ def run_test_with_aligned_screenshot(test_case, cat_num, agent_id, case_index):
             page.wait_for_selector(input_selector, timeout=10000)
 
             steps = _parse_setup(setup_text)
-            ct_path = "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+            ct_path = os.environ.get("BRACHY_TEST_CT", os.path.join(_BRACHYBOT_ROOT, "..", "data", "RuijinCases", "10", "CTyuanaju.nii"))
             send_button = page.locator('.chat-send')
             for action, do_it in steps:
                 if not do_it:
@@ -709,7 +710,7 @@ def run_multi_turn_test(test_case, cat_num, agent_id, case_index):
                     setup_text = first_turn_setup
 
             steps = _parse_setup(setup_text)
-            ct_path = "/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii"
+            ct_path = os.environ.get("BRACHY_TEST_CT", os.path.join(_BRACHYBOT_ROOT, "..", "data", "RuijinCases", "10", "CTyuanaju.nii"))
             send_button = page.locator('.chat-send')
             for action, do_it in steps:
                 if not do_it:

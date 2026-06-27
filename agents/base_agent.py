@@ -151,6 +151,7 @@ class LLMCapableAgent(BaseAgent):
                 AgentRole.PLAN_REVIEWER: "plan_reviewer",
                 AgentRole.FACT_CHECKER: "fact_checker",
                 AgentRole.SAFETY_GUARDIAN: "safety_guardian",
+                AgentRole.COMPLETENESS_CHECKER: "completeness_checker",
             }
             prompt_name = prompt_map.get(self.role)
             if prompt_name:

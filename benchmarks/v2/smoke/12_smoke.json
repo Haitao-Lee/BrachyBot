@@ -5,12 +5,12 @@
   "cases": [
     {
       "id": "LN001",
-      "input": "请分析图像",
+      "input": "Analyze the image",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [
-        "维度",
-        "体素",
+        "dimensions",
+        "voxels",
         "HU"
       ],
       "forbidden_keywords": [
@@ -32,8 +32,8 @@
         "HU"
       ],
       "forbidden_keywords": [
-        "维度",
-        "体素"
+        "dimensions",
+        "voxels"
       ],
       "pass_threshold": 0.6,
       "difficulty": "easy",

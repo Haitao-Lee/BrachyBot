@@ -5,13 +5,13 @@
   "cases": [
     {
       "id": "LN001",
-      "input": "请分析图像",
+      "input": "Analyze the image",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [
-        "维度",
-        "体素",
-        "扫描"
+        "dimensions",
+        "voxels",
+        "scan"
       ],
       "forbidden_keywords": [
         "Dimensions",
@@ -32,8 +32,8 @@
         "Scan"
       ],
       "forbidden_keywords": [
-        "维度",
-        "体素"
+        "dimensions",
+        "voxels"
       ],
       "pass_threshold": 0.6,
       "difficulty": "easy",
@@ -41,12 +41,12 @@
     },
     {
       "id": "LN003",
-      "input": "请分割图像",
+      "input": "Segment the image",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [
-        "分割",
-        "完成"
+        "segmentation",
+        "completed"
       ],
       "forbidden_keywords": [
         "segmentation completed"
@@ -65,7 +65,7 @@
         "completed"
       ],
       "forbidden_keywords": [
-        "分割完成"
+        "segmentation completed"
       ],
       "pass_threshold": 0.6,
       "difficulty": "easy",
@@ -73,12 +73,12 @@
     },
     {
       "id": "LN005",
-      "input": "分析并分割图像",
+      "input": "Analyze and segment the image",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [
-        "分析",
-        "分割"
+        "analysis",
+        "segmentation"
       ],
       "forbidden_keywords": [
         "Analysis",
@@ -98,8 +98,8 @@
         "Segmentation"
       ],
       "forbidden_keywords": [
-        "分析",
-        "分割"
+        "analysis",
+        "segmentation"
       ],
       "pass_threshold": 0.6,
       "difficulty": "medium",

@@ -80,9 +80,9 @@
     },
     {
       "id": "CM006",
-      "input": "我之前做过一个肝癌的plan，帮我找出来",
+      "input": "I previously did a liver cancer plan, help me find it",
       "expected_keywords": [
-        "肝癌",
+        "liver cancer",
         "plan"
       ],
       "forbidden_keywords": [
@@ -94,9 +94,9 @@
     },
     {
       "id": "CM007",
-      "input": "这个病例的V100达到了98%，帮我存档",
+      "input": "This case V100 reached 98%, archive it for me",
       "expected_keywords": [
-        "存档",
+        "archive",
         "V100"
       ],
       "forbidden_keywords": [

@@ -3,7 +3,7 @@
 **🔴 Search query rules (CRITICAL):**
 - Use the user's EXACT keywords as the search query. Do NOT add extra context.
 - The search tool automatically generates query variants, translates, and expands synonyms. You do NOT need to do this.
-- ❌ WRONG: "DeepRare 深度学习 放疗 医学图像" (you added "深度学习 放疗 医学图像")
+- ❌ WRONG: "DeepRare deep learning radiotherapy medical imaging" (you added extra context)
 - ✅ RIGHT: "DeepRare" (just the user's keyword)
 - Use simple keywords (1-2 words), not full sentences
 - PubMed works best with simple terms

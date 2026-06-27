@@ -39,7 +39,9 @@ class SafetyGuardian(BaseAgent):
     ]
 
     def __init__(self, llm_callback=None):
-        super().__init__(AgentRole.SAFETY_GUARDIAN, llm_callback)
+        # llm_callback accepted for interface compat but NOT used.
+        # This agent is purely deterministic (threshold comparisons).
+        super().__init__(AgentRole.SAFETY_GUARDIAN, None)
 
     async def process(self, message: AgentMessage) -> AgentResponse:
         content = message.content

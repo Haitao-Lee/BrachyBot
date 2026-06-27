@@ -505,7 +505,7 @@
     },
     {
       "id": "Q0596",
-      "input": "Evaluate the quality of an endometrial cancer vaginal cuff brachytherapy plan where the阴道 cylinder length is 4 cm, the prescribed dose is 21 Gy in 3 fractions, and the treatment depth at the vaginal surface is 5 mm. The D2cc to the rectum is 48 Gy EQD2 and the D2cc to the bladder is 52 Gy EQD2. Are these dose parameters adequate for tumor control while maintaining acceptable OAR doses?",
+      "input": "Evaluate the quality of an endometrial cancer vaginal cuff brachytherapy plan where the vaginal cylinder length is 4 cm, the prescribed dose is 21 Gy in 3 fractions, and the treatment depth at the vaginal surface is 5 mm. The D2cc to the rectum is 48 Gy EQD2 and the D2cc to the bladder is 52 Gy EQD2. Are these dose parameters adequate for tumor control while maintaining acceptable OAR doses?",
       "expected_keywords": [
         "vaginal cylinder",
         "prescription",

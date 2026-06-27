@@ -129,15 +129,15 @@ class ExperienceMemory:
     def _auto_tag(self, intent: str, tool_chain: List[Dict]) -> List[str]:
         tags = []
         intent_lower = intent.lower()
-        if any(k in intent_lower for k in ["segment", "分割"]):
+        if any(k in intent_lower for k in ["segment", "segmentation"]):
             tags.append("segmentation")
-        if any(k in intent_lower for k in ["plan", "计划", "规划"]):
+        if any(k in intent_lower for k in ["plan", "planning"]):
             tags.append("planning")
-        if any(k in intent_lower for k in ["eval", "评估", "dose", "剂量"]):
+        if any(k in intent_lower for k in ["eval", "evaluation", "dose", "dosimetry"]):
             tags.append("evaluation")
-        if any(k in intent_lower for k in ["optim", "优化", "adjust", "调整"]):
+        if any(k in intent_lower for k in ["optim", "optimize", "adjust", "refine"]):
             tags.append("optimization")
-        if any(k in intent_lower for k in ["intra", "术中", "replan", "重规划"]):
+        if any(k in intent_lower for k in ["intra", "intraop", "replan", "replanning"]):
             tags.append("intraoperative")
         tools_used = [t.get("tool", "") for t in tool_chain]
         if "ctv_segmentation" in tools_used:

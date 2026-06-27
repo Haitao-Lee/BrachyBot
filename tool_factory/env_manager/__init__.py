@@ -3,6 +3,12 @@ Environment Manager Tool
 ========================
 Allows the agent to create virtual environments, install packages,
 and manage Python dependencies dynamically.
+
+Security layers (added 2026-06-27):
+- Path traversal protection on env_name
+- Package name validation (blocks known malicious patterns)
+- Dangerous command interception in run_in_env
+- Audit logging for all operations
 """
 
 import os
@@ -12,6 +18,8 @@ import logging
 import subprocess
 import venv
 import shutil
+import re
+import time
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 
@@ -23,6 +31,43 @@ logger = logging.getLogger(__name__)
 ENVS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "envs")
 os.makedirs(ENVS_DIR, exist_ok=True)
 
+# Audit log path
+_AUDIT_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "audit.log")
+
+
+def _audit(action: str, detail: str, env_name: str = ""):
+    """Append an audit entry. Never raises."""
+    try:
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        entry = f"[{ts}] action={action} env={env_name!r} detail={detail}\n"
+        with open(_AUDIT_LOG, "a", encoding="utf-8") as f:
+            f.write(entry)
+    except Exception:
+        pass  # audit failure must not block the operation
+
+
+# ─── Path traversal guard ───────────────────────────────────────────
+_ENV_NAME_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$')
+
+
+def _validate_env_name(name: str) -> Optional[str]:
+    """Return None if valid, error message if invalid."""
+    if not name:
+        return "env_name is required"
+    if not _ENV_NAME_RE.match(name):
+        return (
+            f"Invalid env_name '{name}'. "
+            "Must be 1-64 chars: alphanumeric, dot, hyphen, underscore. "
+            "Must start with alphanumeric."
+        )
+    # Resolve the path and ensure it stays inside ENVS_DIR
+    resolved = (Path(ENVS_DIR) / name).resolve()
+    if not str(resolved).startswith(str(Path(ENVS_DIR).resolve())):
+        return "env_name resolves outside the allowed directory"
+    return None
+
+
+# ─── Package validation ─────────────────────────────────────────────
 # Allowed package patterns (safe packages)
 ALLOWED_PACKAGE_PATTERNS = [
     "numpy", "scipy", "pandas", "matplotlib", "scikit-image", "scikit-learn",
@@ -30,13 +75,62 @@ ALLOWED_PACKAGE_PATTERNS = [
     "opencv-python", "Pillow", "scipy", "nibabel", "pydicom",
     "pymedphys", "pylinac", "dicompyler", "plotly", "seaborn",
     "scipy", "statsmodels", "sympy", "networkx",
+    # Common medical/scientific packages
+    "monai", "tqdm", "requests", "flask", "flask-cors", "openai",
+    "anthropic", "transformers", "huggingface-hub", "safetensors",
+    "accelerate", "datasets", "tokenizers", "sentencepiece",
+    "einops", "timm", "lightning", "pytorch-lightning",
+    "joblib", "threadpoolctl", "filelock", "fsspec",
+    "pyyaml", "toml", "tomli", "click", "rich", "typer",
+    "Pillow", "imageio", "tifffile", "lazy-loader",
+    "networkx", "python-dateutil", "pytz", "tzdata",
+    "contourpy", "cycler", "fontools", "kiwisolver",
+    "pyparsing", "packaging", "platformdirs",
+    # Web/network
+    "httpx", "aiohttp", "beautifulsoup4", "lxml", "soupsieve",
+    "urllib3", "certifi", "charset-normalizer", "idna",
+    # Scientific
+    "threadpoolctl", "llvmlite", "numba", "pooch",
+    "more-itertools", "jinja2", "markupsafe",
+    # Medical imaging
+    "highdicom", "pylibjpeg", "python-gdcm", "rt-utils",
+    "dicompyler-core", "pymedphys", "pylinac",
 ]
 
-# Blocked packages (potentially dangerous)
+# Blocked packages (potentially dangerous or known malicious)
 BLOCKED_PACKAGES = [
-    "os", "sys", "subprocess", "shutil",  # These are stdlib, not pip packages
-    "hacking", "exploit", "attack",  # Security-related
+    # stdlib names that aren't real pip packages
+    "os", "sys", "subprocess", "shutil", "socket", "ctypes",
+    # Known malicious or dangerous packages
+    "hacking", "exploit", "attack", "malware", "virus", "trojan",
+    "backdoor", "keylogger", "ransomware",
+    # Typosquatting of popular packages
+    "reqeusts", "reqeust", "beutifulsoup", "beatifulsoup",
+    "pillow-simd",  # not the real Pillow
+    # Packages that can execute arbitrary code on install
+    "setup-cfg",  # not a real package
 ]
+
+# Dangerous command patterns for run_in_env
+_DANGEROUS_CMD_PATTERNS = [
+    r'rm\s+-rf\s+/',           # rm -rf /
+    r'rm\s+-rf\s+~',           # rm -rf ~
+    r'rm\s+-rf\s+\*',          # rm -rf *
+    r'mkfs\.',                 # mkfs (format disk)
+    r'dd\s+if=.*of=/dev/',     # dd to device
+    r'>\s*/dev/sd',            # overwrite disk device
+    r'chmod\s+777\s+/',        # chmod 777 /
+    r'wget.*\|\s*sh',          # download and execute
+    r'curl.*\|\s*sh',          # download and execute
+    r'curl.*\|\s*bash',        # download and execute
+    r'wget.*\|\s*bash',        # download and execute
+    r'eval\s*\(',              # eval() in Python
+    r'exec\s*\(',              # exec() in Python
+    r'__import__\s*\(',        # __import__() bypass
+    r'importlib\.import_module',  # dynamic import bypass
+]
+
+_DANGEROUS_CMD_RE = re.compile('|'.join(_DANGEROUS_CMD_PATTERNS), re.IGNORECASE)
 
 
 class EnvManagerTool(BaseTool):
@@ -86,19 +180,40 @@ Capabilities:
         """Get the path for a virtual environment."""
         return Path(ENVS_DIR) / env_name
 
-    def _validate_package_name(self, package: str) -> bool:
-        """Validate package name is safe."""
-        package_lower = package.strip().lower().split("=")[0].split(">")[0].split("<")[0]
+    def _validate_package_name(self, package: str) -> Optional[str]:
+        """Validate package name. Return None if valid, error message if invalid."""
+        # Strip version specifiers: numpy==1.24.0 -> numpy
+        pkg_base = package.strip().lower().split("=")[0].split(">")[0].split("<")[0].split("!")[0].split("[")[0]
+        pkg_base = pkg_base.replace("-", "_").replace(".", "_")  # normalize
 
-        # Check blocked packages
+        # Check blocked packages (exact match after normalization)
         for blocked in BLOCKED_PACKAGES:
-            if blocked in package_lower:
-                return False
+            blocked_norm = blocked.replace("-", "_").replace(".", "_")
+            if pkg_base == blocked_norm:
+                return f"Package '{package}' is blocked (known dangerous or not a real pip package)"
 
-        return True
+        # Check for suspicious patterns in the full specifier
+        full = package.strip().lower()
+        # Block URL-based installs (pip install https://...)
+        if full.startswith(("http://", "https://", "git+", "svn+", "hg+")):
+            return f"URL-based package installs are not allowed: '{package}'"
+        # Block local path installs
+        if full.startswith(("/", "./", "../", "~/")):
+            return f"Local path installs are not allowed: '{package}'"
+        # Block --extra-index-url or --index-url (could point to malicious index)
+        if "--" in full:
+            return f"pip flags in package name are not allowed: '{package}'"
+
+        return None  # valid
 
     def _create_env(self, env_name: str, python_version: Optional[str] = None) -> ToolResult:
         """Create a new virtual environment."""
+        # Validate env_name
+        err = _validate_env_name(env_name)
+        if err:
+            _audit("create_env_blocked", err, env_name)
+            return ToolResult(success=False, error=err, message=err)
+
         env_path = self._get_env_path(env_name)
 
         if env_path.exists():
@@ -155,6 +270,10 @@ Capabilities:
 
     def _install_packages(self, env_name: str, packages: str) -> ToolResult:
         """Install packages in a virtual environment."""
+        err = _validate_env_name(env_name)
+        if err:
+            return ToolResult(success=False, error=err, message=err)
+
         env_path = self._get_env_path(env_name)
 
         if not env_path.exists():
@@ -170,14 +289,16 @@ Capabilities:
         # Validate packages
         invalid_pkgs = []
         for pkg in pkg_list:
-            if not self._validate_package_name(pkg):
-                invalid_pkgs.append(pkg)
+            err = self._validate_package_name(pkg)
+            if err:
+                invalid_pkgs.append(err)
 
         if invalid_pkgs:
+            _audit("install_blocked", "; ".join(invalid_pkgs), env_name)
             return ToolResult(
                 success=False,
-                error=f"Invalid packages: {', '.join(invalid_pkgs)}",
-                message=f"The following packages are not allowed: {', '.join(invalid_pkgs)}"
+                error=f"Package validation failed",
+                message=f"Blocked: {'; '.join(invalid_pkgs)}"
             )
 
         # Get pip path
@@ -204,6 +325,7 @@ Capabilities:
             )
 
             if result.returncode == 0:
+                _audit("install_ok", f"packages={pkg_list}", env_name)
                 return ToolResult(
                     success=True,
                     data={
@@ -264,6 +386,10 @@ Capabilities:
 
     def _list_packages(self, env_name: str) -> ToolResult:
         """List packages installed in an environment."""
+        err = _validate_env_name(env_name)
+        if err:
+            return ToolResult(success=False, error=err, message=err)
+
         env_path = self._get_env_path(env_name)
 
         if not env_path.exists():
@@ -310,6 +436,10 @@ Capabilities:
 
     def _delete_env(self, env_name: str) -> ToolResult:
         """Delete a virtual environment."""
+        err = _validate_env_name(env_name)
+        if err:
+            return ToolResult(success=False, error=err, message=err)
+
         env_path = self._get_env_path(env_name)
 
         if not env_path.exists():
@@ -335,6 +465,10 @@ Capabilities:
 
     def _run_in_env(self, env_name: str, command: str) -> ToolResult:
         """Run a command in a virtual environment."""
+        err = _validate_env_name(env_name)
+        if err:
+            return ToolResult(success=False, error=err, message=err)
+
         env_path = self._get_env_path(env_name)
 
         if not env_path.exists():
@@ -344,11 +478,26 @@ Capabilities:
                 message=f"Environment '{env_name}' not found"
             )
 
+        # Dangerous command check (log + block, don't silently allow)
+        if _DANGEROUS_CMD_RE.search(command):
+            _audit("run_in_env_BLOCKED", f"Dangerous command pattern: {command[:200]}", env_name)
+            return ToolResult(
+                success=False,
+                error="Command blocked by security policy",
+                message=(
+                    "This command matches a dangerous pattern and was blocked. "
+                    "If this is intentional, the command must be restructured."
+                ),
+                data={"blocked_command": command[:500]}
+            )
+
         # Get python path
         if sys.platform == "win32":
             python_path = env_path / "Scripts" / "python.exe"
         else:
             python_path = env_path / "bin" / "python"
+
+        _audit("run_in_env", f"cmd={command[:200]}", env_name)
 
         try:
             # Run command using the environment's python
@@ -357,21 +506,29 @@ Capabilities:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=120  # 2 minutes (increased from 60s)
             )
 
             return ToolResult(
                 success=result.returncode == 0,
                 data={
                     "env_name": env_name,
-                    "stdout": result.stdout[-2000:],
-                    "stderr": result.stderr[-1000:],
+                    "stdout": result.stdout[-5000:],
+                    "stderr": result.stderr[-2000:],
                     "returncode": result.returncode,
                 },
                 message=f"Command executed in '{env_name}'" + (" successfully" if result.returncode == 0 else " with errors"),
             )
 
+        except subprocess.TimeoutExpired:
+            _audit("run_in_env_TIMEOUT", f"cmd={command[:200]}", env_name)
+            return ToolResult(
+                success=False,
+                error="Command timed out (120 seconds)",
+                message=f"Command timed out in '{env_name}'"
+            )
         except Exception as e:
+            _audit("run_in_env_ERROR", f"{type(e).__name__}: {e}", env_name)
             return ToolResult(
                 success=False,
                 error=str(e),

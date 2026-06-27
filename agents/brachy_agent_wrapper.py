@@ -189,3 +189,35 @@ class BrachyAgentMultiAgentWrapper:
     def clear_history(self):
         """Clear all histories."""
         self.orchestrator.clear_history()
+
+    def update_global_context(self, context: Dict[str, Any]):
+        """Update shared context for all sub-agents."""
+        self.orchestrator.update_global_context(context)
+
+    async def review_plan_append(self, dose_metrics: Dict, plan_info: Dict,
+                                  plan_config: Dict = None, lang: str = "en") -> str:
+        """Run PlanReviewer, return appendix string. No retries."""
+        if not self._enabled:
+            return ""
+        return await self.orchestrator.review_plan_append(
+            dose_metrics, plan_info, plan_config, lang
+        )
+
+    async def review_facts_append(self, claims: list, sources: list,
+                                    lang: str = "en",
+                                    skip_distill: bool = False) -> str:
+        """Run FactChecker, return appendix string. No retries."""
+        if not self._enabled:
+            return ""
+        return await self.orchestrator.review_facts_append(
+            claims, sources, lang, skip_distill=skip_distill
+        )
+
+    async def check_completeness_append(self, user_message: str, response: str,
+                                          steps: list = None, lang: str = "en") -> str:
+        """Run CompletenessChecker, return appendix string. No retries."""
+        if not self._enabled:
+            return ""
+        return await self.orchestrator.check_completeness_append(
+            user_message, response, steps, lang
+        )

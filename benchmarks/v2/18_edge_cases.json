@@ -59,36 +59,36 @@
     },
     {
       "id": "EC006",
-      "input": "分割一下",
+      "input": "Segment it",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [
-        "分割",
-        "完成"
+        "segmentation",
+        "completed"
       ],
       "pass_threshold": 0.5,
       "difficulty": "easy"
     },
     {
       "id": "EC007",
-      "input": "帮帮忙分析一下图像吧",
+      "input": "Help me analyze an image",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [
-        "分析",
-        "维度"
+        "analysis",
+        "dimensions"
       ],
       "pass_threshold": 0.5,
       "difficulty": "easy"
     },
     {
       "id": "EC008",
-      "input": "请帮我做一下分割",
+      "input": "Please help me do a segmentation",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [
-        "分割",
-        "完成"
+        "segmentation",
+        "completed"
       ],
       "pass_threshold": 0.5,
       "difficulty": "easy"
@@ -130,24 +130,24 @@
     },
     {
       "id": "EC012",
-      "input": "分割图像然后再分析一下",
+      "input": "Segment the image, then analyze it",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [
-        "分割",
-        "分析"
+        "segmentation",
+        "analysis"
       ],
       "pass_threshold": 0.5,
       "difficulty": "medium"
     },
     {
       "id": "EC013",
-      "input": "请同时分析和分割图像",
+      "input": "Please analyze and segment the image simultaneously",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [
-        "分析",
-        "分割"
+        "analysis",
+        "segmentation"
       ],
       "pass_threshold": 0.5,
       "difficulty": "medium"

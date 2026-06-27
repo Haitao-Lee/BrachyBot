@@ -35,9 +35,9 @@
     },
     {
       "id": "PC005",
-      "input": "帮我比较一下这两个方案的DVH曲线差异",
+      "input": "Compare the DVH curve differences between these two plans",
       "expected_keywords": [
-        "比较",
+        "compare",
         "DVH"
       ],
       "forbidden_keywords": [
@@ -64,10 +64,10 @@
     },
     {
       "id": "PC007",
-      "input": "这个方案比上一个好在哪里？",
+      "input": "How is this plan better than the previous one?",
       "expected_keywords": [
-        "方案",
-        "好"
+        "plan",
+        "better"
       ],
       "forbidden_keywords": [
         "plan_comparator"

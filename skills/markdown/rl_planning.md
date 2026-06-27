@@ -4,9 +4,8 @@ description: Reinforcement learning based planning for complex cases
 category: planning
 triggers:
   - RL
-  - 强化学习
+  - reinforcement learning
   - complex
-  - 复杂
   - reinforcement
 tool_sequence:
   - ctv_segmentation

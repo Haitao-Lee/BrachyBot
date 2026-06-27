@@ -8,9 +8,12 @@ Forms the foundation for self-evolution.
 import os
 import json
 import time
+import logging
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field, asdict
 from collections import defaultdict, Counter
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

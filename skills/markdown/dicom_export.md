@@ -5,7 +5,6 @@ category: export
 triggers:
   - DICOM
   - export
-  - 导出
   - RT Structure
   - RT Plan
 tool_sequence:

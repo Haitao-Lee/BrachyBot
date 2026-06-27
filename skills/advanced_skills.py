@@ -16,14 +16,14 @@ from .skill_base import Skill
 class FullAutoPlanningSkill(Skill):
     """
     Fully automated planning: CTV + OAR segmentation → trajectory → seed → dose → eval.
-    Triggered by "full plan", "全自动计划", "complete planning".
+    Triggered by "full plan", "complete planning", "full pipeline".
     """
     def __init__(self):
         super().__init__(
             name="full_auto_planning",
             description="Fully automated treatment planning with auto-segmentation",
             category="planning",
-            triggers=["full plan", "全自动计划", "complete planning", "generate full plan", "完整计划"],
+            triggers=["full plan", "complete planning", "generate full plan", "full pipeline"],
             tool_sequence=["ctv_segmentation", "oar_segmentation", "trajectory_planning",
                           "seed_planning", "dose_engine", "dose_evaluation"],
             parameters={
@@ -38,14 +38,14 @@ class FullAutoPlanningSkill(Skill):
 class QuickPlanSkill(Skill):
     """
     Quick planning with pre-segmented data: trajectory → seed → dose → eval.
-    Triggered by "quick plan", "快速计划", "fast plan".
+    Triggered by "quick plan", "fast plan", "simple plan".
     """
     def __init__(self):
         super().__init__(
             name="quick_plan",
             description="Quick planning using existing segmentations",
             category="planning",
-            triggers=["quick plan", "快速计划", "fast plan", "simple plan"],
+            triggers=["quick plan", "fast plan", "simple plan", "rapid plan"],
             tool_sequence=["trajectory_planning", "seed_planning", "dose_engine", "dose_evaluation"],
             parameters={
                 "seed_planning": {"mode": "rule_based"},
@@ -57,14 +57,14 @@ class QuickPlanSkill(Skill):
 class RLPlanSkill(Skill):
     """
     RL-optimized planning: uses REINFORCE for seed placement.
-    Triggered by "rl plan", "强化学习", "RL optimization".
+    Triggered by "rl plan", "RL optimization", "reinforcement learning".
     """
     def __init__(self):
         super().__init__(
             name="rl_optimized_plan",
             description="RL-optimized seed placement using REINFORCE algorithm",
             category="planning",
-            triggers=["rl plan", "强化学习", "RL optimization", "reinforcement learning plan"],
+            triggers=["rl plan", "RL optimization", "reinforcement learning plan"],
             tool_sequence=["ctv_segmentation", "oar_segmentation", "trajectory_planning",
                           "seed_planning", "dose_engine", "dose_evaluation", "plan_quality_scorer"],
             parameters={
@@ -81,7 +81,7 @@ class PancreasCTVSkill(Skill):
             name="pancreas_ctv_seg",
             description="Pancreatic tumor CTV segmentation using VoCo or nnU-Net",
             category="segmentation",
-            triggers=["pancreas segment", "胰腺分割", "pancreatic tumor", "胰腺肿瘤"],
+            triggers=["pancreas segment", "pancreatic tumor", "pancreas segmentation"],
             tool_sequence=["ctv_segmentation"],
             parameters={
                 "ctv_segmentation": {"anatomy": "pancreas", "method": "voco"},
@@ -96,7 +96,7 @@ class PancreasOARSkill(Skill):
             name="pancreas_oar_seg",
             description="Pancreatic OAR segmentation (duodenum, stomach, kidneys, spinal cord)",
             category="segmentation",
-            triggers=["pancreas oar", "胰腺危及器官", "pancreatic organs"],
+            triggers=["pancreas oar", "pancreatic organs", "pancreas OAR"],
             tool_sequence=["oar_segmentation"],
             parameters={
                 "oar_segmentation": {"method": "totalsegmentator"},
@@ -111,7 +111,7 @@ class PancreasFullSkill(Skill):
             name="pancreas_full_workflow",
             description="Complete pancreatic brachytherapy workflow: seg → plan → eval",
             category="workflow",
-            triggers=["pancreas workflow", "胰腺全流程", "pancreatic brachytherapy"],
+            triggers=["pancreas workflow", "pancreatic brachytherapy", "pancreas full"],
             tool_sequence=["ctv_segmentation", "oar_segmentation", "trajectory_planning",
                           "seed_planning", "dose_engine", "dose_evaluation",
                           "oar_constraint_checker", "plan_quality_scorer"],
@@ -130,7 +130,7 @@ class ProstateFullSkill(Skill):
             name="prostate_full_workflow",
             description="Complete prostate brachytherapy workflow",
             category="workflow",
-            triggers=["prostate workflow", "前列腺全流程", "prostate brachytherapy"],
+            triggers=["prostate workflow", "prostate brachytherapy", "prostate full"],
             tool_sequence=["ctv_segmentation", "oar_segmentation", "trajectory_planning",
                           "seed_planning", "dose_engine", "dose_evaluation",
                           "oar_constraint_checker", "plan_quality_scorer"],
@@ -154,7 +154,7 @@ class LiverFullSkill(Skill):
             name="liver_full_workflow",
             description="Complete liver brachytherapy workflow: seg → lateral/posterior trajectory → seed → dose → eval",
             category="workflow",
-            triggers=["liver workflow", "肝癌全流程", "肝肿瘤", "liver brachytherapy", "liver tumor", "hepatic"],
+            triggers=["liver workflow", "liver brachytherapy", "liver tumor", "hepatic", "liver full"],
             tool_sequence=["ctv_segmentation", "oar_segmentation", "trajectory_planning",
                           "seed_planning", "dose_engine", "dose_evaluation",
                           "oar_constraint_checker", "plan_quality_scorer"],
@@ -179,7 +179,7 @@ class LungFullSkill(Skill):
             name="lung_full_workflow",
             description="Complete lung brachytherapy workflow: seg → anterior trajectory → seed → dose → eval",
             category="workflow",
-            triggers=["lung workflow", "肺癌全流程", "肺肿瘤", "lung brachytherapy", "lung tumor", "pulmonary"],
+            triggers=["lung workflow", "lung brachytherapy", "lung tumor", "pulmonary", "lung full"],
             tool_sequence=["ctv_segmentation", "oar_segmentation", "trajectory_planning",
                           "seed_planning", "dose_engine", "dose_evaluation",
                           "oar_constraint_checker", "plan_quality_scorer"],
@@ -199,7 +199,7 @@ class DoseEvalSkill(Skill):
             name="comprehensive_dose_eval",
             description="Comprehensive dose evaluation with OAR constraints and quality scoring",
             category="evaluation",
-            triggers=["dose eval", "剂量评估", "evaluate dose", "check dose", "剂量检查"],
+            triggers=["dose eval", "evaluate dose", "check dose", "dose assessment"],
             tool_sequence=["dose_evaluation", "oar_constraint_checker", "plan_quality_scorer"],
             parameters={},
         )
@@ -212,7 +212,7 @@ class PlanOptimizationSkill(Skill):
             name="plan_optimization",
             description="Iterative plan optimization to improve V100 and reduce OAR dose",
             category="optimization",
-            triggers=["optimize", "优化", "improve plan", "调整计划", "plan refinement"],
+            triggers=["optimize", "improve plan", "refine plan", "plan refinement"],
             tool_sequence=["dose_evaluation", "oar_constraint_checker", "plan_refinement",
                           "dose_engine", "dose_evaluation", "plan_quality_scorer"],
             parameters={},
@@ -226,7 +226,7 @@ class IntraOpReplanSkill(Skill):
             name="intraop_replan",
             description="Intra-operative seed detection and replanning",
             category="intraoperative",
-            triggers=["intraop", "术中", "replan", "replanning", "重规划", "seed check"],
+            triggers=["intraop", "replan", "replanning", "seed check", "intra-operative"],
             tool_sequence=["seed_segmentation", "dose_evaluation", "seed_planning",
                           "dose_engine", "dose_evaluation"],
             parameters={
@@ -242,7 +242,7 @@ class DICOMExportSkill(Skill):
             name="dicom_export",
             description="Export plan to DICOM RT Structure Set and RT Dose",
             category="export",
-            triggers=["export dicom", "导出DICOM", "DICOM RT", "export plan"],
+            triggers=["export dicom", "DICOM RT", "export plan"],
             tool_sequence=["dicom_rt_exporter"],
             parameters={},
         )
@@ -255,7 +255,7 @@ class ReportGenerationSkill(Skill):
             name="report_generation",
             description="Generate planning report in JSON/HTML/Markdown format",
             category="export",
-            triggers=["generate report", "生成报告", "report", "summary"],
+            triggers=["generate report", "create report", "report", "summary"],
             tool_sequence=["report_generator"],
             parameters={},
         )
@@ -268,7 +268,7 @@ class MultiOrganSegSkill(Skill):
             name="multi_organ_seg",
             description="Segment all organs using TotalSegmentator (104 structures)",
             category="segmentation",
-            triggers=["segment all", "全部分割", "multi-organ", "totalsegmentator", "全器官"],
+            triggers=["segment all", "multi-organ", "totalsegmentator", "all organs"],
             tool_sequence=["oar_segmentation"],
             parameters={
                 "oar_segmentation": {"method": "totalsegmentator"},
@@ -283,7 +283,7 @@ class VoCoSegSkill(Skill):
             name="voco_segmentation",
             description="Tumor segmentation using VoCo pre-trained models",
             category="segmentation",
-            triggers=["voco", "voco seg", "VoCo分割", "pretrained seg"],
+            triggers=["voco", "voco seg", "VoCo segmentation", "pretrained seg"],
             tool_sequence=["ctv_segmentation", "oar_segmentation"],
             parameters={
                 "ctv_segmentation": {"method": "voco"},
@@ -299,7 +299,7 @@ class QualityCheckSkill(Skill):
             name="quality_check",
             description="Comprehensive plan quality check with clinical constraints",
             category="evaluation",
-            triggers=["quality check", "质量检查", "check plan", "verify plan", "计划检查"],
+            triggers=["quality check", "check plan", "verify plan", "plan review"],
             tool_sequence=["dose_evaluation", "oar_constraint_checker", "plan_quality_scorer"],
             parameters={},
         )
@@ -312,7 +312,7 @@ class DVHAnalysisSkill(Skill):
             name="dvh_analysis",
             description="Dose-volume histogram analysis for all structures",
             category="evaluation",
-            triggers=["dvh", "DVH分析", "dose volume", "volume histogram"],
+            triggers=["dvh", "DVH analysis", "dose volume", "volume histogram"],
             tool_sequence=["dose_evaluation"],
             parameters={},
         )
@@ -325,7 +325,7 @@ class SelfEvolveSkill(Skill):
             name="self_evolve",
             description="Run self-evolution: analyze experiences, learn new skills, optimize parameters",
             category="meta",
-            triggers=["evolve", "进化", "self-improve", "learn", "学习", "总结经验"],
+            triggers=["evolve", "self-improve", "learn", "self-evolve", "summarize experience"],
             tool_sequence=[],
             parameters={},
         )
@@ -338,7 +338,7 @@ class CodeWriterSkill(Skill):
             name="code_writer",
             description="Write new tool code and register it into the tool registry",
             category="meta",
-            triggers=["write tool", "写工具", "create tool", "新工具", "add tool", "编写代码"],
+            triggers=["write tool", "create tool", "new tool", "add tool", "write code"],
             tool_sequence=[],
             parameters={},
         )

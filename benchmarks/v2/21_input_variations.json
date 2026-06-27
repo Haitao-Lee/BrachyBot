@@ -533,7 +533,7 @@
     },
     {
       "id": "IV034",
-      "input": "把窗宽设为200",
+      "input": "Set window width to 200",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [
@@ -546,7 +546,7 @@
     },
     {
       "id": "IV035",
-      "input": "窗宽调到200",
+      "input": "Adjust window width to 200",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [
@@ -559,7 +559,7 @@
     },
     {
       "id": "IV036",
-      "input": "调整窗宽到200",
+      "input": "Adjust window width to 200",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [
@@ -572,7 +572,7 @@
     },
     {
       "id": "IV037",
-      "input": "肿瘤体积是多少？",
+      "input": "What is the tumor volume?",
       "language": "zh",
       "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
       "expected_keywords": [
@@ -590,7 +590,7 @@
     },
     {
       "id": "IV038",
-      "input": "CTV有多大？",
+      "input": "How large is the CTV?",
       "language": "zh",
       "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
       "expected_keywords": [
@@ -608,7 +608,7 @@
     },
     {
       "id": "IV039",
-      "input": "肿瘤有多大？",
+      "input": "How large is the tumor?",
       "language": "zh",
       "setup": "Upload CT + CTV segmentation (volume ~27849mm³)",
       "expected_keywords": [
@@ -626,7 +626,7 @@
     },
     {
       "id": "IV040",
-      "input": "请分析CT图像",
+      "input": "Analyze the CT image",
       "language": "zh",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
       "expected_keywords": [
@@ -645,7 +645,7 @@
     },
     {
       "id": "IV041",
-      "input": "分析图像",
+      "input": "Analyze the image",
       "language": "zh",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
       "expected_keywords": [
@@ -664,7 +664,7 @@
     },
     {
       "id": "IV042",
-      "input": "帮我分析一下这个CT",
+      "input": "Help me analyze this CT",
       "language": "zh",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
       "expected_keywords": [
@@ -683,7 +683,7 @@
     },
     {
       "id": "IV043",
-      "input": "分析并分割图像",
+      "input": "Analyze and segment the image",
       "language": "zh",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
       "expected_keywords": [
@@ -696,7 +696,7 @@
     },
     {
       "id": "IV044",
-      "input": "先分析再分割",
+      "input": "First analyze, then segment",
       "language": "zh",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
       "expected_keywords": [
@@ -709,7 +709,7 @@
     },
     {
       "id": "IV045",
-      "input": "分析一下图像，然后分割",
+      "input": "Analyze the image, then segment",
       "language": "zh",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
       "expected_keywords": [
@@ -722,7 +722,7 @@
     },
     {
       "id": "IV046",
-      "input": "分割了多少个器官？",
+      "input": "How many organs were segmented?",
       "language": "zh",
       "setup": "Upload CT + OAR segmentation (57 organs)",
       "expected_keywords": [
@@ -739,7 +739,7 @@
     },
     {
       "id": "IV047",
-      "input": "器官有多少个？",
+      "input": "How many organs are there?",
       "language": "zh",
       "setup": "Upload CT + OAR segmentation (57 organs)",
       "expected_keywords": [
@@ -756,7 +756,7 @@
     },
     {
       "id": "IV048",
-      "input": "告诉我器官数量",
+      "input": "Tell me the organ count",
       "language": "zh",
       "setup": "Upload CT + OAR segmentation (57 organs)",
       "expected_keywords": [
@@ -773,7 +773,7 @@
     },
     {
       "id": "IV049",
-      "input": "你好",
+      "input": "Hello",
       "language": "zh",
       "setup": "No CT needed",
       "expected_keywords": [
@@ -789,7 +789,7 @@
     },
     {
       "id": "IV050",
-      "input": "嗨",
+      "input": "Hi",
       "language": "zh",
       "setup": "No CT needed",
       "expected_keywords": [
@@ -805,7 +805,7 @@
     },
     {
       "id": "IV051",
-      "input": "您好",
+      "input": "Hello",
       "language": "zh",
       "setup": "No CT needed",
       "expected_keywords": [
@@ -821,7 +821,7 @@
     },
     {
       "id": "IV052",
-      "input": "隐藏CTV",
+      "input": "hideCTV",
       "language": "zh",
       "setup": "Upload CT + segmentation",
       "expected_keywords": [
@@ -838,7 +838,7 @@
     },
     {
       "id": "IV053",
-      "input": "把CTV关掉",
+      "input": "Turn off CTV",
       "language": "zh",
       "setup": "Upload CT + segmentation",
       "expected_keywords": [
@@ -855,7 +855,7 @@
     },
     {
       "id": "IV054",
-      "input": "CTV不要显示",
+      "input": "Hide CTV",
       "language": "zh",
       "setup": "Upload CT + segmentation",
       "expected_keywords": [
@@ -872,7 +872,7 @@
     },
     {
       "id": "IV055",
-      "input": "显示CTV",
+      "input": "showCTV",
       "language": "zh",
       "setup": "Upload CT + segmentation",
       "expected_keywords": [
@@ -886,7 +886,7 @@
     },
     {
       "id": "IV056",
-      "input": "把CTV显示出来",
+      "input": "Show CTV",
       "language": "zh",
       "setup": "Upload CT + segmentation",
       "expected_keywords": [
@@ -900,7 +900,7 @@
     },
     {
       "id": "IV057",
-      "input": "打开CTV叠加层",
+      "input": "Open CTV overlay",
       "language": "zh",
       "setup": "Upload CT + segmentation",
       "expected_keywords": [
@@ -914,7 +914,7 @@
     },
     {
       "id": "IV058",
-      "input": "请分割CT",
+      "input": "Please segment the CT",
       "language": "zh",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
       "expected_keywords": [
@@ -931,7 +931,7 @@
     },
     {
       "id": "IV059",
-      "input": "分割图像",
+      "input": "segmentationimage",
       "language": "zh",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
       "expected_keywords": [
@@ -948,7 +948,7 @@
     },
     {
       "id": "IV060",
-      "input": "帮我分割一下",
+      "input": "Segment it for me",
       "language": "zh",
       "setup": "Upload CT: ui_state.ct_path='/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii'",
       "expected_keywords": [
@@ -965,7 +965,7 @@
     },
     {
       "id": "IV061",
-      "input": "肿瘤体积是多少？",
+      "input": "What is the tumor volume?",
       "language": "zh",
       "setup": "Upload CT only, NO segmentation",
       "expected_keywords": [
@@ -985,7 +985,7 @@
     },
     {
       "id": "IV062",
-      "input": "CTV有多大？",
+      "input": "How large is the CTV?",
       "language": "zh",
       "setup": "Upload CT only, NO segmentation",
       "expected_keywords": [
@@ -1005,7 +1005,7 @@
     },
     {
       "id": "IV063",
-      "input": "肿瘤有多大？",
+      "input": "How large is the tumor?",
       "language": "zh",
       "setup": "Upload CT only, NO segmentation",
       "expected_keywords": [
@@ -1025,7 +1025,7 @@
     },
     {
       "id": "IV064",
-      "input": "切到viewer",
+      "input": "Switch to viewer",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [
@@ -1037,7 +1037,7 @@
     },
     {
       "id": "IV065",
-      "input": "帮我切到查看器",
+      "input": "Switch to the viewer for me",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [
@@ -1049,7 +1049,7 @@
     },
     {
       "id": "IV066",
-      "input": "转到viewer面板",
+      "input": "Go to the viewer panel",
       "language": "zh",
       "setup": "Upload CT",
       "expected_keywords": [

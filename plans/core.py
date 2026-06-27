@@ -79,7 +79,7 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
     progressDialog.setLabelText("Initial Planning...")
 
     # ---- 2.  Extract candidate voxels inside cone ----
-    max_points_num = maximum_candidate_trajectories // len(candidate_dirs)
+    max_points_num = max(1, maximum_candidate_trajectories // len(candidate_dirs))
 
     close_points, max_length = utilizations.get_close_points(
         dose_image, radiation_volume, ref_direc, target_value, extract_angle
@@ -88,12 +88,15 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
     progressDialog.setValue(40)
     progressDialog.setLabelText("Initial Planning...")
 
-    # Relax cone angle if too few points
-    while close_points.shape[0] > max_points_num:
-        extract_angle *= 1.1
+    # Narrow cone angle if too many points (smaller angle = fewer points)
+    _max_iter = 50
+    _iter = 0
+    while close_points.shape[0] > max_points_num and _iter < _max_iter:
+        extract_angle *= 0.9  # shrink cone to reduce points
         close_points, max_length = utilizations.get_close_points(
             dose_image, radiation_volume, ref_direc, target_value, extract_angle
         )
+        _iter += 1
         progressDialog.setValue(40)
         progressDialog.setLabelText("Initial Planning...")
 

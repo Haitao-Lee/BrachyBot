@@ -159,11 +159,11 @@ class SkillRegistry:
                 break
 
         trigger_map = {
-            "ctv_segmentation": ["分割", "肿瘤", "target", "segment"],
-            "oar_segmentation": ["器官", "OAR", "organ"],
-            "seed_planning": ["种子", "seed", "规划", "plan"],
-            "trajectory_planning": ["轨迹", "trajectory"],
-            "dose_evaluation": ["评估", "剂量", "eval", "dose"],
+            "ctv_segmentation": ["segment", "tumor", "target", "ctv"],
+            "oar_segmentation": ["organ", "OAR", "segment"],
+            "seed_planning": ["seed", "plan", "planning"],
+            "trajectory_planning": ["trajectory", "needle"],
+            "dose_evaluation": ["eval", "dose", "evaluation", "dosimetry"],
         }
 
         triggers = []

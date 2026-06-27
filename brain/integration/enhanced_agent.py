@@ -162,13 +162,13 @@ class EnhancedAgentIntegration:
     def _extract_tags(self, user_input: str) -> list:
         tags = []
         lower = user_input.lower()
-        if "plan" in lower or "规划" in lower:
+        if "plan" in lower or "planning" in lower:
             tags.append("planning")
-        if "seg" in lower or "分割" in lower:
+        if "seg" in lower or "segment" in lower:
             tags.append("segmentation")
-        if "dose" in lower or "剂量" in lower:
+        if "dose" in lower or "dosimetry" in lower:
             tags.append("dose")
-        if "eval" in lower or "评估" in lower:
+        if "eval" in lower or "evaluation" in lower:
             tags.append("evaluation")
         if "ctv" in lower:
             tags.append("ctv")

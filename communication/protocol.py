@@ -21,6 +21,7 @@ class AgentRole(Enum):
     PLAN_REVIEWER = "plan_reviewer"
     FACT_CHECKER = "fact_checker"
     SAFETY_GUARDIAN = "safety_guardian"
+    COMPLETENESS_CHECKER = "completeness_checker"
     SYNTHESIZER = "synthesizer"
     USER = "user"  # Represents the user
 

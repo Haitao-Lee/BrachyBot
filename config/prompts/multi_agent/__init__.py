@@ -26,6 +26,7 @@ AGENT_PROMPT_FILES = {
     "plan_reviewer": "plan_reviewer.md",
     "fact_checker": "fact_checker.md",
     "safety_guardian": "safety_guardian.md",
+    "completeness_checker": "completeness_checker.md",
     "orchestrator": "orchestrator.md",
 }
 

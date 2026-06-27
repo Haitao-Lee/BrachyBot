@@ -49,10 +49,10 @@
     },
     {
       "id": "PT005",
-      "input": "记录用户反馈：这个方案很好，评分5分",
+      "input": "Record user feedback: this plan is very good, rated 5/5",
       "expected_keywords": [
-        "记录",
-        "反馈"
+        "log",
+        "feedback"
       ],
       "forbidden_keywords": [
         "performance_tracker"

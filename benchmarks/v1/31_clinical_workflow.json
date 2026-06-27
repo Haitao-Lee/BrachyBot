@@ -7,82 +7,189 @@
     {
       "id": "CW001",
       "input": "Complete prostate brachytherapy workflow: analyze CT, segment CTV and OAR, plan seeds, calculate dose, evaluate plan, and generate report",
-      "expected_keywords": ["CTV", "OAR", "seed", "dose", "evaluate", "report"],
+      "expected_keywords": [
+        "CTV",
+        "OAR",
+        "seed",
+        "dose",
+        "evaluate",
+        "report"
+      ],
       "difficulty": "hard",
       "user_type": "experienced",
-      "workflow_steps": ["ct_analysis", "ctv_segmentation", "oar_segmentation", "seed_planning", "dose_engine", "dose_evaluation", "report_generator"]
+      "workflow_steps": [
+        "ct_analysis",
+        "ctv_segmentation",
+        "oar_segmentation",
+        "seed_planning",
+        "dose_engine",
+        "dose_evaluation",
+        "report_generator"
+      ]
     },
     {
       "id": "CW002",
-      "input": "我有一个前列腺癌病人，请帮我完成从CT分析到计划导出的全流程",
-      "expected_keywords": ["CT", "segment", "plan", "dose", "export"],
+      "input": "I have a prostate cancer patient, please help me with the full workflow from CT analysis to plan export",
+      "expected_keywords": [
+        "CT",
+        "segment",
+        "plan",
+        "dose",
+        "export"
+      ],
       "difficulty": "hard",
       "user_type": "chinese",
-      "workflow_steps": ["ct_analysis", "ctv_segmentation", "oar_segmentation", "seed_planning", "dose_engine", "dose_evaluation"]
+      "workflow_steps": [
+        "ct_analysis",
+        "ctv_segmentation",
+        "oar_segmentation",
+        "seed_planning",
+        "dose_engine",
+        "dose_evaluation"
+      ]
     },
     {
       "id": "CW003",
       "input": "Segment the CT, then check if the plan meets safety constraints before exporting",
-      "expected_keywords": ["segment", "safety", "constraints", "export"],
+      "expected_keywords": [
+        "segment",
+        "safety",
+        "constraints",
+        "export"
+      ],
       "difficulty": "medium",
       "user_type": "experienced",
-      "workflow_steps": ["ctv_segmentation", "oar_segmentation", "safety_validator"]
+      "workflow_steps": [
+        "ctv_segmentation",
+        "oar_segmentation",
+        "safety_validator"
+      ]
     },
     {
       "id": "CW004",
-      "input": "分析CT，分割CTV和OAR，然后生成治疗计划",
-      "expected_keywords": ["CT", "CTV", "OAR", "plan"],
+      "input": "Analyze CT, segment CTV and OAR, then generate treatment plan",
+      "expected_keywords": [
+        "CT",
+        "CTV",
+        "OAR",
+        "plan"
+      ],
       "difficulty": "medium",
       "user_type": "chinese",
-      "workflow_steps": ["ct_analysis", "ctv_segmentation", "oar_segmentation", "seed_planning"]
+      "workflow_steps": [
+        "ct_analysis",
+        "ctv_segmentation",
+        "oar_segmentation",
+        "seed_planning"
+      ]
     },
     {
       "id": "CW005",
       "input": "Run the full planning pipeline: segmentation → trajectory → seeds → dose → evaluation",
-      "expected_keywords": ["segment", "trajectory", "seed", "dose", "evaluate"],
+      "expected_keywords": [
+        "segment",
+        "trajectory",
+        "seed",
+        "dose",
+        "evaluate"
+      ],
       "difficulty": "hard",
       "user_type": "experienced",
-      "workflow_steps": ["ctv_segmentation", "oar_segmentation", "traj_planning", "seed_planning", "dose_engine", "dose_evaluation"]
+      "workflow_steps": [
+        "ctv_segmentation",
+        "oar_segmentation",
+        "traj_planning",
+        "seed_planning",
+        "dose_engine",
+        "dose_evaluation"
+      ]
     },
     {
       "id": "CW006",
-      "input": "帮我做一下剂量评估，然后和之前保存的病例对比一下",
-      "expected_keywords": ["dose", "evaluate", "case_memory", "compare"],
+      "input": "Do a dose evaluation, then compare with the previously saved case",
+      "expected_keywords": [
+        "dose",
+        "evaluate",
+        "case_memory",
+        "compare"
+      ],
       "difficulty": "hard",
       "user_type": "chinese",
-      "workflow_steps": ["dose_evaluation", "case_memory"]
+      "workflow_steps": [
+        "dose_evaluation",
+        "case_memory"
+      ]
     },
     {
       "id": "CW007",
       "input": "Generate a treatment plan, validate it for safety, and export the report",
-      "expected_keywords": ["plan", "safety", "report", "export"],
+      "expected_keywords": [
+        "plan",
+        "safety",
+        "report",
+        "export"
+      ],
       "difficulty": "hard",
       "user_type": "experienced",
-      "workflow_steps": ["seed_planning", "dose_engine", "safety_validator", "report_generator"]
+      "workflow_steps": [
+        "seed_planning",
+        "dose_engine",
+        "safety_validator",
+        "report_generator"
+      ]
     },
     {
       "id": "CW008",
-      "input": "分割完成后，帮我检查一下剂量约束是否达标",
-      "expected_keywords": ["segment", "dose", "constraints", "check"],
+      "input": "After segmentation is completed, check if dose constraints are met",
+      "expected_keywords": [
+        "segment",
+        "dose",
+        "constraints",
+        "check"
+      ],
       "difficulty": "medium",
       "user_type": "chinese",
-      "workflow_steps": ["ctv_segmentation", "oar_segmentation", "safety_validator"]
+      "workflow_steps": [
+        "ctv_segmentation",
+        "oar_segmentation",
+        "safety_validator"
+      ]
     },
     {
       "id": "CW009",
       "input": "I want to optimize the plan: evaluate current plan, get suggestions, re-plan, and compare with original",
-      "expected_keywords": ["evaluate", "optimize", "plan", "compare"],
+      "expected_keywords": [
+        "evaluate",
+        "optimize",
+        "plan",
+        "compare"
+      ],
       "difficulty": "hard",
       "user_type": "experienced",
-      "workflow_steps": ["dose_evaluation", "plan_comparator", "seed_planning", "dose_engine"]
+      "workflow_steps": [
+        "dose_evaluation",
+        "plan_comparator",
+        "seed_planning",
+        "dose_engine"
+      ]
     },
     {
       "id": "CW010",
-      "input": "完成治疗计划后，保存到病例库并生成临床报告",
-      "expected_keywords": ["plan", "save", "case_memory", "report"],
+      "input": "After completing the treatment plan, save to case library and generate clinical report",
+      "expected_keywords": [
+        "plan",
+        "save",
+        "case_memory",
+        "report"
+      ],
       "difficulty": "hard",
       "user_type": "chinese",
-      "workflow_steps": ["seed_planning", "dose_engine", "case_memory", "report_generator"]
+      "workflow_steps": [
+        "seed_planning",
+        "dose_engine",
+        "case_memory",
+        "report_generator"
+      ]
     }
   ]
 }

@@ -29,13 +29,13 @@
 > - 19_regression.json rewritten: each case now corresponds to a specific bug fix (mask orientation, dose overlay scroll, plan_mode checkbox, DVH flicker, 3D pipeline, etc.).
 > - 27_tool_availability.json expanded: 6 → 15 cases covering all real tools + 2 fake tool refusal tests.
 > - 07_safety.json + 15_safety.json expanded: 5→15 and 10→15 cases with additional clinical safety scenarios.
-> - Every new test case has `_comment` in format: "测试目的 + 考核机制 + 验证方式".
+> - Every new test case has `_comment` in format: "test purpose + evaluation mechanism + verification method".
 
 ---
 
 ## 1. Objective
 
-Build an industrial-grade automated QA + multi-round benchmark testing + multi-agent evaluation + issue闭环 fixing + continuous self-evolution system.
+Build an industrial-grade automated QA + multi-round benchmark testing + multi-agent evaluation + closed-loop issue fixing + continuous self-evolution system.
 
 **Core Principle:** "Don't cram for tests, find root causes" - All fixes must be deep, essential, useful, and harmless.
 
@@ -154,7 +154,7 @@ categories 11-16. Full rationale in `benchmarks/v2/README.md → "Why
 ### 2.4 Key Test Material
 
 - **CT File:** `/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii`
-- **Patient:** 胰腺癌 (pancreatic cancer)
+- **Patient:** pancreatic cancer
 - **Specs:** 48 × 512 × 512 voxels, 0.68 × 0.68 × 5.0 mm spacing
 - **Test cases for other organs** (prostate, lung, etc.) are
   **pure-knowledge queries** with `setup: "No CT needed"`. The runner

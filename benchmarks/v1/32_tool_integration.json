@@ -6,105 +6,152 @@
     {
       "id": "TI001",
       "input": "What tools do you have available?",
-      "expected_keywords": ["tool", "available"],
+      "expected_keywords": [
+        "tool",
+        "available"
+      ],
       "difficulty": "easy",
       "user_type": "beginner"
     },
     {
       "id": "TI002",
       "input": "Use the filesystem browser to list files in the current directory",
-      "expected_keywords": ["filesystem_browser", "list"],
+      "expected_keywords": [
+        "filesystem_browser",
+        "list"
+      ],
       "difficulty": "easy",
       "user_type": "experienced"
     },
     {
       "id": "TI003",
       "input": "Run a Python script to calculate the area of a circle with radius 5",
-      "expected_keywords": ["code_executor", "python"],
+      "expected_keywords": [
+        "code_executor",
+        "python"
+      ],
       "difficulty": "easy",
       "user_type": "experienced"
     },
     {
       "id": "TI004",
       "input": "Create a new tool that calculates the conformality index",
-      "expected_keywords": ["tool_creator", "create"],
+      "expected_keywords": [
+        "tool_creator",
+        "create"
+      ],
       "difficulty": "hard",
       "user_type": "experienced"
     },
     {
       "id": "TI005",
-      "input": "帮我读一下这个PDF文件的内容",
-      "expected_keywords": ["doc_reader", "read"],
+      "input": "Read the content of this PDF file for me",
+      "expected_keywords": [
+        "doc_reader",
+        "read"
+      ],
       "difficulty": "medium",
       "user_type": "chinese"
     },
     {
       "id": "TI006",
       "input": "Inspect the current UI state",
-      "expected_keywords": ["ui_inspector", "state"],
+      "expected_keywords": [
+        "ui_inspector",
+        "state"
+      ],
       "difficulty": "medium",
       "user_type": "experienced"
     },
     {
       "id": "TI007",
       "input": "Install numpy in a new virtual environment",
-      "expected_keywords": ["env_manager", "install"],
+      "expected_keywords": [
+        "env_manager",
+        "install"
+      ],
       "difficulty": "medium",
       "user_type": "experienced"
     },
     {
       "id": "TI008",
       "input": "Run a shell command to check disk space",
-      "expected_keywords": ["shell_executor", "command"],
+      "expected_keywords": [
+        "shell_executor",
+        "command"
+      ],
       "difficulty": "easy",
       "user_type": "experienced"
     },
     {
       "id": "TI009",
-      "input": "帮我查一下UI上有哪些可用的按钮",
-      "expected_keywords": ["ui_inspector", "scan"],
+      "input": "Check which buttons are available in the UI",
+      "expected_keywords": [
+        "ui_inspector",
+        "scan"
+      ],
       "difficulty": "medium",
       "user_type": "chinese"
     },
     {
       "id": "TI010",
       "input": "List all dynamic tools that have been created",
-      "expected_keywords": ["tool_creator", "list"],
+      "expected_keywords": [
+        "tool_creator",
+        "list"
+      ],
       "difficulty": "medium",
       "user_type": "experienced"
     },
     {
       "id": "TI011",
       "input": "What slash commands are available?",
-      "expected_keywords": ["ui_inspector", "slash"],
+      "expected_keywords": [
+        "ui_inspector",
+        "slash"
+      ],
       "difficulty": "easy",
       "user_type": "beginner"
     },
     {
       "id": "TI012",
       "input": "Read this CSV file and show me the first 10 rows",
-      "expected_keywords": ["doc_reader", "read", "csv"],
+      "expected_keywords": [
+        "doc_reader",
+        "read",
+        "csv"
+      ],
       "difficulty": "medium",
       "user_type": "experienced"
     },
     {
       "id": "TI013",
-      "input": "帮我查看一下conda环境中安装了哪些包",
-      "expected_keywords": ["env_manager", "list_packages"],
+      "input": "Check which packages are installed in the conda environment",
+      "expected_keywords": [
+        "env_manager",
+        "list_packages"
+      ],
       "difficulty": "medium",
       "user_type": "chinese"
     },
     {
       "id": "TI014",
       "input": "Execute a Python script to parse DICOM metadata",
-      "expected_keywords": ["code_executor", "python", "dicom"],
+      "expected_keywords": [
+        "code_executor",
+        "python",
+        "dicom"
+      ],
       "difficulty": "hard",
       "user_type": "experienced"
     },
     {
       "id": "TI015",
       "input": "What's the typical workflow for brachytherapy planning?",
-      "expected_keywords": ["ui_inspector", "workflow"],
+      "expected_keywords": [
+        "ui_inspector",
+        "workflow"
+      ],
       "difficulty": "easy",
       "user_type": "beginner"
     }

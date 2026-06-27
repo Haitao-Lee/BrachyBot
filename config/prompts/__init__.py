@@ -56,7 +56,7 @@ _MODULE_TRIGGERS = {
     ],
     # Memory recall
     "memory_recall": [
-        r"(?:recall|remember|what did.*discuss|prior conversation|previous session|earlier.*talk|之前.*讨论|上次.*说|回忆|记得)",
+        r"(?:recall|remember|what did.*discuss|prior conversation|previous session|earlier.*talk)",
     ],
     # Clinical knowledge — dose constraints, guidelines, tolerances
     "clinical_kb": [
@@ -64,20 +64,18 @@ _MODULE_TRIGGERS = {
         r"(?:V100|D90|V200|D2cc|D0\.1cc|DVH.*constraint|dose.*standard)",
         r"(?:what.*dose|how much.*dose|recommended.*dose|standard.*dose|dose.*require)",
         r"(?:ABS|GEC.?ESTRO|AAPM|ICRU|NCCN|TG.?(?:43|229|137))",
-        r"(?:剂量约束|剂量限制|器官耐受|处方剂量|剂量标准|剂量要求|耐受量|耐受剂量)",
         r"(?:clinical_kb|knowledge base|clinical knowledge|knowledge.*query)",
-        r"(?:详细介绍.*粒子|粒子植入.*介绍|brachytherapy.*overview|seed.*implant.*overview)",
-        r"(?:spinal cord.*dose|cord.*tolerance|脊髓.*剂量|脊髓.*耐受)",
+        r"(?:detailed.*introduction.*particle|particle.*implant.*introduction|brachytherapy.*overview|seed.*implant.*overview)",
+        r"(?:spinal cord.*dose|cord.*tolerance)",
     ],
     # Planning agent — brachytherapy planning workflow
     "planning_agent": [
         r"(?:execute.*plan|run.*plan|start.*plan|perform.*plan)",
         r"(?:brachytherapy|particle.*implant|seed.*implant|implant.*plan|treatment.*plan)",
-        r"(?:segment.*(?:ctv|tumor|tumour|lesion)|分割.*(?:肿瘤|靶区|病灶|CTV))",
-        r"(?:segment.*(?:oar|organ)|分割.*(?:器官|危及器官))",
-        r"(?:full.*plan|plan.*full|complete.*plan|全自动|全流程)",
+        r"(?:segment.*(?:ctv|tumor|tumour|lesion))",
+        r"(?:segment.*(?:oar|organ))",
+        r"(?:full.*plan|plan.*full|complete.*plan)",
         r"(?:planning_pipeline|ctv_segmentation|oar_segmentation|trajectory|seed.*plann)",
-        r"(?:规划|计划|粒子.*植入|放射.*粒子)",
     ],
     # Tool routing — when user asks about tools or invokes planning/segmentation
     "tool_routing": [
@@ -96,18 +94,16 @@ _MODULE_TRIGGERS = {
     # Search guide — web search rules
     "search_guide": [
         r"(?:web_search|web_fetch|search.*result|search.*(?:for|find|query))",
-        r"(?:cite|source|reference|full.?text|pubmed|search|检索|搜索|联网|全网)",
+        r"(?:cite|source|reference|full.?text|pubmed|search)",
     ],
     # Formatting — report generation, visual formatting
     "formatting": [
         r"(?:generate.*report|create.*report|export.*report|PDF.*report|clinical.*report)",
-        r"(?:生成.*报告|创建.*报告|导出.*报告)",
     ],
     # Visual proactive — screenshots, viewers
     "visual_proactive": [
         r"(?:screenshot|capture|annotate|show.*(?:UI|viewer|image|3D|slice))",
         r"(?:axial|sagittal|coronal|data.tree|overlay|what does.*look)",
-        r"(?:截图|截屏|显示.*(?:查看器|三维|切片))",
     ],
 }
 
