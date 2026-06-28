@@ -5,8 +5,8 @@ category: planning
 triggers:
   - RL
   - reinforcement learning
-  - complex
   - reinforcement
+  - rl planning
 tool_sequence:
   - ctv_segmentation
   - oar_segmentation

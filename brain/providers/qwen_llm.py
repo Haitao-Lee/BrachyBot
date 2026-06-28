@@ -54,11 +54,13 @@ class QwenLLM(BaseLLM):
             import openai
             client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
 
-            chat_kwargs = {"model": self.model, "messages": messages}
-            if tools:
-                chat_kwargs["tools"] = tools
+            chat_kwargs = {}
             chat_kwargs.update(self.extra_kwargs)
             chat_kwargs.update(kwargs)
+            chat_kwargs["model"] = self.model
+            chat_kwargs["messages"] = messages
+            if tools:
+                chat_kwargs["tools"] = tools
 
             response = client.chat.completions.create(**chat_kwargs)
 
@@ -66,6 +68,9 @@ class QwenLLM(BaseLLM):
 
             return LLMResponse(
                 content=response.choices[0].message.content or "",
+                # Nested format: {"function": {"name", "arguments"}}.
+                # Consumers (AgenticSys.py:4098-4119) handle both flat and nested formats.
+                # OpenAI provider uses flat {"id", "name", "arguments"} instead.
                 tool_calls=[
                     {"function": {"name": tc.function.name, "arguments": tc.function.arguments}}
                     for tc in response.choices[0].message.tool_calls or []

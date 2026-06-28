@@ -167,8 +167,12 @@ class SmartContextManager:
         return f"msg_{self._message_counter}_{int(time.time())}"
 
     def _estimate_tokens(self, text: str) -> int:
-        """Estimate token count (rough: 1 token ≈ 4 chars)."""
-        return len(text) // 4
+        """Estimate token count. CJK characters ~1-2 tokens each, Latin ~4 chars per token."""
+        if not text:
+            return 0
+        cjk_count = sum(1 for c in text if '\u4e00' <= c <= '\u9fff' or '\u3400' <= c <= '\u4dbf')
+        other_count = len(text) - cjk_count
+        return cjk_count + other_count // 4
 
     def _extract_entities(self, text: str) -> List[str]:
         """Extract entities from text using pattern matching."""

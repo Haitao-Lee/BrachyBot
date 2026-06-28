@@ -138,7 +138,7 @@ class LLMRouter:
         elif name == "local":
             from ..providers.local_llm import LocalLLM
             return LocalLLM(
-                base_url=cfg.get("base_url", "http://localhost:8000/v1"),
+                base_url=cfg.get("base_url", "http://localhost:8000"),
                 model=cfg.get("model", "qwen2.5-14b-instruct"),
             )
         elif name == "ollama":

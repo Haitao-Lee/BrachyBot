@@ -61,6 +61,11 @@ class MiniMaxLLM(BaseLLM):
 
         for attempt in range(max_retries):
             try:
+                # openai imported inside try: if missing, ImportError propagates
+                # to the outer except Exception (line 108). The except
+                # openai.RateLimitError (line 99) is safe because openai is in
+                # requirements.txt — if somehow missing, the ImportError hits
+                # first and we never reach the RateLimitError handler.
                 import openai
                 client = openai.OpenAI(
                     api_key=self.api_key,
@@ -73,10 +78,13 @@ class MiniMaxLLM(BaseLLM):
                 chat_kwargs.update(self.extra_kwargs)
                 chat_kwargs.update(kwargs)
 
+                start_time = time.time()
                 response = client.chat.completions.create(**chat_kwargs)
 
                 return LLMResponse(
                     content=response.choices[0].message.content or "",
+                    # Nested format: {"function": {"name", "arguments"}}.
+                    # Consumers handle both flat and nested. See AgenticSys.py:4098-4119.
                     tool_calls=[
                         {"function": {"name": tc.function.name, "arguments": tc.function.arguments}}
                         for tc in response.choices[0].message.tool_calls or []
@@ -87,7 +95,7 @@ class MiniMaxLLM(BaseLLM):
                         "total_tokens": response.usage.total_tokens if response.usage else 0,
                     },
                     model=self.model,
-                    latency_ms=0.0,
+                    latency_ms=(time.time() - start_time) * 1000,
                     finish_reason=response.choices[0].finish_reason or "stop",
                 )
             except openai.RateLimitError as e:
@@ -114,6 +122,7 @@ class MiniMaxLLM(BaseLLM):
 
         for attempt in range(max_retries):
             try:
+                # Same as _chat: openai imported inside try for graceful fallback.
                 import openai
                 client = openai.OpenAI(
                     api_key=self.api_key,

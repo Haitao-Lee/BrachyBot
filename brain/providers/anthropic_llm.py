@@ -365,7 +365,6 @@ class AnthropicLLM(BaseLLM):
                     if block.type == "text":
                         content += block.text
                 
-                yield content
                 yield {
                     "type": "final",
                     "content": content,

@@ -7607,21 +7607,19 @@ function _todoCreate() {
             }
         }
         // Render helper: take the JSON from /api/device/status and
-        // pick the first device that has an active lease. If no GPU
-        // is leased, fall back to the most-free one.
+        // pick the GPU with the most free memory. This is most likely
+        // the GPU that device_manager selected for the current tool.
+        // Don't try to guess based on memory usage, as other processes
+        // (like training) may be using GPUs and give misleading signals.
         const render = (s) => {
             if (!s || !s.cuda_available) {
                 badge.textContent = '🎮 CPU';
                 badge.classList.add('cpu');
                 return;
             }
-            // Try to find a device the current tool is "using".
-            // DeviceManager.status() returns `active_leases` count
-            // and per-device `used_mem_mb`. We just pick the most-
-            // utilized one as "the one in use right now".
+            // Pick the GPU with the most free memory (what device_manager likely selected)
             const devs = (s.devices || []).filter(d => d.is_available !== false);
-            const busy = (s.devices || []).find(d => d.used_mem_mb > 1500);
-            const target = busy || (devs.length ? devs.reduce((a, b) => (a.free_mem_mb > b.free_mem_mb ? a : b)) : null);
+            const target = devs.length ? devs.reduce((a, b) => (a.free_mem_mb > b.free_mem_mb ? a : b)) : null;
             if (!target) {
                 badge.textContent = '';
                 return;
@@ -7629,7 +7627,7 @@ function _todoCreate() {
             const freeGB = (target.free_mem_mb / 1024).toFixed(1);
             const util = (target.utilization_pct >= 0) ? `, ${target.utilization_pct}%` : '';
             const shortName = (target.name || '').replace(/NVIDIA\s+GeForce\s+/i, '').replace(/^RTX\s+/, 'RTX ');
-            badge.textContent = `🎮 ${target.index === 0 && !busy ? 'auto' : 'cuda:' + target.index} · ${freeGB}GB free${util}`;
+            badge.textContent = `🎮 cuda:${target.index} · ${freeGB}GB free${util}`;
             badge.classList.remove('cpu');
             badge.title = `GPU ${target.index}: ${target.name}\n` +
                           `Memory: ${(target.used_mem_mb/1024).toFixed(1)}/${(target.total_mem_mb/1024).toFixed(1)} GB used\n` +
@@ -10446,8 +10444,9 @@ function switchPanel(name, el) {
                     const _meshCount = Object.keys(scene3D.meshes).length;
                     const _hasDvh = !!state.dvhData;
                     const _hasDose = !!(state.doseOverlay && state.doseOverlay.peakVoxel);
-                    console.log(`[Report] Capture attempt ${_attempts}: meshes=${_meshCount} dvh=${_hasDvh} dose=${_hasDose}`);
-                    if (_meshCount > 0 || _hasDvh || _hasDose || _attempts >= 5) {
+                    const _allReady = _meshCount > 0 && _hasDvh && _hasDose;
+                    console.log(`[Report] Capture attempt ${_attempts}: meshes=${_meshCount} dvh=${_hasDvh} dose=${_hasDose} allReady=${_allReady}`);
+                    if (_allReady || _attempts >= 5) {
                         autoCaptureReportFigures();
                     } else {
                         setTimeout(_tryCapture, 500);
@@ -17498,7 +17497,7 @@ function drawDVH() {
         }
     }
 
-    Plotly.react(dvhEl, traces, {
+    return Plotly.react(dvhEl, traces, {
         paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
         font: { color: '#cbd5e1', size: 11, family: 'Inter, sans-serif' },
         margin: { l: 55, r: 200, t: 10, b: 40 },
@@ -17558,7 +17557,10 @@ function drawDVH() {
         displayModeBar: true,
         modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d', 'toggleSpikelines'],
         displaylogo: false,
-    });
+    }).then(() => {
+        // Force Plotly to re-measure container after render completes
+        try { Plotly.Plots.resize(dvhEl); } catch (_) {}
+    }).catch(() => {});
 
     // Custom HTML DVH tooltip — mousemove-based (NOT Plotly hover-based).
     // Previous approaches using plotly_hover/plotly_unhover had persistent
@@ -17858,7 +17860,12 @@ async function refreshPlanningUI() {
                 if (data.dvh && Object.keys(data.dvh).length > 0) {
                     state.dvhData = data.dvh;
                     console.log('[refreshPlanningUI] Calling drawDVH()');
-                    try { drawDVH(); } catch (e) { console.warn('[refreshPlanningUI] drawDVH failed:', e); }
+                    try {
+                        const _dvhPromise = drawDVH();
+                        if (_dvhPromise && typeof _dvhPromise.then === 'function') {
+                            await _dvhPromise;
+                        }
+                    } catch (e) { console.warn('[refreshPlanningUI] drawDVH failed:', e); }
                 } else {
                     console.warn('[refreshPlanningUI] NO DVH data received');
                 }
@@ -18217,6 +18224,12 @@ async function refreshPlanningUI() {
         //    AFTER all meshes are loaded and DVH is drawn. Without
         //    this, the report only gets figures when the user opens
         //    the report panel or exports PDF.
+        //    WAIT for dose overlay to load first (fire-and-forget above).
+        try {
+            if (typeof loadDoseOverlay === 'function' && data.has_dose && !state.doseOverlay) {
+                await loadDoseOverlay();
+            }
+        } catch (_) {}
         try {
             if (typeof autoCaptureReportFigures === 'function') {
                 await autoCaptureReportFigures();
@@ -20483,21 +20496,24 @@ async function autoCaptureReportFigures() {
     if (!window.reportForm.figures) window.reportForm.figures = [];
 
     // Drop stale auto-captured figures (user-uploads are kept).
+    // Also drop incomplete auto-captures (missing DVH or dose).
     try {
         const _lastPlan = window.state && window.state.lastPlanTimestamp;
         if (_lastPlan && window.reportForm.figures) {
             const _ts = new Date(_lastPlan).getTime();
-            const _before = window.reportForm.figures.length;
             window.reportForm.figures = window.reportForm.figures.filter(f => {
                 if (!f) return false;
                 if (f.type === 'upload') return true;
                 const fts = f.capturedAt ? new Date(f.capturedAt).getTime() : 0;
-                return fts >= _ts;
+                // Keep if captured after last plan AND not a stale auto-capture
+                if (fts >= _ts) return true;
+                return false;
             });
-            const _after = window.reportForm.figures.length;
-            if (_before !== _after) console.log(`[Report] Dropped ${_before - _after} stale figures`);
         }
     } catch (_) {}
+
+    // Always clear auto-captured figures to allow fresh capture with complete data
+    window.reportForm.figures = (window.reportForm.figures || []).filter(f => f && f.type === 'upload');
 
     if (window.reportForm.figures.length > 0) {
         console.log('[Report] Figures already exist:', window.reportForm.figures.length, '- skipping');
@@ -20755,7 +20771,7 @@ async function autoCaptureReportFigures() {
         // Check for dose data existence, NOT just visibility — the user may
         // not have toggled dose on yet, but we still need to capture it.
         const hasDose = state.doseOverlay && state.doseOverlay.peakVoxel
-            && state.doseOverlay.shape && state.doseOverlay.data;
+            && state.doseOverlay.shape;
         if (hasDose) {
             const pv = state.doseOverlay.peakVoxel;
             console.log('[Report] Figure 2: starting dose+DVH capture, peak voxel:', pv);

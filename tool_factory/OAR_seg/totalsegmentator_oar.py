@@ -245,9 +245,12 @@ class TotalSegmentatorOARTool(BaseTool):
         try:
             oar_array, method = self._totalsegmentator_segmentation(image, organ_filter, fast_mode)
         except Exception as e:
-            logger.warning(f"TotalSegmentator failed: {e}, returning empty OAR mask")
-            oar_array = np.zeros(sitk.GetArrayFromImage(image).shape, dtype=np.float64)
-            method = "empty_mask"
+            logger.error(f"TotalSegmentator failed: {e}")
+            return ToolResult(
+                success=False,
+                error=f"TotalSegmentator failed: {e}",
+                message=f"OAR segmentation failed: {e}",
+            )
 
         spacing = image.GetSpacing()
         voxel_volume_mm3 = float(spacing[0] * spacing[1] * spacing[2])
@@ -303,13 +306,11 @@ class TotalSegmentatorOARTool(BaseTool):
 
             from plans.device_manager import get_device as _get_device
 
+            # Get the best GPU and set CUDA_VISIBLE_DEVICES for the subprocess
+            _dev = str(_get_device(caller=__name__))
+            logger.info(f"OAR segmentation using device: {_dev}")
 
             # Totalsegmentator uses "gpu"/"cpu" strings; map our device
-
-
-            _dev = str(_get_device(caller=__name__))
-
-
             device_str = "gpu" if _dev.startswith("cuda") else _dev
 
             cmd = [
@@ -325,7 +326,13 @@ class TotalSegmentatorOARTool(BaseTool):
 
             logger.info(f"Running TotalSegmentator OAR: {' '.join(cmd)}")
 
+            # Set subprocess environment with CUDA_VISIBLE_DEVICES restriction
             env = self._get_clean_subprocess_env()
+            if _dev.startswith("cuda:"):
+                # Extract GPU index (e.g., "cuda:0" -> "0")
+                gpu_idx = _dev.split(":")[1]
+                env["CUDA_VISIBLE_DEVICES"] = gpu_idx
+                logger.info(f"Setting CUDA_VISIBLE_DEVICES={gpu_idx} for TotalSegmentator subprocess")
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -336,7 +343,12 @@ class TotalSegmentatorOARTool(BaseTool):
 
             for line in proc.stdout:
                 logger.debug(line.strip())
-            proc.wait()
+            try:
+                proc.wait(timeout=600)  # 10 minute timeout
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+                raise RuntimeError("TotalSegmentator timed out after 600s")
 
             if proc.returncode != 0:
                 raise RuntimeError(f"TotalSegmentator failed with return code {proc.returncode}")

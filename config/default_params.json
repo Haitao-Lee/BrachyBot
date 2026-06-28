@@ -4,7 +4,8 @@
     "length": 4.5,
     "margin_rate": 1.0,
     "num_of_seeds": [5, 200],
-    "seed_avr_dose": 50
+    "seed_avr_dose": 50,
+    "_seed_avr_dose_comment": "Average dose per seed in normalized units (0-255 scale), NOT Gy"
   },
   "radiation_array_params": {
     "target_value": 2,
