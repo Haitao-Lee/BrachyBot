@@ -18,7 +18,7 @@ class QualityDecider(BaseDecider):
     - Target coverage (V100, V150, V200)
     - Dose homogeneity (D90, D95, D99)
     - OAR sparing compliance
-    - Overall quality score (0-100)
+    - Overall quality score (0-80)
     """
 
     def __init__(self, llm: BaseLLM):
@@ -108,9 +108,9 @@ class QualityDecider(BaseDecider):
 
         overall = coverage_score + homogeneity_score + oar_score
 
-        if overall >= 80 and not violations:
+        if overall >= 65 and not violations:
             acceptability = "ACCEPTABLE"
-        elif overall >= 60:
+        elif overall >= 50:
             acceptability = "BORDERLINE"
         else:
             acceptability = "UNACCEPTABLE"

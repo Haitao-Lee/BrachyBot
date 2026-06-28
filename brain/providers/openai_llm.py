@@ -79,7 +79,7 @@ class OpenAILLM(BaseLLM):
         if not api_key:
             return LLMResponse(content="Error: No API key provided", finish_reason="error")
 
-        client_kwargs = {"api_key": api_key, "timeout": self.timeout}
+        client_kwargs = {"api_key": api_key, "timeout": self.timeout, "max_retries": self.max_retries}
         if self.base_url:
             client_kwargs["base_url"] = self.base_url
 
@@ -115,6 +115,9 @@ class OpenAILLM(BaseLLM):
                     args = json.loads(tc.function.arguments)
                 except json.JSONDecodeError:
                     args = tc.function.arguments
+                # Flat format: {"id", "name", "arguments"} — NOT nested under "function".
+                # Consumers (AgenticSys.py:4098-4119) handle both flat and nested formats.
+                # Some providers (qwen, deepseek, etc.) use nested {"function": {"name", "arguments"}}.
                 tool_calls.append({
                     "id": tc.id,
                     "name": tc.function.name,

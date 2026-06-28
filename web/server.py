@@ -164,7 +164,7 @@ def _validate_path(path: str) -> bool:
         os.path.join(_project_root, "memory", "data"),    # Memory data
         "/tmp",                                           # Temp files
         "/data",                                          # Common data mount
-        "/home",                                          # User home directories
+        os.path.expanduser("~"),                          # Current user home only
     ]
     # Check if resolved path starts with any allowed root
     for root in _allowed_roots:
@@ -1008,6 +1008,10 @@ def create_app(config: Optional[Dict] = None):
             agent.memory.store("ct_window_width", window_width)
             agent.memory.store("ct_path", ct_path)  # Store path for 3D reconstruction
             agent.memory.store("ct_source_kind", kind)
+
+            # Update UI state so LLM knows CT is loaded
+            agent.memory.set_ui_state({"ct_path": ct_path})
+
             if src_meta:
                 # Don't store the heavy first_slice_tags blob — only summary
                 summary = {k: v for k, v in src_meta.items() if k != "first_slice_tags"}
@@ -1244,12 +1248,16 @@ def create_app(config: Optional[Dict] = None):
                     if oar_array is None:
                         oar_array = np.zeros_like(ctv_full, dtype=np.uint8)
                     elif oar_array.shape != ctv_full.shape:
-                        # Resample OAR to match CTV shape if needed
-                        pass  # Will be handled by shape check below
-                    for src_label, dst_label in nnunet_oar_labels.items():
-                        mask = ctv_full == src_label
-                        if np.any(mask):
-                            oar_array[mask] = dst_label
+                        # Shape mismatch - likely orientation issue
+                        # Skip merging to avoid IndexError
+                        logger.warning(f"[label_volume] OAR shape {oar_array.shape} != CTV shape {ctv_full.shape}, skipping nnUNet label merge")
+                        has_nnunet_oar = False  # Disable the merge below
+
+                    if has_nnunet_oar:
+                        for src_label, dst_label in nnunet_oar_labels.items():
+                            mask = ctv_full == src_label
+                            if np.any(mask):
+                                oar_array[mask] = dst_label
 
             shape = ct_data.shape  # (Z, Y, X)
 
@@ -3298,10 +3306,34 @@ def create_app(config: Optional[Dict] = None):
             try:
                 agent.memory.set_ui_state(ui_state)
                 result = agent.chat_with_trace(full_message)
+
+                # Sanitize result to make it JSON-serializable (remove numpy arrays, etc.)
+                def _sanitize_for_json(obj):
+                    """Recursively sanitize objects to make them JSON-serializable."""
+                    import numpy as np
+                    if isinstance(obj, dict):
+                        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+                    elif isinstance(obj, (list, tuple)):
+                        return [_sanitize_for_json(item) for item in obj]
+                    elif isinstance(obj, np.ndarray):
+                        return f"<ndarray shape={obj.shape} dtype={obj.dtype}>"
+                    elif isinstance(obj, (np.integer, np.int64)):
+                        return int(obj)
+                    elif isinstance(obj, (np.floating, np.float64)):
+                        return float(obj)
+                    elif isinstance(obj, np.bool_):
+                        return bool(obj)
+                    elif hasattr(obj, '__dict__'):
+                        return f"<{type(obj).__name__} object>"
+                    else:
+                        return obj
+
+                sanitized_result = _sanitize_for_json(result)
+
                 return jsonify({
-                    "response": result["response"],
-                    "steps": result["steps"],
-                    "llm_meta": result.get("llm_meta", {}),
+                    "response": sanitized_result["response"],
+                    "steps": sanitized_result["steps"],
+                    "llm_meta": sanitized_result.get("llm_meta", {}),
                     "context": {
                         "summary": agent.memory.context_summary or None,
                         "compaction_count": agent.memory.compaction_count,
@@ -3643,6 +3675,34 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
     # Cleanup handler: kill background threads/subprocesses on exit
     import atexit, signal as _sig, threading as _threading
     _shutdown_event = _threading.Event()
+    _active_operations = []  # Track ongoing tool executions
+    _ops_lock = _threading.Lock()
+
+    class _OperationContext:
+        """Context manager to track ongoing operations."""
+        def __init__(self, name):
+            self.name = name
+        def __enter__(self):
+            with _ops_lock:
+                _active_operations.append(self.name)
+                logger.debug(f"[OP-TRACK] Added '{self.name}' to active operations: {_active_operations}")
+            return self
+        def __exit__(self, *args):
+            with _ops_lock:
+                if self.name in _active_operations:
+                    _active_operations.remove(self.name)
+                    logger.debug(f"[OP-TRACK] Removed '{self.name}' from active operations: {_active_operations}")
+                else:
+                    logger.warning(f"[OP-TRACK] Tried to remove '{self.name}' but it wasn't in the list: {_active_operations}")
+
+    def get_active_operations():
+        """Get list of currently active operations."""
+        with _ops_lock:
+            return list(_active_operations)
+
+    # Make operation tracking available globally
+    import builtins
+    builtins.track_operation = _OperationContext
 
     def _cleanup():
         logger.info("[shutdown] Cleaning up background tasks...")
@@ -3666,10 +3726,28 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
     atexit.register(_cleanup)
 
     def _signal_handler(signum, frame):
-        print("\nShutting down...")
+        print("\nShutdown signal received...")
+
+        with _ops_lock:
+            active = list(_active_operations)
+
+        if active:
+            # Don't shut down if there are active operations!
+            # Just print a warning and continue running
+            print(f"⚠ Cannot shutdown: {len(active)} operation(s) in progress: {active}")
+            print("  Please wait for operations to complete, then press Ctrl+C again.")
+            print("  Server will continue running...")
+            return  # Don't shut down, just return and let Flask continue
+
+        # No active operations, safe to shut down
+        print("✓ No active operations. Shutting down gracefully...")
+        print("  Waiting 3 seconds for pending HTTP responses...")
+        import time
+        time.sleep(3)
+
         _cleanup()
-        import os
-        os._exit(0)
+        print("✓ Shutdown complete.")
+        raise SystemExit(0)
 
     _sig.signal(_sig.SIGTERM, _signal_handler)
     _sig.signal(_sig.SIGINT, _signal_handler)

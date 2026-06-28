@@ -191,10 +191,9 @@ class NNUNetPancreaticTumorTool(BaseTool):
     def _run_nnunet_inference(self, image: sitk.Image, config_dir: str, fast_mode: bool) -> np.ndarray:
         """Run nnUNet v2 inference using Python API."""
         import gc
-        import torch
         from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 
-        # Set environment variables
+        # Set environment variables BEFORE importing torch
         os.environ["nnUNet_results"] = self.MODEL_DIR
         os.environ["nnUNet_raw"] = self.MODEL_DIR
         os.environ["nnUNet_preprocessed"] = os.path.join(self.MODEL_DIR, "nnUNet_preprocessed")
@@ -202,31 +201,32 @@ class NNUNetPancreaticTumorTool(BaseTool):
         os.environ["OMP_NUM_THREADS"] = "1"
         os.environ["MKL_NUM_THREADS"] = "1"
 
-        # Auto-detect device via the centralized DeviceManager.
-        # nnUNet uses DataParallel across all visible GPUs (the
-        # framework requirement), so for this tool we override the
-        # "pick one best" default with "all GPUs" by setting
-        # CUDA_VISIBLE_DEVICES explicitly. The device_manager is
-        # still consulted for status logging so the user sees the
-        # same free-memory snapshot in /api/device/status.
+        # CRITICAL: Auto-detect device and set CUDA_VISIBLE_DEVICES BEFORE importing torch
+        # PyTorch initializes CUDA on first import, so CUDA_VISIBLE_DEVICES must be set first
         from plans.device_manager import DeviceManager
         _dm = DeviceManager.instance()
+        _chosen_gpu = "cuda:0"
+        _n_gpus = 0
+        _gpu_lease = None
         if _dm.cuda_available():
-            n_gpus = _dm.device_count()
-            # Pin to the most-free single GPU by default. nnUNet will
-            # still use DataParallel within that one device's memory.
-            # If the user wants the old "all GPUs" behavior, set
-            # NNUNET_USE_ALL_GPUS=1 in the env.
+            _n_gpus = _dm.device_count()
+            # Pin to the most-free single GPU by default
             if os.environ.get("NNUNET_USE_ALL_GPUS", "").lower() in ("1", "true", "yes"):
-                chosen = f"cuda:0"  # nnUNet will see all GPUs via DataParallel
-                os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(n_gpus))
+                _chosen_gpu = f"cuda:0"
+                os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(_n_gpus))
             else:
                 # Pick the most-free single GPU (smart scheduler)
-                chosen = _dm.acquire(caller=self.__class__.__name__)
-                os.environ["CUDA_VISIBLE_DEVICES"] = chosen.split(":", 1)[1] if ":" in chosen else "0"
-            device = torch.device(chosen)
-            logger.info(f"nnUNet using {chosen} (managed by DeviceManager); "
-                        f"{n_gpus} total GPU(s) visible: {_dm.device_names()}")
+                _chosen_gpu = _dm.acquire(caller=self.__class__.__name__)
+                os.environ["CUDA_VISIBLE_DEVICES"] = _chosen_gpu.split(":", 1)[1] if ":" in _chosen_gpu else "0"
+
+        # NOW import torch - after CUDA_VISIBLE_DEVICES is set
+        import torch
+
+        # Create device object
+        if _n_gpus > 0:
+            device = torch.device(_chosen_gpu)
+            logger.info(f"nnUNet using {_chosen_gpu} (managed by DeviceManager); "
+                        f"{_n_gpus} total GPU(s) visible: {_dm.device_names()}")
         else:
             device = torch.device("cpu")
             logger.info("No GPU available, using CPU")
@@ -263,9 +263,19 @@ class NNUNetPancreaticTumorTool(BaseTool):
             logger.info(f"nnUNet output shape: {result.shape}, unique values: {np.unique(result)}")
             return result.astype(np.uint8)
         finally:
-            # Free GPU memory
+            # Free GPU memory and release DeviceManager lease
             del predictor
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 logger.info("GPU memory freed")
+            # Release GPU lease so other tools (e.g. TotalSegmentator) can use it
+            if _dm.cuda_available() and _chosen_gpu.startswith("cuda:"):
+                try:
+                    with _dm._lease_lock:
+                        _dm._active_per_device[_chosen_gpu] = max(
+                            0, _dm._active_per_device.get(_chosen_gpu, 0) - 1
+                        )
+                    logger.info(f"Released GPU lease for {_chosen_gpu}")
+                except Exception:
+                    pass

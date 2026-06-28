@@ -160,11 +160,11 @@ class UserProfile:
     def record_interaction(self, user_input: str, agent_response: str, success: bool):
         self.total_interactions += 1
 
-        if "plan" in user_input.lower() or "planning" in user_input:
+        if "plan" in user_input.lower() or "planning" in user_input.lower():
             self._detect_planning_preference(user_input)
-        if "dose" in user_input.lower() or "dosimetry" in user_input:
+        if "dose" in user_input.lower() or "dosimetry" in user_input.lower():
             self._detect_dose_preference(user_input)
-        if "seg" in user_input.lower() or "segment" in user_input:
+        if "seg" in user_input.lower() or "segment" in user_input.lower():
             self._detect_segmentation_preference(user_input)
 
         pattern_key = self._classify_interaction(user_input)
@@ -188,13 +188,13 @@ class UserProfile:
             self.observe_behavior(input_text, "prefers_rl_optimization", "planning")
 
     def _detect_dose_preference(self, input_text: str):
-        if any(w in input_text.lower() for w in ["CNN", "myDoseNet", "deep learning"]):
+        if any(w in input_text.lower() for w in ["cnn", "mydosnet", "deep learning"]):
             self.observe_behavior(input_text, "prefers_cnn_dose", "dose")
 
     def _detect_segmentation_preference(self, input_text: str):
-        if any(w in input_text.lower() for w in ["nnunet", "nnU-Net"]):
+        if any(w in input_text.lower() for w in ["nnunet", "nnu-net"]):
             self.observe_behavior(input_text, "prefers_nnunet_seg", "segmentation")
-        if any(w in input_text.lower() for w in ["voco", "VoCo"]):
+        if any(w in input_text.lower() for w in ["voco"]):
             self.observe_behavior(input_text, "prefers_voco_seg", "segmentation")
 
     def _classify_interaction(self, input_text: str) -> str:

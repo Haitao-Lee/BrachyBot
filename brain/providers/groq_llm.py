@@ -49,18 +49,37 @@ class GroqLLM(BaseLLM):
             import openai
             client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
 
-            chat_kwargs = {"model": self.model, "messages": messages}
-            if tools:
-                chat_kwargs["tools"] = tools
+            chat_kwargs = {}
+
+
             chat_kwargs.update(self.extra_kwargs)
+
+
             chat_kwargs.update(kwargs)
+
+
+            chat_kwargs["model"] = self.model
+
+
+            chat_kwargs["messages"] = messages
+
+
+            if tools:
+
+
+                chat_kwargs["tools"] = tools
+
+            start_time = time.time()
+
 
             response = client.chat.completions.create(**chat_kwargs)
 
             return LLMResponse(
                 content=response.choices[0].message.content or "",
-                tool_calls=[
-                    {"function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                # Nested format: {"function": {"name", "arguments"}}.
+                    # Consumers handle both flat and nested. See AgenticSys.py:4098-4119.
+                    tool_calls=[
+                        {"function": {"name": tc.function.name, "arguments": tc.function.arguments}}
                     for tc in response.choices[0].message.tool_calls or []
                 ] if response.choices[0].message.tool_calls else [],
                 usage={
@@ -69,7 +88,7 @@ class GroqLLM(BaseLLM):
                     "total_tokens": response.usage.total_tokens if response.usage else 0,
                 },
                 model=self.model,
-                latency_ms=0.0,
+                latency_ms=(time.time() - start_time) * 1000,
                 finish_reason=response.choices[0].finish_reason or "stop",
             )
         except Exception as e:

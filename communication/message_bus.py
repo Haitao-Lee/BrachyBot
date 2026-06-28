@@ -7,7 +7,7 @@ Inspired by event-driven architectures in OpenCode and CrewAI.
 
 import asyncio
 import logging
-from typing import Dict, List, Callable, Optional
+from typing import Any, Dict, List, Callable, Optional
 from collections import defaultdict
 from .protocol import AgentMessage, AgentRole, MessageType
 
@@ -25,11 +25,12 @@ class MessageBus:
     - Priority-based routing
     """
 
-    def __init__(self):
+    def __init__(self, max_history: int = 1000):
         self._subscribers: Dict[str, List[Callable]] = defaultdict(list)
         self._history: List[AgentMessage] = []
         self._pending_responses: Dict[str, asyncio.Future] = {}
         self._message_count = 0
+        self._max_history = max_history
 
     def subscribe(self, message_type_or_role: str, handler: Callable):
         """
@@ -47,7 +48,7 @@ class MessageBus:
         if handler in self._subscribers[message_type_or_role]:
             self._subscribers[message_type_or_role].remove(handler)
 
-    async def publish(self, message: AgentMessage) -> List[any]:
+    async def publish(self, message: AgentMessage) -> List[Any]:
         """
         Publish a message to all subscribers.
 
@@ -59,6 +60,10 @@ class MessageBus:
         """
         self._history.append(message)
         self._message_count += 1
+
+        # Evict oldest messages when history exceeds cap
+        if len(self._history) > self._max_history:
+            self._history = self._history[-self._max_history:]
 
         results = []
 
@@ -100,7 +105,7 @@ class MessageBus:
             Response message or None if timeout
         """
         # Create a future for the response
-        future = asyncio.get_event_loop().create_future()
+        future = asyncio.get_running_loop().create_future()
         self._pending_responses[message.message_id] = future
 
         # Publish the request

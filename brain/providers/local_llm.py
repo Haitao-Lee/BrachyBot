@@ -15,7 +15,7 @@ class LocalLLM(BaseLLM):
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8000/v1",
+        base_url: str = "http://localhost:8000",
         model: str = "qwen2.5-14b-instruct",
         timeout: int = 120,
         max_retries: int = 3,
@@ -38,7 +38,7 @@ class LocalLLM(BaseLLM):
             return [self.model]
         try:
             import requests
-            resp = requests.get(f"{self.base_url}/v1/models", timeout=5)
+            resp = requests.get(f"{self.base_url}/models", timeout=5)
             if resp.status_code == 200:
                 return [m["id"] for m in resp.json().get("data", [])]
         except Exception:
@@ -52,7 +52,7 @@ class LocalLLM(BaseLLM):
             return LLMResponse(content="Error: openai package not installed", finish_reason="error")
 
         start_time = time.time()
-        base_url = self.base_url or "http://localhost:8000/v1"
+        base_url = self.base_url or "http://localhost:8000"
 
         try:
             client = OpenAI(

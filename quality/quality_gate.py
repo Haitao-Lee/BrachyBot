@@ -106,6 +106,11 @@ class QualityGate:
         agents_to_use = self._select_agents(output_type)
 
         if not agents_to_use:
+            # INTENTIONAL: When no review agents are available, pass through with a
+            # warning rather than blocking all clinical output. This is consistent
+            # with the APPEND-ONLY design (see _aggregate_reviews) where review
+            # results are advisory, not blocking. Blocking here would cause all
+            # planning to fail if agent imports break (e.g. ImportError).
             logger.warning(f"No review agents available for {output_type}")
             return GateResult(
                 passed=True,
@@ -331,6 +336,12 @@ class QualityGate:
         # Determine final decision
         # APPEND-ONLY MODE (2026-06-27): never reject or retry.
         # All review results are passed through as supplementary info.
+        # BY DESIGN: The LLM agent (BrachyAgent) is the final decision maker,
+        # not this gate. Sub-agents (SafetyGuardian, PlanReviewer, FactChecker)
+        # are advisory — see system_prompt.md "Sub-Agent Results Are ADVISORY".
+        # Blocking clinical output here would be dangerous: a false reject from
+        # any sub-agent would prevent all planning. Instead, concerns are appended
+        # to the response for the LLM to weigh independently.
         if reject_count > 0:
             final_decision = "conditional"
             passed = True  # don't block — append review to response

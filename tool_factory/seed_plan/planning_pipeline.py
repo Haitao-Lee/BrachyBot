@@ -602,6 +602,68 @@ class PlanningPipelineTool(BaseTool):
         oar_mask = self._load_oar(kwargs, agent, ct_image)
         logger.info(f"OAR mask loaded: {oar_mask is not None}")
 
+        # CRITICAL: Validate required inputs for full pipeline
+        # If LLM provides fake paths that don't exist, _load_ctv/_load_oar will return None.
+        # AUTO-RECOVERY: If CTV/OAR masks are missing, automatically run segmentation!
+        if step == "full":
+            if ctv_mask is None:
+                logger.warning("[AUTO-RECOVERY] CTV mask not found — auto-running ctv_segmentation")
+                ct_path = kwargs.get("ct_image_path") or (agent.memory.retrieve("ct_path") if agent else None)
+                if ct_path and os.path.exists(ct_path):
+                    try:
+                        ctv_tool = agent.registry.get("ctv_segmentation") if agent else None
+                        if ctv_tool:
+                            ctv_result = ctv_tool.execute(image_path=ct_path)
+                            if ctv_result and ctv_result.success:
+                                logger.info("[AUTO-RECOVERY] ✓ CTV segmentation completed")
+                                # Reload CTV mask from memory
+                                ctv_mask = self._load_ctv(kwargs, agent, ct_image)
+                                if ctv_mask is None:
+                                    return ToolResult(success=False, error="CTV segmentation completed but mask still not found in memory")
+                            else:
+                                return ToolResult(
+                                    success=False,
+                                    error=f"Auto-recovery failed: CTV segmentation error: {ctv_result.error if ctv_result else 'no result'}"
+                                )
+                        else:
+                            return ToolResult(success=False, error="ctv_segmentation tool not found")
+                    except Exception as e:
+                        return ToolResult(success=False, error=f"Auto-recovery failed: {e}")
+                else:
+                    return ToolResult(
+                        success=False,
+                        error=f"CTV mask is required but CT path not found. Please upload a CT image first."
+                    )
+
+            if oar_mask is None:
+                logger.warning("[AUTO-RECOVERY] OAR mask not found — auto-running oar_segmentation")
+                ct_path = kwargs.get("ct_image_path") or (agent.memory.retrieve("ct_path") if agent else None)
+                if ct_path and os.path.exists(ct_path):
+                    try:
+                        oar_tool = agent.registry.get("oar_segmentation") if agent else None
+                        if oar_tool:
+                            oar_result = oar_tool.execute(image_path=ct_path)
+                            if oar_result and oar_result.success:
+                                logger.info("[AUTO-RECOVERY] ✓ OAR segmentation completed")
+                                # Reload OAR mask from memory
+                                oar_mask = self._load_oar(kwargs, agent, ct_image)
+                                if oar_mask is None:
+                                    return ToolResult(success=False, error="OAR segmentation completed but mask still not found in memory")
+                            else:
+                                return ToolResult(
+                                    success=False,
+                                    error=f"Auto-recovery failed: OAR segmentation error: {oar_result.error if oar_result else 'no result'}"
+                                )
+                        else:
+                            return ToolResult(success=False, error="oar_segmentation tool not found")
+                    except Exception as e:
+                        return ToolResult(success=False, error=f"Auto-recovery failed: {e}")
+                else:
+                    return ToolResult(
+                        success=False,
+                        error=f"OAR mask is required but CT path not found. Please upload a CT image first."
+                    )
+
         # Get agent config
         agent_config = getattr(agent, 'config', {}) if agent else {}
 

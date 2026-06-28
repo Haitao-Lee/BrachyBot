@@ -7,6 +7,7 @@ Supports batch inference for multiple seeds simultaneously.
 
 
 from tool_factory import BaseTool, ToolResult
+import os
 import numpy as np
 import torch
 import SimpleITK as sitk
@@ -145,6 +146,10 @@ class CNNDoseEngineTool(BaseTool):
             if dl_params.get("multi_GPU", False):
                 model = torch.nn.DataParallel(model)
             model_path = dl_params.get("dose_model_path", "./dose_pre/dose_model.pth")
+            # Resolve relative path against project root
+            if not os.path.isabs(model_path):
+                _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+                model_path = os.path.join(_project_root, model_path)
             model.load_state_dict(torch.load(model_path, map_location=device))
             model.to(device)
             model.eval()

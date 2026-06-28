@@ -31,7 +31,7 @@ DANGEROUS_PATTERNS = [
     "__import__", "importlib", "subprocess", "os.system",
     "os.popen", "exec(", "eval(", "compile(",
     "shutil.rmtree", "shutil.move",
-    "socket.socket",
+    "socket.socket", "os.remove", "os.rmdir",
 ]
 
 
