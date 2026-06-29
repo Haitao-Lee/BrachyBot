@@ -13984,7 +13984,9 @@ async function reconstruct3D() {
     }
 
     const loading = document.getElementById('loading3D');
-    if (loading) loading.classList.add('active');
+    const external3dStatus = document.getElementById('meshPrewarmStatus')
+        || document.getElementById('auto3DStatusBar');
+    if (loading && !external3dStatus) loading.classList.add('active');
 
     try {
         // 1) CTV + non-traversable OARs (the structures the planning
@@ -14013,7 +14015,7 @@ async function reconstruct3D() {
     } catch (e) {
         addChat('error', '3D reconstruction failed: ' + e.message);
     } finally {
-        if (loading) loading.classList.remove('active');
+        if (loading && !external3dStatus) loading.classList.remove('active');
     }
 }
 
@@ -14040,7 +14042,9 @@ async function reconstructOrgan3D(id, silent = false) {
     }
 
     const loading = document.getElementById('loading3D');
-    if (loading) loading.classList.add('active');
+    const external3dStatus = document.getElementById('meshPrewarmStatus')
+        || document.getElementById('auto3DStatusBar');
+    if (loading && !external3dStatus) loading.classList.add('active');
 
     try {
         // CTV: reconstruct all labels (multi-label)
@@ -14126,7 +14130,7 @@ async function reconstructOrgan3D(id, silent = false) {
     } catch (e) {
         addChat('error', '3D reconstruction failed: ' + e.message);
     } finally {
-        if (loading) loading.classList.remove('active');
+        if (loading && !external3dStatus) loading.classList.remove('active');
     }
 }
 
@@ -15447,6 +15451,7 @@ function _setMeshPrewarmStatus(text, show = true) {
     }
     if (!el) {
         el = document.createElement('div');
+        el.id = 'meshPrewarmStatus';
         el.style.cssText = 'position:fixed;bottom:60px;right:20px;background:rgba(15,23,42,0.9);color:#94a3b8;padding:8px 16px;border-radius:8px;font-size:0.75rem;z-index:9999;display:flex;align-items:center;gap:8px;';
         el.innerHTML = '<div class="spinner-ring" style="width:12px;height:12px;border-width:2px;"></div><span></span>';
         document.body.appendChild(el);
@@ -19173,10 +19178,15 @@ async function refreshPlanningUI() {
         // 3D MESHES: run ALL in parallel with a loading indicator.
         // Show a temporary status bar so the user knows 3D is building.
         // ═══════════════════════════════════════════════════════════
-        const _3dStatusBar = document.createElement('div');
-        _3dStatusBar.style.cssText = 'position:fixed;bottom:60px;right:20px;background:rgba(15,23,42,0.9);color:#94a3b8;padding:8px 16px;border-radius:8px;font-size:0.75rem;z-index:9999;display:flex;align-items:center;gap:8px;';
-        _3dStatusBar.innerHTML = '<div class="spinner-ring" style="width:12px;height:12px;border-width:2px;"></div><span>3D 重建中...</span>';
-        document.body.appendChild(_3dStatusBar);
+        let _3dStatusBar = document.getElementById('meshPrewarmStatus')
+            || document.getElementById('auto3DStatusBar');
+        if (!_3dStatusBar) {
+            _3dStatusBar = document.createElement('div');
+            _3dStatusBar.id = 'auto3DStatusBar';
+            _3dStatusBar.style.cssText = 'position:fixed;bottom:60px;right:20px;background:rgba(15,23,42,0.9);color:#94a3b8;padding:8px 16px;border-radius:8px;font-size:0.75rem;z-index:9999;display:flex;align-items:center;gap:8px;';
+            _3dStatusBar.innerHTML = '<div class="spinner-ring" style="width:12px;height:12px;border-width:2px;"></div><span>3D reconstruction running...</span>';
+            document.body.appendChild(_3dStatusBar);
+        }
 
         function _withTimeout(promise, name, ms = 60000) {
             return Promise.race([
