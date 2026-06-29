@@ -3326,6 +3326,38 @@ print(json.dumps(result))
         def L(zh, en):
             return zh if is_zh else en
 
+        def _label_id_from_generic_name(name):
+            s = str(name or "").strip().lower().replace("-", "_").replace(" ", "_")
+            for prefix in ("oar_", "organ_", "label_"):
+                if s.startswith(prefix):
+                    tail = s[len(prefix):]
+                    if tail.isdigit():
+                        return int(tail)
+            return None
+
+        def _display_organ_name(name):
+            label_id = _label_id_from_generic_name(name)
+            if label_id is None:
+                return str(name)
+            for key in (label_id, str(label_id)):
+                resolved = organ_names.get(key) if isinstance(organ_names, dict) else None
+                if resolved and not str(resolved).lower().startswith(("oar_", "organ_", "label_")):
+                    return str(resolved)
+            nnunet_oar_names = {201: "artery", 202: "vein", 203: "pancreas"}
+            if label_id in nnunet_oar_names:
+                return nnunet_oar_names[label_id]
+            try:
+                from tool_factory.OAR_seg.totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
+                resolved = TOTALSEG_LABEL_MAPPING.get(label_id)
+                if resolved:
+                    return resolved
+            except Exception:
+                pass
+            return f"Organ {label_id}"
+
+        def _metric_dmax(om):
+            return (om.get('dmax') or om.get('max_dose') or 0) if isinstance(om, dict) else 0
+
         lines = []
         # Section 1: Workflow Summary
         lines.append(f"## {L('1. 流程总结', '1. Workflow Summary')}")
@@ -3361,7 +3393,8 @@ print(json.dumps(result))
         # Show the 8 most clinically relevant OARs
         clinical_oars = ["duodenum", "small_bowel", "colon", "stomach", "liver",
                          "kidney", "spinal_cord", "pancreas", "spleen", "adrenal_gland"]
-        relevant = [name for name in clinical_oars if name in organ_names][:8]
+        organ_name_values = [str(v) for v in organ_names.values()] if isinstance(organ_names, dict) else []
+        relevant = [name for name in clinical_oars if any(name in v for v in organ_name_values)][:8]
         if relevant:
             lines.append(f"- **{L('临床相关 OAR', 'Clinically relevant OARs detected')}**: {', '.join(relevant)}")
         lines.append("")
@@ -3392,11 +3425,13 @@ print(json.dumps(result))
         lines.append(f"## {L('6. OAR 剂量分析', '6. OAR Dose Analysis')}")
         lines.append("")
         oar_metrics = metrics.get('oar_metrics', {}) or {}
+        if isinstance(oar_metrics, dict):
+            oar_metrics = {_display_organ_name(organ): om for organ, om in oar_metrics.items()}
         if oar_metrics:
             lines.append(f"| {L('危及器官', 'OAR')} | {L('最大剂量 (Gy)', 'Dmax (Gy)')} | D2cc (Gy) | D1cc (Gy) | {L('状态', 'Status')} |")
             lines.append("|" + "|".join(["---"] * 5) + "|")
-            for organ, om in sorted(oar_metrics.items(), key=lambda kv: (kv[1].get('dmax') or 0), reverse=True):
-                dmax = om.get('dmax') or 0
+            for organ, om in sorted(oar_metrics.items(), key=lambda kv: _metric_dmax(kv[1]), reverse=True):
+                dmax = _metric_dmax(om)
                 d2cc = om.get('d2cc') or 0
                 d1cc = om.get('d1cc') or 0
                 # Status thresholds (clinical brachy practice):
@@ -3421,8 +3456,8 @@ print(json.dumps(result))
         lines.append("")
         issues_found = False
         if oar_metrics:
-            for organ, om in sorted(oar_metrics.items(), key=lambda kv: (kv[1].get('dmax') or 0), reverse=True):
-                dmax = om.get('dmax') or 0
+            for organ, om in sorted(oar_metrics.items(), key=lambda kv: _metric_dmax(kv[1]), reverse=True):
+                dmax = _metric_dmax(om)
                 d2cc = om.get('d2cc') or 0
                 if dmax > 2 * rx_gy or d2cc > rx_gy:
                     lines.append(f"- **{L('超限', 'EXCEEDS')}**: {organ} {L('最大剂量', 'Dmax')} {dmax:.2f} Gy, D2cc {d2cc:.2f} Gy — {L('需重点关注,可考虑降低处方或重新规划粒子分布', 'requires attention, consider reducing prescription or replanning seed distribution')}")
@@ -3443,7 +3478,7 @@ print(json.dumps(result))
         lines.append(f"- {L('请放射肿瘤科医师审核本计划并签署批准', 'Have a radiation oncologist review and sign off on this plan')}")
         lines.append(f"- {L('使用独立剂量算法进行二次校验(蒙特卡罗或 TG-43)', 'Perform secondary dose verification using an independent algorithm (Monte Carlo or TG-43)')}")
         if oar_metrics:
-            exceed_count = sum(1 for om in oar_metrics.values() if (om.get('dmax') or 0) > 2 * rx_gy)
+            exceed_count = sum(1 for om in oar_metrics.values() if _metric_dmax(om) > 2 * rx_gy)
             if exceed_count > 0:
                 lines.append(f"- {L(f'重点关注 {exceed_count} 个超限 OAR,可在 Report 面板中调整粒子分布', f'Focus on the {exceed_count} OAR(s) exceeding limits; consider seed repositioning in the Report panel')}")
         lines.append(f"- {L('术后 1 个月复查 CT,评估粒子迁移和剂量验证', 'Schedule a 1-month follow-up CT to assess seed migration and dose verification')}")

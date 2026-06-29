@@ -19481,15 +19481,52 @@ function updateMetrics(metrics) {
 // muted gray if the organ isn't in the data tree. The returned color is
 // a CSS color string (hex like "#ff6644" or rgb(...)) so it can be used
 // directly in inline styles.
+const _FALLBACK_OAR_LABEL_NAMES = {
+    201: 'artery',
+    202: 'vein',
+    203: 'pancreas',
+};
+
+function _extractGenericOARLabelId(name) {
+    const s = String(name || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+    const m = s.match(/^(oar|organ|label)_(\d+)$/);
+    return m ? parseInt(m[2], 10) : null;
+}
+
+function _resolveOARDisplayName(name, metric = {}) {
+    const metricLabel = metric && (metric.label_id ?? metric.labelId ?? metric.organ_label ?? metric.organLabel);
+    const labelId = Number.isFinite(Number(metricLabel))
+        ? Number(metricLabel)
+        : _extractGenericOARLabelId(name);
+
+    if (labelId !== null && Number.isFinite(labelId)) {
+        const meta = organMetaFromServer && (organMetaFromServer[labelId] || organMetaFromServer[String(labelId)]);
+        if (meta && meta.name && !/^(oar|organ|label)[_\s-]?\d+$/i.test(meta.name)) return meta.name;
+        const fallback = _FALLBACK_OAR_LABEL_NAMES[labelId];
+        if (fallback) return fallback;
+        if (dataTreeState && dataTreeState.organs) {
+            const match = dataTreeState.organs.find(o =>
+                Number(o.labelId) === labelId ||
+                Number(String(o.id || '').replace(/\D+/g, '')) === labelId
+            );
+            if (match && match.label && !/^(oar|organ|label)[_\s-]?\d+$/i.test(match.label)) return match.label;
+        }
+        return `Organ ${labelId}`;
+    }
+
+    return String(name || '');
+}
+
 function _getOrganColor(name) {
     if (!dataTreeState || !dataTreeState.organs) return null;
+    const displayName = _resolveOARDisplayName(name);
     // Direct match (label may be canonical)
     for (const o of dataTreeState.organs) {
-        if (o.label === name) return o.color;
+        if (o.label === displayName || o.label === name) return o.color;
     }
     // Fuzzy match: data tree names sometimes have "(...)" suffixes or
     // differ by case from DVH/OAR names.
-    const ln = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const ln = displayName.toLowerCase().replace(/[^a-z0-9]/g, '');
     for (const o of dataTreeState.organs) {
         const lo = (o.label || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         if (lo === ln) return o.color;
@@ -19505,6 +19542,7 @@ function updateOARTable(oarMetrics) {
         return;
     }
     tbody.innerHTML = Object.entries(oarMetrics).map(([name, m]) => {
+        const displayName = _resolveOARDisplayName(name, m);
         const d01 = m.d0_1cc || 0;
         const d1 = m.d1cc || 0;
         const d2 = m.d2cc || 0;
@@ -19517,12 +19555,12 @@ function updateOARTable(oarMetrics) {
         // Color the organ name with the SAME color used in the data tree
         // and DVH curve, so the user can visually trace each OAR across
         // all 3 panels.
-        const organColor = _getOrganColor(name);
+        const organColor = _getOrganColor(displayName);
         const nameStyle = organColor
             ? `style="max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;border-left:3px solid ${organColor};padding-left:6px;color:${organColor};"`
             : `style="max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"`;
         return `<tr>
-            <td ${nameStyle} title="${escHtml(name)}">${escHtml(name)}</td>
+            <td ${nameStyle} title="${escHtml(displayName)}">${escHtml(displayName)}</td>
             <td>${d01.toFixed(1)}</td>
             <td>${d1.toFixed(1)}</td>
             <td ${d2ccClass}>${d2.toFixed(1)}</td>
@@ -19610,8 +19648,9 @@ function updateClinicalEvaluation() {
     }
     // Per-OAR: each entry has Dmax and D2cc; flag anything > 2× Rx
     // (TG-229) or > 1× Rx (D2cc, GEC-ESTRO).
-    for (const [name, m] of Object.entries(oarMetrics)) {
-        const dmax = m.dmax || m.Dmax || 0;
+    for (const [rawName, m] of Object.entries(oarMetrics)) {
+        const name = _resolveOARDisplayName(rawName, m);
+        const dmax = m.dmax || m.max_dose || m.Dmax || 0;
         const d2cc = m.d2cc || 0;
         if (dmax > 2 * rxGy) {
             issues.push({ sev: 'high', organ: name, msg: `${name} Dmax = ${dmax.toFixed(2)} Gy > 2× prescription — exceeds tolerance.` });
@@ -20570,11 +20609,12 @@ window.Report = (function () {
                                 (x.dmax && x.dmax > 5)
                             ))
                             .map(([n, x]) => ({
-                                organ: n,
+                                organ: _resolveOARDisplayName(n, x),
+                                label_id: x.label_id ?? x.labelId ?? null,
                                 d2cc: x.d2cc || null,
                                 d1cc: x.d1cc || null,
                                 d0_1cc: x.d0_1cc || null,
-                                dmax: x.dmax || null,
+                                dmax: x.dmax || x.max_dose || null,
                                 v100: x.v100 ? x.v100 * 100 : null,
                             }))
                             .sort((a, b) => (b.d2cc || 0) - (a.d2cc || 0));
@@ -22479,7 +22519,15 @@ async function reportAutoFill() {
     if (state.metrics && state.metrics.oar_metrics) {
         f.oarDose = Object.entries(state.metrics.oar_metrics)
             .filter(([n, x]) => x && (x.d2cc || x.d1cc || x.d0_1cc))
-            .map(([n, x]) => ({ organ: n, d2cc: x.d2cc || null, d1cc: x.d1cc || null, d0_1cc: x.d0_1cc || null, v100: x.v100 ? x.v100 * 100 : null }))
+            .map(([n, x]) => ({
+                organ: _resolveOARDisplayName(n, x),
+                label_id: x.label_id ?? x.labelId ?? null,
+                d2cc: x.d2cc || null,
+                d1cc: x.d1cc || null,
+                d0_1cc: x.d0_1cc || null,
+                dmax: x.dmax || x.max_dose || null,
+                v100: x.v100 ? x.v100 * 100 : null,
+            }))
             .sort((a, b) => (b.d2cc || 0) - (a.d2cc || 0)).slice(0, 12);
     }
     if (dataTreeState && dataTreeState.organs) f.case.oarCount = dataTreeState.organs.length || f.case.oarCount;
@@ -22552,9 +22600,10 @@ function _autoFillInterpretation() {
     if (sortedOars.length > 0) {
         if (isZh) lines.push('**危及器官剂量评估**(按 D2cc 排序,前 3 位):');
         else lines.push('**Organ-at-risk dose assessment** (sorted by D2cc, top 3):');
-        for (const [name, om] of sortedOars) {
+        for (const [rawName, om] of sortedOars) {
+            const name = _resolveOARDisplayName(rawName, om);
             const d2cc = om.d2cc || 0;
-            const dmax = om.dmax || 0;
+            const dmax = om.dmax || om.max_dose || 0;
             const rxGy = (window.reportForm && window.reportForm.planning && window.reportForm.planning.prescriptionGy) || 120;
             const exceeds = d2cc > rxGy || dmax > 2 * rxGy;
             if (isZh) {
@@ -22914,10 +22963,11 @@ function _updateReportPreview() {
                 <thead><tr><th>${escHtml(s.organ)}</th><th>${d2ccLabel} (${U.Gy})</th><th>${d1ccLabel} (${U.Gy})</th><th>${d01ccLabel} (${U.Gy})</th><th>${v100Label} (${U.percent})</th><th>${t('status')}</th></tr></thead>
                 <tbody>
                 ${f.oarDose.map(o => {
+                    const organName = _resolveOARDisplayName(o.organ, o);
                     const cls = o.d2cc > 100 ? 'warn' : 'pass';
                     const statusText = cls === 'warn' ? s.statusFail : s.statusPass;
                     return `<tr>
-                        <td>${escHtml(o.organ)}</td>
+                        <td>${escHtml(organName)}</td>
                         <td>${o.d2cc !== null ? o.d2cc.toFixed(1) : ND}</td>
                         <td>${o.d1cc !== null ? o.d1cc.toFixed(1) : ND}</td>
                         <td>${o.d0_1cc !== null ? o.d0_1cc.toFixed(1) : ND}</td>
