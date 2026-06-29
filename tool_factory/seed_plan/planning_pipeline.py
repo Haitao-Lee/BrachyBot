@@ -1329,6 +1329,39 @@ class PlanningPipelineTool(BaseTool):
             organ_names = agent.memory.retrieve("organ_names")
             logger.info(f"[dose_eval] organ_names: {organ_names}")
 
+        resolved_organ_names = dict(organ_names or {})
+
+        def _lookup_oar_name(label_val):
+            """Resolve numeric OAR labels to stable clinical names."""
+            try:
+                label_int = int(label_val)
+            except (TypeError, ValueError):
+                label_int = label_val
+
+            for key in (label_int, str(label_int), label_val, str(label_val)):
+                name = resolved_organ_names.get(key)
+                if name and not str(name).lower().startswith(("oar_", "organ_", "label_")):
+                    return str(name)
+
+            nnunet_oar_names = {201: "artery", 202: "vein", 203: "pancreas"}
+            if label_int in nnunet_oar_names:
+                name = nnunet_oar_names[label_int]
+                resolved_organ_names[label_int] = name
+                return name
+
+            try:
+                from tool_factory.OAR_seg.totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
+                name = TOTALSEG_LABEL_MAPPING.get(label_int)
+                if name:
+                    resolved_organ_names[label_int] = name
+                    return name
+            except Exception:
+                pass
+
+            if isinstance(label_int, int):
+                return f"Organ {label_int}"
+            return str(label_val)
+
         # Verify shapes match
         logger.info(f"[dose_eval] dose_distribution shape: {dose_distribution.shape}, ctv_mask shape: {ctv_mask.shape}")
         if oar_mask is not None:
@@ -1402,12 +1435,7 @@ class PlanningPipelineTool(BaseTool):
                 if label_val > 0:
                     oar_doses = dose_distribution[oar_mask == label_val] * DOSE_SCALE
                     if len(oar_doses) > 0:
-                        # Get organ name
-                        oar_name = None
-                        if organ_names:
-                            oar_name = organ_names.get(int(label_val)) or organ_names.get(str(int(label_val))) or organ_names.get(label_val)
-                        if not oar_name:
-                            oar_name = f"OAR_{int(label_val)}"
+                        oar_name = _lookup_oar_name(label_val)
 
                         sorted_doses_desc = np.sort(oar_doses)[::-1]
                         sorted_doses_asc = np.sort(oar_doses)
@@ -1432,7 +1460,9 @@ class PlanningPipelineTool(BaseTool):
                             return float(np.sum(oar_doses >= dose_gy) / n * 100.0)
 
                         oar_metrics[oar_name] = {
+                            "label_id": int(label_val),
                             "max_dose": float(np.max(oar_doses)),
+                            "dmax": float(np.max(oar_doses)),
                             "mean_dose": float(np.mean(oar_doses)),
                             "d0_1cc": dose_at_xcc(0.1),
                             "d1cc": dose_at_xcc(1.0),
@@ -1492,11 +1522,7 @@ class PlanningPipelineTool(BaseTool):
                             pct = min(100.0, max(0.0, float(np.sum(oar_doses_arr >= d) / len(oar_doses_arr) * 100.0)))
                             oar_pcts.append(pct)
                         # Try both int and string keys for organ_names
-                        oar_name = None
-                        if organ_names:
-                            oar_name = organ_names.get(int(label_val)) or organ_names.get(str(int(label_val))) or organ_names.get(label_val)
-                        if not oar_name:
-                            oar_name = f"OAR_{int(label_val)}"
+                        oar_name = _lookup_oar_name(label_val)
                         dvh_data[oar_name] = {
                             "dose_bins": dose_centers.tolist(),
                             "volume_pcts": oar_pcts,
@@ -1536,6 +1562,8 @@ class PlanningPipelineTool(BaseTool):
 
         if agent:
             agent.memory.store("dose_metrics", metrics)
+            if resolved_organ_names:
+                agent.memory.store("organ_names", resolved_organ_names)
 
         return ToolResult(
             success=True,
