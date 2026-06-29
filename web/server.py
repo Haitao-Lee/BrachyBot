@@ -41,7 +41,7 @@ ALLOWED_UPLOAD_EXTENSIONS = {
 }
 ALLOWED_DICOM_SERIES_EXTENSIONS = {"", ".dcm", ".dicom"}
 MAX_UPLOAD_FILES = int(os.environ.get("BRACHYBOT_MAX_UPLOAD_FILES", "3000"))
-MAX_SCREENSHOT_BYTES = int(os.environ.get("BRACHYBOT_MAX_SCREENSHOT_BYTES", str(10 * 1024 * 1024)))
+MAX_SCREENSHOT_BYTES = int(os.environ.get("BRACHYBOT_MAX_SCREENSHOT_BYTES", str(25 * 1024 * 1024)))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -61,6 +61,11 @@ if not API_KEY and not _TRUST_NETWORK:
 RATE_LIMIT_REQUESTS = 9999 if _TRUST_NETWORK else 120
 RATE_LIMIT_WINDOW = 60
 _rate_limit_store: Dict[str, list] = {}
+
+_MESH_CACHE_LOCK = threading.Lock()
+_MESH_CACHE: Dict[tuple, Dict[str, Any]] = {}
+_MESH_CACHE_ORDER: list = []
+_MESH_CACHE_MAX_ITEMS = int(os.environ.get("BRACHYBOT_MESH_CACHE_MAX_ITEMS", "96"))
 
 
 class TaskManager:
@@ -1917,13 +1922,25 @@ def create_app(config: Optional[Dict] = None):
 
             # Extract binary mask for this label
             label_id = int(label_id)
+            try:
+                mask_shape_key = tuple(int(x) for x in getattr(mask_data, "shape", ()))
+            except Exception:
+                mask_shape_key = ()
+            smoothing_key = data.get("smoothing", 1)
             binary_mask = (mask_data == label_id).astype(np.uint8)
 
-            if binary_mask.sum() == 0:
+            total_voxels = int(binary_mask.sum())
+            if total_voxels == 0:
                 return jsonify({"error": f"Label {label_id} not found in mask"}), 400
+            cache_key = (source, label_id, str(smoothing_key), id(mask_data), mask_shape_key, total_voxels)
+            with _MESH_CACHE_LOCK:
+                cached = _MESH_CACHE.get(cache_key)
+            if cached is not None:
+                cached_payload = dict(cached)
+                cached_payload["cached"] = True
+                return jsonify(cached_payload)
 
             # Adaptive preprocessing based on mask density
-            total_voxels = binary_mask.sum()
             mask_volume = binary_mask.shape[0] * binary_mask.shape[1] * binary_mask.shape[2]
             density = total_voxels / mask_volume
 
@@ -2005,7 +2022,7 @@ def create_app(config: Optional[Dict] = None):
                     # No decimation - keep full mesh (stride-based creates holes)
                     pass
 
-            return jsonify({
+            payload = {
                 "success": True,
                 "vertices": vertices.tolist(),
                 "faces": faces.tolist(),
@@ -2013,7 +2030,16 @@ def create_app(config: Optional[Dict] = None):
                 "face_count": len(faces),
                 "label_id": label_id,
                 "source": source,
-            })
+                "cached": False,
+            }
+            with _MESH_CACHE_LOCK:
+                _MESH_CACHE[cache_key] = payload
+                _MESH_CACHE_ORDER.append(cache_key)
+                while len(_MESH_CACHE_ORDER) > _MESH_CACHE_MAX_ITEMS:
+                    old_key = _MESH_CACHE_ORDER.pop(0)
+                    _MESH_CACHE.pop(old_key, None)
+
+            return jsonify(payload)
         except Exception as e:
             logger.error(f"3D mask reconstruction failed: {e}")
             return jsonify({"error": str(e)}), 500
@@ -3082,8 +3108,10 @@ def create_app(config: Optional[Dict] = None):
             # distribution's edge (around 1 Gy), which doesn't match
             # the visible dose map at all.
             iso_values_rel = iso_params.get("iso_dose_values", [1.0, 1.5, 2.0, 4.0])
-            iso_colors_raw = iso_params.get("iso_colors", [[0,1,0],[0,1,1],[1,1,0],[1,0.5,0],[1,0,0]])
-            iso_opacities = iso_params.get("iso_opacities", [0.3, 0.2, 0.1, 0.05])
+            # Colors now match the colorbar (petRainbow2 colormap) and 3D isosurfaces.
+            # 1.0×Rx = green, 1.5×Rx = yellow-green, 2.0×Rx = yellow, 4.0×Rx = orange.
+            iso_colors_raw = iso_params.get("iso_colors", [[0,1,0], [0.53,1,0], [1,1,0], [1,0.53,0], [1,0,0]])
+            iso_opacities = iso_params.get("iso_opacities", [0.7, 0.6, 0.5, 0.4])  # Increased opacity for better visibility
             # Read prescription in Gy: prefer memory dose_metrics
             # (already in normalized units * DOSE_SCALE) then fall
             # back to reportForm, then default 120 Gy.
@@ -3893,6 +3921,9 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({
                 "success": True,
                 "url": url,
+                "screenshot_url": url,
+                "path": url,
+                "data": {"url": url},
                 "filename": filename,
                 "description": description,
                 "target": target,
@@ -3906,8 +3937,7 @@ def create_app(config: Optional[Dict] = None):
     @rate_limit
     def api_serve_screenshot(filename):
         """Serve a saved screenshot file."""
-        screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads", "screenshots")
-        screenshots_dir = os.path.normpath(screenshots_dir)
+        screenshots_dir = SCREENSHOTS_DIR
         filepath = os.path.join(screenshots_dir, filename)
         if not os.path.exists(filepath):
             return jsonify({"error": "File not found"}), 404
