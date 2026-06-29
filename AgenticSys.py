@@ -4922,6 +4922,43 @@ Output (JSON array of strings):"""
         def _cancelled():
             return bool(getattr(self, "_cancel_requested", False))
 
+        def _ui_screenshot_turn_response() -> Optional[str]:
+            tool_steps = [s for s in steps if s.get("type") == "tool"]
+            if not tool_steps:
+                return None
+            if any(s.get("tool") != "ui_screenshot" for s in tool_steps if s.get("tool")):
+                return None
+            ss_steps = [s for s in tool_steps if s.get("tool") == "ui_screenshot"]
+            if not ss_steps:
+                return None
+            last = ss_steps[-1]
+            params = last.get("params") or {}
+            target = params.get("target") or (last.get("metadata") or {}).get("target") or ""
+            if target == "dose-overview":
+                target_label = "three-plane dose overview (Axial/Sagittal/Coronal)"
+            elif target == "dvh":
+                target_label = "DVH chart"
+            elif target == "viewer-axial":
+                target_label = "Axial view"
+            elif target == "viewer-sagittal":
+                target_label = "Sagittal view"
+            elif target == "viewer-coronal":
+                target_label = "Coronal view"
+            elif target == "metrics":
+                target_label = "Analysis/Metrics panel with DVH"
+            else:
+                target_label = target or "current UI"
+            if last.get("status") == "error":
+                result = last.get("result") or last.get("content") or "Screenshot request failed."
+                if "Unknown target" in str(result) and "dvh" in str(result).lower():
+                    return "DVH screenshot target is now `dvh`. Please request the DVH screenshot again."
+                return f"Screenshot request failed: {result}"
+            lowered = message.lower()
+            asked_direction = any(k in lowered for k in ["哪个方向", "方向", "axial", "sagittal", "coronal"])
+            if asked_direction and target in ("viewer-axial", "viewer-sagittal", "viewer-coronal"):
+                return f"The requested screenshot is the {target_label}. It will appear directly in the chat."
+            return f"Requested screenshot: {target_label}. The image will appear directly in the chat."
+
         # Auto-compact conversation history if too long
         compaction_triggered = False
         if self.memory.needs_compaction():
@@ -6122,6 +6159,10 @@ Output (JSON array of strings):"""
                     final_response = "Tools executed. Check the execution trace above for results."
             else:
                 final_response = "Tools executed. Check the execution trace above for results."
+
+        ui_screenshot_response = _ui_screenshot_turn_response()
+        if ui_screenshot_response:
+            final_response = ui_screenshot_response
 
         # Verify response against search results to detect fabrication
         if final_response and tools_executed:
