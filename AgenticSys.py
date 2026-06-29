@@ -1989,8 +1989,31 @@ class BrachyAgent:
         )
 
     def _planning_requested(self, message: str, tool_calls: List[Dict] = None) -> bool:
-        """Detect clinical planning requests without relying only on LLM order."""
+        """Detect requests to execute planning, not educational questions about planning."""
         text = (message or "").lower()
+        planning_tools = {"planning_pipeline", "seed_planning", "dose_engine", "dose_evaluation", "dose_calc"}
+        planning_tool_requested = any((tc.get("tool") in planning_tools) for tc in (tool_calls or []))
+
+        knowledge_markers = (
+            "介绍", "解释", "说明", "讲讲", "为什么", "为啥", "好处", "优势",
+            "缺点", "局限", "比较", "区别", "对比", "不用其他治疗",
+            "what is", "explain", "why", "benefit", "advantage", "disadvantage",
+            "compare", "comparison", "versus", " vs ",
+        )
+        execution_markers = (
+            "执行", "运行", "开始", "生成", "制定", "计算", "进行规划",
+            "开始规划", "重新规划", "帮我规划", "请规划", "做一个计划",
+            "做治疗计划", "治疗计划生成",
+            "run", "execute", "start planning", "perform planning",
+            "generate a treatment plan", "create a treatment plan",
+            "compute plan", "replan",
+        )
+        has_execution_intent = any(k in text for k in execution_markers)
+        is_knowledge_question = any(k in text for k in knowledge_markers)
+
+        if is_knowledge_question and not has_execution_intent:
+            return False
+
         planning_keywords = (
             "planning",
             "treatment plan",
@@ -2002,10 +2025,10 @@ class BrachyAgent:
             "\u690d\u5165",
             "\u653e\u5c04\u6027",
         )
-        if any(k in text for k in planning_keywords):
+        has_planning_domain = any(k in text for k in planning_keywords)
+        if has_execution_intent and has_planning_domain:
             return True
-        planning_tools = {"planning_pipeline", "seed_planning", "dose_engine", "dose_evaluation", "dose_calc"}
-        return any((tc.get("tool") in planning_tools) for tc in (tool_calls or []))
+        return planning_tool_requested and has_execution_intent
 
     def _current_ct_path(self, tool_calls: List[Dict] = None) -> str:
         for tc in tool_calls or []:
@@ -4106,7 +4129,7 @@ Output (JSON array of strings):"""
                 pre_ctx = self.enhanced.pre_task_hook(message)
                 if pre_ctx.get("reflexion_warnings") and self.memory.retrieve("ct_image") is not None:
                     enhanced_context += "\n### Past Experience Warnings\n" + pre_ctx["reflexion_warnings"]
-                if pre_ctx.get("matched_sop") and self.memory.retrieve("ct_image") is not None:
+                if self._planning_requested(message) and pre_ctx.get("matched_sop") and self.memory.retrieve("ct_image") is not None:
                     sop = pre_ctx["matched_sop"]
                     enhanced_context += f"\n### Matched SOP: {sop['name']} (success: {sop['success_rate']:.0%})\n"
                     enhanced_context += f"Recommended chain: {' -> '.join(sop['steps'])}\n"
@@ -4119,7 +4142,7 @@ Output (JSON array of strings):"""
                     kw in message for kw in ['segment', 'plan', 'dose',
                                                'screenshot', 'analyze', 'load']
                 )
-                if pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and not _planning_done and not _simple_question:
+                if self._planning_requested(message) and pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and not _planning_done and not _simple_question:
                     sk = pre_ctx["crystallized_skill"]
                     # Skip skill if it doesn't match what the user actually wants
                     _direct = self._detect_tool_request(message)
@@ -5067,7 +5090,7 @@ Output (JSON array of strings):"""
                 pre_ctx = self.enhanced.pre_task_hook(message)
                 if pre_ctx.get("reflexion_warnings") and self.memory.retrieve("ct_image") is not None:
                     enhanced_context += "\n### Past Experience Warnings\n" + pre_ctx["reflexion_warnings"]
-                if pre_ctx.get("matched_sop") and self.memory.retrieve("ct_image") is not None:
+                if self._planning_requested(message) and pre_ctx.get("matched_sop") and self.memory.retrieve("ct_image") is not None:
                     sop = pre_ctx["matched_sop"]
                     enhanced_context += f"\n### Matched SOP: {sop['name']} (success: {sop['success_rate']:.0%})\n"
                     enhanced_context += f"Recommended chain: {' -> '.join(sop['steps'])}\n"
@@ -5080,7 +5103,7 @@ Output (JSON array of strings):"""
                     kw in message for kw in ['segment', 'plan', 'dose',
                                                'screenshot', 'analyze', 'load']
                 )
-                if pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and not _planning_done and not _simple_question:
+                if self._planning_requested(message) and pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and not _planning_done and not _simple_question:
                     sk = pre_ctx["crystallized_skill"]
                     # Skip skill if it doesn't match what the user actually wants
                     _direct = self._detect_tool_request(message)
@@ -6247,17 +6270,11 @@ Output (JSON array of strings):"""
                 warning = "\n\n⚠️ Warning: Some information in this response may not be fully accurate. Please verify the sources."
                 final_response += warning
 
-        step_id_ref[0] += 1
-        response_step = {
-            "id": step_id_ref[0],
-            "type": "assistant",
-            "title": "AI Response",
-            "content": final_response,
-            "status": "done",
-        }
-        steps.append(response_step)
-        yield yield_event("step", response_step)
-
+        # Do not emit an assistant/final-response step here. The
+        # enclosing chat_with_stream still needs to run requirement
+        # coverage review and workflow enforcement before the answer is
+        # user-visible. Emitting this step early makes the UI look as if
+        # the final answer was generated before completeness_checker.
         self.memory.add_message("assistant", final_response)
         yield {"type": "_result", "response": final_response, "llm_meta": {
             "usage": total_usage,
@@ -6511,10 +6528,10 @@ Output (JSON array of strings):"""
 
         if self.enhanced:
             pre_ctx = self.enhanced.pre_task_hook(message)
-            if pre_ctx.get("matched_sop"):
+            if self._planning_requested(message) and pre_ctx.get("matched_sop"):
                 sop = pre_ctx["matched_sop"]
                 add_step("memory", "Matched SOP", f"{sop['name']} ({sop['success_rate']:.0%} success): {' -> '.join(sop['steps'])}")
-            if pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and self.memory.retrieve("dose_metrics") is None:
+            if self._planning_requested(message) and pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and self.memory.retrieve("dose_metrics") is None:
                 sk = pre_ctx["crystallized_skill"]
                 add_step("memory", "Crystallized Skill", f"{sk['name']} ({sk['success_rate']:.0%}): {' -> '.join(sk['tool_chain'])}")
             if pre_ctx.get("reflexion_warnings"):
@@ -6884,6 +6901,45 @@ Output (JSON array of strings):"""
                 response = self._build_planning_report(_lang, steps)
                 logger.info(f"[streaming] Regenerated planning report after review: {len(response)} chars")
 
+            # Direct-tool requests return from this branch, so run the
+            # same user-visible completeness check here before the final
+            # response event. This keeps the UI order consistent:
+            # tools -> requirement coverage -> final answer.
+            if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
+                step_id[0] += 1
+                _direct_cc_step = {
+                    "id": step_id[0],
+                    "type": "tool",
+                    "title": "Completeness Check",
+                    "tool": "completeness_checker",
+                    "content": "Checking requirement coverage...",
+                    "status": "pending",
+                }
+                steps.append(_direct_cc_step)
+                yield yield_event("step", _direct_cc_step)
+                try:
+                    import asyncio as _asyncio_direct_review
+                    _direct_loop = _asyncio_direct_review.new_event_loop()
+                    try:
+                        _asyncio_direct_review.set_event_loop(_direct_loop)
+                        _cc_result = _direct_loop.run_until_complete(
+                            self.multi_agent_wrapper.check_completeness_append(
+                                message, response, steps, _lang
+                            )
+                        )
+                    finally:
+                        _direct_loop.close()
+                    if isinstance(_cc_result, str) and _cc_result:
+                        response += "\n\n---\n" + _cc_result
+                    _direct_cc_step["status"] = "done"
+                    _direct_cc_step["content"] = "Checked" if not _cc_result else "Issues found"
+                    yield yield_event("step", _direct_cc_step)
+                except Exception as e:
+                    logger.debug(f"Direct completeness check skipped: {e}")
+                    _direct_cc_step["status"] = "done"
+                    _direct_cc_step["content"] = "Coverage check unavailable; continuing."
+                    yield yield_event("step", _direct_cc_step)
+
             yield yield_event("response", {"response": response})
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
             return
@@ -6891,11 +6947,11 @@ Output (JSON array of strings):"""
         # Enhanced context
         if self.enhanced:
             pre_ctx = self.enhanced.pre_task_hook(message)
-            if pre_ctx.get("matched_sop"):
+            if self._planning_requested(message) and pre_ctx.get("matched_sop"):
                 sop = pre_ctx["matched_sop"]
                 step = add_step("memory", "Matched SOP", f"{sop['name']} ({sop['success_rate']:.0%} success): {' -> '.join(sop['steps'])}")
                 yield yield_event("step", step)
-            if pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None:
+            if self._planning_requested(message) and pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None:
                 sk = pre_ctx["crystallized_skill"]
                 step = add_step("memory", "Crystallized Skill", f"{sk['name']} ({sk['success_rate']:.0%}): {' -> '.join(sk['tool_chain'])}")
                 yield yield_event("step", step)
