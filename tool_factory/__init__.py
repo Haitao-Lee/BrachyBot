@@ -7,8 +7,10 @@ that can be called by the LLM Agent system.
 """
 
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from typing import Any, Dict, Optional
 import logging
+import sys
 import time
 
 logger = logging.getLogger(__name__)
@@ -101,6 +103,38 @@ class BaseTool(ABC):
             if param not in kwargs:
                 raise ValueError(f"Missing required parameter: {param}")
         return True
+
+    @contextmanager
+    def _operation_tracker(self):
+        """Best-effort hook for web/server.py shutdown protection."""
+        ctx = None
+        entered = False
+        try:
+            import builtins
+            tracker = getattr(builtins, "track_operation", None)
+            if callable(tracker):
+                ctx = tracker(self.name)
+                ctx.__enter__()
+                entered = True
+        except Exception as e:
+            logger.debug(f"Operation tracking unavailable for {self.name}: {e}")
+            ctx = None
+
+        try:
+            yield
+        except Exception:
+            if entered and ctx is not None:
+                try:
+                    ctx.__exit__(*sys.exc_info())
+                except Exception as e:
+                    logger.debug(f"Operation tracking exit failed for {self.name}: {e}")
+            raise
+        else:
+            if entered and ctx is not None:
+                try:
+                    ctx.__exit__(None, None, None)
+                except Exception as e:
+                    logger.debug(f"Operation tracking exit failed for {self.name}: {e}")
     
     def execute(self, **kwargs) -> ToolResult:
         """
@@ -114,9 +148,10 @@ class BaseTool(ABC):
         """
         start_time = time.time()
         try:
-            self.validate_input(**kwargs)
-            logger.info(f"Executing tool: {self.name}")
-            result = self._execute(**kwargs)
+            with self._operation_tracker():
+                self.validate_input(**kwargs)
+                logger.info(f"Executing tool: {self.name}")
+                result = self._execute(**kwargs)
             result.execution_time = time.time() - start_time
             logger.info(f"Tool {self.name} completed in {result.execution_time:.2f}s")
             return result

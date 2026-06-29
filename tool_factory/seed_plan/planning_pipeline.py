@@ -607,33 +607,10 @@ class PlanningPipelineTool(BaseTool):
         # AUTO-RECOVERY: If CTV/OAR masks are missing, automatically run segmentation!
         if step == "full":
             if ctv_mask is None:
-                logger.warning("[AUTO-RECOVERY] CTV mask not found — auto-running ctv_segmentation")
-                ct_path = kwargs.get("ct_image_path") or (agent.memory.retrieve("ct_path") if agent else None)
-                if ct_path and os.path.exists(ct_path):
-                    try:
-                        ctv_tool = agent.registry.get("ctv_segmentation") if agent else None
-                        if ctv_tool:
-                            ctv_result = ctv_tool.execute(image_path=ct_path)
-                            if ctv_result and ctv_result.success:
-                                logger.info("[AUTO-RECOVERY] ✓ CTV segmentation completed")
-                                # Reload CTV mask from memory
-                                ctv_mask = self._load_ctv(kwargs, agent, ct_image)
-                                if ctv_mask is None:
-                                    return ToolResult(success=False, error="CTV segmentation completed but mask still not found in memory")
-                            else:
-                                return ToolResult(
-                                    success=False,
-                                    error=f"Auto-recovery failed: CTV segmentation error: {ctv_result.error if ctv_result else 'no result'}"
-                                )
-                        else:
-                            return ToolResult(success=False, error="ctv_segmentation tool not found")
-                    except Exception as e:
-                        return ToolResult(success=False, error=f"Auto-recovery failed: {e}")
-                else:
-                    return ToolResult(
-                        success=False,
-                        error=f"CTV mask is required but CT path not found. Please upload a CT image first."
-                    )
+                return ToolResult(
+                    success=False,
+                    error="CTV mask is required but not found. You MUST call ctv_segmentation FIRST, then oar_segmentation, before planning_pipeline."
+                )
 
             if oar_mask is None:
                 logger.warning("[AUTO-RECOVERY] OAR mask not found — auto-running oar_segmentation")
@@ -642,7 +619,8 @@ class PlanningPipelineTool(BaseTool):
                     try:
                         oar_tool = agent.registry.get("oar_segmentation") if agent else None
                         if oar_tool:
-                            oar_result = oar_tool.execute(image_path=ct_path)
+                            # Pass LPI CT object (not file path) to prevent Z-flip
+                            oar_result = oar_tool.execute(image=ct_image, image_path=ct_path) if ct_image else oar_tool.execute(image_path=ct_path)
                             if oar_result and oar_result.success:
                                 logger.info("[AUTO-RECOVERY] ✓ OAR segmentation completed")
                                 # Reload OAR mask from memory
@@ -1192,6 +1170,7 @@ class PlanningPipelineTool(BaseTool):
         # Store results
         if agent:
             agent.memory.store("seed_plan", plan_res)
+            agent.memory.store("seed_plan_serialized", seed_plan)
             agent.memory.store("dose_distribution", sum_image)
             agent.memory.store("total_seeds", total_seeds)
             agent.memory.store("num_trajectories", num_trajectories)
@@ -1678,6 +1657,7 @@ class PlanningPipelineTool(BaseTool):
         # "unsupported format string passed to NoneType.__format__".
         # Use `or 0` so a None value falls back to 0.
         total_seeds = results.get("total_seeds", 0) or 0
+        num_trajectories = len(results.get("seed_plan", []) or [])
         metrics = results.get("dose_metrics", {}) or {}
         v100_val = metrics.get("v100") or 0
         d90_val = metrics.get("d90") or 0
@@ -1698,6 +1678,7 @@ class PlanningPipelineTool(BaseTool):
                 "dose_distribution": results.get("dose_distribution"),
                 "dose_metrics": results.get("dose_metrics", {}),
                 "total_seeds": total_seeds,
+                "num_trajectories": num_trajectories,
                 "summary": summary,
                 # Per-substep wall-clock timings in seconds. Used by the
                 # frontend pipeline progress box to show per-step timers

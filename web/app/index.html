@@ -2253,6 +2253,11 @@ body::before {
     transform: translateY(-1px);
     box-shadow: var(--inset-top), var(--shadow-sm);
 }
+.file-btn.active {
+    background: var(--primary);
+    color: var(--primary-ink);
+    border-color: var(--primary);
+}
 .file-btn:active { transform: translateY(0) scale(0.97); }
 .file-btn:focus-visible {
     outline: 2px solid var(--primary);
@@ -2648,14 +2653,8 @@ body::before {
 .dvh-container { padding: 0.95rem; flex: 1; overflow: hidden; position: relative; }
 /* DVH tooltip uses a mousemove-based approach with a fixed-position div
    appended to document.body. Plotly's native hoverlabel is fully disabled. */
-.dvh-container .hoverlayer,
-.dvh-container .hoverlayer *,
-.dvh-container .hoverlayer .hovertext,
-.dvh-container .hoverlayer .hovertext text {
-    display: none !important;
-    visibility: hidden !important;
+.dvh-container .hoverlayer {
     pointer-events: none !important;
-    opacity: 0 !important;
 }
 
 .dvh-container {
@@ -2671,11 +2670,17 @@ body::before {
     border-radius: var(--radius-md);
     border: 1px solid var(--border-hairline);
     box-shadow: var(--inset-bottom), var(--shadow-xs);
-    overflow: visible;  /* Allow Plotly hoverlabel to render; JS clamp repositions */
+    overflow: hidden;  /* Custom DVH tooltip is clamped inside this panel. */
     margin-bottom: 0.3rem;
     /* Do NOT use height:0 — it gives the container zero dimensions,
        causing Plotly's hover tooltip to misposition and overflow.
        The metrics-section parent already caps height via flex layout. */
+}
+
+#dvhChart {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
 }
 
 .dvh-placeholder {
@@ -5114,6 +5119,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
                         style="width:50px;height:12px;cursor:pointer;">
                     <span id="doseOpacityVal" style="font-size:0.55rem;min-width:20px;">50%</span>
                 </label>
+                <button class="file-btn" id="doseTextureToggle" style="padding:2px 6px;font-size:0.6rem;white-space:nowrap;" onclick="toggleDoseTextureMode()" title="Map dose intensity onto CTV/OAR 3D surfaces">Dose Surface</button>
                 <div class="ctrl-sep" style="height:16px;"></div>
                 <!-- Tools -->
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;white-space:nowrap;" onclick="setViewerTool('crosshair')" id="toolCrosshair">&#10799; Crosshair</button>
@@ -6167,17 +6173,28 @@ function _firstMatchingIcon(text) {
 
 function _sanitizeHtml(html) {
     // Strip <script>, <iframe>, <object>, <embed>, <form> tags and event handlers.
-    // This is a lightweight sanitizer — not a full CSP replacement, but
-    // sufficient to prevent XSS from LLM-generated markdown.
+    // This is a lightweight defense-in-depth sanitizer. Keep server/API
+    // responses escaped where possible; use DOMPurify if arbitrary HTML is
+    // ever intentionally allowed.
     if (!html) return '';
     // Remove dangerous tags and their content
-    let s = html.replace(/<(script|iframe|object|embed|form|style|link|meta|base)\b[^>]*>[\s\S]*?<\/\1>/gi, '');
+    let s = html.replace(/<\s*(script|iframe|object|embed|form|style|link|meta|base)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '');
     // Remove self-closing dangerous tags
-    s = s.replace(/<(script|iframe|object|embed|form|style|link|meta|base)\b[^>]*\/?>/gi, '');
+    s = s.replace(/<\s*(script|iframe|object|embed|form|style|link|meta|base)\b[^>]*\/?>/gi, '');
     // Remove event handlers (onclick, onerror, onload, etc.)
-    s = s.replace(/\s+on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
-    // Remove javascript: URLs
-    s = s.replace(/href\s*=\s*["']?\s*javascript:/gi, 'href="#"');
+    s = s.replace(/[\s/]+on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+    // Remove scriptable or embedded-data URLs in common URL attributes.
+    s = s.replace(/\s(href|src|xlink:href)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, (m, attr, value) => {
+        const raw = String(value || '').replace(/^['"]|['"]$/g, '').trim().replace(/[\u0000-\u001F\u007F\s]+/g, '');
+        if (/^(javascript|vbscript|data):/i.test(raw)) return ' ' + attr + '="#"';
+        return m;
+    });
+    // Neutralize inline CSS expression/url javascript payloads.
+    s = s.replace(/\sstyle\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, (m, value) => {
+        const raw = String(value || '').toLowerCase();
+        if (raw.includes('expression(') || raw.includes('javascript:') || raw.includes('data:')) return '';
+        return m;
+    });
     return s;
 }
 
@@ -7936,6 +7953,19 @@ function handleChatInput(el) {
 // and render the final response.
 async function sendChat(prefill) {
     const input = document.getElementById('chatInput');
+
+    // If user already has an active stream, treat this button click as STOP.
+    // This must run before reading/validating the input box; during streaming
+    // the input is usually empty, and the old ordering returned early before
+    // aborting anything.
+    if (chatAbortController && window._chatStreaming) {
+        try { chatAbortController.abort(); } catch (_) {}
+        window._chatStreaming = false;
+        setStreamingState(false);
+        try { fetch(API + '/chat/abort', { method: 'POST' }); } catch (_) {}
+        return;
+    }
+
     const text = (prefill != null ? prefill : (input ? input.value : '')).trim();
     if (!text) return;
     if (input) input.value = '';
@@ -7949,15 +7979,6 @@ async function sendChat(prefill) {
     // fresh page load.
     try { if (typeof ensurePendingSession === 'function') ensurePendingSession(); } catch (_) {}
 
-    // If user already has an active stream, treat this as a STOP request
-    if (chatAbortController && window._chatStreaming) {
-        try { chatAbortController.abort(); } catch (_) {}
-        window._chatStreaming = false;
-        setStreamingState(false);
-        // Notify server to stop processing and clean up conversation
-        try { fetch(API + '/chat/abort', { method: 'POST' }); } catch (_) {}
-        return;
-    }
     window._chatStreaming = false;
 
     // BUG FIX 2026-06-16: previously the dock accumulated one
@@ -8179,13 +8200,22 @@ async function sendChat(prefill) {
                         }
                         // Show tool progress (pending / done)
                         if (data.type === 'tool' && data.status === 'pending') {
-                            if (progressEl && progressEl.parentNode) {
-                                progressEl.style.opacity = '0.3';
-                                progressEl.style.transform = 'scale(0.98)';
-                            }
-                            lastToolName = data.tool || 'unknown';
-                            if (typeof showToolProgress === 'function') {
-                                progressEl = showToolProgress(lastToolName, data.params);
+                            // If this is the SAME tool already showing progress,
+                            // just update its content — don't create a new row.
+                            if (progressEl && progressEl.parentNode && lastToolName === (data.tool || 'unknown')) {
+                                const existingText = progressEl.querySelector('.tool-progress-text');
+                                if (existingText && data.content) {
+                                    existingText.textContent = data.content;
+                                }
+                            } else {
+                                if (progressEl && progressEl.parentNode) {
+                                    progressEl.style.opacity = '0.3';
+                                    progressEl.style.transform = 'scale(0.98)';
+                                }
+                                lastToolName = data.tool || 'unknown';
+                                if (typeof showToolProgress === 'function') {
+                                    progressEl = showToolProgress(lastToolName, data.params);
+                                }
                             }
                         } else if (data.type === 'tool' && (data.status === 'done' || data.status === 'error')) {
                             if (progressEl && typeof updateToolProgress === 'function') {
@@ -8554,6 +8584,12 @@ const state = {
     seedsOverlay: null,  // { seeds: [...], needles: [...] } in world coords
     slices: { axial: 0, sagittal: 0, coronal: 0 },
     doseOpacity: 0.4,
+    doseTexture: {
+        enabled: false,
+        applying: false,
+        rawAxialSlices: {},
+        originalMaterials: {},
+    },
     viewerSettings: {
         window: 400,
         level: 40,
@@ -8586,6 +8622,38 @@ const state = {
 
 /******** API ********/
 const API = '/api';
+
+(function installApiKeyFetchWrapper() {
+    const nativeFetch = window.fetch.bind(window);
+    // Support ?api_key=xxx in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const keyFromUrl = urlParams.get('api_key');
+    if (keyFromUrl) {
+        localStorage.setItem('BRACHYBOT_API_KEY', keyFromUrl);
+        window.BRACHYBOT_API_KEY = keyFromUrl;
+        // Clean URL without reload
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, '', cleanUrl);
+    }
+    window.setBrachyBotApiKey = function setBrachyBotApiKey(key) {
+        const value = String(key || '').trim();
+        window.BRACHYBOT_API_KEY = value;
+        if (value) localStorage.setItem('BRACHYBOT_API_KEY', value);
+        else localStorage.removeItem('BRACHYBOT_API_KEY');
+    };
+    window.fetch = function brachybotFetch(input, init) {
+        const key = window.BRACHYBOT_API_KEY || localStorage.getItem('BRACHYBOT_API_KEY') || '';
+        if (!key) return nativeFetch(input, init);
+        const url = typeof input === 'string' ? input : (input && input.url) || '';
+        const isApiRequest = url.startsWith(API + '/') || url.startsWith('/api/');
+        if (!isApiRequest) return nativeFetch(input, init);
+        const nextInit = Object.assign({}, init || {});
+        const headers = new Headers(nextInit.headers || (input && input.headers) || {});
+        if (!headers.has('X-API-Key')) headers.set('X-API-Key', key);
+        nextInit.headers = headers;
+        return nativeFetch(input, nextInit);
+    };
+})();
 
 // Abort controller for stopping streaming responses
 let chatAbortController = null;
@@ -9114,8 +9182,25 @@ for (const [name, fn] of Object.entries(_legacyMissingStubs)) {
 
 /******** INIT ********/
 async function init() {
+    // --- PRIORITY 0: Restore chat history IMMEDIATELY (no await) ---
+    // Sessions live in localStorage; rendering them must NOT be blocked
+    // by any server round-trip.  Previously, loadSessions() was called
+    // AFTER three sequential await fetch() calls (/status, /planning/clear,
+    // /config), which meant the user saw a blank chat area for 1-3s on
+    // every page refresh.
     try {
-        const resp = await fetch(API + '/status');
+        if (typeof loadSessions === 'function') loadSessions();
+        if (typeof renderSessionList === 'function') renderSessionList();
+        if (typeof loadSessionChat === 'function' && activeSessionId) {
+            loadSessionChat(activeSessionId);
+        }
+    } catch (e) { console.warn('Session init failed:', e); }
+
+    // --- PRIORITY 1: Server init — run /status, /planning/clear, /config
+    // in parallel instead of sequentially.  The /status response is needed
+    // by downstream UI, so we await it; /planning/clear and /config are
+    // fire-and-forget.
+    const _statusPromise = fetch(API + '/status').then(async resp => {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
         state.brainAvailable = data.brain_available;
@@ -9123,20 +9208,28 @@ async function init() {
         document.getElementById('brainDot').className = 'dot ' + (data.brain_available ? 'green' : 'yellow');
         document.getElementById('brainStatusText').textContent = data.brain_available ? _t('在线', 'Online') : _t('离线', 'Offline');
         document.getElementById('sessionDisplay').textContent = state.sessionId;
-    } catch (e) {
+    }).catch(e => {
         document.getElementById('serverDot').className = 'dot red';
         document.getElementById('serverStatus').textContent = _t('已断开', 'Offline');
-    }
+    });
 
-    // Clear planning data ONLY on first page load (not on periodic refresh)
+    // Fire-and-forget: clear planning data on first page load only
     if (!window._initDone) {
         window._initDone = true;
-        try {
-            await fetch(API + '/planning/clear', { method: 'POST' });
-            console.log('Cleared planning data on page load');
-        } catch (e) { console.warn('Clear planning failed:', e); }
+        fetch(API + '/planning/clear', { method: 'POST' })
+            .then(() => console.log('Cleared planning data on page load'))
+            .catch(e => console.warn('Clear planning failed:', e));
+    }
 
-        // Clear ALL frontend state
+    // Fire-and-forget: load config defaults
+    loadDefaultParams().catch(e => console.warn('loadDefaultParams failed:', e));
+
+    // Wait for /status (needed by UI below); clear/config run in background.
+    await _statusPromise;
+
+    // Clear frontend state (runs once per page load)
+    if (!window._stateCleared) {
+        window._stateCleared = true;
         state.seeds = [];
         state.dvhData = null;
         state.metrics = {};
@@ -9233,23 +9326,6 @@ async function init() {
 
     // Apply default viewer layout (vertical = 4 rows in 1 column)
     setViewerLayout(state.viewerSettings.layout || 'vertical');
-
-    // Restore chat sessions + ensure there's an active one. This
-    // was previously declared but never CALLED — the user saw an
-    // empty session list on every page load and refresh wiped
-    // nothing because there was nothing to wipe. Now we run
-    // loadSessions() which restores prior sessions from
-    // localStorage AND creates a default "New chat" if no
-    // active session exists. The chat area then renders the
-    // active session's messages (empty welcome for the new
-    // "New chat" default).
-    try {
-        if (typeof loadSessions === 'function') loadSessions();
-        if (typeof renderSessionList === 'function') renderSessionList();
-        if (typeof loadSessionChat === 'function' && activeSessionId) {
-            loadSessionChat(activeSessionId);
-        }
-    } catch (e) { console.warn('Session init failed:', e); }
 
     // Install the drag-resize splitters. These were previously defined
     // but never called — the user reported that the chat/right-panel
@@ -10425,6 +10501,9 @@ function switchPanel(name, el) {
             setTimeout(() => forceRender3DViewer(), 50);
         }
     }
+    if (name === 'metrics') {
+        _resizeDVHChartSoon();
+    }
     // BUG FIX 2026-06-16 (report auto-screenshots): previously the
     // report panel opened with NO figures and the user had to
     // manually click 📷 Capture 2D / 3D / DVH or wait for PDF
@@ -10535,6 +10614,28 @@ let ctvLabelData = null;   // Uint8Array, shape (Z, Y, X)
 let oarLabelData = null;   // Uint8Array, shape (Z, Y, X)
 let labelColorLUT = {};    // {label_id: [R, G, B]}
 let organMetaFromServer = {};  // {label_id: {name, color, voxels}}
+function _getMprGeometry(axis, shape, spacing) {
+    const [Z, Y, X] = shape;
+    const sp = spacing || [0.68, 0.68, 5.0];
+    const spacingX = sp[0] || 0.68;
+    const spacingY = sp[1] || 0.68;
+    const spacingZ = sp[2] || 5.0;
+    if (axis === 'axial') return { width: X, height: Y, resampleRatio: 1 };
+    if (axis === 'sagittal') {
+        const ratio = Math.max(spacingZ / spacingY, 0.01);
+        return { width: Y, height: Math.max(1, Math.round(Z * ratio)), resampleRatio: ratio };
+    }
+    const ratio = Math.max(spacingZ / spacingX, 0.01);
+    return { width: X, height: Math.max(1, Math.round(Z * ratio)), resampleRatio: ratio };
+}
+
+function _displayYToVolumeZ(py, resampleRatio, zCount) {
+    return Math.max(0, Math.min(Math.floor(py / (resampleRatio || 1)), zCount - 1));
+}
+
+function _volumeZToDisplayY(z, resampleRatio) {
+    return z * (resampleRatio || 1);
+}
 
 async function loadVolumeData() {
     const res = await fetch(API + '/viewer/volume');
@@ -10660,6 +10761,22 @@ async function loadLabelVolumes() {
         }
         // Force a re-render of the data tree regardless of metadata.
         try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
+        if ((hasCTV || hasOAR) && state && state.viewerSettings) {
+            state.viewerSettings.displayMode = 'overlay';
+            state.viewerSettings.showCTV = true;
+            state.viewerSettings.showOAR = true;
+            const dm = document.getElementById('displayMode');
+            if (dm) dm.value = 'overlay';
+            const ctvCb = document.getElementById('overlayCTV');
+            if (ctvCb) ctvCb.checked = true;
+            const oarCb = document.getElementById('overlayOAR');
+            if (oarCb) oarCb.checked = true;
+            if (volumeData && volumeShape) {
+                ['axial', 'sagittal', 'coronal'].forEach(axis => {
+                    try { renderSliceFromVolume(axis, state.slices[axis]); } catch (_) {}
+                });
+            }
+        }
     } catch (e) {
         console.error('Failed to load label volumes:', e);
     }
@@ -10717,25 +10834,10 @@ function renderOverlayFromVolume(axis, sliceIndex) {
 
     const [Z, Y, X] = volumeShape;
     const spacing = volumeSpacing || [0.68, 0.68, 5.0];
-    const spacingX = spacing[0] || 0.68;
-    const spacingY = spacing[1] || 0.68;
-    const spacingZ = spacing[2] || 5.0;
-
-    let width, height;
-    let resampleRatio = 1;
-
-    if (axis === 'axial') {
-        width = X;
-        height = Y;
-    } else if (axis === 'sagittal') {
-        width = Y;
-        height = Math.round(Z * spacingZ / spacingY);
-        resampleRatio = spacingZ / spacingY;
-    } else {
-        width = X;
-        height = Math.round(Z * spacingZ / spacingX);
-        resampleRatio = spacingZ / spacingX;
-    }
+    const geom = _getMprGeometry(axis, [Z, Y, X], spacing);
+    const width = geom.width;
+    const height = geom.height;
+    const resampleRatio = geom.resampleRatio;
 
     // Size overlay canvas to match CT canvas pixel dimensions
     // IMPORTANT: setting canvas.width/height clears the canvas, so only do it when needed
@@ -10759,20 +10861,19 @@ function renderOverlayFromVolume(axis, sliceIndex) {
     for (let py = 0; py < height; py++) {
         for (let px = 0; px < width; px++) {
             // Map display coords to volume coords.
-            // Z is FLIPPED so display matches raw DICOM ordering: slider 0 = raw Z=0 = feet,
-            // slider N-1 = raw Z=N-1 = head. (DICOMOrient('LPI') reverses array Z so
-            // LPI Z=0 = head; we invert again at render time so scrolling matches the
-            // raw DICOM convention the user expects.)
-            // Y axis: in LPI Y=0 = Anterior (top of axial canvas), Y=Y-1 = Posterior.
+            // Keep sagittal/coronal Z in the same display order used by
+            // crosshair and dose overlays. Axial keeps its historical
+            // slice-index flip below, but vertical Z in reformatted views
+            // must not be inverted.
             let volZ, volY, volX;
             if (axis === 'axial') {
                 volZ = (Z - 1) - sliceIndex; volY = py; volX = px;
             }
             else if (axis === 'sagittal') {
-                volZ = (Z - 1) - Math.min(Math.floor(py / resampleRatio), Z - 1);
+                volZ = _displayYToVolumeZ(py, resampleRatio, Z);
                 volY = px; volX = sliceIndex;
             } else {
-                volZ = (Z - 1) - Math.min(Math.floor(py / resampleRatio), Z - 1);
+                volZ = _displayYToVolumeZ(py, resampleRatio, Z);
                 volY = sliceIndex; volX = px;
             }
 
@@ -10844,13 +10945,12 @@ function renderSliceFromVolume(axis, sliceIndex) {
 
     // Get spacing for isotropic resampling
     const spacing = volumeSpacing || [0.68, 0.68, 5.0];
-    const spacingX = spacing[0] || 0.68;
-    const spacingY = spacing[1] || 0.68;
-    const spacingZ = spacing[2] || 5.0;
+    const geom = _getMprGeometry(axis, [Z, Y, X], spacing);
 
-    let width, height;
-    let resampleRatio = 1; // For Z axis resampling
+    let width = geom.width, height = geom.height;
+    let resampleRatio = geom.resampleRatio;
 
+    /*
     if (axis === 'axial') {
         width = X;
         height = Y;
@@ -10865,6 +10965,7 @@ function renderSliceFromVolume(axis, sliceIndex) {
         height = Math.round(Z * spacingZ / spacingX);
         resampleRatio = spacingZ / spacingX;
     }
+    */
 
     const pixelCount = width * height;
 
@@ -10875,10 +10976,9 @@ function renderSliceFromVolume(axis, sliceIndex) {
     const pixels = _pixelBuffer;
 
     // Extract and transform pixels in one pass.
-    // Z is FLIPPED at render time to match raw DICOM convention (slider 0 = feet,
-    // slider N-1 = head). This compensates for the LPI reorientation in
-    // DICOMOrient so the user sees head at the bottom of the slider range
-    // (matching their raw DICOM files).
+    // Axial keeps the historical Z slice-index flip. Sagittal/coronal
+    // reformats do not flip display Y; dose, crosshair, and contours already
+    // use the non-flipped Z order there.
     if (axis === 'axial') {
         const srcSliceIdx = (Z - 1) - sliceIndex;
         const offset = srcSliceIdx * Y * X;
@@ -10890,9 +10990,7 @@ function renderSliceFromVolume(axis, sliceIndex) {
         // Resample Z axis to match Y spacing (isotropic display)
         let idx = 0;
         for (let displayY = 0; displayY < height; displayY++) {
-            // Map display Y to source Z (with Z-flip to match raw DICOM order)
-            const rawDisplayZ = Math.min(Math.floor(displayY / resampleRatio), Z - 1);
-            const srcZ = (Z - 1) - rawDisplayZ;
+            const srcZ = _displayYToVolumeZ(displayY, resampleRatio, Z);
             const zOffset = srcZ * Y * X + sliceIndex;
             for (let y = 0; y < Y; y++) {
                 const val = volumeData[zOffset + y * X];
@@ -10903,8 +11001,7 @@ function renderSliceFromVolume(axis, sliceIndex) {
         // Resample Z axis to match X spacing (isotropic display)
         let idx = 0;
         for (let displayY = 0; displayY < height; displayY++) {
-            const rawDisplayZ = Math.min(Math.floor(displayY / resampleRatio), Z - 1);
-            const srcZ = (Z - 1) - rawDisplayZ;
+            const srcZ = _displayYToVolumeZ(displayY, resampleRatio, Z);
             const zOffset = srcZ * Y * X + sliceIndex * X;
             for (let x = 0; x < X; x++) {
                 const val = volumeData[zOffset + x];
@@ -10943,17 +11040,17 @@ function renderSliceFromVolume(axis, sliceIndex) {
     for (let py = 0; py < height; py++) {
         for (let px = 0; px < width; px++) {
             // Map display coords to volume coords for label lookup.
-            // Z is FLIPPED to match raw DICOM ordering (slider 0 = feet). Same convention
-            // as the CT rendering above so labels and CT overlay align perfectly.
+            // Match the CT extraction above: axial slice index is flipped,
+            // sagittal/coronal display Y is not.
             let volZ, volY2, volX2;
             if (axis === 'axial') {
                 volZ = (Z - 1) - sliceIndex; volY2 = py; volX2 = px;
             }
             else if (axis === 'sagittal') {
-                volZ = (Z - 1) - Math.min(Math.floor(py / resampleRatio), Z - 1);
+                volZ = _displayYToVolumeZ(py, resampleRatio, Z);
                 volY2 = px; volX2 = sliceIndex;
             } else {
-                volZ = (Z - 1) - Math.min(Math.floor(py / resampleRatio), Z - 1);
+                volZ = _displayYToVolumeZ(py, resampleRatio, Z);
                 volY2 = sliceIndex; volX2 = px;
             }
             const flatIdx = volZ * labelSliceSize + volY2 * X + volX2;
@@ -10985,8 +11082,14 @@ function renderSliceFromVolume(axis, sliceIndex) {
                     if (ctvVal > 0) {
                         // Use per-label color from LUT
                         const color = labelColorLUT[ctvVal] || [255, 0, 0];
-                        const opacity = dataTreeState.ctv.opacity || 0.7;
-                        oR = color[0]; oG = color[1]; oB = color[2]; oA = Math.round(opacity * 255);
+                            const labelState = dataTreeState.ctvLabels?.[`ctv_${ctvVal}`];
+                            const labelVisible = labelState ? labelState.visible !== false : true;
+                            if (!labelVisible) continue;
+                            const opacity = dataTreeState.ctv.labelOpacities?.[ctvVal]
+                                ?? labelState?.opacity
+                                ?? dataTreeState.ctv.opacity
+                                ?? 0.7;
+                            oR = color[0]; oG = color[1]; oB = color[2]; oA = Math.round(opacity * 255);
                     }
                 }
 
@@ -11068,6 +11171,11 @@ function renderSliceFromVolume(axis, sliceIndex) {
     // so the dose canvas copies the correct position/size.
     if (state.doseOverlay && state.doseOverlay.visible) {
         renderDoseForCurrentSlice(axis, sliceIndex);
+        triggerDoseContourRender(axis, sliceIndex);
+    }
+
+    if (state.seedsOverlay && ((state.seedsOverlay.seeds || []).length || (state.seedsOverlay.needles || []).length)) {
+        renderSeedsOverlay(axis, sliceIndex);
     }
 
     // Overlay is composited inline into CT pixels — hide the separate overlay canvas
@@ -12195,6 +12303,7 @@ function openColorPicker(id, swatchEl) {
         clearTimeout(window._colorOverlayTimer);
         window._colorOverlayTimer = setTimeout(() => {
             if (state.ctLoaded) reloadOverlays();
+            redrawSeedNeedleOverlays();
             renderDataTreeDebounced();
         }, 100);
         closeDialog();
@@ -12348,11 +12457,18 @@ function soloGroup(category) {
     dataTreeState.planning.doseLevels.forEach(d => { d.visible = (category === 'dose_isosurfaces'); });
     // Update 3D meshes
     Object.entries(scene3D.meshes).forEach(([id, mesh]) => {
-        if (id.startsWith('seed_')) mesh.visible = dataTreeState.planning.seeds.find(s => s.id === id)?.visible ?? false;
-        else if (id.startsWith('needle_')) mesh.visible = dataTreeState.planning.needles.find(n => n.id === id)?.visible ?? false;
+        if (id.startsWith('seed_')) {
+            const s = dataTreeState.planning.seeds.find(s => s.id === id);
+            applyMeshVisibility(mesh, s?.visible ?? false, s?.opacity ?? 1.0);
+        }
+        else if (id.startsWith('needle_')) {
+            const n = dataTreeState.planning.needles.find(n => n.id === id);
+            applyMeshVisibility(mesh, n?.visible ?? false, n?.opacity ?? 0.8);
+        }
         else if (id.startsWith('dose_iso_')) {
             const threshold = parseFloat(id.replace('dose_iso_', ''));
-            mesh.visible = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold)?.visible ?? false;
+            const d = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
+            applyMeshVisibility(mesh, d?.visible ?? false, d?.opacity ?? 0.3);
         }
     });
     renderDataTree();
@@ -12506,7 +12622,7 @@ function batchToggleVisibility(visible) {
         if (id === 'ctv') {
             dataTreeState.ctv.visible = visible;
             const mesh = scene3D.meshes['ctv'];
-            if (mesh) mesh.visible = visible;
+            if (mesh) applyMeshVisibility(mesh, visible, dataTreeState.ctv.opacity ?? 0.7);
         }
         // CTV sub-labels
         else if (id.startsWith('ctv_')) {
@@ -12514,14 +12630,14 @@ function batchToggleVisibility(visible) {
             if (!dataTreeState.ctvLabels[id]) dataTreeState.ctvLabels[id] = { visible: true, opacity: 0.7, color: '#ef4444' };
             dataTreeState.ctvLabels[id].visible = visible;
             const mesh = scene3D.meshes[id];
-            if (mesh) mesh.visible = visible;
+            if (mesh) applyMeshVisibility(mesh, visible, dataTreeState.ctvLabels[id].opacity ?? dataTreeState.ctv.opacity ?? 0.7);
         }
         // OAR group
         else if (id === 'oar') {
             dataTreeState.organs.forEach(o => {
                 o.visible = visible;
                 const mesh = scene3D.meshes[o.id];
-                if (mesh) mesh.visible = visible;
+                if (mesh) applyMeshVisibility(mesh, visible, o.opacity ?? 0.5);
             });
         }
         // Individual organs
@@ -12530,7 +12646,7 @@ function batchToggleVisibility(visible) {
             if (o) {
                 o.visible = visible;
                 const mesh = scene3D.meshes[id];
-                if (mesh) mesh.visible = visible;
+                if (mesh) applyMeshVisibility(mesh, visible, o.opacity ?? 0.5);
             }
         }
         // Planning seeds
@@ -12539,7 +12655,7 @@ function batchToggleVisibility(visible) {
             if (s) {
                 s.visible = visible;
                 const mesh = scene3D.meshes[id];
-                if (mesh) mesh.visible = visible;
+                if (mesh) applyMeshVisibility(mesh, visible, s.opacity ?? 1.0);
             }
         }
         // Planning needles
@@ -12548,7 +12664,7 @@ function batchToggleVisibility(visible) {
             if (n) {
                 n.visible = visible;
                 const mesh = scene3D.meshes[id];
-                if (mesh) mesh.visible = visible;
+                if (mesh) applyMeshVisibility(mesh, visible, n.opacity ?? 0.8);
             }
         }
         // Dose isosurfaces
@@ -12558,12 +12674,13 @@ function batchToggleVisibility(visible) {
             if (d) {
                 d.visible = visible;
                 const mesh = scene3D.meshes[id];
-                if (mesh) mesh.visible = visible;
+                if (mesh) applyMeshVisibility(mesh, visible, d.opacity ?? 0.3);
             }
         }
     });
     renderDataTree();
     if (state.ctLoaded) reloadOverlays();
+    redrawSeedNeedleOverlays();
 }
 
 function batchMoveToCategory(category) {
@@ -12575,6 +12692,7 @@ function batchMoveToCategory(category) {
     });
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
+    redrawSeedNeedleOverlays();
 }
 
 function batchSolo() {
@@ -12589,18 +12707,46 @@ function batchSetOpacity(opacity) {
     getSelectedOrganIds().forEach(id => {
         if (id === 'ctv') {
             dataTreeState.ctv.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes['ctv'], opacity, dataTreeState.ctv.visible !== false);
         } else if (id.startsWith('ctv_')) {
             // Individual CTV label
             const labelId = parseInt(id.replace('ctv_', ''));
             if (!dataTreeState.ctv.labelOpacities) dataTreeState.ctv.labelOpacities = {};
             dataTreeState.ctv.labelOpacities[labelId] = opacity;
+            if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
+            if (!dataTreeState.ctvLabels[id]) dataTreeState.ctvLabels[id] = { visible: true, opacity, color: '#ef4444' };
+            dataTreeState.ctvLabels[id].opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[id], opacity, dataTreeState.ctvLabels[id].visible !== false);
+        } else if (id.startsWith('seed_')) {
+            const s = dataTreeState.planning.seeds.find(s => s.id === id);
+            if (s) {
+                s.opacity = opacity;
+                applyMeshOpacity(scene3D.meshes[id], opacity, s.visible !== false);
+            }
+        } else if (id.startsWith('needle_')) {
+            const n = dataTreeState.planning.needles.find(n => n.id === id);
+            if (n) {
+                n.opacity = opacity;
+                applyMeshOpacity(scene3D.meshes[id], opacity, n.visible !== false);
+            }
+        } else if (id.startsWith('dose_iso_')) {
+            const threshold = parseFloat(id.replace('dose_iso_', ''));
+            const d = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
+            if (d) {
+                d.opacity = opacity;
+                applyMeshOpacity(scene3D.meshes[id], opacity, d.visible !== false);
+            }
         } else {
             const o = dataTreeState.organs.find(o => o.id === id);
-            if (o) o.opacity = opacity;
+            if (o) {
+                o.opacity = opacity;
+                applyMeshOpacity(scene3D.meshes[id], opacity, o.visible !== false);
+            }
         }
     });
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
+    redrawSeedNeedleOverlays();
 }
 
 async function batchReconstruct3D() {
@@ -12634,7 +12780,19 @@ function showAllOrgans() {
     dataTreeState.planning.needles.forEach(n => { n.visible = true; });
     dataTreeState.planning.doseLevels.forEach(d => { d.visible = true; });
     // Update 3D meshes visibility
-    Object.values(scene3D.meshes).forEach(mesh => { if (mesh) mesh.visible = true; });
+    Object.entries(scene3D.meshes).forEach(([id, mesh]) => {
+        if (!mesh) return;
+        let opacity = 1;
+        if (id.startsWith('seed_')) opacity = dataTreeState.planning.seeds.find(s => s.id === id)?.opacity ?? 1.0;
+        else if (id.startsWith('needle_')) opacity = dataTreeState.planning.needles.find(n => n.id === id)?.opacity ?? 0.8;
+        else if (id.startsWith('dose_iso_')) {
+            const threshold = parseFloat(id.replace('dose_iso_', ''));
+            opacity = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold)?.opacity ?? 0.3;
+        }
+        else if (id.startsWith('organ_')) opacity = dataTreeState.organs.find(o => o.id === id)?.opacity ?? 0.5;
+        else if (id.startsWith('ctv_')) opacity = dataTreeState.ctvLabels?.[id]?.opacity ?? dataTreeState.ctv.opacity ?? 0.7;
+        applyMeshVisibility(mesh, true, opacity);
+    });
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
 }
@@ -12648,7 +12806,7 @@ function setGroupVisibility(category, visible) {
                 label.visible = visible;
                 // Update 3D mesh
                 const mesh = scene3D.meshes[id];
-                if (mesh) mesh.visible = visible;
+                if (mesh) applyMeshVisibility(mesh, visible, label.opacity ?? dataTreeState.ctv.opacity ?? 0.7);
             });
         }
     } else if (category === 'oar') {
@@ -12656,42 +12814,43 @@ function setGroupVisibility(category, visible) {
             o.visible = visible;
             // Update 3D mesh
             const mesh = scene3D.meshes[o.id];
-            if (mesh) mesh.visible = visible;
+            if (mesh) applyMeshVisibility(mesh, visible, o.opacity ?? 0.5);
         });
     } else if (category === 'planning_seeds') {
         dataTreeState.planning.seeds.forEach(seed => {
             seed.visible = visible;
             const mesh = scene3D.meshes[seed.id];
-            if (mesh) mesh.visible = visible;
+            if (mesh) applyMeshVisibility(mesh, visible, seed.opacity ?? 1.0);
         });
     } else if (category === 'planning_needles') {
         dataTreeState.planning.needles.forEach(needle => {
             needle.visible = visible;
             const mesh = scene3D.meshes[needle.id];
-            if (mesh) mesh.visible = visible;
+            if (mesh) applyMeshVisibility(mesh, visible, needle.opacity ?? 0.8);
         });
     } else if (category === 'dose_isosurfaces') {
         dataTreeState.planning.doseLevels.forEach(level => {
             level.visible = visible;
             const mesh = scene3D.meshes[`dose_iso_${level.threshold}`];
-            if (mesh) mesh.visible = visible;
+            if (mesh) applyMeshVisibility(mesh, visible, level.opacity ?? 0.3);
         });
     } else if (category === 'planning_meshes') {
         (dataTreeState.planning.meshes || []).forEach(m => {
             m.visible = visible;
             const mesh = scene3D.meshes[m.id];
-            if (mesh) mesh.visible = visible;
+            if (mesh) applyMeshVisibility(mesh, visible, m.opacity ?? 0.7);
         });
     } else {
         dataTreeState.organs.filter(o => o.category === category).forEach(o => {
             o.visible = visible;
             // Update 3D mesh
             const mesh = scene3D.meshes[o.id];
-            if (mesh) mesh.visible = visible;
+            if (mesh) applyMeshVisibility(mesh, visible, o.opacity ?? 0.5);
         });
     }
     renderDataTree();
     if (state.ctLoaded) reloadOverlays();
+    redrawSeedNeedleOverlays();
 }
 
 let _groupOpacityTimer = null;
@@ -12704,47 +12863,40 @@ function setGroupOpacity(category, value) {
             Object.entries(dataTreeState.ctvLabels).forEach(([id, label]) => {
                 label.opacity = opacity;
                 // Update 3D mesh
-                const mesh = getMeshSurface(scene3D.meshes[id]);
-                if (mesh && mesh.material) mesh.material.opacity = opacity;
+                applyMeshOpacity(scene3D.meshes[id], opacity, label.visible !== false);
             });
         }
     } else if (category === 'oar') {
         dataTreeState.organs.forEach(o => {
             o.opacity = opacity;
             // Update 3D mesh
-            const mesh = getMeshSurface(scene3D.meshes[o.id]);
-            if (mesh && mesh.material) mesh.material.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[o.id], opacity, o.visible !== false);
         });
     } else if (category === 'planning_seeds') {
         dataTreeState.planning.seeds.forEach(seed => {
             seed.opacity = opacity;
-            const mesh = scene3D.meshes[seed.id];
-            if (mesh && mesh.material) mesh.material.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[seed.id], opacity, seed.visible !== false);
         });
     } else if (category === 'planning_needles') {
         dataTreeState.planning.needles.forEach(needle => {
             needle.opacity = opacity;
-            const mesh = scene3D.meshes[needle.id];
-            if (mesh && mesh.material) mesh.material.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[needle.id], opacity, needle.visible !== false);
         });
     } else if (category === 'dose_isosurfaces') {
         dataTreeState.planning.doseLevels.forEach(level => {
             level.opacity = opacity;
-            const mesh = scene3D.meshes[`dose_iso_${level.threshold}`];
-            if (mesh && mesh.material) mesh.material.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[`dose_iso_${level.threshold}`], opacity, level.visible !== false);
         });
     } else if (category === 'planning_meshes') {
         (dataTreeState.planning.meshes || []).forEach(m => {
             m.opacity = opacity;
-            const mesh = scene3D.meshes[m.id];
-            if (mesh && mesh.material) mesh.material.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[m.id], opacity, m.visible !== false);
         });
     } else {
         dataTreeState.organs.filter(o => o.category === category).forEach(o => {
             o.opacity = opacity;
             // Update 3D mesh
-            const mesh = getMeshSurface(scene3D.meshes[o.id]);
-            if (mesh && mesh.material) mesh.material.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[o.id], opacity, o.visible !== false);
         });
     }
     // Debounce tree re-render and overlay reload
@@ -12752,6 +12904,7 @@ function setGroupOpacity(category, value) {
     _groupOpacityTimer = setTimeout(() => {
         renderDataTree();
         if (state.ctLoaded) loadAllSlices();
+        redrawSeedNeedleOverlays();
     }, 150);
 }
 
@@ -12781,7 +12934,7 @@ function toggleDataVisibility(id) {
             organ.visible = !organ.visible;
             // Also toggle 3D mesh visibility
             const mesh = scene3D.meshes[id];
-            if (mesh) mesh.visible = organ.visible;
+            if (mesh) applyMeshVisibility(mesh, organ.visible, organ.opacity ?? 0.5);
             renderDataTree();
             if (state.ctLoaded) reloadOverlays();
         }
@@ -12796,8 +12949,8 @@ function toggleDataVisibility(id) {
         }
         dataTreeState.ctvLabels[id].visible = !dataTreeState.ctvLabels[id].visible;
         // Also toggle 3D mesh visibility
-        const mesh = scene3D.meshes[id];
-        if (mesh) mesh.visible = dataTreeState.ctvLabels[id].visible;
+            const mesh = scene3D.meshes[id];
+            if (mesh) applyMeshVisibility(mesh, dataTreeState.ctvLabels[id].visible, dataTreeState.ctvLabels[id].opacity ?? dataTreeState.ctv.opacity ?? 0.7);
         renderDataTree();
         if (state.ctLoaded) reloadOverlays();
         return;
@@ -12809,8 +12962,9 @@ function toggleDataVisibility(id) {
         if (seed) {
             seed.visible = !seed.visible;
             const mesh = scene3D.meshes[id];
-            if (mesh) mesh.visible = seed.visible;
+            if (mesh) applyMeshVisibility(mesh, seed.visible, seed.opacity ?? 1.0);
             renderDataTree();
+            redrawSeedNeedleOverlays();
         }
         return;
     }
@@ -12821,8 +12975,9 @@ function toggleDataVisibility(id) {
         if (needle) {
             needle.visible = !needle.visible;
             const mesh = scene3D.meshes[id];
-            if (mesh) mesh.visible = needle.visible;
+            if (mesh) applyMeshVisibility(mesh, needle.visible, needle.opacity ?? 0.8);
             renderDataTree();
+            redrawSeedNeedleOverlays();
         }
         return;
     }
@@ -12834,7 +12989,7 @@ function toggleDataVisibility(id) {
         if (level) {
             level.visible = !level.visible;
             const mesh = scene3D.meshes[id];
-            if (mesh) mesh.visible = level.visible;
+            if (mesh) applyMeshVisibility(mesh, level.visible, level.opacity ?? 0.3);
             renderDataTree();
         }
         return;
@@ -12846,7 +13001,7 @@ function toggleDataVisibility(id) {
     if (meshEntry) {
         meshEntry.visible = !meshEntry.visible;
         const mesh = scene3D.meshes[id];
-        if (mesh) mesh.visible = meshEntry.visible;
+        if (mesh) applyMeshVisibility(mesh, meshEntry.visible, meshEntry.opacity ?? 0.7);
         renderDataTree();
         return;
     }
@@ -12856,7 +13011,7 @@ function toggleDataVisibility(id) {
     // Toggle 3D mesh for CTV
     if (id === 'ctv') {
         const mesh = scene3D.meshes['ctv'];
-        if (mesh) mesh.visible = dataTreeState[id].visible;
+        if (mesh) applyMeshVisibility(mesh, dataTreeState[id].visible, dataTreeState[id].opacity ?? 0.7);
     }
 
     // Sync with existing overlay system
@@ -12885,8 +13040,7 @@ function setDataOpacity(id, value) {
         if (organ) {
             organ.opacity = opacity;
             // Also update 3D mesh opacity
-            const mesh = getMeshSurface(scene3D.meshes[id]);
-            if (mesh && mesh.material) mesh.material.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[id], opacity, organ.visible !== false);
         }
         // Debounce overlay reload
         clearTimeout(_opacityTimer);
@@ -12903,8 +13057,7 @@ function setDataOpacity(id, value) {
             dataTreeState.ctvLabels[id].opacity = opacity;
         }
         // Also update 3D mesh opacity
-        const mesh = getMeshSurface(scene3D.meshes[id]);
-        if (mesh && mesh.material) mesh.material.opacity = opacity;
+        applyMeshOpacity(scene3D.meshes[id], opacity, dataTreeState.ctvLabels[id].visible !== false);
         // Debounce overlay reload
         clearTimeout(_opacityTimer);
         _opacityTimer = setTimeout(() => { if (state.ctLoaded) reloadOverlays(); }, 150);
@@ -12916,8 +13069,8 @@ function setDataOpacity(id, value) {
         const seed = dataTreeState.planning.seeds.find(s => s.id === id);
         if (seed) {
             seed.opacity = opacity;
-            const mesh = scene3D.meshes[id];
-            if (mesh && mesh.material) mesh.material.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[id], opacity, seed.visible !== false);
+            redrawSeedNeedleOverlays();
         }
         return;
     }
@@ -12927,8 +13080,8 @@ function setDataOpacity(id, value) {
         const needle = dataTreeState.planning.needles.find(n => n.id === id);
         if (needle) {
             needle.opacity = opacity;
-            const mesh = scene3D.meshes[id];
-            if (mesh && mesh.material) mesh.material.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[id], opacity, needle.visible !== false);
+            redrawSeedNeedleOverlays();
         }
         return;
     }
@@ -12939,9 +13092,15 @@ function setDataOpacity(id, value) {
         const level = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
         if (level) {
             level.opacity = opacity;
-            const mesh = scene3D.meshes[id];
-            if (mesh && mesh.material) mesh.material.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[id], opacity, level.visible !== false);
         }
+        return;
+    }
+
+    const meshEntry = (dataTreeState.planning.meshes || []).find(m => m.id === id);
+    if (meshEntry) {
+        meshEntry.opacity = opacity;
+        applyMeshOpacity(scene3D.meshes[id], opacity, meshEntry.visible !== false);
         return;
     }
 
@@ -12949,8 +13108,7 @@ function setDataOpacity(id, value) {
     dataTreeState[id].opacity = opacity;
     // Update CTV 3D mesh
     if (id === 'ctv') {
-        const mesh = scene3D.meshes['ctv'];
-        if (mesh && mesh.material) mesh.material.opacity = opacity;
+        applyMeshOpacity(scene3D.meshes['ctv'], opacity, dataTreeState[id].visible !== false);
     }
 
     if (state.ctLoaded) reloadOverlays();
@@ -13752,6 +13910,200 @@ function getMeshSurface(mesh) {
     return mesh;
 }
 
+function _forEachMaterial(mesh, fn) {
+    const surface = getMeshSurface(mesh);
+    if (!surface || !surface.material) return;
+    const mats = Array.isArray(surface.material) ? surface.material : [surface.material];
+    mats.forEach(mat => { if (mat) fn(mat); });
+}
+
+function applyMeshVisibility(mesh, visible, opacity = 1) {
+    if (!mesh) return;
+    mesh.visible = !!visible && opacity > 0.001;
+    const surface = getMeshSurface(mesh);
+    if (surface && surface !== mesh) surface.visible = mesh.visible;
+}
+
+function applyMeshOpacity(mesh, opacity, visible = true) {
+    if (!mesh) return;
+    const op = Math.max(0, Math.min(1, Number(opacity) || 0));
+    _forEachMaterial(mesh, mat => {
+        mat.transparent = op < 0.999;
+        mat.opacity = op;
+        mat.depthWrite = op > 0.001;
+        mat.needsUpdate = true;
+    });
+    applyMeshVisibility(mesh, visible, op);
+}
+
+function _isDoseTexturableMesh(id, mesh) {
+    const surface = getMeshSurface(mesh);
+    if (!surface || !surface.geometry || !surface.geometry.attributes || !surface.geometry.attributes.position) return false;
+    if (id === 'ctv' || id.startsWith('ctv_') || id.startsWith('organ_')) return true;
+    const t = surface.userData?.type || surface.userData?.source || mesh?.userData?.type || mesh?.userData?.source || '';
+    return t === 'ctv' || t === 'oar' || t === 'organ';
+}
+
+function _rememberDoseTextureMaterial(id, mesh) {
+    const surface = getMeshSurface(mesh);
+    if (!surface || !surface.material) return;
+    if (!state.doseTexture.originalMaterials[id]) {
+        state.doseTexture.originalMaterials[id] = surface.material;
+    }
+}
+
+function _restoreDoseTextureMaterials() {
+    Object.entries(state.doseTexture.originalMaterials || {}).forEach(([id, mat]) => {
+        const mesh = scene3D.meshes?.[id];
+        const surface = getMeshSurface(mesh);
+        if (!surface || !mat) return;
+        surface.material = mat;
+        if (surface.geometry?.attributes?.color) {
+            surface.geometry.deleteAttribute('color');
+        }
+        _forEachMaterial(surface, m => { if (m) m.needsUpdate = true; });
+    });
+    state.doseTexture.originalMaterials = {};
+}
+
+async function _fetchDoseRawAxialSlice(rawZ) {
+    if (!state.doseOverlay || !state.doseOverlay.shape) return null;
+    const maxZ = (state.doseOverlay.shape[0] || 1) - 1;
+    const z = Math.max(0, Math.min(maxZ, Math.round(rawZ)));
+    const cache = state.doseTexture.rawAxialSlices || (state.doseTexture.rawAxialSlices = {});
+    if (cache[z]) return cache[z];
+    const res = await fetch(API + '/planning/dose_overlay_slice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ axis: 'axial', slice_index: z }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.success || !data.slice) return null;
+    cache[z] = data.slice;
+    return cache[z];
+}
+
+async function _sampleDoseNormalizedAtIndex(idx) {
+    if (!idx || !state.doseOverlay?.shape) return 0;
+    const [Z, Y, X] = state.doseOverlay.shape;
+    const z = Math.max(0, Math.min(Z - 1, Math.round(idx[0])));
+    const y = Math.max(0, Math.min(Y - 1, Math.round(idx[1])));
+    const x = Math.max(0, Math.min(X - 1, Math.round(idx[2])));
+    const slice = await _fetchDoseRawAxialSlice(z);
+    if (!slice || !slice[y]) return 0;
+    return Number(slice[y][x]) || 0;
+}
+
+async function _applyDoseTextureToMesh(id, mesh) {
+    const surface = getMeshSurface(mesh);
+    if (!_isDoseTexturableMesh(id, mesh) || !surface) return;
+    const posAttr = surface.geometry.attributes.position;
+    if (!posAttr || posAttr.count <= 0) return;
+    _rememberDoseTextureMaterial(id, mesh);
+
+    const colors = new Float32Array(posAttr.count * 3);
+    const v = new THREE.Vector3();
+    const dMinGy = COLORBAR_MIN_GY;
+    const dMaxGy = COLORBAR_MAX_GY;
+    const sampleEvery = posAttr.count > 25000 ? 2 : 1;
+    let lastRgb = [0, 0, 0];
+    for (let i = 0; i < posAttr.count; i++) {
+        if (sampleEvery > 1 && (i % sampleEvery) !== 0) {
+            colors[i * 3] = lastRgb[0];
+            colors[i * 3 + 1] = lastRgb[1];
+            colors[i * 3 + 2] = lastRgb[2];
+            continue;
+        }
+        v.fromBufferAttribute(posAttr, i);
+        surface.localToWorld(v);
+        const idx = _worldToIndex(v.x, v.y, v.z);
+        const doseNorm = await _sampleDoseNormalizedAtIndex(idx);
+        const doseGy = doseNorm * DOSE_NORM_TO_GY;
+        const t = Math.max(0, Math.min(1, (doseGy - dMinGy) / (dMaxGy - dMinGy)));
+        const [r, g, b] = _petRainbow2(t);
+        lastRgb = [r / 255, g / 255, b / 255];
+        colors[i * 3] = lastRgb[0];
+        colors[i * 3 + 1] = lastRgb[1];
+        colors[i * 3 + 2] = lastRgb[2];
+    }
+
+    surface.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const oldOpacity = Array.isArray(surface.material)
+        ? (surface.material[0]?.opacity ?? 0.75)
+        : (surface.material?.opacity ?? 0.75);
+    const oldVisible = surface.visible;
+    surface.material = new THREE.MeshPhongMaterial({
+        vertexColors: true,
+        transparent: oldOpacity < 0.999,
+        opacity: oldOpacity,
+        side: THREE.DoubleSide,
+        shininess: 35,
+        depthWrite: oldOpacity > 0.001,
+    });
+    applyMeshVisibility(mesh, oldVisible, oldOpacity);
+}
+
+async function setDoseTextureMode(enabled, opts = {}) {
+    if (state.doseTexture.applying) return;
+    state.doseTexture.applying = true;
+    const btn = document.getElementById('doseTextureToggle');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = enabled ? 'Mapping...' : 'Dose Surface';
+    }
+    try {
+        if (enabled) {
+            if (!state.doseOverlay) await loadDoseOverlay();
+            if (!state.doseOverlay?.shape) throw new Error('Dose overlay is not available');
+            const entries = Object.entries(scene3D.meshes || {}).filter(([id, mesh]) => _isDoseTexturableMesh(id, mesh));
+            for (const [id, mesh] of entries) {
+                await _applyDoseTextureToMesh(id, mesh);
+            }
+            state.doseTexture.enabled = true;
+        } else {
+            _restoreDoseTextureMaterials();
+            state.doseTexture.enabled = false;
+        }
+        if (scene3D.renderer && scene3D.scene && scene3D.camera) {
+            scene3D.renderer.render(scene3D.scene, scene3D.camera);
+        }
+    } catch (e) {
+        console.warn('[DoseTexture] failed:', e);
+        if (!opts.silent) alert('Dose surface mapping failed: ' + (e.message || e));
+        _restoreDoseTextureMaterials();
+        state.doseTexture.enabled = false;
+    } finally {
+        state.doseTexture.applying = false;
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = state.doseTexture.enabled ? 'Normal Surface' : 'Dose Surface';
+            btn.classList.toggle('active', state.doseTexture.enabled);
+        }
+    }
+}
+
+function toggleDoseTextureMode() {
+    setDoseTextureMode(!state.doseTexture.enabled);
+}
+
+function _hexToRgbArray(hex, fallback = [255, 204, 0]) {
+    if (Array.isArray(hex)) return hex;
+    if (typeof hex !== 'string' || !/^#[0-9a-f]{6}$/i.test(hex)) return fallback;
+    return [
+        parseInt(hex.slice(1, 3), 16),
+        parseInt(hex.slice(3, 5), 16),
+        parseInt(hex.slice(5, 7), 16),
+    ];
+}
+
+function redrawSeedNeedleOverlays() {
+    if (!state.seedsOverlay) return;
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        try { renderSeedsOverlay(axis, state.slices[axis]); } catch (_) {}
+    });
+}
+
 function init3DScene() {
     const canvas = document.getElementById('canvas3D');
     if (!canvas || scene3D.initialized) return;
@@ -14205,10 +14557,11 @@ function addMeshToScene(meshData) {
         metalness: 0.1,
         clearcoat: 0.3,
         clearcoatRoughness: 0.2,
-        depthWrite: true,
+        depthWrite: opacity > 0.001,
         depthTest: true,
     });
     const mesh = new THREE.Mesh(geometry, surfaceMat);
+    mesh.visible = opacity > 0.001;
     mesh.userData = { type: 'mesh', id, source: meshData.source || 'mesh', labelId: meshData.label_id, organId: id };
 
     scene3D.scene.add(mesh);
@@ -14340,12 +14693,7 @@ function update3DMeshOpacity(val) {
     const opacity = parseInt(val) / 100;
     Object.values(scene3D.meshes).forEach(mesh => {
         if (!mesh) return;
-        // Handle mesh with surfaceMesh property
-        if (mesh.surfaceMesh) {
-            mesh.surfaceMesh.material.opacity = opacity;
-        } else if (mesh.material) {
-            mesh.material.opacity = opacity;
-        }
+        applyMeshOpacity(mesh, opacity, true);
     });
 }
 
@@ -14356,11 +14704,11 @@ function toggle3DWireframe(on) {
             // Add wireframe effect by changing material
             if (on) {
                 mesh.material.wireframe = true;
-                mesh.material.opacity = 0.8;
+                applyMeshOpacity(mesh, 0.8, true);
             } else {
                 mesh.material.wireframe = false;
                 const opVal = document.getElementById('meshOpacity3D')?.value || 70;
-                mesh.material.opacity = parseInt(opVal) / 100;
+                applyMeshOpacity(mesh, parseInt(opVal) / 100, true);
             }
         }
     });
@@ -14401,6 +14749,14 @@ async function toggle3DSkin(on) {
 
 // ==================== SEED & NEEDLE 3D VISUALIZATION ====================
 
+function _normalizeTrajectoryId(tid) {
+    if (tid === null || tid === undefined || tid === '') return 'unassigned';
+    if (typeof tid === 'number' && Number.isFinite(tid)) return `traj_${tid + 1}`;
+    const s = String(tid);
+    if (/^\d+$/.test(s)) return `traj_${Number(s) + 1}`;
+    return s;
+}
+
 async function loadSeeds3D() {
     try {
         const res = await fetch(API + '/planning/seeds_3d');
@@ -14427,8 +14783,9 @@ async function loadSeeds3D() {
         dataTreeState.planning.seeds = data.seeds.map(seed => ({
             id: seed.id,
             position: seed.position,
+            voxel_index: seed.voxel_index || null,
             direction: seed.direction,
-            trajectory_id: seed.trajectory_id,
+            trajectory_id: _normalizeTrajectoryId(seed.trajectory_id),
             visible: true,
             opacity: 1.0,
             color: '#ffcc00',
@@ -14437,10 +14794,22 @@ async function loadSeeds3D() {
         dataTreeState.planning.needles = data.needles.map(needle => ({
             id: needle.id,
             points: needle.points,
-            trajectory_id: needle.trajectory_id,
+            trajectory_id: _normalizeTrajectoryId(needle.trajectory_id),
             visible: true,
             opacity: 0.9,
             color: '#ff2266',
+        }));
+
+        state.seeds = dataTreeState.planning.seeds.map(seed => ({
+            id: seed.id,
+            pos: seed.position,
+            position: seed.position,
+            voxel_index: seed.voxel_index || null,
+            direction: seed.direction,
+            trajectory_id: seed.trajectory_id,
+            visible: seed.visible,
+            opacity: seed.opacity,
+            color: seed.color,
         }));
 
         dataTreeState.seeds.loaded = true;
@@ -14475,7 +14844,7 @@ async function loadSeeds3D() {
             mesh.setRotationFromQuaternion(quaternion);
             mesh.position.copy(pos);
 
-            mesh.userData = { type: 'seed', id: seed.id, trajectoryId: seed.trajectory_id };
+            mesh.userData = { type: 'seed', id: seed.id, trajectoryId: _normalizeTrajectoryId(seed.trajectory_id) };
             scene3D.scene.add(mesh);
             scene3D.meshes[seed.id] = mesh;
         });
@@ -14484,7 +14853,7 @@ async function loadSeeds3D() {
         // Bright magenta-red for clear visibility against the CTV mesh & dose cloud.
         data.needles.forEach(needle => {
             if (needle.points.length < 2) return;
-            const points = needle.points.map(p => new THREE.Vector3(...p));
+            let points = needle.points.map(p => new THREE.Vector3(...p));
 
             try {
                 // Filter out NaN points from needle trajectory
@@ -14499,7 +14868,8 @@ async function loadSeeds3D() {
                     const length = dir.length();
                     if (length < 0.1) return;
                     dir.normalize();
-                    const geo = new THREE.CylinderGeometry(1.0, 1.0, length, 10);
+                    const needleRadius = 0.28;
+                    const geo = new THREE.CylinderGeometry(needleRadius, needleRadius, length, 10);
                     const mat = new THREE.MeshPhysicalMaterial({
                         color: 0xff2266, transparent: true, opacity: 0.9,
                         metalness: 0.1, roughness: 0.4,
@@ -14515,7 +14885,7 @@ async function loadSeeds3D() {
                     tube.setRotationFromQuaternion(quat);
                 } else {
                     const curve = new THREE.CatmullRomCurve3(points);
-                    const tubeGeometry = new THREE.TubeGeometry(curve, 32, 1.0, 10, false);
+                    const tubeGeometry = new THREE.TubeGeometry(curve, 32, 0.28, 10, false);
                     const tubeMaterial = new THREE.MeshPhysicalMaterial({
                         color: 0xff2266, transparent: true, opacity: 0.9,
                         metalness: 0.1, roughness: 0.4,
@@ -14523,7 +14893,7 @@ async function loadSeeds3D() {
                     });
                     tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
                 }
-                tube.userData = { type: 'needle', id: needle.id, trajectoryId: needle.trajectory_id };
+                tube.userData = { type: 'needle', id: needle.id, trajectoryId: _normalizeTrajectoryId(needle.trajectory_id) };
                 scene3D.scene.add(tube);
                 scene3D.meshes[needle.id] = tube;
             } catch (e) {
@@ -14531,7 +14901,7 @@ async function loadSeeds3D() {
                 const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
                 const lineMat = new THREE.LineBasicMaterial({ color: 0xff2266, linewidth: 2 });
                 const line = new THREE.Line(lineGeo, lineMat);
-                line.userData = { type: 'needle', id: needle.id, trajectoryId: needle.trajectory_id };
+                line.userData = { type: 'needle', id: needle.id, trajectoryId: _normalizeTrajectoryId(needle.trajectory_id) };
                 scene3D.scene.add(line);
                 scene3D.meshes[needle.id] = line;
             }
@@ -14556,8 +14926,17 @@ async function loadSeeds3D() {
         }
 
         // Update data tree
+        if (state.trajectories && state.trajectories.length > 0) {
+            updateTrajectories(state.trajectories);
+        }
         renderDataTree();
         fitCameraToScene();
+        forceRender3DViewer();
+        ['axial', 'sagittal', 'coronal'].forEach(axis => {
+            if (state.slices && state.slices[axis] !== undefined) {
+                try { renderSeedsOverlay(axis, state.slices[axis]); } catch (_) {}
+            }
+        });
 
         console.log(`[loadSeeds3D] Added ${data.seeds.length} seeds + ${data.needles.length} needles to 3D scene (total meshes: ${Object.keys(scene3D.meshes).length})`);
 
@@ -14605,6 +14984,7 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
             side: THREE.DoubleSide,
             metalness: 0.1,
             roughness: 0.6,
+            depthWrite: true,
         });
 
         const mesh = new THREE.Mesh(geometry, material);
@@ -14724,9 +15104,7 @@ async function loadAllIsoSurfaces() {
             // Override the just-added mesh's opacity with the per-level
             // config value (loadDoseIsosurface uses a hard-coded 0.3).
             const mesh = scene3D.meshes[`dose_iso_${v}`];
-            if (mesh && mesh.material) {
-                mesh.material.opacity = opacity;
-            }
+            if (mesh) applyMeshOpacity(mesh, opacity, true);
             // Mirror into data tree with the config opacity.
             if (dataTreeState && dataTreeState.planning) {
                 const existing = dataTreeState.planning.doseLevels
@@ -14987,6 +15365,7 @@ async function loadDoseOverlay() {
         // Store metadata; slices will be fetched on demand
         // doseMin / doseMax are in NORMALIZED units (CNN output). They are
         // converted to Gy only for display labels.
+        if (state.doseTexture) state.doseTexture.rawAxialSlices = {};
         state.doseOverlay = {
             shape: data.dose_shape,
             doseMin: data.dose_min,
@@ -14996,10 +15375,16 @@ async function loadDoseOverlay() {
             slices: {},  // Cache: {axis_index: sliceData}
             maxSlice: {
                 axial: (data.dose_shape?.[0] || 200) - 1,
-                sagittal: (data.dose_shape?.[1] || 200) - 1,
-                coronal: (data.dose_shape?.[2] || 200) - 1,
+                sagittal: (data.dose_shape?.[2] || 200) - 1,
+                coronal: (data.dose_shape?.[1] || 200) - 1,
             },
-            peakVoxel: data.peak_voxel || null,
+            peakVoxel: data.peak_voxel ? {
+                ...data.peak_voxel,
+                raw_z: data.peak_voxel.z,
+                z: ((data.dose_shape?.[0] || 0) > 0)
+                    ? ((data.dose_shape[0] - 1) - data.peak_voxel.z)
+                    : data.peak_voxel.z,
+            } : null,
         };
 
         renderDataTree();
@@ -15036,10 +15421,14 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
 
     const myVersion = ++_doseOverlayRequestVersion;
     try {
+        const axialMax = state.doseOverlay.maxSlice?.axial;
+        const requestSliceIndex = axis === 'axial' && Number.isFinite(axialMax)
+            ? Math.max(0, Math.min(axialMax, axialMax - sliceIndex))
+            : sliceIndex;
         const res = await fetch(API + '/planning/dose_overlay_slice', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ axis, slice_index: sliceIndex }),
+            body: JSON.stringify({ axis, slice_index: requestSliceIndex }),
         });
         if (!res.ok) { console.log(`[dose] fetch HTTP ${res.status} for ${cacheKey}`); return null; }
         const data = await res.json();
@@ -15347,10 +15736,14 @@ async function fetchDoseContourSlice(axis, sliceIndex) {
     if (_doseContourCache[cacheKey]) return _doseContourCache[cacheKey];
 
     try {
+        const axialMax = state.doseOverlay?.maxSlice?.axial;
+        const requestSliceIndex = axis === 'axial' && Number.isFinite(axialMax)
+            ? Math.max(0, Math.min(axialMax, axialMax - sliceIndex))
+            : sliceIndex;
         const res = await fetch(API + '/planning/dose_contour_slice', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ axis, slice_index: sliceIndex }),
+            body: JSON.stringify({ axis, slice_index: requestSliceIndex }),
         });
         if (!res.ok) return null;
         const data = await res.json();
@@ -15365,11 +15758,12 @@ async function fetchDoseContourSlice(axis, sliceIndex) {
 function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
     const cacheKey = `${axis}_${sliceIndex}`;
     const data = _doseContourCache[cacheKey];
-    if (!data || !data.contours || data.contours.length === 0) return;
 
     const ctx = canvas.getContext('2d');
     const w = canvas.width;
     const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    if (!data || !data.contours || data.contours.length === 0) return;
 
     // Coordinate mapping from dose slice to canvas.
     // The server returns slice_shape = [rows, cols] in dose volume
@@ -15469,12 +15863,12 @@ function triggerDoseContourRender(axis, sliceIndex) {
         parent.appendChild(canvas);
     }
 
-    // Match canvas size to the slice canvas
     const sliceCanvas = document.getElementById('sliceCanvas' + capitalize(axis));
-    if (sliceCanvas) {
-        canvas.width = sliceCanvas.width;
-        canvas.height = sliceCanvas.height;
-    }
+    if (sliceCanvas) _syncLayerToSliceCanvas(axis, canvas, 7);
+    canvas.dataset.axis = axis;
+    canvas.dataset.sliceIndex = String(sliceIndex);
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // 1) Synchronous draw if cached. This is the path that fixes
     //    the "drag → blank → wait for fetch → reappear" bug: after
@@ -15483,23 +15877,20 @@ function triggerDoseContourRender(axis, sliceIndex) {
     //    network latency.
     const cacheKey = `${axis}_${sliceIndex}`;
     const cached = _doseContourCache[cacheKey];
-    if (cached && cached.contours && cached.contours.length > 0) {
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (cached) {
         renderDoseContourOnCanvas(canvas, axis, sliceIndex);
         return;
     }
 
-    // 2) Async fetch + draw. We DON'T clear the canvas here so the
-    //    previous contour stays visible until the new one arrives —
-    //    same anti-flicker pattern as the dose overlay path.
+    // 2) Async fetch + draw. The canvas was already cleared for the
+    //    requested slice above. Only draw if the user is still on the
+    //    same slice when the response returns; otherwise stale contour
+    //    lines from a previous slice would remain visible.
     fetchDoseContourSlice(axis, sliceIndex).then(data => {
-        if (!data || !data.contours || data.contours.length === 0) return;
         // Make sure we're still on the same slice the user requested
         // (the slider may have moved while the fetch was in flight).
         if (state.slices[axis] !== sliceIndex) return;
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (canvas.dataset.axis !== axis || canvas.dataset.sliceIndex !== String(sliceIndex)) return;
         renderDoseContourOnCanvas(canvas, axis, sliceIndex);
     });
     // 3) Pre-fetch ±N neighbors so scrubbing doesn't keep
@@ -16182,6 +16573,37 @@ function getSliceCanvas(axis) {
 // and to detect stale canvases that need re-painting.
 const _doseLastRendered = { axial: -1, sagittal: -1, coronal: -1 };
 
+function _viewerTransformString() {
+    const { flipH, flipV, rotation, zoom, panX, panY } = state.viewerSettings;
+    const scaleX = flipH ? -1 : 1;
+    const scaleY = flipV ? -1 : 1;
+    return `rotate(${rotation}deg) scale(${zoom * scaleX}, ${zoom * scaleY}) translate(${panX}px, ${panY}px)`;
+}
+
+function _syncLayerToSliceCanvas(axis, layerCanvas, zIndex) {
+    const sliceCanvas = getSliceCanvas(axis);
+    if (!sliceCanvas || !layerCanvas) return false;
+    if (layerCanvas.width !== sliceCanvas.width || layerCanvas.height !== sliceCanvas.height) {
+        layerCanvas.width = sliceCanvas.width;
+        layerCanvas.height = sliceCanvas.height;
+    }
+    const sw = sliceCanvas._displayW || sliceCanvas.offsetWidth;
+    const sh = sliceCanvas._displayH || sliceCanvas.offsetHeight;
+    const sx = sliceCanvas._offsetX || parseFloat(sliceCanvas.style.left) || 0;
+    const sy = sliceCanvas._offsetY || parseFloat(sliceCanvas.style.top) || 0;
+    layerCanvas.style.position = 'absolute';
+    layerCanvas.style.pointerEvents = 'none';
+    layerCanvas.style.zIndex = String(zIndex);
+    layerCanvas.style.display = 'block';
+    layerCanvas.style.width = sw + 'px';
+    layerCanvas.style.height = sh + 'px';
+    layerCanvas.style.left = sx + 'px';
+    layerCanvas.style.top = sy + 'px';
+    layerCanvas.style.transform = _viewerTransformString();
+    layerCanvas.style.transformOrigin = 'center center';
+    return true;
+}
+
 function renderDoseForCurrentSlice(axis, sliceIndex) {
     if (!state.doseOverlay || !state.doseOverlay.visible) return;
     const sliceCanvas = getSliceCanvas(axis);
@@ -16196,21 +16618,7 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
         parent.appendChild(doseCanvas);
         sliceCanvas._doseCanvas = doseCanvas;
     }
-    const newW = sliceCanvas.width;
-    const newH = sliceCanvas.height;
-    if (doseCanvas.width !== newW || doseCanvas.height !== newH) {
-        doseCanvas.width = newW;
-        doseCanvas.height = newH;
-    }
-    const sw = sliceCanvas._displayW || sliceCanvas.offsetWidth;
-    const sh = sliceCanvas._displayH || sliceCanvas.offsetHeight;
-    const sx = sliceCanvas._offsetX || parseFloat(sliceCanvas.style.left) || 0;
-    const sy = sliceCanvas._offsetY || parseFloat(sliceCanvas.style.top) || 0;
-    doseCanvas.style.width = sw + 'px';
-    doseCanvas.style.height = sh + 'px';
-    doseCanvas.style.left = sx + 'px';
-    doseCanvas.style.top = sy + 'px';
-    doseCanvas.style.display = 'block';
+    _syncLayerToSliceCanvas(axis, doseCanvas, 5);
 
     const cacheKey = axis + '_' + sliceIndex;
     if (state.doseOverlay.slices[cacheKey]) {
@@ -16295,22 +16703,9 @@ function renderSeedsOverlay(axis, sliceIndex) {
         canvas.style.cssText = 'position:absolute;pointer-events:none;z-index:6;display:block;';
         sliceCanvas.parentElement.appendChild(canvas);
     }
-    const w = sliceCanvas.width;
-    const h = sliceCanvas.height;
-    if (canvas.width !== w || canvas.height !== h) {
-        canvas.width = w;
-        canvas.height = h;
-    }
-    // Match dose overlay positioning
-    const sw = sliceCanvas._displayW || sliceCanvas.offsetWidth;
-    const sh = sliceCanvas._displayH || sliceCanvas.offsetHeight;
-    const sx = sliceCanvas._offsetX || parseFloat(sliceCanvas.style.left) || 0;
-    const sy = sliceCanvas._offsetY || parseFloat(sliceCanvas.style.top) || 0;
-    canvas.style.width = sw + 'px';
-    canvas.style.height = sh + 'px';
-    canvas.style.left = sx + 'px';
-    canvas.style.top = sy + 'px';
-    canvas.style.display = 'block';
+    _syncLayerToSliceCanvas(axis, canvas, 6);
+    const w = canvas.width;
+    const h = canvas.height;
 
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, w, h);
@@ -16324,39 +16719,47 @@ function renderSeedsOverlay(axis, sliceIndex) {
     //   axial:   slice along Z, display X×Y, Z is flipped
     //   sagittal: slice along X, display Y×Z_resampled, Z is flipped on display Y
     //   coronal:  slice along Y, display X×Z_resampled, Z is flipped on display Y
+    const geom = _getMprGeometry(axis, [Z, Y, X], volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0]);
     let axisIdx, dimA, dimB, sizeA, sizeB, zFlipped;
     if (axis === 'axial') {
         axisIdx = 0; dimA = 2; dimB = 1; sizeA = X; sizeB = Y; zFlipped = true;
     } else if (axis === 'sagittal') {
-        axisIdx = 2; dimA = 1; dimB = 0; sizeA = Y; sizeB = Z; zFlipped = true;
+        axisIdx = 2; dimA = 1; dimB = 0; sizeA = Y; sizeB = Z; zFlipped = false;
     } else { // coronal
-        axisIdx = 1; dimA = 2; dimB = 0; sizeA = X; sizeB = Z; zFlipped = true;
+        axisIdx = 1; dimA = 2; dimB = 0; sizeA = X; sizeB = Z; zFlipped = false;
     }
 
     const scaleX = w / sizeA;
-    const scaleY = h / sizeB;
+    const scaleY = h / (axis === 'axial' ? sizeB : geom.height);
     const tolerance = 3.0; // mm tolerance for "on this slice"
 
     // Draw seeds as yellow circles
     const seeds = state.seedsOverlay.seeds || [];
     for (const seed of seeds) {
+        const seedState = dataTreeState.planning.seeds.find(s => s.id === seed.id);
+        if (seedState && seedState.visible === false) continue;
         const pos = seed.position;
         if (!pos || pos.length < 3) continue;
-        const idx = _worldToIndex(pos[0], pos[1], pos[2]);
+        const idx = (Array.isArray(seed.voxel_index) && seed.voxel_index.length >= 3)
+            ? seed.voxel_index.map(v => Number(v))
+            : _worldToIndex(pos[0], pos[1], pos[2]);
         if (!idx) continue;
         // Apply Z-flip to match CT rendering convention
-        const flippedIdx = [Z - 1 - idx[0], idx[1], idx[2]];
+        const flippedIdx = zFlipped ? [Z - 1 - idx[0], idx[1], idx[2]] : idx;
         const slicePos = flippedIdx[axisIdx];
         const dist = Math.abs(slicePos - sliceIndex);
         if (dist > tolerance) continue;
-        const alpha = Math.max(0.3, 1 - dist / tolerance);
+        const baseOpacity = seedState?.opacity ?? seed.opacity ?? 1.0;
+        if (baseOpacity <= 0.001) continue;
+        const alpha = baseOpacity * Math.max(0.3, 1 - dist / tolerance);
+        const seedRgb = _hexToRgbArray(seedState?.color || seed.color || '#ffcc00', [255, 204, 0]);
         const cx = flippedIdx[dimA] * scaleX;
-        const cy = flippedIdx[dimB] * scaleY;
+        const cy = (axis === 'axial' ? flippedIdx[dimB] : _volumeZToDisplayY(flippedIdx[dimB], geom.resampleRatio)) * scaleY;
         ctx.beginPath();
         ctx.arc(cx, cy, 5, 0, 2 * Math.PI);
-        ctx.fillStyle = `rgba(255, 204, 0, ${alpha})`;
+        ctx.fillStyle = `rgba(${seedRgb[0]}, ${seedRgb[1]}, ${seedRgb[2]}, ${alpha})`;
         ctx.fill();
-        ctx.strokeStyle = `rgba(255, 160, 0, ${alpha})`;
+        ctx.strokeStyle = `rgba(${seedRgb[0]}, ${Math.max(0, seedRgb[1] - 44)}, 0, ${alpha})`;
         ctx.lineWidth = 1.5;
         ctx.stroke();
     }
@@ -16364,14 +16767,19 @@ function renderSeedsOverlay(axis, sliceIndex) {
     // Draw needles as red lines
     const needles = state.seedsOverlay.needles || [];
     for (const needle of needles) {
+        const needleState = dataTreeState.planning.needles.find(n => n.id === needle.id);
+        if (needleState && needleState.visible === false) continue;
+        const needleOpacity = needleState?.opacity ?? needle.opacity ?? 0.8;
+        if (needleOpacity <= 0.001) continue;
+        const needleRgb = _hexToRgbArray(needleState?.color || needle.color || '#ff2266', [255, 34, 102]);
         const pts = needle.points;
         if (!pts || pts.length < 2) continue;
         const idx0_raw = _worldToIndex(pts[0][0], pts[0][1], pts[0][2]);
         const idx1_raw = _worldToIndex(pts[1][0], pts[1][1], pts[1][2]);
         if (!idx0_raw || !idx1_raw) continue;
         // Apply Z-flip
-        const idx0 = [Z - 1 - idx0_raw[0], idx0_raw[1], idx0_raw[2]];
-        const idx1 = [Z - 1 - idx1_raw[0], idx1_raw[1], idx1_raw[2]];
+        const idx0 = zFlipped ? [Z - 1 - idx0_raw[0], idx0_raw[1], idx0_raw[2]] : idx0_raw;
+        const idx1 = zFlipped ? [Z - 1 - idx1_raw[0], idx1_raw[1], idx1_raw[2]] : idx1_raw;
         const s0 = idx0[axisIdx];
         const s1 = idx1[axisIdx];
         const sMin = Math.min(s0, s1);
@@ -16381,17 +16789,153 @@ function renderSeedsOverlay(axis, sliceIndex) {
         const aX = idx0[dimA] + t * (idx1[dimA] - idx0[dimA]);
         const aY = idx0[dimB] + t * (idx1[dimB] - idx0[dimB]);
         const cx = aX * scaleX;
-        const cy = aY * scaleY;
+        const cy = (axis === 'axial' ? aY : _volumeZToDisplayY(aY, geom.resampleRatio)) * scaleY;
         ctx.beginPath();
         ctx.moveTo(cx - 6, cy); ctx.lineTo(cx + 6, cy);
         ctx.moveTo(cx, cy - 6); ctx.lineTo(cx, cy + 6);
-        ctx.strokeStyle = 'rgba(255, 34, 102, 0.9)';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = `rgba(${needleRgb[0]}, ${needleRgb[1]}, ${needleRgb[2]}, ${0.75 * needleOpacity})`;
+        ctx.lineWidth = 1.25;
         ctx.stroke();
         ctx.beginPath();
-        ctx.arc(cx, cy, 4, 0, 2 * Math.PI);
-        ctx.strokeStyle = 'rgba(255, 34, 102, 0.6)';
+        ctx.arc(cx, cy, 3, 0, 2 * Math.PI);
+        ctx.strokeStyle = `rgba(${needleRgb[0]}, ${needleRgb[1]}, ${needleRgb[2]}, ${0.45 * needleOpacity})`;
         ctx.lineWidth = 1;
+        ctx.stroke();
+    }
+}
+
+// Product overlay override: finite needle segment projection + in-plane marker.
+// This definition intentionally follows the legacy implementation above so it
+// wins during script parsing without touching older coordinate code.
+function renderSeedsOverlay(axis, sliceIndex) {
+    if (!state.seedsOverlay || !state.ctShape) return;
+    const sliceCanvas = getSliceCanvas(axis);
+    if (!sliceCanvas) return;
+
+    const canvasId = 'seedsOverlayCanvas' + capitalize(axis);
+    let canvas = document.getElementById(canvasId);
+    if (!canvas) {
+        canvas = document.createElement('canvas');
+        canvas.id = canvasId;
+        canvas.style.cssText = 'position:absolute;pointer-events:none;z-index:6;display:block;';
+        sliceCanvas.parentElement.appendChild(canvas);
+    }
+    _syncLayerToSliceCanvas(axis, canvas, 6);
+    const w = canvas.width;
+    const h = canvas.height;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+
+    const [Z, Y, X] = state.ctShape;
+    const geom = _getMprGeometry(axis, [Z, Y, X], volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0]);
+    let axisIdx, dimA, dimB, sizeA, sizeB, zFlipped;
+    if (axis === 'axial') {
+        axisIdx = 0; dimA = 2; dimB = 1; sizeA = X; sizeB = Y; zFlipped = true;
+    } else if (axis === 'sagittal') {
+        axisIdx = 2; dimA = 1; dimB = 0; sizeA = Y; sizeB = Z; zFlipped = false;
+    } else {
+        axisIdx = 1; dimA = 2; dimB = 0; sizeA = X; sizeB = Z; zFlipped = false;
+    }
+
+    const scaleX = w / sizeA;
+    const scaleY = h / (axis === 'axial' ? sizeB : geom.height);
+    const orientIdx = (idx) => zFlipped ? [Z - 1 - idx[0], idx[1], idx[2]] : idx;
+    const toDisplay = (idx) => ({
+        x: idx[dimA] * scaleX,
+        y: (axis === 'axial' ? idx[dimB] : _volumeZToDisplayY(idx[dimB], geom.resampleRatio)) * scaleY,
+    });
+
+    const needles = state.seedsOverlay.needles || [];
+    for (const needle of needles) {
+        const needleState = dataTreeState.planning.needles.find(n => n.id === needle.id);
+        if (needleState && needleState.visible === false) continue;
+        const needleOpacity = needleState?.opacity ?? needle.opacity ?? 0.8;
+        if (needleOpacity <= 0.001) continue;
+        const pts = needle.points;
+        if (!pts || pts.length < 2) continue;
+        const idx0_raw = _worldToIndex(pts[0][0], pts[0][1], pts[0][2]);
+        const lastPt = pts[pts.length - 1];
+        const idx1_raw = _worldToIndex(lastPt[0], lastPt[1], lastPt[2]);
+        if (!idx0_raw || !idx1_raw) continue;
+        const idx0 = orientIdx(idx0_raw);
+        const idx1 = orientIdx(idx1_raw);
+        const s0 = idx0[axisIdx];
+        const s1 = idx1[axisIdx];
+        const sMin = Math.min(s0, s1);
+        const sMax = Math.max(s0, s1);
+        if (sliceIndex < sMin || sliceIndex > sMax) continue;
+
+        const p0 = toDisplay(idx0);
+        const p1 = toDisplay(idx1);
+        const lineLen = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+        const needleRgb = _hexToRgbArray(needleState?.color || needle.color || '#ff2266', [255, 34, 102]);
+        const grad = ctx.createLinearGradient(p0.x, p0.y, p1.x, p1.y);
+        grad.addColorStop(0, `rgba(56, 189, 248, ${0.25 + 0.55 * needleOpacity})`);
+        grad.addColorStop(1, `rgba(${needleRgb[0]}, ${needleRgb[1]}, ${needleRgb[2]}, ${0.25 + 0.65 * needleOpacity})`);
+
+        if (lineLen > 1.5) {
+            ctx.save();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = 'rgba(2, 6, 23, 0.85)';
+            ctx.lineWidth = 4.2;
+            ctx.beginPath();
+            ctx.moveTo(p0.x, p0.y);
+            ctx.lineTo(p1.x, p1.y);
+            ctx.stroke();
+            ctx.strokeStyle = grad;
+            ctx.lineWidth = 2.2;
+            ctx.beginPath();
+            ctx.moveTo(p0.x, p0.y);
+            ctx.lineTo(p1.x, p1.y);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        const t = Math.abs(s1 - s0) < 1e-6 ? 0.5 : Math.max(0, Math.min(1, (sliceIndex - s0) / (s1 - s0)));
+        const hit = { x: p0.x + t * (p1.x - p0.x), y: p0.y + t * (p1.y - p0.y) };
+        ctx.save();
+        ctx.strokeStyle = `rgba(255, 255, 255, ${0.95 * needleOpacity})`;
+        ctx.lineWidth = 2.0;
+        ctx.beginPath();
+        ctx.moveTo(hit.x - 5.5, hit.y - 5.5);
+        ctx.lineTo(hit.x + 5.5, hit.y + 5.5);
+        ctx.moveTo(hit.x + 5.5, hit.y - 5.5);
+        ctx.lineTo(hit.x - 5.5, hit.y + 5.5);
+        ctx.stroke();
+        ctx.strokeStyle = `rgba(${needleRgb[0]}, ${needleRgb[1]}, ${needleRgb[2]}, ${0.95 * needleOpacity})`;
+        ctx.lineWidth = 1.1;
+        ctx.beginPath();
+        ctx.arc(hit.x, hit.y, 7, 0, 2 * Math.PI);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    const seedTolerance = 3.0;
+    const seeds = state.seedsOverlay.seeds || [];
+    for (const seed of seeds) {
+        const seedState = dataTreeState.planning.seeds.find(s => s.id === seed.id);
+        if (seedState && seedState.visible === false) continue;
+        const pos = seed.position;
+        if (!pos || pos.length < 3) continue;
+        const idx = (Array.isArray(seed.voxel_index) && seed.voxel_index.length >= 3)
+            ? seed.voxel_index.map(v => Number(v))
+            : _worldToIndex(pos[0], pos[1], pos[2]);
+        if (!idx) continue;
+        const flippedIdx = orientIdx(idx);
+        const dist = Math.abs(flippedIdx[axisIdx] - sliceIndex);
+        if (dist > seedTolerance) continue;
+        const baseOpacity = seedState?.opacity ?? seed.opacity ?? 1.0;
+        if (baseOpacity <= 0.001) continue;
+        const alpha = baseOpacity * Math.max(0.35, 1 - dist / seedTolerance);
+        const seedRgb = _hexToRgbArray(seedState?.color || seed.color || '#ffcc00', [255, 204, 0]);
+        const p = toDisplay(flippedIdx);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = `rgba(${seedRgb[0]}, ${seedRgb[1]}, ${seedRgb[2]}, ${alpha})`;
+        ctx.fill();
+        ctx.strokeStyle = `rgba(255, 255, 255, ${0.75 * alpha})`;
+        ctx.lineWidth = 1.3;
         ctx.stroke();
     }
 }
@@ -16698,10 +17242,7 @@ function viewerRotate() {
 }
 
 function applyViewerTransform() {
-    const { flipH, flipV, rotation, zoom, panX, panY } = state.viewerSettings;
-    const scaleX = flipH ? -1 : 1;
-    const scaleY = flipV ? -1 : 1;
-    const transform = `rotate(${rotation}deg) scale(${zoom * scaleX}, ${zoom * scaleY}) translate(${panX}px, ${panY}px)`;
+    const transform = _viewerTransformString();
 
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         const canvas = getSliceCanvas(axis);
@@ -16738,6 +17279,16 @@ function applyViewerTransform() {
         if (doseCanvas) {
             doseCanvas.style.transform = transform;
             doseCanvas.style.transformOrigin = 'center center';
+        }
+        const contourCanvas = document.getElementById('contourCanvas' + capitalize(axis));
+        if (contourCanvas) {
+            contourCanvas.style.transform = transform;
+            contourCanvas.style.transformOrigin = 'center center';
+        }
+        const seedsCanvas = document.getElementById('seedsOverlayCanvas' + capitalize(axis));
+        if (seedsCanvas) {
+            seedsCanvas.style.transform = transform;
+            seedsCanvas.style.transformOrigin = 'center center';
         }
     });
 }
@@ -17083,11 +17634,11 @@ function setupBasicInteractions(axis, canvas) {
             } else if (axis === 'sagittal') {
                 // sagittal: imgX = Y, imgY = Z (resampled)
                 // Need to convert from resampled Z to original Z
-                const resampleRatio = spacing[2] / spacing[1]; // 5.0 / 0.68
+                const resampleRatio = _getMprGeometry('sagittal', state.ctShape, spacing).resampleRatio;
                 volX = zSag; volY = imgX; volZ = Math.round(imgY / resampleRatio);
             } else {
                 // coronal: imgX = X, imgY = Z (resampled)
-                const resampleRatio = spacing[2] / spacing[0]; // 5.0 / 0.68
+                const resampleRatio = _getMprGeometry('coronal', state.ctShape, spacing).resampleRatio;
                 volX = imgX; volY = zCor; volZ = Math.round(imgY / resampleRatio);
             }
             
@@ -17169,11 +17720,11 @@ function setupBasicInteractions(axis, canvas) {
         if (axis === 'axial') {
             volX = imgX; volY = imgY; volZ = state.slices.axial;
         } else if (axis === 'sagittal') {
-            const resampleRatio = spacing[2] / spacing[1];
+            const resampleRatio = _getMprGeometry('sagittal', state.ctShape, spacing).resampleRatio;
             volX = state.slices.sagittal; volY = imgX;
             volZ = Math.round(imgY / resampleRatio);
         } else {
-            const resampleRatio = spacing[2] / spacing[0];
+            const resampleRatio = _getMprGeometry('coronal', state.ctShape, spacing).resampleRatio;
             volX = imgX; volY = state.slices.coronal;
             volZ = Math.round(imgY / resampleRatio);
         }
@@ -17289,6 +17840,213 @@ function _dvhDefaultDticks(xRange, yRange) {
     return { xTick, yTick };
 }
 
+function _resizeDVHChartSoon() {
+    const dvhEl = document.getElementById('dvhChart');
+    if (!dvhEl || typeof Plotly === 'undefined' || !Plotly.Plots) return;
+    dvhEl.style.width = '100%';
+    dvhEl.style.height = '100%';
+    const run = () => {
+        try {
+            if (dvhEl.data && dvhEl.data.length && Plotly.relayout) {
+                Plotly.relayout(dvhEl, _getDvhResponsiveRelayout(dvhEl));
+            }
+            Plotly.Plots.resize(dvhEl);
+        } catch (_) {}
+    };
+    requestAnimationFrame(run);
+    setTimeout(run, 80);
+    setTimeout(run, 250);
+    setTimeout(run, 600);
+}
+
+function _getDvhResponsiveRelayout(dvhEl) {
+    const w = dvhEl?.clientWidth || 900;
+    if (w < 680) {
+        return {
+            margin: { l: 50, r: 14, t: 12, b: 104 },
+            legend: {
+                orientation: 'h', x: 0, y: -0.24, xanchor: 'left', yanchor: 'top',
+                bgcolor: 'rgba(15,23,42,0.62)', bordercolor: 'rgba(148,163,184,0.18)',
+                borderwidth: 1, font: { size: 8, color: '#cbd5e1' },
+                tracegroupgap: 0, itemwidth: 30,
+            },
+        };
+    }
+    return {
+        margin: { l: 55, r: 18, t: 10, b: 42 },
+        legend: {
+            orientation: 'v', x: 0.995, y: 0.995, xanchor: 'right', yanchor: 'top',
+            bgcolor: 'rgba(15,23,42,0.72)', bordercolor: 'rgba(148,163,184,0.22)',
+            borderwidth: 1, font: { size: 9, color: '#cbd5e1' },
+            tracegroupgap: 0, itemwidth: 30,
+        },
+    };
+}
+
+function _setupDvhResponsiveResize(dvhEl) {
+    if (!dvhEl || typeof ResizeObserver === 'undefined' || typeof Plotly === 'undefined') return;
+    if (dvhEl._dvhResizeObserver) {
+        try { dvhEl._dvhResizeObserver.disconnect(); } catch (_) {}
+    }
+    let timer = null;
+    dvhEl._dvhResizeObserver = new ResizeObserver(() => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+            try {
+                if (dvhEl.data && dvhEl.data.length && Plotly.relayout) {
+                    Plotly.relayout(dvhEl, _getDvhResponsiveRelayout(dvhEl));
+                }
+                if (Plotly.Plots) Plotly.Plots.resize(dvhEl);
+            } catch (_) {}
+        }, 40);
+    });
+    dvhEl._dvhResizeObserver.observe(dvhEl);
+}
+
+function _setupDvhCustomTooltip(dvhEl) {
+    if (!dvhEl) return;
+    if (dvhEl._dvhTooltipCleanup) {
+        try { dvhEl._dvhTooltipCleanup(); } catch (_) {}
+        dvhEl._dvhTooltipCleanup = null;
+    }
+    let tip = dvhEl.querySelector('.dvh-custom-tooltip');
+    if (!tip) {
+        tip = document.createElement('div');
+        tip.className = 'dvh-custom-tooltip';
+        dvhEl.appendChild(tip);
+    }
+    tip.style.cssText = 'position:absolute;display:none;pointer-events:none;z-index:50;' +
+        'background:rgba(15,23,42,0.96);border:1px solid rgba(148,163,184,0.55);border-radius:6px;' +
+        'padding:6px 9px;font-size:11px;line-height:1.35;color:#e2e8f0;font-family:Inter,system-ui,sans-serif;' +
+        'white-space:nowrap;box-shadow:0 8px 18px rgba(0,0,0,0.35);max-width:240px;';
+
+    const onMove = (ev) => {
+        const layout = dvhEl._fullLayout;
+        const traces = dvhEl.data || [];
+        if (!layout || !layout.xaxis || !layout.yaxis || !traces.length) {
+            tip.style.display = 'none';
+            return;
+        }
+        const box = dvhEl.getBoundingClientRect();
+        const size = layout._size || {};
+        const plotLeft = size.l || 0;
+        const plotTop = size.t || 0;
+        const plotW = size.w || 1;
+        const plotH = size.h || 1;
+        const mx = ev.clientX - box.left;
+        const my = ev.clientY - box.top;
+        if (mx < plotLeft || mx > plotLeft + plotW || my < plotTop || my > plotTop + plotH) {
+            tip.style.display = 'none';
+            return;
+        }
+        let best = null;
+        let bestPx2 = Infinity;
+        for (const trace of traces) {
+            if (!trace || trace.visible === false || trace.visible === 'legendonly' || !trace.x || !trace.y) continue;
+            const color = trace.line?.color || '#e2e8f0';
+            for (let i = 0; i < trace.x.length; i++) {
+                const x = Number(trace.x[i]);
+                const y = Number(trace.y[i]);
+                if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+                const xr = layout.xaxis.range || [0, 1];
+                const yr = layout.yaxis.range || [0, 1];
+                const px = plotLeft + (typeof layout.xaxis.l2p === 'function'
+                    ? layout.xaxis.l2p(x)
+                    : ((x - xr[0]) / Math.max(xr[1] - xr[0], 1e-9)) * plotW);
+                const py = plotTop + (typeof layout.yaxis.l2p === 'function'
+                    ? layout.yaxis.l2p(y)
+                    : (1 - (y - yr[0]) / Math.max(yr[1] - yr[0], 1e-9)) * plotH);
+                const dx = px - mx;
+                const dy = py - my;
+                const d2 = dx * dx + dy * dy;
+                if (d2 < bestPx2) {
+                    bestPx2 = d2;
+                    best = { name: trace.name || '', x, y, color };
+                }
+            }
+        }
+        if (!best || bestPx2 > 18 * 18) {
+            tip.style.display = 'none';
+            return;
+        }
+        const color = String(best.color || '#e2e8f0');
+        const safeColor = /^#[0-9a-f]{3,8}$/i.test(color) || /^rgba?\([0-9.,\s%]+\)$/i.test(color) ? color : '#e2e8f0';
+        tip.innerHTML = `<div style="color:${safeColor};font-weight:700;margin-bottom:2px">${escHtml(best.name)}</div>` +
+            `<div>Dose: ${best.x.toFixed(2)} Gy</div><div>Volume: ${best.y.toFixed(1)}%</div>`;
+        tip.style.display = 'block';
+        const pad = 8;
+        const offset = 14;
+        const tw = tip.offsetWidth || 140;
+        const th = tip.offsetHeight || 54;
+        let left = mx + offset;
+        let top = my + offset;
+        if (left + tw + pad > dvhEl.clientWidth) left = mx - tw - offset;
+        if (top + th + pad > dvhEl.clientHeight) top = my - th - offset;
+        left = Math.max(pad, Math.min(left, dvhEl.clientWidth - tw - pad));
+        top = Math.max(pad, Math.min(top, dvhEl.clientHeight - th - pad));
+        tip.style.left = `${left}px`;
+        tip.style.top = `${top}px`;
+    };
+    const onLeave = () => { tip.style.display = 'none'; };
+    dvhEl.addEventListener('mousemove', onMove);
+    dvhEl.addEventListener('mouseleave', onLeave);
+    dvhEl._dvhTooltipCleanup = () => {
+        dvhEl.removeEventListener('mousemove', onMove);
+        dvhEl.removeEventListener('mouseleave', onLeave);
+        tip.style.display = 'none';
+    };
+}
+
+function _clampDvhVolume(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(100, n));
+}
+
+function _smoothDvhCurveForDisplay(doseBins, volPcts, maxSmoothDose = 600) {
+    const pairs = [];
+    for (let i = 0; i < Math.min(doseBins.length, volPcts.length); i++) {
+        const x = Number(doseBins[i]);
+        const y = Number(volPcts[i]);
+        if (Number.isFinite(x) && Number.isFinite(y)) pairs.push([x, _clampDvhVolume(y)]);
+    }
+    if (pairs.length < 2) return { x: pairs.map(p => p[0]), y: pairs.map(p => p[1]) };
+    pairs.sort((a, b) => a[0] - b[0]);
+
+    const outX = [pairs[0][0]];
+    const outY = [pairs[0][1]];
+    const hermite = (p0, p1, p2, p3, t) => {
+        const t2 = t * t, t3 = t2 * t;
+        return 0.5 * ((2 * p1) +
+            (-p0 + p2) * t +
+            (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+            (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+    };
+
+    for (let i = 0; i < pairs.length - 1; i++) {
+        const [x1, y1] = pairs[i];
+        const [x2, y2] = pairs[i + 1];
+        const smoothThisSegment = x1 < maxSmoothDose && x2 <= maxSmoothDose && pairs.length >= 4;
+        const samples = smoothThisSegment
+            ? Math.max(2, Math.min(8, Math.ceil(Math.abs(x2 - x1) / 5)))
+            : 1;
+        for (let s = 1; s < samples; s++) {
+            const t = s / samples;
+            outX.push(x1 + t * (x2 - x1));
+            outY.push(_clampDvhVolume(hermite(
+                pairs[Math.max(0, i - 1)][1],
+                y1,
+                y2,
+                pairs[Math.min(pairs.length - 1, i + 2)][1],
+                t,
+            )));
+        }
+        outX.push(x2);
+        outY.push(_clampDvhVolume(y2));
+    }
+    return { x: outX, y: outY };
+}
+
 function drawDVH() {
     console.log('[drawDVH] called, dvhData:', !!state.dvhData, 'keys:', state.dvhData ? Object.keys(state.dvhData).length : 0);
     const placeholder = document.getElementById('dvhPlaceholder');
@@ -17300,7 +18058,13 @@ function drawDVH() {
     // when refreshPlanningUI fires multiple times in quick succession
     // (e.g. once per SSE step event during planning).
     const _newSig = Object.keys(state.dvhData).sort().join('|');
-    if (drawDVH._lastSig === _newSig) { console.log('[drawDVH] Same signature, skipping'); return; }
+    if (drawDVH._lastSig === _newSig) {
+        console.log('[drawDVH] Same signature, skipping');
+        _setupDvhResponsiveResize(document.getElementById('dvhChart'));
+        _setupDvhCustomTooltip(document.getElementById('dvhChart'));
+        _resizeDVHChartSoon();
+        return;
+    }
     console.log('[drawDVH] Rendering DVH with keys:', Object.keys(state.dvhData).slice(0, 5));
     drawDVH._lastSig = _newSig;
 
@@ -17382,14 +18146,23 @@ function drawDVH() {
             smoothX.push(...doseBins);
             smoothY.push(...volPcts.map(v => Math.max(0, Math.min(100, v))));
         }
+        // Override the legacy dense interpolation with bounded display data.
+        // The legacy code above clamps its points, but Plotly's own spline
+        // can still overshoot past 100%. Keep only our 0-600 Gy display
+        // interpolation and render it linearly.
+        const displaySmooth = _smoothDvhCurveForDisplay(doseBins, volPcts, 600);
+        smoothX.length = 0;
+        smoothY.length = 0;
+        smoothX.push(...displaySmooth.x);
+        smoothY.push(...displaySmooth.y);
         traces.push({
             x: smoothX,
             y: smoothY,
             type: 'scatter', mode: 'lines', name: name,
-            line: { color, width: name === ctvName ? 2.6 : 1.4, shape: 'spline', smoothing: 1.0 },
+            line: { color, width: name === ctvName ? 2.6 : 1.4, shape: 'linear' },
             fill: name === ctvName ? 'tozeroy' : 'none',
             fillcolor: name === ctvName ? 'rgba(14,165,233,0.10)' : undefined,
-            hovertemplate: `<b>${name}</b><br>Dose: %{x:.2f} Gy<br>Volume: %{y:.1f}%<extra></extra>`,
+            hoverinfo: 'skip',
             legendgroup: name,
             showlegend: true,
         });
@@ -17397,6 +18170,8 @@ function drawDVH() {
     }
 
     const dvhEl = document.getElementById('dvhChart');
+    dvhEl.style.width = '100%';
+    dvhEl.style.height = '100%';
 
     // BUG FIX 2026-06-16: user asked for the DVH chart to default
     // to a FIXED 0–600 Gy x-range (the brachytherapy planning view
@@ -17457,12 +18232,12 @@ function drawDVH() {
     const annotations = [];
     if (rxGy > 0 && rxGy <= xRange[1] * 1.5) {
         shapes.push({
-            type: 'line', x0: rxGy, x1: rxGy, y0: 0, y1: 110,
+            type: 'line', x0: rxGy, x1: rxGy, y0: 0, y1: 100,
             xref: 'x', yref: 'y',
             line: { color: '#facc15', width: 1.5, dash: 'dash' },
         });
         annotations.push({
-            x: rxGy, y: 108,
+            x: rxGy, y: 99,
             xref: 'x', yref: 'y',
             text: `Rx ${rxGy.toFixed(1)} Gy`,
             showarrow: false,
@@ -17480,7 +18255,7 @@ function drawDVH() {
             // reads as a clear marker without obscuring the line.
             shapes.push({
                 type: 'circle', x0: rxGy - 2, x1: rxGy + 2,
-                y0: ctvRxCoverage - 2, y1: ctvRxCoverage + 2,
+                y0: Math.max(0, ctvRxCoverage - 2), y1: Math.min(100, ctvRxCoverage + 2),
                 xref: 'x', yref: 'y',
                 fillcolor: '#facc15', line: { color: '#facc15' },
             });
@@ -17497,10 +18272,11 @@ function drawDVH() {
         }
     }
 
+    const responsiveLayout = _getDvhResponsiveRelayout(dvhEl);
     return Plotly.react(dvhEl, traces, {
         paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
         font: { color: '#cbd5e1', size: 11, family: 'Inter, sans-serif' },
-        margin: { l: 55, r: 200, t: 10, b: 40 },
+        margin: responsiveLayout.margin,
         xaxis: {
             title: 'Dose (Gy)',
             gridcolor: '#334155', linecolor: '#475569', tickcolor: '#475569',
@@ -17518,7 +18294,7 @@ function drawDVH() {
             gridcolor: '#334155', linecolor: '#475569', tickcolor: '#475569',
             titlefont: { color: '#cbd5e1', size: 10 },
             tickfont: { size: 9, color: '#cbd5e1' },
-            range: [0, 110],
+            range: [0, 100],
             // User requested 10% ticks (0, 10, 20, ..., 100). The
             // adaptive relayout handler will only adjust this when the
             // user zooms the y-axis (so the ticks stay 10% at the
@@ -17531,12 +18307,7 @@ function drawDVH() {
         // so the user can scan all OAR names without the legend
         // wrapping over the plot area. The CTV (first entry) is
         // bolded by a wider line width in the trace itself.
-        legend: {
-            orientation: 'v', x: 1.02, y: 1, xanchor: 'left', yanchor: 'top',
-            bgcolor: 'rgba(15,23,42,0.45)', bordercolor: 'rgba(148,163,184,0.18)',
-            borderwidth: 1, font: { size: 9, color: '#cbd5e1' },
-            tracegroupgap: 0, itemwidth: 30,
-        },
+        legend: responsiveLayout.legend,
         shapes, annotations,
         // BUG FIX 2026-06-16 (DVH hover): user complained that the
         // unified hover tooltip showed ALL 30+ legend entries at
@@ -17546,12 +18317,8 @@ function drawDVH() {
         // the user wants — hover continuously to read off
         // (dose, volume) values for any curve, with no need for
         // the click-to-pick flow.
-        hovermode: 'closest',
+        hovermode: false,
         dragmode: 'zoom',
-        // Disable Plotly's built-in hoverlabel — we use a custom HTML tooltip
-        // instead, because Plotly's SVG hoverlabel has persistent positioning
-        // issues (text floats in/out, overflows container, coordinate mismatch).
-        hoverlabel: { visible: false },
     }, {
         responsive: true,
         displayModeBar: true,
@@ -17559,7 +18326,9 @@ function drawDVH() {
         displaylogo: false,
     }).then(() => {
         // Force Plotly to re-measure container after render completes
-        try { Plotly.Plots.resize(dvhEl); } catch (_) {}
+        _setupDvhResponsiveResize(dvhEl);
+        _setupDvhCustomTooltip(dvhEl);
+        _resizeDVHChartSoon();
     }).catch(() => {});
 
     // Custom HTML DVH tooltip — mousemove-based (NOT Plotly hover-based).
@@ -17644,7 +18413,10 @@ function drawDVH() {
             const dose = bestTrace.x[bestIdx] != null ? bestTrace.x[bestIdx].toFixed(1) : '';
             const vol = bestTrace.y[bestIdx] != null ? bestTrace.y[bestIdx].toFixed(1) : '';
             const color = bestTrace.line ? (bestTrace.line.color || '#e2e8f0') : '#e2e8f0';
-            tip.innerHTML = `<div style="color:${color};font-weight:600;margin-bottom:2px">${traceName}</div>` +
+            const safeColor = /^#[0-9a-f]{3,8}$/i.test(String(color)) || /^rgba?\([0-9.,\s%]+\)$/i.test(String(color))
+                ? String(color)
+                : '#e2e8f0';
+            tip.innerHTML = `<div style="color:${safeColor};font-weight:600;margin-bottom:2px">${escHtml(traceName)}</div>` +
                 `<div>Dose: ${dose} Gy</div><div>Volume: ${vol}%</div>`;
             tip.style.display = 'block';
 
@@ -17997,8 +18769,15 @@ async function refreshPlanningUI() {
             _withTimeout(loadCTVAndObstacleMeshes(), 'CTV/OAR meshes', 300000)
                 .then(() => console.log('[3D auto-load] CTV/obstacle done. Meshes:', Object.keys(scene3D.meshes).length))
         );
-        // Seeds + needles
-        if (data.seeds && data.seeds.length > 0) {
+        // Seeds + needles. The authoritative 3D geometry lives behind
+        // /planning/seeds_3d, while /planning/results may omit the flat
+        // seeds array. Load geometry whenever the result indicates any
+        // trajectories or seeds exist.
+        const shouldLoadSeedGeometry = ((data.seeds || []).length > 0)
+            || ((data.total_seeds || 0) > 0)
+            || ((data.num_trajectories || 0) > 0)
+            || ((data.trajectories || []).length > 0);
+        if (shouldLoadSeedGeometry) {
             _meshPromises.push(
                 _withTimeout(loadSeeds3D(), 'Seeds')
                     .then(() => console.log('[3D auto-load] Seeds done. Meshes:', Object.keys(scene3D.meshes).length))
@@ -18486,7 +19265,10 @@ function updateClinicalEvaluation() {
 }
 
 function updateSeeds(seeds) {
-    state.seeds = seeds || [];
+    state.seeds = (seeds || []).map(seed => ({
+        ...seed,
+        trajectory_id: _normalizeTrajectoryId(seed.trajectory_id),
+    }));
     // Update data tree so the "seeds" entry shows a fresh count badge
     // and so renderDataTree() can mark the row as "loaded" / "visible".
     if (typeof dataTreeState !== 'undefined' && dataTreeState.seeds) {
@@ -18510,14 +19292,15 @@ function updateTrajectories(trajectories) {
     // groupChildren() call per trajectory.
     const grouped = {};
     (state.seeds || []).forEach(s => {
-        const t = s.trajectory_id || 'unassigned';
+        const t = _normalizeTrajectoryId(s.trajectory_id);
         if (!grouped[t]) grouped[t] = [];
         grouped[t].push(s);
     });
     dataTreeState.planning.trajectories = (trajectories || []).map(t => {
-        const childSeeds = grouped[t.id] || [];
+        const trajId = _normalizeTrajectoryId(t.id);
+        const childSeeds = grouped[trajId] || [];
         return {
-            id: t.id,
+            id: trajId,
             index: t.index,
             entry: t.entry,
             target: t.target,
@@ -20535,12 +21318,13 @@ async function autoCaptureReportFigures() {
         lblAxial: '轴位', lblSagittal: '矢状位', lblCoronal: '冠状位',
     } : {
         seed3d: 'Seed Implant Plan',
-        seed3dCap: 'Left: Front view with needle paths (red), seeds (yellow), CTV, and all OARs; Right: Translucent CTV showing internal 3D seed distribution',
+        seed3dCap: 'Left: Front view with Data Tree-matched colors for CTV/tumor, OARs, needle paths, and seeds; Right: translucent CTV showing internal 3D seed distribution. Legend colors match the Data Tree.',
         doseDvh: 'Dose Distribution & DVH',
-        doseDvhCap: 'Top: Axial/Sagittal/Coronal CT with dose heatmap at peak dose voxel; Bottom: Dose-volume histogram for CTV and OARs',
+        doseDvhCap: '(a) Axial, (b) Sagittal, and (c) Coronal CT slices with dose heatmap at the peak-dose voxel; (d) CTV/OAR dose surface close-up; (e) dose-volume histogram for CTV and OARs.',
         lblFront: 'Front view (with OARs)',
         lblInside: 'Translucent tumor (seed distribution)',
         lblAxial: 'Axial', lblSagittal: 'Sagittal', lblCoronal: 'Coronal',
+        lblDoseSurface: 'CTV/OAR dose surface',
     };
 
     const _ts = () => new Date().toISOString();
@@ -20564,12 +21348,16 @@ async function autoCaptureReportFigures() {
     });
 
     // Helper: draw image onto canvas context, returns Promise
-    function _drawImg(ctx, dataUrl, dx, dy, maxW, maxH) {
+    function _drawImg(ctx, dataUrl, dx, dy, maxW, maxH, opts = {}) {
         return new Promise(resolve => {
             if (!dataUrl) { resolve(false); return; }
             const img = new Image();
             img.onload = () => {
-                const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+                const fit = opts.fit === 'cover' ? 'cover' : 'contain';
+                const rawScale = fit === 'cover'
+                    ? Math.max(maxW / img.width, maxH / img.height)
+                    : Math.min(maxW / img.width, maxH / img.height);
+                const scale = opts.allowUpscale ? rawScale : Math.min(rawScale, 1);
                 const w = img.width * scale, h = img.height * scale;
                 ctx.drawImage(img, dx + (maxW - w) / 2, dy + (maxH - h) / 2, w, h);
                 resolve(true);
@@ -20577,6 +21365,138 @@ async function autoCaptureReportFigures() {
             img.onerror = () => resolve(false);
             img.src = dataUrl;
         });
+    }
+
+    async function _drawFigurePanel(ctx, dataUrl, x, y, w, h, badge, label) {
+        ctx.save();
+        ctx.fillStyle = '#020617';
+        ctx.strokeStyle = 'rgba(148,163,184,0.28)';
+        ctx.lineWidth = 1;
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+        await _drawImg(ctx, dataUrl, x + 8, y + 24, w - 16, h - 54, { allowUpscale: true, fit: 'contain' });
+        ctx.fillStyle = 'rgba(15,23,42,0.92)';
+        ctx.strokeStyle = 'rgba(148,163,184,0.32)';
+        ctx.beginPath();
+        if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(x + 10, y + 8, 28, 22, 6);
+        } else {
+            ctx.rect(x + 10, y + 8, 28, 22);
+        }
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = 'bold 12px Inter, system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`(${badge})`, x + 24, y + 23);
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = '12px Inter, system-ui, sans-serif';
+        ctx.fillText(label, x + w / 2, y + h - 18);
+        ctx.restore();
+    }
+
+    function _drawDoseColorbar(ctx, x, y, w, h, title = 'Dose (Gy)') {
+        ctx.save();
+        ctx.fillStyle = 'rgba(2,6,23,0.92)';
+        ctx.strokeStyle = 'rgba(148,163,184,0.32)';
+        ctx.lineWidth = 1;
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+
+        const barX = x + 12;
+        const barY = y + 28;
+        const barW = 18;
+        const barH = h - 52;
+        for (let yy = 0; yy < barH; yy++) {
+            const t = 1 - yy / Math.max(1, barH - 1);
+            const [r, g, b] = _petRainbow2(t);
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+            ctx.fillRect(barX, barY + yy, barW, 1);
+        }
+        ctx.strokeStyle = 'rgba(226,232,240,0.65)';
+        ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
+
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = 'bold 11px Inter, system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(title, x + 8, y + 18);
+        const ticks = [COLORBAR_MAX_GY, COLORBAR_MAX_GY * 0.75, COLORBAR_MAX_GY * 0.5, COLORBAR_MAX_GY * 0.25, COLORBAR_MIN_GY];
+        ticks.forEach((v, i) => {
+            const ty = barY + (barH - 1) * (i / 4);
+            ctx.strokeStyle = 'rgba(226,232,240,0.72)';
+            ctx.beginPath();
+            ctx.moveTo(barX + barW + 2, ty);
+            ctx.lineTo(barX + barW + 7, ty);
+            ctx.stroke();
+            ctx.fillStyle = '#cbd5e1';
+            ctx.font = '10px Inter, system-ui, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(String(Math.round(v)), barX + barW + 10, ty + 3);
+        });
+        ctx.restore();
+    }
+
+    function _drawPlanLegend(ctx, x, y, w) {
+        const items = [];
+        const ctvColor = dataTreeState.ctv?.color || '#ef4444';
+        items.push({ type: 'swatch', color: ctvColor, label: 'CTV / tumor' });
+        const firstOar = (dataTreeState.organs || []).find(o => o.visible !== false) || dataTreeState.organs?.[0];
+        items.push({ type: 'swatch', color: firstOar?.color || dataTreeState.oar?.color || '#22c55e', label: 'OAR surfaces' });
+        items.push({ type: 'seed', color: dataTreeState.planning?.seeds?.[0]?.color || dataTreeState.seeds?.color || '#ffcc00', label: 'I-125 seeds' });
+        items.push({ type: 'needle', color: dataTreeState.planning?.needles?.[0]?.color || dataTreeState.needles?.color || '#ff2266', label: 'Needle paths' });
+        items.push({ type: 'gradient', label: 'Dose surface: blue low, red high' });
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(2,6,23,0.94)';
+        ctx.strokeStyle = 'rgba(148,163,184,0.28)';
+        ctx.lineWidth = 1;
+        ctx.fillRect(x, y, w, 56);
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, 55);
+        ctx.font = '11px Inter, system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        let cx = x + 14;
+        const cy = y + 29;
+        items.forEach(item => {
+            if (item.type === 'swatch') {
+                ctx.fillStyle = item.color;
+                ctx.fillRect(cx, cy - 6, 12, 12);
+                ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+                ctx.strokeRect(cx + 0.5, cy - 5.5, 11, 11);
+                cx += 18;
+            } else if (item.type === 'seed') {
+                ctx.fillStyle = item.color;
+                ctx.beginPath();
+                ctx.arc(cx + 6, cy, 6, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+                ctx.stroke();
+                cx += 18;
+            } else if (item.type === 'needle') {
+                ctx.strokeStyle = item.color;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.lineTo(cx + 18, cy);
+                ctx.stroke();
+                cx += 24;
+            } else {
+                const grad = ctx.createLinearGradient(cx, cy, cx + 34, cy);
+                grad.addColorStop(0, '#0034ff');
+                grad.addColorStop(0.5, '#00ffff');
+                grad.addColorStop(0.75, '#ffff00');
+                grad.addColorStop(1, '#ff0000');
+                ctx.fillStyle = grad;
+                ctx.fillRect(cx, cy - 6, 34, 12);
+                ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+                ctx.strokeRect(cx + 0.5, cy - 5.5, 33, 11);
+                cx += 40;
+            }
+            ctx.fillStyle = '#cbd5e1';
+            ctx.font = '11px Inter, system-ui, sans-serif';
+            ctx.fillText(item.label, cx, cy + 4);
+            cx += ctx.measureText(item.label).width + 22;
+        });
+        ctx.restore();
     }
 
     // Helper: draw a label centered below an image area
@@ -20618,6 +21538,45 @@ async function autoCaptureReportFigures() {
                 return box;
             }
 
+            function _computeFocusedPlanBox({ includeOars = false } = {}) {
+                const box = new THREE.Box3();
+                const expandMesh = (mesh) => {
+                    if (!mesh || !mesh.visible) return;
+                    try { box.expandByObject(mesh); } catch (_) {}
+                };
+                for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                    if (!mesh) continue;
+                    const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.source === 'ctv' || mesh?.userData?.type === 'ctv';
+                    const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed';
+                    const isNeedle = id.startsWith('needle_') || mesh?.userData?.type === 'needle';
+                    const isDose = id.startsWith('dose_iso_') || mesh?.userData?.type === 'dose_isosurface';
+                    const isSkin = id === 'skin' || mesh === scene3D.skinMesh || mesh?.userData?.type === 'skin';
+                    const isOar = !isCtv && !isSeed && !isNeedle && !isDose && !isSkin;
+                    if (isCtv || isSeed || isNeedle || (includeOars && isOar)) expandMesh(mesh);
+                }
+                if (!(box.min.x < box.max.x)) return _computeSceneBox();
+                return box;
+            }
+
+            function _frameCameraToBox(box, mode) {
+                if (!(box && box.min.x < box.max.x) || !scene3D.camera || !scene3D.controls) return;
+                const center = box.getCenter(new THREE.Vector3());
+                const size = box.getSize(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z, 1);
+                const fov = (scene3D.camera.fov || 45) * Math.PI / 180;
+                const padding = mode === 'detail' ? 1.25 : 1.55;
+                const dist = (maxDim * padding) / (2 * Math.tan(fov / 2));
+                const dir = mode === 'detail'
+                    ? new THREE.Vector3(0.55, -0.25, 0.8).normalize()
+                    : new THREE.Vector3(0.35, -0.55, 0.76).normalize();
+                scene3D.controls.target.copy(center);
+                scene3D.camera.position.copy(center.clone().add(dir.multiplyScalar(dist)));
+                scene3D.camera.near = Math.max(0.1, dist / 100);
+                scene3D.camera.far = Math.max(2000, dist * 20);
+                scene3D.camera.updateProjectionMatrix();
+                scene3D.controls.update();
+            }
+
             // Helper: render and capture 3D canvas
             async function _capture3D(label) {
                 await _waitFrames(3);
@@ -20654,18 +21613,8 @@ async function autoCaptureReportFigures() {
                 || Object.values(scene3D.meshes).find(m => m?.userData?.source === 'ctv');
             if (ctvMesh?.material) { ctvMesh.material.opacity = 0.3; ctvMesh.material.transparent = true; }
 
-            fitCameraToScene();
+            _frameCameraToBox(_computeFocusedPlanBox({ includeOars: true }), 'overview');
             await _waitFrames(2);
-            const boxA = _computeSceneBox();
-            if (boxA.min.x < boxA.max.x) {
-                const centerA = boxA.getCenter(new THREE.Vector3());
-                const sizeA = boxA.getSize(new THREE.Vector3());
-                const distA = Math.max(sizeA.x, sizeA.y, sizeA.z) * 2.2;
-                scene3D.controls.target.copy(centerA);
-                scene3D.camera.position.set(centerA.x, centerA.y + distA * 0.3, centerA.z + distA * 0.8);
-                scene3D.camera.updateProjectionMatrix();
-                scene3D.controls.update();
-            }
             const imgA = await _capture3D('View A (front+OARs)');
 
             // ── View B: Translucent tumor, seeds visible inside ──
@@ -20688,31 +21637,16 @@ async function autoCaptureReportFigures() {
                 if (id.startsWith('needle_') && mesh?.material) { mesh.material.opacity = 0.8; }
             }
 
-            fitCameraToScene();
+            _frameCameraToBox(_computeFocusedPlanBox({ includeOars: false }), 'detail');
             await _waitFrames(2);
-            const boxB = _computeSceneBox();
-            if (boxB.min.x < boxB.max.x) {
-                const centerB = boxB.getCenter(new THREE.Vector3());
-                const sizeB = boxB.getSize(new THREE.Vector3());
-                const distB = Math.max(sizeB.x, sizeB.y, sizeB.z) * 1.8;
-                // Closer view, slightly rotated to see inside the tumor
-                scene3D.controls.target.copy(centerB);
-                scene3D.camera.position.set(
-                    centerB.x + distB * 0.4,
-                    centerB.y + distB * 0.2,
-                    centerB.z + distB * 0.6
-                );
-                scene3D.camera.updateProjectionMatrix();
-                scene3D.controls.update();
-            }
             const imgB = await _capture3D('View B (translucent tumor)');
 
             // ── Composite: side by side ──
             if (imgA || imgB) {
-                const W = 1200, halfW = 560, gap = 40, titleH = 44, labelH = 28, pad = 20;
+                const W = 1200, halfW = 560, gap = 40, titleH = 44, labelH = 28, legendH = 66, pad = 20;
                 const compCanvas = document.createElement('canvas');
                 compCanvas.width = W;
-                compCanvas.height = titleH + pad + halfW + labelH;
+                compCanvas.height = titleH + pad + halfW + labelH + legendH;
                 const ctx = compCanvas.getContext('2d');
 
                 // Background
@@ -20740,6 +21674,8 @@ async function autoCaptureReportFigures() {
                 ctx.moveTo(W / 2, titleH + 10);
                 ctx.lineTo(W / 2, titleH + halfW - 10);
                 ctx.stroke();
+
+                _drawPlanLegend(ctx, pad, titleH + halfW + labelH + 6, W - pad * 2);
 
                 _push(labels.seed3d, labels.seed3dCap, compCanvas.toDataURL('image/png'), '3d_seeds');
             }
@@ -20815,6 +21751,59 @@ async function autoCaptureReportFigures() {
                 }
             }
 
+            let doseSurfaceDataUrl = null;
+            try {
+                const savedTextureMode = !!state.doseTexture.enabled;
+                await setDoseTextureMode(true, { silent: true });
+                const savedVis = {};
+                const savedOp = {};
+                for (const [id, mesh] of Object.entries(scene3D.meshes || {})) {
+                    if (!mesh) continue;
+                    savedVis[id] = mesh.visible;
+                    const surface = getMeshSurface(mesh);
+                    if (surface?.material && !Array.isArray(surface.material)) savedOp[id] = surface.material.opacity;
+                    const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.type === 'ctv';
+                    const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed';
+                    const isNeedle = id.startsWith('needle_') || mesh?.userData?.type === 'needle';
+                    mesh.visible = isCtv || isSeed || isNeedle;
+                    if (isCtv) applyMeshOpacity(mesh, 0.92, true);
+                }
+                const box = new THREE.Box3();
+                Object.entries(scene3D.meshes || {}).forEach(([id, mesh]) => {
+                    if (!mesh || !mesh.visible) return;
+                    if (id.startsWith('dose_iso_')) return;
+                    try { box.expandByObject(mesh); } catch (_) {}
+                });
+                if (box.min.x < box.max.x && scene3D.camera && scene3D.controls) {
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z, 1);
+                    const fov = (scene3D.camera.fov || 45) * Math.PI / 180;
+                    const dist = (maxDim * 1.2) / (2 * Math.tan(fov / 2));
+                    const dir = new THREE.Vector3(0.5, -0.25, 0.82).normalize();
+                    scene3D.controls.target.copy(center);
+                    scene3D.camera.position.copy(center.clone().add(dir.multiplyScalar(dist)));
+                    scene3D.camera.near = Math.max(0.1, dist / 100);
+                    scene3D.camera.far = Math.max(2000, dist * 20);
+                    scene3D.camera.updateProjectionMatrix();
+                    scene3D.controls.update();
+                    await _waitFrames(4);
+                    scene3D.renderer.render(scene3D.scene, scene3D.camera);
+                    doseSurfaceDataUrl = scene3D.renderer.domElement.toDataURL('image/png');
+                }
+                for (const [id, vis] of Object.entries(savedVis)) {
+                    const mesh = scene3D.meshes[id];
+                    if (!mesh) continue;
+                    mesh.visible = vis;
+                    if (savedOp[id] !== undefined) applyMeshOpacity(mesh, savedOp[id], vis);
+                }
+                if (!savedTextureMode) await setDoseTextureMode(false, { silent: true });
+                fitCameraToScene();
+                await _waitFrames(2);
+            } catch (e) {
+                console.warn('[Report] dose surface close-up capture failed:', e);
+            }
+
             // Restore original slices and opacity
             state.doseOverlay.opacity = origOpacity;
             state.doseOverlay.visible = origVisible;
@@ -20852,19 +21841,21 @@ async function autoCaptureReportFigures() {
             }
 
             // Compose into single image
-            if (doseImages.length > 0 || dvhDataUrl) {
-                const W = 1200;
-                const pad = 20;
-                const viewW = Math.floor((W - pad * 2 - 20) / 3);  // 3 views with gaps
-                const viewH = viewW;  // square-ish
-                const dvhH = 380;
-                const gap = 12;
-                const titleH = 44;
-                const labelH = 28;
+            if (doseImages.length > 0 || doseSurfaceDataUrl || dvhDataUrl) {
+                const W = 1400;
+                const pad = 24;
+                const gap = 14;
+                const titleH = 48;
+                const colorbarW = 78;
+                const topPanelCount = 4;
+                const viewW = Math.floor((W - pad * 2 - gap * (topPanelCount - 1) - colorbarW - gap) / topPanelCount);
+                const viewH = 270;
+                const dvhH = 370;
+                const dvhYPad = 44;
 
                 const compositeCanvas = document.createElement('canvas');
                 compositeCanvas.width = W;
-                compositeCanvas.height = titleH + labelH + viewH + gap + dvhH + pad;
+                compositeCanvas.height = titleH + viewH + gap + dvhYPad + dvhH + pad;
                 const ctx = compositeCanvas.getContext('2d');
 
                 // Background
@@ -20877,17 +21868,24 @@ async function autoCaptureReportFigures() {
                 ctx.textAlign = 'center';
                 ctx.fillText(labels.doseDvh, W / 2, 30);
 
-                // Draw 3 dose views in a row (top)
-                let xPos = pad;
-                for (let i = 0; i < doseImages.length; i++) {
-                    const entry = doseImages[i];
-                    await _drawImg(ctx, entry.dataUrl, xPos, titleH, viewW, viewH);
-                    _drawLabel(ctx, entry.label, xPos + viewW / 2, titleH + viewH + 18, viewW);
-                    xPos += viewW + 10;
+                // Draw dose views + 3D dose surface in uniform panels (top)
+                const panelLabels = [
+                    labels.lblAxial || 'Axial',
+                    labels.lblSagittal || 'Sagittal',
+                    labels.lblCoronal || 'Coronal',
+                    labels.lblDoseSurface || 'CTV/OAR dose surface',
+                ];
+                const topPanels = doseImages.slice(0, 3);
+                if (doseSurfaceDataUrl) topPanels.push({ dataUrl: doseSurfaceDataUrl, label: labels.lblDoseSurface || 'CTV/OAR dose surface' });
+                for (let i = 0; i < topPanels.length; i++) {
+                    const entry = topPanels[i];
+                    const xPos = pad + i * (viewW + gap);
+                    await _drawFigurePanel(ctx, entry.dataUrl, xPos, titleH, viewW, viewH, String.fromCharCode(97 + i), panelLabels[i] || entry.label);
                 }
+                _drawDoseColorbar(ctx, W - pad - colorbarW, titleH, colorbarW, viewH, 'Dose (Gy)');
 
                 // Draw thin separator line
-                const sepY = titleH + viewH + labelH + 4;
+                const sepY = titleH + viewH + gap;
                 ctx.strokeStyle = 'rgba(148,163,184,0.15)';
                 ctx.lineWidth = 1;
                 ctx.beginPath();
@@ -20899,16 +21897,15 @@ async function autoCaptureReportFigures() {
                 ctx.fillStyle = '#64748b';
                 ctx.font = '11px Inter, system-ui, sans-serif';
                 ctx.textAlign = 'left';
-                ctx.fillText('DVH — Dose Volume Histogram', pad, sepY + 16);
+                ctx.fillText('(e) DVH - Dose Volume Histogram', pad, sepY + 20);
 
                 // Draw DVH chart (bottom)
+                const dvhY = sepY + dvhYPad;
                 if (dvhDataUrl) {
-                    const dvhY = sepY + 22;
-                    await _drawImg(ctx, dvhDataUrl, pad, dvhY, W - pad * 2, dvhH);
+                    await _drawFigurePanel(ctx, dvhDataUrl, pad, dvhY, W - pad * 2, dvhH, 'e', 'Dose-volume histogram');
                 } else {
                     // No DVH available — draw placeholder
                     ctx.fillStyle = 'rgba(148,163,184,0.1)';
-                    const dvhY = sepY + 22;
                     ctx.fillRect(pad, dvhY, W - pad * 2, dvhH);
                     ctx.fillStyle = '#64748b';
                     ctx.font = '14px Inter, system-ui, sans-serif';

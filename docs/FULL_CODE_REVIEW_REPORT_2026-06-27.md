@@ -2037,3 +2037,160 @@ DICOM/NIfTI 上传
 **累计审查**: 6 轮 / 244 个问题 / 67 个已修复 / 177 个待修复  
 **第五/六轮修复**: 验证 25 个问题，修复 18 个，跳过 7 个
 
+---
+
+## 第七轮：CodeGraph 全局审查与架构校准 (2026-06-28)
+
+> 本轮按用户要求使用项目现有 CodeGraph 数据库 `.codegraph/codegraph.db` 建立全局理解，并用 AST/源码抽样交叉验证。重点不是重复前六轮的逐文件列表，而是从调用图、入口点、状态边界和当前工作树改动中确认真实高风险问题。
+
+### 审查输入与可信度
+
+| 数据源 | 结果 | 说明 |
+|--------|------|------|
+| `.codegraph/codegraph.db` | 289 files / 6022 nodes / 10498 edges | 覆盖核心 Python/JS 文件，适合做架构热点定位 |
+| CodeGraph nodes | import 1696 / variable 1570 / method 1232 / function 928 / class 260 / route 47 | Flask route、类、方法和调用边已被索引 |
+| CodeGraph edges | contains 5690 / calls 3489 / imports 620 / instantiates 548 | 足以识别高耦合模块和跨模块依赖 |
+| AST route scan | `web/server.py` 共 47 个 route | 逐个提取 decorator，验证鉴权/限流覆盖 |
+| AST/source scan | 1515 个 `.py` 文件扫描，发现后再过滤到应用代码 | 避免把 venv/vendor 噪声计入真实问题 |
+| CodeGraph daemon | 多次 `ENOSPC: System limit for number of file watchers reached` | 图快照可用，但增量同步存在遗漏风险 |
+
+### CodeGraph 全局架构理解
+
+```mermaid
+graph TD
+    UI["web/app/index.html\n单页前端 + viewer + report"] --> API["web/server.py\n47 Flask routes / session manager / SSE"]
+    API --> Agent["AgenticSys.py\nBrachyAgent / AgentMemory / function calling"]
+    Agent --> Tools["tool_factory/*\nsegmentation / planning / executor / export"]
+    Agent --> Brain["brain/*\nLLM providers / deciders / RAG / execution"]
+    Agent --> Memory["memory/*\nconversation / preference / smart context"]
+    Tools --> Plans["plans/*\ngeometry / dose / device manager"]
+    Tools --> External["TotalSegmentator / nnUNet / dose model / web APIs"]
+    API --> Outputs["uploads / outputs / screenshots / report export"]
+```
+
+核心运行链路可以概括为：
+
+1. `web/server.py` 是唯一主要 HTTP 边界，负责上传、影像加载、viewer 切片/体数据、规划步骤、chat、导出和状态查询。
+2. `AgenticSys.py` 是系统内核，持有 `AgentMemory`、工具注册表、LLM function-calling 循环和全局 `_global_agent` 兼容层。
+3. `tool_factory/seed_plan/planning_pipeline.py` 是治疗计划主流水线，依赖 CT、CTV、OAR、device manager 和 dose/evaluation 组件。
+4. `tool_factory/OAR_seg/totalsegmentator_oar.py`、`tool_factory/CTV_seg/*`、`plans/*` 组成影像/分割/剂量计算路径，是临床正确性最高风险区域。
+5. `brain/providers/*`、`memory/*`、`skills/*` 影响 LLM 行为和工具选择，但最终安全边界仍落在 server route、tool executor 和文件系统访问控制上。
+
+### CodeGraph 热点文件
+
+| 排名 | 文件 | 图证据 | 风险含义 |
+|------|------|--------|----------|
+| 1 | `AgenticSys.py` | out edges 978 / in edges 1103 / unresolved refs 1691 | 系统核心，状态、工具调用、LLM 行为高度集中 |
+| 2 | `web/server.py` | 160 nodes / 47 routes / unresolved refs 1518 | 外部攻击面和状态入口高度集中 |
+| 3 | `tool_factory/seed_plan/planning_pipeline.py` | out edges 260 / 52 nodes | 规划主链路，当前工作树存在逻辑回归 |
+| 4 | `plans/utilizations.py` | 94 nodes / out edges 237 | 剂量/几何工具函数复杂度高 |
+| 5 | `tool_factory/web_search/__init__.py` | 87 nodes / in/out edges ~200 | 网络访问和证据链复杂度高 |
+| 6 | `tool_factory/env_manager/__init__.py` | out edges 102 | LLM 可触发环境/包管理，安全边界敏感 |
+
+---
+
+### Critical — 本轮新增/重新确认
+
+| # | 文件 | 行号 | 问题 |
+|---|------|------|------|
+| CG-01 | `web/server.py` | 34-39, 177-188, 3764-3775 | **默认外网监听 + 默认关闭 API key 鉴权**。CLI 默认 `--host 0.0.0.0`，而 `require_api_key` 只有设置 `BRACHYBOT_API_KEY` 时才真正生效；未设置时所有带 decorator 的接口也不会校验 key。CORS 不能替代鉴权，非浏览器客户端可直接调用。 |
+| CG-02 | `start_server.sh` | 7-9 | **启动脚本明文写入第三方 LLM API key**。该文件当前是 untracked，但位于项目根目录，极易被提交、截图、日志复制或 shell history 泄露。报告中已脱敏，必须轮换该 key。 |
+| CG-03 | `tool_factory/code_executor/__init__.py` | 23-35, 83-126 | **CodeExecutor 不是有效沙箱**。`ALLOWED_MODULES` 包含 `os/sys/pathlib`，`safe_builtins` 暴露 `__import__`，最终在同进程 `exec()` 运行。已用无敏感文件 `/etc/hostname` 复现：工具代码可读取服务器文件。另无真实超时/内存/CPU 隔离。 |
+
+### High — 本轮新增/重新确认
+
+| # | 文件 | 行号 | 问题 |
+|---|------|------|------|
+| CG-04 | `web/server.py` | 295-386, 3575-3606 | **上传和截图写入接口无鉴权、无限流、文件类型校验不足**。`/api/upload` 保存任意文件名后缀，`/api/screenshot` 接受任意 base64 并写入磁盘；仅有全局 500MB request 上限，不限制文件数量、累计容量或 MIME/content。 |
+| CG-05 | `web/server.py` | 142-174, 583-598, 950-985, 3171-3219, 3447-3451 | **路径边界过宽且应用不一致**。`_validate_path()` allowlist 包含整个项目根和当前用户 home；`api_header_info`、`api_viewer_load` 直接读取用户提交的 `ct_path`，未调用 `_validate_path()`；`api_export_dicom_rt`、`api_export_stl` 直接 `os.makedirs(output_dir)`。这会把“只读/只写 uploads、outputs”的安全假设扩大到整个 home。 |
+| CG-06 | `web/server.py` | 2979-3001 | **`/api/config` POST 可无鉴权修改规划参数**。该接口没有 `@require_api_key` 和 `@rate_limit`，会直接覆盖 `agent.config` 中 seed、dose、RL、distance 等核心规划参数。若服务按默认 `0.0.0.0` 暴露，任何可达客户端都能影响后续计划。 |
+| CG-07 | `tool_factory/seed_plan/planning_pipeline.py` | 614-620 | **OAR auto-recovery 分支不可达**。当前工作树新增 `if oar_mask is None: return ...`，紧接着 line 620 又判断同一条件并尝试自动运行 OAR segmentation；后者永远不会执行，破坏原有 auto-recovery 行为。 |
+| CG-08 | `tool_factory/OAR_seg/totalsegmentator_oar.py` | 316-326 | **CPU fallback 被错误映射成 GPU**。当前改动中 `_dev.startswith("cuda:")` 之外的所有情况都设置 `device_str = "gpu"`；当 device manager 返回 `cpu` 时仍会执行 `TotalSegmentator --device gpu`，在无可用 GPU 或 GPU 被禁用时失败。 |
+
+### Medium — 本轮新增/重新确认
+
+| # | 文件 | 行号 | 问题 |
+|---|------|------|------|
+| CG-09 | `web/server.py`, `AgenticSys.py` | `web/server.py:227-266, 3756`; `AgenticSys.py:168-172, 391-404` | **Flask threaded=True 下 session/agent memory 缺少锁**。`_sessions`、`_session_timestamps`、`planning_results`、`conversation`、`_ui_state` 都会在多请求线程中读写；长耗时分割/规划与前端轮询并发时可能出现状态撕裂、旧病人数据串用或 conversation 丢失。 |
+| CG-10 | `web/server.py` | 45-95, 3351-3367 | **TaskManager/SSE 不是持续流且任务无 TTL**。`/api/tasks/stream` 只输出当前任务快照后结束，没有 heartbeat/阻塞等待；`_tasks` 只增不删，任务列表还无鉴权暴露。 |
+| CG-11 | `web/app/index.html` | 6168-6181, 6968-6976, 17643-17648 | **前端 XSS 风险应从“完全未过滤”修正为“自写 sanitizer 不足 + 局部未转义”**。LLM markdown 经过 `_sanitizeHtml()`，但正则 sanitizer 不是 DOMPurify；DVH tooltip 仍将 `traceName` 直接拼入 `innerHTML`。 |
+| CG-12 | `.codegraph/daemon.log` | tail | **CodeGraph 增量同步受 inotify watcher 上限影响**。日志反复出现 `ENOSPC: System limit for number of file watchers reached`，尤其在大量 generated evidence/json 文件下。当前 DB 可用于本轮分析，但后续依赖 CodeGraph 做“已同步最新代码”判断前，应先修复 watcher/exclude 配置。 |
+
+---
+
+### 对前六轮结论的校准
+
+| 旧结论 | 本轮校准 |
+|--------|----------|
+| CORS 配置待核实 | 已核实：CORS 默认限制 localhost origins，但服务 CLI 默认监听 `0.0.0.0`，CORS 不能替代 API 鉴权。 |
+| `/api/status` 暴露待核实 | 已核实：`/api/status` 和 `/api/device/status` 无鉴权，会暴露 brain/provider/device 状态；单独看不是 P0，但与默认无鉴权/外网监听组合后风险升高。 |
+| LLM 工具无权限为有意设计 | 设计意图可保留，但 `code_executor` 当前宣传为 sandboxed，实际同进程读文件、无资源隔离；应修正文档或实现真沙箱。 |
+| `/home` 路径范围已修复 | 当前是 `os.path.expanduser("~")`，仍等价允许整个 `/home/lht`。对医学数据读取可以讨论，对导出写路径和任意文件读取接口仍过宽。 |
+| H-10 SSE 无心跳待核实 | 已核实：`/api/tasks/stream` 只 emit 快照后结束，不是持续任务事件流；`/api/chat` 流式响应有 keep-alive header，但没有应用层 heartbeat。 |
+
+### 修复优先级建议
+
+| 优先级 | 问题 | 建议修复 |
+|--------|------|----------|
+| P0 | CG-02 明文 API key | 立即轮换 key；从 `start_server.sh` 删除；改用 shell 环境或 `.env` 且 `.gitignore`；清理 shell history/日志中泄露副本。 |
+| P0 | CG-01 默认无鉴权外网服务 | `main()` 默认 host 改回 `127.0.0.1`；只要 host 非 loopback 就强制要求 `BRACHYBOT_API_KEY`；所有 POST/导出/上传/viewer 数据接口统一加鉴权。 |
+| P0 | CG-03 CodeExecutor 沙箱失效 | 短期禁用或仅本地开发启用；移除 `os/sys/pathlib/__import__`；长期改为子进程/container + uid 隔离 + seccomp/ulimit + wall-clock timeout。 |
+| P1 | CG-05 路径边界 | 实现 `safe_join(base, user_path)`；读路径限制到 `uploads/` 和显式配置的数据目录；写路径限制到 `outputs/`；禁止 symlink escape。 |
+| P1 | CG-04 上传/截图 | 加 `@require_api_key`、`@rate_limit`、扩展名+magic bytes 校验、文件数量/累计容量限制、图片解码尺寸限制。 |
+| P1 | CG-07/CG-08 当前工作树回归 | 修正 unreachable OAR auto-recovery；CPU 时传 `--device cpu`，CUDA 时再传具体 `gpu:N`。 |
+| P2 | CG-09 并发状态 | 为每个 session/agent 加 `RLock`；长任务状态和 memory 更新走单线程队列或事务式 snapshot。 |
+| P2 | CG-11 前端 sanitizer | 引入 DOMPurify；所有非固定模板数据都用 `textContent` 或 `escHtml`；tooltip traceName 必须转义。 |
+| P2 | CG-12 CodeGraph 同步 | 排除 `uploads/`、`outputs/`、`memory/data/`、`tool_factory/web_search/evidence/`、venv；必要时提高 `fs.inotify.max_user_watches`。 |
+
+### 第七轮问题统计
+
+| 严重度 | 数量 | 关键发现 |
+|--------|------|----------|
+| Critical | 3 | 默认外网无鉴权、明文 API key、CodeExecutor 沙箱失效 |
+| High | 5 | 上传/截图写入、路径边界、配置篡改、planning_pipeline 回归、OAR device 回归 |
+| Medium | 4 | 多线程状态竞态、TaskManager/SSE、前端 sanitizer、CodeGraph 同步可靠性 |
+| **总计** | **12** | |
+
+**第七轮审查完成时间**: 2026-06-28
+**审查人**: Codex CodeGraph Review
+**审查覆盖**: CodeGraph DB + AST route scan + 高风险入口源码核验 + 当前工作树 diff
+**累计审查**: 7 轮 / 在前六轮基础上新增或重新确认 12 个问题
+
+---
+
+## 第七轮修复记录 (2026-06-28)
+
+> 修复原则：逐项复核是否真实存在、是否属于有意设计；仅对确认存在且会扩大安全/正确性风险的问题做代码修复。对保留的能力改为显式启用或安全默认。
+
+### 逐项复核与修复状态
+
+| # | 复核结论 | 修复内容 | 验证 |
+|---|----------|----------|------|
+| CG-01 | 确认真问题。默认 `0.0.0.0` + 未配置 key 时鉴权 decorator 失效不是安全默认。 | `web/server.py` 默认 host 改为 `127.0.0.1`；非 loopback 监听在未设置 `BRACHYBOT_API_KEY` 时 fail-closed，除非显式设置 `BRACHYBOT_ALLOW_INSECURE_REMOTE=1`；补齐高风险 API 的 `@require_api_key`/`@rate_limit`。 | Flask test client 验证 `/api/config` 无 key 返回 401、有 key 返回 200；`run_server(host="0.0.0.0")` 无 key 被拒绝。 |
+| CG-02 | 确认真问题。启动脚本明文 key 没有必要且极易泄漏。 | `start_server.sh` 删除第三方 LLM key，改为只读取 shell 环境变量；默认只监听 `127.0.0.1`；远程监听无 `BRACHYBOT_API_KEY` 时退出；`start_server.sh` 加入 `.gitignore`。 | `bash -n start_server.sh` 通过；grep 检查未再出现 token 样式密钥或 assignment 模板。仍建议立即轮换曾经暴露过的 key。 |
+| CG-03 | 确认真问题。现有 `exec()` 不能称为沙箱。 | `code_executor` 默认禁用，必须设置 `BRACHYBOT_ENABLE_CODE_EXECUTOR=1` 才可运行；移除 `os/sys/pathlib/io` 等高风险模块；自定义 `__import__` 白名单；加强危险模式拦截；文档描述改为 restricted execution。 | 远端执行 `CodeExecutorTool()._execute(...)` 默认返回 `code_executor is disabled`；`py_compile` 通过。 |
+| CG-04 | 确认真问题。上传/截图属于写入面，应鉴权并限制内容。 | `/api/upload`、`/api/screenshot` 加鉴权和限流；上传限制文件数量和允许扩展名；截图仅接受 PNG data URL 或 PNG bytes，限制大小并校验 PNG 魔数。 | 静态检查确认 auth/限流和 PNG decoder 存在；`git diff --check` 通过。 |
+| CG-05 | 确认真问题。原 allowlist 把读写边界扩大到项目根和 home。 | 拆分 read/write roots；默认读取仅允许 uploads、`/tmp`、`/data` 和显式 `BRACHYBOT_DATA_ROOTS`；默认写入仅允许 output/outputs/screenshots、`/tmp` 和显式 `BRACHYBOT_OUTPUT_ROOTS`；`ct_path`、viewer load、导出路径统一走校验。 | 路径测试确认 `/etc/passwd`、`~/.ssh/id_rsa`、`/etc/brachybot-report.json` 被拒绝，uploads 可读，`./output/report.json` 解析到项目输出目录。 |
+| CG-06 | 确认真问题。`/api/config` 可影响计划参数，不能无鉴权 POST。 | `/api/config` GET/POST 补齐 `@require_api_key` 和 `@rate_limit`。 | Flask test client 验证无 key 401、有 key 200。 |
+| CG-07 | 确认真问题。当前工作树中的 OAR 早退会让 auto-recovery 不可达。 | 移除 `oar_mask is None` 的直接失败返回，保留 CTV 缺失的显式失败；OAR 缺失时重新进入原 auto-recovery 分支。 | 静态检查确认没有 OAR direct early return，且 `oar_segmentation` auto-recovery 调用仍存在。 |
+| CG-08 | 确认真问题。CPU fallback 映射到 GPU 会导致无 GPU 或禁用 GPU 时失败。 | `cuda:N` 映射为 `gpu:N`，裸 `cuda` 映射为 `gpu`，其他设备映射为 `cpu`。 | 静态检查确认 `cuda` 和 `cpu` 分支均存在。 |
+| CG-09 | 确认真问题。`threaded=True` 下 session/memory 多线程读写没有一致性保护。 | `web/server.py` 为 session map 增加 `RLock`；`AgenticSys.AgentMemory` 增加 `RLock`，对 store/retrieve/conversation/ui_state/export/clear/compact 等读写加锁或快照。 | `AgenticSys.py` 与 `web/server.py` 通过 `py_compile`；相关路由导入和 Flask client 验证通过。 |
+| CG-10 | 确认真问题。任务状态无 TTL 且 SSE 只是快照。 | `TaskManager` 增加 TTL、最大任务数、created/updated 时间和快照返回；`/api/tasks/stream` 改为短期持续流，发送变更事件和 heartbeat，并补充缓存禁用 header。 | 静态检查和 `git diff --check` 通过。 |
+| CG-11 | 确认真问题，但范围校准为自研 sanitizer 不足和局部未转义。 | 前端增加 `/api/*` fetch wrapper，可通过 `window.setBrachyBotApiKey(key)` 附加 `X-API-Key`；强化 `_sanitizeHtml()` 对危险标签、事件处理器、`href/src/xlink:href` 协议和 inline style payload 的过滤；DVH tooltip 对 `traceName` 和颜色做转义/校验。 | 静态检查确认 API key wrapper、`escHtml(traceName)`、URL/style sanitizer 存在。长期仍建议引入 DOMPurify 处理任意 HTML。 |
+| CG-12 | 确认真问题。生成文件和大目录会放大 CodeGraph watcher 压力。 | 新增 `.codegraphignore` 排除 `.codegraph/`、uploads/output/outputs/screenshots/test_screenshots、memory/data、web_search evidence/cache、case_memory cases、venv 和医学影像大文件；`.gitignore` 同步排除生成目录。 | `.codegraphignore` 纳入工作树；后续需重启或重新索引 CodeGraph 以应用新的 exclude 配置。 |
+
+### 本轮验证记录
+
+- 语法检查：`python -m py_compile web/server.py AgenticSys.py tool_factory/code_executor/__init__.py tool_factory/seed_plan/planning_pipeline.py tool_factory/OAR_seg/totalsegmentator_oar.py`
+- 安全默认：`code_executor` 默认禁用；远程监听无 `BRACHYBOT_API_KEY` 时 fail-closed。
+- 鉴权回归：`/api/config` 在设置 `BRACHYBOT_API_KEY` 后，无 `X-API-Key` 返回 401，有正确 key 返回 200。
+- 路径边界：确认敏感系统路径和 home 私钥路径被拒绝，uploads 读路径和项目 output 写路径按预期允许。
+- 静态回归：确认 OAR auto-recovery 可达、TotalSegmentator CPU/CUDA 设备映射正确、前端 API key wrapper 与 tooltip 转义存在、启动脚本无明文 key。
+- Diff 检查：`git diff --check` 对本轮修改文件通过。
+
+### 剩余注意事项
+
+1. CG-02 的历史明文 key 必须轮换；本轮只能移除当前工作树中的明文，不能撤销已经可能发生的泄漏。
+2. 如需外网访问 BrachyBot，必须显式设置 `BRACHYBOT_API_KEY` 并让前端通过 `window.setBrachyBotApiKey(...)` 写入本地 key；默认启动只面向本机 loopback。
+3. `code_executor` 现在是默认禁用的受限执行器，不是真正容器沙箱；若业务确需启用，仍建议后续改为子进程/container、低权限用户、资源限制和 wall-clock timeout。
+4. CodeGraph 的 watcher/exclude 配置需要 daemon 重启或重新索引后才会完全生效。

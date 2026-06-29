@@ -3857,7 +3857,7 @@ def get_available_position(trajectory, seeds, seed_info, dose_image, distance_ma
 
     import logging as _log
     _logger = _log.getLogger(__name__)
-    _logger.info(f"[get_avail_pos] target_depths={target_depths}, background_depths={background_depths}, initial_range={len(effective_range)}")
+    _logger.debug(f"[get_avail_pos] target_depths={target_depths}, background_depths={background_depths}, initial_range={len(effective_range)}")
     
     # Exclude positions near the boundary of the seed influence zone.
     total_depth = sum(background_depths) + sum(target_depths) 
@@ -3872,7 +3872,7 @@ def get_available_position(trajectory, seeds, seed_info, dose_image, distance_ma
         and np.linalg.norm(position_transform(dose_image, np.array(update_direction * x + point))[0] - world_p) < np.linalg.norm(position_transform(dose_image, np.array(update_direction * total_depth + point)) - world_p) - rate * seed_info['length'] / 2
         and _safe_distance_lookup(distance_map, np.array(update_direction * x + point)) > distance_margin * seed_volume_length
     ]
-    _logger.info(f"[get_avail_pos] after margin/distance filter: {len(effective_range)} positions (margin_rate={rate}, seed_length={seed_info['length']})")
+    _logger.debug(f"[get_avail_pos] after margin/distance filter: {len(effective_range)} positions (margin_rate={rate}, seed_length={seed_info['length']})")
 
     # Adjust the effective range to exclude positions influenced by each already-placed seed.
     for seed in seeds:
