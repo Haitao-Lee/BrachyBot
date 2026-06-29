@@ -1227,6 +1227,9 @@ body::before {
    made long responses look "centered" / constrained which the
    user explicitly compared against ChatGPT's layout and disliked. */
 .chat-row.bot { align-self: stretch; max-width: 100%; }
+.chat-row.bot.bot-continuation .chat-avatar {
+    visibility: hidden;
+}
 
 .chat-avatar {
     width: 28px; height: 28px;
@@ -5309,6 +5312,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
                                 <span>No plan data</span>
                             </div>
                             <div id="labelOverlay_3d" style="position:absolute;inset:0;display:block;opacity:0.6;pointer-events:none;background:transparent;"></div>
+                            <!-- 3D dose colorbar (shown only when dose surface mode is active) -->
+                            <div class="dose-colorbar" id="doseColorbar3D" style="display:none;position:absolute;right:6px;top:6px;bottom:6px;width:24px;z-index:7;pointer-events:none;">
+                                <canvas class="colorbarCanvas" data-axis="3d" width="16" height="512" style="width:100%;height:100%;image-rendering:auto;"></canvas>
+                                <div style="position:absolute;top:0;right:12px;width:3px;height:1px;background:rgba(255,255,255,0.5);"></div>
+                                <div style="position:absolute;top:25%;right:12px;width:3px;height:1px;background:rgba(255,255,255,0.3);"></div>
+                                <div style="position:absolute;top:50%;right:12px;width:3px;height:1px;background:rgba(255,255,255,0.5);"></div>
+                                <div style="position:absolute;top:75%;right:12px;width:3px;height:1px;background:rgba(255,255,255,0.3);"></div>
+                                <div style="position:absolute;bottom:0;right:12px;width:3px;height:1px;background:rgba(255,255,255,0.5);"></div>
+                                <div style="position:absolute;top:-2px;left:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:600;" class="doseColorbarMax" data-axis="3d">max</div>
+                                <div style="position:absolute;top:25%;left:0;transform:translateY(-50%);font-size:0.48rem;color:rgba(255,255,255,0.7);text-shadow:0 1px 2px #000;" class="doseColorbarQ1" data-axis="3d"></div>
+                                <div style="position:absolute;top:50%;left:0;transform:translateY(-50%);font-size:0.5rem;color:#fff;text-shadow:0 1px 2px #000;" class="doseColorbarMid" data-axis="3d"></div>
+                                <div style="position:absolute;top:75%;left:0;transform:translateY(-50%);font-size:0.48rem;color:rgba(255,255,255,0.7);text-shadow:0 1px 2px #000;" class="doseColorbarQ3" data-axis="3d"></div>
+                                <div style="position:absolute;bottom:-2px;left:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:600;" class="doseColorbarMin" data-axis="3d">0</div>
+                            </div>
                         </div>
                     </div>
                     <div class="viewer-resize-h" data-view="3d"></div>
@@ -5927,6 +5944,9 @@ function addChat(type, content, scroll, timestamp, fromSession) {
             // Wrapped layout: .chat-row > [.chat-avatar, .chat-msg-wrapper > .chat-msg, .chat-timestamp]
             const row = document.createElement('div');
             row.className = 'chat-row ' + safeType;
+            if (safeType === 'bot' && !fromSession && _hasBotMessageSinceLastUser(container)) {
+                row.classList.add('bot-continuation');
+            }
 
             const avatar = document.createElement('div');
             avatar.className = 'chat-avatar ' + (safeType === 'bot' ? 'bot-avatar' : 'user-avatar');
@@ -6023,6 +6043,17 @@ function addChat(type, content, scroll, timestamp, fromSession) {
         // Never let chat rendering break the caller (CT load, plan, etc.)
         console.warn('addChat failed:', e);
     }
+}
+
+function _hasBotMessageSinceLastUser(container) {
+    if (!container) return false;
+    for (let i = container.children.length - 1; i >= 0; i--) {
+        const el = container.children[i];
+        if (!el || !el.classList) continue;
+        if (el.classList.contains('user')) return false;
+        if (el.classList.contains('bot')) return true;
+    }
+    return false;
 }
 
 // ----- Thinking chain + streaming helpers (restored from upstream) -----
@@ -6955,6 +6986,9 @@ function createStreamingResponse() {
     const container = document.getElementById('chatMessages');
     const row = document.createElement('div');
     row.className = 'chat-row bot';
+    if (_hasBotMessageSinceLastUser(container)) {
+        row.classList.add('bot-continuation');
+    }
 
     const avatar = document.createElement('div');
     avatar.className = 'chat-avatar bot-avatar';
@@ -8315,6 +8349,9 @@ async function sendChat(prefill) {
                                 if (typeof loadLabelVolumes === 'function') {
                                     loadLabelVolumes().then(() => {
                                         if (typeof renderDataTree === 'function') renderDataTree();
+                                        if (typeof startSegmentationMeshPrewarm === 'function') {
+                                            startSegmentationMeshPrewarm(data.tool === 'ctv_segmentation' ? 'ctv' : 'oar');
+                                        }
                                     }).catch(e => console.warn('[SSE-STEP] loadLabelVolumes failed:', e));
                                 }
                             }
@@ -10316,11 +10353,22 @@ function _executeUIActionRaw(a) {
 }
 
 // Screenshot capture — uses unified target map
-function _captureScreenshot(view) {
+async function _captureScreenshot(view) {
     // Normalize legacy short names to full target names
     const ALIAS = { 'axial': 'viewer-axial', 'sagittal': 'viewer-sagittal',
-                    'coronal': 'viewer-coronal', '3d': 'viewer-3d', 'dvh': 'metrics' };
+                    'coronal': 'viewer-coronal', '3d': 'viewer-3d', 'dvh': 'dvh',
+                    'dose': 'dose-overview', 'dose-overview': 'dose-overview' };
     const target = ALIAS[view] || view;
+    if (target === 'dose-overview' || target === 'dvh') {
+        const dataUrl = await _captureScreenshotDataUrl(target);
+        if (dataUrl) {
+            const link = document.createElement('a');
+            link.download = `brachybot_${view}_${Date.now()}.png`;
+            link.href = dataUrl;
+            link.click();
+        }
+        return;
+    }
     const el = _resolveScreenshotTarget(target);
     if (!el) { console.warn('[screenshot] Target not found:', view); return; }
     if (typeof html2canvas !== 'undefined') {
@@ -10347,13 +10395,15 @@ function _captureScreenshot(view) {
 // _interceptScreenshot (SSE-driven) and _captureScreenshot (direct)
 // use this to find the DOM element to capture.
 const _SCREENSHOT_TARGET_MAP = {
-    'viewer-axial':     '#sliceCanvasAxial',
-    'viewer-sagittal':  '#sliceCanvasSagittal',
-    'viewer-coronal':   '#sliceCanvasCoronal',
+    'viewer-axial':     '#viewerAxial',
+    'viewer-sagittal':  '#viewerSagittal',
+    'viewer-coronal':   '#viewerCoronal',
     'viewer-3d':        '#canvas3D',
     'data-tree':        '#dataTreeBody',
     'chat':             '#chatMessages',
     'metrics':          '#panelMetrics',
+    'dvh':              '#dvhChart',
+    'dose-overview':    null,
     'input':            '#panelInput',
     'seeds':            '#panelViewers',      // seeds are inside viewers panel
     'planning':         '#panelInput',        // planning controls are in input panel
@@ -10365,8 +10415,8 @@ const _SCREENSHOT_TARGET_MAP = {
 const _SCREENSHOT_PANEL_MAP = {
     'viewer-axial': 'viewers', 'viewer-sagittal': 'viewers', 'viewer-coronal': 'viewers',
     'viewer-3d': 'viewers', 'data-tree': 'viewers', 'overlay-controls': 'viewers',
-    'seeds': 'viewers',
-    'metrics': 'metrics', 'input': 'input', 'planning': 'input',
+    'seeds': 'viewers', 'dose-overview': 'viewers',
+    'metrics': 'metrics', 'dvh': 'metrics', 'input': 'input', 'planning': 'input',
     'report': 'report',
 };
 function _resolveScreenshotTarget(target) {
@@ -10375,19 +10425,188 @@ function _resolveScreenshotTarget(target) {
     if (selector) el = document.querySelector(selector);
     if (!el && target === 'full') el = document.body;
     // Auto-switch panel if target is hidden
-    if (!el) {
-        const panelName = _SCREENSHOT_PANEL_MAP[target];
+    const panelName = _SCREENSHOT_PANEL_MAP[target];
+    const hiddenByInactivePanel = !!(el && target !== 'full' && el.offsetParent === null && panelName);
+    if (!el || hiddenByInactivePanel) {
         if (panelName) {
             const tab = document.querySelector(`.panel-tab[data-panel="${panelName}"]`)
                      || document.querySelector(`.panel-tab[onclick*="${panelName}"]`);
             if (tab && !tab.classList.contains('active')) {
                 switchPanel(panelName, tab);
-                // Retry after panel switch
-                if (selector) el = document.querySelector(selector);
             }
+            if (selector) el = document.querySelector(selector);
         }
     }
     return el;
+}
+
+function _waitScreenshotFrames(n = 2) {
+    return new Promise(resolve => {
+        let count = 0;
+        const tick = () => {
+            count += 1;
+            if (count >= n) resolve();
+            else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    });
+}
+
+function _drawScreenshotColorbar(ctx, x, y, w, h) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(2,6,23,0.96)';
+    ctx.strokeStyle = 'rgba(148,163,184,0.32)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    const barX = x + 12, barY = y + 34, barW = 20, barH = h - 68;
+    for (let yy = 0; yy < barH; yy++) {
+        const t = 1 - yy / Math.max(1, barH - 1);
+        const rgb = (typeof _petRainbow2 === 'function') ? _petRainbow2(t) : [255 * t, 255 * (1 - Math.abs(t - 0.5) * 2), 255 * (1 - t)];
+        ctx.fillStyle = `rgb(${Math.round(rgb[0])},${Math.round(rgb[1])},${Math.round(rgb[2])})`;
+        ctx.fillRect(barX, barY + yy, barW, 1);
+    }
+    ctx.strokeStyle = 'rgba(226,232,240,0.7)';
+    ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = 'bold 12px Inter, system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Dose (Gy)', x + 8, y + 20);
+    const maxGy = (typeof COLORBAR_MAX_GY === 'number') ? COLORBAR_MAX_GY : 1000;
+    [maxGy, maxGy * 0.75, maxGy * 0.5, maxGy * 0.25, 0].forEach((v, i) => {
+        const ty = barY + (barH - 1) * (i / 4);
+        ctx.beginPath();
+        ctx.moveTo(barX + barW + 3, ty);
+        ctx.lineTo(barX + barW + 8, ty);
+        ctx.stroke();
+        ctx.font = '10px Inter, system-ui, sans-serif';
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillText(String(Math.round(v)), barX + barW + 12, ty + 3);
+    });
+    ctx.restore();
+}
+
+async function _captureDoseOverviewDataUrl() {
+    const panelTab = document.querySelector('.panel-tab[data-panel="viewers"]');
+    if (panelTab && !panelTab.classList.contains('active')) switchPanel('viewers', panelTab);
+    const origSlices = {
+        axial: state.slices?.axial || 0,
+        sagittal: state.slices?.sagittal || 0,
+        coronal: state.slices?.coronal || 0,
+    };
+    let origVisible = null;
+    let origOpacity = null;
+    if (state.doseOverlay) {
+        origVisible = state.doseOverlay.visible;
+        origOpacity = state.doseOverlay.opacity;
+        state.doseOverlay.visible = true;
+        if (typeof state.doseOverlay.opacity === 'number' && state.doseOverlay.opacity < 0.55) {
+            state.doseOverlay.opacity = 0.7;
+        }
+        updateDoseColorbars(true, state.doseOverlay.doseMin, state.doseOverlay.doseMax);
+    }
+    const pv = state.doseOverlay && state.doseOverlay.peakVoxel;
+    if (pv) {
+        [
+            { ax: 'axial', slice: pv.z },
+            { ax: 'sagittal', slice: pv.x },
+            { ax: 'coronal', slice: pv.y },
+        ].forEach(cfg => {
+            const name = cfg.ax.charAt(0).toUpperCase() + cfg.ax.slice(1);
+            const slider = document.getElementById('slider' + name);
+            const maxVal = slider ? parseInt(slider.max, 10) : Math.round(cfg.slice);
+            const clamped = Math.max(0, Math.min(maxVal, Math.round(cfg.slice)));
+            if (slider) slider.value = clamped;
+            updateSlice(cfg.ax, clamped);
+        });
+        await _waitScreenshotFrames(6);
+    } else {
+        await _waitScreenshotFrames(3);
+    }
+    const imgs = [
+        { ax: 'axial', label: 'Axial' },
+        { ax: 'sagittal', label: 'Sagittal' },
+        { ax: 'coronal', label: 'Coronal' },
+    ].map(a => ({ ...a, dataUrl: _composite2DViewerCanvas(a.ax) })).filter(x => x.dataUrl);
+    if (!imgs.length) return null;
+
+    const W = 1320, H = 420, pad = 22, gap = 14, colorbarW = 82;
+    const panelW = Math.floor((W - pad * 2 - colorbarW - gap * 3) / 3);
+    const panelH = 320;
+    const out = document.createElement('canvas');
+    out.width = W; out.height = H;
+    const ctx = out.getContext('2d');
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = 'bold 17px Inter, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Dose Distribution Overview', W / 2, 28);
+
+    const drawImage = (entry, i) => new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => {
+            const x = pad + i * (panelW + gap);
+            const y = 50;
+            ctx.fillStyle = '#020617';
+            ctx.strokeStyle = 'rgba(148,163,184,0.25)';
+            ctx.fillRect(x, y, panelW, panelH);
+            ctx.strokeRect(x + 0.5, y + 0.5, panelW - 1, panelH - 1);
+            const scale = Math.min(panelW / img.width, (panelH - 32) / img.height);
+            const iw = img.width * scale, ih = img.height * scale;
+            ctx.drawImage(img, x + (panelW - iw) / 2, y + 12 + ((panelH - 44) - ih) / 2, iw, ih);
+            ctx.fillStyle = '#cbd5e1';
+            ctx.font = '12px Inter, system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`(${String.fromCharCode(97 + i)}) ${entry.label}`, x + panelW / 2, y + panelH - 12);
+            resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = entry.dataUrl;
+    });
+    for (let i = 0; i < imgs.length; i++) await drawImage(imgs[i], i);
+    _drawScreenshotColorbar(ctx, W - pad - colorbarW, 50, colorbarW, panelH);
+    if (pv) {
+        Object.entries(origSlices).forEach(([ax, sl]) => {
+            const name = ax.charAt(0).toUpperCase() + ax.slice(1);
+            const slider = document.getElementById('slider' + name);
+            if (slider) slider.value = sl;
+            updateSlice(ax, sl);
+        });
+    }
+    if (state.doseOverlay) {
+        state.doseOverlay.visible = origVisible;
+        state.doseOverlay.opacity = origOpacity;
+        updateDoseColorbars(state.doseOverlay.visible, state.doseOverlay.doseMin, state.doseOverlay.doseMax);
+    }
+    return out.toDataURL('image/png');
+}
+
+async function _captureScreenshotDataUrl(target, el) {
+    if (target === 'dose-overview') return _captureDoseOverviewDataUrl();
+    if (target === 'viewer-axial' || target === 'viewer-sagittal' || target === 'viewer-coronal') {
+        const axis = target.replace('viewer-', '');
+        const composite = _composite2DViewerCanvas(axis);
+        if (composite) return composite;
+    }
+    if (target === 'dvh') {
+        const dvhEl = el || _resolveScreenshotTarget('dvh');
+        if (dvhEl && typeof Plotly !== 'undefined' && typeof Plotly.toImage === 'function') {
+            try {
+                await _waitScreenshotFrames(2);
+                return await Plotly.toImage(dvhEl, {
+                    format: 'png',
+                    width: Math.max(900, dvhEl.clientWidth || 900),
+                    height: Math.max(420, dvhEl.clientHeight || 420),
+                });
+            } catch (e) {
+                console.warn('[screenshot] Plotly DVH export failed:', e);
+            }
+        }
+    }
+    const targetEl = el || _resolveScreenshotTarget(target);
+    if (!targetEl || typeof html2canvas === 'undefined') return null;
+    const canvas = await html2canvas(targetEl, { useCORS: true, allowTaint: true, scale: 1 });
+    return canvas.toDataURL('image/png');
 }
 
 // Intercept ui_screenshot: capture the target element, upload to server,
@@ -10397,13 +10616,14 @@ function _interceptScreenshot(target, question) {
     // Unified screenshot target map — single source of truth for both
     // _interceptScreenshot (SSE-driven) and _captureScreenshot (direct).
     console.log('[screenshot] Capturing target:', target);
-    const el = _resolveScreenshotTarget(target);
+    const normalizedTarget = ({ 'dose': 'dose-overview', 'dose_distribution': 'dose-overview', 'dvh-chart': 'dvh' })[target] || target;
+    const el = normalizedTarget === 'dose-overview' ? document.body : _resolveScreenshotTarget(normalizedTarget);
     if (!el) {
         console.warn('[screenshot] Target element not found:', target);
         if (typeof addChat === 'function') addChat('error', `截图失败：未找到目标元素 "${target}"`);
         return;
     }
-    if (typeof html2canvas === 'undefined') {
+    if (typeof html2canvas === 'undefined' && normalizedTarget !== 'dose-overview' && normalizedTarget !== 'dvh') {
         console.warn('[screenshot] html2canvas not loaded');
         if (typeof addChat === 'function') addChat('error', '截图失败：html2canvas 库未加载');
         return;
@@ -10412,37 +10632,54 @@ function _interceptScreenshot(target, question) {
     // Small delay to let panel render
     setTimeout(() => {
         console.log('[screenshot] Capturing element:', el.tagName, el.id || el.className);
-        html2canvas(el, { useCORS: true, allowTaint: true, scale: 1 }).then(canvas => {
-            console.log('[screenshot] Canvas size:', canvas.width, 'x', canvas.height);
-            const dataUrl = canvas.toDataURL('image/png');
+        _captureScreenshotDataUrl(normalizedTarget, el).then(dataUrl => {
+            if (!dataUrl) throw new Error('No screenshot data was produced');
             console.log('[screenshot] Data URL size:', Math.round(dataUrl.length / 1024), 'KB');
-            // Upload to server
+            // Upload to server. If persistence fails, still show the freshly
+            // captured data URL so the user gets the requested visual result.
             fetch(API + '/screenshot', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     image: dataUrl,
-                    target: target,
-                    description: question || `Screenshot of ${target}`,
+                    target: normalizedTarget,
+                    description: question || `Screenshot of ${normalizedTarget}`,
                 }),
-            }).then(res => res.json()).then(data => {
+            }).then(async res => {
+                const text = await res.text();
+                let data = {};
+                try {
+                    data = text ? JSON.parse(text) : {};
+                } catch (e) {
+                    data = { error: text || `HTTP ${res.status}` };
+                }
+                if (!res.ok) {
+                    const msg = data.error || data.message || `HTTP ${res.status}`;
+                    throw new Error(msg);
+                }
+                return data;
+            }).then(data => {
                 console.log('[screenshot] Server response:', data);
-                if (data.url) {
+                const screenshotUrl = data.url || data.screenshot_url || data.image_url || data.path || (data.data && (data.data.url || data.data.path));
+                if (screenshotUrl) {
                     // Display in chat as a bot message with markdown image
                     // Use HTML img tag directly for reliable rendering
                     if (typeof addChat === 'function') {
-                        addChat('bot', `<img src="${data.url}" style="max-width:100%;border-radius:8px;" alt="${target}">\n\n${question || ''}`);
+                        addChat('bot', `<img src="${screenshotUrl}" style="max-width:100%;border-radius:8px;" alt="${escHtml(target)}">\n\n${question || ''}`);
                     }
-                    console.log('[screenshot] Captured and uploaded:', data.url);
+                    console.log('[screenshot] Captured and uploaded:', screenshotUrl);
                 } else {
                     console.warn('[screenshot] No URL in response:', data);
-                    if (typeof addChat === 'function') addChat('error', '截图上传失败：服务器未返回URL');
+                    if (typeof addChat === 'function') {
+                        const detail = data.error || data.message || 'server did not return a screenshot URL';
+                        addChat('bot', `<img src="${dataUrl}" style="max-width:100%;border-radius:8px;" alt="${escHtml(target)}">\n\n${question || ''}\n\n截图已捕获，但服务器未保存：${escHtml(detail)}`);
+                    }
                 }
             }).catch(e => {
                 console.warn('[screenshot] Upload failed:', e);
                 // Fallback: display locally as data URL
                 if (typeof addChat === 'function') {
-                    addChat('bot', `<img src="${dataUrl}" style="max-width:100%;border-radius:8px;" alt="${target}">\n\n${question || ''}`);
+                    addChat('bot', `<img src="${dataUrl}" style="max-width:100%;border-radius:8px;" alt="${escHtml(target)}">\n\n${question || ''}\n\n截图已捕获，但上传保存失败：${escHtml(e.message || String(e))}`);
                 }
             });
         }).catch(e => {
@@ -14061,9 +14298,13 @@ async function setDoseTextureMode(enabled, opts = {}) {
                 await _applyDoseTextureToMesh(id, mesh);
             }
             state.doseTexture.enabled = true;
+            // Show 3D colorbar when dose surface mode is active
+            update3DColorbar(true);
         } else {
             _restoreDoseTextureMaterials();
             state.doseTexture.enabled = false;
+            // Hide 3D colorbar when switching back to normal surface
+            update3DColorbar(false);
         }
         if (scene3D.renderer && scene3D.scene && scene3D.camera) {
             scene3D.renderer.render(scene3D.scene, scene3D.camera);
@@ -14073,6 +14314,7 @@ async function setDoseTextureMode(enabled, opts = {}) {
         if (!opts.silent) alert('Dose surface mapping failed: ' + (e.message || e));
         _restoreDoseTextureMaterials();
         state.doseTexture.enabled = false;
+        update3DColorbar(false);
     } finally {
         state.doseTexture.applying = false;
         if (btn) {
@@ -15056,7 +15298,10 @@ async function loadAllIsoSurfaces() {
     // Multiply by prescription dose to get Gy thresholds.
     // ref.py: args.iso_dose_params['iso_dose_values'] = inLowestEnergy * np.array(iso_dose_values)
     const relValues = display3d.iso_dose_values || [1.0, 1.5, 2.0, 4.0];
-    const hexColors = display3d.iso_surface_colors || ['#7dd3fc', '#22c55e', '#facc15', '#f97316'];
+    // Colors now match the 2D contour colors and the colorbar (petRainbow2 colormap).
+    // 1.0×Rx (120 Gy) = green, 1.5×Rx (180 Gy) = yellow-green,
+    // 2.0×Rx (240 Gy) = yellow, 4.0×Rx (480 Gy) = orange.
+    const hexColors = display3d.iso_surface_colors || ['#00ff00', '#88ff00', '#ffff00', '#ff8800'];
     const opacities = display3d.iso_surface_opacities || [0.15, 0.25, 0.35, 0.45];
     // Read prescription dose from multiple sources (in priority order):
     // 1. Config endpoint in_lowest_energy (most reliable, from server config)
@@ -15140,113 +15385,194 @@ async function loadAllIsoSurfaces() {
 // isosurface cloud against. Uses the modern addMeshToScene path
 // (addMeshToScene initializes the scene if needed and mirrors into
 // the data tree).
-async function loadCTVAndObstacleMeshes() {
-    init3DScene();
-    // CTV multi-label segmentation produces labels 1..6.
-    // ALL labels use organ_id='ctv_${lid}' and source='ctv' to match
-    // reconstructOrgan3D('ctv') exactly. The Data Tree categorizes
-    // label 1 under CTV, labels 2-3 under OAR>Non-traversable,
-    // labels 4+ under OAR>Traversable — but the 3D mesh IDs are
-    // always 'ctv_${lid}' so the Data Tree's visibility toggles
-    // (which look for scene3D.meshes['ctv_2'] etc.) work correctly.
-    const ctvLabelMap = window._ctvLabelMap || {};
-    const ctvLabelIds = Object.keys(ctvLabelMap).map(Number).length > 0
-        ? Object.keys(ctvLabelMap).map(Number)
-        : [1, 2, 3, 4, 5, 6];
-    console.log('[loadCTVAndObstacle] CTV label IDs:', ctvLabelIds, 'ctvLabelMap:', ctvLabelMap);
+const _segmentationMeshPrewarm = {
+    tasks: new Map(),
+    statusEl: null,
+    activeRuns: 0,
+};
 
-    let ctvMeshCount = 0;
-    for (const lid of ctvLabelIds) {
-        if (lid === 0) continue; // Skip background label
+function _meshTaskKey(source, labelId, smoothing = 1) {
+    return `${source}:${labelId}:${smoothing}`;
+}
+
+function _sceneHasMesh(id) {
+    return !!(typeof scene3D !== 'undefined' && scene3D.meshes && scene3D.meshes[id]);
+}
+
+function _getCtvMeshLabelIds() {
+    const ctvLabelMap = window._ctvLabelMap || {};
+    const ids = Object.keys(ctvLabelMap).map(Number).filter(n => Number.isFinite(n) && n !== 0);
+    return ids.length > 0 ? ids : [1, 2, 3, 4, 5, 6];
+}
+
+function _parseTreeColorValue(color, fallback = 0xff4444) {
+    if (!color) return fallback;
+    if (typeof color === 'number') return color;
+    const c = String(color);
+    if (c.startsWith('#') && (c.length === 7 || c.length === 4)) {
+        if (c.length === 7) return parseInt(c.slice(1), 16);
+        return parseInt(c.slice(1).split('').map(ch => ch + ch).join(''), 16);
+    }
+    const m = c.match(/(\d+)/g);
+    if (m && m.length >= 3) return (parseInt(m[0]) << 16) | (parseInt(m[1]) << 8) | parseInt(m[2]);
+    return fallback;
+}
+
+function _getNonTraversableOarMeshIds(ctvLabelIds) {
+    const ctvIdSet = new Set(ctvLabelIds || []);
+    const ids = new Set();
+    if (dataTreeState && Array.isArray(dataTreeState.organs)) {
+        dataTreeState.organs
+            .filter(o => o.category === 'non_traversable'
+                && o.labelId !== undefined
+                && !ctvIdSet.has(o.labelId)
+                && !(o.source === 'ctv'))
+            .forEach(o => ids.add(o.labelId));
+    }
+    if (ids.size === 0) {
+        ids.add(201);
+        ids.add(202);
+    }
+    return [...ids];
+}
+
+function _setMeshPrewarmStatus(text, show = true) {
+    let el = _segmentationMeshPrewarm.statusEl;
+    if (!show) {
+        if (el) {
+            try { el.remove(); } catch (_) {}
+            _segmentationMeshPrewarm.statusEl = null;
+        }
+        return;
+    }
+    if (!el) {
+        el = document.createElement('div');
+        el.style.cssText = 'position:fixed;bottom:60px;right:20px;background:rgba(15,23,42,0.9);color:#94a3b8;padding:8px 16px;border-radius:8px;font-size:0.75rem;z-index:9999;display:flex;align-items:center;gap:8px;';
+        el.innerHTML = '<div class="spinner-ring" style="width:12px;height:12px;border-width:2px;"></div><span></span>';
+        document.body.appendChild(el);
+        _segmentationMeshPrewarm.statusEl = el;
+    }
+    const span = el.querySelector('span');
+    if (span) span.textContent = text || '3D reconstruction running...';
+}
+
+async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, opacity, force = false, smoothing = 1 }) {
+    if (labelId === undefined || labelId === null || !source || !organId) return { status: 'invalid' };
+    if (!force && _sceneHasMesh(organId)) return { status: 'exists', id: organId };
+
+    const key = _meshTaskKey(source, labelId, smoothing);
+    if (_segmentationMeshPrewarm.tasks.has(key)) {
+        return _segmentationMeshPrewarm.tasks.get(key);
+    }
+
+    const task = (async () => {
         try {
             const res = await fetch(API + '/viewer/3d_mask', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ label_id: lid, source: 'ctv', smoothing: 1 }),
+                body: JSON.stringify({ label_id: labelId, source, smoothing }),
             });
-            if (!res.ok) { console.log(`[loadCTVAndObstacle] CTV label ${lid}: HTTP ${res.status}`); continue; }
+            if (!res.ok) return { status: 'http', code: res.status, id: organId };
             const data = await res.json();
-            if (data && data.success && data.vertex_count > 0) {
-                // Skip meshes with >100K faces (background, huge organs)
-                if (data.face_count > 100000) {
-                    console.warn(`[loadCTVAndObstacle] CTV label ${lid}: skipping (${data.face_count} faces > 100K limit)`);
-                    continue;
-                }
-                const c = labelColorLUT && labelColorLUT[lid];
-                data.color = c ? ((c[0] << 16) | (c[1] << 8) | c[2]) : 0xff6b6b;
-                // Use SAME organ_id as reconstructOrgan3D('ctv')
-                data.organ_id = `ctv_${lid}`;
-                data.label = ctvLabelMap[lid] || `CTV Label ${lid}`;
-                data.source = 'ctv';
-                addMeshToScene(data);
-                ctvMeshCount++;
+            if (!data || !data.success || !data.vertex_count) return { status: 'empty', id: organId };
+            if (data.face_count > 100000) {
+                console.warn(`[3D mesh] ${organId}: skipping (${data.face_count} faces > 100K limit)`);
+                return { status: 'too_large', id: organId };
             }
-        } catch (e) { console.warn(`[loadCTVAndObstacle] CTV label ${lid} error:`, e); }
-    }
-    console.log(`[loadCTVAndObstacle] CTV meshes added: ${ctvMeshCount}`);
-    // Non-traversable OARs from OAR segmentation (bones, major vessels, etc.).
-    // IMPORTANT: exclude CTV label IDs (already loaded above as ctv_* meshes)
-    // to avoid duplicate meshes (e.g. artery from CTV seg = ctv_2, artery from
-    // OAR seg = organ_201 — both are "artery" but from different sources).
-    const ctvIdSet = new Set(ctvLabelIds);
-    const nonTravIds = new Set();
-    if (dataTreeState && dataTreeState.organs) {
-        dataTreeState.organs
-            .filter(o => o.category === 'non_traversable'
-                         && o.labelId !== undefined
-                         && !ctvIdSet.has(o.labelId)  // skip CTV sub-labels
-                         && !(o.source === 'ctv'))     // skip organs sourced from CTV seg
-            .forEach(o => nonTravIds.add(o.labelId));
-    }
-    if (nonTravIds.size === 0) {
-        nonTravIds.add(201); // artery (TotalSegmentator)
-        nonTravIds.add(202); // vein (TotalSegmentator)
-    }
-    console.log('[loadCTVAndObstacle] Non-traversable OAR IDs:', [...nonTravIds], 'organs count:', dataTreeState.organs.length);
+            data.color = color;
+            data.organ_id = organId;
+            data.label = label || organId;
+            data.source = source;
+            if (typeof opacity === 'number') data.opacity = opacity;
+            addMeshToScene(data);
+            return { status: data.cached ? 'cached' : 'loaded', id: organId };
+        } catch (e) {
+            console.warn(`[3D mesh] ${organId} failed:`, e);
+            return { status: 'error', id: organId, error: e };
+        } finally {
+            _segmentationMeshPrewarm.tasks.delete(key);
+        }
+    })();
+    _segmentationMeshPrewarm.tasks.set(key, task);
+    return task;
+}
 
-    // Helper: parse organ color from data tree (handles #hex, rgb(), and fallback)
-    function _parseOrganColor(organ) {
-        if (!organ || !organ.color) return 0xff4444;
-        const c = organ.color;
-        if (c.startsWith('#') && c.length === 7) return parseInt(c.slice(1), 16);
-        const m = c.match(/(\d+)/g);
-        if (m && m.length >= 3) return (parseInt(m[0]) << 16) | (parseInt(m[1]) << 8) | parseInt(m[2]);
-        return 0xff4444;
-    }
+async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
+    if (!state.ctLoaded && !state.ctPath) return;
+    init3DScene();
 
-    // Load OAR meshes in batches of 5 (server can't handle 34 parallel requests)
-    const oarIds = [...nonTravIds];
-    console.log(`[loadCTVAndObstacle] Loading ${oarIds.length} OAR meshes in batches of 5...`);
-    let oarMeshCount = 0;
-    const BATCH = 5;
-    for (let i = 0; i < oarIds.length; i += BATCH) {
-        const batch = oarIds.slice(i, i + BATCH);
-        const batchResults = await Promise.all(batch.map(lid => (async () => {
-            try {
-                const res = await fetch(API + '/viewer/3d_mask', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ label_id: lid, source: 'oar', smoothing: 1 }),
+    const includeCTV = kind === 'ctv' || kind === 'oar' || kind === 'all';
+    const includeOAR = kind === 'oar' || kind === 'all';
+    const showStatus = opts.showStatus !== false;
+    const force = opts.force === true;
+    const ctvLabelIds = _getCtvMeshLabelIds();
+    const promises = [];
+
+    _segmentationMeshPrewarm.activeRuns += 1;
+    if (showStatus) _setMeshPrewarmStatus(kind === 'ctv' ? '3D CTV reconstruction started...' : '3D OAR reconstruction running...');
+
+    try {
+        if (includeCTV && ctvLabelData) {
+            for (const lid of ctvLabelIds) {
+                const c = labelColorLUT && labelColorLUT[lid];
+                promises.push(_fetchAndAddOrganMesh({
+                    labelId: lid,
+                    source: 'ctv',
+                    organId: `ctv_${lid}`,
+                    label: (window._ctvLabelMap || {})[lid] || `CTV Label ${lid}`,
+                    color: c ? ((c[0] << 16) | (c[1] << 8) | c[2]) : 0xff6b6b,
+                    force,
+                }));
+            }
+        }
+
+        if (includeOAR && oarLabelData) {
+            const oarIds = _getNonTraversableOarMeshIds(ctvLabelIds);
+            const batchSize = opts.batchSize || 3;
+            for (let i = 0; i < oarIds.length; i += batchSize) {
+                const batch = oarIds.slice(i, i + batchSize).map(lid => {
+                    const organ = (dataTreeState.organs || []).find(o => o.labelId === lid);
+                    return _fetchAndAddOrganMesh({
+                        labelId: lid,
+                        source: 'oar',
+                        organId: `organ_${lid}`,
+                        label: (organ && (organ.label || organ.name)) || `OAR ${lid}`,
+                        color: _parseTreeColorValue(organ && organ.color, 0xff4444),
+                        opacity: organ && typeof organ.opacity === 'number' ? organ.opacity : undefined,
+                        force,
+                    });
                 });
-                if (!res.ok) return null;
-                const data = await res.json();
-                if (data && data.success && data.vertex_count > 0 && data.face_count <= 100000) {
-                    const organ = dataTreeState.organs.find(o => o.labelId === lid);
-                    data.color = _parseOrganColor(organ);
-                    data.organ_id = `organ_${lid}`;
-                    data.label = (organ && (organ.label || organ.name)) || `OAR ${lid}`;
-                    data.source = 'oar';
-                    if (organ && typeof organ.opacity === 'number') data.opacity = organ.opacity;
-                    return data;
-                }
-            } catch (e) { /* skip */ }
-            return null;
-        })()));
-        for (const data of batchResults) {
-            if (data) { addMeshToScene(data); oarMeshCount++; }
+                promises.push(Promise.all(batch));
+                await Promise.all(batch);
+                if (showStatus) _setMeshPrewarmStatus(`3D OAR reconstruction ${Math.min(i + batchSize, oarIds.length)}/${oarIds.length}`);
+            }
+        }
+
+        await Promise.all(promises);
+        if (scene3D.renderer && scene3D.scene && scene3D.camera) fitCameraToScene();
+    } finally {
+        _segmentationMeshPrewarm.activeRuns = Math.max(0, _segmentationMeshPrewarm.activeRuns - 1);
+        if (_segmentationMeshPrewarm.activeRuns === 0) {
+            setTimeout(() => {
+                if (_segmentationMeshPrewarm.activeRuns === 0) _setMeshPrewarmStatus('', false);
+            }, 600);
         }
     }
-    console.log(`[loadCTVAndObstacle] OAR meshes added: ${oarMeshCount}/${oarIds.length}. Total scene meshes: ${Object.keys(scene3D.meshes).length}`);
+}
+
+function startSegmentationMeshPrewarm(kind = 'all') {
+    if (!state.ctLoaded && !state.ctPath) return;
+    setTimeout(() => {
+        prewarmSegmentationMeshes(kind, { showStatus: true }).catch(e => {
+            console.warn('[3D prewarm] failed:', e);
+            _setMeshPrewarmStatus('', false);
+        });
+    }, 0);
+}
+
+async function loadCTVAndObstacleMeshes() {
+    await prewarmSegmentationMeshes('all', { showStatus: false, batchSize: 3 });
+    console.log(`[loadCTVAndObstacle] Meshes ready. Total scene meshes: ${Object.keys(scene3D.meshes).length}`);
 }
 
 // Load dose distribution as 2D overlay on CT slices
@@ -15267,41 +15593,51 @@ const COLORBAR_MAX_GY = 1000.0;
 const COLORBAR_MIN_GY = 0.0;
 
 // PETrainbow2-style colormap (black→blue→cyan→green→yellow→orange→red),
-// linearly maps value in [0,1] to a color. Same function as the dose
-// overlay rendering.
+// maps value in [0,1] to a color.
 //
-// User feedback (2026-06-15): the previous version went into red at
-// ~510 Gy (0.85 normalized) which made 25% of the colorbar red, and
-// the dose map looked dominated by the red band. The user asked
-// specifically for red to start much later — only at 550 Gy and
-// above. With the [0, 600] Gy display range, 550 Gy = 0.917
-// normalized, and 600 Gy = 1.0. We redesign the top end so the
-// yellow→orange transition happens between 468–552 Gy (0.78–0.92),
-// and pure red appears only in the top 8% (552–600 Gy, 0.92–1.0).
-// Below 0.78 the colorbar stays in the cooler spectrum (blue→cyan
-// →green→yellow) so the eye can see the gradient of the dose falloff
-// before being hit by red.
+// User feedback (2026-06-29): the previous version had too much blue in
+// the 0-250 Gy range, making it hard to distinguish dose differences.
+// Redesigned so that:
+//   - 120 Gy (0.12 normalized) = green
+//   - 750 Gy (0.75 normalized) = red
+//   - Green→yellow transition happens early (at ~350 Gy)
+//   - Yellow→red continues until 750 Gy, then stays red
+// This makes the clinically relevant 0-250 Gy range much more visible.
 function _petRainbow2(val) {
     const v = Math.min(1, Math.max(0, val));
     let r, g, b;
-    // Black portion narrowed: 0-0.10 (was 0-0.17)
-    const BLACK_END = 0.10;
-    const BLUE_END = 0.38;
-    const CYAN_END = 0.80;
-    if (v < BLACK_END) {
-        // Black → Blue
-        r = 0; g = 0; b = Math.floor((v / BLACK_END) * 255);
-    } else if (v < BLUE_END) {
-        // Blue → Cyan
-        r = 0; g = Math.floor(((v - BLACK_END) / (BLUE_END - BLACK_END)) * 255); b = 255;
-    } else if (v < CYAN_END) {
-        // Cyan → Yellow
-        const t = (v - BLUE_END) / (CYAN_END - BLUE_END);
-        r = Math.floor(t * 255); g = 255; b = Math.floor((1 - t) * 255);
-    } else {
-        // Yellow → Red
-        const t = (v - CYAN_END) / (1 - CYAN_END);
+    // Key thresholds (normalized, where 1.0 = 1000 Gy):
+    const GREEN_AT = 0.12;   // 120 Gy
+    const YELLOW_AT = 0.35;  // 350 Gy (yellow appears early)
+    const RED_AT = 0.75;     // 750 Gy (red starts here)
+
+    if (v < GREEN_AT) {
+        // Black → Blue → Cyan → Green (0 to 120 Gy)
+        const t = v / GREEN_AT;  // 0 to 1
+        if (t < 0.33) {
+            // Black → Blue
+            const s = t / 0.33;
+            r = 0; g = 0; b = Math.floor(s * 255);
+        } else if (t < 0.66) {
+            // Blue → Cyan
+            const s = (t - 0.33) / 0.33;
+            r = 0; g = Math.floor(s * 255); b = 255;
+        } else {
+            // Cyan → Green
+            const s = (t - 0.66) / 0.34;
+            r = 0; g = 255; b = Math.floor((1 - s) * 255);
+        }
+    } else if (v < YELLOW_AT) {
+        // Green → Yellow (120 to 350 Gy)
+        const t = (v - GREEN_AT) / (YELLOW_AT - GREEN_AT);
+        r = Math.floor(t * 255); g = 255; b = 0;
+    } else if (v < RED_AT) {
+        // Yellow → Orange → Red (350 to 750 Gy)
+        const t = (v - YELLOW_AT) / (RED_AT - YELLOW_AT);
         r = 255; g = Math.floor((1 - t) * 255); b = 0;
+    } else {
+        // Saturated red (750+ Gy)
+        r = 255; g = 0; b = 0;
     }
     return [r, g, b];
 }
@@ -15352,6 +15688,51 @@ function updateDoseColorbars(visible, doseMinNorm, doseMaxNorm) {
             ctx.fillStyle = `rgb(${r},${g},${b})`;
             ctx.fillRect(0, y, w, 1);
         }
+    });
+}
+
+// Update 3D viewer dose colorbar (shown only when dose surface mode is active)
+// This reuses the same gradient and labels as the 2D viewers' colorbars.
+function update3DColorbar(visible) {
+    const colorbar3D = document.getElementById('doseColorbar3D');
+    if (!colorbar3D) return;
+
+    colorbar3D.style.display = visible ? 'block' : 'none';
+    if (!visible) return;
+
+    // Render the gradient on the 3D colorbar canvas
+    const canvas = colorbar3D.querySelector('.colorbarCanvas');
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        const h = canvas.height;
+        const w = canvas.width;
+        for (let y = 0; y < h; y++) {
+            // y=0 (top) → max (val=1); y=h-1 (bottom) → min (val=0)
+            const val = 1 - y / (h - 1);
+            const [r, g, b] = _petRainbow2(val);
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+            ctx.fillRect(0, y, w, 1);
+        }
+    }
+
+    // Update labels (use the same 0-1000 Gy range as 2D colorbars)
+    const dMinGy = COLORBAR_MIN_GY;
+    const dMaxGy = COLORBAR_MAX_GY;
+    const ticks = [0, 0.25, 0.5, 0.75, 1.0].map(f => dMaxGy * f);
+    const tickLabels = ticks.map(v => v.toFixed(0));
+
+    // Update 3D colorbar labels specifically
+    const positions = ['bottom', '75%', '50%', '25%', 'top'];
+    positions.forEach((pos, i) => {
+        const labelClass = pos === 'top' ? 'doseColorbarMax'
+                          : pos === 'bottom' ? 'doseColorbarMin'
+                          : pos === '50%' ? 'doseColorbarMid'
+                          : pos === '25%' ? 'doseColorbarQ1'
+                          : 'doseColorbarQ3';
+        // Only update labels with data-axis="3d"
+        colorbar3D.querySelectorAll('.' + labelClass).forEach(el => {
+            el.textContent = tickLabels[i] + ' Gy';
+        });
     });
 }
 
@@ -15793,16 +16174,29 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
     const scaleX = w / doseCols;
     const scaleY = h / doseRows;
 
+    // Filter contours based on data tree visibility state.
+    // Only draw contours whose corresponding dose level is visible in the data tree.
+    const doseLevels = dataTreeState.planning.doseLevels || [];
+    const visibleContours = data.contours.filter(contour => {
+        // Match contour level (Gy) with doseLevels threshold
+        const level = contour.level || contour.level_rel;
+        if (!level) return true;  // If no level info, draw it
+        const doseLevel = doseLevels.find(d => Math.abs(d.threshold - level) < 1 || Math.abs(d.thresholdGy - level) < 1);
+        // If not found in doseLevels, draw it (might be a new level)
+        // Otherwise, only draw if visible
+        return !doseLevel || doseLevel.visible !== false;
+    });
+
     // Draw contour lines
-    data.contours.forEach(contour => {
+    visibleContours.forEach(contour => {
         const color = contour.color;
-        const opacity = contour.opacity || 0.5;
+        const opacity = contour.opacity || 0.7;  // Increased from 0.5 to 0.7 for better visibility
         const r = Math.round(color[0] * 255);
         const g = Math.round(color[1] * 255);
         const b = Math.round(color[2] * 255);
 
-        ctx.strokeStyle = `rgba(${r},${g},${b},${opacity + 0.3})`;
-        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = `rgba(${r},${g},${b},${Math.min(1, opacity + 0.2)})`;  // Boost opacity
+        ctx.lineWidth = 2.5;  // Increased from 1.5 to 2.5 for better visibility
         ctx.setLineDash([]);
 
         contour.lines.forEach(line => {
@@ -16363,8 +16757,14 @@ async function runSegmentationStep(kind) {
         if (typeof addChat === 'function') {
             addChat('system', `✅ ${label} done — ${n} label(s) found.`);
         }
-        if (typeof refreshPlanningUI === 'function') {
-            try { await refreshPlanningUI(); } catch (_) {}
+        if (typeof loadLabelVolumes === 'function') {
+            try { await loadLabelVolumes(); } catch (e) { console.warn('[manual segmentation] loadLabelVolumes failed:', e); }
+        }
+        if (typeof renderDataTree === 'function') {
+            try { renderDataTree(); } catch (_) {}
+        }
+        if (typeof startSegmentationMeshPrewarm === 'function') {
+            startSegmentationMeshPrewarm(kind === 'ctv_segmentation' ? 'ctv' : 'oar');
         }
     } catch (e) {
         if (typeof addChat === 'function') {
@@ -22388,6 +22788,9 @@ function _updateReportPreview() {
     const d01ccLabel = f.language === 'zh' ? 'D₀.₁cc' : 'D₀.₁cc';
     const v100Label = 'V100';
     const gyUnit = U.Gy;
+    const reportTotalPages = 4;
+    const pageFooter = (pageNo) =>
+        `<div class="hp-page-footer"><span class="pageno">— ${escHtml(s.page)} ${pageNo} ${escHtml(s.pageOf)} ${reportTotalPages} —</span></div>`;
 
     // ============== PAGE 1: Letterhead + Patient ID + Imaging + Case ==============
     // BUG FIX 2026-06-17 (header redesign): the user requested a
@@ -22458,7 +22861,7 @@ function _updateReportPreview() {
         const fig1 = f.figures[0];
         p1 += `<div class="hp-figure"><img src="${fig1.dataUrl}" alt="${escHtml(fig1.title || '')}"/><div class="hp-figure-cap">${escHtml(s.figCaption)} 1 · ${escHtml(fig1.title || '')}${fig1.caption ? ' — ' + escHtml(fig1.caption) : ''}</div></div>`;
     }
-    p1 += `<div class="hp-page-footer"><span class="pageno">— ${s.page} 1 ${s.pageOf} — —</span></div></div>`;
+    p1 += `${pageFooter(1)}</div>`;
 
     // ============== PAGE 2: Methodology + Planning + Plan Quality ==============
     const t = (key) => escHtml(s[key]);
@@ -22499,7 +22902,7 @@ function _updateReportPreview() {
         const fig2 = f.figures[1];
         p2 += `<div class="hp-figure"><img src="${fig2.dataUrl}" alt="${escHtml(fig2.title || '')}"/><div class="hp-figure-cap">${escHtml(s.figCaption)} 2 · ${escHtml(fig2.title || '')}${fig2.caption ? ' — ' + escHtml(fig2.caption) : ''}</div></div>`;
     }
-    p2 += `<div class="hp-page-footer"><span class="pageno">— ${s.page} 2 ${s.pageOf} — —</span></div></div>`;
+    p2 += `${pageFooter(2)}</div>`;
 
     // ============== PAGE 3: OAR Dose + Interpretation ==============
     let p3 = `<div class="report-page">
@@ -22531,7 +22934,7 @@ function _updateReportPreview() {
         <div class="hp-section-body">${_renderMarkdown(f.interpretation)}</div>`;
     }
     p3 += `</div>`;
-    p3 += `<div class="hp-page-footer"><span class="pageno">— ${s.page} 3 ${s.pageOf} — —</span></div></div>`;
+    p3 += `${pageFooter(3)}</div>`;
 
     // ============== PAGE 4: Safety + QA + Methodology + References + Disclaimer + Signatures ==============
     let p4 = `<div class="report-page">
@@ -22578,7 +22981,7 @@ function _updateReportPreview() {
             ${f.signature.notes ? `<p style="margin-top:6px;font-size:9pt;color:#64748b;">${escHtml(f.signature.notes)}</p>` : ''}
         </div>`;
     p4 += `</div>`;
-    p4 += `<div class="hp-page-footer"><span class="pageno">— ${s.page} 4 ${s.pageOf} — —</span></div></div>`;
+    p4 += `${pageFooter(4)}</div>`;
 
     pagesEl.innerHTML = p1 + p2 + p3 + p4;
 }

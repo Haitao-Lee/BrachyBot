@@ -27,10 +27,12 @@ SCREENSHOT_TARGETS = {
     "viewer-axial": "Axial viewer panel (2D slice view)",
     "viewer-sagittal": "Sagittal viewer panel",
     "viewer-coronal": "Coronal viewer panel",
+    "dose-overview": "Three-plane dose distribution overview (axial, sagittal, coronal CT with dose overlay and colorbar)",
     "viewer-3d": "3D reconstruction view",
     "data-tree": "Data tree panel (organ list, visibility controls)",
     "chat": "Chat panel (conversation history)",
     "metrics": "Metrics panel (dose evaluation, DVH)",
+    "dvh": "DVH chart only (dose-volume histogram)",
     "input": "Input panel (file loading, configuration)",
     "seeds": "Seeds panel (seed planning results)",
     "planning": "Planning panel (step-by-step planning tools)",
@@ -55,6 +57,8 @@ class UIScreenshotTool(BaseTool):
             "Use this when you need to SEE the current state of the UI — viewer slices, "
             "3D reconstructions, data tree, overlays, segmentation results, etc. "
             "The screenshot will be displayed in chat and sent to you for visual analysis. "
+            "For current dose distribution, prefer target='dose-overview'. "
+            "For the dose-volume histogram, use target='dvh'. "
             f"Available targets: {targets}. "
             "You can also specify a slice index to navigate to before capturing."
         )
@@ -92,6 +96,14 @@ class UIScreenshotTool(BaseTool):
 
     def _execute(self, **kwargs) -> ToolResult:
         target = kwargs.get("target", "full")
+        target = {
+            "dose": "dose-overview",
+            "dose_distribution": "dose-overview",
+            "dose-distribution": "dose-overview",
+            "dose_overview": "dose-overview",
+            "dvh-chart": "dvh",
+            "dose-volume-histogram": "dvh",
+        }.get(target, target)
         question = kwargs.get("question", "Analyze this screenshot")
         slice_index = kwargs.get("slice_index")
         axis = kwargs.get("axis")

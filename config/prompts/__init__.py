@@ -103,6 +103,7 @@ _MODULE_TRIGGERS = {
     # Visual proactive — screenshots, viewers
     "visual_proactive": [
         r"(?:screenshot|capture|annotate|show.*(?:UI|viewer|image|3D|slice))",
+        r"(?:DVH|dose.?volume|histogram|剂量体积|直方图|剂量分布|截图)",
         r"(?:axial|sagittal|coronal|data.tree|overlay|what does.*look)",
     ],
 }
