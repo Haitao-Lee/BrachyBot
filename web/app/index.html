@@ -18339,33 +18339,37 @@ function _setupDvhCustomTooltip(dvhEl) {
             tip.style.display = 'none';
             return;
         }
+        const xr = layout.xaxis.range || [0, 1];
+        const yr = layout.yaxis.range || [0, 1];
+        const relX = mx - plotLeft;
+        let doseAtCursor = null;
+        if (typeof layout.xaxis.p2l === 'function') {
+            doseAtCursor = Number(layout.xaxis.p2l(relX));
+        } else {
+            doseAtCursor = xr[0] + (relX / Math.max(plotW, 1)) * (xr[1] - xr[0]);
+        }
+        if (!Number.isFinite(doseAtCursor)) {
+            tip.style.display = 'none';
+            return;
+        }
+
         let best = null;
-        let bestPx2 = Infinity;
+        let bestDy = Infinity;
         for (const trace of traces) {
             if (!trace || trace.visible === false || trace.visible === 'legendonly' || !trace.x || !trace.y) continue;
             const color = trace.line?.color || '#e2e8f0';
-            for (let i = 0; i < trace.x.length; i++) {
-                const x = Number(trace.x[i]);
-                const y = Number(trace.y[i]);
-                if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-                const xr = layout.xaxis.range || [0, 1];
-                const yr = layout.yaxis.range || [0, 1];
-                const px = plotLeft + (typeof layout.xaxis.l2p === 'function'
-                    ? layout.xaxis.l2p(x)
-                    : ((x - xr[0]) / Math.max(xr[1] - xr[0], 1e-9)) * plotW);
-                const py = plotTop + (typeof layout.yaxis.l2p === 'function'
-                    ? layout.yaxis.l2p(y)
-                    : (1 - (y - yr[0]) / Math.max(yr[1] - yr[0], 1e-9)) * plotH);
-                const dx = px - mx;
-                const dy = py - my;
-                const d2 = dx * dx + dy * dy;
-                if (d2 < bestPx2) {
-                    bestPx2 = d2;
-                    best = { name: trace.name || '', x, y, color };
-                }
+            const y = _interpolateDvhAtDose(trace.x, trace.y, doseAtCursor);
+            if (!Number.isFinite(y)) continue;
+            const py = plotTop + (typeof layout.yaxis.l2p === 'function'
+                ? layout.yaxis.l2p(y)
+                : (1 - (y - yr[0]) / Math.max(yr[1] - yr[0], 1e-9)) * plotH);
+            const dy = Math.abs(py - my);
+            if (dy < bestDy) {
+                bestDy = dy;
+                best = { name: trace.name || '', x: doseAtCursor, y, color };
             }
         }
-        if (!best || bestPx2 > 18 * 18) {
+        if (!best || bestDy > 32) {
             tip.style.display = 'none';
             return;
         }
@@ -18401,6 +18405,31 @@ function _clampDvhVolume(v) {
     const n = Number(v);
     if (!Number.isFinite(n)) return 0;
     return Math.max(0, Math.min(100, n));
+}
+
+function _interpolateDvhAtDose(xs, ys, dose) {
+    const target = Number(dose);
+    if (!Array.isArray(xs) || !Array.isArray(ys) || !Number.isFinite(target)) return null;
+    const pairs = [];
+    const n = Math.min(xs.length, ys.length);
+    for (let i = 0; i < n; i++) {
+        const x = Number(xs[i]);
+        const y = Number(ys[i]);
+        if (Number.isFinite(x) && Number.isFinite(y)) pairs.push([x, _clampDvhVolume(y)]);
+    }
+    if (!pairs.length) return null;
+    pairs.sort((a, b) => a[0] - b[0]);
+    if (target <= pairs[0][0]) return pairs[0][1];
+    for (let i = 0; i < pairs.length - 1; i++) {
+        const [x1, y1] = pairs[i];
+        const [x2, y2] = pairs[i + 1];
+        if (target <= x2) {
+            if (Math.abs(x2 - x1) < 1e-9) return _clampDvhVolume(y2);
+            const t = (target - x1) / (x2 - x1);
+            return _clampDvhVolume(y1 + t * (y2 - y1));
+        }
+    }
+    return pairs[pairs.length - 1][1];
 }
 
 function _smoothDvhCurveForDisplay(doseBins, volPcts, maxSmoothDose = 600) {
@@ -18494,6 +18523,7 @@ function drawDVH() {
     const picked = ctvFirst ? [ctvFirst, ...topOthers] : topOthers;
 
     const traces = [];
+    let ctvDisplayTrace = null;
     // Fallback palette used only when an organ is NOT in the data tree
     // (rare — usually the data tree is loaded first). Matches the same
     // palette used elsewhere for visual consistency. Extended to 16
@@ -18555,6 +18585,9 @@ function drawDVH() {
         smoothY.length = 0;
         smoothX.push(...displaySmooth.x);
         smoothY.push(...displaySmooth.y);
+        if (name === ctvName) {
+            ctvDisplayTrace = { x: smoothX.slice(), y: smoothY.slice() };
+        }
         traces.push({
             x: smoothX,
             y: smoothY,
@@ -18609,20 +18642,13 @@ function drawDVH() {
             rxGy = Number(state.metrics.prescribed_dose) * 120;  // DOSE_SCALE
         }
     } catch (_) {}
-    // Compute CTV coverage at Rx — find the bin closest to rxGy
-    // and read its volume_pcts value.
+    // Compute CTV coverage at Rx on the same displayed curve used by
+    // the tooltip, so the fixed Rx marker and hover values agree.
     let ctvRxCoverage = null;
-    if (ctvEntry && Array.isArray(ctvEntry[1].dose_bins) && Array.isArray(ctvEntry[1].volume_pcts)) {
-        const bins = ctvEntry[1].dose_bins;
-        const pcts = ctvEntry[1].volume_pcts;
-        // Find the bin index whose dose is closest to rxGy
-        let bestIdx = 0;
-        let bestDelta = Infinity;
-        for (let k = 0; k < bins.length; k++) {
-            const d = Math.abs(bins[k] - rxGy);
-            if (d < bestDelta) { bestDelta = d; bestIdx = k; }
-        }
-        ctvRxCoverage = pcts[bestIdx];
+    if (ctvDisplayTrace) {
+        ctvRxCoverage = _interpolateDvhAtDose(ctvDisplayTrace.x, ctvDisplayTrace.y, rxGy);
+    } else if (ctvEntry && Array.isArray(ctvEntry[1].dose_bins) && Array.isArray(ctvEntry[1].volume_pcts)) {
+        ctvRxCoverage = _interpolateDvhAtDose(ctvEntry[1].dose_bins, ctvEntry[1].volume_pcts, rxGy);
     }
     // Build the shapes/annotations arrays. The vertical line is a
     // vertical dashed line at x = rxGy, full height. The marker

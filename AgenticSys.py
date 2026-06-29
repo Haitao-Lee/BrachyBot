@@ -2171,6 +2171,8 @@ class BrachyAgent:
         # be set in all code paths).
         if tool_name == "planning_pipeline":
             params["_agent"] = self
+        elif tool_name == "report_auto_fill":
+            params["_agent"] = self
 
         # BUG FIX 2026-06-17 (duplicate oar_segmentation): the LLM
         # often calls oar_segmentation explicitly in Call 2, even
@@ -5901,15 +5903,21 @@ Output (JSON array of strings):"""
                         yield yield_event(_evt_type, _evt_data)
                     self._pending_callback_events.clear()
 
-                # SKIP step event for deduped tools — the auto-fired
-                # version already emitted its own step events. Without
-                # this, the todo list shows "oar_segmentation completed"
-                # twice and the CTV timer includes OAR time.
+                # Deduped tools still need a final step event. The
+                # frontend may already have received the pending row for
+                # the LLM-requested call; skipping the done update leaves
+                # that row stuck in "waiting".
                 _is_skipped_dup = (tool_result is not None
                                    and hasattr(tool_result, 'metadata')
                                    and tool_result.metadata
                                    and tool_result.metadata.get('skipped_duplicate'))
-                if not _is_skipped_dup:
+                if _is_skipped_dup:
+                    tool_step["status"] = "done"
+                    tool_step["content"] = f"{tool_name} already available; reused existing result."
+                    if not tool_step.get("result"):
+                        tool_step["result"] = result_text or "Reused existing result."
+                    yield yield_event("step", tool_step)
+                else:
                     yield yield_event("step", tool_step)
 
                 # AUTO-OAR: After CTV "done" is yielded, check if we
@@ -7076,6 +7084,39 @@ Output (JSON array of strings):"""
                     _loop.close()
                 except Exception:
                     pass
+        elif _needs_review:
+            logger.info(f"[Review phase] Running fallback completeness check: {_review_reason}")
+            try:
+                step_id[0] += 1
+                _cc_step = {
+                    "id": step_id[0],
+                    "type": "tool",
+                    "title": "Completeness Check",
+                    "tool": "completeness_checker",
+                    "content": "Checking requirement coverage...",
+                    "status": "pending",
+                }
+                steps.append(_cc_step)
+                yield yield_event("step", _cc_step)
+
+                _checks = []
+                _has_plan_now = self._has_completed_planning(steps)
+                _planning_requested_now = self._planning_requested(message)
+                if _planning_requested_now and not _has_plan_now:
+                    _checks.append("planning request detected but planning_pipeline has not completed")
+                if _has_plan_now and not (self.memory.retrieve("dose_metrics") or self.memory.retrieve("metrics")):
+                    _checks.append("planning completed but dose metrics were not found in memory")
+                if response and len(response) < 80:
+                    _checks.append("final response is unusually short")
+
+                _cc_step["status"] = "done"
+                if _checks:
+                    _cc_step["content"] = "Checked with warnings: " + "; ".join(_checks)
+                else:
+                    _cc_step["content"] = "Checked final response coverage."
+                yield yield_event("step", _cc_step)
+            except Exception as e:
+                logger.debug(f"Fallback completeness check skipped: {e}")
 
         # Append review sections to response
         if review_sections:
