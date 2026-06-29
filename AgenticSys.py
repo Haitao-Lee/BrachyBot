@@ -1703,6 +1703,20 @@ class BrachyAgent:
         except Exception as e:
             logger.warning(f"Multi-agent system not available: {e}")
 
+    def _get_llm_callback(self):
+        """Return the shared synchronous LLM callback used by sub-agents."""
+        if self.brain_available and hasattr(self, "brain_router") and self.brain_router:
+            def _llm_cb(prompt):
+                resp = self.brain_router.chat(prompt)
+                return resp.content if hasattr(resp, "content") else str(resp)
+            return _llm_cb
+        enhanced_cb = getattr(getattr(self, "enhanced", None), "llm_callback", None)
+        if enhanced_cb:
+            return enhanced_cb
+        wrapper = getattr(self, "multi_agent_wrapper", None)
+        orchestrator = getattr(wrapper, "orchestrator", None)
+        return getattr(orchestrator, "llm_callback", None)
+
     @property
     def brain_available(self) -> bool:
         return self._brain_available
@@ -1943,16 +1957,19 @@ class BrachyAgent:
             return len(value) > 0
         return True
 
+    def _has_completed_planning_in_steps(self, steps: List[Dict] = None) -> bool:
+        """Return True only when planning completed in the current turn."""
+        return bool(steps) and any(
+            s.get("type") == "tool"
+            and s.get("status") == "done"
+            and s.get("tool") == "planning_pipeline"
+            for s in steps
+        )
+
     def _has_completed_planning(self, steps: List[Dict] = None) -> bool:
         """Planning is complete only after dose metrics plus seed/dose payloads exist."""
-        if steps:
-            if any(
-                s.get("type") == "tool"
-                and s.get("status") == "done"
-                and s.get("tool") == "planning_pipeline"
-                for s in steps
-            ):
-                return True
+        if self._has_completed_planning_in_steps(steps):
+            return True
 
         metrics = self.memory.retrieve("dose_metrics")
         seed_payload = self.memory.retrieve("seed_plan")
@@ -3598,7 +3615,8 @@ print(json.dumps(result))
         Returns a list of claims (max 7) for FactChecker to verify.
         """
         # Try LLM-based extraction first
-        if self.llm_callback:
+        _llm_cb = self._get_llm_callback()
+        if _llm_cb:
             try:
                 prompt = f"""You are preparing claims for a medical fact-checker agent.
 
@@ -3617,7 +3635,7 @@ Text to analyze:
 
 Output (JSON array of strings):"""
 
-                response = self.llm_callback(prompt)
+                response = _llm_cb(prompt)
                 # Parse JSON response
                 import json
                 claims = json.loads(response.strip())
@@ -4580,8 +4598,9 @@ Output (JSON array of strings):"""
                     for s in steps
                     if s.get("type") == "tool" and s.get("status") == "done"
                 ]
-                _has_planning = self._has_completed_planning(steps)
-                if not _has_planning:
+                _planning_request_this_turn = self._planning_requested(message, tool_calls)
+                _has_planning = self._has_completed_planning_in_steps(steps)
+                if _planning_request_this_turn and not _has_planning:
                     # CTV + OAR are done, but planning is not. Force the
                     # LLM to continue with planning_pipeline. Without
                     # this the LLM summarizes after just the segmentations
@@ -4596,7 +4615,7 @@ Output (JSON array of strings):"""
                         "```\n"
                         "After planning completes successfully, the system will give you a final-summary instruction."
                     )
-                else:
+                elif _planning_request_this_turn and _has_planning:
                     # Planning has run. Now give the constrained summary
                     # format so the LLM can't ramble and run out of
                     # output tokens mid-thought.
@@ -4607,6 +4626,12 @@ Output (JSON array of strings):"""
                         "3. One final sentence confirming completion.\n\n"
                         "DO NOT exceed this format. The 3D viewer is rebuilt automatically — do NOT ask the user to do it.\n"
                         "CRITICAL: Your ENTIRE response must be in the SAME language as the user's original question."
+                    )
+                else:
+                    _present_instruction = (
+                        "Use the tool result(s) from this turn to answer the user's CURRENT request directly. "
+                        "Do NOT summarize prior treatment planning results unless the user explicitly asked about them. "
+                        "If search results are insufficient or uncertain, say so clearly and cite what was found."
                     )
                 messages.append({"role": "user", "content": _present_instruction})
 
@@ -6124,8 +6149,9 @@ Output (JSON array of strings):"""
                     for s in steps
                     if s.get("type") == "tool" and s.get("status") == "done"
                 ]
-                _has_planning = self._has_completed_planning(steps)
-                if not _has_planning:
+                _planning_request_this_turn = self._planning_requested(message, tool_calls)
+                _has_planning = self._has_completed_planning_in_steps(steps)
+                if _planning_request_this_turn and not _has_planning:
                     # CTV + OAR are done, but planning is not. Force the
                     # LLM to continue with planning_pipeline. Without
                     # this the LLM summarizes after just the segmentations
@@ -6140,7 +6166,7 @@ Output (JSON array of strings):"""
                         "```\n"
                         "After planning completes successfully, the system will give you a final-summary instruction."
                     )
-                else:
+                elif _planning_request_this_turn and _has_planning:
                     # Planning has run. Now give the constrained summary
                     # format so the LLM can't ramble and run out of
                     # output tokens mid-thought.
@@ -6151,6 +6177,12 @@ Output (JSON array of strings):"""
                         "3. One final sentence confirming completion.\n\n"
                         "DO NOT exceed this format. The 3D viewer is rebuilt automatically — do NOT ask the user to do it.\n"
                         "CRITICAL: Your ENTIRE response must be in the SAME language as the user's original question."
+                    )
+                else:
+                    _present_instruction = (
+                        "Use the tool result(s) from this turn to answer the user's CURRENT request directly. "
+                        "Do NOT summarize prior treatment planning results unless the user explicitly asked about them. "
+                        "If search results are insufficient or uncertain, say so clearly and cite what was found."
                     )
                 messages.append({"role": "user", "content": _present_instruction})
 
@@ -6537,7 +6569,7 @@ Output (JSON array of strings):"""
                 self.memory.retrieve("oar_array") is not None
                 or any(s.get("tool") == "oar_segmentation" and s.get("status") == "done" for s in steps if s.get("type") == "tool")
             )
-            has_planning = self._has_completed_planning(steps)
+            has_planning = self._has_completed_planning_in_steps(steps)
 
             if not (has_ctv and has_oar and has_planning):
                 logger.info(f"[WORKFLOW-ENFORCER] Planning requested but incomplete. CTV={has_ctv}, OAR={has_oar}, Planning={has_planning}")
@@ -6830,7 +6862,7 @@ Output (JSON array of strings):"""
             # structured response directly from the actual stored
             # metrics. This guarantees the user always sees the
             # complete clinical report.
-            has_planning = self._has_completed_planning(steps)
+            has_planning = self._has_completed_planning_in_steps(steps)
             if has_planning:
                 response = self._build_planning_report(_lang, steps)
             else:
@@ -6902,7 +6934,7 @@ Output (JSON array of strings):"""
 
         # SAFETY NET: after quality review retry, ensure the response
         # is the full planning report (not a brief LLM acknowledgment).
-        _has_planning = self._has_completed_planning(steps)
+        _has_planning = self._has_completed_planning_in_steps(steps)
         if _has_planning and response:
             # Check if response is suspiciously short (likely a retry
             # artifact that didn't regenerate the full report)
@@ -6940,9 +6972,21 @@ Output (JSON array of strings):"""
         }
         _tools_called = {s.get("tool") for s in steps if s.get("type") == "tool"}
         _high_value_called = _tools_called & _high_value_tools
+        _knowledge_tools = {"web_search", "web_fetch", "web_access"}
+        _knowledge_called = _tools_called & _knowledge_tools
+        _has_plan = self._has_completed_planning_in_steps(steps)
+        _router_requires_review = bool(
+            _ma_routing and getattr(_ma_routing, "requires_review", False)
+        )
         _response_len = len(response)
 
-        if _high_value_called:
+        if _router_requires_review:
+            _needs_review = True
+            _review_reason = "router_requires_review"
+        elif _knowledge_called:
+            _needs_review = True
+            _review_reason = f"knowledge_tools: {_knowledge_called}"
+        elif _high_value_called:
             _needs_review = True
             _review_reason = f"high_value_tools: {_high_value_called}"
         elif len(_tools_called) >= 3:
@@ -7100,7 +7144,7 @@ Output (JSON array of strings):"""
                 yield yield_event("step", _cc_step)
 
                 _checks = []
-                _has_plan_now = self._has_completed_planning(steps)
+                _has_plan_now = self._has_completed_planning_in_steps(steps)
                 _planning_requested_now = self._planning_requested(message)
                 if _planning_requested_now and not _has_plan_now:
                     _checks.append("planning request detected but planning_pipeline has not completed")
@@ -7133,7 +7177,7 @@ Output (JSON array of strings):"""
                 self.memory.retrieve("oar_array") is not None
                 or any(s.get("tool") == "oar_segmentation" and s.get("status") == "done" for s in steps if s.get("type") == "tool")
             )
-            has_planning = self._has_completed_planning(steps)
+            has_planning = self._has_completed_planning_in_steps(steps)
 
             if not (has_ctv and has_oar and has_planning):
                 logger.info(f"[WORKFLOW-ENFORCER-STREAM] Planning requested but incomplete. CTV={has_ctv}, OAR={has_oar}, Planning={has_planning}")
