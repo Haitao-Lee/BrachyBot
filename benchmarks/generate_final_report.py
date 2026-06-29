@@ -144,7 +144,7 @@ def generate_final_report():
         f.write("8. **error_recovery** (10 cases) — graceful error handling\n\n")
 
         f.write("### Key Test Material\n\n")
-        f.write("- **CT File:** `/home/lht/snap/brachyplan/data/RuijinCases/10/CTyuanaju.nii`\n")
+        f.write("- **CT File:** `CTyuanaju.nii` (pancreatic cancer case)\n")
         f.write("- **Patient:** Pancreatic cancer\n")
         f.write("- **Specs:** 48 × 512 × 512 voxels, 0.68 × 0.68 × 5.0 mm spacing\n\n")
 

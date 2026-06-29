@@ -79,6 +79,12 @@ mykey.py
 # Local debug scripts (never committed)
 debug_*.py
 
+# Local test scripts (contain hardcoded local paths)
+test_*.py
+
+# Benchmark archive scripts (contain hardcoded local paths)
+benchmarks/archive/v1_scripts/
+
 # Runtime web search cache (regenerated on demand)
 tool_factory/web_search/cache/
 tool_factory/web_search/evidence/
@@ -86,3 +92,4 @@ tool_factory/case_memory/cases/
 
 # Local run scripts may contain environment-specific ports or secret setup
 start_server.sh
+*.bak_codex_*

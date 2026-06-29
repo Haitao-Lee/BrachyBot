@@ -6,7 +6,7 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 
 BASE_URL = "http://localhost:8080"
-SCREENSHOTS_DIR = Path("/home/lht/snap/brachyplan/BrachyBot/docs/screenshots")
+SCREENSHOTS_DIR = Path(__file__).resolve().parent.parent / "docs" / "screenshots"
 SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 
 async def capture_ui():
