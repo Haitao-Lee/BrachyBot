@@ -11,6 +11,7 @@ import tempfile
 import shutil
 import subprocess
 import json
+import signal
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -287,15 +288,22 @@ class TotalSegmentatorOARTool(BaseTool):
                 "organ_counts": organ_counts,
                 "dose_constraints": dose_constraints,
                 "method": method,
+                "oar_source": "totalsegmentator",
+                "oar_is_full": True,
             },
         )
 
     def _totalsegmentator_segmentation(
         self, image: sitk.Image, organ_filter: list, fast_mode: bool
     ):
+        # --- Preflight: verify TotalSegmentator is available ---
         ts_exe = shutil.which("TotalSegmentator")
         if ts_exe is None:
-            raise RuntimeError("TotalSegmentator not found in PATH")
+            raise RuntimeError(
+                "TotalSegmentator not found in PATH. "
+                f"Current Python: {sys.executable}. "
+                "Install with: pip install totalsegmentator==2.13.0"
+            )
 
         temp_dir = tempfile.mkdtemp()
         try:
@@ -306,12 +314,24 @@ class TotalSegmentatorOARTool(BaseTool):
 
             from plans.device_manager import get_device as _get_device
 
-            # Get the best GPU and set CUDA_VISIBLE_DEVICES for the subprocess
             _dev = str(_get_device(caller=__name__))
             logger.info(f"OAR segmentation using device: {_dev}")
 
-            # Totalsegmentator uses "gpu"/"cpu" strings; map our device
-            device_str = "gpu" if _dev.startswith("cuda") else _dev
+            # Build device flags for TotalSegmentator.
+            # When CUDA_VISIBLE_DEVICES is set, the subprocess sees only
+            # one GPU renumbered as 0 — so we MUST pass "gpu" or "gpu:0",
+            # NOT the original index.  Passing "gpu:1" when only 1 GPU
+            # is visible causes an out-of-range crash.
+            env = self._get_clean_subprocess_env()
+            if _dev.startswith("cuda:"):
+                gpu_idx = _dev.split(":")[1]
+                env["CUDA_VISIBLE_DEVICES"] = gpu_idx
+                device_str = "gpu"  # subprocess sees this as gpu:0
+                logger.info(f"CUDA_VISIBLE_DEVICES={gpu_idx}, --device gpu")
+            elif _dev == "cuda":
+                device_str = "gpu"
+            else:
+                device_str = "cpu"
 
             cmd = [
                 ts_exe,
@@ -319,45 +339,59 @@ class TotalSegmentatorOARTool(BaseTool):
                 "-o", output_path,
                 "--task", "total",
                 "--device", device_str,
-                "--ml",  # multilabel output for easier reading
+                "--ml",
             ]
             if fast_mode:
                 cmd.append("--fast")
 
             logger.info(f"Running TotalSegmentator OAR: {' '.join(cmd)}")
 
-            # Set subprocess environment with CUDA_VISIBLE_DEVICES restriction
-            env = self._get_clean_subprocess_env()
-            if _dev.startswith("cuda:"):
-                # Extract GPU index (e.g., "cuda:0" -> "0")
-                gpu_idx = _dev.split(":")[1]
-                env["CUDA_VISIBLE_DEVICES"] = gpu_idx
-                logger.info(f"Setting CUDA_VISIBLE_DEVICES={gpu_idx} for TotalSegmentator subprocess")
+            timeout_s = int(os.getenv("BRACHYBOT_TOTALSEG_TIMEOUT_SEC", "300"))
+
+            # Capture stdout+stderr with communicate(timeout=...).  Do not
+            # iterate over proc.stdout directly: TotalSegmentator can spawn
+            # children that keep the pipe open after the parent exits, which
+            # otherwise prevents the timeout from ever being reached.
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                universal_newlines=True,
+                text=True,
                 env=env,
+                start_new_session=(os.name == "posix"),
             )
 
-            for line in proc.stdout:
-                logger.debug(line.strip())
             try:
-                proc.wait(timeout=600)  # 10 minute timeout
+                output, _ = proc.communicate(timeout=timeout_s)
             except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
-                raise RuntimeError("TotalSegmentator timed out after 600s")
+                self._terminate_subprocess_group(proc)
+                try:
+                    output, _ = proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    output = ""
+                raise RuntimeError(
+                    f"TotalSegmentator timed out after {timeout_s}s. "
+                    f"Last output: {self._tail_output(output, 5)}"
+                )
+
+            _output_lines = self._tail_output(output, 50)
+            for stripped in _output_lines:
+                logger.debug(stripped)
 
             if proc.returncode != 0:
-                raise RuntimeError(f"TotalSegmentator failed with return code {proc.returncode}")
+                tail = "\n".join(_output_lines[-15:]) if _output_lines else "(no output)"
+                raise RuntimeError(
+                    f"TotalSegmentator failed (exit code {proc.returncode}). "
+                    f"Command: {' '.join(cmd)}\nLast output:\n{tail}"
+                )
 
-            result_file = output_path
-            if not os.path.exists(result_file):
-                raise RuntimeError(f"TotalSegmentator output not found: {result_file}")
+            if not os.path.exists(output_path):
+                raise RuntimeError(
+                    f"TotalSegmentator output not found: {output_path}. "
+                    f"Last output: {_output_lines[-5:] if _output_lines else '(none)'}"
+                )
 
-            seg_img = nib.load(result_file)
+            seg_img = nib.load(output_path)
             seg_data = seg_img.get_fdata()
 
             oar_array = np.zeros_like(seg_data, dtype=np.float64)
@@ -374,6 +408,45 @@ class TotalSegmentatorOARTool(BaseTool):
 
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def _terminate_subprocess_group(self, proc: subprocess.Popen) -> None:
+        """Terminate TotalSegmentator and any child workers it spawned."""
+        if proc.poll() is not None:
+            return
+
+        if os.name == "posix":
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                return
+            except Exception as exc:
+                logger.warning(f"Failed to SIGTERM TotalSegmentator process group: {exc}")
+                proc.terminate()
+        else:
+            proc.terminate()
+
+        try:
+            proc.wait(timeout=5)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+
+        if os.name == "posix":
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                return
+            except Exception as exc:
+                logger.warning(f"Failed to SIGKILL TotalSegmentator process group: {exc}")
+                proc.kill()
+        else:
+            proc.kill()
+        proc.wait()
+
+    def _tail_output(self, output: str, max_lines: int) -> list:
+        if not output:
+            return []
+        return [line.strip() for line in output.splitlines() if line.strip()][-max_lines:]
 
     def _get_clean_subprocess_env(self) -> dict:
         env = os.environ.copy()

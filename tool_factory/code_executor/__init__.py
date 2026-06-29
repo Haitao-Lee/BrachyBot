@@ -2,11 +2,11 @@
 Code Executor Tool
 ==================
 Allows the agent to write and execute Python code on demand.
-Sandboxed execution with controlled imports and timeouts.
+Restricted execution with controlled imports. Disabled by default unless
+BRACHYBOT_ENABLE_CODE_EXECUTOR=1 is explicitly set.
 """
 
 import os
-import sys
 import json
 import logging
 import time
@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 ALLOWED_MODULES = {
     "numpy", "scipy", "nibabel", "SimpleITK", "matplotlib",
-    "json", "os", "sys", "math", "collections", "itertools",
-    "re", "datetime", "pathlib", "csv", "io", "time",
+    "json", "math", "collections", "itertools",
+    "re", "datetime", "csv", "time",
     "skimage", "pandas",
 }
 
@@ -32,14 +32,18 @@ DANGEROUS_PATTERNS = [
     "os.popen", "exec(", "eval(", "compile(",
     "shutil.rmtree", "shutil.move",
     "socket.socket", "os.remove", "os.rmdir",
+    "open(", "pathlib", "sys.modules", "globals(", "locals(",
 ]
+
+TRUE_VALUES = {"1", "true", "yes", "on"}
+EXECUTION_ENABLED = os.environ.get("BRACHYBOT_ENABLE_CODE_EXECUTOR", "").lower() in TRUE_VALUES
 
 
 class CodeExecutorTool(BaseTool):
-    """Execute Python code in a sandboxed environment."""
+    """Execute Python code in a restricted environment when explicitly enabled."""
 
     name = "code_executor"
-    description = "Execute Python code for ad-hoc tasks: inspecting medical images, computing statistics, data analysis, etc. Available libraries: numpy, scipy, nibabel, SimpleITK, matplotlib, pandas, skimage. Returns stdout, stderr, and result."
+    description = "Execute Python code for ad-hoc data analysis when BRACHYBOT_ENABLE_CODE_EXECUTOR=1. Available libraries: numpy, scipy, nibabel, SimpleITK, matplotlib, pandas, skimage. Returns stdout, stderr, and result."
     input_schema = {
         "code": {"type": "string", "description": "Python code to execute"},
         "description": {"type": "string", "description": "Brief description of what the code does"},
@@ -54,15 +58,32 @@ class CodeExecutorTool(BaseTool):
     def _sanitize_code(self, code: str) -> tuple:
         """Check for dangerous patterns. Returns (safe, warnings)."""
         warnings = []
+        lowered = code.lower()
         for pattern in DANGEROUS_PATTERNS:
-            if pattern in code:
+            if pattern.lower() in lowered:
                 warnings.append(f"Potentially dangerous pattern: {pattern}")
 
         return len(warnings) == 0, warnings
 
+    def _safe_import(self, name, globals=None, locals=None, fromlist=(), level=0):
+        root = name.split(".", 1)[0]
+        if root not in ALLOWED_MODULES:
+            raise ImportError(f"Import of '{name}' is not allowed")
+        return __import__(name, globals, locals, fromlist, level)
+
     def _execute(self, **kwargs) -> "ToolResult":
         code = kwargs.get("code", "")
         description = kwargs.get("description", "")
+
+        if not EXECUTION_ENABLED:
+            return ToolResult(
+                success=False,
+                error="code_executor is disabled",
+                message=(
+                    "Code execution is disabled by default. Set "
+                    "BRACHYBOT_ENABLE_CODE_EXECUTOR=1 only in a trusted local environment."
+                ),
+            )
 
         if not code:
             return ToolResult(
@@ -97,8 +118,8 @@ class CodeExecutorTool(BaseTool):
                 'str': str, 'sum': sum, 'super': super, 'tuple': tuple, 'type': type,
                 'zip': zip, 'True': True, 'False': False, 'None': None,
                 'Ellipsis': Ellipsis, 'NotImplemented': NotImplemented,
-                # Allow __import__ for import statements (sandboxed by allowed modules list)
-                '__import__': __import__,
+                # Allow imports only through the module allowlist above.
+                '__import__': self._safe_import,
             }
 
             env = {"__builtins__": safe_builtins}

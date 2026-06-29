@@ -13,8 +13,10 @@ import time
 import threading
 import secrets
 import hashlib
+import base64
+import binascii
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Iterable
 from functools import wraps
 
 # Add parent directory to Python path for imports
@@ -25,32 +27,68 @@ from flask_cors import CORS
 
 WEB_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(WEB_DIR, "app")
+PROJECT_ROOT = os.path.realpath(os.path.join(WEB_DIR, ".."))
+UPLOAD_DIR = os.path.realpath(os.path.join(PROJECT_ROOT, "uploads"))
+OUTPUT_DIRS = [
+    os.path.realpath(os.path.join(PROJECT_ROOT, "output")),
+    os.path.realpath(os.path.join(PROJECT_ROOT, "outputs")),
+]
+SCREENSHOTS_DIR = os.path.realpath(os.path.join(UPLOAD_DIR, "screenshots"))
+
+TRUE_VALUES = {"1", "true", "yes", "on"}
+ALLOWED_UPLOAD_EXTENSIONS = {
+    ".nii", ".nii.gz", ".mha", ".mhd", ".nrrd", ".dcm", ".dicom",
+}
+ALLOWED_DICOM_SERIES_EXTENSIONS = {"", ".dcm", ".dicom"}
+MAX_UPLOAD_FILES = int(os.environ.get("BRACHYBOT_MAX_UPLOAD_FILES", "3000"))
+MAX_SCREENSHOT_BYTES = int(os.environ.get("BRACHYBOT_MAX_SCREENSHOT_BYTES", str(10 * 1024 * 1024)))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# API key for authentication. If not set via env var, generate a random one
-# and log it so the user can access the API during development.
+# API key for authentication. Local loopback development can run without a key;
+# non-loopback server startup is refused unless BRACHYBOT_API_KEY is set or
+# BRACHYBOT_ALLOW_INSECURE_REMOTE=1 is explicitly provided.
+# BRACHYBOT_TRUST_NETWORK=1: listen on 0.0.0.0 without requiring API key from clients.
 API_KEY = os.environ.get("BRACHYBOT_API_KEY", None)
-_API_KEY_REQUIRED = bool(API_KEY)  # Only require if explicitly set by user
-if not API_KEY:
+_TRUST_NETWORK = os.environ.get("BRACHYBOT_TRUST_NETWORK", "").lower() in TRUE_VALUES
+_API_KEY_REQUIRED = (bool(API_KEY) and not _TRUST_NETWORK) or os.environ.get("BRACHYBOT_REQUIRE_API_KEY", "").lower() in TRUE_VALUES
+if not API_KEY and not _TRUST_NETWORK:
     API_KEY = secrets.token_urlsafe(32)
-    logger.info(f"BRACHYBOT_API_KEY not set. API key auth disabled for local dev.")
+    logger.info("BRACHYBOT_API_KEY not set. API key auth is disabled for loopback local dev only.")
 
-RATE_LIMIT_REQUESTS = 60
+# Trusted network: no rate limiting. Local dev: generous limit.
+RATE_LIMIT_REQUESTS = 9999 if _TRUST_NETWORK else 120
 RATE_LIMIT_WINDOW = 60
 _rate_limit_store: Dict[str, list] = {}
 
 
 class TaskManager:
     """Manages background task progress for SSE streaming."""
-    def __init__(self):
+    def __init__(self, max_tasks: int = 1000, ttl_seconds: int = 3600):
         self._tasks: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
+        self._max_tasks = max_tasks
+        self._ttl_seconds = ttl_seconds
+
+    def _prune_locked(self):
+        now = time.time()
+        expired = [
+            tid for tid, task in self._tasks.items()
+            if task.get("status") != "running" and now - task.get("updated_at", now) > self._ttl_seconds
+        ]
+        for tid in expired:
+            self._tasks.pop(tid, None)
+        if len(self._tasks) > self._max_tasks:
+            ordered = sorted(self._tasks.items(), key=lambda item: item[1].get("updated_at", 0))
+            for tid, _task in ordered[: len(self._tasks) - self._max_tasks]:
+                self._tasks.pop(tid, None)
 
     def create_task(self, task_type: str, description: str) -> str:
         task_id = secrets.token_hex(8)
         with self._lock:
+            self._prune_locked()
+            now = time.time()
             self._tasks[task_id] = {
                 "id": task_id,
                 "type": task_type,
@@ -60,6 +98,8 @@ class TaskManager:
                 "message": "Starting...",
                 "result": None,
                 "error": None,
+                "created_at": now,
+                "updated_at": now,
             }
         return task_id
 
@@ -69,6 +109,7 @@ class TaskManager:
                 self._tasks[task_id]["progress"] = progress
                 if message:
                     self._tasks[task_id]["message"] = message
+                self._tasks[task_id]["updated_at"] = time.time()
 
     def complete_task(self, task_id: str, result: Any = None):
         with self._lock:
@@ -76,20 +117,25 @@ class TaskManager:
                 self._tasks[task_id]["status"] = "completed"
                 self._tasks[task_id]["progress"] = 100
                 self._tasks[task_id]["result"] = result
+                self._tasks[task_id]["updated_at"] = time.time()
 
     def fail_task(self, task_id: str, error: str):
         with self._lock:
             if task_id in self._tasks:
                 self._tasks[task_id]["status"] = "failed"
                 self._tasks[task_id]["error"] = error
+                self._tasks[task_id]["updated_at"] = time.time()
 
     def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         with self._lock:
-            return self._tasks.get(task_id)
+            self._prune_locked()
+            task = self._tasks.get(task_id)
+            return dict(task) if task else None
 
     def get_all_tasks(self) -> Dict[str, Dict[str, Any]]:
         with self._lock:
-            return dict(self._tasks)
+            self._prune_locked()
+            return {tid: dict(task) for tid, task in self._tasks.items()}
 
 
 task_manager = TaskManager()
@@ -139,39 +185,108 @@ def _check_rate_limit(client_ip: str) -> bool:
     return True
 
 
-def _validate_path(path: str) -> bool:
-    """Validate a file path is safe (no traversal attacks).
+def _is_loopback_host(host: str) -> bool:
+    host = (host or "").strip().lower()
+    return host in {"127.0.0.1", "localhost", "::1"} or host.startswith("127.")
 
-    Uses an allowlist approach: the resolved path must be within one of
-    the allowed root directories. This prevents reading arbitrary files
-    on the server (e.g., /etc/passwd, ~/.ssh/id_rsa).
-    """
+
+def _env_paths(name: str) -> list:
+    raw = os.environ.get(name, "")
+    return [p for p in raw.split(os.pathsep) if p.strip()]
+
+
+def _real_roots(paths: Iterable[str]) -> list:
+    roots = []
+    for path in paths:
+        if not path:
+            continue
+        roots.append(os.path.realpath(os.path.abspath(os.path.expanduser(path))))
+    return roots
+
+
+def _is_under_root(path: str, roots: Iterable[str]) -> bool:
+    resolved = os.path.realpath(os.path.abspath(os.path.expanduser(path)))
+    for root in _real_roots(roots):
+        if resolved == root or resolved.startswith(root + os.sep):
+            return True
+    return False
+
+
+def _allowed_read_roots() -> list:
+    return _real_roots([
+        UPLOAD_DIR,
+        "/tmp",
+        "/data",
+        *_env_paths("BRACHYBOT_DATA_ROOTS"),
+    ])
+
+
+def _allowed_write_roots() -> list:
+    return _real_roots([
+        *OUTPUT_DIRS,
+        SCREENSHOTS_DIR,
+        "/tmp",
+        *_env_paths("BRACHYBOT_OUTPUT_ROOTS"),
+    ])
+
+
+def _validate_path(path: str, purpose: str = "read") -> bool:
+    """Validate a file path against purpose-specific allowlists."""
     if not path:
         return False
-    # Reject relative traversal attempts
     if '..' in path.replace('\\', '/').split('/'):
         return False
-    # Resolve to absolute path (follows symlinks)
     try:
         resolved = os.path.realpath(os.path.abspath(path))
     except (OSError, ValueError):
         return False
-    # Allowed root directories
-    _project_root = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-    _allowed_roots = [
-        _project_root,                                    # Project directory
-        os.path.join(_project_root, "uploads"),           # Uploads directory
-        os.path.join(_project_root, "memory", "data"),    # Memory data
-        "/tmp",                                           # Temp files
-        "/data",                                          # Common data mount
-        os.path.expanduser("~"),                          # Current user home only
-    ]
-    # Check if resolved path starts with any allowed root
-    for root in _allowed_roots:
-        if resolved.startswith(root + os.sep) or resolved == root:
-            return True
-    logger.warning(f"Path validation failed: {path} (resolved: {resolved}) not in allowed roots")
+    roots = _allowed_write_roots() if purpose == "write" else _allowed_read_roots()
+    if _is_under_root(resolved, roots):
+        return True
+    logger.warning(
+        "Path validation failed: %s (resolved: %s) not in allowed %s roots: %s",
+        path, resolved, purpose, roots,
+    )
     return False
+
+
+def _resolve_output_path(path: str) -> Optional[str]:
+    if not path:
+        return None
+    candidate = path if os.path.isabs(path) else os.path.join(PROJECT_ROOT, path)
+    resolved = os.path.realpath(os.path.abspath(candidate))
+    return resolved if _validate_path(resolved, purpose="write") else None
+
+
+def _upload_ext(filename: str) -> str:
+    lower = filename.lower()
+    if lower.endswith(".nii.gz"):
+        return ".nii.gz"
+    return os.path.splitext(lower)[1]
+
+
+def _validate_upload_name(filename: str, *, dicom_series: bool = False) -> bool:
+    ext = _upload_ext(filename)
+    allowed = ALLOWED_DICOM_SERIES_EXTENSIONS if dicom_series else ALLOWED_UPLOAD_EXTENSIONS
+    return ext in allowed
+
+
+def _decode_png_data_url(image_data: str) -> bytes:
+    if "," in image_data:
+        header, b64 = image_data.split(",", 1)
+        if not header.lower().startswith("data:image/png;base64"):
+            raise ValueError("Only PNG screenshots are accepted")
+    else:
+        b64 = image_data
+    try:
+        img_bytes = base64.b64decode(b64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("Invalid base64 image data") from exc
+    if len(img_bytes) > MAX_SCREENSHOT_BYTES:
+        raise ValueError(f"Screenshot exceeds {MAX_SCREENSHOT_BYTES} bytes")
+    if not img_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("Screenshot payload is not a PNG image")
+    return img_bytes
 
 
 def require_api_key(f):
@@ -192,9 +307,10 @@ def require_api_key(f):
 def rate_limit(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        client_ip = request.remote_addr
-        if not _check_rate_limit(client_ip):
-            return jsonify({"error": "Rate limit exceeded"}), 429
+        if not _TRUST_NETWORK:
+            client_ip = request.remote_addr
+            if not _check_rate_limit(client_ip):
+                return jsonify({"error": "Rate limit exceeded"}), 429
         return f(*args, **kwargs)
     return decorated
 
@@ -212,11 +328,15 @@ def create_app(config: Optional[Dict] = None):
 
     app = Flask(__name__, static_folder=APP_DIR, static_url_path="")
     # CORS: restrict to localhost origins for security.
-    # Override with ALLOWED_ORIGINS env var if needed (comma-separated).
-    _allowed_origins = os.environ.get(
-        "ALLOWED_ORIGINS",
-        "http://localhost,http://127.0.0.1,http://localhost:8080,http://127.0.0.1:8080"
-    ).split(",")
+    # When BRACHYBOT_TRUST_NETWORK is set, allow all origins (LAN access).
+    # Override with ALLOWED_ORIGINS env var for explicit control.
+    if _TRUST_NETWORK:
+        _allowed_origins = "*"
+    else:
+        _allowed_origins = os.environ.get(
+            "ALLOWED_ORIGINS",
+            "http://localhost,http://127.0.0.1,http://localhost:8080,http://127.0.0.1:8080"
+        ).split(",")
     CORS(app, origins=_allowed_origins)
     app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500MB max upload
 
@@ -226,6 +346,7 @@ def create_app(config: Optional[Dict] = None):
     # Session management: each session gets its own agent instance
     _sessions: Dict[str, Any] = {}  # session_id -> BrachyAgent
     _session_timestamps: Dict[str, float] = {}  # session_id -> last access time
+    _sessions_lock = threading.RLock()
     _default_session_id = config.get("session_id", "web")
     _max_sessions = 50  # Maximum number of concurrent sessions
     _session_timeout = 3600  # Session timeout in seconds (1 hour)
@@ -238,51 +359,53 @@ def create_app(config: Optional[Dict] = None):
         if session_id is None:
             session_id = _default_session_id
 
-        # Clean up old sessions periodically
-        _cleanup_old_sessions()
+        with _sessions_lock:
+            # Clean up old sessions periodically
+            _cleanup_old_sessions()
 
-        # Return existing agent if session exists
-        if session_id in _sessions:
-            _session_timestamps[session_id] = time.time()
-            return _sessions[session_id]
+            # Return existing agent if session exists
+            if session_id in _sessions:
+                _session_timestamps[session_id] = time.time()
+                return _sessions[session_id]
 
-        # Check if we've hit the max sessions limit
-        if len(_sessions) >= _max_sessions:
-            # Remove the oldest session
-            oldest_session = min(_session_timestamps, key=_session_timestamps.get)
-            _sessions.pop(oldest_session, None)
-            _session_timestamps.pop(oldest_session, None)
-            logger.info(f"Removed oldest session: {oldest_session}")
+            # Check if we've hit the max sessions limit
+            if len(_sessions) >= _max_sessions:
+                # Remove the oldest session
+                oldest_session = min(_session_timestamps, key=_session_timestamps.get)
+                _sessions.pop(oldest_session, None)
+                _session_timestamps.pop(oldest_session, None)
+                logger.info(f"Removed oldest session: {oldest_session}")
 
-        # Create new agent for this session
-        try:
-            from AgenticSys import BrachyAgent
-            agent = BrachyAgent(
-                session_id=session_id,
-                config=config.get("agent_config", {})
-            )
-            _sessions[session_id] = agent
-            _session_timestamps[session_id] = time.time()
-            logger.info(f"Created new agent for session: {session_id}")
-            return agent
-        except Exception as e:
-            import traceback
-            logger.error(f"Failed to initialize BrachyAgent for session {session_id}: {e}")
-            logger.error(traceback.format_exc())
-            return None
+            # Create new agent for this session
+            try:
+                from AgenticSys import BrachyAgent
+                agent = BrachyAgent(
+                    session_id=session_id,
+                    config=config.get("agent_config", {})
+                )
+                _sessions[session_id] = agent
+                _session_timestamps[session_id] = time.time()
+                logger.info(f"Created new agent for session: {session_id}")
+                return agent
+            except Exception as e:
+                import traceback
+                logger.error(f"Failed to initialize BrachyAgent for session {session_id}: {e}")
+                logger.error(traceback.format_exc())
+                return None
 
     def _cleanup_old_sessions():
         """Remove sessions that have exceeded the timeout."""
         nonlocal _sessions, _session_timestamps
-        current_time = time.time()
-        expired_sessions = [
-            sid for sid, timestamp in _session_timestamps.items()
-            if current_time - timestamp > _session_timeout
-        ]
-        for sid in expired_sessions:
-            _sessions.pop(sid, None)
-            _session_timestamps.pop(sid, None)
-            logger.info(f"Removed expired session: {sid}")
+        with _sessions_lock:
+            current_time = time.time()
+            expired_sessions = [
+                sid for sid, timestamp in _session_timestamps.items()
+                if current_time - timestamp > _session_timeout
+            ]
+            for sid in expired_sessions:
+                _sessions.pop(sid, None)
+                _session_timestamps.pop(sid, None)
+                logger.info(f"Removed expired session: {sid}")
 
     @app.route("/")
     def index():
@@ -293,6 +416,8 @@ def create_app(config: Optional[Dict] = None):
         return resp
 
     @app.route("/api/upload", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_upload():
         """Upload a file (or many files / a folder) and return a server-side path.
 
@@ -310,8 +435,10 @@ def create_app(config: Optional[Dict] = None):
             files = request.files.getlist("file")
             if not files:
                 return jsonify({"error": "No file provided"}), 400
+            if len(files) > MAX_UPLOAD_FILES:
+                return jsonify({"error": f"Too many files; max is {MAX_UPLOAD_FILES}"}), 400
 
-            upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")
+            upload_dir = UPLOAD_DIR
             os.makedirs(upload_dir, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -325,6 +452,8 @@ def create_app(config: Optional[Dict] = None):
                 if f.filename == "":
                     return jsonify({"error": "No file selected"}), 400
                 filename = _safe(f.filename)
+                if not _validate_upload_name(filename):
+                    return jsonify({"error": f"Unsupported upload type: {filename}"}), 400
                 base, ext = os.path.splitext(filename)
                 # Handle .nii.gz two-part extension
                 if base.lower().endswith(".nii") and ext.lower() == ".gz":
@@ -357,6 +486,8 @@ def create_app(config: Optional[Dict] = None):
                 leaf = _safe(rel.split("/")[-1])
                 if not leaf:
                     continue
+                if not _validate_upload_name(leaf, dicom_series=True):
+                    return jsonify({"error": f"Unsupported DICOM series file type: {leaf}"}), 400
                 save_path = os.path.join(sub_dir, leaf)
                 # Avoid collision: append counter
                 if os.path.exists(save_path):
@@ -386,6 +517,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/viewer/image", methods=["GET"])
+    @require_api_key
+    @rate_limit
     def api_viewer_image():
         """Serve an image file from the server."""
         image_path = request.args.get("path", "")
@@ -580,6 +713,8 @@ def create_app(config: Optional[Dict] = None):
         return tags
 
     @app.route("/api/header/info", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_header_info():
         """Return DICOM header metadata for a CT path.
 
@@ -593,6 +728,8 @@ def create_app(config: Optional[Dict] = None):
         ct_path = data.get("ct_path")
         if not ct_path:
             return jsonify({"error": "ct_path is required"}), 400
+        if not _validate_path(ct_path, purpose="read"):
+            return jsonify({"error": "Invalid ct_path"}), 400
         try:
             img, kind, meta = _load_ct_image(ct_path)
             # For series reads, the assembled volume has empty metadata.
@@ -727,6 +864,8 @@ def create_app(config: Optional[Dict] = None):
         return "\n".join(lines), safety
 
     @app.route("/api/report/auto-fill", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_report_auto_fill():
         """Build a partial report patch from agent memory (DICOM + NIfTI + planning).
 
@@ -947,6 +1086,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"success": False, "error": str(e)}), 500
 
     @app.route("/api/viewer/load", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_viewer_load():
         """Load CT image and return slice metadata (no pixel data)."""
         agent = get_agent()
@@ -960,6 +1101,8 @@ def create_app(config: Optional[Dict] = None):
 
         if not ct_path:
             return jsonify({"error": "ct_path is required"}), 400
+        if not _validate_path(ct_path, purpose="read"):
+            return jsonify({"error": "Invalid ct_path"}), 400
 
         # Per-patient memory isolation: if a DIFFERENT CT is being
         # loaded, wipe all planning / segmentation / dose state from
@@ -1068,6 +1211,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/viewer/slice", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_viewer_slice():
         """Get a specific slice from loaded CT as PNG image."""
         agent = get_agent()
@@ -1170,6 +1315,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/viewer/volume", methods=["GET"])
+    @require_api_key
+    @rate_limit
     def api_viewer_volume():
         """Return entire CT volume as binary blob for client-side rendering."""
         agent = get_agent()
@@ -1202,6 +1349,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/viewer/label_volume", methods=["GET"])
+    @require_api_key
+    @rate_limit
     def api_viewer_label_volume():
         """Return full CTV/OAR label volumes as binary uint8 for client-side rendering."""
         agent = get_agent()
@@ -1380,6 +1529,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/viewer/overlay", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_viewer_overlay():
         """Get segmentation overlay for a specific slice."""
         agent = get_agent()
@@ -1503,6 +1654,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/viewer/organs", methods=["GET"])
+    @require_api_key
+    @rate_limit
     def api_viewer_organs():
         """Return organ data (names and voxel counts) from OAR segmentation."""
         agent = get_agent()
@@ -1547,6 +1700,8 @@ def create_app(config: Optional[Dict] = None):
         return jsonify({"success": True, "organs": organs})
 
     @app.route("/api/viewer/threshold", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_viewer_threshold():
         """Apply threshold segmentation and return mask."""
         agent = get_agent()
@@ -1588,6 +1743,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/viewer/hu", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_viewer_hu():
         """Get HU value at a specific voxel."""
         agent = get_agent()
@@ -1641,6 +1798,8 @@ def create_app(config: Optional[Dict] = None):
         return verts
 
     @app.route("/api/viewer/3d", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_viewer_3d():
         """Generate 3D mesh from CTV or OAR mask."""
         agent = get_agent()
@@ -1728,6 +1887,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/viewer/3d_mask", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_viewer_3d_mask():
         """Generate 3D mesh from a specific organ mask label."""
         agent = get_agent()
@@ -1858,6 +2019,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/viewer/3d_skin", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_viewer_3d_skin():
         """Generate CT skin mesh using isosurface (marching cubes at skin threshold)."""
         agent = get_agent()
@@ -1927,6 +2090,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/planning/seeds_3d", methods=["GET"])
+    @require_api_key
+    @rate_limit
     def api_planning_seeds_3d():
         """Get seed positions and directions for 3D visualization.
 
@@ -1942,13 +2107,15 @@ def create_app(config: Optional[Dict] = None):
             import numpy as np
 
             seed_plan = agent.memory.retrieve("seed_plan")
-            if seed_plan is None:
+            seed_plan_serialized = agent.memory.retrieve("seed_plan_serialized") or []
+            if seed_plan is None and not seed_plan_serialized:
                 return jsonify({"success": True, "seeds": [], "needles": [], "message": "No seed plan available"})
 
             # Get resampled CT for coordinate transform
             resampled_ct = agent.memory.retrieve("resampled_ct")
             if resampled_ct is None:
                 logger.warning("[seeds_3d] No resampled_ct found, returning raw coordinates")
+            ct_image = agent.memory.retrieve("ct_image")
 
             def _voxel_to_world(voxel_pos):
                 """Convert planning grid voxel coords to world coords.
@@ -2031,19 +2198,42 @@ def create_app(config: Optional[Dict] = None):
                     logger.warning(f"[seeds_3d] direction transform failed: {e}")
                     return voxel_dir.tolist()
 
+            def _world_to_ct_voxel_index(world_pos):
+                """Return CT voxel index in numpy order [z, y, x]."""
+                if ct_image is None:
+                    return None
+                try:
+                    idx_xyz = ct_image.TransformPhysicalPointToIndex(tuple(float(v) for v in world_pos[:3]))
+                    return [int(idx_xyz[2]), int(idx_xyz[1]), int(idx_xyz[0])]
+                except Exception as e:
+                    logger.debug(f"[seeds_3d] world_to_ct_voxel_index failed: {e}")
+                    return None
+
             seeds = []
             needles = []
 
-            for i, entry in enumerate(seed_plan):
-                if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+            plan_source = seed_plan if seed_plan is not None else seed_plan_serialized
+            for i, entry in enumerate(plan_source):
+                if isinstance(entry, dict):
+                    trajectory = entry.get("trajectory")
+                    seed_list = entry.get("seeds") or []
+                elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                    trajectory = entry[0] if len(entry) > 0 else None
+                    seed_list = entry[1] if len(entry) > 1 else []
+                else:
                     continue
-
-                trajectory = entry[0] if len(entry) > 0 else None
-                seed_list = entry[1] if len(entry) > 1 else []
 
                 needle_seeds = []
                 for j, seed in enumerate(seed_list):
-                    if not isinstance(seed, (list, tuple)) or len(seed) < 2:
+                    if isinstance(seed, dict):
+                        seed_pos = seed.get("position") or seed.get("pos")
+                        seed_dir = seed.get("direction") or seed.get("dir")
+                    elif isinstance(seed, (list, tuple)) and len(seed) >= 2:
+                        seed_pos = seed[0]
+                        seed_dir = seed[1]
+                    else:
+                        continue
+                    if seed_pos is None:
                         continue
 
                     # CRITICAL: optimal_plan() in plans/core.py ALREADY converts
@@ -2051,8 +2241,8 @@ def create_app(config: Optional[Dict] = None):
                     # The seed[0] and seed[1] are therefore ALREADY in world coords.
                     # Do NOT apply _voxel_to_world again — that would double-transform
                     # and place seeds far from the correct position.
-                    pos_world = np.array(seed[0], dtype=np.float64).flatten()[:3]
-                    direc_world = np.array(seed[1], dtype=np.float64).flatten()[:3]
+                    pos_world = np.array(seed_pos, dtype=np.float64).flatten()[:3]
+                    direc_world = np.array(seed_dir if seed_dir is not None else [0.0, 0.0, 1.0], dtype=np.float64).flatten()[:3]
 
                     if i == 0 and j == 0:
                         logger.info(f"[seeds_3d] first seed (already world): pos={pos_world.tolist()}, dir={direc_world.tolist()}")
@@ -2060,6 +2250,7 @@ def create_app(config: Optional[Dict] = None):
                     seed_data = {
                         "id": f"seed_{i}_{j}",
                         "position": pos_world.tolist(),
+                        "voxel_index": _world_to_ct_voxel_index(pos_world),
                         "direction": direc_world.tolist(),
                         "trajectory_id": i,
                         "seed_index": j,
@@ -2131,6 +2322,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/planning/clear", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_planning_clear():
         """Clear all planning data from agent memory (called on page refresh)."""
         import AgenticSys as _ag
@@ -2167,6 +2360,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/planning/results", methods=["GET"])
+    @require_api_key
+    @rate_limit
     def api_planning_results():
         """Get latest planning results including metrics, seeds, trajectories, dose, DVH.
 
@@ -2187,6 +2382,7 @@ def create_app(config: Optional[Dict] = None):
             total_seeds = agent.memory.retrieve("total_seeds") or 0
             num_trajectories = agent.memory.retrieve("num_trajectories") or 0
             seed_plan = agent.memory.retrieve("seed_plan")
+            seed_plan_serialized = agent.memory.retrieve("seed_plan_serialized") or []
             dose_distribution = agent.memory.retrieve("dose_distribution")
             dose_distribution_gy = agent.memory.retrieve("dose_distribution_gy")
             trajectories = agent.memory.retrieve("trajectories") or agent.memory.retrieve("refined_trajectories")
@@ -2201,12 +2397,17 @@ def create_app(config: Optional[Dict] = None):
             seeds = []
             trajectories_data = []
 
-            if seed_plan:
-                for i, entry in enumerate(seed_plan):
-                    if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+            plan_source = seed_plan if seed_plan else seed_plan_serialized
+            if plan_source:
+                for i, entry in enumerate(plan_source):
+                    if isinstance(entry, dict):
+                        traj_descriptor = entry.get("trajectory")
+                        seed_list = entry.get("seeds") or []
+                    elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                        traj_descriptor = entry[0]
+                        seed_list = entry[1] if len(entry) > 1 else []
+                    else:
                         continue
-                    traj_descriptor = entry[0]
-                    seed_list = entry[1] if len(entry) > 1 else []
                     # Convert trajectory descriptor to world coordinates
                     entry_pt_world = None
                     target_pt_world = None
@@ -2233,11 +2434,17 @@ def create_app(config: Optional[Dict] = None):
                     })
 
                     for j, seed in enumerate(seed_list or []):
-                        if not isinstance(seed, (list, tuple)) or len(seed) < 2:
+                        if isinstance(seed, dict):
+                            seed_pos = seed.get("position") or seed.get("pos")
+                        elif isinstance(seed, (list, tuple)) and len(seed) >= 2:
+                            seed_pos = seed[0]
+                        else:
+                            continue
+                        if seed_pos is None:
                             continue
                         # Seeds from optimal_plan() are ALREADY in world coordinates.
                         # Do NOT apply position_transform again (double-transform bug).
-                        pos_world = np.array(seed[0], dtype=np.float64).flatten()[:3].tolist()
+                        pos_world = np.array(seed_pos, dtype=np.float64).flatten()[:3].tolist()
                         seeds.append({
                             "id": f"seed_{i + 1}_{j + 1}",
                             "pos": pos_world,
@@ -2290,6 +2497,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/planning/show_step", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_planning_show_step():
         """Show specific planning step results and return data for UI update."""
         agent = get_agent()
@@ -2334,6 +2543,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/segmentation", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_segmentation():
         """MANUAL segmentation (2026-06-15) — runs CTV or OAR
         segmentation directly without going through the LLM agent.
@@ -2385,25 +2596,36 @@ def create_app(config: Optional[Dict] = None):
                     except Exception as e:
                         logger.warning(f"store ctv_label_data failed: {e}")
             elif kind == "oar" and hasattr(agent, "memory"):
-                mask = getattr(result, "mask_array", None) or getattr(result, "mask", None)
-                if mask is not None:
+                # OAR tool returns metadata["oar_array"], metadata["organ_names"], etc.
+                meta = getattr(result, "metadata", {}) or {}
+                oar_array = meta.get("oar_array")
+                if oar_array is not None:
                     try:
-                        agent.memory.store("oar_label_data", mask)
+                        agent.memory.store("oar_array", oar_array)
+                        agent.memory.store("oar_label_data", oar_array)
                         agent.memory.store("oar_segmented", True)
+                        if meta.get("organ_names"):
+                            agent.memory.store("organ_names", meta["organ_names"])
+                        if meta.get("organ_counts"):
+                            agent.memory.store("organ_counts", meta["organ_counts"])
                     except Exception as e:
-                        logger.warning(f"store oar_label_data failed: {e}")
+                        logger.warning(f"store oar data failed: {e}")
 
+            meta = getattr(result, "metadata", {}) or {}
+            label_counts = meta.get("organ_counts", {}) or getattr(result, "label_counts", {}) or {}
             return jsonify({
                 "success": True,
                 "kind": kind,
-                "label_counts": getattr(result, "label_counts", {}) or {},
-                "total_labels": len(getattr(result, "label_counts", {}) or {}),
+                "label_counts": label_counts,
+                "total_labels": len(label_counts),
             })
         except Exception as e:
             logger.error(f"Manual segmentation ({kind}) failed: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/planning/run_step", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_planning_run_step():
         """Run a specific planning step."""
         agent = get_agent()
@@ -2491,6 +2713,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/planning/config", methods=["GET"])
+    @require_api_key
+    @rate_limit
     def api_planning_config():
         """Get planning configuration including iso-dose parameters."""
         import AgenticSys as _ag
@@ -2545,6 +2769,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/planning/dose_isosurface", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_planning_dose_isosurface():
         """Generate dose isosurface mesh for 3D visualization.
 
@@ -2659,6 +2885,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/planning/dose_overlay", methods=["GET"])
+    @require_api_key
+    @rate_limit
     def api_planning_dose_overlay():
         """Get dose distribution resampled to original CT space for 2D overlay.
 
@@ -2739,6 +2967,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/planning/dose_overlay_slice", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_planning_dose_overlay_slice():
         """Get a single dose overlay slice for a given axis and index.
 
@@ -2806,6 +3036,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/planning/dose_contour_slice", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_planning_dose_contour_slice():
         """Get dose contour lines for a given slice.
 
@@ -2948,6 +3180,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/config", methods=["GET"])
+    @require_api_key
+    @rate_limit
     def api_config_get():
         """Get default hyperparameters from config file."""
         try:
@@ -2961,6 +3195,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/device/status", methods=["GET"])
+    @require_api_key
+    @rate_limit
     def api_device_status():
         """Get current GPU/CPU device allocation. The agent uses
         plans/device_manager.DeviceManager to pick the best free GPU
@@ -2977,6 +3213,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/config", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_config():
         """Update agent configuration (hyperparameters)."""
         agent = get_agent()
@@ -3004,6 +3242,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/status", methods=["GET"])
+    @require_api_key
+    @rate_limit
     def api_status():
         """Get system status."""
         agent = get_agent()
@@ -3047,7 +3287,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": "Invalid ctv_path"}), 400
         if oar_path and not _validate_path(oar_path):
             return jsonify({"error": "Invalid oar_path"}), 400
-        if not _validate_path(output_dir):
+        safe_output_dir = _resolve_output_path(output_dir)
+        if safe_output_dir is None:
             return jsonify({"error": "Invalid output_dir"}), 400
         if mode not in ("rule_based", "rl", "auto"):
             return jsonify({"error": "Invalid mode. Use 'rule_based', 'rl', or 'auto'"}), 400
@@ -3077,7 +3318,7 @@ def create_app(config: Optional[Dict] = None):
                 DVH_rate=DVH_rate,
                 max_iter=max_iter,
                 rf_params=rf_params,
-                output_dir=output_dir,
+                output_dir=safe_output_dir,
             )
             return jsonify(result)
         except Exception as e:
@@ -3104,7 +3345,8 @@ def create_app(config: Optional[Dict] = None):
 
         if not _validate_path(ct_path):
             return jsonify({"error": "Invalid ct_path"}), 400
-        if not _validate_path(output_dir):
+        safe_output_dir = _resolve_output_path(output_dir)
+        if safe_output_dir is None:
             return jsonify({"error": "Invalid output_dir"}), 400
         try:
             threshold = float(threshold)
@@ -3118,7 +3360,7 @@ def create_app(config: Optional[Dict] = None):
                 intra_op_ct_path=ct_path,
                 original_plan=original_plan,
                 deviation_threshold_mm=threshold,
-                output_dir=output_dir,
+                output_dir=safe_output_dir,
             )
             return jsonify(result)
         except Exception as e:
@@ -3126,22 +3368,26 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/chat/abort", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_chat_abort():
         """Clean up incomplete conversation after user aborts streaming."""
         agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
         try:
+            setattr(agent, "_cancel_requested", True)
             # Remove the last incomplete conversation turn
-            conv = agent.memory.conversation
-            if len(conv) >= 2:
-                # Remove last assistant message if incomplete
-                if conv[-1].get("role") == "assistant":
-                    conv.pop()
-                # Remove last user message (the one that triggered the aborted response)
-                if conv and conv[-1].get("role") == "user":
-                    conv.pop()
-            return jsonify({"success": True})
+            with getattr(agent.memory, "_lock", threading.RLock()):
+                conv = agent.memory.conversation
+                if len(conv) >= 2:
+                    # Remove last assistant message if incomplete
+                    if conv[-1].get("role") == "assistant":
+                        conv.pop()
+                    # Remove last user message (the one that triggered the aborted response)
+                    if conv and conv[-1].get("role") == "user":
+                        conv.pop()
+            return jsonify({"success": True, "cancel_requested": True})
         except Exception as e:
             logger.error(f"Chat abort cleanup failed: {e}")
             return jsonify({"error": str(e)}), 500
@@ -3162,6 +3408,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/export/dicom_rt", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_export_dicom_rt():
         """Export treatment plan to DICOM-RT format."""
         agent = get_agent()
@@ -3171,10 +3419,13 @@ def create_app(config: Optional[Dict] = None):
         data = request.get_json() or {}
         ct_path = data.get("ct_path")
         output_dir = data.get("output_dir", "./output/dicom_rt")
+        safe_output_dir = _resolve_output_path(output_dir)
+        if safe_output_dir is None:
+            return jsonify({"error": "Invalid output_dir"}), 400
 
         try:
             import os
-            os.makedirs(output_dir, exist_ok=True)
+            os.makedirs(safe_output_dir, exist_ok=True)
 
             # Get planning data
             seed_plan = agent.memory.retrieve("seed_plan")
@@ -3191,11 +3442,11 @@ def create_app(config: Optional[Dict] = None):
                 ct_image=ct_image,
                 seed_plan=seed_plan,
                 dose_distribution=dose_distribution,
-                output_dir=output_dir,
+                output_dir=safe_output_dir,
             )
 
             if result.success:
-                return jsonify({"success": True, "output_dir": output_dir, "message": result.message})
+                return jsonify({"success": True, "output_dir": safe_output_dir, "message": result.message})
             else:
                 return jsonify({"success": False, "error": result.error}), 400
         except Exception as e:
@@ -3203,6 +3454,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/export/stl", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_export_stl():
         """Export seed positions as STL files."""
         agent = get_agent()
@@ -3211,11 +3464,14 @@ def create_app(config: Optional[Dict] = None):
 
         data = request.get_json() or {}
         output_dir = data.get("output_dir", "./output/stl")
+        safe_output_dir = _resolve_output_path(output_dir)
+        if safe_output_dir is None:
+            return jsonify({"error": "Invalid output_dir"}), 400
 
         try:
             import os
             import numpy as np
-            os.makedirs(output_dir, exist_ok=True)
+            os.makedirs(safe_output_dir, exist_ok=True)
 
             seed_plan = agent.memory.retrieve("seed_plan")
             if seed_plan is None:
@@ -3236,11 +3492,11 @@ def create_app(config: Optional[Dict] = None):
                     # Save position data as numpy (STL requires pyvista/vtk)
                     pos = np.array(seed[0])
                     direc = np.array(seed[1])
-                    np.save(os.path.join(output_dir, f"seed_{i}_{j}_pos.npy"), pos)
-                    np.save(os.path.join(output_dir, f"seed_{i}_{j}_dir.npy"), direc)
+                    np.save(os.path.join(safe_output_dir, f"seed_{i}_{j}_pos.npy"), pos)
+                    np.save(os.path.join(safe_output_dir, f"seed_{i}_{j}_dir.npy"), direc)
                     count += 1
 
-            return jsonify({"success": True, "count": count, "output_dir": output_dir})
+            return jsonify({"success": True, "count": count, "output_dir": safe_output_dir})
         except Exception as e:
             logger.error(f"STL export failed: {e}")
             return jsonify({"error": str(e)}), 500
@@ -3280,20 +3536,23 @@ def create_app(config: Optional[Dict] = None):
         if image_path:
             full_message = f"{message}\n\n[Uploaded image path: {image_path}]"
 
+        setattr(agent, "_cancel_requested", False)
+
         if stream:
             def generate():
                 agent.memory.set_ui_state(ui_state)
                 try:
                     for event in agent.chat_with_stream(full_message):
-                        yield event
+                        yield event.encode("utf-8") if isinstance(event, str) else event
+                except GeneratorExit:
+                    setattr(agent, "_cancel_requested", True)
+                    logger.warning("SSE client disconnected (GeneratorExit)")
                 except Exception as e:
-                    # Mid-stream failure: emit a final SSE error event so the
-                    # client can render a graceful message instead of a broken stream.
                     logger.error(f"Chat stream failed: {e}")
                     import json
-                    yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+                    yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n".encode("utf-8")
 
-            return Response(
+            resp = Response(
                 generate(),
                 mimetype='text/event-stream',
                 headers={
@@ -3302,6 +3561,8 @@ def create_app(config: Optional[Dict] = None):
                     'Connection': 'keep-alive',
                 }
             )
+            resp.direct_passthrough = True
+            return resp
         else:
             try:
                 agent.memory.set_ui_state(ui_state)
@@ -3348,25 +3609,49 @@ def create_app(config: Optional[Dict] = None):
                 return jsonify({"error": str(e)}), 500
 
     @app.route("/api/tasks/stream")
+    @require_api_key
+    @rate_limit
     def api_tasks_stream():
         """SSE endpoint for real-time task progress updates."""
         task_id = request.args.get("task_id")
 
         def generate():
-            if task_id:
-                task = task_manager.get_task(task_id)
-                if task:
-                    yield f"event: task\ndata: {json.dumps(task)}\n\n"
-                return
+            deadline = time.time() + 300
+            last_payload = None
+            while time.time() < deadline:
+                if task_id:
+                    task = task_manager.get_task(task_id)
+                    payload = {"task": task}
+                    if task:
+                        data = json.dumps(task)
+                        if data != last_payload:
+                            last_payload = data
+                            yield f"event: task\ndata: {data}\n\n".encode("utf-8")
+                        if task.get("status") != "running":
+                            break
+                    else:
+                        yield f"event: task\ndata: {json.dumps(payload)}\n\n".encode("utf-8")
+                        break
+                else:
+                    tasks = task_manager.get_all_tasks()
+                    data = json.dumps(tasks)
+                    if data != last_payload:
+                        last_payload = data
+                        yield f"event: tasks\ndata: {data}\n\n".encode("utf-8")
+                    if not any(task.get("status") == "running" for task in tasks.values()):
+                        break
+                yield b"event: heartbeat\ndata: {}\n\n"
+                time.sleep(5)
 
-            for tid, task in task_manager.get_all_tasks().items():
-                yield f"event: task\ndata: {json.dumps(task)}\n\n"
-                if task["status"] != "running":
-                    continue
-
-        return Response(generate(), mimetype='text/event-stream')
+        return Response(
+            generate(),
+            mimetype='text/event-stream',
+            headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+        )
 
     @app.route("/api/tasks/<task_id>", methods=["GET"])
+    @require_api_key
+    @rate_limit
     def api_task_status(task_id):
         """Get task status."""
         task = task_manager.get_task(task_id)
@@ -3375,6 +3660,8 @@ def create_app(config: Optional[Dict] = None):
         return jsonify(task)
 
     @app.route("/api/tasks", methods=["GET"])
+    @require_api_key
+    @rate_limit
     def api_tasks_list():
         """List all tasks."""
         return jsonify(task_manager.get_all_tasks())
@@ -3391,7 +3678,8 @@ def create_app(config: Optional[Dict] = None):
         data = request.get_json() or {}
         output_dir = data.get("output_dir", "./dicom_export")
 
-        if not _validate_path(output_dir):
+        safe_output_dir = _resolve_output_path(output_dir)
+        if safe_output_dir is None:
             return jsonify({"error": "Invalid output_dir"}), 400
 
         try:
@@ -3418,7 +3706,7 @@ def create_app(config: Optional[Dict] = None):
                 structures=structures,
                 dose_array=dose_distribution,
                 seeds=seed_positions or [],
-                output_dir=output_dir,
+                output_dir=safe_output_dir,
             )
 
             if result.success:
@@ -3447,7 +3735,8 @@ def create_app(config: Optional[Dict] = None):
         output_path = data.get("output_path", "./report.json")
         output_format = data.get("format", "json")
 
-        if not _validate_path(output_path):
+        safe_output_path = _resolve_output_path(output_path)
+        if safe_output_path is None:
             return jsonify({"error": "Invalid output_path"}), 400
         if output_format not in ("json", "html", "pdf"):
             return jsonify({"error": "Invalid format. Use 'json', 'html', or 'pdf'"}), 400
@@ -3464,7 +3753,7 @@ def create_app(config: Optional[Dict] = None):
             result = generator.execute(
                 patient_id=agent.memory.patient_data.get("id", "UNKNOWN"),
                 plan_name="BrachyPlan",
-                output_path=output_path,
+                output_path=safe_output_path,
                 output_format=output_format,
                 ctv_metrics={"voxels": int(metrics.get("ctv_voxel_count", 0))},
                 dose_metrics=metrics,
@@ -3572,6 +3861,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/screenshot", methods=["POST"])
+    @require_api_key
+    @rate_limit
     def api_screenshot():
         """Receive a screenshot from the frontend and save it."""
         data = request.get_json() or {}
@@ -3583,20 +3874,11 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": "No image data provided"}), 400
 
         try:
-            import base64
             import uuid
-
-            # Strip data URL prefix if present
-            if "," in image_data:
-                header, b64 = image_data.split(",", 1)
-            else:
-                b64 = image_data
-
-            img_bytes = base64.b64decode(b64)
+            img_bytes = _decode_png_data_url(image_data)
 
             # Save to uploads/screenshots/
-            screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads", "screenshots")
-            screenshots_dir = os.path.normpath(screenshots_dir)
+            screenshots_dir = SCREENSHOTS_DIR
             os.makedirs(screenshots_dir, exist_ok=True)
 
             filename = f"screenshot_{uuid.uuid4().hex[:12]}.png"
@@ -3620,6 +3902,8 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/screenshots/<filename>")
+    @require_api_key
+    @rate_limit
     def api_serve_screenshot(filename):
         """Serve a saved screenshot file."""
         screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads", "screenshots")
@@ -3637,13 +3921,14 @@ def create_app(config: Optional[Dict] = None):
         data = request.get_json() or {}
         session_id = data.get("session_id", _default_session_id)
 
-        if session_id in _sessions:
-            _sessions.pop(session_id, None)
-            _session_timestamps.pop(session_id, None)
-            logger.info(f"Reset session: {session_id}")
-            return jsonify({"success": True, "message": f"Session {session_id} reset"})
-        else:
-            return jsonify({"success": True, "message": "Session not found"})
+        with _sessions_lock:
+            if session_id in _sessions:
+                _sessions.pop(session_id, None)
+                _session_timestamps.pop(session_id, None)
+                logger.info(f"Reset session: {session_id}")
+                return jsonify({"success": True, "message": f"Session {session_id} reset"})
+            else:
+                return jsonify({"success": True, "message": "Session not found"})
 
     @app.errorhandler(404)
     def not_found(e):
@@ -3658,6 +3943,17 @@ def create_app(config: Optional[Dict] = None):
 
 def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict] = None):
     """Run the web server."""
+    if not _is_loopback_host(host):
+        allow_insecure = os.environ.get("BRACHYBOT_ALLOW_INSECURE_REMOTE", "").lower() in TRUE_VALUES
+        if not os.environ.get("BRACHYBOT_API_KEY") and not allow_insecure:
+            logger.error(
+                "Refusing to bind BrachyBot to non-loopback host %s without BRACHYBOT_API_KEY. "
+                "Set BRACHYBOT_API_KEY, bind to 127.0.0.1, or explicitly set "
+                "BRACHYBOT_ALLOW_INSECURE_REMOTE=1 for local trusted networks.",
+                host,
+            )
+            return
+
     app = create_app(config)
 
     if app is None:
@@ -3673,36 +3969,76 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
     print(f"{'=' * 50}\n")
 
     # Cleanup handler: kill background threads/subprocesses on exit
-    import atexit, signal as _sig, threading as _threading
+    import atexit, itertools as _itertools, signal as _sig, threading as _threading
     _shutdown_event = _threading.Event()
-    _active_operations = []  # Track ongoing tool executions
-    _ops_lock = _threading.Lock()
+    _active_operations = {}  # op_id -> operation metadata
+    _op_counter = _itertools.count(1)
+    _ops_lock = _threading.RLock()
+    _track_local = _threading.local()
 
     class _OperationContext:
         """Context manager to track ongoing operations."""
         def __init__(self, name):
             self.name = name
+            self.op_id = None
+            self._nested = False
         def __enter__(self):
+            stack = getattr(_track_local, "stack", [])
+            if self.name in stack:
+                self._nested = True
+                stack.append(self.name)
+                _track_local.stack = stack
+                logger.debug(f"[OP-TRACK] Nested '{self.name}' reuses active operation")
+                return self
+
             with _ops_lock:
-                _active_operations.append(self.name)
-                logger.debug(f"[OP-TRACK] Added '{self.name}' to active operations: {_active_operations}")
+                self.op_id = next(_op_counter)
+                _active_operations[self.op_id] = {
+                    "name": self.name,
+                    "started_at": time.time(),
+                    "thread": _threading.current_thread().name,
+                }
+                logger.debug(f"[OP-TRACK] Added '{self.name}' to active operations: {get_active_operations()}")
+            stack.append(self.name)
+            _track_local.stack = stack
             return self
         def __exit__(self, *args):
+            stack = getattr(_track_local, "stack", [])
+            if stack:
+                try:
+                    stack.remove(self.name)
+                except ValueError:
+                    pass
+                _track_local.stack = stack
+            if self._nested:
+                return False
+
             with _ops_lock:
-                if self.name in _active_operations:
-                    _active_operations.remove(self.name)
-                    logger.debug(f"[OP-TRACK] Removed '{self.name}' from active operations: {_active_operations}")
+                if self.op_id in _active_operations:
+                    _active_operations.pop(self.op_id, None)
+                    logger.debug(f"[OP-TRACK] Removed '{self.name}' from active operations: {get_active_operations()}")
                 else:
-                    logger.warning(f"[OP-TRACK] Tried to remove '{self.name}' but it wasn't in the list: {_active_operations}")
+                    logger.warning(f"[OP-TRACK] Tried to remove '{self.name}' but it wasn't active: {get_active_operations()}")
+            return False
 
     def get_active_operations():
         """Get list of currently active operations."""
         with _ops_lock:
-            return list(_active_operations)
+            now = time.time()
+            return [
+                {
+                    "id": op_id,
+                    "name": meta["name"],
+                    "thread": meta["thread"],
+                    "elapsed_sec": round(now - meta["started_at"], 1),
+                }
+                for op_id, meta in sorted(_active_operations.items())
+            ]
 
     # Make operation tracking available globally
     import builtins
     builtins.track_operation = _OperationContext
+    builtins.get_active_operations = get_active_operations
 
     def _cleanup():
         logger.info("[shutdown] Cleaning up background tasks...")
@@ -3725,19 +4061,28 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
 
     atexit.register(_cleanup)
 
-    def _signal_handler(signum, frame):
-        print("\nShutdown signal received...")
+    _shutdown_requested = [False]  # Use list for closure mutability
 
-        with _ops_lock:
-            active = list(_active_operations)
+    def _signal_handler(signum, frame):
+        try:
+            signal_name = _sig.Signals(signum).name
+        except Exception:
+            signal_name = str(signum)
+        print(f"\nShutdown signal received ({signal_name}/{signum})...")
+
+        active = get_active_operations()
 
         if active:
-            # Don't shut down if there are active operations!
-            # Just print a warning and continue running
-            print(f"⚠ Cannot shutdown: {len(active)} operation(s) in progress: {active}")
-            print("  Please wait for operations to complete, then press Ctrl+C again.")
-            print("  Server will continue running...")
-            return  # Don't shut down, just return and let Flask continue
+            _shutdown_requested[0] = True
+            print(f"⚠ {len(active)} operation(s) in progress: {active}")
+            print("  Shutdown deferred so the active medical workflow can finish.")
+            print("  Stop again after the operation completes, or set BRACHYBOT_FORCE_SHUTDOWN_ON_SECOND_SIGNAL=1 to allow forced termination.")
+            if os.environ.get("BRACHYBOT_FORCE_SHUTDOWN_ON_SECOND_SIGNAL", "").lower() in TRUE_VALUES:
+                print("  Force-shutdown override is enabled; terminating active workflow.")
+                _cleanup()
+                print("✓ Forced shutdown complete.")
+                raise SystemExit(1)
+            return
 
         # No active operations, safe to shut down
         print("✓ No active operations. Shutting down gracefully...")
@@ -3751,6 +4096,9 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
 
     _sig.signal(_sig.SIGTERM, _signal_handler)
     _sig.signal(_sig.SIGINT, _signal_handler)
+    if hasattr(_sig, "SIGHUP"):
+        _sig.signal(_sig.SIGHUP, _signal_handler)
+    _sig.signal(_sig.SIGHUP, _sig.SIG_IGN)
 
     try:
         app.run(host=host, port=port, debug=False, threaded=True)
@@ -3763,7 +4111,8 @@ def main():
 
     parser = argparse.ArgumentParser(description="AI-BrachyAgent Web Server")
     parser.add_argument("--port", type=int, default=8080, help="Server port")
-    parser.add_argument("--host", default="0.0.0.0", help="Server host")
+    default_host = "0.0.0.0" if (os.environ.get("BRACHYBOT_API_KEY") or os.environ.get("BRACHYBOT_TRUST_NETWORK")) else "127.0.0.1"
+    parser.add_argument("--host", default=default_host, help="Server host")
     parser.add_argument("--session", default="web", help="Session ID")
     args = parser.parse_args()
 

@@ -27,6 +27,7 @@ import json
 import logging
 import re
 import time
+import threading
 from typing import Any, Dict, List, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
@@ -137,6 +138,7 @@ class AgentMemory:
 
     def __init__(self, session_id: str = "default"):
         self.session_id = session_id
+        self._lock = threading.RLock()
         self.patient_data: Dict = {}
         self.planning_results: Dict = {}
         self.tool_results: List[Dict] = []
@@ -166,10 +168,12 @@ class AgentMemory:
             logger.warning("SmartContextManager not available, using basic conversation")
 
     def store(self, key: str, value: Any):
-        self.planning_results[key] = value
+        with self._lock:
+            self.planning_results[key] = value
 
     def retrieve(self, key: str, default: Any = None) -> Any:
-        return self.planning_results.get(key, default)
+        with self._lock:
+            return self.planning_results.get(key, default)
 
     # ------------------------------------------------------------------
     # CTV/OAR label priority (2026-06-16)
@@ -380,17 +384,19 @@ class AgentMemory:
         return arr, filtered_names, filtered_counts
 
     def log_tool_call(self, tool_name: str, inputs: Dict, result):
-        self.tool_results.append({
-            "tool": tool_name,
-            "inputs": {k: str(v)[:100] for k, v in inputs.items()},
-            "success": result.success,
-            "message": result.message,
-            "execution_time": result.execution_time,
-        })
+        with self._lock:
+            self.tool_results.append({
+                "tool": tool_name,
+                "inputs": {k: str(v)[:100] for k, v in inputs.items()},
+                "success": result.success,
+                "message": result.message,
+                "execution_time": result.execution_time,
+            })
 
     def add_message(self, role: str, content: str):
         """Add a message with smart context tracking."""
-        self.conversation.append({"role": role, "content": content})
+        with self._lock:
+            self.conversation.append({"role": role, "content": content})
 
         # Also add to smart context manager
         if self.smart_context:
@@ -398,10 +404,12 @@ class AgentMemory:
     
     def set_ui_state(self, state: Dict):
         """Update UI state from frontend (selected files, etc)."""
-        self._ui_state.update(state)
+        with self._lock:
+            self._ui_state.update(state)
     
     def get_ui_state(self) -> Dict:
-        return dict(self._ui_state)
+        with self._lock:
+            return dict(self._ui_state)
 
     @staticmethod
     def is_ct_loaded(ui_state: Optional[Dict]) -> bool:
@@ -423,11 +431,13 @@ class AgentMemory:
     def get_ui_state_summary(self) -> str:
         """Generate a human-readable summary of current UI state for the LLM."""
         parts = []
-        ct = self._ui_state.get("ct_path", "")
-        ctv = self._ui_state.get("ctv_path", "")
-        oar = self._ui_state.get("oar_path", "")
-        plan_mode = self._ui_state.get("plan_mode", "")
-        dev_threshold = self._ui_state.get("dev_threshold", "")
+        with self._lock:
+            ui_state = dict(self._ui_state)
+        ct = ui_state.get("ct_path", "")
+        ctv = ui_state.get("ctv_path", "")
+        oar = ui_state.get("oar_path", "")
+        plan_mode = ui_state.get("plan_mode", "")
+        dev_threshold = ui_state.get("dev_threshold", "")
 
         if ct:
             parts.append(f"CT Image loaded: `{ct}`")
@@ -469,38 +479,41 @@ class AgentMemory:
         return "Current UI state:\n" + "\n".join(parts)
     
     def needs_compaction(self, max_messages: int = 12) -> bool:
-        return len(self.conversation) > max_messages
+        with self._lock:
+            return len(self.conversation) > max_messages
     
     def compact(self, keep_last: int = 6) -> str:
         """Summarize old messages and keep only recent ones."""
-        if len(self.conversation) <= keep_last:
+        with self._lock:
+            if len(self.conversation) <= keep_last:
+                return self.context_summary
+
+            overflow = self.conversation[:-keep_last]
+            summary_parts = []
+            for msg in overflow:
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")[:200]
+                if role == "user":
+                    summary_parts.append(f"User: {content}")
+                elif role == "assistant":
+                    summary_parts.append(f"Assistant: {content}")
+
+            if self.context_summary:
+                self.context_summary += "\n" + "\n".join(summary_parts)
+            else:
+                self.context_summary = "Previous conversation summary:\n" + "\n".join(summary_parts)
+
+            self.conversation = self.conversation[-keep_last:]
+            self.compaction_count += 1
             return self.context_summary
-        
-        overflow = self.conversation[:-keep_last]
-        summary_parts = []
-        for msg in overflow:
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")[:200]
-            if role == "user":
-                summary_parts.append(f"User: {content}")
-            elif role == "assistant":
-                summary_parts.append(f"Assistant: {content}")
-        
-        if self.context_summary:
-            self.context_summary += "\n" + "\n".join(summary_parts)
-        else:
-            self.context_summary = "Previous conversation summary:\n" + "\n".join(summary_parts)
-        
-        self.conversation = self.conversation[-keep_last:]
-        self.compaction_count += 1
-        return self.context_summary
 
     def clear_conversation(self):
         """Clear conversation history and context summary for fresh start."""
-        self.conversation = []
-        self.context_summary = ""
-        self.compaction_count = 0
-        self.tool_results = []
+        with self._lock:
+            self.conversation = []
+            self.context_summary = ""
+            self.compaction_count = 0
+            self.tool_results = []
 
         # Also clear smart context manager to prevent old context pollution
         if hasattr(self, 'smart_context') and self.smart_context:
@@ -515,13 +528,14 @@ class AgentMemory:
     def clear_all_data(self):
         """Clear all loaded data (CT, CTV, OAR, planning results) for a completely fresh start."""
         # Clear planning results (stores CT, CTV, OAR, dose, seeds, etc.)
-        self.planning_results.clear()
-        # Clear patient data
-        self.patient_data.clear()
-        # Clear tool results
-        self.tool_results.clear()
-        # Reset planning phase
-        self.current_phase = PlanningPhase.IDLE
+        with self._lock:
+            self.planning_results.clear()
+            # Clear patient data
+            self.patient_data.clear()
+            # Clear tool results
+            self.tool_results.clear()
+            # Reset planning phase
+            self.current_phase = PlanningPhase.IDLE
         logger.info("All data cleared (CT, CTV, OAR, planning results)")
 
         # Clear all enhanced integration components
@@ -552,9 +566,11 @@ class AgentMemory:
 
     def get_clean_context(self) -> str:
         """Return context summary with memory artifacts removed."""
-        if not self.context_summary:
+        with self._lock:
+            context_summary = self.context_summary
+        if not context_summary:
             return ""
-        cleaned = self.context_summary
+        cleaned = context_summary
         # Remove [Called tool_name] artifacts
         cleaned = re.sub(r'\[Called [^\]]+\]', '', cleaned)
         # Remove [Tool result: ...] artifacts
@@ -617,11 +633,13 @@ class AgentMemory:
 
     def _get_basic_context(self) -> str:
         """Fallback: get basic context from conversation history."""
-        if not self.conversation:
+        with self._lock:
+            conversation = list(self.conversation)
+        if not conversation:
             return ""
 
         # Get last 10 messages
-        recent = self.conversation[-10:]
+        recent = conversation[-10:]
         context_parts = []
         for msg in recent:
             role = msg.get("role", "unknown")
@@ -637,23 +655,26 @@ class AgentMemory:
         """Get context manager statistics."""
         if self.smart_context:
             return self.smart_context.get_stats()
+        with self._lock:
+            message_count = len(self.conversation)
         return {
-            "message_count": len(self.conversation),
+            "message_count": message_count,
             "entity_count": 0,
             "topic_count": 0,
         }
 
     def export_state(self, path: str):
-        state = {
-            "session_id": self.session_id,
-            "phase": self.current_phase.value,
-            "tool_results": self.tool_results,
-            "conversation": self.conversation,
-            "planning_summary": {
-                k: str(v)[:200] if not isinstance(v, (int, float, str, bool, list, dict)) else v
-                for k, v in self.planning_results.items()
-            },
-        }
+        with self._lock:
+            state = {
+                "session_id": self.session_id,
+                "phase": self.current_phase.value,
+                "tool_results": list(self.tool_results),
+                "conversation": list(self.conversation),
+                "planning_summary": {
+                    k: str(v)[:200] if not isinstance(v, (int, float, str, bool, list, dict)) else v
+                    for k, v in self.planning_results.items()
+                },
+            }
         os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
         with open(path, "w") as f:
             json.dump(state, f, indent=2, default=str)
@@ -881,6 +902,10 @@ class ToolResultPipeline:
             step = meta.get("step_executed", "full")
             total_seeds = meta.get("total_seeds", 0)
             num_traj = meta.get("num_trajectories", 0)
+            if not num_traj:
+                seed_plan = meta.get("seed_plan") or meta.get("trajectories") or []
+                if isinstance(seed_plan, (list, tuple)):
+                    num_traj = len(seed_plan)
             metrics = meta.get("dose_metrics", {})
 
             if step == "full":
@@ -1295,6 +1320,7 @@ class BrachyAgent:
         self.registry = ToolRegistry()
         self.config = config or {}
         self._load_tools()
+        self._cancel_requested = False
 
         # Register as global agent for tools that need it (e.g. planning_pipeline).
         # ARCHITECTURAL NOTE: This is a module-level singleton pattern, not a bug.
@@ -1908,6 +1934,137 @@ class BrachyAgent:
             logger.warning(f"WebAccessTool not available: {e}")
 
         logger.info(f"Registered {len(self.registry.tool_names)} tools: {self.registry.tool_names}")
+
+    def _truthy_payload(self, value) -> bool:
+        """Return True for stored arrays/objects without forcing numpy truth tests."""
+        if value is None:
+            return False
+        if isinstance(value, (dict, list, tuple, set, str, bytes)):
+            return len(value) > 0
+        return True
+
+    def _has_completed_planning(self, steps: List[Dict] = None) -> bool:
+        """Planning is complete only after dose metrics plus seed/dose payloads exist."""
+        if steps:
+            if any(
+                s.get("type") == "tool"
+                and s.get("status") == "done"
+                and s.get("tool") == "planning_pipeline"
+                for s in steps
+            ):
+                return True
+
+        metrics = self.memory.retrieve("dose_metrics")
+        seed_payload = self.memory.retrieve("seed_plan")
+        if not self._truthy_payload(seed_payload):
+            seed_payload = self.memory.retrieve("seed_plan_serialized")
+        if not self._truthy_payload(seed_payload):
+            seed_payload = self.memory.retrieve("seed_positions")
+        dose_payload = (
+            self.memory.retrieve("dose_distribution")
+            if self.memory.retrieve("dose_distribution") is not None
+            else self.memory.retrieve("dose_distribution_gy")
+        )
+        return (
+            self._truthy_payload(metrics)
+            and self._truthy_payload(seed_payload)
+            and self._truthy_payload(dose_payload)
+        )
+
+    def _planning_requested(self, message: str, tool_calls: List[Dict] = None) -> bool:
+        """Detect clinical planning requests without relying only on LLM order."""
+        text = (message or "").lower()
+        planning_keywords = (
+            "planning",
+            "treatment plan",
+            "brachytherapy",
+            "implant",
+            "\u89c4\u5212",
+            "\u6cbb\u7597\u8ba1\u5212",
+            "\u7c92\u5b50",
+            "\u690d\u5165",
+            "\u653e\u5c04\u6027",
+        )
+        if any(k in text for k in planning_keywords):
+            return True
+        planning_tools = {"planning_pipeline", "seed_planning", "dose_engine", "dose_evaluation", "dose_calc"}
+        return any((tc.get("tool") in planning_tools) for tc in (tool_calls or []))
+
+    def _current_ct_path(self, tool_calls: List[Dict] = None) -> str:
+        for tc in tool_calls or []:
+            params = tc.get("params") or {}
+            for key in ("ct_image_path", "image_path", "ct_path"):
+                if params.get(key):
+                    return params[key]
+        return (
+            self.memory.retrieve("ct_path")
+            or (self.memory.get_ui_state() or {}).get("ct_path")
+            or ""
+        )
+
+    def _normalize_clinical_tool_calls(self, tool_calls: List[Dict], message: str) -> List[Dict]:
+        """Force full brachytherapy planning into CTV -> OAR -> planning order."""
+        if not tool_calls or not self._planning_requested(message, tool_calls):
+            return tool_calls
+
+        planning_tools = {"planning_pipeline", "seed_planning", "dose_engine", "dose_evaluation", "dose_calc"}
+        ctv_ready = self.memory.retrieve("ctv_array") is not None
+        oar_ready = self.memory.retrieve("oar_array") is not None and (
+            bool(self.memory.retrieve("oar_is_full"))
+            or len(self.memory.retrieve("organ_names") or {}) >= 5
+        )
+        planning_ready = self._has_completed_planning()
+        ct_path = self._current_ct_path(tool_calls)
+
+        def clone_call(tc):
+            return {
+                "id": tc.get("id"),
+                "tool": tc.get("tool"),
+                "params": dict(tc.get("params") or {}),
+            }
+
+        by_tool = {}
+        rest = []
+        for tc in tool_calls:
+            tool_name = tc.get("tool")
+            if tool_name in {"ctv_segmentation", "oar_segmentation", "planning_pipeline"}:
+                by_tool.setdefault(tool_name, clone_call(tc))
+            elif tool_name in planning_tools:
+                # Replace stepwise planning tool fragments with the unified pipeline.
+                by_tool.setdefault("planning_pipeline", {
+                    "id": "auto_planning_pipeline",
+                    "tool": "planning_pipeline",
+                    "params": {"step": "full", "mode": "rule_based"},
+                })
+            else:
+                rest.append(tc)
+
+        def ensure_call(tool_name, params):
+            call = by_tool.get(tool_name)
+            if call is None:
+                call = {"id": f"auto_{tool_name}", "tool": tool_name, "params": {}}
+            call["params"] = dict(call.get("params") or {})
+            call["params"].update({k: v for k, v in params.items() if v})
+            return call
+
+        ordered = []
+        if not ctv_ready:
+            ordered.append(ensure_call("ctv_segmentation", {"image_path": ct_path}))
+        if not oar_ready:
+            ordered.append(ensure_call("oar_segmentation", {"image_path": ct_path}))
+        if not planning_ready:
+            ordered.append(ensure_call("planning_pipeline", {
+                "ct_image_path": ct_path,
+                "step": "full",
+                "mode": "rule_based",
+            }))
+
+        if ordered:
+            logger.info(
+                "[workflow-normalizer] normalized clinical tool order: %s",
+                " -> ".join(call.get("tool", "") for call in ordered),
+            )
+        return ordered + rest
     
     def _execute_tool_with_memory(self, tool_name: str, params: Dict, progress_callback=None, step_callback=None, skip_auto_oar=False) -> Any:
         """Execute a tool, automatically injecting memory-stored data.
@@ -2168,6 +2325,9 @@ class BrachyAgent:
                         self.memory.store("oar_array", result.metadata["oar_array"])
                     if "organ_names" in result.metadata:
                         self.memory.store("organ_names", result.metadata["organ_names"])
+                if result.metadata.get("oar_array") is not None and not self.memory.retrieve("oar_is_full"):
+                    self.memory.store("oar_source", "ctv_embedded")
+                    self.memory.store("oar_is_full", False)
             elif tool_name == "oar_segmentation":
                 logger.info(f"OAR segmentation result: oar_array={'oar_array' in result.metadata}, organ_names={'organ_names' in result.metadata}")
                 # BUG FIX 2026-06-16: BEFORE storing the new OAR
@@ -2197,6 +2357,8 @@ class BrachyAgent:
                     logger.info(f"Stored organ_names: {organ_names}")
                 if organ_counts is not None:
                     self.memory.store("organ_counts", organ_counts)
+                self.memory.store("oar_source", "totalsegmentator")
+                self.memory.store("oar_is_full", True)
 
             # If CTV segmentation completed but the resulting OAR map is
             # missing or only carries a few labels (the CTV pipeline also
@@ -2211,100 +2373,134 @@ class BrachyAgent:
             # skip_auto_oar: when True, skip this block so the caller
             # (streaming handler) can yield CTV "done" before running OAR.
             if not skip_auto_oar and tool_name == "ctv_segmentation" and result.success:
-                oar_array = self.memory.retrieve("oar_array")
-                organ_count = 0
-                if oar_array is not None:
-                    try:
-                        import numpy as _np
-                        organ_count = int(len(_np.unique(oar_array)) - 1)  # subtract background
-                    except Exception:
-                        organ_count = 0
-                if organ_count < 5:  # Need a real OAR map, not just 2-3 vessels
-                    logger.info(f"[auto-oar] CTV seg completed but OAR map has only {organ_count} organs — auto-running oar_segmentation")
-                    # Emit a 'pending' step event so the todo list ticks
-                    # through oar_segmentation just like the LLM had
-                    # called it explicitly. The user's complaint:
-                    # "OAR was silently auto-run by the agent but the
-                    # todo list never showed it, so the workflow
-                    # appeared incomplete." With this emit, the
-                    # predicted oar_segmentation row gets the
-                    # breathing animation, then transitions to done
-                    # when auto-OAR completes.
-                    if step_callback is not None:
+                # Skip auto-OAR if planning already completed successfully
+                _planning_already_done_non_stream = (
+                    self.memory.retrieve("dose_metrics") is not None
+                    or self.memory.retrieve("planning_results") is not None
+                )
+                if _planning_already_done_non_stream:
+                    logger.info("[auto-oar] Skipping auto-OAR: planning already done")
+                else:
+                    oar_array = self.memory.retrieve("oar_array")
+                    oar_source = self.memory.retrieve("oar_source") or "unknown"
+                    oar_is_full = bool(self.memory.retrieve("oar_is_full"))
+                    organ_count = 0
+                    if oar_array is not None:
                         try:
-                            step_callback("oar_segmentation", "pending", "Auto-running OAR (CTV map had <5 organs)")
-                        except Exception as _e:
-                            logger.debug(f"step_callback (oar pending) failed: {_e}")
-                    try:
-                        # The oar_segmentation tool accepts EITHER an in-memory
-                        # `image` (SimpleITK Image) or an on-disk `image_path`.
-                        # The in-memory path is faster (skips re-reading the
-                        # file from disk) but the tool's validator rejects
-                        # when the image is passed without image_path. Pass
-                        # both, with image_path coming from the agent's
-                        # memory if available (so the tool can also write
-                        # cached side files consistently).
-                        oar_params = {"organ_type": "general"}
-                        ct_image = self.memory.retrieve("ct_image")
-                        ct_path = self.memory.retrieve("ct_path")
-                        if ct_image is not None:
-                            oar_params["image"] = ct_image
-                        if ct_path:
-                            oar_params["image_path"] = ct_path
-                        oar_result = self.registry.execute("oar_segmentation", **oar_params)
-                        if oar_result and oar_result.success:
-                            if "oar_array" in (oar_result.metadata or {}):
-                                # BUG FIX 2026-06-16 (CTV/OAR priority):
-                                # strip any OAR labels that overlap with
-                                # the CTV's label map so the auto-OAR
-                                # doesn't overwrite the CTV's pancreas
-                                # with the TotalSegmentator version.
-                                oar_a = oar_result.metadata["oar_array"]
-                                oar_n = oar_result.metadata.get("organ_names", {})
-                                oar_c = oar_result.metadata.get("organ_counts", {})
-                                # BUG FIX 2026-06-16: route helper through self.memory
-                                try:
-                                    oar_a, oar_n, oar_c = self.memory._strip_oar_labels_in_ctv(
-                                        oar_a, oar_n, oar_c
-                                    )
-                                except AttributeError:
-                                    pass
-                                self.memory.store("oar_array", oar_a)
-                                if oar_n:
+                            import numpy as _np
+                            organ_count = int(len(_np.unique(oar_array)) - 1)  # subtract background
+                        except Exception:
+                            organ_count = 0
+                    if oar_is_full:
+                        logger.info(f"[auto-oar] Skipping auto-OAR: full OAR already available ({organ_count} labels)")
+                    else:
+                        logger.info(
+                            "[auto-oar] Full OAR not available "
+                            f"(source={oar_source}, labels={organ_count}) — auto-running TotalSegmentator"
+                        )
+                        # Emit a 'pending' step event so the todo list ticks
+                        # through oar_segmentation just like the LLM had
+                        # called it explicitly. The user's complaint:
+                        # "OAR was silently auto-run by the agent but the
+                        # todo list never showed it, so the workflow
+                        # appeared incomplete." With this emit, the
+                        # predicted oar_segmentation row gets the
+                        # breathing animation, then transitions to done
+                        # when auto-OAR completes.
+                        if step_callback is not None:
+                            try:
+                                step_callback("oar_segmentation", "pending", "Auto-running OAR (CTV map had <5 organs)")
+                            except Exception as _e:
+                                logger.debug(f"step_callback (oar pending) failed: {_e}")
+                        try:
+                            # The oar_segmentation tool accepts EITHER an in-memory
+                            # `image` (SimpleITK Image) or an on-disk `image_path`.
+                            # The in-memory path is faster (skips re-reading the
+                            # file from disk) but the tool's validator rejects
+                            # when the image is passed without image_path. Pass
+                            # both, with image_path coming from the agent's
+                            # memory if available (so the tool can also write
+                            # cached side files consistently).
+                            oar_params = {"organ_type": "general"}
+                            ct_image = self.memory.retrieve("ct_image")
+                            ct_path = self.memory.retrieve("ct_path")
+                            if ct_image is not None:
+                                oar_params["image"] = ct_image
+                            if ct_path:
+                                oar_params["image_path"] = ct_path
+                            _auto_oar_op = None
+                            try:
+                                import builtins as _bi_auto
+                                if hasattr(_bi_auto, 'track_operation'):
+                                    _auto_oar_op = _bi_auto.track_operation("oar_segmentation")
+                                    _auto_oar_op.__enter__()
+                            except Exception:
+                                pass
+                            try:
+                                oar_result = self.registry.execute("oar_segmentation", **oar_params)
+                            finally:
+                                if _auto_oar_op is not None:
+                                    try:
+                                        _auto_oar_op.__exit__(None, None, None)
+                                    except Exception:
+                                        pass
+                            if oar_result and oar_result.success:
+                                if "oar_array" in (oar_result.metadata or {}):
+                                    # BUG FIX 2026-06-16 (CTV/OAR priority):
+                                    # strip any OAR labels that overlap with
+                                    # the CTV's label map so the auto-OAR
+                                    # doesn't overwrite the CTV's pancreas
+                                    # with the TotalSegmentator version.
+                                    oar_a = oar_result.metadata["oar_array"]
+                                    oar_n = oar_result.metadata.get("organ_names", {})
+                                    oar_c = oar_result.metadata.get("organ_counts", {})
+                                    # BUG FIX 2026-06-16: route helper through self.memory
+                                    try:
+                                        oar_a, oar_n, oar_c = self.memory._strip_oar_labels_in_ctv(
+                                            oar_a, oar_n, oar_c
+                                        )
+                                    except AttributeError:
+                                        pass
+                                    self.memory.store("oar_array", oar_a)
+                                    if oar_n:
+                                        self.memory.store("organ_names", oar_n)
+                                    if oar_c:
+                                        self.memory.store("organ_counts", oar_c)
+                                    self.memory.store("oar_source", "totalsegmentator")
+                                    self.memory.store("oar_is_full", True)
+                                elif "organ_names" in (oar_result.metadata or {}):
+                                    # Fallback: OAR has no array but has names
+                                    # (rare). Still strip overlapping labels.
+                                    oar_n = oar_result.metadata["organ_names"]
+                                    oar_c = oar_result.metadata.get("organ_counts", {})
+                                    try:
+                                        _, oar_n, oar_c = self.memory._strip_oar_labels_in_ctv(
+                                            None, oar_n, oar_c
+                                        )
+                                    except AttributeError:
+                                        pass
                                     self.memory.store("organ_names", oar_n)
-                                if oar_c:
-                                    self.memory.store("organ_counts", oar_c)
-                            elif "organ_names" in (oar_result.metadata or {}):
-                                # Fallback: OAR has no array but has names
-                                # (rare). Still strip overlapping labels.
-                                oar_n = oar_result.metadata["organ_names"]
-                                oar_c = oar_result.metadata.get("organ_counts", {})
-                                try:
-                                    _, oar_n, oar_c = self.memory._strip_oar_labels_in_ctv(
-                                        None, oar_n, oar_c
-                                    )
-                                except AttributeError:
-                                    pass
-                                self.memory.store("organ_names", oar_n)
-                                if oar_c:
-                                    self.memory.store("organ_counts", oar_c)
-                            logger.info(f"[auto-oar] OAR seg done: {len(oar_result.metadata.get('organ_names', {}))} organs (after CTV-strip)")
-                            # Emit 'done' for the predicted oar row.
-                            if step_callback is not None:
-                                try:
-                                    n_organs = len(oar_result.metadata.get("organ_names", {}))
-                                    step_callback("oar_segmentation", "done", f"{n_organs} organs")
-                                except Exception as _e:
-                                    logger.debug(f"step_callback (oar done) failed: {_e}")
-                        else:
-                            logger.warning(f"[auto-oar] OAR seg failed: {oar_result.error if oar_result else 'no result'}")
-                            if step_callback is not None:
-                                try:
-                                    step_callback("oar_segmentation", "error", oar_result.error if oar_result else "no result")
-                                except Exception as _e:
-                                    logger.debug(f"step_callback (oar error) failed: {_e}")
-                    except Exception as e:
-                        logger.warning(f"[auto-oar] exception: {e}")
+                                    if oar_c:
+                                        self.memory.store("organ_counts", oar_c)
+                                    self.memory.store("oar_source", "totalsegmentator")
+                                    self.memory.store("oar_is_full", True)
+                                logger.info(f"[auto-oar] OAR seg done: {len(oar_result.metadata.get('organ_names', {}))} organs (after CTV-strip)")
+                                # Emit 'done' for the predicted oar row.
+                                if step_callback is not None:
+                                    try:
+                                        n_organs = len(oar_result.metadata.get("organ_names", {}))
+                                        step_callback("oar_segmentation", "done", f"{n_organs} organs")
+                                    except Exception as _e:
+                                        logger.debug(f"step_callback (oar done) failed: {_e}")
+                            else:
+                                logger.warning(f"[auto-oar] OAR seg failed: {oar_result.error if oar_result else 'no result'}")
+                                if step_callback is not None:
+                                    try:
+                                        step_callback("oar_segmentation", "error", oar_result.error if oar_result else "no result")
+                                    except Exception as _e:
+                                        logger.debug(f"step_callback (oar error) failed: {_e}")
+                        except Exception as e:
+                            logger.warning(f"[auto-oar] exception: {e}")
             elif tool_name == "trajectory_planning" and "trajectories" in result.metadata:
                 self.memory.store("trajectories", result.metadata["trajectories"])
             elif tool_name == "seed_planning":
@@ -2397,11 +2593,22 @@ class BrachyAgent:
         if tool_name in ("ctv_segmentation", "oar_segmentation") and result.success:
             ctv_array = self.memory.retrieve("ctv_array")
             oar_array = self.memory.retrieve("oar_array")
-            if ctv_array is not None and oar_array is not None:
+            oar_is_full = bool(self.memory.retrieve("oar_is_full"))
+            if ctv_array is not None and oar_array is not None and not oar_is_full:
+                logger.info("[AUTO-PLANNING] Waiting for full OAR before planning; current OAR is partial/embedded")
+            if ctv_array is not None and oar_array is not None and oar_is_full:
                 # Both segmentations complete - check if planning has been done
                 planning_done = self.memory.retrieve("planning_results") is not None
                 if not planning_done:
                     logger.info("[AUTO-PLANNING] CTV and OAR both complete, planning not done — auto-triggering planning_pipeline")
+                    _auto_plan_op = None
+                    try:
+                        import builtins as _bi_auto_plan
+                        if hasattr(_bi_auto_plan, 'track_operation'):
+                            _auto_plan_op = _bi_auto_plan.track_operation("planning_pipeline")
+                            _auto_plan_op.__enter__()
+                    except Exception:
+                        pass
                     try:
                         planning_tool = self.registry.get("planning_pipeline")
                         if planning_tool:
@@ -2427,6 +2634,12 @@ class BrachyAgent:
                             logger.warning("[AUTO-PLANNING] planning_pipeline tool not found")
                     except Exception as e:
                         logger.error(f"[AUTO-PLANNING] Error: {e}", exc_info=True)
+                    finally:
+                        if _auto_plan_op is not None:
+                            try:
+                                _auto_plan_op.__exit__(None, None, None)
+                            except Exception:
+                                pass
 
         return result
 
@@ -3864,7 +4077,7 @@ Output (JSON array of strings):"""
                             # Filter out already-completed steps from chain
                             _filtered = [s for s in sk['tool_chain']
                                          if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
-                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None)]
+                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None and bool(self.memory.retrieve('oar_is_full')))]
                             enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
                             enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
                             if len(_filtered) < len(sk['tool_chain']):
@@ -3884,7 +4097,7 @@ Output (JSON array of strings):"""
                         if not _is_view_request:
                             _filtered = [s for s in sk['tool_chain']
                                          if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
-                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None)]
+                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None and bool(self.memory.retrieve('oar_is_full')))]
                             enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
                             enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
                             if len(_filtered) < len(sk['tool_chain']):
@@ -3910,6 +4123,13 @@ Output (JSON array of strings):"""
         }
         query_strategy = type_labels.get(query_type, type_labels['knowledge'])
         enhanced_context += f"\n### Query Type: {query_strategy}\n"
+        enhanced_context += (
+            "\n### Ambiguity and Typo Policy\n"
+            "If the user's request is vague, typo-heavy, internally inconsistent, or missing a required target/action, "
+            "ask one concise clarifying question in the user's language. Do not call clinical tools, planning tools, "
+            "file-modifying tools, or web tools until the intent and required inputs are clear. Minor typos may be "
+            "silently corrected only when the intended action is obvious from context.\n"
+        )
         if query_type == 'realtime':
             enhanced_context += "This query requires CURRENT data. You MUST use web_search. Do NOT answer from training data.\n"
         elif query_type == 'system':
@@ -4080,6 +4300,23 @@ Output (JSON array of strings):"""
         llm_calls = 0
 
         while iteration < max_iterations:
+            if _cancelled():
+                step_id_ref[0] += 1
+                cancel_step = {
+                    "id": step_id_ref[0],
+                    "type": "system",
+                    "title": "Stopped",
+                    "content": "User stopped this response before the next LLM/tool step.",
+                    "status": "done",
+                }
+                steps.append(cancel_step)
+                yield yield_event("step", cancel_step)
+                yield {
+                    "type": "_result",
+                    "response": "已停止本次响应。请修改输入后重新发送，我会按新的请求重新执行。",
+                    "llm_meta": {"usage": total_usage, "latency_ms": total_latency_ms, "llm_calls": llm_calls},
+                }
+                return
             iteration += 1
 
             try:
@@ -4182,7 +4419,10 @@ Output (JSON array of strings):"""
                 tools_executed = True
                 break
 
-            tool_calls = valid_tool_calls
+            tool_calls = self._normalize_clinical_tool_calls(valid_tool_calls, message)
+            if not tool_calls:
+                tools_executed = True
+                break
             tools_executed = True  # Mark that tools are being executed
             _tool_results_to_store = []  # Collect (tool_name, result, params) for batch storage
 
@@ -4303,10 +4543,7 @@ Output (JSON array of strings):"""
                     for s in steps
                     if s.get("type") == "tool" and s.get("status") == "done"
                 ]
-                _has_planning = any(
-                    t in _executed_tool_names
-                    for t in ("planning_pipeline", "seed_planning", "trajectory_planning", "dose_engine", "dose_evaluation")
-                )
+                _has_planning = self._has_completed_planning(steps)
                 if not _has_planning:
                     # CTV + OAR are done, but planning is not. Force the
                     # LLM to continue with planning_pipeline. Without
@@ -4682,6 +4919,9 @@ Output (JSON array of strings):"""
         def emit(event_type, data):
             return yield_event(event_type, data)
 
+        def _cancelled():
+            return bool(getattr(self, "_cancel_requested", False))
+
         # Auto-compact conversation history if too long
         compaction_triggered = False
         if self.memory.needs_compaction():
@@ -4754,7 +4994,7 @@ Output (JSON array of strings):"""
                             # Filter out already-completed steps from chain
                             _filtered = [s for s in sk['tool_chain']
                                          if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
-                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None)]
+                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None and bool(self.memory.retrieve('oar_is_full')))]
                             enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
                             enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
                             if len(_filtered) < len(sk['tool_chain']):
@@ -4774,7 +5014,7 @@ Output (JSON array of strings):"""
                         if not _is_view_request:
                             _filtered = [s for s in sk['tool_chain']
                                          if not (s == 'ctv_segmentation' and self.memory.retrieve('ctv_array') is not None)
-                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None)]
+                                         and not (s == 'oar_segmentation' and self.memory.retrieve('oar_array') is not None and bool(self.memory.retrieve('oar_is_full')))]
                             enhanced_context += f"\n### Crystallized Skill: {sk['name']} ({sk['success_rate']:.0%})\n"
                             enhanced_context += f"Chain: {' -> '.join(_filtered)}\n"
                             if len(_filtered) < len(sk['tool_chain']):
@@ -4800,6 +5040,13 @@ Output (JSON array of strings):"""
         }
         query_strategy = type_labels.get(query_type, type_labels['knowledge'])
         enhanced_context += f"\n### Query Type: {query_strategy}\n"
+        enhanced_context += (
+            "\n### Ambiguity and Typo Policy\n"
+            "If the user's request is vague, typo-heavy, internally inconsistent, or missing a required target/action, "
+            "ask one concise clarifying question in the user's language. Do not call clinical tools, planning tools, "
+            "file-modifying tools, or web tools until the intent and required inputs are clear. Minor typos may be "
+            "silently corrected only when the intended action is obvious from context.\n"
+        )
         if query_type == 'realtime':
             enhanced_context += "This query requires CURRENT data. You MUST use web_search. Do NOT answer from training data.\n"
         elif query_type == 'system':
@@ -5196,8 +5443,8 @@ Output (JSON array of strings):"""
                     logger.info(f"[HARD-BLOCK] Skipping redundant planning_pipeline (already ran this turn)")
                     continue
                 # Also block if planning already completed in a PREVIOUS turn
-                if _tn == "planning_pipeline" and self.memory.retrieve("dose_metrics") is not None:
-                    logger.info(f"[HARD-BLOCK] Skipping planning_pipeline (dose_metrics already in memory)")
+                if _tn == "planning_pipeline" and self._has_completed_planning():
+                    logger.info(f"[HARD-BLOCK] Skipping planning_pipeline (completed planning already in memory)")
                     continue
                 _filtered_again.append(tc)
             valid_tool_calls = _filtered_again
@@ -5206,13 +5453,33 @@ Output (JSON array of strings):"""
                 tools_executed = True
                 break
 
-            tool_calls = valid_tool_calls
+            tool_calls = self._normalize_clinical_tool_calls(valid_tool_calls, message)
+            if not tool_calls:
+                tools_executed = True
+                break
             _tool_results_to_store = []  # Collect (tool_name, result, params) for batch storage
 
             # Prevent ui_screenshot from being called multiple times per conversation
             _screenshot_called_this_turn = set()
 
             for tc in tool_calls:
+                if _cancelled():
+                    step_id_ref[0] += 1
+                    cancel_step = {
+                        "id": step_id_ref[0],
+                        "type": "system",
+                        "title": "Stopped",
+                        "content": "User stopped this response before running the next tool.",
+                        "status": "done",
+                    }
+                    steps.append(cancel_step)
+                    yield yield_event("step", cancel_step)
+                    yield {
+                        "type": "_result",
+                        "response": "已停止本次响应。请修改输入后重新发送，我会按新的请求重新执行。",
+                        "llm_meta": {"usage": total_usage, "latency_ms": total_latency_ms, "llm_calls": llm_calls},
+                    }
+                    return
                 tool_name = tc.get("tool", "")
                 params = tc.get("params", {})
 
@@ -5356,12 +5623,48 @@ Output (JSON array of strings):"""
                         # "done" BEFORE starting OAR (prevents both
                         # appearing to complete simultaneously).
                         _skip_oar = (tool_name == "ctv_segmentation")
-                        result = self._execute_tool_with_memory(
-                            tool_name, params,
-                            progress_callback=tool_progress_callback,
-                            step_callback=tool_step_callback,
-                            skip_auto_oar=_skip_oar,
-                        )
+
+                        # Run tool in a daemon thread with periodic heartbeats
+                        # to prevent SSE connection timeout during long
+                        # operations (nnUNet inference, TotalSegmentator).
+                        # Daemon threads don't block Python shutdown, so
+                        # Ctrl+C won't hang waiting for them.
+                        import threading as _thr
+                        _tool_result_box = [None]
+                        _tool_exc_box = [None]
+                        def _run_tool():
+                            try:
+                                _tool_result_box[0] = self._execute_tool_with_memory(
+                                    tool_name, params,
+                                    progress_callback=tool_progress_callback,
+                                    step_callback=tool_step_callback,
+                                    skip_auto_oar=_skip_oar,
+                                )
+                            except Exception as _te:
+                                _tool_exc_box[0] = _te
+                        _tool_thread = _thr.Thread(target=_run_tool, daemon=True)
+                        _tool_thread.start()
+                        _hb_count = 0
+                        while _tool_thread.is_alive():
+                            _tool_thread.join(timeout=1)
+                            if _cancelled():
+                                tool_step["status"] = "error"
+                                tool_step["content"] = f"{tool_name} cancelled by user."
+                                tool_step["result"] = "Cancelled by user"
+                                yield yield_event("step", tool_step)
+                                yield {
+                                    "type": "_result",
+                                    "response": "已停止本次响应。当前长耗时工具若已经进入底层推理，可能会在后台自然结束，但不会继续触发后续规划步骤。",
+                                    "llm_meta": {"usage": total_usage, "latency_ms": total_latency_ms, "llm_calls": llm_calls},
+                                }
+                                return
+                            if _tool_thread.is_alive():
+                                _hb_count += 1
+                                tool_step["content"] = f"{tool_name} running... ({_hb_count}s)"
+                                yield yield_event("step", tool_step)
+                        if _tool_exc_box[0] is not None:
+                            raise _tool_exc_box[0]
+                        result = _tool_result_box[0]
                         # CRITICAL: Capture tool result BEFORE any yields.
                         # The yield pauses this generator. If the Flask
                         # SSE consumer closes the connection, code after
@@ -5544,64 +5847,114 @@ Output (JSON array of strings):"""
                 # OAR started. Now it runs here with proper event yields.
                 if (tool_name == "ctv_segmentation" and tool_result is not None
                         and tool_result.success):
-                    oar_array = self.memory.retrieve("oar_array")
-                    organ_count = 0
-                    if oar_array is not None:
-                        try:
-                            import numpy as _np
-                            organ_count = int(len(_np.unique(oar_array)) - 1)
-                        except Exception:
-                            organ_count = 0
-                    if organ_count < 5:
-                        logger.info(f"[auto-oar-stream] CTV done, OAR has {organ_count} organs — auto-running")
-                        _oar_step_id = step_id_ref[0] + 1
-                        _oar_step = {
-                            "id": _oar_step_id, "type": "tool",
-                            "title": "Auto OAR Segmentation",
-                            "content": "Auto-running OAR (CTV map had <5 organs)",
-                            "status": "pending", "tool": "oar_segmentation", "params": {},
-                        }
-                        steps.append(_oar_step)
-                        yield yield_event("step", _oar_step)
-                        step_id_ref[0] = _oar_step_id
-                        try:
-                            _oar_params = {"organ_type": "general"}
-                            _ct_img = self.memory.retrieve("ct_image")
-                            _ct_p = self.memory.retrieve("ct_path")
-                            if _ct_img is not None:
-                                _oar_params["image"] = _ct_img
-                            if _ct_p:
-                                _oar_params["image_path"] = _ct_p
-                            _oar_result = self.registry.execute("oar_segmentation", **_oar_params)
-                            if _oar_result and _oar_result.success:
-                                if "oar_array" in (_oar_result.metadata or {}):
-                                    _oa = _oar_result.metadata["oar_array"]
-                                    _on = _oar_result.metadata.get("organ_names", {})
-                                    _oc = _oar_result.metadata.get("organ_counts", {})
-                                    try:
-                                        _oa, _on, _oc = self.memory._strip_oar_labels_in_ctv(_oa, _on, _oc)
-                                    except AttributeError:
-                                        pass
-                                    self.memory.store("oar_array", _oa)
-                                    if _on:
-                                        self.memory.store("organ_names", _on)
-                                    if _oc:
-                                        self.memory.store("organ_counts", _oc)
-                                _oar_step["status"] = "done"
-                                _n = len(_oar_result.metadata.get("organ_names", {}))
-                                _oar_step["result"] = f"{_n} organs"
-                                yield yield_event("step", _oar_step)
-                                logger.info(f"[auto-oar-stream] ✓ OAR done: {_n} organs")
-                            else:
-                                _oar_step["status"] = "error"
-                                _oar_step["result"] = _oar_result.error if _oar_result else "no result"
-                                yield yield_event("step", _oar_step)
-                                logger.warning(f"[auto-oar-stream] OAR failed: {_oar_result.error if _oar_result else 'no result'}")
-                        except Exception as _e:
-                            _oar_step["status"] = "error"
-                            _oar_step["result"] = str(_e)[:200]
+                    # Skip auto-OAR if planning already completed successfully
+                    _planning_already_done = (
+                        self.memory.retrieve("dose_metrics") is not None
+                        or self.memory.retrieve("planning_results") is not None
+                    )
+                    if _planning_already_done:
+                        logger.info("[auto-oar-stream] Skipping auto-OAR: planning already done")
+                    else:
+                        oar_array = self.memory.retrieve("oar_array")
+                        oar_source = self.memory.retrieve("oar_source") or "unknown"
+                        oar_is_full = bool(self.memory.retrieve("oar_is_full"))
+                        organ_count = 0
+                        if oar_array is not None:
+                            try:
+                                import numpy as _np
+                                organ_count = int(len(_np.unique(oar_array)) - 1)
+                            except Exception:
+                                organ_count = 0
+                        if oar_is_full:
+                            logger.info(f"[auto-oar-stream] Skipping auto-OAR: full OAR already available ({organ_count} labels)")
+                        else:
+                            logger.info(
+                                "[auto-oar-stream] Full OAR not available "
+                                f"(source={oar_source}, labels={organ_count}) — auto-running TotalSegmentator"
+                            )
+                            _oar_step_id = step_id_ref[0] + 1
+                            _oar_step = {
+                                "id": _oar_step_id, "type": "tool",
+                                "title": "Auto OAR Segmentation",
+                                "content": "Auto-running OAR (CTV map had <5 organs)",
+                                "status": "pending", "tool": "oar_segmentation", "params": {},
+                            }
+                            steps.append(_oar_step)
                             yield yield_event("step", _oar_step)
-                            logger.error(f"[auto-oar-stream] exception: {_e}")
+                            step_id_ref[0] = _oar_step_id
+                            try:
+                                _oar_params = {"organ_type": "general"}
+                                _ct_img = self.memory.retrieve("ct_image")
+                                _ct_p = self.memory.retrieve("ct_path")
+                                if _ct_img is not None:
+                                    _oar_params["image"] = _ct_img
+                                if _ct_p:
+                                    _oar_params["image_path"] = _ct_p
+                                import threading as _thr_o
+                                _oar_result_box = [None]
+                                _oar_exc_box = [None]
+                                def _run_oar():
+                                    _op = None
+                                    try:
+                                        import builtins as _bi
+                                        if hasattr(_bi, 'track_operation'):
+                                            _op = _bi.track_operation("oar_segmentation")
+                                            _op.__enter__()
+                                    except Exception:
+                                        pass
+                                    try:
+                                        _oar_result_box[0] = self.registry.execute("oar_segmentation", **_oar_params)
+                                    except Exception as _oe:
+                                        _oar_exc_box[0] = _oe
+                                    finally:
+                                        if _op is not None:
+                                            try:
+                                                _op.__exit__(None, None, None)
+                                            except Exception:
+                                                pass
+                                _oar_thread = _thr_o.Thread(target=_run_oar, daemon=True)
+                                _oar_thread.start()
+                                _oar_heartbeat = 0
+                                while _oar_thread.is_alive():
+                                    _oar_thread.join(timeout=8)
+                                    if _oar_thread.is_alive():
+                                        _oar_heartbeat += 1
+                                        _oar_step["content"] = f"OAR segmentation running... ({_oar_heartbeat * 8}s)"
+                                        yield yield_event("step", _oar_step)
+                                if _oar_exc_box[0] is not None:
+                                    raise _oar_exc_box[0]
+                                _oar_result = _oar_result_box[0]
+                                if _oar_result and _oar_result.success:
+                                    if "oar_array" in (_oar_result.metadata or {}):
+                                        _oa = _oar_result.metadata["oar_array"]
+                                        _on = _oar_result.metadata.get("organ_names", {})
+                                        _oc = _oar_result.metadata.get("organ_counts", {})
+                                        try:
+                                            _oa, _on, _oc = self.memory._strip_oar_labels_in_ctv(_oa, _on, _oc)
+                                        except AttributeError:
+                                            pass
+                                        self.memory.store("oar_array", _oa)
+                                        if _on:
+                                            self.memory.store("organ_names", _on)
+                                        if _oc:
+                                            self.memory.store("organ_counts", _oc)
+                                        self.memory.store("oar_source", "totalsegmentator")
+                                        self.memory.store("oar_is_full", True)
+                                    _oar_step["status"] = "done"
+                                    _n = len(_oar_result.metadata.get("organ_names", {}))
+                                    _oar_step["result"] = f"{_n} organs"
+                                    yield yield_event("step", _oar_step)
+                                    logger.info(f"[auto-oar-stream] ✓ OAR done: {_n} organs")
+                                else:
+                                    _oar_step["status"] = "error"
+                                    _oar_step["result"] = _oar_result.error if _oar_result else "no result"
+                                    yield yield_event("step", _oar_step)
+                                    logger.warning(f"[auto-oar-stream] OAR failed: {_oar_result.error if _oar_result else 'no result'}")
+                            except Exception as _e:
+                                _oar_step["status"] = "error"
+                                _oar_step["result"] = str(_e)[:200]
+                                yield yield_event("step", _oar_step)
+                                logger.error(f"[auto-oar-stream] exception: {_e}")
 
                 # Collect for batch storage after loop (yield may
                 # cause generator pause, making in-loop storage unreliable)
@@ -5691,10 +6044,7 @@ Output (JSON array of strings):"""
                     for s in steps
                     if s.get("type") == "tool" and s.get("status") == "done"
                 ]
-                _has_planning = any(
-                    t in _executed_tool_names
-                    for t in ("planning_pipeline", "seed_planning", "trajectory_planning", "dose_engine", "dose_evaluation")
-                )
+                _has_planning = self._has_completed_planning(steps)
                 if not _has_planning:
                     # CTV + OAR are done, but planning is not. Force the
                     # LLM to continue with planning_pipeline. Without
@@ -6093,12 +6443,17 @@ Output (JSON array of strings):"""
             }, ensure_ascii=False))
 
         # WORKFLOW ENFORCER: If user requested planning but LLM didn't execute tools, force-execute
-        planning_keywords = ['规划', 'planning', '粒子植入', 'brachytherapy', '治疗计划', 'treatment plan']
-        is_planning_request = any(kw in message.lower() for kw in planning_keywords)
+        is_planning_request = self._planning_requested(message)
         if is_planning_request:
-            has_ctv = any('ctv_segmentation' in str(s) for s in steps if s.get('type') == 'tool')
-            has_oar = any('oar_segmentation' in str(s) for s in steps if s.get('type') == 'tool')
-            has_planning = any('planning_pipeline' in str(s) for s in steps if s.get('type') == 'tool')
+            has_ctv = (
+                self.memory.retrieve("ctv_array") is not None
+                or any(s.get("tool") == "ctv_segmentation" and s.get("status") == "done" for s in steps if s.get("type") == "tool")
+            )
+            has_oar = (
+                self.memory.retrieve("oar_array") is not None
+                or any(s.get("tool") == "oar_segmentation" and s.get("status") == "done" for s in steps if s.get("type") == "tool")
+            )
+            has_planning = self._has_completed_planning(steps)
 
             if not (has_ctv and has_oar and has_planning):
                 logger.info(f"[WORKFLOW-ENFORCER] Planning requested but incomplete. CTV={has_ctv}, OAR={has_oar}, Planning={has_planning}")
@@ -6107,6 +6462,14 @@ Output (JSON array of strings):"""
                     # Auto-execute missing steps
                     if not has_ctv:
                         logger.info("[WORKFLOW-ENFORCER] Auto-running CTV segmentation")
+                        _we_ctv_op = None
+                        try:
+                            import builtins as _bi_we_ctv
+                            if hasattr(_bi_we_ctv, 'track_operation'):
+                                _we_ctv_op = _bi_we_ctv.track_operation("ctv_segmentation")
+                                _we_ctv_op.__enter__()
+                        except Exception:
+                            pass
                         try:
                             ctv_tool = self.registry.get("ctv_segmentation")
                             if ctv_tool:
@@ -6123,12 +6486,42 @@ Output (JSON array of strings):"""
                                     add_step("tool", "Auto CTV Segmentation", "Auto-executed by workflow enforcer", tool="ctv_segmentation", status="done")
                         except Exception as e:
                             logger.error(f"[WORKFLOW-ENFORCER] CTV auto-execution failed: {e}")
+                        finally:
+                            if _we_ctv_op is not None:
+                                try:
+                                    _we_ctv_op.__exit__(None, None, None)
+                                except Exception:
+                                    pass
 
                     # Re-check after CTV
-                    has_ctv = any('ctv_segmentation' in str(s) for s in steps if s.get('type') == 'tool')
+                    has_ctv = (
+                        self.memory.retrieve("ctv_array") is not None
+                        or any(s.get("tool") == "ctv_segmentation" and s.get("status") == "done" for s in steps if s.get("type") == "tool")
+                    )
+
+                    if (
+                        has_ctv and not has_oar
+                        and self.memory.retrieve("oar_array") is not None
+                        and bool(self.memory.retrieve("oar_is_full"))
+                    ):
+                        has_oar = True
+                        logger.info(
+                            "[WORKFLOW-ENFORCER] Using existing full OAR data "
+                            f"(source={self.memory.retrieve('oar_source') or 'unknown'}, "
+                            f"full={bool(self.memory.retrieve('oar_is_full'))}) for planning; "
+                            "not auto-running full TotalSegmentator."
+                        )
 
                     if has_ctv and not has_oar:
                         logger.info("[WORKFLOW-ENFORCER] Auto-running OAR segmentation")
+                        _we_oar_op = None
+                        try:
+                            import builtins as _bi_we
+                            if hasattr(_bi_we, 'track_operation'):
+                                _we_oar_op = _bi_we.track_operation("oar_segmentation")
+                                _we_oar_op.__enter__()
+                        except Exception:
+                            pass
                         try:
                             oar_tool = self.registry.get("oar_segmentation")
                             if oar_tool:
@@ -6139,12 +6532,23 @@ Output (JSON array of strings):"""
                                     if oar_result.metadata:
                                         for key, value in oar_result.metadata.items():
                                             self.memory.store(key, value)
+                                    self.memory.store("oar_source", "totalsegmentator")
+                                    self.memory.store("oar_is_full", True)
                                     add_step("tool", "Auto OAR Segmentation", "Auto-executed by workflow enforcer", tool="oar_segmentation", status="done")
                         except Exception as e:
                             logger.error(f"[WORKFLOW-ENFORCER] OAR auto-execution failed: {e}")
+                        finally:
+                            if _we_oar_op is not None:
+                                try:
+                                    _we_oar_op.__exit__(None, None, None)
+                                except Exception:
+                                    pass
 
                     # Re-check after OAR
-                    has_oar = any('oar_segmentation' in str(s) for s in steps if s.get('type') == 'tool')
+                    has_oar = (
+                        self.memory.retrieve("oar_array") is not None
+                        or any(s.get("tool") == "oar_segmentation" and s.get("status") == "done" for s in steps if s.get("type") == "tool")
+                    )
 
                     if has_ctv and has_oar and not has_planning:
                         logger.info("[WORKFLOW-ENFORCER] Auto-running planning pipeline")
@@ -6180,6 +6584,7 @@ Output (JSON array of strings):"""
             try:
                 import asyncio
                 _loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(_loop)
                 try:
                     _cc_result = _loop.run_until_complete(
                         self.multi_agent_wrapper.check_completeness_append(
@@ -6197,6 +6602,7 @@ Output (JSON array of strings):"""
 
     def chat_with_stream(self, message: str):
         """Streaming version of chat_with_trace. Yields SSE events."""
+        self._cancel_requested = False
         self.memory.add_message("user", message)
         self.memory.user_lang = "zh" if re.search(r'[一-鿿]', message) else "en"
         steps = []
@@ -6243,7 +6649,7 @@ Output (JSON array of strings):"""
         # SKIP for short messages (< 15 chars) to save an LLM round-trip
         # on greetings / simple questions.
         _ma_routing = None
-        if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled and len(message.strip()) > 15:
+        if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
             try:
                 import asyncio
                 loop = asyncio.new_event_loop()
@@ -6340,13 +6746,7 @@ Output (JSON array of strings):"""
             # structured response directly from the actual stored
             # metrics. This guarantees the user always sees the
             # complete clinical report.
-            planning_tools_in_run = {"ctv_segmentation", "oar_segmentation",
-                                     "planning_pipeline", "seed_planning",
-                                     "dose_evaluation", "dose_calc"}
-            has_planning = any(
-                s.get("tool") in planning_tools_in_run
-                for s in steps
-            )
+            has_planning = self._has_completed_planning(steps)
             if has_planning:
                 response = self._build_planning_report(_lang, steps)
             else:
@@ -6418,12 +6818,7 @@ Output (JSON array of strings):"""
 
         # SAFETY NET: after quality review retry, ensure the response
         # is the full planning report (not a brief LLM acknowledgment).
-        _has_planning = any(
-            s.get("tool") in ("ctv_segmentation", "oar_segmentation",
-                               "planning_pipeline", "seed_planning",
-                               "dose_evaluation", "dose_calc")
-            for s in steps
-        )
+        _has_planning = self._has_completed_planning(steps)
         if _has_planning and response:
             # Check if response is suspiciously short (likely a retry
             # artifact that didn't regenerate the full report)
@@ -6453,28 +6848,28 @@ Output (JSON array of strings):"""
         _needs_review = False
         _review_reason = ""
 
-        # Check if review is needed based on routing decision
-        if _ma_routing and hasattr(_ma_routing, 'requires_review'):
-            _needs_review = _ma_routing.requires_review
-            _review_reason = f"routing.requires_review={_ma_routing.requires_review}"
-        elif _ma_routing and hasattr(_ma_routing, 'complexity'):
-            # If no explicit requires_review, use complexity as proxy
-            _needs_review = _ma_routing.complexity in ("medium", "high")
-            _review_reason = f"routing.complexity={_ma_routing.complexity}"
-        else:
-            # No routing decision available, default to reviewing
-            # (conservative: better to review than miss issues)
-            _needs_review = True
-            _review_reason = "no_routing_decision"
+        # Smart review decision based on tool usage and response complexity
+        _high_value_tools = {
+            "planning_pipeline", "seed_planning", "dose_evaluation", "dose_calc",
+            "ctv_segmentation", "oar_segmentation", "trajectory_planning",
+            "safety_validator", "clinical_kb"
+        }
+        _tools_called = {s.get("tool") for s in steps if s.get("type") == "tool"}
+        _high_value_called = _tools_called & _high_value_tools
+        _response_len = len(response)
 
-        # Always review if planning tools were used (plan quality is critical)
-        _plan_tools = {"planning_pipeline", "seed_planning",
-                       "dose_evaluation", "dose_calc"}
-        _has_plan = any(s.get("tool") in _plan_tools
-                        for s in steps if s.get("type") == "tool")
-        if _has_plan:
+        if _high_value_called:
             _needs_review = True
-            _review_reason = f"{_review_reason} + has_plan"
+            _review_reason = f"high_value_tools: {_high_value_called}"
+        elif len(_tools_called) >= 3:
+            _needs_review = True
+            _review_reason = f"many_tools: {len(_tools_called)}"
+        elif _response_len > 500:
+            _needs_review = True
+            _review_reason = f"long_response: {_response_len} chars"
+        else:
+            _needs_review = False
+            _review_reason = f"skip: tools={len(_tools_called)}, response={_response_len} chars"
 
         if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled and _needs_review:
             logger.info(f"[Review phase] Running review: {_review_reason}")
@@ -6482,6 +6877,7 @@ Output (JSON array of strings):"""
             try:
                 import asyncio
                 _loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(_loop)
 
                 # Inject global context so sub-agents have full
                 # situational awareness. Only include decision-relevant
@@ -6610,12 +7006,17 @@ Output (JSON array of strings):"""
             response += "\n\n---\n" + "\n\n".join(review_sections)
 
         # WORKFLOW ENFORCER: If user requested planning but LLM didn't execute tools, force-execute
-        planning_keywords = ['规划', 'planning', '粒子植入', 'brachytherapy', '治疗计划', 'treatment plan']
-        is_planning_request = any(kw in message.lower() for kw in planning_keywords)
+        is_planning_request = self._planning_requested(message)
         if is_planning_request:
-            has_ctv = any('ctv_segmentation' in str(s) for s in steps if s.get('type') == 'tool')
-            has_oar = any('oar_segmentation' in str(s) for s in steps if s.get('type') == 'tool')
-            has_planning = any('planning_pipeline' in str(s) for s in steps if s.get('type') == 'tool')
+            has_ctv = (
+                self.memory.retrieve("ctv_array") is not None
+                or any(s.get("tool") == "ctv_segmentation" and s.get("status") == "done" for s in steps if s.get("type") == "tool")
+            )
+            has_oar = (
+                self.memory.retrieve("oar_array") is not None
+                or any(s.get("tool") == "oar_segmentation" and s.get("status") == "done" for s in steps if s.get("type") == "tool")
+            )
+            has_planning = self._has_completed_planning(steps)
 
             if not (has_ctv and has_oar and has_planning):
                 logger.info(f"[WORKFLOW-ENFORCER-STREAM] Planning requested but incomplete. CTV={has_ctv}, OAR={has_oar}, Planning={has_planning}")
@@ -6626,11 +7027,38 @@ Output (JSON array of strings):"""
                         logger.info("[WORKFLOW-ENFORCER-STREAM] Auto-running CTV segmentation")
                         ctv_step = add_step("tool", "Auto CTV Segmentation", "Auto-executed by workflow enforcer", status="pending", tool="ctv_segmentation")
                         yield yield_event("step", ctv_step)
+                        _we_stream_ctv_op = None
+                        try:
+                            import builtins as _bi_we_s_ctv
+                            if hasattr(_bi_we_s_ctv, 'track_operation'):
+                                _we_stream_ctv_op = _bi_we_s_ctv.track_operation("ctv_segmentation")
+                                _we_stream_ctv_op.__enter__()
+                        except Exception:
+                            pass
                         try:
                             ctv_tool = self.registry.get("ctv_segmentation")
                             if ctv_tool:
                                 ct_image = self.memory.retrieve("ct_image")
-                                ctv_result = ctv_tool.execute(image=ct_image) if ct_image else ctv_tool.execute(image_path=ct_path)
+                                import threading as _thr_ctv
+                                _ctv_rbox = [None]
+                                _ctv_ebox = [None]
+                                def _run_ctv():
+                                    try:
+                                        _ctv_rbox[0] = ctv_tool.execute(**({"image": ct_image} if ct_image else {"image_path": ct_path}))
+                                    except Exception as _e:
+                                        _ctv_ebox[0] = _e
+                                _ctv_th = _thr_ctv.Thread(target=_run_ctv, daemon=True)
+                                _ctv_th.start()
+                                _ctv_hb = 0
+                                while _ctv_th.is_alive():
+                                    _ctv_th.join(timeout=10)
+                                    if _ctv_th.is_alive():
+                                        _ctv_hb += 1
+                                        ctv_step["content"] = f"CTV segmentation running... ({_ctv_hb * 10}s)"
+                                        yield yield_event("step", ctv_step)
+                                if _ctv_ebox[0] is not None:
+                                    raise _ctv_ebox[0]
+                                ctv_result = _ctv_rbox[0]
                                 if ctv_result and ctv_result.success:
                                     logger.info("[WORKFLOW-ENFORCER-STREAM] ✓ CTV completed")
                                     if ctv_result.metadata:
@@ -6644,24 +7072,75 @@ Output (JSON array of strings):"""
                             ctv_step["status"] = "error"
                             ctv_step["result"] = str(e)[:200]
                             yield yield_event("step", ctv_step)
+                        finally:
+                            if _we_stream_ctv_op is not None:
+                                try:
+                                    _we_stream_ctv_op.__exit__(None, None, None)
+                                except Exception:
+                                    pass
 
                     # Re-check after CTV
-                    has_ctv = any('ctv_segmentation' in str(s) for s in steps if s.get('type') == 'tool')
+                    has_ctv = (
+                        self.memory.retrieve("ctv_array") is not None
+                        or any(s.get("tool") == "ctv_segmentation" and s.get("status") == "done" for s in steps if s.get("type") == "tool")
+                    )
+
+                    if (
+                        has_ctv and not has_oar
+                        and self.memory.retrieve("oar_array") is not None
+                        and bool(self.memory.retrieve("oar_is_full"))
+                    ):
+                        has_oar = True
+                        logger.info(
+                            "[WORKFLOW-ENFORCER-STREAM] Using existing full OAR data "
+                            f"(source={self.memory.retrieve('oar_source') or 'unknown'}, "
+                            f"full={bool(self.memory.retrieve('oar_is_full'))}) for planning; "
+                            "not auto-running full TotalSegmentator."
+                        )
 
                     if has_ctv and not has_oar:
                         logger.info("[WORKFLOW-ENFORCER-STREAM] Auto-running OAR segmentation")
                         oar_step = add_step("tool", "Auto OAR Segmentation", "Auto-executed by workflow enforcer", status="pending", tool="oar_segmentation")
                         yield yield_event("step", oar_step)
+                        _we_stream_oar_op = None
+                        try:
+                            import builtins as _bi_we_s_oar
+                            if hasattr(_bi_we_s_oar, 'track_operation'):
+                                _we_stream_oar_op = _bi_we_s_oar.track_operation("oar_segmentation")
+                                _we_stream_oar_op.__enter__()
+                        except Exception:
+                            pass
                         try:
                             oar_tool = self.registry.get("oar_segmentation")
                             if oar_tool:
                                 ct_image = self.memory.retrieve("ct_image")
-                                oar_result = oar_tool.execute(image=ct_image) if ct_image else oar_tool.execute(image_path=ct_path)
+                                import threading as _thr_o2
+                                _oar2_rbox = [None]
+                                _oar2_ebox = [None]
+                                def _run_oar2():
+                                    try:
+                                        _oar2_rbox[0] = oar_tool.execute(**({"image": ct_image} if ct_image else {"image_path": ct_path}))
+                                    except Exception as _e:
+                                        _oar2_ebox[0] = _e
+                                _oar2_th = _thr_o2.Thread(target=_run_oar2, daemon=True)
+                                _oar2_th.start()
+                                _oar_hb = 0
+                                while _oar2_th.is_alive():
+                                    _oar2_th.join(timeout=10)
+                                    if _oar2_th.is_alive():
+                                        _oar_hb += 1
+                                        oar_step["content"] = f"OAR segmentation running... ({_oar_hb * 10}s)"
+                                        yield yield_event("step", oar_step)
+                                if _oar2_ebox[0] is not None:
+                                    raise _oar2_ebox[0]
+                                oar_result = _oar2_rbox[0]
                                 if oar_result and oar_result.success:
                                     logger.info("[WORKFLOW-ENFORCER-STREAM] ✓ OAR completed")
                                     if oar_result.metadata:
                                         for key, value in oar_result.metadata.items():
                                             self.memory.store(key, value)
+                                    self.memory.store("oar_source", "totalsegmentator")
+                                    self.memory.store("oar_is_full", True)
                                     oar_step["status"] = "done"
                                     oar_step["result"] = str(oar_result.message)[:200] if oar_result.message else "Completed"
                                     yield yield_event("step", oar_step)
@@ -6670,9 +7149,18 @@ Output (JSON array of strings):"""
                             oar_step["status"] = "error"
                             oar_step["result"] = str(e)[:200]
                             yield yield_event("step", oar_step)
+                        finally:
+                            if _we_stream_oar_op is not None:
+                                try:
+                                    _we_stream_oar_op.__exit__(None, None, None)
+                                except Exception:
+                                    pass
 
                     # Re-check after OAR
-                    has_oar = any('oar_segmentation' in str(s) for s in steps if s.get('type') == 'tool')
+                    has_oar = (
+                        self.memory.retrieve("oar_array") is not None
+                        or any(s.get("tool") == "oar_segmentation" and s.get("status") == "done" for s in steps if s.get("type") == "tool")
+                    )
 
                     if has_ctv and has_oar and not has_planning:
                         logger.info("[WORKFLOW-ENFORCER-STREAM] Auto-running planning pipeline")
@@ -6681,7 +7169,26 @@ Output (JSON array of strings):"""
                         try:
                             planning_tool = self.registry.get("planning_pipeline")
                             if planning_tool:
-                                planning_result = planning_tool.execute(ct_image_path=ct_path, mode="rl", step="full")
+                                import threading as _thr_p
+                                _plan_rbox = [None]
+                                _plan_ebox = [None]
+                                def _run_plan():
+                                    try:
+                                        _plan_rbox[0] = planning_tool.execute(ct_image_path=ct_path, mode="rl", step="full")
+                                    except Exception as _e:
+                                        _plan_ebox[0] = _e
+                                _plan_th = _thr_p.Thread(target=_run_plan, daemon=True)
+                                _plan_th.start()
+                                _plan_hb = 0
+                                while _plan_th.is_alive():
+                                    _plan_th.join(timeout=10)
+                                    if _plan_th.is_alive():
+                                        _plan_hb += 1
+                                        planning_step["content"] = f"Planning pipeline running... ({_plan_hb * 10}s)"
+                                        yield yield_event("step", planning_step)
+                                if _plan_ebox[0] is not None:
+                                    raise _plan_ebox[0]
+                                planning_result = _plan_rbox[0]
                                 if planning_result and planning_result.success:
                                     logger.info("[WORKFLOW-ENFORCER-STREAM] ✓ Planning completed")
                                     if planning_result.metadata:

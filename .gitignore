@@ -38,6 +38,7 @@ dose_pre/*.ckpt
 # Data and runtime memory
 memory/data/
 output/
+outputs/
 *.nii.gz
 *.nii
 *.dcm
@@ -53,6 +54,8 @@ logs/
 
 # Uploads (runtime generated)
 uploads/
+screenshots/
+test_screenshots/
 
 # Documentation (local only)
 docs/
@@ -78,3 +81,8 @@ debug_*.py
 
 # Runtime web search cache (regenerated on demand)
 tool_factory/web_search/cache/
+tool_factory/web_search/evidence/
+tool_factory/case_memory/cases/
+
+# Local run scripts may contain environment-specific ports or secret setup
+start_server.sh
