@@ -8626,6 +8626,8 @@ const state = {
         applying: false,
         rawAxialSlices: {},
         originalMaterials: {},
+        originalSceneStyle: {},
+        originalSkinStyle: null,
     },
     viewerSettings: {
         window: 400,
@@ -10459,28 +10461,26 @@ function _drawScreenshotColorbar(ctx, x, y, w, h) {
     ctx.fillRect(x, y, w, h);
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     const barX = x + 12, barY = y + 34, barW = 20, barH = h - 68;
-    for (let yy = 0; yy < barH; yy++) {
-        const t = 1 - yy / Math.max(1, barH - 1);
-        const rgb = (typeof _petRainbow2 === 'function') ? _petRainbow2(t) : [255 * t, 255 * (1 - Math.abs(t - 0.5) * 2), 255 * (1 - t)];
-        ctx.fillStyle = `rgb(${Math.round(rgb[0])},${Math.round(rgb[1])},${Math.round(rgb[2])})`;
-        ctx.fillRect(barX, barY + yy, barW, 1);
-    }
+    const gradCanvas = document.createElement('canvas');
+    gradCanvas.width = barW;
+    gradCanvas.height = barH;
+    _drawDoseColorbarGradient(gradCanvas.getContext('2d'), barW, barH);
+    ctx.drawImage(gradCanvas, barX, barY);
     ctx.strokeStyle = 'rgba(226,232,240,0.7)';
     ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
     ctx.fillStyle = '#e2e8f0';
     ctx.font = 'bold 12px Inter, system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText('Dose (Gy)', x + 8, y + 20);
-    const maxGy = (typeof COLORBAR_MAX_GY === 'number') ? COLORBAR_MAX_GY : 1000;
-    [maxGy, maxGy * 0.75, maxGy * 0.5, maxGy * 0.25, 0].forEach((v, i) => {
-        const ty = barY + (barH - 1) * (i / 4);
+    _doseColorbarLabelSpecs(barH).forEach(spec => {
+        const ty = barY + (barH - 1) * (spec.pct / 100);
         ctx.beginPath();
         ctx.moveTo(barX + barW + 3, ty);
         ctx.lineTo(barX + barW + 8, ty);
         ctx.stroke();
-        ctx.font = '10px Inter, system-ui, sans-serif';
+        ctx.font = `${spec.major ? 'bold ' : ''}9px Inter, system-ui, sans-serif`;
         ctx.fillStyle = '#cbd5e1';
-        ctx.fillText(String(Math.round(v)), barX + barW + 12, ty + 3);
+        ctx.fillText(spec.label, barX + barW + 12, ty + 3);
     });
     ctx.restore();
 }
@@ -14191,6 +14191,16 @@ function _rememberDoseTextureMaterial(id, mesh) {
     if (!state.doseTexture.originalMaterials[id]) {
         state.doseTexture.originalMaterials[id] = surface.material;
     }
+    if (!state.doseTexture.originalSceneStyle[id]) {
+        const mat = Array.isArray(surface.material) ? surface.material[0] : surface.material;
+        state.doseTexture.originalSceneStyle[id] = {
+            visible: mesh.visible,
+            surfaceVisible: surface.visible,
+            opacity: Number(mat?.opacity ?? 1),
+            transparent: !!mat?.transparent,
+            depthWrite: mat?.depthWrite !== false,
+        };
+    }
 }
 
 function _restoreDoseTextureMaterials() {
@@ -14203,8 +14213,115 @@ function _restoreDoseTextureMaterials() {
             surface.geometry.deleteAttribute('color');
         }
         _forEachMaterial(surface, m => { if (m) m.needsUpdate = true; });
+        const style = state.doseTexture.originalSceneStyle?.[id];
+        if (style) {
+            mesh.visible = style.visible;
+            surface.visible = style.surfaceVisible;
+            _forEachMaterial(mesh, m => {
+                m.opacity = style.opacity;
+                m.transparent = style.transparent;
+                m.depthWrite = style.depthWrite;
+                m.needsUpdate = true;
+            });
+        }
+    });
+    Object.entries(state.doseTexture.originalSceneStyle || {}).forEach(([id, style]) => {
+        if (state.doseTexture.originalMaterials?.[id]) return;
+        const mesh = scene3D.meshes?.[id];
+        const surface = getMeshSurface(mesh);
+        if (!mesh || !style) return;
+        mesh.visible = style.visible;
+        if (surface) surface.visible = style.surfaceVisible;
+        _forEachMaterial(mesh, m => {
+            m.opacity = style.opacity;
+            m.transparent = style.transparent;
+            m.depthWrite = style.depthWrite;
+            m.needsUpdate = true;
+        });
     });
     state.doseTexture.originalMaterials = {};
+    state.doseTexture.originalSceneStyle = {};
+    if (state.doseTexture.originalSkinStyle && scene3D.skinMesh) {
+        scene3D.skinMesh.visible = state.doseTexture.originalSkinStyle.visible;
+        _forEachMaterial(scene3D.skinMesh, mat => {
+            mat.opacity = state.doseTexture.originalSkinStyle.opacity;
+            mat.transparent = state.doseTexture.originalSkinStyle.transparent;
+            mat.depthWrite = state.doseTexture.originalSkinStyle.depthWrite;
+            mat.needsUpdate = true;
+        });
+    }
+    state.doseTexture.originalSkinStyle = null;
+}
+
+function _isSeedOrNeedleMesh(id, mesh) {
+    const t = mesh?.userData?.type || mesh?.userData?.source || '';
+    return id.startsWith('seed_') || id.startsWith('needle_') || t === 'seed' || t === 'needle';
+}
+
+function _isDoseIsoMesh(id, mesh) {
+    const t = mesh?.userData?.type || mesh?.userData?.source || '';
+    return id.startsWith('dose_iso_') || t === 'dose' || t === 'dose_isosurface';
+}
+
+function _meshBaseColor(mesh) {
+    const surface = getMeshSurface(mesh);
+    const mat = Array.isArray(surface?.material) ? surface.material[0] : surface?.material;
+    const c = mat?.color;
+    if (c && typeof c.r === 'number') return [c.r, c.g, c.b];
+    return [0.45, 0.18, 0.65];
+}
+
+function _doseTextureOpacityForMesh(id, mesh) {
+    const surface = getMeshSurface(mesh);
+    const t = surface?.userData?.type || surface?.userData?.source || mesh?.userData?.type || mesh?.userData?.source || '';
+    if (id === 'ctv' || id.startsWith('ctv_') || t === 'ctv') return 0.86;
+    return 0.52;
+}
+
+function _rememberDoseTextureSceneMesh(id, mesh) {
+    if (!mesh || state.doseTexture.originalSceneStyle[id]) return;
+    const surface = getMeshSurface(mesh);
+    const mat = Array.isArray(surface?.material) ? surface.material[0] : surface?.material;
+    state.doseTexture.originalSceneStyle[id] = {
+        visible: mesh.visible,
+        surfaceVisible: surface ? surface.visible : mesh.visible,
+        opacity: Number(mat?.opacity ?? 1),
+        transparent: !!mat?.transparent,
+        depthWrite: mat?.depthWrite !== false,
+    };
+}
+
+function _prepareDoseTextureSceneVisibility() {
+    if (scene3D.skinMesh && !state.doseTexture.originalSkinStyle) {
+        const mat = Array.isArray(scene3D.skinMesh.material) ? scene3D.skinMesh.material[0] : scene3D.skinMesh.material;
+        state.doseTexture.originalSkinStyle = {
+            visible: scene3D.skinMesh.visible,
+            opacity: Number(mat?.opacity ?? 1),
+            transparent: !!mat?.transparent,
+            depthWrite: mat?.depthWrite !== false,
+        };
+        scene3D.skinMesh.visible = false;
+    }
+
+    Object.entries(scene3D.meshes || {}).forEach(([id, mesh]) => {
+        if (!mesh) return;
+        if (_isDoseTexturableMesh(id, mesh)) {
+            _rememberDoseTextureSceneMesh(id, mesh);
+            applyMeshOpacity(mesh, _doseTextureOpacityForMesh(id, mesh), true);
+        } else if (_isSeedOrNeedleMesh(id, mesh)) {
+            _rememberDoseTextureSceneMesh(id, mesh);
+            mesh.visible = true;
+            _forEachMaterial(mesh, mat => {
+                mat.transparent = true;
+                mat.opacity = id.startsWith('needle_') ? 0.95 : 1.0;
+                mat.depthWrite = true;
+                mat.needsUpdate = true;
+            });
+        } else if (_isDoseIsoMesh(id, mesh)) {
+            _rememberDoseTextureSceneMesh(id, mesh);
+            applyMeshOpacity(mesh, 0.18, true);
+        }
+    });
 }
 
 async function _fetchDoseRawAxialSlice(rawZ) {
@@ -14247,6 +14364,7 @@ async function _applyDoseTextureToMesh(id, mesh) {
     const v = new THREE.Vector3();
     const dMinGy = COLORBAR_MIN_GY;
     const dMaxGy = COLORBAR_MAX_GY;
+    const baseRgb = _meshBaseColor(mesh);
     const sampleEvery = posAttr.count > 25000 ? 2 : 1;
     let lastRgb = [0, 0, 0];
     for (let i = 0; i < posAttr.count; i++) {
@@ -14263,26 +14381,59 @@ async function _applyDoseTextureToMesh(id, mesh) {
         const doseGy = doseNorm * DOSE_NORM_TO_GY;
         const t = Math.max(0, Math.min(1, (doseGy - dMinGy) / (dMaxGy - dMinGy)));
         const [r, g, b] = _petRainbow2(t);
-        lastRgb = [r / 255, g / 255, b / 255];
+        const doseRgb = [r / 255, g / 255, b / 255];
+        const mix = Math.max(0.18, Math.min(0.96, t));
+        lastRgb = [
+            baseRgb[0] * (1 - mix) + doseRgb[0] * mix,
+            baseRgb[1] * (1 - mix) + doseRgb[1] * mix,
+            baseRgb[2] * (1 - mix) + doseRgb[2] * mix,
+        ];
         colors[i * 3] = lastRgb[0];
         colors[i * 3 + 1] = lastRgb[1];
         colors[i * 3 + 2] = lastRgb[2];
     }
 
     surface.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    const oldOpacity = Array.isArray(surface.material)
-        ? (surface.material[0]?.opacity ?? 0.75)
-        : (surface.material?.opacity ?? 0.75);
-    const oldVisible = surface.visible;
+    const opacity = _doseTextureOpacityForMesh(id, mesh);
     surface.material = new THREE.MeshPhongMaterial({
         vertexColors: true,
-        transparent: oldOpacity < 0.999,
-        opacity: oldOpacity,
+        transparent: true,
+        opacity,
         side: THREE.DoubleSide,
         shininess: 35,
-        depthWrite: oldOpacity > 0.001,
+        depthWrite: false,
     });
-    applyMeshVisibility(mesh, oldVisible, oldOpacity);
+    applyMeshVisibility(mesh, true, opacity);
+}
+
+function fitCameraToDoseSurfaceScene() {
+    if (!scene3D.camera || !scene3D.controls) return;
+    const priorityBox = new THREE.Box3();
+    const contextBox = new THREE.Box3();
+    Object.entries(scene3D.meshes || {}).forEach(([id, mesh]) => {
+        if (!mesh || mesh.visible === false) return;
+        if (_isDoseTexturableMesh(id, mesh)) contextBox.expandByObject(mesh);
+        if (id === 'ctv' || id.startsWith('ctv_') || _isSeedOrNeedleMesh(id, mesh) || _isDoseIsoMesh(id, mesh)) {
+            priorityBox.expandByObject(mesh);
+        }
+    });
+    const box = priorityBox.isEmpty() ? contextBox : priorityBox;
+    if (box.isEmpty()) {
+        fitCameraToScene();
+        return;
+    }
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    box.getCenter(center);
+    box.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z, 40);
+    const dist = maxDim * 2.4;
+    scene3D.controls.target.copy(center);
+    scene3D.camera.position.set(center.x + dist * 0.45, center.y - dist * 1.05, center.z + dist * 0.55);
+    scene3D.camera.near = Math.max(0.1, dist * 0.002);
+    scene3D.camera.far = dist * 25;
+    scene3D.camera.updateProjectionMatrix();
+    scene3D.controls.update();
 }
 
 async function setDoseTextureMode(enabled, opts = {}) {
@@ -14295,15 +14446,22 @@ async function setDoseTextureMode(enabled, opts = {}) {
     }
     try {
         if (enabled) {
+            init3DScene();
+            await loadCTVAndObstacleMeshes();
+            try { await loadSeeds3D(); } catch (e) { console.warn('[DoseTexture] seeds/needles unavailable:', e); }
             if (!state.doseOverlay) await loadDoseOverlay();
             if (!state.doseOverlay?.shape) throw new Error('Dose overlay is not available');
+            _prepareDoseTextureSceneVisibility();
             const entries = Object.entries(scene3D.meshes || {}).filter(([id, mesh]) => _isDoseTexturableMesh(id, mesh));
+            if (entries.length === 0) throw new Error('No CTV/OAR 3D meshes are available for dose surface mapping');
             for (const [id, mesh] of entries) {
                 await _applyDoseTextureToMesh(id, mesh);
             }
+            _prepareDoseTextureSceneVisibility();
             state.doseTexture.enabled = true;
             // Show 3D colorbar when dose surface mode is active
             update3DColorbar(true);
+            fitCameraToDoseSurfaceScene();
         } else {
             _restoreDoseTextureMaterials();
             state.doseTexture.enabled = false;
@@ -15594,8 +15752,8 @@ const DOSE_NORM_TO_GY = 120.0;
 // Colorbar display range, in Gy. Matches ref.py displayNode.SetWindow(600) / SetLevel(300).
 // Dose values above this are SATURATED to the top colormap color (not rescaled).
 // Reference: BrachyBot/docs/ref.py lines 4719-4723.
-const COLORBAR_MAX_GY = 1000.0;
-const COLORBAR_MIN_GY = 0.0;
+const COLORBAR_MIN_GY = 10.0;
+const COLORBAR_MAX_GY = 200.0;
 
 // PETrainbow2-style colormap (black→blue→cyan→green→yellow→orange→red),
 // maps value in [0,1] to a color.
@@ -15647,6 +15805,108 @@ function _petRainbow2(val) {
     return [r, g, b];
 }
 
+// Dose-surface color window used by all colorbars and overlays. This later
+// declaration intentionally overrides the legacy colormap above.
+function _petRainbow2(val) {
+    const v = Math.min(1, Math.max(0, val));
+    const stops = [
+        [0.00, [0, 0, 0]],
+        [0.08, [38, 0, 82]],
+        [0.18, [0, 0, 180]],
+        [0.30, [0, 180, 255]],
+        [0.43, [0, 210, 95]],
+        [0.58, [255, 235, 0]],
+        [0.72, [255, 145, 0]],
+        [0.86, [220, 0, 0]],
+        [0.96, [120, 0, 0]],
+        [1.00, [255, 255, 255]],
+    ];
+    for (let i = 1; i < stops.length; i++) {
+        const [p1, c1] = stops[i];
+        const [p0, c0] = stops[i - 1];
+        if (v <= p1) {
+            const s = (v - p0) / Math.max(0.0001, p1 - p0);
+            return [
+                Math.round(c0[0] + (c1[0] - c0[0]) * s),
+                Math.round(c0[1] + (c1[1] - c0[1]) * s),
+                Math.round(c0[2] + (c1[2] - c0[2]) * s),
+            ];
+        }
+    }
+    return [255, 255, 255];
+}
+
+function _doseDisplayT(doseGy) {
+    return Math.max(0, Math.min(1, (Number(doseGy || 0) - COLORBAR_MIN_GY) / (COLORBAR_MAX_GY - COLORBAR_MIN_GY)));
+}
+
+function _doseGyToRgb(doseGy) {
+    return _petRainbow2(_doseDisplayT(doseGy));
+}
+
+function _doseNormToRgb(doseNorm) {
+    return _doseGyToRgb(Number(doseNorm || 0) * DOSE_NORM_TO_GY);
+}
+
+function _doseColorbarLabelSpecs(pixelHeight = 512) {
+    const dense = pixelHeight >= 300;
+    const values = dense ? [180, 160, 140, 120, 100, 80, 60, 40, 20] : [150, 100, 50];
+    return [
+        { pct: 0, label: `>${COLORBAR_MAX_GY.toFixed(1)} Gy`, major: true },
+        ...values.map(v => ({
+            pct: (1 - _doseDisplayT(v)) * 100,
+            label: `${v.toFixed(1)} Gy`,
+            major: v % 40 === 0,
+        })),
+        { pct: 100, label: `<${COLORBAR_MIN_GY.toFixed(1)} Gy`, major: true },
+    ];
+}
+
+function _drawDoseColorbarGradient(ctx, w, h) {
+    for (let y = 0; y < h; y++) {
+        const val = 1 - y / Math.max(1, h - 1);
+        const [r, g, b] = _petRainbow2(val);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(0, y, w, 1);
+    }
+}
+
+function _labelClassForDoseColorbarPosition(pos) {
+    return pos === 'top' ? 'doseColorbarMax'
+        : pos === 'bottom' ? 'doseColorbarMin'
+        : pos === '50%' ? 'doseColorbarMid'
+        : pos === '25%' ? 'doseColorbarQ1'
+        : 'doseColorbarQ3';
+}
+
+function _updateDoseColorbarLabels(container) {
+    if (!container) return;
+    container.querySelectorAll('.doseColorbarDynamicTick').forEach(el => el.remove());
+    container.querySelectorAll('.doseColorbarMax,.doseColorbarQ1,.doseColorbarMid,.doseColorbarQ3,.doseColorbarMin')
+        .forEach(el => { el.style.display = 'none'; });
+    const canvas = container.querySelector('.colorbarCanvas');
+    const specs = _doseColorbarLabelSpecs(canvas?.clientHeight || canvas?.height || 512);
+    specs.forEach(spec => {
+        const tick = document.createElement('div');
+        tick.className = 'doseColorbarDynamicTick';
+        tick.style.cssText = [
+            'position:absolute',
+            `top:${spec.pct}%`,
+            'right:18px',
+            'transform:translateY(-50%)',
+            `font-size:${spec.major ? '0.46rem' : '0.42rem'}`,
+            `font-weight:${spec.major ? '700' : '500'}`,
+            'color:rgba(255,255,255,0.92)',
+            'text-shadow:0 1px 2px #000',
+            'white-space:nowrap',
+            'line-height:1',
+            'pointer-events:none',
+        ].join(';');
+        tick.textContent = spec.label;
+        container.appendChild(tick);
+    });
+}
+
 // Update all 3 colorbars (axial/sagittal/coronal) in lock-step.
 // doseMinNorm, doseMaxNorm: dose range in NORMALIZED units (raw CNN output).
 // They are converted to Gy here so the labels show real physical dose.
@@ -15655,7 +15915,9 @@ function _petRainbow2(val) {
 // above 600 Gy are saturated to the top colormap color.
 function updateDoseColorbars(visible, doseMinNorm, doseMaxNorm) {
     document.querySelectorAll('.dose-colorbar').forEach(cb => {
-        cb.style.display = visible ? 'block' : 'none';
+        const shouldShow = cb.id === 'doseColorbar3D' ? (visible && !!state.doseTexture?.enabled) : visible;
+        cb.style.display = shouldShow ? 'block' : 'none';
+        if (shouldShow) _updateDoseColorbarLabels(cb);
     });
     if (!visible) return;
 
@@ -15704,6 +15966,7 @@ function update3DColorbar(visible) {
 
     colorbar3D.style.display = visible ? 'block' : 'none';
     if (!visible) return;
+    _updateDoseColorbarLabels(colorbar3D);
 
     // Render the gradient on the 3D colorbar canvas
     const canvas = colorbar3D.querySelector('.colorbarCanvas');
@@ -21883,12 +22146,11 @@ async function autoCaptureReportFigures() {
         const barY = y + 28;
         const barW = 18;
         const barH = h - 52;
-        for (let yy = 0; yy < barH; yy++) {
-            const t = 1 - yy / Math.max(1, barH - 1);
-            const [r, g, b] = _petRainbow2(t);
-            ctx.fillStyle = `rgb(${r},${g},${b})`;
-            ctx.fillRect(barX, barY + yy, barW, 1);
-        }
+        const gradCanvas = document.createElement('canvas');
+        gradCanvas.width = barW;
+        gradCanvas.height = barH;
+        _drawDoseColorbarGradient(gradCanvas.getContext('2d'), barW, barH);
+        ctx.drawImage(gradCanvas, barX, barY);
         ctx.strokeStyle = 'rgba(226,232,240,0.65)';
         ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
 
@@ -21896,18 +22158,17 @@ async function autoCaptureReportFigures() {
         ctx.font = 'bold 11px Inter, system-ui, sans-serif';
         ctx.textAlign = 'left';
         ctx.fillText(title, x + 8, y + 18);
-        const ticks = [COLORBAR_MAX_GY, COLORBAR_MAX_GY * 0.75, COLORBAR_MAX_GY * 0.5, COLORBAR_MAX_GY * 0.25, COLORBAR_MIN_GY];
-        ticks.forEach((v, i) => {
-            const ty = barY + (barH - 1) * (i / 4);
+        _doseColorbarLabelSpecs(barH).forEach(spec => {
+            const ty = barY + (barH - 1) * (spec.pct / 100);
             ctx.strokeStyle = 'rgba(226,232,240,0.72)';
             ctx.beginPath();
             ctx.moveTo(barX + barW + 2, ty);
             ctx.lineTo(barX + barW + 7, ty);
             ctx.stroke();
             ctx.fillStyle = '#cbd5e1';
-            ctx.font = '10px Inter, system-ui, sans-serif';
+            ctx.font = `${spec.major ? 'bold ' : ''}9px Inter, system-ui, sans-serif`;
             ctx.textAlign = 'left';
-            ctx.fillText(String(Math.round(v)), barX + barW + 10, ty + 3);
+            ctx.fillText(spec.label, barX + barW + 10, ty + 3);
         });
         ctx.restore();
     }
@@ -21920,7 +22181,7 @@ async function autoCaptureReportFigures() {
         items.push({ type: 'swatch', color: firstOar?.color || dataTreeState.oar?.color || '#22c55e', label: 'OAR surfaces' });
         items.push({ type: 'seed', color: dataTreeState.planning?.seeds?.[0]?.color || dataTreeState.seeds?.color || '#ffcc00', label: 'I-125 seeds' });
         items.push({ type: 'needle', color: dataTreeState.planning?.needles?.[0]?.color || dataTreeState.needles?.color || '#ff2266', label: 'Needle paths' });
-        items.push({ type: 'gradient', label: 'Dose surface: blue low, red high' });
+        items.push({ type: 'gradient', label: 'Dose surface: <10 to >200 Gy' });
 
         ctx.save();
         ctx.fillStyle = 'rgba(2,6,23,0.94)';
