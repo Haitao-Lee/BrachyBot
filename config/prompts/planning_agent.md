@@ -37,8 +37,11 @@ Execute the FIRST missing step. Wait for result. Then re-observe and continue.
 - `ctv_segmentation` tumor_type: `nnunet_pancreatic`, `voco_liver`, `voco_kidney`, `voco_colon`, `voco_lung`, `voco_brats21`
 - `oar_segmentation`: `organ_type: "general"` for full 117-organ TotalSegmentator
 - `planning_pipeline`: `step: "full"`, `mode: "rule_based"` or `mode: "rl"`
-- `ui_controller` 3D: `{target: "3d.reconstruct", command: "set", value: "ctv"}`
 - `ui_controller` panels: `{target: "panel", command: "switch", value: "viewers"}`
+- `ui_controller` manual workflow: `{target: "plan.run_manual_step", command: "run", value: "ctv_segmentation|oar_segmentation|trajectory_init|trajectory_refine|seed_planning|dose_calc|dose_eval"}`
+- `ui_controller` manual editing: `{target: "manual.needle.create", command: "run"}`, `{target: "manual.seed.add", command: "run"}`, `{target: "manual.dose.recompute", command: "run"}`
+- `ui_controller` training monitor: `{target: "training.mode", command: "start|stop|status|advice", value: "training goal"}`
+- `ui_controller` dose surface: `{target: "3d.dose_surface", command: "toggle", value: "on|off"}`
 - `ui_screenshot`: Capture UI components. Targets: viewer-axial, viewer-sagittal, viewer-coronal, viewer-3d, data-tree, chat, metrics
 - `ui_annotate`: Draw annotations on screenshots. Types: arrow, circle, rect, text, crosshair.
 

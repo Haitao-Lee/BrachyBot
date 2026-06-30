@@ -316,6 +316,16 @@ Use this when:
                     "trigger": "User says 'start planning' or /plan"
                 },
                 {
+                    "name": "Manual Planning",
+                    "steps": "Load CT -> CTV/OAR segmentation -> trajectory init/refine -> seed planning -> dose/DVH -> report/export",
+                    "trigger": "User asks to run the plan step-by-step without LLM automation"
+                },
+                {
+                    "name": "Training Monitor",
+                    "steps": "Start monitor -> observe UI edits/buttons/sliders -> live feedback -> final advice report",
+                    "trigger": "User asks BrachyBot to monitor, train, supervise, or review their planning process"
+                },
+                {
                     "name": "Quick Segmentation",
                     "steps": "Ensure CT is loaded → Auto segment CTV and OAR",
                     "trigger": "User says 'segment' or /segment"

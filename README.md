@@ -469,6 +469,20 @@ Task: "Generate prostate plan"
 - **Auto Screenshots**: LLM proactively screenshots UI areas during `/help` and explanations
 - **Image Modal**: Click-to-enlarge fullscreen view of any chat image
 
+### UI-Aware Manual Planning and Training Monitor
+
+BrachyBot can now operate as both an agentic planner and a standalone manual planning workstation:
+
+- **UI state bridge**: the browser reports active panel, viewer settings, overlays, Data Tree state, manual planning state, and recent user interactions to the backend.
+- **Structured UI control**: `ui_controller` can switch panels, adjust viewers, toggle overlays, run manual workflow steps, add manual needles/seeds, recompute manual dose preview, request advice, and toggle 3D dose surface mode.
+- **Manual planning without LLM dependency**: the Input panel exposes CTV/OAR segmentation, trajectory initialization/refinement, seed planning, dose calculation, dose evaluation, report fill, and export controls as direct UI actions.
+- **Manual 3D fine planning**: users can add editable needles in the 3D viewer, drag needle endpoints, add or drag seeds, and recompute fast dose/DVH previews after edits.
+- **Training monitor**: users can ask BrachyBot to monitor a manual or automatic planning process, receive live feedback after key interactions, request detailed advice at any time, and stop monitoring to receive a final workflow report.
+
+Important boundary: the fast manual dose preview is intended for interaction, education, and planning feedback. Formal clinical review should still use the established planning pipeline dose outputs and independent verification.
+
+Implementation details are documented in `docs/UI_CONTROL_MANUAL_TRAINING_REPORT_2026-06-30.md`.
+
 ### 📸 Visual Interaction System (NEW)
 BrachyBot's LLM can **see and annotate** the UI in real-time:
 
