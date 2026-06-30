@@ -8625,6 +8625,25 @@ function collectUIState() {
         const el = document.getElementById(id);
         return !!(el && el.checked);
     };
+    const controls = Array.from(document.querySelectorAll('button, input, select, textarea, [role="button"], [data-ui-control]'))
+        .slice(0, 260)
+        .map((el) => {
+            const ident = `${el.id || ''} ${el.getAttribute('name') || ''} ${el.getAttribute('autocomplete') || ''} ${el.getAttribute('placeholder') || ''}`.toLowerCase();
+            const type = el.getAttribute('type') || null;
+            const sensitive = type === 'password' || /(api[_-]?key|token|secret|password|authorization|bearer)/i.test(ident);
+            return {
+                id: el.id || null,
+                tag: el.tagName.toLowerCase(),
+                type,
+                role: el.getAttribute('role') || null,
+                text: (el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 80),
+                value: sensitive ? '[redacted]' : (('value' in el) ? String(el.value || '').slice(0, 120) : ''),
+                checked: ('checked' in el) ? !!el.checked : null,
+                disabled: !!el.disabled,
+                visible: !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length),
+            };
+        })
+        .filter(c => c.id || c.text || c.value);
     return {
         ct_path: gv('ctPath'),
         ctv_path: gv('ctvPath'),
@@ -8666,6 +8685,7 @@ function collectUIState() {
             active: !!trainingMonitorState.active,
             goal: trainingMonitorState.goal || '',
         } : {},
+        controls,
         viewer: {
             ct_loaded: !!(state && state.ctLoaded),
             ct_shape: (state && state.ctShape) || null,
@@ -8742,6 +8762,7 @@ var trainingMonitorState = {
     goal: '',
     sessionId: 'web',
     lastFeedbackAt: 0,
+    lastScreenshotAt: 0,
 };
 
 var manualPlanningState = {
@@ -8813,11 +8834,83 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
         if (data && data.feedback && _shouldLogTrainingFeedback(data.feedback)) {
             addChat('system', `Monitor: ${data.feedback}`);
         }
+        if (data && data.suggested_screenshot && trainingMonitorState.active) {
+            const now = Date.now();
+            if (now - trainingMonitorState.lastScreenshotAt > 45000 && typeof _interceptScreenshot === 'function') {
+                trainingMonitorState.lastScreenshotAt = now;
+                const ss = data.suggested_screenshot;
+                setTimeout(() => _interceptScreenshot(ss.target || 'dose-overview', ss.question || ss.description || 'Monitor screenshot'), 500);
+            }
+        }
         if (options.returnData) return data;
     } catch (e) {
         console.debug('[ui-event] report skipped:', e);
     }
     return null;
+}
+
+function _parseUIControlPayload(value) {
+    if (value && typeof value === 'object') return value;
+    if (typeof value !== 'string') return {};
+    const raw = value.trim();
+    if (!raw) return {};
+    try {
+        return JSON.parse(raw);
+    } catch (_) {
+        return raw.startsWith('#') || raw.includes('[') || raw.includes('.') || raw.includes(' ')
+            ? { selector: raw }
+            : { id: raw };
+    }
+}
+
+function _resolveUIControlElement(payload) {
+    const p = _parseUIControlPayload(payload);
+    if (p.id) return document.getElementById(String(p.id).replace(/^#/, ''));
+    if (p.selector) {
+        try { return document.querySelector(String(p.selector)); } catch (_) { return null; }
+    }
+    return null;
+}
+
+function executeGenericUIControl(command, value) {
+    const payload = _parseUIControlPayload(value);
+    const el = _resolveUIControlElement(payload);
+    if (!el) {
+        if (typeof addChat === 'function') addChat('error', `UI control not found: ${JSON.stringify(value)}`);
+        return false;
+    }
+    const cmd = command || payload.command || 'click';
+    if (cmd === 'click') {
+        el.click();
+    } else if (cmd === 'toggle') {
+        if ('checked' in el) {
+            el.checked = payload.checked !== undefined ? !!payload.checked : !el.checked;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+            el.click();
+        }
+    } else if (cmd === 'set') {
+        const nextValue = payload.value !== undefined ? payload.value : payload.text;
+        if ('checked' in el && (el.type === 'checkbox' || el.type === 'radio')) {
+            el.checked = !!nextValue;
+        } else if ('value' in el) {
+            el.value = nextValue === undefined ? '' : String(nextValue);
+        } else if (nextValue !== undefined) {
+            el.textContent = String(nextValue);
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    } else if (cmd === 'focus') {
+        el.focus();
+    } else if (cmd === 'blur') {
+        el.blur();
+    } else {
+        console.warn('[UIAction] Unsupported generic control command:', cmd);
+        return false;
+    }
+    reportUIEvent('ui.control', payload.id || payload.selector || el.id || el.tagName.toLowerCase(), { command: cmd, payload });
+    return true;
 }
 
 function instrumentUIControls() {
@@ -10187,6 +10280,10 @@ function _executeUIAction(a) {
 function _executeUIActionRaw(a) {
     const { target, command, value } = a;
     try {
+        if (target === 'ui.control') {
+            executeGenericUIControl(command, value);
+            return;
+        }
         // ── Panel switching ──
         if (target === 'panel' && command === 'switch') {
             const tab = document.querySelector(`.panel-tab[data-panel="${value}"]`)

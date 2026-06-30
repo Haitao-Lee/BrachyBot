@@ -474,10 +474,10 @@ Task: "Generate prostate plan"
 BrachyBot can now operate as both an agentic planner and a standalone manual planning workstation:
 
 - **UI state bridge**: the browser reports active panel, viewer settings, overlays, Data Tree state, manual planning state, and recent user interactions to the backend.
-- **Structured UI control**: `ui_controller` can switch panels, adjust viewers, toggle overlays, run manual workflow steps, add manual needles/seeds, recompute manual dose preview, request advice, and toggle 3D dose surface mode.
+- **Structured UI control**: `ui_controller` can switch panels, adjust viewers, toggle overlays, run manual workflow steps, add manual needles/seeds, recompute manual dose preview, request advice, and toggle 3D dose surface mode. A safe generic `ui.control` fallback can click, set, toggle, focus, or blur controls by DOM id/selector when no dedicated target exists.
 - **Manual planning without LLM dependency**: the Input panel exposes CTV/OAR segmentation, trajectory initialization/refinement, seed planning, dose calculation, dose evaluation, report fill, and export controls as direct UI actions.
 - **Manual 3D fine planning**: users can add editable needles in the 3D viewer, drag needle endpoints, add or drag seeds, and recompute fast dose/DVH previews after edits.
-- **Training monitor**: users can ask BrachyBot to monitor a manual or automatic planning process, receive live feedback after key interactions, request detailed advice at any time, and stop monitoring to receive a final workflow report.
+- **Training monitor**: users can ask BrachyBot to monitor a manual or automatic planning process, receive live feedback after key interactions, capture rate-limited review screenshots at key checkpoints, request detailed advice at any time, and stop monitoring to receive a final workflow report.
 
 Important boundary: the fast manual dose preview is intended for interaction, education, and planning feedback. Formal clinical review should still use the established planning pipeline dose outputs and independent verification.
 

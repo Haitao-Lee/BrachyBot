@@ -329,6 +329,43 @@ def _training_feedback_for_event(agent, session_id: Optional[str], event: Dict[s
     return None
 
 
+def _training_screenshot_for_event(agent, session_id: Optional[str], event: Dict[str, Any], feedback: Optional[str]) -> Optional[Dict[str, str]]:
+    """Suggest a screenshot target for high-value training checkpoints."""
+    if not feedback:
+        return None
+    etype = str(event.get("type", ""))
+    label = str(event.get("label", ""))
+    snapshot = _latest_plan_snapshot(agent)
+    metrics = snapshot.get("metrics", {}) or {}
+    v100 = _extract_metric_value(metrics, "v100")
+    v200 = _extract_metric_value(metrics, "v200")
+
+    if etype == "manual.dose":
+        if (v100 is not None and v100 < 0.90) or (v200 is not None and v200 > 0.30):
+            return {
+                "target": "dose-overview",
+                "question": "Training monitor snapshot: show current CT, masks, dose heatmap, seeds/needles, and DVH after manual dose recomputation.",
+            }
+        return {
+            "target": "dvh",
+            "question": "Training monitor snapshot: show the updated DVH after manual dose recomputation.",
+        }
+
+    if etype == "planning.step" and ("completed" in label.lower() or "full pipeline completed" in label.lower()):
+        return {
+            "target": "dose-overview",
+            "question": "Training monitor snapshot: show the completed plan dose distribution and DVH for review.",
+        }
+
+    if etype.startswith("manual.needle"):
+        return {
+            "target": "viewer-3d",
+            "question": "Training monitor snapshot: show the current 3D needle path and nearby anatomy.",
+        }
+
+    return None
+
+
 def _safe_float_list(values: Any, length: int = 3, default: Optional[list] = None) -> list:
     if default is None:
         default = [0.0] * length
@@ -3752,6 +3789,7 @@ def create_app(config: Optional[Dict] = None):
             "detail": data.get("detail", {}),
         })
         feedback = _training_feedback_for_event(agent, session_id, event)
+        suggested_screenshot = _training_screenshot_for_event(agent, session_id, event, feedback)
         if feedback:
             with _UI_BRIDGE_LOCK:
                 training = bucket.setdefault("training", {})
@@ -3763,6 +3801,7 @@ def create_app(config: Optional[Dict] = None):
             "event": event,
             "training": bucket.get("training", {}),
             "feedback": feedback if bucket.get("training", {}).get("active") else None,
+            "suggested_screenshot": suggested_screenshot if bucket.get("training", {}).get("active") else None,
         })
 
     @app.route("/api/training/start", methods=["POST"])
