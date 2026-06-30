@@ -260,7 +260,7 @@ CONTROL_REGISTRY = {
     "manual.dose.recompute": {
         "commands": ["run"],
         "value_type": "string",
-        "description": "Recompute fast manual dose/DVH preview from current manual seeds and needles"
+        "description": "Recompute manual dose/DVH with the trained myDoseNet AI dose model"
     },
     "manual.plan.finish": {
         "commands": ["run"],

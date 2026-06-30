@@ -860,37 +860,30 @@ def get_cone(dire, angle, r_resolution, c_resolution):
 
 
 def simple_single_dose_calculation(shape, pos, direc, seed_sigma, seed_avr_dose):
-    """
-    Calculate a simple single-dose distribution based on a 3D Gaussian model.
+    """Legacy analytical dose model placeholder.
 
-    Parameters:
-        shape (tuple): The shape of the output 3D array, typically specified as (depth, height, width).
-        pos (tuple): The center position of the dose distribution in 3D space (z, y, x).
-        seed_sigma (tuple): Standard deviations for the Gaussian distribution along each axis (z, y, x), 
-                            representing the spread or "size" of the dose.
-        direc (tuple): A 3D direction vector specifying the orientation of the dose distribution.
-
-    Returns:
-        numpy.ndarray: A 3D array representing the single-dose distribution with the specified orientation and spread.
+    The simplified Gaussian seed-dose approximation has been removed from the
+    active code path. Use `single_seed_dose_calculation_dl` or
+    `batch_seed_dose_calculation_dl`, which call the trained myDoseNet model.
     """
-    pos = np.array(pos).reshape(-1)*np.array(shape).reshape(-1)
-    
-    return seed_avr_dose*geometry.generate_oriented_3d_gaussian(shape, pos, direc, seed_sigma)
+    raise NotImplementedError(
+        "The legacy analytical Gaussian dose model has been removed. "
+        "Use myDoseNet via single_seed_dose_calculation_dl or "
+        "batch_seed_dose_calculation_dl."
+    )
 
 
 def single_dose_calculation_v2(pos, direc, dose_image, dose_cal_model):
     """
-    Calculate a simple single-dose distribution based on a 3D Gaussian model.
+    Calculate a single-seed dose distribution with a trained dose model.
 
     Parameters:
         shape (tuple): The shape of the output 3D array, typically specified as (depth, height, width).
         pos (tuple): The center position of the dose distribution in 3D space (z, y, x).
-        seed_sigma (tuple): Standard deviations for the Gaussian distribution along each axis (z, y, x), 
-                            representing the spread or "size" of the dose.
         direc (tuple): A 3D direction vector specifying the orientation of the dose distribution.
 
     Returns:
-        numpy.ndarray: A 3D array representing the single-dose distribution with the specified orientation and spread.
+        numpy.ndarray: A 3D array representing the model-predicted single-seed dose distribution.
     """
     image_array = sitk.GetArrayFromImage(dose_image)
     image_shape, image_spascing, image_origin = image_array.shape, dose_image.GetSpacing(), dose_image.GetOrigin()
