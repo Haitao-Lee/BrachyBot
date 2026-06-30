@@ -93,3 +93,6 @@ tool_factory/case_memory/cases/
 # Local run scripts may contain environment-specific ports or secret setup
 start_server.sh
 *.bak_codex_*
+
+# PDF files (not part of codebase)
+*.pdf
