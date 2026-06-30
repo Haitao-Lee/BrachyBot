@@ -145,6 +145,422 @@ class TaskManager:
 
 task_manager = TaskManager()
 
+_UI_BRIDGE_LOCK = threading.Lock()
+_UI_BRIDGE_MAX_EVENTS = int(os.environ.get("BRACHYBOT_UI_BRIDGE_MAX_EVENTS", "500"))
+_UI_BRIDGE: Dict[str, Dict[str, Any]] = {}
+
+
+def _ui_session_id(session_id: Optional[str] = None) -> str:
+    sid = str(session_id or "web").strip()
+    return sid or "web"
+
+
+def _ui_bucket(session_id: Optional[str] = None) -> Dict[str, Any]:
+    sid = _ui_session_id(session_id)
+    with _UI_BRIDGE_LOCK:
+        return _UI_BRIDGE.setdefault(sid, {
+            "state": {},
+            "events": [],
+            "training": {
+                "active": False,
+                "goal": "",
+                "started_at": None,
+                "stopped_at": None,
+                "events": [],
+                "feedback": [],
+            },
+        })
+
+
+def _append_ui_event(session_id: Optional[str], event: Dict[str, Any]) -> Dict[str, Any]:
+    bucket = _ui_bucket(session_id)
+    item = dict(event or {})
+    item.setdefault("type", "ui.event")
+    item.setdefault("label", "")
+    item.setdefault("detail", {})
+    item["ts"] = time.time()
+    with _UI_BRIDGE_LOCK:
+        events = bucket.setdefault("events", [])
+        events.append(item)
+        if len(events) > _UI_BRIDGE_MAX_EVENTS:
+            del events[: len(events) - _UI_BRIDGE_MAX_EVENTS]
+        training = bucket.setdefault("training", {})
+        if training.get("active"):
+            training.setdefault("events", []).append(item)
+    return item
+
+
+def _extract_metric_value(metrics: Dict[str, Any], *names: str) -> Optional[float]:
+    if not isinstance(metrics, dict):
+        return None
+    for name in names:
+        value = metrics.get(name)
+        if isinstance(value, (int, float)):
+            return float(value)
+    return None
+
+
+def _latest_plan_snapshot(agent) -> Dict[str, Any]:
+    if agent is None or not hasattr(agent, "memory"):
+        return {}
+    metrics = agent.memory.retrieve("dose_metrics") or agent.memory.retrieve("metrics") or {}
+    if isinstance(metrics, dict) and "metrics" in metrics and isinstance(metrics["metrics"], dict):
+        metrics = metrics["metrics"]
+    total_seeds = agent.memory.retrieve("total_seeds") or 0
+    num_trajectories = agent.memory.retrieve("num_trajectories") or 0
+    return {
+        "metrics": metrics if isinstance(metrics, dict) else {},
+        "total_seeds": int(total_seeds or 0),
+        "num_trajectories": int(num_trajectories or 0),
+        "has_dose": agent.memory.retrieve("dose_distribution") is not None
+            or agent.memory.retrieve("dose_distribution_gy") is not None,
+        "manual_preview": bool(agent.memory.retrieve("manual_planning_preview")),
+    }
+
+
+def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any]:
+    """Create deterministic planning advice from current metrics and UI events."""
+    snapshot = _latest_plan_snapshot(agent)
+    metrics = snapshot.get("metrics", {}) or {}
+    events = list((_ui_bucket(session_id).get("events") or [])[-80:])
+    advice: list = []
+    issues: list = []
+    strengths: list = []
+
+    rx_gy = 120.0
+    prescribed = _extract_metric_value(metrics, "prescribed_dose", "prescription")
+    if prescribed and prescribed < 10:
+        rx_gy = prescribed * 120.0
+    elif prescribed:
+        rx_gy = prescribed
+
+    v100 = _extract_metric_value(metrics, "v100")
+    d90 = _extract_metric_value(metrics, "d90")
+    v150 = _extract_metric_value(metrics, "v150")
+    v200 = _extract_metric_value(metrics, "v200")
+    plan_score = _extract_metric_value(metrics, "plan_score", "score")
+
+    if v100 is not None:
+        if v100 >= 0.90:
+            strengths.append(f"CTV V100 is {v100 * 100:.1f}%, meeting the usual 90% coverage target.")
+        else:
+            issues.append(f"CTV V100 is {v100 * 100:.1f}%, below the 90% coverage target.")
+            advice.append("Add or shift seeds toward cold CTV regions, then recompute dose and DVH.")
+    else:
+        advice.append("Run dose evaluation to make V100/D90 advice available.")
+
+    if d90 is not None:
+        if d90 >= rx_gy:
+            strengths.append(f"CTV D90 is {d90:.1f} Gy, at or above the {rx_gy:.0f} Gy prescription.")
+        else:
+            issues.append(f"CTV D90 is {d90:.1f} Gy, below the {rx_gy:.0f} Gy prescription.")
+            advice.append("Increase peripheral CTV dose before adding more central hot-spot seeds.")
+
+    if v200 is not None and v200 > 0.30:
+        issues.append(f"CTV V200 is {v200 * 100:.1f}%, suggesting a hot spot or over-concentrated seed cluster.")
+        advice.append("Spread central seeds along the needle track or reduce seed density near the hot spot.")
+    elif v150 is not None and v150 > 0.65:
+        issues.append(f"CTV V150 is {v150 * 100:.1f}%, higher than a typical uniformity target.")
+
+    oar_metrics = metrics.get("oar_metrics") if isinstance(metrics, dict) else None
+    if isinstance(oar_metrics, dict):
+        high_oars = []
+        for name, m in oar_metrics.items():
+            if not isinstance(m, dict):
+                continue
+            dmax = _extract_metric_value(m, "dmax", "max_dose", "Dmax") or 0.0
+            d2cc = _extract_metric_value(m, "d2cc", "D2cc") or 0.0
+            if dmax > 2 * rx_gy or d2cc > rx_gy:
+                high_oars.append((str(name), dmax, d2cc))
+        if high_oars:
+            top = sorted(high_oars, key=lambda x: max(x[1], x[2]), reverse=True)[:5]
+            issues.append("High OAR dose: " + ", ".join(f"{n} Dmax={dm:.1f} Gy D2cc={d2:.1f} Gy" for n, dm, d2 in top))
+            advice.append("Move nearby seeds away from high-dose OARs or adjust needle direction to increase clearance.")
+
+    if snapshot.get("total_seeds", 0) == 0:
+        advice.append("No seeds are present. Add a needle and place seeds through the CTV before dose evaluation.")
+    elif snapshot.get("total_seeds", 0) < 6 and v100 is not None and v100 < 0.9:
+        advice.append("The current seed count is low for incomplete coverage; add seeds first, then optimize spacing.")
+
+    recent_manual = [e for e in events if str(e.get("type", "")).startswith("manual.")]
+    if recent_manual:
+        advice.append("Recent manual edits were detected; recompute dose after each seed or needle adjustment to keep DVH current.")
+
+    if plan_score is not None:
+        if plan_score >= 80:
+            strengths.append(f"Plan score is {plan_score:.0f}/100.")
+        else:
+            issues.append(f"Plan score is {plan_score:.0f}/100; review coverage, hot spots, and OAR dose before approval.")
+
+    if not strengths and not issues and not advice:
+        advice.append("Load CT, segment CTV/OAR, and run planning or manual dose preview to generate actionable advice.")
+
+    return {
+        "success": True,
+        "snapshot": snapshot,
+        "strengths": strengths,
+        "issues": issues,
+        "advice": advice,
+        "event_count": len(events),
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+def _training_feedback_for_event(agent, session_id: Optional[str], event: Dict[str, Any]) -> Optional[str]:
+    etype = str(event.get("type", ""))
+    label = str(event.get("label", ""))
+    snapshot = _latest_plan_snapshot(agent)
+    metrics = snapshot.get("metrics", {}) or {}
+    v100 = _extract_metric_value(metrics, "v100")
+    d90 = _extract_metric_value(metrics, "d90")
+
+    if etype.startswith("manual.seed"):
+        if v100 is not None and v100 < 0.90:
+            return f"Seed edit recorded. Current V100 is {v100 * 100:.1f}%; inspect cold CTV regions after recompute."
+        return "Seed edit recorded. Recompute dose and verify DVH before placing the next seed."
+    if etype.startswith("manual.needle"):
+        return "Needle edit recorded. Check that the path traverses safe tissue and keeps distance from non-traversable OARs."
+    if etype in {"planning.step", "segmentation.step"}:
+        return f"{label or etype} recorded. Continue with the next prerequisite step and verify outputs in the data tree."
+    if etype == "manual.dose":
+        if v100 is not None and d90 is not None:
+            return f"Dose preview updated: V100={v100 * 100:.1f}%, D90={d90:.1f} Gy. Review hot spots and OAR dose before adding seeds."
+        return "Dose preview updated. Open Analysis to inspect DVH and OAR dose."
+    return None
+
+
+def _safe_float_list(values: Any, length: int = 3, default: Optional[list] = None) -> list:
+    if default is None:
+        default = [0.0] * length
+    if values is None:
+        return list(default)
+    try:
+        arr = list(values)[:length]
+        if len(arr) < length:
+            arr.extend(default[len(arr):])
+        return [float(v) for v in arr]
+    except Exception:
+        return list(default)
+
+
+def _compute_manual_preview(agent, seeds: list, needles: list, dose_cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Compute a fast spacing-aware Gaussian dose preview in original CT space.
+
+    Input seed/needle coordinates are world coordinates. The function uses the
+    current SimpleITK CT transform only to locate voxel ROIs, leaving the
+    existing viewer coordinate path untouched.
+    """
+    import numpy as np
+
+    if agent is None or not hasattr(agent, "memory"):
+        raise ValueError("Agent not available")
+    ct_image = agent.memory.retrieve("ct_image")
+    ct_data = agent.memory.retrieve("ct_data")
+    if ct_image is None or ct_data is None:
+        raise ValueError("No CT image loaded")
+
+    shape = tuple(int(v) for v in np.asarray(ct_data).shape)
+    spacing_xyz = np.asarray(ct_image.GetSpacing(), dtype=np.float32)
+    dose = np.zeros(shape, dtype=np.float32)  # normalized dose, 1.0 = prescription
+
+    seed_strength_gy = float(dose_cfg.get("seed_strength_gy", dose_cfg.get("seedStrengthGy", 90.0)) or 90.0)
+    sigma_mm = float(dose_cfg.get("sigma_mm", dose_cfg.get("sigmaMm", 12.0)) or 12.0)
+    cutoff_mm = float(dose_cfg.get("cutoff_mm", dose_cfg.get("cutoffMm", max(30.0, sigma_mm * 3.0))) or max(30.0, sigma_mm * 3.0))
+    seed_strength_norm = seed_strength_gy / 120.0
+    sigma_mm = max(1.0, sigma_mm)
+    cutoff_mm = max(sigma_mm * 1.5, cutoff_mm)
+
+    norm_seeds = []
+    for i, seed in enumerate(seeds or []):
+        pos = _safe_float_list(seed.get("position") if isinstance(seed, dict) else None, 3)
+        direction = _safe_float_list((seed.get("direction") if isinstance(seed, dict) else None), 3, [0.0, 0.0, 1.0])
+        dn = float(np.linalg.norm(direction))
+        if dn <= 1e-8:
+            direction = [0.0, 0.0, 1.0]
+        else:
+            direction = (np.asarray(direction, dtype=np.float32) / dn).tolist()
+        seed_id = str(seed.get("id") if isinstance(seed, dict) and seed.get("id") else f"manual_seed_{i + 1}")
+        traj_id = str(seed.get("trajectory_id") if isinstance(seed, dict) and seed.get("trajectory_id") else "manual_traj_1")
+
+        try:
+            idx_xyz = ct_image.TransformPhysicalPointToIndex(tuple(float(v) for v in pos))
+        except Exception:
+            continue
+        cx, cy, cz = int(idx_xyz[0]), int(idx_xyz[1]), int(idx_xyz[2])
+        if not (0 <= cz < shape[0] and 0 <= cy < shape[1] and 0 <= cx < shape[2]):
+            continue
+
+        rx = max(1, int(np.ceil(cutoff_mm / max(float(spacing_xyz[0]), 1e-6))))
+        ry = max(1, int(np.ceil(cutoff_mm / max(float(spacing_xyz[1]), 1e-6))))
+        rz = max(1, int(np.ceil(cutoff_mm / max(float(spacing_xyz[2]), 1e-6))))
+        z0, z1 = max(0, cz - rz), min(shape[0], cz + rz + 1)
+        y0, y1 = max(0, cy - ry), min(shape[1], cy + ry + 1)
+        x0, x1 = max(0, cx - rx), min(shape[2], cx + rx + 1)
+        zz = (np.arange(z0, z1, dtype=np.float32) - cz) * spacing_xyz[2]
+        yy = (np.arange(y0, y1, dtype=np.float32) - cy) * spacing_xyz[1]
+        xx = (np.arange(x0, x1, dtype=np.float32) - cx) * spacing_xyz[0]
+        dist2 = zz[:, None, None] ** 2 + yy[None, :, None] ** 2 + xx[None, None, :] ** 2
+        dose[z0:z1, y0:y1, x0:x1] += seed_strength_norm * np.exp(-0.5 * dist2 / (sigma_mm * sigma_mm)).astype(np.float32)
+
+        norm_seeds.append({
+            "id": seed_id,
+            "position": pos,
+            "direction": direction,
+            "trajectory_id": traj_id,
+        })
+
+    norm_needles = []
+    for i, needle in enumerate(needles or []):
+        points = needle.get("points") if isinstance(needle, dict) else None
+        if not isinstance(points, list) or len(points) < 2:
+            continue
+        norm_needles.append({
+            "id": str(needle.get("id") or f"manual_needle_{i + 1}"),
+            "points": [_safe_float_list(points[0], 3), _safe_float_list(points[-1], 3)],
+            "trajectory_id": str(needle.get("trajectory_id") or f"manual_traj_{i + 1}"),
+        })
+
+    grouped: Dict[str, list] = {}
+    for seed in norm_seeds:
+        grouped.setdefault(seed["trajectory_id"], []).append(seed)
+    plan_serialized = []
+    for traj_id, seed_list in grouped.items():
+        needle = next((n for n in norm_needles if n.get("trajectory_id") == traj_id), None)
+        trajectory = {"id": traj_id, "points": needle.get("points") if needle else []}
+        plan_serialized.append({
+            "trajectory": trajectory,
+            "seeds": [{"position": s["position"], "direction": s["direction"]} for s in seed_list],
+            "num_seeds": len(seed_list),
+        })
+
+    def _mask_array(*keys):
+        for key in keys:
+            arr = agent.memory.retrieve(key)
+            if arr is None:
+                continue
+            try:
+                arr_np = np.asarray(arr)
+                if arr_np.shape == dose.shape:
+                    return arr_np
+            except Exception:
+                continue
+        return None
+
+    ctv_mask = _mask_array("ctv_mask", "ctv_array", "ctv_label_data", "ctv_full_labels")
+    oar_mask = _mask_array("oar_array", "oar_label_data")
+    organ_names = agent.memory.retrieve("organ_names") or {}
+    spacing = np.asarray(ct_image.GetSpacing(), dtype=np.float32)
+    voxel_vol_cm3 = float(np.prod(spacing) / 1000.0)
+    dose_gy = dose * 120.0
+
+    metrics: Dict[str, Any] = {
+        "prescribed_dose": 1.0,
+        "manual_preview": True,
+        "total_seeds": len(norm_seeds),
+        "num_trajectories": len(grouped),
+    }
+    dvh_data: Dict[str, Any] = {}
+    if ctv_mask is not None and np.any(ctv_mask > 0):
+        target_doses = dose_gy[ctv_mask > 0]
+        if target_doses.size:
+            sorted_desc = np.sort(target_doses)[::-1]
+
+            def dose_at_pct(pct):
+                idx = int(np.clip(np.ceil((pct / 100.0) * len(sorted_desc)) - 1, 0, len(sorted_desc) - 1))
+                return float(sorted_desc[idx])
+
+            def vol_at_dose(thr):
+                return float(np.sum(target_doses >= thr) / len(target_doses))
+
+            metrics.update({
+                "dmax": float(np.max(target_doses)),
+                "dmin": float(np.min(target_doses)),
+                "dmean": float(np.mean(target_doses)),
+                "d98": dose_at_pct(98),
+                "d95": dose_at_pct(95),
+                "d90": dose_at_pct(90),
+                "d50": dose_at_pct(50),
+                "d2": dose_at_pct(2),
+                "v100": vol_at_dose(120.0),
+                "v150": vol_at_dose(180.0),
+                "v200": vol_at_dose(240.0),
+                "v50": vol_at_dose(60.0),
+                "ctv_voxels": int(np.sum(ctv_mask > 0)),
+                "ctv_volume_cm3": float(np.sum(ctv_mask > 0) * voxel_vol_cm3),
+            })
+            coverage = metrics["v100"] * 100.0
+            hotspot_penalty = max(0.0, metrics["v200"] * 100.0 - 30.0) * 0.7
+            d90_penalty = max(0.0, 120.0 - metrics["d90"]) * 0.25
+            metrics["plan_score"] = float(max(0.0, min(100.0, coverage - hotspot_penalty - d90_penalty)))
+
+            dose_max_val = max(600.0, float(np.max(target_doses)) * 1.1, 360.0)
+            centers = np.linspace(0.0, dose_max_val, 601, dtype=np.float32)
+            dvh_data["CTV"] = {
+                "dose_bins": centers.tolist(),
+                "volume_pcts": [float(np.sum(target_doses >= d) / len(target_doses) * 100.0) for d in centers],
+            }
+
+    oar_metrics: Dict[str, Any] = {}
+    if oar_mask is not None:
+        labels = [int(v) for v in np.unique(oar_mask) if int(v) > 0]
+        centers = None
+        for label in labels:
+            mask = oar_mask == label
+            od = dose_gy[mask]
+            if od.size == 0:
+                continue
+            name = organ_names.get(label) or organ_names.get(str(label)) or f"Organ {label}"
+            sorted_desc = np.sort(od)[::-1]
+
+            def dose_at_xcc(x_cc):
+                nvox = max(1, int(np.ceil(x_cc / max(voxel_vol_cm3, 1e-9))))
+                idx = min(nvox - 1, len(sorted_desc) - 1)
+                return float(sorted_desc[idx])
+
+            oar_metrics[name] = {
+                "label_id": int(label),
+                "dmax": float(np.max(od)),
+                "max_dose": float(np.max(od)),
+                "mean_dose": float(np.mean(od)),
+                "d0_1cc": dose_at_xcc(0.1),
+                "d1cc": dose_at_xcc(1.0),
+                "d2cc": dose_at_xcc(2.0),
+                "v100": float(np.sum(od >= 120.0) / len(od) * 100.0),
+                "v150": float(np.sum(od >= 180.0) / len(od) * 100.0),
+                "volume_cm3": float(np.sum(mask) * voxel_vol_cm3),
+                "volume_voxels": int(np.sum(mask)),
+            }
+            if centers is None:
+                centers = np.linspace(0.0, max(600.0, float(np.max(dose_gy)) * 1.1, 360.0), 601, dtype=np.float32)
+            dvh_data[name] = {
+                "dose_bins": centers.tolist(),
+                "volume_pcts": [float(np.sum(od >= d) / len(od) * 100.0) for d in centers],
+            }
+    metrics["oar_metrics"] = oar_metrics
+    metrics["dvh_data"] = dvh_data
+
+    agent.memory.store("manual_planning_preview", True)
+    agent.memory.store("manual_seeds", norm_seeds)
+    agent.memory.store("manual_needles", norm_needles)
+    agent.memory.store("seed_plan", plan_serialized)
+    agent.memory.store("seed_plan_serialized", plan_serialized)
+    agent.memory.store("total_seeds", len(norm_seeds))
+    agent.memory.store("num_trajectories", len(grouped))
+    agent.memory.store("dose_distribution", dose)
+    agent.memory.store("dose_distribution_gy", dose)
+    agent.memory.store("dose_metrics", metrics)
+    agent.memory.store("metrics", metrics)
+    agent.memory.store("dvh_data", dvh_data)
+
+    return {
+        "success": True,
+        "manual_preview": True,
+        "total_seeds": len(norm_seeds),
+        "num_trajectories": len(grouped),
+        "metrics": metrics,
+        "dose_range": [float(dose.min()), float(dose.max())],
+    }
+
 
 import colorsys
 
@@ -2368,6 +2784,8 @@ def create_app(config: Optional[Dict] = None):
                 "trajectories", "refined_trajectories",
                 "dvh_data", "plan_config", "plan_score", "metrics",
                 "seed_positions", "radiation_volume",
+                "seed_plan_serialized", "manual_planning_preview",
+                "manual_seeds", "manual_needles",
                 # Segmentation results (will be re-generated by agent)
                 "ctv_array", "ctv_mask", "ctv_label_stats", "ctv_label_map",
                 "ctv_full_labels", "oar_array", "organ_names", "organ_counts",
@@ -3268,6 +3686,200 @@ def create_app(config: Optional[Dict] = None):
         except Exception as e:
             logger.error(f"Config update failed: {e}")
             return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/ui/state", methods=["GET", "POST"])
+    @require_api_key
+    @rate_limit
+    def api_ui_state():
+        """Store or read frontend UI state used by agent UI control."""
+        data = request.get_json(silent=True) or {}
+        session_id = _ui_session_id(data.get("session_id") or request.args.get("session_id") or "web")
+        agent = get_agent(session_id)
+        bucket = _ui_bucket(session_id)
+
+        if request.method == "POST":
+            state_payload = data.get("state") or data.get("ui_state") or {}
+            with _UI_BRIDGE_LOCK:
+                bucket["state"] = state_payload if isinstance(state_payload, dict) else {}
+                bucket["updated_at"] = time.time()
+            if agent is not None and hasattr(agent, "memory"):
+                try:
+                    agent.memory.set_ui_state(bucket["state"])
+                except Exception as e:
+                    logger.debug(f"ui_state memory update failed: {e}")
+            return jsonify({
+                "success": True,
+                "session_id": session_id,
+                "state_keys": list((bucket.get("state") or {}).keys()),
+                "training": bucket.get("training", {}),
+            })
+
+        with _UI_BRIDGE_LOCK:
+            state_copy = dict(bucket.get("state") or {})
+            events_copy = list(bucket.get("events") or [])[-100:]
+            training_copy = dict(bucket.get("training") or {})
+        return jsonify({
+            "success": True,
+            "session_id": session_id,
+            "state": state_copy,
+            "events": events_copy,
+            "training": training_copy,
+        })
+
+    @app.route("/api/ui/event", methods=["POST"])
+    @require_api_key
+    @rate_limit
+    def api_ui_event():
+        """Record a frontend UI event and optionally return live monitor feedback."""
+        data = request.get_json() or {}
+        session_id = _ui_session_id(data.get("session_id") or "web")
+        agent = get_agent(session_id)
+        state_payload = data.get("ui_state") or data.get("state")
+        bucket = _ui_bucket(session_id)
+        if isinstance(state_payload, dict):
+            with _UI_BRIDGE_LOCK:
+                bucket["state"] = state_payload
+                bucket["updated_at"] = time.time()
+            if agent is not None and hasattr(agent, "memory"):
+                try:
+                    agent.memory.set_ui_state(state_payload)
+                except Exception:
+                    pass
+
+        event = _append_ui_event(session_id, {
+            "type": data.get("type", "ui.event"),
+            "label": data.get("label", ""),
+            "detail": data.get("detail", {}),
+        })
+        feedback = _training_feedback_for_event(agent, session_id, event)
+        if feedback:
+            with _UI_BRIDGE_LOCK:
+                training = bucket.setdefault("training", {})
+                if training.get("active"):
+                    training.setdefault("feedback", []).append({"ts": time.time(), "message": feedback})
+                    training["feedback"] = training["feedback"][-100:]
+        return jsonify({
+            "success": True,
+            "event": event,
+            "training": bucket.get("training", {}),
+            "feedback": feedback if bucket.get("training", {}).get("active") else None,
+        })
+
+    @app.route("/api/training/start", methods=["POST"])
+    @require_api_key
+    @rate_limit
+    def api_training_start():
+        """Start live planning monitoring/training mode."""
+        data = request.get_json() or {}
+        session_id = _ui_session_id(data.get("session_id") or "web")
+        goal = str(data.get("goal") or "Monitor my planning workflow").strip()
+        bucket = _ui_bucket(session_id)
+        with _UI_BRIDGE_LOCK:
+            bucket["training"] = {
+                "active": True,
+                "goal": goal,
+                "started_at": time.time(),
+                "stopped_at": None,
+                "events": [],
+                "feedback": [],
+            }
+        _append_ui_event(session_id, {"type": "training.start", "label": "Training started", "detail": {"goal": goal}})
+        return jsonify({
+            "success": True,
+            "session_id": session_id,
+            "training": bucket["training"],
+            "message": "Live planning monitoring started.",
+        })
+
+    @app.route("/api/training/stop", methods=["POST"])
+    @require_api_key
+    @rate_limit
+    def api_training_stop():
+        """Stop live monitoring and return a final deterministic training report."""
+        data = request.get_json() or {}
+        session_id = _ui_session_id(data.get("session_id") or "web")
+        agent = get_agent(session_id)
+        bucket = _ui_bucket(session_id)
+        with _UI_BRIDGE_LOCK:
+            training = bucket.setdefault("training", {})
+            training["active"] = False
+            training["stopped_at"] = time.time()
+            events = list(training.get("events") or bucket.get("events") or [])
+            feedback = list(training.get("feedback") or [])
+        counts: Dict[str, int] = {}
+        for event in events:
+            etype = str(event.get("type", "ui.event"))
+            counts[etype] = counts.get(etype, 0) + 1
+        advice = _build_plan_advice(agent, session_id)
+        report_lines = [
+            "Planning monitoring stopped.",
+            f"Recorded {len(events)} UI/planning events.",
+        ]
+        if counts:
+            top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:8]
+            report_lines.append("Main activity: " + ", ".join(f"{k}={v}" for k, v in top))
+        if advice.get("strengths"):
+            report_lines.append("Strengths: " + " ".join(advice["strengths"][:3]))
+        if advice.get("issues"):
+            report_lines.append("Issues: " + " ".join(advice["issues"][:5]))
+        if advice.get("advice"):
+            report_lines.append("Recommendations: " + " ".join(advice["advice"][:6]))
+        return jsonify({
+            "success": True,
+            "session_id": session_id,
+            "summary": "\n".join(report_lines),
+            "event_counts": counts,
+            "feedback": feedback,
+            "advice": advice,
+            "training": training,
+        })
+
+    @app.route("/api/training/advice", methods=["GET", "POST"])
+    @require_api_key
+    @rate_limit
+    def api_training_advice():
+        """Return detailed advice for the current auto/manual plan."""
+        data = request.get_json(silent=True) or {}
+        session_id = _ui_session_id(data.get("session_id") or request.args.get("session_id") or "web")
+        agent = get_agent(session_id)
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+        return jsonify(_build_plan_advice(agent, session_id))
+
+    @app.route("/api/manual_planning/update", methods=["POST"])
+    @require_api_key
+    @rate_limit
+    def api_manual_planning_update():
+        """Update manual world-coordinate seeds/needles and recompute preview dose."""
+        data = request.get_json() or {}
+        session_id = _ui_session_id(data.get("session_id") or "web")
+        agent = get_agent(session_id)
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+
+        seeds = data.get("seeds") or []
+        needles = data.get("needles") or []
+        dose_cfg = data.get("dose") or {}
+        reason = data.get("reason") or "manual_update"
+        try:
+            result = _compute_manual_preview(agent, seeds, needles, dose_cfg)
+            event = _append_ui_event(session_id, {
+                "type": "manual.dose",
+                "label": reason,
+                "detail": {
+                    "seeds": result.get("total_seeds", 0),
+                    "trajectories": result.get("num_trajectories", 0),
+                    "manual_preview": True,
+                },
+            })
+            result["event"] = event
+            result["advice"] = _build_plan_advice(agent, session_id)
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"Manual planning update failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return jsonify({"success": False, "error": str(e)}), 500
 
     @app.route("/api/status", methods=["GET"])
     @require_api_key

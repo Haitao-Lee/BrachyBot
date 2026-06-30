@@ -222,10 +222,44 @@ CONTROL_REGISTRY = {
         "commands": ["run"],
         "description": "Run the full planning pipeline"
     },
+    "plan.run_manual_step": {
+        "commands": ["run"],
+        "values": [
+            "ctv_segmentation", "oar_segmentation", "trajectory_init",
+            "trajectory_refine", "seed_planning", "dose_calc", "dose_eval"
+        ],
+        "description": "Run one manual workflow step without relying on the LLM planner"
+    },
     "plan.reset": {
         "commands": ["run"],
         "destructive": True,
         "description": "Reset the current planning session. REQUIRES user confirmation."
+    },
+    "ui.state": {
+        "commands": ["sync", "inspect"],
+        "description": "Synchronize or inspect the current frontend UI state snapshot"
+    },
+    "training.mode": {
+        "commands": ["start", "stop", "status", "advice"],
+        "value_type": "string",
+        "description": "Start/stop live planning monitor, check status, or request detailed planning advice"
+    },
+    "manual.needle.create": {
+        "commands": ["run"],
+        "description": "Create an editable manual needle in the 3D viewer near the current planning target"
+    },
+    "manual.seed.add": {
+        "commands": ["run"],
+        "description": "Add a manual seed on the selected/current manual needle and refresh dose preview"
+    },
+    "manual.dose.recompute": {
+        "commands": ["run"],
+        "value_type": "string",
+        "description": "Recompute fast manual dose/DVH preview from current manual seeds and needles"
+    },
+    "manual.plan.finish": {
+        "commands": ["run"],
+        "description": "Finish/review a manual plan and provide current planning advice"
     },
     # ── Report actions ──
     "report.autofill": {
@@ -310,6 +344,11 @@ CONTROL_REGISTRY = {
         "value_type": "int",
         "range": [0, 100],
         "description": "3D dose mesh opacity"
+    },
+    "3d.dose_surface": {
+        "commands": ["toggle"],
+        "values": ["on", "off"],
+        "description": "Toggle dose-textured CTV/OAR surface mode in the 3D viewer"
     },
     "3d.fit": {
         "commands": ["run"],
@@ -581,6 +620,17 @@ class UIControllerTool(BaseTool):
 
         # Planning
         if target == "plan.run": return "Planning pipeline started"
+        if target == "plan.run_manual_step": return f"Manual workflow step started: {value}"
+        if target == "ui.state": return "UI state snapshot synchronized"
+        if target == "training.mode":
+            if command == "start": return f"Planning monitor started: {value or 'default goal'}"
+            if command == "stop": return "Planning monitor stopped"
+            if command == "advice": return "Detailed planning advice requested"
+            return "Planning monitor status requested"
+        if target == "manual.needle.create": return "Manual editable needle created"
+        if target == "manual.seed.add": return "Manual seed added and dose preview requested"
+        if target == "manual.dose.recompute": return "Manual dose and DVH preview recomputed"
+        if target == "manual.plan.finish": return "Manual plan review requested"
         if target == "plan.reset": return "⚠️ Planning session reset"
 
         # Report
@@ -614,6 +664,7 @@ class UIControllerTool(BaseTool):
         if target == "3d.wireframe": return f"3D wireframe {value}"
         if target == "3d.skin": return f"3D skin surface {value}"
         if target == "3d.dose_opacity": return f"3D dose opacity set to {value}%"
+        if target == "3d.dose_surface": return f"3D dose surface mode {value}"
         if target == "3d.fit": return "Camera fitted to all 3D meshes"
         if target == "3d.reset": return "3D camera reset to default"
         if target == "3d.show_all": return "All 3D meshes shown"

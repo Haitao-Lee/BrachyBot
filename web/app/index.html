@@ -4832,6 +4832,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
                         <button class="btn btn-outline" onclick="exportSTL()" style="font-size:0.6rem;padding:4px 8px;">STL</button>
                         <button class="btn btn-outline" onclick="exportReport()" style="font-size:0.6rem;padding:4px 8px;">Report</button>
                     </div>
+
+                    <!-- Manual fine planning and training monitor -->
+                    <div class="form-section-title" style="font-size:0.65rem;margin-top:8px;">Manual Fine Planning</div>
+                    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;">
+                        <button class="btn btn-outline" onclick="startTrainingMode('Monitor manual/automatic planning')" style="font-size:0.6rem;padding:5px 6px;">Monitor</button>
+                        <button class="btn btn-outline" onclick="stopTrainingMode()" style="font-size:0.6rem;padding:5px 6px;">Finish Monitor</button>
+                        <button class="btn btn-outline" onclick="addManualNeedle()" style="font-size:0.6rem;padding:5px 6px;">Add Needle</button>
+                        <button class="btn btn-outline" onclick="addManualSeed()" style="font-size:0.6rem;padding:5px 6px;">Add Seed</button>
+                        <button class="btn btn-outline" onclick="recomputeManualDose('manual_button')" style="font-size:0.6rem;padding:5px 6px;">Recompute Dose</button>
+                        <button class="btn btn-outline" onclick="requestPlanningAdvice()" style="font-size:0.6rem;padding:5px 6px;">Detailed Advice</button>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-top:4px;">
+                        <label style="font-size:0.58rem;color:var(--text-dim);">Gy/seed<input id="manualSeedStrengthGy" type="number" value="90" step="5" style="width:100%;font-size:0.62rem;"></label>
+                        <label style="font-size:0.58rem;color:var(--text-dim);">Sigma mm<input id="manualDoseSigmaMm" type="number" value="12" step="1" style="width:100%;font-size:0.62rem;"></label>
+                        <label style="font-size:0.58rem;color:var(--text-dim);">Cutoff mm<input id="manualDoseCutoffMm" type="number" value="42" step="2" style="width:100%;font-size:0.62rem;"></label>
+                    </div>
                 </div>
             </div>
         </div>
@@ -7985,6 +8001,21 @@ function handleChatInput(el) {
 // If streaming isn't supported (server doesn't return text/event-stream,
 // or `ReadableStream` API is missing), fall back to a single JSON call
 // and render the final response.
+function _isMonitorStartRequest(text) {
+    return /(?:monitor|training|coach|guide|supervise|watch|observe|培训|训练|监测|监督|指导|教我|带我)/i.test(text || '')
+        && !/(?:stop|finish|end|停止|结束|关闭)/i.test(text || '');
+}
+
+function _isMonitorStopRequest(text) {
+    return /(?:stop|finish|end|summary|停止|结束|关闭|总结|完成监测|停止监测)/i.test(text || '')
+        && /(?:monitor|training|coach|培训|训练|监测|监督|指导)/i.test(text || '');
+}
+
+function _isAdviceRequest(text) {
+    return /(?:advice|suggest|review|improve|优化|建议|评价|哪里|怎么调|如何调整|详细建议|规划评价)/i.test(text || '')
+        && /(?:plan|planning|dose|seed|needle|CTV|OAR|规划|剂量|粒子|穿刺针|靶区|危及器官)/i.test(text || '');
+}
+
 async function sendChat(prefill) {
     const input = document.getElementById('chatInput');
 
@@ -8012,6 +8043,19 @@ async function sendChat(prefill) {
     // message. This avoids leaking the previous session into a
     // fresh page load.
     try { if (typeof ensurePendingSession === 'function') ensurePendingSession(); } catch (_) {}
+
+    if (_isMonitorStartRequest(text)) {
+        await startTrainingMode(text);
+        return;
+    }
+    if (_isMonitorStopRequest(text) && trainingMonitorState.active) {
+        await stopTrainingMode();
+        return;
+    }
+    if (_isAdviceRequest(text) && !/截图|screenshot|capture/i.test(text)) {
+        await requestPlanningAdvice();
+        return;
+    }
 
     window._chatStreaming = false;
 
@@ -8591,6 +8635,37 @@ function collectUIState() {
         // hadn't checked the box.
         plan_mode: gc('useRLToggle') ? 'rl' : 'rule_based',
         dev_threshold: gv('devThreshold'),
+        active_panel: document.querySelector('.panel-tab.active')?.dataset?.panel || null,
+        overlays: {
+            ctv: gc('overlayCTV'),
+            oar: gc('overlayOAR'),
+            dose_opacity: state?.doseOpacity ?? null,
+            dose_visible: !!state?.doseOverlay?.visible,
+            dose_texture_3d: !!state?.doseTexture?.enabled,
+        },
+        planning: {
+            metrics: state?.metrics || {},
+            seed_count: state?.seeds?.length || 0,
+            trajectories: state?.trajectories?.length || 0,
+            manual_state: (typeof _manualState === 'function') ? _manualState() : {},
+        },
+        data_tree: (typeof dataTreeState !== 'undefined') ? {
+            ctv_loaded: !!dataTreeState.ctv?.loaded,
+            oar_count: dataTreeState.organs?.length || 0,
+            seeds: dataTreeState.planning?.seeds?.length || 0,
+            needles: dataTreeState.planning?.needles?.length || 0,
+            dose_levels: dataTreeState.planning?.doseLevels?.length || 0,
+        } : {},
+        manual: (typeof manualPlanningState !== 'undefined') ? {
+            active_needle_id: manualPlanningState.activeNeedleId,
+            seed_counter: manualPlanningState.seedCounter,
+            needle_counter: manualPlanningState.needleCounter,
+            dose: manualPlanningState.dose,
+        } : {},
+        training: (typeof trainingMonitorState !== 'undefined') ? {
+            active: !!trainingMonitorState.active,
+            goal: trainingMonitorState.goal || '',
+        } : {},
         viewer: {
             ct_loaded: !!(state && state.ctLoaded),
             ct_shape: (state && state.ctShape) || null,
@@ -8661,6 +8736,115 @@ const state = {
 
 /******** API ********/
 const API = '/api';
+
+var trainingMonitorState = {
+    active: false,
+    goal: '',
+    sessionId: 'web',
+    lastFeedbackAt: 0,
+};
+
+var manualPlanningState = {
+    activeNeedleId: null,
+    seedCounter: 0,
+    needleCounter: 0,
+    dose: {
+        seed_strength_gy: 90,
+        sigma_mm: 12,
+        cutoff_mm: 42,
+    },
+};
+
+function _activeApiSessionId() {
+    return (typeof activeSessionId !== 'undefined' && activeSessionId) || state.sessionId || 'web';
+}
+
+function _readManualDoseConfig() {
+    const strength = parseFloat(document.getElementById('manualSeedStrengthGy')?.value || manualPlanningState.dose.seed_strength_gy || 90);
+    const sigma = parseFloat(document.getElementById('manualDoseSigmaMm')?.value || manualPlanningState.dose.sigma_mm || 12);
+    const cutoff = parseFloat(document.getElementById('manualDoseCutoffMm')?.value || manualPlanningState.dose.cutoff_mm || Math.max(30, sigma * 3));
+    manualPlanningState.dose = {
+        seed_strength_gy: Number.isFinite(strength) ? strength : 90,
+        sigma_mm: Number.isFinite(sigma) ? sigma : 12,
+        cutoff_mm: Number.isFinite(cutoff) ? cutoff : 42,
+    };
+    return manualPlanningState.dose;
+}
+
+function _shouldLogTrainingFeedback(message) {
+    if (!message || !trainingMonitorState.active) return false;
+    const now = Date.now();
+    const important = /dose|V100|D90|Seed|Needle|step/i.test(message);
+    if (!important && now - trainingMonitorState.lastFeedbackAt < 15000) return false;
+    trainingMonitorState.lastFeedbackAt = now;
+    return true;
+}
+
+async function syncUIBridgeState(reason = 'snapshot') {
+    try {
+        await fetch(API + '/ui/state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                session_id: _activeApiSessionId(),
+                reason,
+                state: (typeof collectUIState === 'function') ? collectUIState() : {},
+            }),
+        });
+    } catch (e) {
+        console.debug('[ui-state] sync skipped:', e);
+    }
+}
+
+async function reportUIEvent(type, label, detail = {}, options = {}) {
+    try {
+        const res = await fetch(API + '/ui/event', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                session_id: _activeApiSessionId(),
+                type,
+                label,
+                detail,
+                ui_state: (typeof collectUIState === 'function') ? collectUIState() : {},
+            }),
+        });
+        const data = await res.json().catch(() => null);
+        if (data && data.feedback && _shouldLogTrainingFeedback(data.feedback)) {
+            addChat('system', `Monitor: ${data.feedback}`);
+        }
+        if (options.returnData) return data;
+    } catch (e) {
+        console.debug('[ui-event] report skipped:', e);
+    }
+    return null;
+}
+
+function instrumentUIControls() {
+    if (window._brachyUiInstrumentationReady) return;
+    window._brachyUiInstrumentationReady = true;
+    let rangeTimer = null;
+    document.addEventListener('click', (event) => {
+        const btn = event.target.closest('button');
+        if (!btn || btn.disabled) return;
+        const label = (btn.getAttribute('title') || btn.textContent || btn.id || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+        reportUIEvent('ui.click', label || 'button', { id: btn.id || null, classes: btn.className || '' });
+    }, true);
+    document.addEventListener('change', (event) => {
+        const el = event.target;
+        if (!el || !['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)) return;
+        const value = el.type === 'checkbox' ? !!el.checked : el.value;
+        reportUIEvent('ui.change', el.id || el.name || el.tagName.toLowerCase(), { value });
+    }, true);
+    document.addEventListener('input', (event) => {
+        const el = event.target;
+        if (!el || el.type !== 'range') return;
+        clearTimeout(rangeTimer);
+        rangeTimer = setTimeout(() => {
+            reportUIEvent('ui.slider', el.id || el.name || 'range', { value: el.value });
+        }, 400);
+    }, true);
+}
 
 (function installApiKeyFetchWrapper() {
     const nativeFetch = window.fetch.bind(window);
@@ -9221,6 +9405,8 @@ for (const [name, fn] of Object.entries(_legacyMissingStubs)) {
 
 /******** INIT ********/
 async function init() {
+    try { instrumentUIControls(); } catch (e) { console.warn('instrumentUIControls failed:', e); }
+
     // --- PRIORITY 0: Restore chat history IMMEDIATELY (no await) ---
     // Sessions live in localStorage; rendering them must NOT be blocked
     // by any server round-trip.  Previously, loadSessions() was called
@@ -9265,6 +9451,7 @@ async function init() {
 
     // Wait for /status (needed by UI below); clear/config run in background.
     await _statusPromise;
+    syncUIBridgeState('init').catch(e => console.warn('Initial UI state sync failed:', e));
 
     // Clear frontend state (runs once per page load)
     if (!window._stateCleared) {
@@ -10236,14 +10423,50 @@ function _executeUIActionRaw(a) {
         if (target === 'session.clear_all') { clearLocalChatData(); return; }
         // ── Planning ──
         if (target === 'plan.run') {
-            // Send "plan" through the chat system to trigger LLM planning
-            const chatInput = document.getElementById('chatInput');
-            if (chatInput) { chatInput.value = 'plan'; sendChat(); }
+            runPlanning();
+            return;
+        }
+        if (target === 'plan.run_manual_step') {
+            const step = String(value || '').trim();
+            if (step === 'ctv_segmentation' || step === 'oar_segmentation') {
+                runSegmentationStep(step);
+            } else if (step) {
+                runPlanningStep(step);
+            }
             return;
         }
         if (target === 'plan.reset') {
-            resetAllState();
-            if (typeof addChat === 'function') addChat('system', 'Planning session reset.');
+            resetSession();
+            return;
+        }
+        if (target === 'ui.state') {
+            syncUIBridgeState(command || 'ui_controller');
+            if (typeof addChat === 'function') addChat('system', 'UI state snapshot synced.');
+            return;
+        }
+        if (target === 'training.mode') {
+            if (command === 'start') startTrainingMode(value || 'Monitor planning workflow');
+            else if (command === 'stop') stopTrainingMode();
+            else if (command === 'advice') requestPlanningAdvice();
+            else if (typeof addChat === 'function') {
+                addChat('system', trainingMonitorState.active ? 'Monitor mode is active.' : 'Monitor mode is not active.');
+            }
+            return;
+        }
+        if (target === 'manual.needle.create') {
+            addManualNeedle();
+            return;
+        }
+        if (target === 'manual.seed.add') {
+            addManualSeed();
+            return;
+        }
+        if (target === 'manual.dose.recompute') {
+            recomputeManualDose(value || 'ui_controller');
+            return;
+        }
+        if (target === 'manual.plan.finish') {
+            requestPlanningAdvice();
             return;
         }
         // ── Report ──
@@ -10320,6 +10543,11 @@ function _executeUIActionRaw(a) {
         if (target === '3d.dose_opacity') {
             const sl = document.getElementById('doseOpacity');
             if (sl) { sl.value = value; updateDoseOpacity(value); }
+            return;
+        }
+        if (target === '3d.dose_surface') {
+            const on = value === 'on' ? true : value === 'off' ? false : !state.doseTexture?.enabled;
+            setDoseTextureMode(on);
             return;
         }
         if (target === '3d.fit') { fitCameraToScene(); return; }
@@ -10772,6 +11000,7 @@ function switchPanel(name, el) {
             }
         } catch (_) { /* best-effort */ }
     }
+    reportUIEvent('ui.panel', `Panel switched to ${name}`, { panel: name });
 }
 
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
@@ -13064,6 +13293,9 @@ function setGroupVisibility(category, visible) {
             needle.visible = visible;
             const mesh = scene3D.meshes[needle.id];
             if (mesh) applyMeshVisibility(mesh, visible, needle.opacity ?? 0.8);
+            if (typeof _setNeedleHandlesVisibility === 'function') {
+                _setNeedleHandlesVisibility(needle.id, visible, needle.opacity ?? 0.8);
+            }
         });
     } else if (category === 'dose_isosurfaces') {
         dataTreeState.planning.doseLevels.forEach(level => {
@@ -13118,6 +13350,9 @@ function setGroupOpacity(category, value) {
         dataTreeState.planning.needles.forEach(needle => {
             needle.opacity = opacity;
             applyMeshOpacity(scene3D.meshes[needle.id], opacity, needle.visible !== false);
+            if (typeof _setNeedleHandlesVisibility === 'function') {
+                _setNeedleHandlesVisibility(needle.id, needle.visible !== false, opacity);
+            }
         });
     } else if (category === 'dose_isosurfaces') {
         dataTreeState.planning.doseLevels.forEach(level => {
@@ -13213,6 +13448,9 @@ function toggleDataVisibility(id) {
             needle.visible = !needle.visible;
             const mesh = scene3D.meshes[id];
             if (mesh) applyMeshVisibility(mesh, needle.visible, needle.opacity ?? 0.8);
+            if (typeof _setNeedleHandlesVisibility === 'function') {
+                _setNeedleHandlesVisibility(needle.id, needle.visible, needle.opacity ?? 0.8);
+            }
             renderDataTree();
             redrawSeedNeedleOverlays();
         }
@@ -13318,6 +13556,9 @@ function setDataOpacity(id, value) {
         if (needle) {
             needle.opacity = opacity;
             applyMeshOpacity(scene3D.meshes[id], opacity, needle.visible !== false);
+            if (typeof _setNeedleHandlesVisibility === 'function') {
+                _setNeedleHandlesVisibility(needle.id, needle.visible !== false, opacity);
+            }
             redrawSeedNeedleOverlays();
         }
         return;
@@ -14508,6 +14749,424 @@ function redrawSeedNeedleOverlays() {
     });
 }
 
+function _vec3Array(v, fallback = [0, 0, 0]) {
+    if (Array.isArray(v) && v.length >= 3) return [Number(v[0]) || 0, Number(v[1]) || 0, Number(v[2]) || 0];
+    if (v && typeof v === 'object' && 'x' in v) return [Number(v.x) || 0, Number(v.y) || 0, Number(v.z) || 0];
+    return fallback.slice();
+}
+
+function _normalizeArray3(v, fallback = [0, 0, 1]) {
+    const a = _vec3Array(v, fallback);
+    const n = Math.hypot(a[0], a[1], a[2]);
+    if (!Number.isFinite(n) || n < 1e-8) return fallback.slice();
+    return [a[0] / n, a[1] / n, a[2] / n];
+}
+
+function _planningCenterWorld() {
+    init3DScene();
+    const preferred = scene3D.meshes.ctv
+        || Object.entries(scene3D.meshes).find(([id]) => id === 'ctv' || id.startsWith('ctv_'))?.[1]
+        || Object.values(scene3D.meshes).find(m => m && m.visible);
+    if (preferred) {
+        const box = new THREE.Box3().setFromObject(preferred);
+        if (!box.isEmpty()) {
+            const c = box.getCenter(new THREE.Vector3());
+            return [c.x, c.y, c.z];
+        }
+    }
+    if (state.ctOrigin && state.ctSpacing && state.ctShape) {
+        const x = state.ctOrigin[0] + state.ctSpacing[0] * (state.ctShape[2] || 1) * 0.5;
+        const y = state.ctOrigin[1] + state.ctSpacing[1] * (state.ctShape[1] || 1) * 0.5;
+        const z = state.ctOrigin[2] + state.ctSpacing[2] * (state.ctShape[0] || 1) * 0.5;
+        return [x, y, z];
+    }
+    return [0, 0, 0];
+}
+
+function _makeSeedMesh(seed) {
+    init3DScene();
+    const pos = new THREE.Vector3(..._vec3Array(seed.position || seed.pos));
+    const dir = new THREE.Vector3(..._normalizeArray3(seed.direction || [0, 0, 1]));
+    const geometry = new THREE.CylinderGeometry(0.8, 0.8, 4.5, 16);
+    const material = new THREE.MeshPhysicalMaterial({
+        color: 0xe6e64d,
+        metalness: 0.5,
+        roughness: 0.3,
+        emissive: 0x332200,
+        emissiveIntensity: 0.5,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.setRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+    mesh.position.copy(pos);
+    mesh.userData = { type: 'seed', id: seed.id, trajectoryId: _normalizeTrajectoryId(seed.trajectory_id) };
+    return mesh;
+}
+
+function _makeNeedleMesh(needle) {
+    init3DScene();
+    const points = (needle.points || []).map(p => new THREE.Vector3(..._vec3Array(p))).filter(p => Number.isFinite(p.x + p.y + p.z));
+    if (points.length < 2) return null;
+    const dir = new THREE.Vector3().subVectors(points[1], points[0]);
+    const length = dir.length();
+    if (length < 0.1) return null;
+    dir.normalize();
+    const geo = new THREE.CylinderGeometry(0.22, 0.22, length, 10);
+    const mat = new THREE.MeshPhysicalMaterial({
+        color: 0xff2266,
+        transparent: true,
+        opacity: needle.opacity ?? 0.75,
+        metalness: 0.1,
+        roughness: 0.4,
+        emissive: 0x550011,
+        emissiveIntensity: 0.45,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(new THREE.Vector3().addVectors(points[0], points[1]).multiplyScalar(0.5));
+    mesh.setRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+    mesh.userData = { type: 'needle', id: needle.id, trajectoryId: _normalizeTrajectoryId(needle.trajectory_id) };
+    return mesh;
+}
+
+function _needleHandleId(needleId, pointIndex) {
+    return `needle_handle_${needleId}_${pointIndex}`;
+}
+
+function _removeNeedleHandles(needleId) {
+    [0, 1].forEach(i => {
+        const id = _needleHandleId(needleId, i);
+        const mesh = scene3D.meshes[id];
+        if (!mesh) return;
+        scene3D.scene.remove(mesh);
+        try { mesh.geometry?.dispose(); } catch (_) {}
+        try { mesh.material?.dispose(); } catch (_) {}
+        delete scene3D.meshes[id];
+    });
+}
+
+function _makeNeedleHandle(needle, pointIndex) {
+    const point = needle.points?.[pointIndex];
+    if (!point) return null;
+    const color = pointIndex === 0 ? 0xff77aa : 0x66d9ff;
+    const geo = new THREE.SphereGeometry(2.2, 16, 16);
+    const mat = new THREE.MeshPhysicalMaterial({
+        color,
+        transparent: true,
+        opacity: Math.max(0.35, needle.opacity ?? 0.8),
+        emissive: pointIndex === 0 ? 0x551122 : 0x003355,
+        emissiveIntensity: 0.55,
+        metalness: 0.15,
+        roughness: 0.3,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(..._vec3Array(point));
+    mesh.userData = {
+        type: 'needle_handle',
+        id: _needleHandleId(needle.id, pointIndex),
+        needleId: needle.id,
+        pointIndex,
+        trajectoryId: _normalizeTrajectoryId(needle.trajectory_id),
+    };
+    return mesh;
+}
+
+function _syncNeedleHandles(needle) {
+    if (!needle || !needle.id || !Array.isArray(needle.points) || needle.points.length < 2) return;
+    _removeNeedleHandles(needle.id);
+    [0, 1].forEach(i => {
+        const handle = _makeNeedleHandle(needle, i);
+        if (handle) _upsertSceneMesh(handle.userData.id, handle);
+    });
+    _setNeedleHandlesVisibility(needle.id, needle.visible !== false, needle.opacity ?? 0.8);
+}
+
+function _setNeedleHandlesVisibility(needleId, visible, opacity = 0.8) {
+    [0, 1].forEach(i => {
+        const mesh = scene3D.meshes[_needleHandleId(needleId, i)];
+        if (mesh) applyMeshOpacity(mesh, Math.max(0, Math.min(1, opacity)), !!visible);
+    });
+}
+
+function _upsertSceneMesh(id, mesh) {
+    if (!mesh) return;
+    if (scene3D.meshes[id]) {
+        scene3D.scene.remove(scene3D.meshes[id]);
+        try { scene3D.meshes[id].geometry?.dispose(); } catch (_) {}
+        try { scene3D.meshes[id].material?.dispose(); } catch (_) {}
+    }
+    scene3D.scene.add(mesh);
+    scene3D.meshes[id] = mesh;
+}
+
+function _syncTrajectoryChildren() {
+    if (!dataTreeState?.planning) return;
+    const grouped = {};
+    (dataTreeState.planning.seeds || []).forEach(seed => {
+        const tid = seed.trajectory_id || 'manual_traj_1';
+        if (!grouped[tid]) grouped[tid] = [];
+        grouped[tid].push(seed);
+    });
+    (dataTreeState.planning.trajectories || []).forEach(traj => {
+        traj.seeds = grouped[traj.id] || [];
+    });
+    dataTreeState.planning.trajectoriesLoaded = (dataTreeState.planning.trajectories || []).length > 0;
+}
+
+function _syncSeedsOverlayFromDataTree() {
+    _syncTrajectoryChildren();
+    const seeds = (dataTreeState.planning.seeds || []).map(s => ({
+        id: s.id,
+        position: _vec3Array(s.position || s.pos),
+        direction: _normalizeArray3(s.direction || [0, 0, 1]),
+        trajectory_id: s.trajectory_id,
+        visible: s.visible !== false,
+        opacity: s.opacity ?? 1.0,
+        color: s.color || '#ffcc00',
+    }));
+    const needles = (dataTreeState.planning.needles || []).map(n => ({
+        id: n.id,
+        points: (n.points || []).map(p => _vec3Array(p)),
+        trajectory_id: n.trajectory_id,
+        visible: n.visible !== false,
+        opacity: n.opacity ?? 0.8,
+        color: n.color || '#ff2266',
+    }));
+    state.seedsOverlay = { seeds, needles };
+    state.seeds = seeds.map(s => ({ ...s, pos: s.position }));
+    dataTreeState.seeds.loaded = seeds.length > 0;
+    dataTreeState.needles.loaded = needles.length > 0;
+    redrawSeedNeedleOverlays();
+}
+
+function _manualPayload() {
+    _syncSeedsOverlayFromDataTree();
+    return {
+        session_id: _activeApiSessionId(),
+        seeds: state.seedsOverlay.seeds.map(s => ({
+            id: s.id,
+            position: _vec3Array(s.position),
+            direction: _normalizeArray3(s.direction),
+            trajectory_id: s.trajectory_id,
+        })),
+        needles: state.seedsOverlay.needles.map(n => ({
+            id: n.id,
+            points: (n.points || []).map(p => _vec3Array(p)),
+            trajectory_id: n.trajectory_id,
+        })),
+        dose: _readManualDoseConfig(),
+    };
+}
+
+function addManualNeedle() {
+    init3DScene();
+    const center = new THREE.Vector3(..._planningCenterWorld());
+    const dir = new THREE.Vector3();
+    if (scene3D.camera) scene3D.camera.getWorldDirection(dir);
+    if (dir.length() < 1e-6) dir.set(0, 0, 1);
+    dir.normalize();
+    manualPlanningState.needleCounter += 1;
+    const id = `needle_manual_${manualPlanningState.needleCounter}`;
+    const trajId = `manual_traj_${manualPlanningState.needleCounter}`;
+    const start = center.clone().sub(dir.clone().multiplyScalar(80));
+    const end = center.clone().add(dir.clone().multiplyScalar(25));
+    const needle = {
+        id,
+        points: [[end.x, end.y, end.z], [start.x, start.y, start.z]],
+        trajectory_id: trajId,
+        visible: true,
+        opacity: 0.75,
+        color: '#ff2266',
+    };
+    dataTreeState.planning.needles.push(needle);
+    dataTreeState.planning.trajectories.push({
+        id: trajId,
+        index: dataTreeState.planning.trajectories.length,
+        entry: needle.points[1],
+        target: needle.points[0],
+        visible: true,
+        opacity: 0.8,
+        color: '#88ccff',
+        seeds: [],
+    });
+    dataTreeState.planning.trajectoriesLoaded = true;
+    manualPlanningState.activeNeedleId = id;
+    _upsertSceneMesh(id, _makeNeedleMesh(needle));
+    _syncNeedleHandles(needle);
+    _syncSeedsOverlayFromDataTree();
+    renderDataTree();
+    fitCameraToScene();
+    addChat('system', `Manual needle added: ${id}. Drag the two endpoint spheres in 3D, then add seeds or recompute dose.`);
+    reportUIEvent('manual.needle.add', id, { points: needle.points });
+}
+
+async function addManualSeed() {
+    init3DScene();
+    let needle = dataTreeState.planning.needles.find(n => n.id === manualPlanningState.activeNeedleId);
+    if (!needle && dataTreeState.planning.needles.length > 0) {
+        needle = dataTreeState.planning.needles[dataTreeState.planning.needles.length - 1];
+        manualPlanningState.activeNeedleId = needle.id;
+    }
+    if (!needle) {
+        addManualNeedle();
+        needle = dataTreeState.planning.needles[dataTreeState.planning.needles.length - 1];
+    }
+    const p0 = new THREE.Vector3(..._vec3Array(needle.points[0]));
+    const p1 = new THREE.Vector3(..._vec3Array(needle.points[1]));
+    const dir = new THREE.Vector3().subVectors(p0, p1).normalize();
+    const existing = dataTreeState.planning.seeds.filter(s => s.trajectory_id === needle.trajectory_id).length;
+    const frac = Math.max(0.12, Math.min(0.88, 0.22 + existing * 0.10));
+    const pos = new THREE.Vector3().lerpVectors(p1, p0, frac);
+    manualPlanningState.seedCounter += 1;
+    const seed = {
+        id: `seed_manual_${manualPlanningState.seedCounter}`,
+        position: [pos.x, pos.y, pos.z],
+        direction: [dir.x, dir.y, dir.z],
+        trajectory_id: needle.trajectory_id,
+        visible: true,
+        opacity: 1.0,
+        color: '#ffcc00',
+    };
+    dataTreeState.planning.seeds.push(seed);
+    const traj = dataTreeState.planning.trajectories.find(t => t.id === needle.trajectory_id);
+    if (traj) traj.seeds = dataTreeState.planning.seeds.filter(s => s.trajectory_id === traj.id);
+    _upsertSceneMesh(seed.id, _makeSeedMesh(seed));
+    _syncSeedsOverlayFromDataTree();
+    renderDataTree();
+    reportUIEvent('manual.seed.add', seed.id, { position: seed.position, trajectory_id: seed.trajectory_id });
+    await recomputeManualDose('seed_add');
+}
+
+async function recomputeManualDose(reason = 'manual_update') {
+    const payload = _manualPayload();
+    payload.reason = reason;
+    if (!payload.seeds.length) {
+        addChat('error', 'No manual seeds available. Add at least one seed before recomputing dose.');
+        return null;
+    }
+    addChat('system', 'Manual dose preview recomputing...');
+    try {
+        const res = await fetch(API + '/manual_planning/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
+        state.doseOverlay = null;
+        state.dvhData = null;
+        if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
+        const m = data.metrics || {};
+        const v100 = Number.isFinite(m.v100) ? `${(m.v100 * 100).toFixed(1)}%` : '--';
+        const d90 = Number.isFinite(m.d90) ? `${m.d90.toFixed(1)} Gy` : '--';
+        addChat('system', `Manual preview updated: ${data.total_seeds} seeds, V100=${v100}, D90=${d90}.`);
+        if (data.advice && data.advice.advice && trainingMonitorState.active) {
+            addChat('system', 'Monitor advice: ' + data.advice.advice.slice(0, 2).join(' '));
+        }
+        return data;
+    } catch (e) {
+        addChat('error', `Manual dose preview failed: ${e.message}`);
+        return null;
+    }
+}
+
+async function onManualSeedEdited(seedId, position) {
+    const seed = dataTreeState.planning.seeds.find(s => s.id === seedId);
+    if (seed) seed.position = _vec3Array(position);
+    _syncSeedsOverlayFromDataTree();
+    reportUIEvent('manual.seed.drag', seedId, { position: _vec3Array(position) });
+    await recomputeManualDose('seed_drag');
+}
+
+async function onManualNeedleHandleEdited(handle) {
+    const needleId = handle?.userData?.needleId;
+    const pointIndex = handle?.userData?.pointIndex;
+    const needle = dataTreeState.planning.needles.find(n => n.id === needleId);
+    if (!needle || pointIndex === undefined) return;
+    needle.points[pointIndex] = [handle.position.x, handle.position.y, handle.position.z];
+    _upsertSceneMesh(needle.id, _makeNeedleMesh(needle));
+    _syncNeedleHandles(needle);
+    _syncSeedsOverlayFromDataTree();
+    renderDataTree();
+    reportUIEvent('manual.needle.drag', needleId, { point_index: pointIndex, points: needle.points });
+    const hasSeeds = dataTreeState.planning.seeds.some(s => s.trajectory_id === needle.trajectory_id);
+    if (hasSeeds) await recomputeManualDose('needle_drag');
+}
+
+async function startTrainingMode(goal = 'Monitor planning workflow') {
+    trainingMonitorState.sessionId = _activeApiSessionId();
+    trainingMonitorState.goal = goal;
+    try {
+        const res = await fetch(API + '/training/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: trainingMonitorState.sessionId, goal }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
+        trainingMonitorState.active = true;
+        addChat('system', 'Monitor mode started. I will track planning actions and provide live feedback. Use Detailed Advice or Finish Monitor for a full report.');
+        await syncUIBridgeState('training_start');
+        return data;
+    } catch (e) {
+        addChat('error', `Monitor mode failed to start: ${e.message}`);
+        return null;
+    }
+}
+
+async function stopTrainingMode() {
+    try {
+        const res = await fetch(API + '/training/stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: _activeApiSessionId() }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
+        trainingMonitorState.active = false;
+        addChat('bot-response', _formatAdviceReport(data.advice, data.summary));
+        return data;
+    } catch (e) {
+        addChat('error', `Monitor mode failed to stop: ${e.message}`);
+        return null;
+    }
+}
+
+function _formatAdviceReport(advice, prefix = '') {
+    if (!advice) return prefix || 'No advice available yet.';
+    const lines = [];
+    if (prefix) lines.push(prefix);
+    if (advice.strengths && advice.strengths.length) {
+        lines.push('**Strengths**');
+        advice.strengths.forEach(x => lines.push(`- ${x}`));
+    }
+    if (advice.issues && advice.issues.length) {
+        lines.push('**Issues**');
+        advice.issues.forEach(x => lines.push(`- ${x}`));
+    }
+    if (advice.advice && advice.advice.length) {
+        lines.push('**Recommendations**');
+        advice.advice.forEach(x => lines.push(`- ${x}`));
+    }
+    return lines.join('\n');
+}
+
+async function requestPlanningAdvice() {
+    try {
+        const res = await fetch(API + '/training/advice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: _activeApiSessionId(), ui_state: collectUIState() }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
+        addChat('bot-response', _formatAdviceReport(data, 'Detailed plan advice based on current metrics and UI state:'));
+        reportUIEvent('training.advice', 'Detailed advice requested', {});
+        return data;
+    } catch (e) {
+        addChat('error', `Detailed advice failed: ${e.message}`);
+        return null;
+    }
+}
+
 function init3DScene() {
     const canvas = document.getElementById('canvas3D');
     if (!canvas || scene3D.initialized) return;
@@ -14724,7 +15383,7 @@ function init3DScene() {
                 obj = obj.parent;
             }
 
-            if (obj.userData.type === 'seed' || obj.userData.type === 'needle') {
+            if (obj.userData.type === 'seed' || obj.userData.type === 'needle' || obj.userData.type === 'needle_handle') {
                 // Select this object
                 if (selectedObject) {
                     // Deselect previous
@@ -14740,10 +15399,10 @@ function init3DScene() {
                 }
 
                 // Highlight in data tree
-                highlightSeed(obj.userData.id);
+                if (obj.userData.type === 'seed') highlightSeed(obj.userData.id);
 
-                // Start drag for seeds
-                if (obj.userData.type === 'seed') {
+                // Start drag for editable planning handles
+                if (obj.userData.type === 'seed' || obj.userData.type === 'needle_handle') {
                     isDragging = true;
                     scene3D.controls.enabled = false;
 
@@ -14761,7 +15420,9 @@ function init3DScene() {
                 // Show info
                 const info = obj.userData.type === 'seed'
                     ? `Seed ${obj.userData.id} | Trajectory ${obj.userData.trajectoryId}`
-                    : `Needle ${obj.userData.id} | Trajectory ${obj.userData.trajectoryId}`;
+                    : obj.userData.type === 'needle_handle'
+                        ? `Needle endpoint ${obj.userData.pointIndex + 1} | ${obj.userData.needleId}`
+                        : `Needle ${obj.userData.id} | Trajectory ${obj.userData.trajectoryId}`;
                 addChat('system', `Selected: ${info}`);
             }
         } else {
@@ -14802,6 +15463,14 @@ function init3DScene() {
                     seed.position = [selectedObject.position.x, selectedObject.position.y, selectedObject.position.z];
                 }
                 addChat('system', `Seed ${seedId} repositioned to [${selectedObject.position.x.toFixed(1)}, ${selectedObject.position.y.toFixed(1)}, ${selectedObject.position.z.toFixed(1)}]`);
+                if (typeof onManualSeedEdited === 'function') {
+                    onManualSeedEdited(seedId, selectedObject.position).catch(e => console.warn('manual seed edit failed:', e));
+                }
+            } else if (selectedObject && selectedObject.userData.type === 'needle_handle') {
+                addChat('system', `Needle endpoint updated for ${selectedObject.userData.needleId}.`);
+                if (typeof onManualNeedleHandleEdited === 'function') {
+                    onManualNeedleHandleEdited(selectedObject).catch(e => console.warn('manual needle edit failed:', e));
+                }
             }
         }
     });
@@ -15300,6 +15969,13 @@ async function loadSeeds3D() {
                 tube.userData = { type: 'needle', id: needle.id, trajectoryId: _normalizeTrajectoryId(needle.trajectory_id) };
                 scene3D.scene.add(tube);
                 scene3D.meshes[needle.id] = tube;
+                if (typeof _syncNeedleHandles === 'function') _syncNeedleHandles({
+                    id: needle.id,
+                    points: needle.points,
+                    trajectory_id: _normalizeTrajectoryId(needle.trajectory_id),
+                    visible: true,
+                    opacity: 0.9,
+                });
             } catch (e) {
                 // Fallback: render as a simple line
                 const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
@@ -15308,6 +15984,13 @@ async function loadSeeds3D() {
                 line.userData = { type: 'needle', id: needle.id, trajectoryId: _normalizeTrajectoryId(needle.trajectory_id) };
                 scene3D.scene.add(line);
                 scene3D.meshes[needle.id] = line;
+                if (typeof _syncNeedleHandles === 'function') _syncNeedleHandles({
+                    id: needle.id,
+                    points: needle.points,
+                    trajectory_id: _normalizeTrajectoryId(needle.trajectory_id),
+                    visible: true,
+                    opacity: 0.9,
+                });
             }
         });
 
@@ -16657,6 +17340,9 @@ function deleteSeed3D(seedId) {
     dataTreeState.planning.seeds = dataTreeState.planning.seeds.filter(s => s.id !== seedId);
     renderDataTree();
     addChat('system', `Deleted seed ${seedId}`);
+    _syncSeedsOverlayFromDataTree();
+    reportUIEvent('manual.seed.delete', seedId, {});
+    if (dataTreeState.planning.seeds.length > 0) recomputeManualDose('seed_delete');
 }
 
 // Delete a needle from 3D scene and data tree
@@ -16668,10 +17354,23 @@ function deleteNeedle3D(needleId) {
         if (mesh.material) mesh.material.dispose();
         delete scene3D.meshes[needleId];
     }
+    if (typeof _removeNeedleHandles === 'function') _removeNeedleHandles(needleId);
     // Remove from dataTreeState
+    const needle = dataTreeState.planning.needles.find(n => n.id === needleId);
+    const trajId = needle?.trajectory_id;
     dataTreeState.planning.needles = dataTreeState.planning.needles.filter(n => n.id !== needleId);
+    if (trajId) {
+        dataTreeState.planning.seeds
+            .filter(s => s.trajectory_id === trajId)
+            .forEach(s => removeSeed3D(s.id));
+        dataTreeState.planning.seeds = dataTreeState.planning.seeds.filter(s => s.trajectory_id !== trajId);
+        dataTreeState.planning.trajectories = dataTreeState.planning.trajectories.filter(t => t.id !== trajId);
+    }
     renderDataTree();
     addChat('system', `Deleted needle ${needleId}`);
+    _syncSeedsOverlayFromDataTree();
+    reportUIEvent('manual.needle.delete', needleId, {});
+    if (dataTreeState.planning.seeds.length > 0) recomputeManualDose('needle_delete');
 }
 
 // Show dose at seed position
@@ -16841,6 +17540,187 @@ function toggleStepButtons() {
     }
 }
 
+function _num(id, fallback = null) {
+    const el = document.getElementById(id);
+    const v = el ? parseFloat(el.value) : NaN;
+    return Number.isFinite(v) ? v : fallback;
+}
+
+async function applyHyperparams() {
+    const config = {
+        mode: document.getElementById('useRLToggle')?.checked ? 'rl' : 'rule_based',
+        seed_info: {
+            radius: _num('seedRadius', 0.4),
+            length: _num('seedLength', 4.5),
+            num_of_seeds: [Math.round(_num('seedCountMin', 5)), Math.round(_num('seedCountMax', 200))],
+            margin_rate: _num('seedMarginRate', 1.0),
+            seed_avr_dose: _num('seedAvgDose', 50),
+        },
+        radiation_array_params: {
+            target_value: Math.round(_num('targetValue', 1)),
+            obstacle_value: Math.round(_num('obstacleValue', 2)),
+            background_value: Math.round(_num('backgroundValue', 0)),
+        },
+        reference_direc: [_num('refDirecX', 0), _num('refDirecY', 1), _num('refDirecZ', 0)],
+        in_lowest_energy: _num('inLowestEnergy', 1),
+        out_highest_energy: _num('outHighestEnergy', 1),
+        DVH_rate: _num('dvhRate', 0.9),
+        max_iter: Math.round(_num('maxIter', 4)),
+        iter_rate: _num('iterRate', 2),
+        replan_rate: _num('replanRate', 0.6),
+        distance_filter: {
+            lower_bound: _num('distLowerBound', 0.8),
+            upper_bound: _num('distUpperBound', 10),
+            distance_rate: _num('distRate', 0.8),
+            interval_rate: _num('intervalRate', 2),
+        },
+        direc_resolution: [
+            Math.round(_num('direcResCone', 30)),
+            Math.round(_num('direcResStep', 3)),
+            Math.round(_num('direcResRings', 2)),
+        ],
+        dl_params: {
+            lr: _num('dlLR', 0.0004),
+            lr_decay: _num('dlLRDecay', 1.5),
+            epochs: Math.round(_num('dlEpochs', 1000)),
+            patience: Math.round(_num('dlPatience', 200)),
+            search_region: _num('dlSearchRegion', 0.5),
+            DVH_margin: _num('dlDVHMargin', 0.05),
+            infer_size: [
+                Math.round(_num('inferSizeX', 32)),
+                Math.round(_num('inferSizeY', 32)),
+                Math.round(_num('inferSizeZ', 32)),
+            ],
+        },
+        rf_params: {
+            max_episodes: Math.round(_num('rfMaxEpisodes', 100)),
+            bandwidth: _num('rfBandwidth', 50),
+        },
+    };
+    try {
+        const res = await fetch(API + '/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || data.error) throw new Error((data && data.error) || `HTTP ${res.status}`);
+        addChat('system', 'Hyperparameters applied to the server configuration.');
+        reportUIEvent('planning.config', 'Hyperparameters applied', { mode: config.mode });
+        return data;
+    } catch (e) {
+        addChat('error', `Apply hyperparameters failed: ${e.message}`);
+        return null;
+    }
+}
+
+async function runPlanning() {
+    const ctPath = ((document.getElementById('ctPath') || {}).value || '').trim();
+    if (!ctPath) {
+        addChat('error', 'Load CT before running the full planning pipeline.');
+        return;
+    }
+    await applyHyperparams();
+    addChat('system', 'Full planning pipeline started...');
+    reportUIEvent('planning.step', 'Full pipeline started', { step: 'full' });
+    try {
+        const res = await fetch(API + '/planning/run_step', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ct_image_path: ctPath, step: 'full' }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.success) throw new Error((data && (data.error || data.message)) || `HTTP ${res.status}`);
+        _saveManualState({
+            ctv_segmentation: true,
+            oar_segmentation: true,
+            trajectory_init: true,
+            trajectory_refine: true,
+            seed_planning: true,
+            dose_calc: true,
+            dose_eval: true,
+            last_step: 'full',
+        });
+        addChat('system', 'Full planning pipeline completed.');
+        reportUIEvent('planning.step', 'Full pipeline completed', { step: 'full' });
+        if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
+        if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
+        if (trainingMonitorState.active) await requestPlanningAdvice();
+    } catch (e) {
+        addChat('error', `Full planning pipeline failed: ${e.message}`);
+        reportUIEvent('planning.error', 'Full pipeline failed', { error: e.message });
+    }
+}
+
+async function runIntra() {
+    const ctPath = ((document.getElementById('ctPath') || {}).value || '').trim();
+    if (!ctPath) {
+        addChat('error', 'Load intra-operative CT before running intraoperative replanning.');
+        return;
+    }
+    const threshold = _num('devThreshold', 2.0);
+    addChat('system', `Intraoperative replanning started (deviation threshold ${threshold} mm)...`);
+    reportUIEvent('planning.step', 'Intraoperative replanning started', { threshold });
+    try {
+        const res = await fetch(API + '/plan/intraoperative', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ct_path: ctPath, threshold }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || data.error || data.success === false) throw new Error((data && data.error) || `HTTP ${res.status}`);
+        addChat('system', 'Intraoperative replanning completed.');
+        reportUIEvent('planning.step', 'Intraoperative replanning completed', {});
+        if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
+    } catch (e) {
+        addChat('error', `Intraoperative replanning failed: ${e.message}`);
+    }
+}
+
+async function resetSession() {
+    try {
+        await fetch(API + '/planning/clear', { method: 'POST' });
+    } catch (_) {}
+    _saveManualState({
+        ctv_segmentation: false,
+        oar_segmentation: false,
+        trajectory_init: false,
+        trajectory_refine: false,
+        seed_planning: false,
+        dose_calc: false,
+        dose_eval: false,
+        last_step: null,
+    });
+    dataTreeState.planning.trajectories = [];
+    dataTreeState.planning.trajectoriesLoaded = false;
+    dataTreeState.planning.seeds = [];
+    dataTreeState.planning.needles = [];
+    dataTreeState.planning.doseLevels = [];
+    dataTreeState.planning.meshes = [];
+    dataTreeState.seeds.loaded = false;
+    dataTreeState.needles.loaded = false;
+    state.seeds = [];
+    state.seedsOverlay = null;
+    state.doseOverlay = null;
+    state.dvhData = null;
+    state.metrics = {};
+    Object.keys(scene3D.meshes || {}).forEach(id => {
+        if (id.startsWith('seed_') || id.startsWith('needle_') || id.startsWith('dose_iso_')) {
+            const mesh = scene3D.meshes[id];
+            scene3D.scene?.remove(mesh);
+            try { mesh.geometry?.dispose(); } catch (_) {}
+            try { mesh.material?.dispose(); } catch (_) {}
+            delete scene3D.meshes[id];
+        }
+    });
+    if (typeof drawDVH === 'function') drawDVH._lastSig = null;
+    if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
+    renderDataTree();
+    if (state.ctLoaded) loadAllSlices();
+    reportUIEvent('planning.reset', 'Planning state reset', {});
+    addChat('system', 'Planning state reset. CT remains loaded.');
+}
+
 // Run a single planning step manually. The user must have a CT
 // loaded first; we surface a clear error if not.
 async function runPlanningStep(step) {
@@ -16887,6 +17767,7 @@ async function runPlanningStep(step) {
     const btn = document.querySelector(`button[onclick="runPlanningStep('${step}')"]`);
     const oldText = btn ? btn.innerHTML : null;
     if (btn) { btn.disabled = true; btn.innerHTML = '... ' + info.label; }
+    reportUIEvent('planning.step', `${info.label} started`, { step });
     try {
         const res = await fetch(API + '/planning/run_step', {
             method: 'POST',
@@ -16900,6 +17781,7 @@ async function runPlanningStep(step) {
         const data = await res.json();
         if (data.success) {
             _saveManualState({ [step]: true, last_step: step });
+            reportUIEvent('planning.step', `${info.label} completed`, { step });
             if (typeof addChat === 'function') {
                 addChat('system', `✅ Step ${info.num}/5: ${info.label} done.`);
             }
@@ -16913,6 +17795,7 @@ async function runPlanningStep(step) {
             throw new Error(data.error || 'Unknown error');
         }
     } catch (e) {
+        reportUIEvent('planning.error', `${info.label} failed`, { step, error: e.message });
         if (typeof addChat === 'function') {
             addChat('error', `Step ${info.num} (${info.label}) failed: ${e.message}`);
         }
@@ -17009,6 +17892,7 @@ async function runSegmentationStep(kind) {
         addChat('system', `▶ ${label} (${apiKind.toUpperCase()}) — running...`);
     }
     try {
+        reportUIEvent('segmentation.step', `${label} started`, { kind });
         const res = await fetch(API + '/segmentation', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -17022,6 +17906,7 @@ async function runSegmentationStep(kind) {
         if (!data.success) throw new Error(data.error || 'Segmentation failed');
         const n = data.total_labels || Object.keys(data.label_counts || {}).length || 0;
         _saveManualState({ [kind]: true });
+        reportUIEvent('segmentation.step', `${label} completed`, { kind, labels: n });
         if (typeof addChat === 'function') {
             addChat('system', `✅ ${label} done — ${n} label(s) found.`);
         }
@@ -17035,6 +17920,7 @@ async function runSegmentationStep(kind) {
             startSegmentationMeshPrewarm(kind === 'ctv_segmentation' ? 'ctv' : 'oar');
         }
     } catch (e) {
+        reportUIEvent('segmentation.error', `${label} failed`, { kind, error: e.message });
         if (typeof addChat === 'function') {
             addChat('error', `${label} failed: ${e.message}`);
         }
