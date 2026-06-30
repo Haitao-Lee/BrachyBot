@@ -239,6 +239,11 @@ CONTROL_REGISTRY = {
         "commands": ["sync", "inspect"],
         "description": "Synchronize or inspect the current frontend UI state snapshot"
     },
+    "ui.control": {
+        "commands": ["click", "set", "toggle", "focus", "blur"],
+        "value_type": "string",
+        "description": "Generic safe DOM control by id or CSS selector. Value may be an id, selector, or JSON like {\"id\":\"viewerWindow\",\"value\":450}."
+    },
     "training.mode": {
         "commands": ["start", "stop", "status", "advice"],
         "value_type": "string",
@@ -622,6 +627,7 @@ class UIControllerTool(BaseTool):
         if target == "plan.run": return "Planning pipeline started"
         if target == "plan.run_manual_step": return f"Manual workflow step started: {value}"
         if target == "ui.state": return "UI state snapshot synchronized"
+        if target == "ui.control": return f"UI control {command}: {value}"
         if target == "training.mode":
             if command == "start": return f"Planning monitor started: {value or 'default goal'}"
             if command == "stop": return "Planning monitor stopped"

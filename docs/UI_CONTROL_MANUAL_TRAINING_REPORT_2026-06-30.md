@@ -16,10 +16,12 @@ This change extends BrachyBot from an LLM-only planning assistant into a UI-awar
 
 - The frontend now collects a structured UI snapshot through `collectUIState()`.
 - The snapshot includes active panel, viewer settings, overlays, data tree visibility, manual planning status, and training monitor status.
+- The snapshot also includes a bounded, redacted inventory of clickable/input controls. Sensitive fields such as API keys, tokens, secrets, and passwords are reported as `[redacted]`.
 - The browser sends snapshots to the backend via `POST /api/ui/state`.
 - User interactions are recorded through `POST /api/ui/event`, including button clicks, sliders, input changes, panel switches, planning steps, segmentation steps, manual needle/seed edits, and dose recomputation.
 - `ui_controller` now exposes structured actions for:
   - `ui.state`
+  - `ui.control`
   - `plan.run`
   - `plan.run_manual_step`
   - `training.mode`
@@ -64,6 +66,7 @@ The training monitor supports both live and retrospective use:
 - Live mode starts with `POST /api/training/start` or `ui_controller` target `training.mode` command `start`.
 - While active, UI events are appended to the backend event buffer.
 - The backend returns lightweight deterministic feedback for important events, such as segmentation, planning steps, needle edits, seed edits, and dose recomputation.
+- For high-value checkpoints, such as dose recomputation or completed planning, the backend can return a `suggested_screenshot` target. The frontend rate-limits these suggestions and captures a dose overview, DVH, or 3D view into the chat.
 - The user can request detailed advice at any time with `POST /api/training/advice`.
 - Stopping the monitor with `POST /api/training/stop` returns a final report summarizing observed workflow activity and current plan quality.
 
@@ -150,10 +153,13 @@ The manual dose preview is designed for responsive interaction and training feed
 ## Verification Checklist
 
 - UI controller can switch panels and trigger real manual workflow functions.
+- UI controller has a generic `ui.control` fallback for new buttons, inputs, selects, and checkboxes.
 - Manual workflow buttons no longer depend on a working LLM key.
 - Training mode starts, records events, emits live feedback, and produces final advice.
+- Training mode can request rate-limited automatic screenshots for visual review checkpoints.
 - Manual needles and seeds appear in 3D, Data Tree, and 2D overlays.
 - Manual seed/needle edits recompute a fast dose/DVH preview.
 - Existing coordinate conversion functions were not changed.
 - Existing automatic planning, report generation, screenshots, and dose surface mode remain compatible.
+`ui.control` is a safe fallback for newly added UI controls that do not yet have a dedicated target. It accepts an element id or CSS selector and supports `click`, `set`, `toggle`, `focus`, and `blur`. It does not execute arbitrary JavaScript.
 

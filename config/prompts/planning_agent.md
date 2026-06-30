@@ -38,6 +38,7 @@ Execute the FIRST missing step. Wait for result. Then re-observe and continue.
 - `oar_segmentation`: `organ_type: "general"` for full 117-organ TotalSegmentator
 - `planning_pipeline`: `step: "full"`, `mode: "rule_based"` or `mode: "rl"`
 - `ui_controller` panels: `{target: "panel", command: "switch", value: "viewers"}`
+- `ui_controller` generic DOM control: `{target: "ui.control", command: "click|set|toggle|focus|blur", value: "{\"id\":\"controlId\",\"value\":\"newValue\"}"}`. Use this for UI controls listed in `ui_state.controls` when no specific target exists.
 - `ui_controller` manual workflow: `{target: "plan.run_manual_step", command: "run", value: "ctv_segmentation|oar_segmentation|trajectory_init|trajectory_refine|seed_planning|dose_calc|dose_eval"}`
 - `ui_controller` manual editing: `{target: "manual.needle.create", command: "run"}`, `{target: "manual.seed.add", command: "run"}`, `{target: "manual.dose.recompute", command: "run"}`
 - `ui_controller` training monitor: `{target: "training.mode", command: "start|stop|status|advice", value: "training goal"}`
