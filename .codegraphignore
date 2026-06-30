@@ -1,0 +1,25 @@
+.git/
+.codegraph/
+.claude/
+__pycache__/
+*.pyc
+
+# Runtime/generated data that can exhaust file watchers.
+uploads/
+output/
+outputs/
+screenshots/
+test_screenshots/
+memory/data/
+tool_factory/web_search/cache/
+tool_factory/web_search/evidence/
+tool_factory/case_memory/cases/
+
+# Large vendored/model/runtime directories.
+VoCo/
+tool_factory/env_manager/envs/
+*.nii
+*.nii.gz
+*.dcm
+*.dicom
+*.log
