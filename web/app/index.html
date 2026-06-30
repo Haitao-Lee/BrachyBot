@@ -4840,13 +4840,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
                         <button class="btn btn-outline" onclick="stopTrainingMode()" style="font-size:0.6rem;padding:5px 6px;">Finish Monitor</button>
                         <button class="btn btn-outline" onclick="addManualNeedle()" style="font-size:0.6rem;padding:5px 6px;">Add Needle</button>
                         <button class="btn btn-outline" onclick="addManualSeed()" style="font-size:0.6rem;padding:5px 6px;">Add Seed</button>
-                        <button class="btn btn-outline" onclick="recomputeManualDose('manual_button')" style="font-size:0.6rem;padding:5px 6px;">Recompute Dose</button>
+                        <button class="btn btn-outline" onclick="recomputeManualDose('manual_button')" style="font-size:0.6rem;padding:5px 6px;">Recompute AI Dose</button>
                         <button class="btn btn-outline" onclick="requestPlanningAdvice()" style="font-size:0.6rem;padding:5px 6px;">Detailed Advice</button>
-                    </div>
-                    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-top:4px;">
-                        <label style="font-size:0.58rem;color:var(--text-dim);">Gy/seed<input id="manualSeedStrengthGy" type="number" value="90" step="5" style="width:100%;font-size:0.62rem;"></label>
-                        <label style="font-size:0.58rem;color:var(--text-dim);">Sigma mm<input id="manualDoseSigmaMm" type="number" value="12" step="1" style="width:100%;font-size:0.62rem;"></label>
-                        <label style="font-size:0.58rem;color:var(--text-dim);">Cutoff mm<input id="manualDoseCutoffMm" type="number" value="42" step="2" style="width:100%;font-size:0.62rem;"></label>
                     </div>
                 </div>
             </div>
@@ -8679,7 +8674,7 @@ function collectUIState() {
             active_needle_id: manualPlanningState.activeNeedleId,
             seed_counter: manualPlanningState.seedCounter,
             needle_counter: manualPlanningState.needleCounter,
-            dose: manualPlanningState.dose,
+            dose_engine: manualPlanningState.doseEngine || 'myDoseNet',
         } : {},
         training: (typeof trainingMonitorState !== 'undefined') ? {
             active: !!trainingMonitorState.active,
@@ -8769,27 +8764,11 @@ var manualPlanningState = {
     activeNeedleId: null,
     seedCounter: 0,
     needleCounter: 0,
-    dose: {
-        seed_strength_gy: 90,
-        sigma_mm: 12,
-        cutoff_mm: 42,
-    },
+    doseEngine: 'myDoseNet',
 };
 
 function _activeApiSessionId() {
     return (typeof activeSessionId !== 'undefined' && activeSessionId) || state.sessionId || 'web';
-}
-
-function _readManualDoseConfig() {
-    const strength = parseFloat(document.getElementById('manualSeedStrengthGy')?.value || manualPlanningState.dose.seed_strength_gy || 90);
-    const sigma = parseFloat(document.getElementById('manualDoseSigmaMm')?.value || manualPlanningState.dose.sigma_mm || 12);
-    const cutoff = parseFloat(document.getElementById('manualDoseCutoffMm')?.value || manualPlanningState.dose.cutoff_mm || Math.max(30, sigma * 3));
-    manualPlanningState.dose = {
-        seed_strength_gy: Number.isFinite(strength) ? strength : 90,
-        sigma_mm: Number.isFinite(sigma) ? sigma : 12,
-        cutoff_mm: Number.isFinite(cutoff) ? cutoff : 42,
-    };
-    return manualPlanningState.dose;
 }
 
 function _shouldLogTrainingFeedback(message) {
@@ -15049,7 +15028,7 @@ function _manualPayload() {
             points: (n.points || []).map(p => _vec3Array(p)),
             trajectory_id: n.trajectory_id,
         })),
-        dose: _readManualDoseConfig(),
+        dose_engine: 'myDoseNet',
     };
 }
 
@@ -15139,7 +15118,7 @@ async function recomputeManualDose(reason = 'manual_update') {
         addChat('error', 'No manual seeds available. Add at least one seed before recomputing dose.');
         return null;
     }
-    addChat('system', 'Manual dose preview recomputing...');
+    addChat('system', 'Manual AI dose recomputing...');
     try {
         const res = await fetch(API + '/manual_planning/update', {
             method: 'POST',
@@ -15154,13 +15133,13 @@ async function recomputeManualDose(reason = 'manual_update') {
         const m = data.metrics || {};
         const v100 = Number.isFinite(m.v100) ? `${(m.v100 * 100).toFixed(1)}%` : '--';
         const d90 = Number.isFinite(m.d90) ? `${m.d90.toFixed(1)} Gy` : '--';
-        addChat('system', `Manual preview updated: ${data.total_seeds} seeds, V100=${v100}, D90=${d90}.`);
+        addChat('system', `Manual AI dose updated: ${data.total_seeds} seeds, V100=${v100}, D90=${d90}.`);
         if (data.advice && data.advice.advice && trainingMonitorState.active) {
             addChat('system', 'Monitor advice: ' + data.advice.advice.slice(0, 2).join(' '));
         }
         return data;
     } catch (e) {
-        addChat('error', `Manual dose preview failed: ${e.message}`);
+        addChat('error', `Manual AI dose failed: ${e.message}`);
         return null;
     }
 }
@@ -21325,7 +21304,7 @@ const REPORT_STRINGS = {
             '<b>CT 影像输入</b>：CT 序列重采样到 1 mm³ 等向性体素',
             '<b>CTV/OAR 分割</b>：nnUNet 深度学习模型自动分割',
             '<b>穿刺路径规划</b>：基于 Zhiyuan v2 算法的 candidate-trajectory + 自适应过滤',
-            '<b>种子规划</b>：贪心迭代放置策略，每个种子贡献 3D Gaussian 辐射场',
+            '<b>种子规划</b>：贪心迭代放置策略，每个种子贡献 myDoseNet CNN 剂量分布',
             '<b>剂量计算</b>：基于 myDoseNet CNN 代理模型',
             '<b>DVH 评估</b>：按 ICRU 89 / GEC-ESTRO 标准',
         ],
@@ -21421,7 +21400,7 @@ const REPORT_STRINGS = {
             '<b>CT input</b>: resampled to 1 mm³ isotropic voxels',
             '<b>CTV/OAR segmentation</b>: nnUNet deep-learning auto-segmentation',
             '<b>Trajectory planning</b>: Zhiyuan v2 candidate-trajectory + adaptive filter',
-            '<b>Seed planning</b>: greedy iterative placement with 3D Gaussian radiation field',
+            '<b>Seed planning</b>: greedy iterative placement with per-seed myDoseNet CNN dose contributions',
             '<b>Dose calculation</b>: myDoseNet CNN surrogate (calibrated to 120 Gy prescription)',
             '<b>DVH evaluation</b>: per ICRU 89 / GEC-ESTRO standards',
         ],

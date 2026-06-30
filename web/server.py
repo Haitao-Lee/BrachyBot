@@ -293,7 +293,7 @@ def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any
             issues.append(f"Plan score is {plan_score:.0f}/100; review coverage, hot spots, and OAR dose before approval.")
 
     if not strengths and not issues and not advice:
-        advice.append("Load CT, segment CTV/OAR, and run planning or manual dose preview to generate actionable advice.")
+        advice.append("Load CT, segment CTV/OAR, and run planning or manual AI dose recomputation to generate actionable advice.")
 
     return {
         "success": True,
@@ -380,14 +380,18 @@ def _safe_float_list(values: Any, length: int = 3, default: Optional[list] = Non
         return list(default)
 
 
-def _compute_manual_preview(agent, seeds: list, needles: list, dose_cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """Compute a fast spacing-aware Gaussian dose preview in original CT space.
+def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]:
+    """Recompute manual-plan dose with the trained myDoseNet model only.
 
-    Input seed/needle coordinates are world coordinates. The function uses the
-    current SimpleITK CT transform only to locate voxel ROIs, leaving the
-    existing viewer coordinate path untouched.
+    Manual seed and needle coordinates remain in frontend world coordinates.
+    For model inference only, seed positions are transformed onto the existing
+    planning grid and directions are converted with the same RAS-to-voxel helper
+    used by the automatic planning pipeline. The resulting normalized dose is
+    resampled back to original CT space for the existing overlays, DVH, and report
+    paths. There is intentionally no analytical/Gaussian fallback here.
     """
     import numpy as np
+    import SimpleITK as sitk
 
     if agent is None or not hasattr(agent, "memory"):
         raise ValueError("Agent not available")
@@ -396,55 +400,120 @@ def _compute_manual_preview(agent, seeds: list, needles: list, dose_cfg: Dict[st
     if ct_image is None or ct_data is None:
         raise ValueError("No CT image loaded")
 
-    shape = tuple(int(v) for v in np.asarray(ct_data).shape)
-    spacing_xyz = np.asarray(ct_image.GetSpacing(), dtype=np.float32)
-    dose = np.zeros(shape, dtype=np.float32)  # normalized dose, 1.0 = prescription
+    original_shape = tuple(int(v) for v in np.asarray(ct_data).shape)
 
-    seed_strength_gy = float(dose_cfg.get("seed_strength_gy", dose_cfg.get("seedStrengthGy", 90.0)) or 90.0)
-    sigma_mm = float(dose_cfg.get("sigma_mm", dose_cfg.get("sigmaMm", 12.0)) or 12.0)
-    cutoff_mm = float(dose_cfg.get("cutoff_mm", dose_cfg.get("cutoffMm", max(30.0, sigma_mm * 3.0))) or max(30.0, sigma_mm * 3.0))
-    seed_strength_norm = seed_strength_gy / 120.0
-    sigma_mm = max(1.0, sigma_mm)
-    cutoff_mm = max(sigma_mm * 1.5, cutoff_mm)
+    def _mask_array(*keys, shape=original_shape):
+        for key in keys:
+            arr = agent.memory.retrieve(key)
+            if arr is None:
+                continue
+            try:
+                arr_np = np.asarray(arr)
+                if arr_np.shape == shape:
+                    return arr_np
+            except Exception:
+                continue
+        return None
+
+    ctv_mask = _mask_array("ctv_mask", "ctv_array", "ctv_label_data", "ctv_full_labels")
+    if ctv_mask is None or not np.any(ctv_mask > 0):
+        raise ValueError("CTV mask is required before manual AI dose recomputation.")
+    oar_mask = _mask_array("oar_array", "oar_label_data")
+
+    from plans import utilizations
+    from plans.config import setting
+    from tool_factory.seed_plan.planning_pipeline import (
+        NEW_SLICES_ROUNDED,
+        _load_dose_model,
+        _resample_for_planning,
+    )
+
+    resampled_ct = agent.memory.retrieve("resampled_ct")
+    resampled_ctv = agent.memory.retrieve("resampled_ctv")
+    resampled_oar = agent.memory.retrieve("resampled_oar")
+    if resampled_ct is None or resampled_ctv is None:
+        resampled_ct, resampled_ctv, resampled_oar = _resample_for_planning(
+            ct_image, ctv_mask, oar_mask, new_size=[128, 128, NEW_SLICES_ROUNDED]
+        )
+        agent.memory.store("resampled_ct", resampled_ct)
+        agent.memory.store("resampled_ctv", resampled_ctv)
+        if resampled_oar is not None:
+            agent.memory.store("resampled_oar", resampled_oar)
+
+    dose_model, model_error = _load_dose_model()
+    if dose_model is None:
+        raise ValueError(model_error or "myDoseNet dose model is unavailable")
 
     norm_seeds = []
+    model_seeds = []
+    size_xyz = np.asarray(resampled_ct.GetSize(), dtype=np.float64)
     for i, seed in enumerate(seeds or []):
         pos = _safe_float_list(seed.get("position") if isinstance(seed, dict) else None, 3)
         direction = _safe_float_list((seed.get("direction") if isinstance(seed, dict) else None), 3, [0.0, 0.0, 1.0])
-        dn = float(np.linalg.norm(direction))
-        if dn <= 1e-8:
-            direction = [0.0, 0.0, 1.0]
+        direction_np = np.asarray(direction, dtype=np.float64)
+        dn = float(np.linalg.norm(direction_np))
+        if dn <= 1e-8 or not np.all(np.isfinite(direction_np)):
+            direction_np = np.array([0.0, 0.0, 1.0], dtype=np.float64)
         else:
-            direction = (np.asarray(direction, dtype=np.float32) / dn).tolist()
+            direction_np = direction_np / dn
         seed_id = str(seed.get("id") if isinstance(seed, dict) and seed.get("id") else f"manual_seed_{i + 1}")
         traj_id = str(seed.get("trajectory_id") if isinstance(seed, dict) and seed.get("trajectory_id") else "manual_traj_1")
 
         try:
-            idx_xyz = ct_image.TransformPhysicalPointToIndex(tuple(float(v) for v in pos))
+            idx_xyz = np.asarray(
+                resampled_ct.TransformPhysicalPointToContinuousIndex(tuple(float(v) for v in pos)),
+                dtype=np.float64,
+            )
         except Exception:
             continue
-        cx, cy, cz = int(idx_xyz[0]), int(idx_xyz[1]), int(idx_xyz[2])
-        if not (0 <= cz < shape[0] and 0 <= cy < shape[1] and 0 <= cx < shape[2]):
+        if not np.all(np.isfinite(idx_xyz)) or np.any(idx_xyz < 0.0) or np.any(idx_xyz >= size_xyz):
             continue
 
-        rx = max(1, int(np.ceil(cutoff_mm / max(float(spacing_xyz[0]), 1e-6))))
-        ry = max(1, int(np.ceil(cutoff_mm / max(float(spacing_xyz[1]), 1e-6))))
-        rz = max(1, int(np.ceil(cutoff_mm / max(float(spacing_xyz[2]), 1e-6))))
-        z0, z1 = max(0, cz - rz), min(shape[0], cz + rz + 1)
-        y0, y1 = max(0, cy - ry), min(shape[1], cy + ry + 1)
-        x0, x1 = max(0, cx - rx), min(shape[2], cx + rx + 1)
-        zz = (np.arange(z0, z1, dtype=np.float32) - cz) * spacing_xyz[2]
-        yy = (np.arange(y0, y1, dtype=np.float32) - cy) * spacing_xyz[1]
-        xx = (np.arange(x0, x1, dtype=np.float32) - cx) * spacing_xyz[0]
-        dist2 = zz[:, None, None] ** 2 + yy[None, :, None] ** 2 + xx[None, None, :] ** 2
-        dose[z0:z1, y0:y1, x0:x1] += seed_strength_norm * np.exp(-0.5 * dist2 / (sigma_mm * sigma_mm)).astype(np.float32)
+        try:
+            voxel_direction = utilizations.ras_direction_to_voxel(direction_np, resampled_ct).astype(np.float32)
+        except Exception:
+            voxel_direction = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        vdn = float(np.linalg.norm(voxel_direction))
+        if vdn <= 1e-8 or not np.all(np.isfinite(voxel_direction)):
+            voxel_direction = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        else:
+            voxel_direction = voxel_direction / vdn
 
+        pos_zyx = np.array([idx_xyz[2], idx_xyz[1], idx_xyz[0]], dtype=np.float32)
+        model_seeds.append((pos_zyx, voxel_direction.astype(np.float32)))
         norm_seeds.append({
             "id": seed_id,
             "position": pos,
-            "direction": direction,
+            "direction": direction_np.astype(np.float32).tolist(),
             "trajectory_id": traj_id,
         })
+
+    if not model_seeds:
+        raise ValueError("No manual seeds fall inside the current CT volume.")
+
+    args = setting()
+    dose_image = utilizations.normalize_dose_image(
+        resampled_ct,
+        args.image_normalize[0],
+        args.image_normalize[1],
+        args.image_normalize[0],
+        args.image_normalize[1],
+    )
+    per_seed_doses = utilizations.batch_seed_dose_calculation_dl(
+        model_seeds,
+        dose_image,
+        dose_model,
+        args.radiation_array_params["infer_img_size"],
+        args.seed_info,
+        args.image_normalize[0],
+        args.image_normalize[1],
+        args.image_normalize[2],
+    )
+    dose = np.zeros_like(sitk.GetArrayFromImage(dose_image), dtype=np.float32)
+    for seed_dose in per_seed_doses:
+        dose += np.asarray(seed_dose, dtype=np.float32)
+    dose = np.nan_to_num(dose, nan=0.0, posinf=0.0, neginf=0.0)
+    dose[dose < 0.0] = 0.0
 
     norm_needles = []
     for i, needle in enumerate(needles or []):
@@ -470,29 +539,22 @@ def _compute_manual_preview(agent, seeds: list, needles: list, dose_cfg: Dict[st
             "num_seeds": len(seed_list),
         })
 
-    def _mask_array(*keys):
-        for key in keys:
-            arr = agent.memory.retrieve(key)
-            if arr is None:
-                continue
-            try:
-                arr_np = np.asarray(arr)
-                if arr_np.shape == dose.shape:
-                    return arr_np
-            except Exception:
-                continue
-        return None
+    dose_sitk = sitk.GetImageFromArray(dose.astype(np.float32))
+    dose_sitk.CopyInformation(resampled_ct)
+    resampler = sitk.ResampleImageFilter()
+    resampler.SetReferenceImage(ct_image)
+    resampler.SetInterpolator(sitk.sitkLinear)
+    dose_original = sitk.GetArrayFromImage(resampler.Execute(dose_sitk)).astype(np.float32)
 
-    ctv_mask = _mask_array("ctv_mask", "ctv_array", "ctv_label_data", "ctv_full_labels")
-    oar_mask = _mask_array("oar_array", "oar_label_data")
     organ_names = agent.memory.retrieve("organ_names") or {}
     spacing = np.asarray(ct_image.GetSpacing(), dtype=np.float32)
     voxel_vol_cm3 = float(np.prod(spacing) / 1000.0)
-    dose_gy = dose * 120.0
+    dose_gy = dose_original * 120.0
 
     metrics: Dict[str, Any] = {
         "prescribed_dose": 1.0,
         "manual_preview": True,
+        "dose_engine": "myDoseNet",
         "total_seeds": len(norm_seeds),
         "num_trajectories": len(grouped),
     }
@@ -577,6 +639,8 @@ def _compute_manual_preview(agent, seeds: list, needles: list, dose_cfg: Dict[st
     metrics["dvh_data"] = dvh_data
 
     agent.memory.store("manual_planning_preview", True)
+    agent.memory.store("manual_ai_dose", True)
+    agent.memory.store("dose_engine", "myDoseNet")
     agent.memory.store("manual_seeds", norm_seeds)
     agent.memory.store("manual_needles", norm_needles)
     agent.memory.store("seed_plan", plan_serialized)
@@ -584,7 +648,7 @@ def _compute_manual_preview(agent, seeds: list, needles: list, dose_cfg: Dict[st
     agent.memory.store("total_seeds", len(norm_seeds))
     agent.memory.store("num_trajectories", len(grouped))
     agent.memory.store("dose_distribution", dose)
-    agent.memory.store("dose_distribution_gy", dose)
+    agent.memory.store("dose_distribution_gy", dose_original)
     agent.memory.store("dose_metrics", metrics)
     agent.memory.store("metrics", metrics)
     agent.memory.store("dvh_data", dvh_data)
@@ -592,10 +656,11 @@ def _compute_manual_preview(agent, seeds: list, needles: list, dose_cfg: Dict[st
     return {
         "success": True,
         "manual_preview": True,
+        "dose_engine": "myDoseNet",
         "total_seeds": len(norm_seeds),
         "num_trajectories": len(grouped),
         "metrics": metrics,
-        "dose_range": [float(dose.min()), float(dose.max())],
+        "dose_range": [float(dose_original.min()), float(dose_original.max())],
     }
 
 
@@ -3889,7 +3954,7 @@ def create_app(config: Optional[Dict] = None):
     @require_api_key
     @rate_limit
     def api_manual_planning_update():
-        """Update manual world-coordinate seeds/needles and recompute preview dose."""
+        """Update manual world-coordinate seeds/needles and recompute myDoseNet dose."""
         data = request.get_json() or {}
         session_id = _ui_session_id(data.get("session_id") or "web")
         agent = get_agent(session_id)
@@ -3898,10 +3963,9 @@ def create_app(config: Optional[Dict] = None):
 
         seeds = data.get("seeds") or []
         needles = data.get("needles") or []
-        dose_cfg = data.get("dose") or {}
         reason = data.get("reason") or "manual_update"
         try:
-            result = _compute_manual_preview(agent, seeds, needles, dose_cfg)
+            result = _compute_manual_ai_dose(agent, seeds, needles)
             event = _append_ui_event(session_id, {
                 "type": "manual.dose",
                 "label": reason,
@@ -3909,6 +3973,7 @@ def create_app(config: Optional[Dict] = None):
                     "seeds": result.get("total_seeds", 0),
                     "trajectories": result.get("num_trajectories", 0),
                     "manual_preview": True,
+                    "dose_engine": "myDoseNet",
                 },
             })
             result["event"] = event

@@ -54,7 +54,7 @@ The 3D viewer now supports manual fine planning:
 - Drag the needle entry/tip handles in 3D.
 - Add seeds along the selected/current manual needle.
 - Drag existing seed meshes.
-- Recompute the fast manual dose/DVH preview after seed or needle edits.
+- Recompute manual dose/DVH with the trained myDoseNet AI dose model after seed or needle edits.
 - Keep Data Tree, 2D seed/needle projections, 3D meshes, dose overlay, DVH, and metrics synchronized.
 
 Needle endpoint handles are separate `needle_handle` objects, while clinical needle meshes remain thinner than seed meshes so seeds stay visible.
@@ -91,9 +91,9 @@ Implemented in `web/server.py`:
   - `_latest_plan_snapshot`
   - `_build_plan_advice`
   - `_training_feedback_for_event`
-  - `_compute_manual_preview`
+  - `_compute_manual_ai_dose`
 
-`_compute_manual_preview` creates an interaction-speed dose preview from manual world-coordinate seeds. It updates the same frontend-facing memory fields used by the existing dose overlay and DVH paths.
+`_compute_manual_ai_dose` transforms manual world-coordinate seeds onto the planning grid, runs the same trained myDoseNet CNN dose path used by planning, and resamples the normalized dose back to original CT space. It updates the same frontend-facing memory fields used by the existing dose overlay and DVH paths. There is no analytical/Gaussian dose fallback.
 
 ## Frontend Changes
 
@@ -106,7 +106,7 @@ Implemented in `web/app/index.html`:
   - Add Seed
   - Recompute Dose
   - Detailed Advice
-  - Manual seed strength, sigma, and cutoff inputs
+- Manual AI dose recomputation through myDoseNet
 - UI bridge:
   - `syncUIBridgeState`
   - `reportUIEvent`
@@ -148,7 +148,7 @@ This implementation does not change the established viewer coordinate transforms
 
 ## Clinical Boundary
 
-The manual dose preview is designed for responsive interaction and training feedback. It is not a replacement for the formal planning pipeline dose engine. The formal report and clinical approval workflow should continue to rely on the established planning pipeline outputs and independent clinical review.
+Manual dose recomputation uses the trained myDoseNet AI dose model and intentionally has no simplified Gaussian fallback. It is suitable for interactive planning feedback, while formal clinical approval still requires the established planning workflow and independent verification.
 
 ## Verification Checklist
 
@@ -158,8 +158,7 @@ The manual dose preview is designed for responsive interaction and training feed
 - Training mode starts, records events, emits live feedback, and produces final advice.
 - Training mode can request rate-limited automatic screenshots for visual review checkpoints.
 - Manual needles and seeds appear in 3D, Data Tree, and 2D overlays.
-- Manual seed/needle edits recompute a fast dose/DVH preview.
+- Manual seed/needle edits recompute dose/DVH through myDoseNet.
 - Existing coordinate conversion functions were not changed.
 - Existing automatic planning, report generation, screenshots, and dose surface mode remain compatible.
 `ui.control` is a safe fallback for newly added UI controls that do not yet have a dedicated target. It accepts an element id or CSS selector and supports `click`, `set`, `toggle`, `focus`, and `blur`. It does not execute arbitrary JavaScript.
-
