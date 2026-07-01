@@ -1933,24 +1933,6 @@ def create_app(config: Optional[Dict] = None):
 
             shape = ct_data.shape  # (Z, Y, X)
 
-            # DEBUG: verify mask-CT alignment
-            if ctv_array is not None:
-                import SimpleITK as _sitk_dbg
-                _ct_img = agent.memory.retrieve("ct_image")
-                _ct_dir = _ct_img.GetDirection() if _ct_img is not None else "None"
-                _ctv_stored = agent.memory.retrieve("ctv_array")
-                _ctv_dir = _ctv_stored.GetDirection() if isinstance(_ctv_stored, _sitk_dbg.Image) else "numpy"
-                _ctv_nz = [int(i) for i in np.where(ctv_array > 0)[0][:5]] if np.any(ctv_array > 0) else []
-                _ct_nz = [int(i) for i in np.where(ct_data > 0)[0][:5]] if np.any(ct_data > 0) else []
-                logger.info(f"[DEBUG label_volume] CT shape={shape}, dir={_ct_dir}")
-                logger.info(f"[DEBUG label_volume] CTV shape={ctv_array.shape}, dir={_ctv_dir}, first_nz_z={_ctv_nz}")
-                logger.info(f"[DEBUG label_volume] CT first_nz_z={_ct_nz}")
-                # Check if CTV center Z matches CT center Z
-                if np.any(ctv_array > 0):
-                    _ctv_z = np.where(ctv_array > 0)[0]
-                    logger.info(f"[DEBUG label_volume] CTV Z range: {_ctv_z.min()}-{_ctv_z.max()}, center={_ctv_z.mean():.1f}")
-                    logger.info(f"[DEBUG label_volume] CT Z range: 0-{ct_data.shape[0]-1}")
-
             # Ensure label arrays have same shape as CT
             if ctv_array is not None and ctv_array.shape != shape:
                 logger.warning(f"CTV shape mismatch: {ctv_array.shape} vs CT {shape}, resampling...")

@@ -613,7 +613,7 @@ class UIControllerTool(BaseTool):
             return f"Dose overlay {'shown' if value == 'on' else 'hidden'}"
         if target in ("tree.trajectories.visibility", "tree.seeds.visibility",
                        "tree.needles.visibility", "tree.isosurfaces.visibility"):
-            name = target.split(".")[0].replace("tree.", "")
+            name = target.split(".")[1]
             return f"{name.capitalize()} {'shown' if value == 'on' else 'hidden'}"
 
         # Session management
