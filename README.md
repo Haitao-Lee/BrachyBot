@@ -637,6 +637,11 @@ export BRACHYBOT_LLM_API_KEY="your-llm-api-key"
 # CORS allowed origins (comma-separated)
 # Default: http://localhost, http://127.0.0.1
 export ALLOWED_ORIGINS="http://localhost,http://127.0.0.1"
+
+# Dangerous execution tools are disabled by default.
+# Enable them only on a trusted local workstation, never on a shared/public server.
+# export BRACHYBOT_ENABLE_CODE_EXECUTOR=1
+# export BRACHYBOT_ENABLE_SHELL_EXECUTOR=1
 ```
 
 ### Step 3: Download Pre-trained Models (Optional)
@@ -1071,13 +1076,13 @@ tool_factory/
 │   ├── image_loader.py
 │   └── image_preprocessor.py
 │
-├── code_executor/        # Python code execution
+├── code_executor/        # Python code execution, disabled unless BRACHYBOT_ENABLE_CODE_EXECUTOR=1
 │
 ├── filesystem_browser/   # File system navigation
 │
 ├── env_manager/          # Python environment management
 │
-├── shell_executor/       # Shell command execution
+├── shell_executor/       # Shell command execution, disabled unless BRACHYBOT_ENABLE_SHELL_EXECUTOR=1
 │
 ├── tool_creator/         # Dynamic tool creation (self-evolution)
 │
@@ -1380,6 +1385,10 @@ BRACHYBOT_LLM_API_KEY="your-key"  # API key for the default LLM provider
 # Server Security
 BRACHYBOT_API_KEY="your-key"      # API key for web server authentication
 ALLOWED_ORIGINS="http://localhost,http://127.0.0.1"  # CORS allowed origins (comma-separated)
+
+# Optional trusted-local execution tools; leave unset for production
+# BRACHYBOT_ENABLE_CODE_EXECUTOR=1
+# BRACHYBOT_ENABLE_SHELL_EXECUTOR=1
 
 # Server
 BRACHY_PORT=8080                  # Web server port

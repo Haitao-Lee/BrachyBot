@@ -18,6 +18,9 @@ from tool_factory import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
 
+TRUE_VALUES = {"1", "true", "yes", "on"}
+EXECUTION_ENABLED = os.environ.get("BRACHYBOT_ENABLE_SHELL_EXECUTOR", "").lower() in TRUE_VALUES
+
 # Blocked commands for safety
 BLOCKED_COMMANDS = [
     "rm -rf /", "rm -rf /*", "mkfs", "dd if=", ":(){", "fork",
@@ -37,12 +40,12 @@ ALLOWED_PATTERNS = [
 
 
 class ShellExecutorTool(BaseTool):
-    """Execute shell commands in a controlled environment."""
+    """Execute shell commands only in explicitly trusted local deployments."""
 
     name = "shell_executor"
-    description = """Execute shell commands for environment setup and system operations.
-Useful for: installing packages, creating virtual environments, managing files, running scripts.
-Returns stdout, stderr, and return code."""
+    description = """Execute shell commands only when BRACHYBOT_ENABLE_SHELL_EXECUTOR=1.
+Use only in trusted local environments for setup, diagnostics, and maintenance.
+Commands are executed without shell expansion and must start with an allowed executable."""
 
     input_schema = {
         "command": {
@@ -72,6 +75,24 @@ Returns stdout, stderr, and return code."""
     def _validate_command(self, command: str) -> tuple:
         """Validate command is safe. Returns (is_safe, reason)."""
         command_lower = command.lower().strip()
+        try:
+            parts = shlex.split(command)
+        except ValueError as exc:
+            return False, f"Could not parse command: {exc}"
+
+        if not parts:
+            return False, "Empty command"
+
+        executable = Path(parts[0]).name.lower()
+        if executable.endswith(".exe"):
+            executable = executable[:-4]
+        allowed = {p.lower() for p in ALLOWED_PATTERNS}
+        if executable not in allowed:
+            return False, f"Executable '{parts[0]}' is not allowlisted"
+
+        shell_operators = {";", "&&", "||", "|", "`", "$(", ">", "<", "2>", "&>"}
+        if any(op in command for op in shell_operators):
+            return False, "Shell operators and command chaining are not allowed"
 
         # Check blocked commands
         for blocked in BLOCKED_COMMANDS:
@@ -102,6 +123,16 @@ Returns stdout, stderr, and return code."""
                 message="shell_executor requires a 'command' parameter"
             )
 
+        if not EXECUTION_ENABLED:
+            return ToolResult(
+                success=False,
+                error="shell_executor is disabled",
+                message=(
+                    "Shell execution is disabled by default. Set "
+                    "BRACHYBOT_ENABLE_SHELL_EXECUTOR=1 only in a trusted local environment."
+                ),
+            )
+
         # Validate command
         is_safe, reason = self._validate_command(command)
         if not is_safe:
@@ -120,10 +151,11 @@ Returns stdout, stderr, and return code."""
         cwd = working_dir if working_dir and os.path.isdir(working_dir) else os.getcwd()
 
         try:
+            args = shlex.split(command)
             # Run command
             result = subprocess.run(
-                command,
-                shell=True,
+                args,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=timeout,

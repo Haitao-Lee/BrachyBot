@@ -6688,7 +6688,7 @@ Output (JSON array of strings):"""
                         try:
                             planning_tool = self.registry.get("planning_pipeline")
                             if planning_tool:
-                                planning_result = planning_tool.execute(ct_image_path=ct_path, mode="rl", step="full")
+                                planning_result = planning_tool.execute(ct_image_path=ct_path, mode="rule_based", step="full")
                                 if planning_result and planning_result.success:
                                     logger.info("[WORKFLOW-ENFORCER] ✓ Planning completed")
                                     if planning_result.metadata:
@@ -7218,12 +7218,9 @@ Output (JSON array of strings):"""
             except Exception as e:
                 logger.debug(f"Fallback completeness check skipped: {e}")
 
-        # Append review sections to response
-        if review_sections:
-            response += "\n\n---\n" + "\n\n".join(review_sections)
-
         # WORKFLOW ENFORCER: If user requested planning but LLM didn't execute tools, force-execute
         is_planning_request = self._planning_requested(message)
+        _workflow_enforced = False
         if is_planning_request:
             has_ctv = (
                 self.memory.retrieve("ctv_array") is not None
@@ -7242,6 +7239,7 @@ Output (JSON array of strings):"""
                     # Auto-execute missing steps with proper SSE events
                     if not has_ctv:
                         logger.info("[WORKFLOW-ENFORCER-STREAM] Auto-running CTV segmentation")
+                        _workflow_enforced = True
                         ctv_step = add_step("tool", "Auto CTV Segmentation", "Auto-executed by workflow enforcer", status="pending", tool="ctv_segmentation")
                         yield yield_event("step", ctv_step)
                         _we_stream_ctv_op = None
@@ -7317,6 +7315,7 @@ Output (JSON array of strings):"""
 
                     if has_ctv and not has_oar:
                         logger.info("[WORKFLOW-ENFORCER-STREAM] Auto-running OAR segmentation")
+                        _workflow_enforced = True
                         oar_step = add_step("tool", "Auto OAR Segmentation", "Auto-executed by workflow enforcer", status="pending", tool="oar_segmentation")
                         yield yield_event("step", oar_step)
                         _we_stream_oar_op = None
@@ -7381,6 +7380,7 @@ Output (JSON array of strings):"""
 
                     if has_ctv and has_oar and not has_planning:
                         logger.info("[WORKFLOW-ENFORCER-STREAM] Auto-running planning pipeline")
+                        _workflow_enforced = True
                         planning_step = add_step("tool", "Auto Planning Pipeline", "Auto-executed by workflow enforcer", status="pending", tool="planning_pipeline")
                         yield yield_event("step", planning_step)
                         try:
@@ -7391,7 +7391,7 @@ Output (JSON array of strings):"""
                                 _plan_ebox = [None]
                                 def _run_plan():
                                     try:
-                                        _plan_rbox[0] = planning_tool.execute(ct_image_path=ct_path, mode="rl", step="full")
+                                        _plan_rbox[0] = planning_tool.execute(ct_image_path=ct_path, mode="rule_based", step="full")
                                     except Exception as _e:
                                         _plan_ebox[0] = _e
                                 _plan_th = _thr_p.Thread(target=_run_plan, daemon=True)
@@ -7433,6 +7433,93 @@ Output (JSON array of strings):"""
                             planning_step["status"] = "error"
                             planning_step["result"] = str(e)[:200]
                             yield yield_event("step", planning_step)
+
+        if _workflow_enforced and self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
+            _post_loop = None
+            try:
+                import asyncio as _asyncio_post_enforcer
+                _post_loop = _asyncio_post_enforcer.new_event_loop()
+                _asyncio_post_enforcer.set_event_loop(_post_loop)
+                _post_review_step = None
+                _post_cc_step = None
+                if self._has_completed_planning_in_steps(steps):
+                    step_id[0] += 1
+                    _post_review_step = {
+                        "id": step_id[0],
+                        "type": "tool",
+                        "title": "Quality Check",
+                        "tool": "plan_reviewer",
+                        "content": "Reviewing enforced planning result...",
+                        "status": "pending",
+                    }
+                    steps.append(_post_review_step)
+                    yield yield_event("step", _post_review_step)
+
+                step_id[0] += 1
+                _post_cc_step = {
+                    "id": step_id[0],
+                    "type": "tool",
+                    "title": "Completeness Check",
+                    "tool": "completeness_checker",
+                    "content": "Checking final response after workflow enforcement...",
+                    "status": "pending",
+                }
+                steps.append(_post_cc_step)
+                yield yield_event("step", _post_cc_step)
+
+                async def _run_post_plan_review():
+                    if _post_review_step is None:
+                        return ""
+                    _metrics = self.memory.retrieve("metrics", {}) or {}
+                    _config = self.memory.retrieve("plan_config", {}) or {}
+                    _plan_info = {"total_seeds": self.memory.retrieve("total_seeds", 0)}
+                    return await self.multi_agent_wrapper.review_plan_append(
+                        _metrics, _plan_info, _config, self.memory.user_lang
+                    )
+
+                async def _run_post_completeness():
+                    return await self.multi_agent_wrapper.check_completeness_append(
+                        message, response, steps, self.memory.user_lang
+                    )
+
+                _post_plan_result, _post_cc_result = _post_loop.run_until_complete(
+                    _asyncio_post_enforcer.gather(
+                        _run_post_plan_review(),
+                        _run_post_completeness(),
+                        return_exceptions=True,
+                    )
+                )
+                if isinstance(_post_plan_result, Exception):
+                    logger.error(f"[Post-enforcer review] Plan review failed: {_post_plan_result}")
+                    _post_plan_result = ""
+                if isinstance(_post_cc_result, Exception):
+                    logger.error(f"[Post-enforcer review] Completeness check failed: {_post_cc_result}")
+                    _post_cc_result = ""
+                if isinstance(_post_plan_result, str) and _post_plan_result:
+                    review_sections.append(_post_plan_result)
+                if isinstance(_post_cc_result, str) and _post_cc_result:
+                    review_sections.append(_post_cc_result)
+                if _post_review_step:
+                    _post_review_step["status"] = "done"
+                    _post_review_step["content"] = "Reviewed" if _post_plan_result else "No issues"
+                    yield yield_event("step", _post_review_step)
+                if _post_cc_step:
+                    _post_cc_step["status"] = "done"
+                    _post_cc_step["content"] = "Checked" if not _post_cc_result else "Issues found"
+                    yield yield_event("step", _post_cc_step)
+            except Exception as e:
+                logger.debug(f"Post-enforcer review skipped: {e}")
+            finally:
+                if _post_loop is not None:
+                    try:
+                        _post_loop.close()
+                    except Exception:
+                        pass
+
+        # Append review sections to response after any workflow enforcement so
+        # the final message reflects the actual tool chain that ran.
+        if review_sections:
+            response += "\n\n---\n" + "\n\n".join(review_sections)
 
         # Final response
         yield yield_event("response", {"response": response, "steps": steps, "llm_meta": llm_meta})
@@ -7478,7 +7565,7 @@ Output (JSON array of strings):"""
 
             return result
 
-        elif "计划" in msg_lower or "plan" in msg_lower or "规划" in msg_lower:
+        elif self._planning_requested(message):
             mode = "rl" if "rl" in msg_lower or "强化" in msg_lower else "rule_based"
 
             step_id[0] += 1
@@ -7562,7 +7649,7 @@ Output (JSON array of strings):"""
             step_id[0] += 1
             steps.append({"id": step_id[0], "type": "result", "title": f"{target} Result", "content": result, "status": "done"})
             return result
-        elif "计划" in msg_lower or "plan" in msg_lower or "规划" in msg_lower:
+        elif self._planning_requested(message):
             mode = "rl" if "rl" in msg_lower or "强化" in msg_lower else "rule_based"
             step_id[0] += 1
             steps.append({

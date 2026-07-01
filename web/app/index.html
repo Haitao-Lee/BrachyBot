@@ -6214,30 +6214,85 @@ function _firstMatchingIcon(text) {
 }
 
 function _sanitizeHtml(html) {
-    // Strip <script>, <iframe>, <object>, <embed>, <form> tags and event handlers.
-    // This is a lightweight defense-in-depth sanitizer. Keep server/API
-    // responses escaped where possible; use DOMPurify if arbitrary HTML is
-    // ever intentionally allowed.
     if (!html) return '';
-    // Remove dangerous tags and their content
-    let s = html.replace(/<\s*(script|iframe|object|embed|form|style|link|meta|base)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '');
-    // Remove self-closing dangerous tags
-    s = s.replace(/<\s*(script|iframe|object|embed|form|style|link|meta|base)\b[^>]*\/?>/gi, '');
-    // Remove event handlers (onclick, onerror, onload, etc.)
-    s = s.replace(/[\s/]+on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
-    // Remove scriptable or embedded-data URLs in common URL attributes.
-    s = s.replace(/\s(href|src|xlink:href)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, (m, attr, value) => {
-        const raw = String(value || '').replace(/^['"]|['"]$/g, '').trim().replace(/[\u0000-\u001F\u007F\s]+/g, '');
-        if (/^(javascript|vbscript|data):/i.test(raw)) return ' ' + attr + '="#"';
-        return m;
-    });
-    // Neutralize inline CSS expression/url javascript payloads.
-    s = s.replace(/\sstyle\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, (m, value) => {
-        const raw = String(value || '').toLowerCase();
-        if (raw.includes('expression(') || raw.includes('javascript:') || raw.includes('data:')) return '';
-        return m;
-    });
-    return s;
+    if (typeof document === 'undefined') {
+        return String(html)
+            .replace(/<\s*(script|iframe|object|embed|form|style|link|meta|base|svg|math)\b[\s\S]*?>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+            .replace(/\s+on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+            .replace(/\s(href|src|xlink:href)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, ' $1="#"');
+    }
+
+    const allowedTags = new Set([
+        'A', 'P', 'BR', 'HR', 'STRONG', 'B', 'EM', 'I', 'U', 'S',
+        'CODE', 'PRE', 'BLOCKQUOTE', 'UL', 'OL', 'LI',
+        'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TH', 'TD',
+        'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'SPAN', 'DIV', 'IMG',
+    ]);
+    const allowedAttrs = new Set(['href', 'src', 'alt', 'title', 'class', 'target', 'rel']);
+    const allowedClass = /^(md-|chat-|hljs|language-|token|contains-task-list|task-list-item)/;
+    const safeUrl = (value, allowDataImage = false) => {
+        const raw = String(value || '').trim().replace(/[\u0000-\u001F\u007F\s]+/g, '');
+        if (!raw) return false;
+        if (/^(javascript|vbscript|file):/i.test(raw)) return false;
+        if (/^data:/i.test(raw)) return allowDataImage && /^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(raw);
+        return /^(https?:|mailto:|\/|\.\/|\.\.\/|#|_assets\/)/i.test(raw);
+    };
+
+    const template = document.createElement('template');
+    template.innerHTML = String(html);
+
+    const walk = (node) => {
+        for (const child of Array.from(node.childNodes)) {
+            if (child.nodeType === Node.COMMENT_NODE) {
+                child.remove();
+                continue;
+            }
+            if (child.nodeType !== Node.ELEMENT_NODE) {
+                continue;
+            }
+            if (!allowedTags.has(child.tagName)) {
+                child.replaceWith(document.createTextNode(child.textContent || ''));
+                continue;
+            }
+
+            for (const attr of Array.from(child.attributes)) {
+                const name = attr.name.toLowerCase();
+                const value = attr.value || '';
+                if (name.startsWith('on') || name === 'style' || name === 'srcdoc') {
+                    child.removeAttribute(attr.name);
+                    continue;
+                }
+                if (!allowedAttrs.has(name)) {
+                    child.removeAttribute(attr.name);
+                    continue;
+                }
+                if (name === 'href' && !safeUrl(value, false)) {
+                    child.setAttribute('href', '#');
+                    continue;
+                }
+                if (name === 'src' && !safeUrl(value, child.tagName === 'IMG')) {
+                    child.removeAttribute('src');
+                    continue;
+                }
+                if (name === 'class') {
+                    const safeClasses = value.split(/\s+/).filter(c => allowedClass.test(c));
+                    if (safeClasses.length) child.setAttribute('class', safeClasses.join(' '));
+                    else child.removeAttribute('class');
+                    continue;
+                }
+                if (name === 'target') child.setAttribute('target', '_blank');
+                if (name === 'rel') child.setAttribute('rel', 'noopener noreferrer');
+            }
+            if (child.tagName === 'A') {
+                child.setAttribute('target', '_blank');
+                child.setAttribute('rel', 'noopener noreferrer');
+            }
+            walk(child);
+        }
+    };
+
+    walk(template.content);
+    return template.innerHTML;
 }
 
 function renderMarkdown(text) {
