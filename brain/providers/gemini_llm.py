@@ -5,6 +5,7 @@ Google's Gemini series models.
 """
 
 import os
+import re
 import time
 from typing import List, Dict, Any, Optional
 
@@ -72,7 +73,10 @@ class GeminiLLM(BaseLLM):
                         elif block.get("type") == "image_url":
                             image_url = block.get("image_url", {}).get("url", "")
                             if image_url.startswith("data:"):
-                                parts.append({"inline_data": {"mime_type": "image/jpeg", "data": image_url.split(",")[1]}})
+                                match = re.match(r"^data:([^;]+);base64,(.+)$", image_url, re.DOTALL)
+                                if match:
+                                    mime_type, data_b64 = match.groups()
+                                    parts.append({"inline_data": {"mime_type": mime_type, "data": data_b64}})
                 contents.append({"role": "model" if role == "assistant" else "user", "parts": parts})
 
             generation_config = {}

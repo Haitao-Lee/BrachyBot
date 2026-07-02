@@ -8067,7 +8067,54 @@ function _isAdviceRequest(text) {
         && /(?:plan|planning|dose|seed|needle|CTV|OAR|规划|剂量|粒子|穿刺针|靶区|危及器官)/i.test(text || '');
 }
 
-async function sendChat(prefill) {
+window._pendingHiddenChats = window._pendingHiddenChats || [];
+window._hiddenChatFlushRunning = false;
+
+function _buildScreenshotFollowUpMessage(question, screenshotUrl) {
+    const prompt = (question || 'Please analyze this screenshot and answer the user directly.').trim();
+    return `[Screenshot captured: ${screenshotUrl}]\n${prompt}\n\nUse the screenshot as the visual context. Do not call ui_screenshot again unless this image is unusable.`;
+}
+
+function _isScreenshotAckResponse(text, steps) {
+    const safeText = String(text || '').trim();
+    if (!safeText || !Array.isArray(steps) || !steps.length) return false;
+    const toolSteps = steps.filter(step => step && step.type === 'tool' && step.tool);
+    if (!toolSteps.length) return false;
+    if (toolSteps.some(step => step.tool !== 'ui_screenshot')) return false;
+    if (toolSteps.some(step => step.status === 'error')) return false;
+    return /^(Requested screenshot:|The requested screenshot is the )/i.test(safeText);
+}
+
+function _enqueueHiddenChat(message, options) {
+    const safeMessage = String(message || '').trim();
+    if (!safeMessage) return;
+    if (!Array.isArray(window._pendingHiddenChats)) window._pendingHiddenChats = [];
+    window._pendingHiddenChats.push({ message: safeMessage, options: options || {} });
+    setTimeout(() => { try { _flushHiddenChatQueue(); } catch (_) {} }, 0);
+}
+
+async function _flushHiddenChatQueue() {
+    if (window._chatStreaming || window._hiddenChatFlushRunning) return;
+    if (!Array.isArray(window._pendingHiddenChats) || !window._pendingHiddenChats.length) return;
+    const next = window._pendingHiddenChats.shift();
+    if (!next || !next.message) return;
+    window._hiddenChatFlushRunning = true;
+    try {
+        await sendChat(next.message, Object.assign({
+            hiddenUserMessage: true,
+            skipIntentShortcuts: true,
+            preserveLastUserMessage: true,
+        }, next.options || {}));
+    } finally {
+        window._hiddenChatFlushRunning = false;
+        if (Array.isArray(window._pendingHiddenChats) && window._pendingHiddenChats.length) {
+            setTimeout(() => { try { _flushHiddenChatQueue(); } catch (_) {} }, 0);
+        }
+    }
+}
+
+async function sendChat(prefill, options) {
+    const opts = options || {};
     const input = document.getElementById('chatInput');
 
     // If user already has an active stream, treat this button click as STOP.
@@ -8084,9 +8131,11 @@ async function sendChat(prefill) {
 
     const text = (prefill != null ? prefill : (input ? input.value : '')).trim();
     if (!text) return;
-    if (input) input.value = '';
-    if (typeof addChat === 'function') addChat('user', text);
-    window._lastUserMessage = text;
+    if (input && !opts.hiddenUserMessage) input.value = '';
+    if (!opts.hiddenUserMessage && typeof addChat === 'function') addChat('user', text);
+    if (!opts.preserveLastUserMessage) {
+        window._lastUserMessage = text;
+    }
 
     // EPHEMERAL START: lazily create a "New chat" session on the
     // first message send. Until the user actually sends something,
@@ -8095,15 +8144,15 @@ async function sendChat(prefill) {
     // fresh page load.
     try { if (typeof ensurePendingSession === 'function') ensurePendingSession(); } catch (_) {}
 
-    if (_isMonitorStartRequest(text)) {
+    if (!opts.skipIntentShortcuts && _isMonitorStartRequest(text)) {
         await startTrainingMode(text);
         return;
     }
-    if (_isMonitorStopRequest(text) && trainingMonitorState.active) {
+    if (!opts.skipIntentShortcuts && _isMonitorStopRequest(text) && trainingMonitorState.active) {
         await stopTrainingMode();
         return;
     }
-    if (_isAdviceRequest(text) && !/截图|screenshot|capture/i.test(text)) {
+    if (!opts.skipIntentShortcuts && _isAdviceRequest(text) && !/截图|screenshot|capture/i.test(text)) {
         await requestPlanningAdvice();
         return;
     }
@@ -8619,9 +8668,17 @@ async function sendChat(prefill) {
         // a new bubble if there's NO response element AND no prior addChat fallback
         // was used during streaming.
         const finalText = responseText || '(no reply)';
-        if (responseEl && typeof finalizeStreamingResponse === 'function') {
+        const suppressScreenshotAck = _isScreenshotAckResponse(finalText, steps);
+        if (suppressScreenshotAck && responseEl) {
+            try {
+                const staleRow = responseEl.closest('.chat-row');
+                if (staleRow) staleRow.remove();
+            } catch (_) {}
+            responseEl = null;
+        }
+        if (!suppressScreenshotAck && responseEl && typeof finalizeStreamingResponse === 'function') {
             finalizeStreamingResponse(responseEl, finalText);
-        } else if (!responseEl && !window._chatFallbackUsed) {
+        } else if (!suppressScreenshotAck && !responseEl && !window._chatFallbackUsed) {
             window._chatFallbackUsed = true;
             if (typeof addChat === 'function') addChat('bot-response', finalText);
         }
@@ -8635,7 +8692,7 @@ async function sendChat(prefill) {
         // `llm_meta` field in the `response` SSE event, captured in
         // window._lastLLMMeta above. Client-side elapsed time is
         // computed from _chatTurnStartTime which the start handler set.
-        if (responseEl && typeof responseEl.appendChild === 'function') {
+        if (!suppressScreenshotAck && responseEl && typeof responseEl.appendChild === 'function') {
             try {
                 const wrapper = responseEl.parentElement;
                 if (wrapper) {
@@ -8658,6 +8715,7 @@ async function sendChat(prefill) {
     } finally {
         window._chatStreaming = false;
         setStreamingState(false);
+        setTimeout(() => { try { _flushHiddenChatQueue(); } catch (_) {} }, 0);
     }
 }
 
@@ -11026,11 +11084,12 @@ function _interceptScreenshot(target, question) {
                 console.log('[screenshot] Server response:', data);
                 const screenshotUrl = data.url || data.screenshot_url || data.image_url || data.path || (data.data && (data.data.url || data.data.path));
                 if (screenshotUrl) {
-                    // Display in chat as a bot message with markdown image
-                    // Use HTML img tag directly for reliable rendering
+                    // Show the captured image immediately, then let the backend
+                    // analyze the persisted screenshot in a hidden follow-up turn.
                     if (typeof addChat === 'function') {
                         addChat('bot', `<img src="${screenshotUrl}" style="max-width:100%;border-radius:8px;" alt="${escHtml(target)}">\n\n${question || ''}`);
                     }
+                    _enqueueHiddenChat(_buildScreenshotFollowUpMessage(question, screenshotUrl));
                     console.log('[screenshot] Captured and uploaded:', screenshotUrl);
                 } else {
                     console.warn('[screenshot] No URL in response:', data);
@@ -19754,6 +19813,32 @@ function _clampDvhVolume(v) {
     return Math.max(0, Math.min(100, n));
 }
 
+function _getCurrentPrescriptionGyForDvh() {
+    let rxGy = 120;
+    try {
+        if (window.reportForm && window.reportForm.planning
+                && Number.isFinite(window.reportForm.planning.prescriptionGy)) {
+            rxGy = Number(window.reportForm.planning.prescriptionGy);
+        } else if (state.metrics && Number.isFinite(state.metrics.prescribed_dose)) {
+            rxGy = Number(state.metrics.prescribed_dose) * 120;
+        }
+    } catch (_) {}
+    return rxGy;
+}
+
+function _buildDvhSignature(dvhData, rxGy) {
+    if (!dvhData || typeof dvhData !== 'object') return '';
+    const sortedNames = Object.keys(dvhData).sort();
+    return sortedNames.map(name => {
+        const dvh = dvhData[name] || {};
+        return JSON.stringify([
+            name,
+            dvh.dose_bins || [],
+            dvh.volume_pcts || [],
+        ]);
+    }).join('|') + `|rx:${Number(rxGy || 0).toFixed(4)}`;
+}
+
 function _interpolateDvhAtDose(xs, ys, dose) {
     const target = Number(dose);
     if (!Array.isArray(xs) || !Array.isArray(ys) || !Number.isFinite(target)) return null;
@@ -19833,7 +19918,8 @@ function drawDVH() {
     // Plotly's built-in transition animation from "flashing" the curves
     // when refreshPlanningUI fires multiple times in quick succession
     // (e.g. once per SSE step event during planning).
-    const _newSig = Object.keys(state.dvhData).sort().join('|');
+    const rxGy = _getCurrentPrescriptionGyForDvh();
+    const _newSig = _buildDvhSignature(state.dvhData, rxGy);
     if (drawDVH._lastSig === _newSig) {
         console.log('[drawDVH] Same signature, skipping');
         _setupDvhResponsiveResize(document.getElementById('dvhChart'));
@@ -19980,15 +20066,6 @@ function drawDVH() {
     // the Report panel) or state.metrics.prescribed_dose * 120 (the
     // DOSE_SCALE constant from planning_pipeline.py). The fallback
     // order is: explicit report form > metrics > 120 Gy default.
-    let rxGy = 120;
-    try {
-        if (window.reportForm && window.reportForm.planning
-                && Number.isFinite(window.reportForm.planning.prescriptionGy)) {
-            rxGy = Number(window.reportForm.planning.prescriptionGy);
-        } else if (state.metrics && Number.isFinite(state.metrics.prescribed_dose)) {
-            rxGy = Number(state.metrics.prescribed_dose) * 120;  // DOSE_SCALE
-        }
-    } catch (_) {}
     // Compute CTV coverage at Rx on the same displayed curve used by
     // the tooltip, so the fixed Rx marker and hover values agree.
     let ctvRxCoverage = null;
