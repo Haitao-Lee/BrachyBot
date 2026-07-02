@@ -8,6 +8,7 @@ import os
 import time
 import json
 import logging
+import re
 from typing import Dict, List
 
 from ..core.base import BaseLLM, LLMResponse
@@ -28,6 +29,47 @@ class AnthropicLLM(BaseLLM):
         "claude-3-sonnet": "Claude 3 Sonnet",
         "claude-3-haiku": "Claude 3 Haiku fast",
     }
+
+    @staticmethod
+    def _convert_content_to_anthropic(content):
+        """Translate OpenAI-style multimodal blocks into Anthropic content blocks."""
+        if isinstance(content, str):
+            return content
+        if not isinstance(content, list):
+            return str(content)
+
+        blocks = []
+        for block in content:
+            if not isinstance(block, dict):
+                text = str(block).strip()
+                if text:
+                    blocks.append({"type": "text", "text": text})
+                continue
+
+            block_type = block.get("type")
+            if block_type == "text":
+                text = str(block.get("text", "")).strip()
+                if text:
+                    blocks.append({"type": "text", "text": text})
+                continue
+
+            if block_type == "image_url":
+                image_url = str(block.get("image_url", {}).get("url", "") or "")
+                match = re.match(r"^data:(image/[^;]+);base64,(.+)$", image_url, re.DOTALL)
+                if match:
+                    media_type, b64_data = match.groups()
+                    blocks.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": b64_data,
+                        }
+                    })
+
+        if not blocks:
+            return ""
+        return blocks
 
     def __init__(
         self,
@@ -227,11 +269,20 @@ class AnthropicLLM(BaseLLM):
                         blocks.extend(tool_uses)
                         converted.append({"role": "assistant", "content": blocks})
                     else:
-                        converted.append({"role": "assistant", "content": str(content)})
+                        converted.append({
+                            "role": "assistant",
+                            "content": self._convert_content_to_anthropic(content),
+                        })
                 else:
-                    converted.append({"role": "assistant", "content": str(content)})
+                    converted.append({
+                        "role": "assistant",
+                        "content": self._convert_content_to_anthropic(content),
+                    })
             else:
-                converted.append({"role": role, "content": str(content)})
+                converted.append({
+                    "role": role,
+                    "content": self._convert_content_to_anthropic(content),
+                })
 
             i += 1
 

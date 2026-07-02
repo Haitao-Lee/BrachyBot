@@ -31,6 +31,7 @@ import threading
 from typing import Any, Dict, List, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+from urllib.parse import urlparse, unquote
 
 import numpy as np
 import SimpleITK as sitk
@@ -4760,7 +4761,9 @@ Output (JSON array of strings):"""
             return message  # Plain text, no multimodal needed
 
         screenshot_url = match.group(1)
-        filename = screenshot_url.split("/")[-1]
+        parsed_url = urlparse(screenshot_url)
+        screenshot_path = parsed_url.path or screenshot_url
+        filename = os.path.basename(unquote(screenshot_path))
 
         # Read image from disk and encode as base64
         screenshots_dir = os.path.join(
