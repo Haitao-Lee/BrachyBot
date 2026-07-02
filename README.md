@@ -445,7 +445,7 @@ Task: "Generate prostate plan"
 - **Rule-based + RL**: Dual seed planning modes
 - **DICOM Export**: RT Structure, RT Plan, RT Dose
 - **Autonomous Tool Creation**: LLM can create new tools on-demand via `tool_creator`
-- **Clinical Knowledge Base**: Dose constraints, organ tolerances, treatment protocols (`clinical_kb`)
+- **Clinical Knowledge Base**: Dose constraints, organ tolerances, treatment protocols, and source-backed literature retrieval (`clinical_kb`). Safety-critical clinical claims must cite KB/web sources; prompts and validators should not invent standalone clinical thresholds.
 - **Case Memory**: Store, retrieve, and learn from past treatment plans (`case_memory`)
 - **Plan Comparator**: Multi-plan comparison, ranking, and recommendation (`plan_comparator`)
 - **Safety Validator**: Pre-export safety checks for dose constraints and coverage (`safety_validator`)
@@ -475,11 +475,13 @@ BrachyBot can now operate as both an agentic planner and a standalone manual pla
 
 - **UI state bridge**: the browser reports active panel, viewer settings, overlays, Data Tree state, manual planning state, and recent user interactions to the backend.
 - **Structured UI control**: `ui_controller` can switch panels, adjust viewers, toggle overlays, run manual workflow steps, add manual needles/seeds, recompute manual dose with myDoseNet, request advice, and toggle 3D dose surface mode. A safe generic `ui.control` fallback can click, set, toggle, focus, or blur controls by DOM id/selector when no dedicated target exists.
+- **Inspectable UI capability contract**: `GET /api/ui/capabilities` exposes the structured control registry, screenshot targets, manual workflow steps, training monitor support, and execution-tool enablement state for tests and operators.
 - **Manual planning without LLM dependency**: the Input panel exposes CTV/OAR segmentation, trajectory initialization/refinement, seed planning, dose calculation, dose evaluation, report fill, and export controls as direct UI actions.
 - **Manual 3D fine planning**: users can add editable needles in the 3D viewer, drag needle endpoints, add or drag seeds, and recompute myDoseNet dose/DVH after edits.
 - **Training monitor**: users can ask BrachyBot to monitor a manual or automatic planning process, receive live feedback after key interactions, capture rate-limited review screenshots at key checkpoints, request detailed advice at any time, and stop monitoring to receive a final workflow report.
 
 Important boundary: manual dose recomputation uses the trained myDoseNet AI model and no analytical/Gaussian fallback. Formal clinical review still requires the established planning workflow and independent verification.
+Plan refinement proposes seed candidates from the current dose map only; it does not simulate dose or claim improved metrics until `dose_engine` or `planning_pipeline` reruns myDoseNet.
 
 Implementation details are documented in `docs/UI_CONTROL_MANUAL_TRAINING_REPORT_2026-06-30.md`.
 

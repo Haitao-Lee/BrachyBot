@@ -4,16 +4,30 @@
       "ldr": {
         "target": {
           "v100_min": 0.95,
-          "d90_min_pct": 1.00,
-          "v150_max": 0.50,
+          "d90_min_pct": 1.0,
+          "v150_max": 0.5,
           "v200_max": 0.35
         },
         "oar": {
-          "urethra":  { "dmax_pct": 1.20, "d10_pct_max": 1.20 },
-          "rectum":   { "d2cc_gy_eqd2": 75, "d0.1cc_pct": 1.00, "d1cc_pct": 0.83 },
-          "bladder":  { "d2cc_gy_eqd2": 90, "d0.1cc_pct": 1.00 }
+          "urethra": {
+            "dmax_pct": 1.2,
+            "d10_pct_max": 1.2
+          },
+          "rectum": {
+            "d2cc_gy_eqd2": 75,
+            "d0.1cc_pct": 1.0,
+            "d1cc_pct": 0.83
+          },
+          "bladder": {
+            "d2cc_gy_eqd2": 90,
+            "d0.1cc_pct": 1.0
+          }
         },
-        "source": "ABS/AUA/ASTRO 2012 (PMID 22265436); ABS focal-HDR 2022"
+        "source": "ABS/AUA/ASTRO 2012 transrectal ultrasound-guided permanent prostate brachytherapy consensus; ABS prostate portal",
+        "source_urls": [
+          "https://pubmed.ncbi.nlm.nih.gov/22265434/",
+          "https://www.americanbrachytherapy.org/consensus-statements/prostate/"
+        ]
       },
       "hdr": {
         "target": {
@@ -23,180 +37,400 @@
           "v200_max": 0.25
         },
         "oar": {
-          "rectum":   { "v75cc_max": 1.0, "d2cc_pct_max": 0.75 },
-          "urethra":  { "d10_pct_max": 1.15, "dmax_pct": 1.20 }
+          "rectum": {
+            "v75cc_max": 1.0,
+            "d2cc_pct_max": 0.75
+          },
+          "urethra": {
+            "d10_pct_max": 1.15,
+            "dmax_pct": 1.2
+          }
         },
-        "source": "ABS 2022 HDR competency; focal prostate HDR 2022 (PMID 42103556)"
+        "source": "ABS HDR prostate competency framework; contemporary focal/salvage HDR literature",
+        "source_urls": [
+          "https://pubmed.ncbi.nlm.nih.gov/42156316/",
+          "https://pubmed.ncbi.nlm.nih.gov/42103556/"
+        ]
       }
     },
     "cervical": {
       "hdr": {
         "target": {
-          "v100_min": 0.90,
+          "v100_min": 0.9,
           "d90_gy_eqd2_min": 85,
           "d90_gy_eqd2_target": 90
         },
         "oar": {
-          "bladder":    { "d2cc_gy_eqd2": 90 },
-          "rectum":     { "d2cc_gy_eqd2": 75 },
-          "sigmoid":    { "d2cc_gy_eqd2": 70 },
-          "small_bowel": { "d2cc_gy_eqd2": 75 }
+          "bladder": {
+            "d2cc_gy_eqd2": 90
+          },
+          "rectum": {
+            "d2cc_gy_eqd2": 75
+          },
+          "sigmoid": {
+            "d2cc_gy_eqd2": 70
+          },
+          "small_bowel": {
+            "d2cc_gy_eqd2": 75
+          }
         },
-        "source": "EMBRACE II (PMID 42211610); ABS cervix consensus 2012 (PMID 22265436); ICRU 89"
+        "source": "ABS cervix HDR consensus; ICRU Report 89; EMBRACE II protocol literature",
+        "source_urls": [
+          "https://pubmed.ncbi.nlm.nih.gov/22265437/",
+          "https://www.icru.org/report/icru-report-89-prescribing-recording-and-reporting-brachytherapy-for-cancer-of-the-cervix/",
+          "https://pubmed.ncbi.nlm.nih.gov/29594251/"
+        ]
       }
     },
     "breast": {
       "apbi": {
         "target": {
-          "d90_min_pct": 0.90,
+          "d90_min_pct": 0.9,
           "v150_cc_max": 50,
           "v200_cc_max": 25
         },
         "oar": {
-          "skin":   { "dmax_pct": 0.70 },
-          "ribs":   { "dmax_pct": 0.80 },
-          "heart":  { "dmean_gy_max": 3 }
+          "skin": {
+            "dmax_pct": 0.7
+          },
+          "ribs": {
+            "dmax_pct": 0.8
+          },
+          "heart": {
+            "dmean_gy_max": 3
+          }
         },
-        "source": "GEC-ESTRO APBI 2016; ABS APBI 2013 (PMID 23474341)"
+        "source": "ESTRO-ACROP multicatheter breast APBI guideline; ABS APBI consensus statement",
+        "source_urls": [
+          "https://pubmed.ncbi.nlm.nih.gov/29691075/",
+          "https://pubmed.ncbi.nlm.nih.gov/23474341/"
+        ]
       }
     },
     "lung": {
       "ldr": {
         "target": {
           "v100_min": 0.95,
-          "d90_min_pct": 1.00,
-          "v200_max": 0.30
+          "d90_min_pct": 1.0,
+          "v200_max": 0.3
         },
         "oar": {
-          "spinal_cord": { "dmax_gy": 45 },
-          "heart":       { "dmax_gy": 60, "d2cc_gy": 40 },
-          "esophagus":   { "dmax_gy": 60, "d2cc_gy": 55 },
-          "trachea":     { "dmax_gy": 75, "d2cc_gy": 70 }
+          "spinal_cord": {
+            "dmax_gy": 45
+          },
+          "heart": {
+            "dmax_gy": 60,
+            "d2cc_gy": 40
+          },
+          "esophagus": {
+            "dmax_gy": 60,
+            "d2cc_gy": 55
+          },
+          "trachea": {
+            "dmax_gy": 75,
+            "d2cc_gy": 70
+          }
         },
-        "source": "ABS lung consensus; AAPM TG-229"
+        "source": "ABS thoracic/endobronchial brachytherapy consensus; AAPM model-based dose calculation reports",
+        "source_urls": [
+          "https://www.brachyjournal.com/article/S1538-4721%2815%2900557-7/abstract",
+          "https://www.aapm.org/pubs/reports/detail.asp?docid=138"
+        ]
       }
     },
     "pancreatic": {
       "ldr": {
         "target": {
-          "v100_min": 0.90,
-          "d90_min_pct": 1.00,
-          "v200_max": 0.30
+          "v100_min": 0.9,
+          "d90_min_pct": 1.0,
+          "v200_max": 0.3
         },
         "oar": {
-          "duodenum": { "d2cc_gy": 55, "dmax_gy": 75 },
-          "stomach":  { "d2cc_gy": 55, "dmax_gy": 75 },
-          "bowel":    { "d2cc_gy": 55, "dmax_gy": 75 },
-          "artery":   { "d2cc_gy": 80, "dmax_gy": 100 },
-          "vein":     { "d2cc_gy": 80, "dmax_gy": 100 }
+          "duodenum": {
+            "d2cc_gy": 55,
+            "dmax_gy": 75
+          },
+          "stomach": {
+            "d2cc_gy": 55,
+            "dmax_gy": 75
+          },
+          "bowel": {
+            "d2cc_gy": 55,
+            "dmax_gy": 75
+          },
+          "artery": {
+            "d2cc_gy": 80,
+            "dmax_gy": 100
+          },
+          "vein": {
+            "d2cc_gy": 80,
+            "dmax_gy": 100
+          }
         },
-        "source": "Chinese I-125 pancreatic guideline 2023; CSTRO 2017; 3D-template I-125 2018"
+        "source": "Chinese permanent iodine-125 pancreatic cancer guideline 2023; CSTRO/CSCO pancreatic I-125 consensus; 3D-template pancreatic I-125 literature",
+        "source_urls": [
+          "https://pubmed.ncbi.nlm.nih.gov/39206973/",
+          "https://pubmed.ncbi.nlm.nih.gov/30589023/",
+          "https://pubmed.ncbi.nlm.nih.gov/30581276/"
+        ]
       }
     },
     "liver": {
       "ldr": {
         "target": {
-          "v100_min": 0.90,
-          "d90_min_pct": 1.00,
-          "v200_max": 0.30
+          "v100_min": 0.9,
+          "d90_min_pct": 1.0,
+          "v200_max": 0.3
         },
         "oar": {
-          "normal_liver": { "dmean_gy_max": 30 },
-          "stomach":      { "d2cc_gy": 50, "dmax_gy": 65 },
-          "duodenum":     { "d2cc_gy": 50, "dmax_gy": 65 },
-          "colon":        { "d2cc_gy": 50, "dmax_gy": 65 },
-          "kidney":       { "d2cc_gy": 18, "dmax_gy": 25 }
+          "normal_liver": {
+            "dmean_gy_max": 30
+          },
+          "stomach": {
+            "d2cc_gy": 50,
+            "dmax_gy": 65
+          },
+          "duodenum": {
+            "d2cc_gy": 50,
+            "dmax_gy": 65
+          },
+          "colon": {
+            "d2cc_gy": 50,
+            "dmax_gy": 65
+          },
+          "kidney": {
+            "d2cc_gy": 18,
+            "dmax_gy": 25
+          }
         },
-        "source": "ABS liver consensus; AAPM TG-229"
+        "source": "I-125 interstitial brachytherapy literature and AAPM model-based dose calculation reports",
+        "source_urls": [
+          "https://www.aapm.org/pubs/reports/detail.asp?docid=138"
+        ]
       }
     },
     "head_neck": {
       "ldr": {
         "target": {
           "v100_min": 0.95,
-          "d90_min_pct": 1.00,
+          "d90_min_pct": 1.0,
           "v200_max": 0.25
         },
         "oar": {
-          "spinal_cord": { "dmax_gy": 45 },
-          "brainstem":   { "dmax_gy": 54 },
-          "parotid":     { "dmean_gy_max": 26 },
-          "mandible":    { "dmax_gy": 70 }
+          "spinal_cord": {
+            "dmax_gy": 45
+          },
+          "brainstem": {
+            "dmax_gy": 54
+          },
+          "parotid": {
+            "dmean_gy_max": 26
+          },
+          "mandible": {
+            "dmax_gy": 70
+          }
         },
-        "source": "ABS H&N consensus; GEC-ESTRO H&N recommendations"
+        "source": "ABS/ACR low-dose-rate practice parameter and GEC-ESTRO head-neck brachytherapy literature",
+        "source_urls": [
+          "https://pubmed.ncbi.nlm.nih.gov/28109633/",
+          "https://pubmed.ncbi.nlm.nih.gov/40472997/"
+        ]
       }
     },
     "esophageal": {
       "hdr": {
         "target": {
-          "v100_min": 0.90,
-          "d90_min_pct": 1.00
+          "v100_min": 0.9,
+          "d90_min_pct": 1.0
         },
         "oar": {
-          "spinal_cord": { "dmax_gy": 45 },
-          "heart":       { "dmax_gy": 40 },
-          "lung":        { "dmean_gy_max": 20 }
+          "spinal_cord": {
+            "dmax_gy": 45
+          },
+          "heart": {
+            "dmax_gy": 40
+          },
+          "lung": {
+            "dmean_gy_max": 20
+          }
         },
-        "source": "ABS esophageal 2014; NCCN esophageal 2024"
+        "source": "ABS esophageal brachytherapy consensus guideline; NCCN esophageal guideline portal",
+        "source_urls": [
+          "https://pubmed.ncbi.nlm.nih.gov/9212013/",
+          "https://www.nccn.org/guidelines/guidelines-detail?category=1&id=1446"
+        ]
       }
     },
     "default": {
       "target": {
-        "v100_min": 0.90,
-        "d90_min_pct": 1.00,
-        "v150_max": 0.50,
+        "v100_min": 0.9,
+        "d90_min_pct": 1.0,
+        "v150_max": 0.5,
         "v200_max": 0.35
       },
       "oar": {
-        "rectum":      { "d2cc_gy_eqd2": 75, "d0.1cc_pct": 1.00 },
-        "bladder":     { "d2cc_gy_eqd2": 90, "d0.1cc_pct": 1.00 },
-        "urethra":     { "dmax_pct": 1.20 },
-        "bowel":       { "d2cc_gy": 55, "dmax_gy": 75 },
-        "kidney":      { "d2cc_gy": 18, "dmax_gy": 25 },
-        "liver":       { "d2cc_gy": 25, "dmax_gy": 35 },
-        "stomach":     { "d2cc_gy": 50, "dmax_gy": 65 },
-        "duodenum":    { "d2cc_gy": 55, "dmax_gy": 75 },
-        "spinal_cord": { "dmax_gy": 45 },
-        "heart":       { "dmax_gy": 60 },
-        "esophagus":   { "dmax_gy": 60 }
+        "rectum": {
+          "d2cc_gy_eqd2": 75,
+          "d0.1cc_pct": 1.0
+        },
+        "bladder": {
+          "d2cc_gy_eqd2": 90,
+          "d0.1cc_pct": 1.0
+        },
+        "urethra": {
+          "dmax_pct": 1.2
+        },
+        "bowel": {
+          "d2cc_gy": 55,
+          "dmax_gy": 75
+        },
+        "kidney": {
+          "d2cc_gy": 18,
+          "dmax_gy": 25
+        },
+        "liver": {
+          "d2cc_gy": 25,
+          "dmax_gy": 35
+        },
+        "stomach": {
+          "d2cc_gy": 50,
+          "dmax_gy": 65
+        },
+        "duodenum": {
+          "d2cc_gy": 55,
+          "dmax_gy": 75
+        },
+        "spinal_cord": {
+          "dmax_gy": 45
+        },
+        "heart": {
+          "dmax_gy": 60
+        },
+        "esophagus": {
+          "dmax_gy": 60
+        }
       },
-      "source": "GEC-ESTRO / ABS / AAPM TG-229 composite defaults"
+      "source": "GEC-ESTRO / ABS / AAPM TG-229 composite defaults",
+      "source_urls": [
+        "https://www.americanbrachytherapy.org/spotonbrachy/clinical-guidelines/",
+        "https://www.estro.org/Science/Guidelines",
+        "https://www.aapm.org/pubs/reports/"
+      ]
     }
   },
   "plan_quality_benchmarks": {
-    "excellent":   { "min_score": 90, "v100_min": 0.95, "v200_max": 0.25 },
-    "good":        { "min_score": 80, "v100_min": 0.90, "v200_max": 0.35 },
-    "acceptable":  { "min_score": 70, "v100_min": 0.85, "v200_max": 0.40 },
-    "marginal":    { "min_score": 60, "v100_min": 0.80, "v200_max": 0.45 }
+    "excellent": {
+      "min_score": 90,
+      "v100_min": 0.95,
+      "v200_max": 0.25
+    },
+    "good": {
+      "min_score": 80,
+      "v100_min": 0.9,
+      "v200_max": 0.35
+    },
+    "acceptable": {
+      "min_score": 70,
+      "v100_min": 0.85,
+      "v200_max": 0.4
+    },
+    "marginal": {
+      "min_score": 60,
+      "v100_min": 0.8,
+      "v200_max": 0.45
+    }
   },
   "legacy_dose_constraints": {
     "prostate": {
-      "ctv_v100":       { "target": ">=95%", "description": "CTV should receive 100% of prescription dose" },
-      "ctv_d90":        { "target": ">=100%", "description": "90% of CTV should get full prescription" },
-      "rectum_d0.1cc":  { "limit": "<=150%", "description": "Rectum max dose per 0.1cc" },
-      "rectum_d1cc":    { "limit": "<=120%", "description": "Rectum max dose per 1cc" },
-      "bladder_d0.1cc": { "limit": "<=150%", "description": "Bladder max dose per 0.1cc" },
-      "urethra_d0.1cc": { "limit": "<=120%", "description": "Urethra max dose per 0.1cc" },
-      "v200":           { "limit": "<=35%", "description": "Volume receiving 200% dose" }
+      "ctv_v100": {
+        "target": ">=95%",
+        "description": "CTV should receive 100% of prescription dose"
+      },
+      "ctv_d90": {
+        "target": ">=100%",
+        "description": "90% of CTV should get full prescription"
+      },
+      "rectum_d0.1cc": {
+        "limit": "<=150%",
+        "description": "Rectum max dose per 0.1cc"
+      },
+      "rectum_d1cc": {
+        "limit": "<=120%",
+        "description": "Rectum max dose per 1cc"
+      },
+      "bladder_d0.1cc": {
+        "limit": "<=150%",
+        "description": "Bladder max dose per 0.1cc"
+      },
+      "urethra_d0.1cc": {
+        "limit": "<=120%",
+        "description": "Urethra max dose per 0.1cc"
+      },
+      "v200": {
+        "limit": "<=35%",
+        "description": "Volume receiving 200% dose"
+      }
     },
     "cervical": {
-      "ctv_v100":       { "target": ">=90%", "description": "CTV coverage" },
-      "bladder_d2cc":   { "limit": "<=90Gy", "description": "Bladder D2cc EQD2" },
-      "rectum_d2cc":    { "limit": "<=75Gy", "description": "Rectum D2cc EQD2" },
-      "sigmoid_d2cc":   { "limit": "<=75Gy", "description": "Sigmoid D2cc EQD2" }
+      "ctv_v100": {
+        "target": ">=90%",
+        "description": "CTV coverage"
+      },
+      "bladder_d2cc": {
+        "limit": "<=90Gy",
+        "description": "Bladder D2cc EQD2"
+      },
+      "rectum_d2cc": {
+        "limit": "<=75Gy",
+        "description": "Rectum D2cc EQD2"
+      },
+      "sigmoid_d2cc": {
+        "limit": "<=75Gy",
+        "description": "Sigmoid D2cc EQD2"
+      }
     }
   },
   "organ_tolerances": {
-    "spinal_cord":  { "max_dose_gy": 45, "tolerance": "Very sensitive" },
-    "brainstem":    { "max_dose_gy": 54, "tolerance": "Sensitive" },
-    "heart":        { "max_dose_gy": 60, "tolerance": "Sensitive" },
-    "esophagus":    { "max_dose_gy": 60, "tolerance": "Moderate" },
-    "small_bowel":  { "max_dose_gy": 50, "tolerance": "Sensitive" },
-    "rectum":       { "max_dose_gy": 75, "tolerance": "Moderate" },
-    "bladder":      { "max_dose_gy": 90, "tolerance": "Moderate" },
-    "kidney":       { "mean_dose_gy": 18, "tolerance": "Sensitive" },
-    "liver":        { "mean_dose_gy": 30, "tolerance": "Moderate" },
-    "lung":         { "mean_dose_gy": 20, "tolerance": "Sensitive" }
+    "spinal_cord": {
+      "max_dose_gy": 45,
+      "tolerance": "Very sensitive"
+    },
+    "brainstem": {
+      "max_dose_gy": 54,
+      "tolerance": "Sensitive"
+    },
+    "heart": {
+      "max_dose_gy": 60,
+      "tolerance": "Sensitive"
+    },
+    "esophagus": {
+      "max_dose_gy": 60,
+      "tolerance": "Moderate"
+    },
+    "small_bowel": {
+      "max_dose_gy": 50,
+      "tolerance": "Sensitive"
+    },
+    "rectum": {
+      "max_dose_gy": 75,
+      "tolerance": "Moderate"
+    },
+    "bladder": {
+      "max_dose_gy": 90,
+      "tolerance": "Moderate"
+    },
+    "kidney": {
+      "mean_dose_gy": 18,
+      "tolerance": "Sensitive"
+    },
+    "liver": {
+      "mean_dose_gy": 30,
+      "tolerance": "Moderate"
+    },
+    "lung": {
+      "mean_dose_gy": 20,
+      "tolerance": "Sensitive"
+    }
   },
   "treatment_protocols": {
     "prostate_low_risk": {
@@ -216,6 +450,99 @@
       "prescription_dose_gy": 28,
       "fractions": 4,
       "technique": "Intracavitary with tandem/ovoids"
+    }
+  },
+  "evidence_sources": {
+    "pancreatic_i125_guideline_2024": {
+      "title": "Guidelines for permanent iodine-125 seed interstitial brachytherapy for pancreatic cancer (2023 edition)",
+      "why_it_matters": "Primary source for pancreatic I-125 indications, contraindications, prescription dose, CT-guided implantation, post-procedure verification, and complications.",
+      "clinical_use": [
+        "Pancreatic seed planning protocols",
+        "Prescription dose and seed activity rationale",
+        "Contraindication checks before planning"
+      ],
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/39206973/"
+      ],
+      "doi": "10.4103/jcrt.jcrt_2368_23",
+      "pmid": "39206973"
+    },
+    "aapm_tg43u1_2004": {
+      "title": "Update of AAPM Task Group No. 43 Report: a revised protocol for brachytherapy dose calculations",
+      "why_it_matters": "Core low-energy photon brachytherapy dosimetry formalism; useful when explaining TG-43 assumptions and independent dose verification.",
+      "clinical_use": [
+        "Dose calculation explanation",
+        "Secondary dose verification discussion",
+        "Physics QA references"
+      ],
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/15070264/",
+        "https://www.nist.gov/publications/update-aapm-task-group-no-43-report-revised-aapm-protocol-brachytherapy-dose"
+      ],
+      "doi": "10.1118/1.1646040",
+      "pmid": "15070264"
+    },
+    "aapm_tg186_mbdca_2012": {
+      "title": "Report of AAPM Task Group 186 on model-based dose calculation methods beyond TG-43",
+      "why_it_matters": "Reference for when patient heterogeneity, applicator shielding, and model-based algorithms matter beyond TG-43.",
+      "clinical_use": [
+        "Model-based dose calculation discussion",
+        "Dose algorithm limitations",
+        "Research planning roadmap"
+      ],
+      "source_urls": [
+        "https://www.aapm.org/pubs/reports/detail.asp?docid=138",
+        "https://aapm.onlinelibrary.wiley.com/doi/abs/10.1118/1.4747264"
+      ],
+      "doi": "10.1118/1.4747264"
+    },
+    "icru89_cervix_brachytherapy": {
+      "title": "ICRU Report 89: Prescribing, Recording, and Reporting Brachytherapy for Cancer of the Cervix",
+      "why_it_matters": "Authoritative reporting framework for cervix brachytherapy target/OAR volumes, EQD2 reporting, and 3D volumetric planning.",
+      "clinical_use": [
+        "Cervix plan reporting",
+        "OAR D2cc explanation",
+        "EQD2 explanation"
+      ],
+      "source_urls": [
+        "https://www.icru.org/report/icru-report-89-prescribing-recording-and-reporting-brachytherapy-for-cancer-of-the-cervix/"
+      ]
+    },
+    "estro_acrop_breast_apbi_2018": {
+      "title": "ESTRO-ACROP guideline for interstitial multi-catheter breast brachytherapy as APBI or boost",
+      "why_it_matters": "Practical recommendations for image-guided multicatheter breast brachytherapy.",
+      "clinical_use": [
+        "Breast APBI explanation",
+        "Eligibility and technique discussion"
+      ],
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/29691075/"
+      ],
+      "doi": "10.1016/j.radonc.2018.04.009",
+      "pmid": "29691075"
+    },
+    "abs_guidelines_portal": {
+      "title": "American Brachytherapy Society clinical guidelines portal",
+      "why_it_matters": "Society-maintained navigation point for ABS clinical guideline documents across disease sites.",
+      "clinical_use": [
+        "Fallback source discovery",
+        "Guideline citation discovery"
+      ],
+      "source_urls": [
+        "https://www.americanbrachytherapy.org/spotonbrachy/clinical-guidelines/"
+      ]
+    },
+    "pediatric_rms_brachytherapy_guideline_2024": {
+      "title": "International clinical practice survey and guideline development for pediatric rhabdomyosarcoma brachytherapy",
+      "why_it_matters": "Better replacement for prior generic pediatric rhabdomyosarcoma stub.",
+      "clinical_use": [
+        "Pediatric BT training answers",
+        "Manual planning teaching examples requiring strong disclaimers"
+      ],
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/38588921/"
+      ],
+      "pmid": "38588921"
     }
   }
 }

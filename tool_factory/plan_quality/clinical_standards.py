@@ -1,20 +1,15 @@
 """
-Clinical Standards for Brachytherapy Plan Quality
-=================================================
+Clinical Standards Mirror for Brachytherapy Plan Quality
+=======================================================
 
-Per-organ target coverage and OAR dose constraints compiled from:
-  - ABS (American Brachytherapy Society) consensus statements
-  - GEC-ESTRO (Groupe Européen de Curiethérapie) recommendations
-  - AAPM TG-229 / ESTRO guidelines for brachytherapy
-  - NCCN brachytherapy guidelines
+This module mirrors selected target-coverage and OAR constraint values from the
+curated clinical knowledge base for deterministic scoring and safety checks.
+Use ``clinical_kb`` for source-level citations, source freshness, and guideline
+interpretation. Do not add PMID/DOI claims here without verifying and adding the
+same source to the knowledge base.
 
-This module is the single source of truth for clinical pass criteria
-used by both ``PlanQualityScorerTool`` and ``QualityDecider``.
-
-All dose values are in **Gy** (absolute, not normalized). Each entry
-gives the standard target-coverage threshold (D90, V100) and the
-OAR constraints (max_dose, D2cc) in Gy. Organ names match the
-``tumor_type`` strings used elsewhere in BrachyBot.
+All dose values are in Gy unless a key explicitly uses ``_pct``. D90 percentage
+values are fractions of prescription dose.
 """
 
 from typing import Dict, Any
@@ -25,15 +20,7 @@ from typing import Dict, Any
 # (i.e. 1.0 == 100% of prescription). ``v100_min`` is the minimum
 # fraction of CTV receiving >= 100% of prescription.
 #
-# Sources:
-#   prostate: ABS/AUA/ASTRO 2012 (PMID 22265436) — V100≥95%, D90≥100%Rx
-#   prostate HDR: ABS 2022 — V100≥95%, D90 103-108%Rx, V200≤25%
-#   cervical: EMBRACE II (PMID 42211610) — V100≥90%, D90≥85-90 Gy EQD2
-#   breast: GEC-ESTRO APBI 2016 — D90≥90%Rx
-#   lung: ABS lung consensus — V100≥95%
-#   pancreatic: Chinese I-125 guideline 2023 — V100≥90%
-#   liver: ABS liver consensus — V100≥90%
-#   head_neck: ABS H&N consensus — V100≥95%
+# Source citations are stored in tool_factory/clinical_kb/data/knowledge_base.json and the raw source index.
 TARGET_STANDARDS: Dict[str, Dict[str, float]] = {
     "prostate":  {"d90_min_pct": 1.00, "v100_min": 0.95, "v150_max": 0.50, "v200_max": 0.35},
     "pancreas":  {"d90_min_pct": 1.00, "v100_min": 0.90, "v150_max": 0.50, "v200_max": 0.30},
@@ -54,13 +41,7 @@ TARGET_STANDARDS: Dict[str, Dict[str, float]] = {
 # Per-organ OAR constraints (Gy). Values drawn from GEC-ESTRO / ABS
 # consensus statements. Keys are normalized lowercase organ names.
 #
-# Sources:
-#   prostate: ABS/AUA/ASTRO 2012 — urethra Dmax≤120%Rx, rectum D2cc≤75 Gy EQD2
-#   cervical: EMBRACE II — bladder D2cc<90, rectum D2cc<75, sigmoid D2cc<70
-#   lung: ABS lung — spinal cord≤45, heart D2cc≤40
-#   liver: ABS liver — stomach/duodenum D2cc≤50
-#   pancreatic: Chinese I-125 2023 — duodenum D2cc≤55
-#   head_neck: ABS H&N — spinal cord≤45, brainstem≤54, parotid mean≤26
+# Source citations are stored in tool_factory/clinical_kb/data/knowledge_base.json and the raw source index.
 OAR_STANDARDS: Dict[str, Dict[str, Any]] = {
     "prostate": {
         "urethra":  {"max_dose_pct": 120, "d10_pct_max": 120},

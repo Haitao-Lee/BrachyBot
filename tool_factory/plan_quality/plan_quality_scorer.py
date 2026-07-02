@@ -6,7 +6,7 @@ Used for plan comparison and acceptance criteria.
 
 Uses :mod:`clinical_standards` as the single source of truth for
 per-organ pass criteria (D90, V100, V150, V200) and OAR dose limits
-(GEC-ESTRO / ABS / AAPM TG-229).
+(curated clinical KB mirror).
 """
 
 import sys
@@ -67,7 +67,7 @@ class PlanQualityScorerTool(BaseTool):
                         "Target organ / tumor type. Picks the corresponding clinical "
                         "pass criteria from clinical_standards (prostate / pancreas / "
                         "liver / lung / kidney / colon / head_neck). Defaults to "
-                        "generic ABS / GEC-ESTRO values."
+                        "curated clinical KB mirror values."
                     ),
                     "default": "default",
                 },

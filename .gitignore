@@ -57,8 +57,7 @@ uploads/
 screenshots/
 test_screenshots/
 
-# Documentation (local only)
-docs/
+# Documentation generated for this project is tracked.
 brain/knowledge/
 skills/data/
 
@@ -93,6 +92,7 @@ tool_factory/case_memory/cases/
 # Local run scripts may contain environment-specific ports or secret setup
 start_server.sh
 *.bak_codex_*
+*.bak
 
 # PDF files (not part of codebase)
 *.pdf
