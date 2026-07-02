@@ -609,55 +609,11 @@ def ImageResample_size(sitk_image, new_size=[128, 128, 128], is_label=False):
 
 
 def cal_next_seed_pos_direc(mask_volume, cur_radiation, in_lowest_dose, single_seed_radiations, seed_sigma, seed_avr_dose, direc_res):
-    """
-    Calculate the next seed position and its orientation direction for placement in a 3D radiation volume.
-
-    The function determines the next seed's location by identifying under-irradiated regions 
-    based on the current radiation profile. It then calculates the optimal orientation direction 
-    for the seed placement.
-
-    Parameters:
-        mask_volume (numpy.ndarray): A 3D binary array representing the target volume for radiation. 
-                                      Values of 1 indicate regions to be irradiated, and 0 indicates non-target regions.
-        cur_radiation (numpy.ndarray): A 3D array representing the current radiation coverage.
-                                       Values represent radiation levels, with 0 indicating no radiation.
-        in_lowest_dose (float): The threshold dose used to identify under-irradiated regions (regions with radiation < this value).
-        single_seed_radiations (list of ndarray): A list of radiation fields contributed by previously placed seeds.
-        seed_sigma (float): Standard deviation of the radiation spread (Gaussian distribution) for each seed.
-        seed_avr_dose (float): The average dose delivered by a single seed.
-        direc_res (tuple): A resolution parameter that defines the discretization of candidate directions (e.g., radial, azimuthal, and polar angles).
-
-    Returns:
-        tuple: A tuple containing:
-            - pos (tuple): Normalized coordinates (x, y, z) of the next seed position within the volume.
-                           If no radiation has been applied, returns the center of the largest unirradiated region.
-                           Otherwise, returns the position with the lowest radiation coverage in the masked target region.
-            - direc (numpy.ndarray): A unit vector representing the optimal orientation direction for placing the seed.
-            - cur_seed_radiation (numpy.ndarray): The radiation field contributed by the newly placed seed.
-            - updated_radiation (numpy.ndarray): The updated cumulative radiation coverage after placing the seed.
-            - cur_DVH_rate (float): The Dose-Volume Histogram (DVH) rate for the current radiation distribution.
-    """
-    
-    # Step 1: Calculate the next seed position based on the current radiation coverage and the target volume mask.
-    # This function identifies regions with insufficient radiation and returns the position with the lowest radiation coverage.
-    pos = cal_next_seed_pos(mask_volume, cur_radiation, in_lowest_dose)
-    
-    # Step 2: Calculate the optimal orientation direction for the seed based on the current radiation and target mask.
-    # This function returns the best direction for placing the seed at the calculated position.
-    direc = cal_next_seed_direc(mask_volume, cur_radiation, pos)
-    
-    # Step 3: Normalize the seed position to the dimensions of the target volume (mask_volume).
-    # The position is normalized to the range [0, 1] based on the size of the mask_volume.
-    pos = np.array([pos[0]/mask_volume.shape[0], pos[1]/mask_volume.shape[1], pos[2]/mask_volume.shape[2]])
-    
-    # Step 4: Place the seed at the calculated position and evaluate the resulting radiation coverage.
-    # The function tests multiple possible orientations and selects the best direction for maximum DVH rate.
-    best_direc, cur_seed_radiation, cur_radiation, cur_DVH_rate = place_and_evaluate_seed(
-            pos, direc, cur_radiation, mask_volume, in_lowest_dose,
-            single_seed_radiations, seed_sigma, seed_avr_dose, direc_res)
-
-    # Step 5: Return the normalized seed position, the best orientation direction, and updated radiation information.
-    return pos, best_direc, cur_seed_radiation, cur_radiation, cur_DVH_rate
+    """Legacy analytical seed-placement path retained only for import compatibility."""
+    raise NotImplementedError(
+        "cal_next_seed_pos_direc used the removed analytical Gaussian dose path. "
+        "Use cal_next_seed_pos_direc_v2 or the myDoseNet planning path instead."
+    )
 
 
 def cal_next_seed_pos_direc_v2(dose_image, dose_cal_model, mask_volume, cur_radiation, in_lowest_dose, single_seed_radiations, direc_res):
@@ -1416,22 +1372,13 @@ def shrink_mask(mask, shrink_factor):
 
 
 def objective_function(x, dose_volume, radiation_volume, seed_sigma, lowest_dose, DVH_rate, seed_avr_dose):
-    radiation = np.zeros(radiation_volume.shape)
-    for i in range(len(x)//6):  # Parallelize this loop
-        cur_effective_radiation = simple_single_dose_calculation(radiation_volume.shape, 
-                                                                 [x[6*i], x[6*i+1], x[6*i+2]], 
-                                                                 [x[6*i+3], x[6*i+4], x[6*i+5]], 
-                                                                 seed_sigma, 
-                                                                 seed_avr_dose)
-        radiation += cur_effective_radiation
-    effective_radiation = radiation * radiation_volume
-    cur_DVH_rate = np.sum(effective_radiation > lowest_dose) / np.sum(radiation_volume==1)
-    if cur_DVH_rate <= DVH_rate:
-        return - cur_DVH_rate
-    else:
-        return - DVH_rate - np.sum(effective_radiation) / np.sum(radiation)
-    
-    
+    """Legacy analytical optimization objective retained only for import compatibility."""
+    raise NotImplementedError(
+        "objective_function used the removed analytical Gaussian dose path. "
+        "Use myDoseNet-backed dose evaluation for optimization scoring."
+    )
+
+
 def constraint_direc(x):
     """
     Calculate the sum of squared differences from 1 for each 3D direction vector in seeds, representing
@@ -1545,52 +1492,11 @@ def update_seeds(single_seed_radiations, planned_seeds):
 
 
 def calculate_tmp_DVH_rate(pos, direc, cur_radiation, mask_volume, lowest_dose, single_seed_radiations, seed_sigma, seed_avr_dose):
-    """
-    Calculate the Dose-Volume Histogram (DVH) rate after placing a new seed, considering its radiation contribution.
-
-    Args:
-        pos (tuple or array-like): The position of the seed in the 3D space (x, y, z).
-        direc (tuple or array-like): The direction of the seed's radiation.
-        cur_radiation (ndarray): The current radiation distribution in the 3D grid.
-        mask_volume (ndarray): A binary mask representing the target volume, such as the tumor region (1 for target, 0 for non-target).
-        lowest_dose (float): The minimum dose threshold to consider in the DVH calculation.
-        single_seed_radiations (list of ndarray): A list of radiation distributions from previously placed seeds.
-        seed_sigma (float): The standard deviation for the spread of radiation from a seed (Gaussian model parameter).
-        seed_avr_dose (float): The average dose delivered by a single seed (Gaussian model parameter).
-
-    Returns:
-        tuple:
-            - tmp_DVH_rate (float): The DVH rate after placing the current seed, indicating the fraction of target volume receiving a dose above the threshold.
-            - tmp_seed_radiation (ndarray): The radiation contribution from the current seed.
-            - tmp_radiation (ndarray): The updated cumulative radiation field after adding the current seed's contribution.
-            - direc (tuple or array-like): The direction vector (unchanged).
-
-    Steps:
-        1. Calculate the radiation distribution for the current seed based on its position and direction.
-        2. Add the new seed's radiation contribution to the list of individual seed contributions.
-        3. Compute the updated total radiation field by summing all individual contributions.
-        4. Apply the target volume mask to isolate the target regions in the radiation field.
-        5. Calculate the DVH rate as the fraction of the target volume receiving a dose greater than the specified threshold.
-        6. Return the DVH rate, the new seed's radiation contribution, the updated total radiation field, and the unchanged direction.
-    """
-    
-    # Step 1: Calculate the radiation distribution from the current seed using a Gaussian model
-    tmp_seed_radiation = simple_single_dose_calculation(
-        cur_radiation.shape, pos, direc, seed_sigma, seed_avr_dose
+    """Legacy analytical DVH preview path retained only for import compatibility."""
+    raise NotImplementedError(
+        "calculate_tmp_DVH_rate used the removed analytical Gaussian dose path. "
+        "Use calculate_tmp_DVH_rate_v2 or batch_seed_dose_calculation_dl instead."
     )
-
-    # Step 2: Append the current seed's radiation contribution to the list of previous seed radiations
-    tmp_single_seed_radiations = single_seed_radiations.copy()
-    tmp_single_seed_radiations.append(tmp_seed_radiation)
-
-    # Step 3: Compute the updated total radiation field by summing the contributions from all seeds
-    tmp_radiation = np.sum(np.asarray(tmp_single_seed_radiations), axis=0) * mask_volume
-
-    # Step 4: Compute the DVH rate for the target region
-    tmp_DVH_rate = np.sum(tmp_radiation > lowest_dose) / np.sum(mask_volume)
-
-    # Step 5: Return the computed values
-    return tmp_DVH_rate, tmp_seed_radiation, tmp_radiation, direc
 
 
 def calculate_tmp_DVH_rate_v2(pos, direc, dose_image, dose_cal_model, mask_volume, lowest_dose, single_seed_radiations):
@@ -1645,70 +1551,11 @@ def calculate_tmp_DVH_rate_v2(pos, direc, dose_image, dose_cal_model, mask_volum
 
 
 def process_best_x(best_x, cur_radiation, mask_volume, in_lowest_dose, volume, seed_sigma, seed_avr_dose):
-    """
-    Processes the deep learning model's output (`best_x`) to generate a list of optimized seed placements 
-    and their corresponding radiation distributions. Additionally, it computes the Dose-Volume Histogram (DVH) rate.
-
-    Parameters:
-        best_x (torch.Tensor): Tensor containing the positions and directions of the seeds. The tensor has a shape 
-                               of (N, 6), where each seed is represented by a 6-dimensional vector:
-                               - First 3 elements: Seed position (x, y, z).
-                               - Last 3 elements: Seed direction (dx, dy, dz).
-        cur_radiation (numpy.ndarray): Current 3D radiation dose distribution map.
-        mask_volume (numpy.ndarray): 3D binary mask representing the target regions (1 = target, 0 = non-target).
-        in_lowest_dose (float): Minimum acceptable dose for a region to be considered adequately treated.
-        volume (float): Total volume of the target region to be irradiated.
-        seed_sigma (tuple): Tuple representing the radiation spread (sigma) for the seed:
-                            - (length, radial_x, radial_y).
-        seed_avr_dose (float): Average dose delivered by a single seed.
-
-    Returns:
-        tuple:
-            - best_planned_seeds (list): List of optimized seed placements, where each seed is represented as 
-                                         [position, direction]. Position is a 3D array (x, y, z), and direction 
-                                         is a normalized 3D array (dx, dy, dz).
-            - best_single_seed_radiations (list): List of radiation distributions (3D arrays) for each seed.
-            - best_DVH_rate (float): The DVH rate, calculated as the percentage of the target volume that meets or 
-                                     exceeds the minimum dose requirement (`in_lowest_dose`).
-    """
-    best_planned_seeds = []  # List to store optimized seed placements
-    best_single_seed_radiations = []  # List to store radiation distributions of individual seeds
-    
-    # Disable gradient tracking for efficiency
-    with torch.no_grad():
-        # Convert `best_x` tensor from GPU (if applicable) to a NumPy array
-        best_x = best_x.detach().cpu().numpy()
-        
-        # Loop through each seed in `best_x` (6 values per seed: 3 for position, 3 for direction)
-        for i in range(best_x.shape[0] // 6):
-            pos = best_x[6 * i:6 * i + 3]  # Extract position (x, y, z)
-            direc = best_x[6 * i + 3:6 * i + 6]  # Extract direction (dx, dy, dz)
-            
-            # Normalize the direction vector
-            norm = np.linalg.norm(direc)
-            if norm != 0:
-                direc = direc / norm
-            else:
-                # Handle zero-norm direction vectors by skipping normalization
-                print("Warning: Direction vector has zero norm, skipping normalization.")
-            
-            # Store the seed's position and direction
-            seed = [pos.reshape(-1), direc.reshape(-1)]
-            best_planned_seeds.append(seed)
-            
-            # Calculate the radiation distribution for the current seed
-            best_single_seed_radiations.append(
-                simple_single_dose_calculation(cur_radiation.shape, seed[0], seed[1], seed_sigma, seed_avr_dose)
-            )
-        
-        # Combine the radiation distributions of all seeds to compute the overall radiation map
-        best_radiation = np.sum(np.asarray(best_single_seed_radiations), axis=0)
-        
-        # Compute the DVH rate as the percentage of the target volume receiving sufficient dose
-        best_DVH_rate = np.sum(best_radiation * mask_volume > in_lowest_dose) / volume
-    
-    # Return the optimized seed placements, their radiation distributions, and the DVH rate
-    return best_planned_seeds, best_single_seed_radiations, best_DVH_rate
+    """Legacy analytical optimizer conversion retained only for import compatibility."""
+    raise NotImplementedError(
+        "process_best_x depended on the removed analytical Gaussian dose path. "
+        "Use myDoseNet-backed seed planning outputs instead."
+    )
 
 
 def from_x_to_seeds(x):
@@ -2344,53 +2191,11 @@ def train_model(epochs, x, BrachyPlanNet, optimizer, criterion, fitting_loss, ea
 
 
 def place_and_evaluate_seed(pos, direc, cur_radiation, mask_volume, in_lowest_dose, single_seed_radiations, seed_sigma, seed_avr_dose, direc_res):
-    """
-    Place a seed at a specific position in the 3D grid and evaluate its effect on radiation coverage.
-    The function tests multiple candidate directions for seed placement and selects the one that maximizes
-    the Dose-Volume Histogram (DVH) rate for the target region.
-
-    Parameters:
-        pos (tuple): Position of the seed in the 3D grid (x, y, z).
-        direc (numpy.ndarray): The initial direction of the seed (represented as a vector).
-        cur_radiation (numpy.ndarray): Current radiation distribution map (3D grid).
-        mask_volume (numpy.ndarray): Mask indicating the target region (1 for target, 0 for non-target).
-        in_lowest_dose (float): The minimum dose required for the target to be treated.
-        single_seed_radiations (list): List of radiation distributions from previously placed seeds.
-        seed_sigma (tuple): Spread of radiation from the seed (standard deviation in x, y, z directions).
-        seed_avr_dose (float): The average dose delivered by a single seed.
-        direc_res (tuple): Resolution of candidate directions (radial, azimuthal, and polar angles).
-
-    Returns:
-        best_direc (numpy.ndarray): The best direction for placing the seed to maximize the DVH rate.
-        cur_seed_radiation (numpy.ndarray): Radiation distribution contributed by the current seed.
-        cur_radiation (numpy.ndarray): Updated radiation distribution after placing the seed.
-        cur_DVH_rate (float): The Dose-Volume Histogram (DVH) rate for the current radiation distribution.
-    """
-    
-    # Step 1: Generate candidate directions for placing the seed
-    candidate_direcs = get_cone(direc, direc_res[0], direc_res[1], direc_res[2])  # Get all possible directions based on current direction
-    
-    best_direc = direc.copy()  # Initially set the best direction to the input direction
-    cur_seed_radiation = simple_single_dose_calculation(
-        cur_radiation.shape, pos, direc, seed_sigma, seed_avr_dose)  # Radiation distribution from current seed in the initial direction
-    
-    cur_DVH_rate = 0  # Initialize DVH rate (before any radiation contribution)
-
-    # Step 2: Evaluate each candidate direction
-    for candidate_direc in candidate_direcs:
-        # Calculate DVH rate and radiation from the current seed at the candidate direction
-        tmp_DVH_rate, tmp_seed_radiation, tmp_radiation, _ = calculate_tmp_DVH_rate(
-            pos, candidate_direc, cur_radiation, mask_volume, in_lowest_dose, single_seed_radiations, seed_sigma, seed_avr_dose)
-        
-        # Step 3: Update the best direction if the candidate direction results in a higher DVH rate
-        if tmp_DVH_rate > cur_DVH_rate:
-            cur_DVH_rate = tmp_DVH_rate  # Update DVH rate
-            best_direc = candidate_direc.copy()  # Update the best direction
-            cur_seed_radiation = tmp_seed_radiation  # Update seed's radiation distribution
-            cur_radiation = tmp_radiation  # Update the total radiation map
-    
-    # Step 4: Return the best direction, radiation from the current seed, and the updated radiation map
-    return best_direc, cur_seed_radiation, cur_radiation, cur_DVH_rate
+    """Legacy analytical seed-evaluation path retained only for import compatibility."""
+    raise NotImplementedError(
+        "place_and_evaluate_seed used the removed analytical Gaussian dose path. "
+        "Use place_and_evaluate_seed_v2 or the myDoseNet planning path instead."
+    )
 
 
 def place_and_evaluate_seed_v2(dose_image, dose_cal_model, pos, direc, cur_radiation, mask_volume, in_lowest_dose, single_seed_radiations, direc_res):

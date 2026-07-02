@@ -1,42 +1,50 @@
 """
-OAR Constraint Checker Tool
-==========================
-Checks whether OAR doses violate clinical dose constraints.
-Provides pass/fail feedback for each OAR structure.
+Source-aware OAR constraint checker.
+
+This tool provides deterministic OAR dose checks for planning QA. It does not
+invent global OAR limits. Constraints must come from either:
+
+1. ``custom_constraints`` supplied by the caller, usually from a case protocol.
+2. The curated clinical-standards mirror for an explicit tumor site.
+
+When no applicable source-backed constraint exists for an OAR, the tool reports
+``NOT_CHECKED`` and asks the caller to query ``clinical_kb`` or provide
+``custom_constraints``.
 """
 
-import sys
+from __future__ import annotations
+
+import argparse
+import json
 import os
+import sys
+from typing import Any, Dict, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from tool_factory import BaseTool, ToolResult
-from typing import Dict, List, Optional
-import numpy as np
+try:
+    from .clinical_standards import OAR_STANDARDS
+except ImportError:  # pragma: no cover - direct script execution path
+    from clinical_standards import OAR_STANDARDS
 
 
-DEFAULT_CONSTRAINTS = {
-    "rectum": {"max_dose": 120.0, "d2cc": 100.0},
-    "bladder": {"max_dose": 150.0, "d2cc": 125.0},
-    "urethra": {"max_dose": 100.0, "d2cc": 90.0},
-    "bowel": {"max_dose": 80.0, "d2cc": 70.0},
-    "kidney": {"max_dose": 20.0, "d2cc": 18.0},
-    "liver": {"max_dose": 30.0, "d2cc": 25.0},
-    "stomach": {"max_dose": 50.0, "d2cc": 45.0},
-    "pancreas": {"max_dose": 60.0, "d2cc": 50.0},
-    "duodenum": {"max_dose": 60.0, "d2cc": 55.0},
-    "artery": {"max_dose": 80.0, "d2cc": 70.0},
-    "vein": {"max_dose": 60.0, "d2cc": 50.0},
-}
+def _norm(value: str) -> str:
+    return (value or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def _metric(metrics: Dict[str, Any], *names: str) -> float:
+    for name in names:
+        if name in metrics and metrics[name] is not None:
+            try:
+                return float(metrics[name])
+            except (TypeError, ValueError):
+                return 0.0
+    return 0.0
 
 
 class OARConstraintCheckerTool(BaseTool):
-    """
-    Tool for checking OAR dose constraints.
-
-    Validates OAR doses against clinical constraints (TG-264 / ESTRO guidelines).
-    Returns pass/fail status for each OAR and overall plan acceptability.
-    """
+    """Check OAR dose metrics against source-backed constraints."""
 
     @property
     def name(self) -> str:
@@ -45,10 +53,10 @@ class OARConstraintCheckerTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Check OAR doses against clinical dose constraints. "
-            "Validates rectum, bladder, urethra, bowel, kidney, liver, etc. "
-            "Input: OAR dose metrics and optional custom constraints. "
-            "Output: Per-OAR pass/fail status and overall plan acceptability."
+            "Check OAR dose metrics against explicit case constraints or the "
+            "curated clinical KB mirror for a specified tumor site. If no "
+            "source-backed constraint is available, returns NOT_CHECKED rather "
+            "than PASS/FAIL."
         )
 
     @property
@@ -58,16 +66,19 @@ class OARConstraintCheckerTool(BaseTool):
             "properties": {
                 "oar_metrics": {
                     "type": "object",
-                    "description": "Dict of OAR name -> {max_dose, d2cc, mean_dose}",
+                    "description": "Dict of OAR name -> {max_dose/dmax, d2cc, d1cc, mean_dose}",
+                },
+                "tumor_type": {
+                    "type": "string",
+                    "description": "Tumor site used to select curated KB mirror limits, e.g. pancreas/prostate/lung.",
+                },
+                "organ": {
+                    "type": "string",
+                    "description": "Alias for tumor_type.",
                 },
                 "custom_constraints": {
                     "type": "object",
-                    "description": "Custom constraints dict (overrides defaults)",
-                },
-                "strict_mode": {
-                    "type": "boolean",
-                    "default": True,
-                    "description": "If True, any violation fails the plan",
+                    "description": "Explicit OAR constraints. Values may include max_dose, dmax, d2cc, d1cc, mean_dose.",
                 },
             },
             "required": ["oar_metrics"],
@@ -78,90 +89,147 @@ class OARConstraintCheckerTool(BaseTool):
         return {
             "type": "object",
             "properties": {
-                "all_pass": {"type": "boolean", "description": "True if all constraints satisfied"},
-                "violations": {"type": "array", "description": "List of constraint violations"},
-                "oar_status": {"type": "object", "description": "Per-OAR pass/fail dict"},
+                "all_checked_pass": {
+                    "type": "boolean",
+                    "description": "True only if every checked constraint passes. Unchecked OARs do not count as pass.",
+                },
+                "violations": {"type": "array", "description": "Source-backed constraint violations"},
+                "oar_status": {"type": "object", "description": "Per-OAR status: PASS, FAIL, or NOT_CHECKED"},
+                "unchecked": {"type": "array", "description": "OARs with no source-backed constraints"},
+                "constraint_source": {"type": "string"},
             },
         }
 
     def _execute(self, **kwargs) -> ToolResult:
-        oar_metrics = kwargs.get("oar_metrics", {})
-        custom_constraints = kwargs.get("custom_constraints", {})
-        strict_mode = kwargs.get("strict_mode", True)
+        oar_metrics = kwargs.get("oar_metrics") or {}
+        tumor_type = _norm(kwargs.get("tumor_type") or kwargs.get("organ") or "")
+        custom_constraints = kwargs.get("custom_constraints") or {}
 
-        constraints = {**DEFAULT_CONSTRAINTS, **custom_constraints}
-
+        constraints, source = self._build_constraints(tumor_type, custom_constraints)
         violations = []
+        unchecked = []
         oar_status = {}
 
-        for oar_name, metrics in oar_metrics.items():
-            oar_constraints = constraints.get(oar_name, {})
-            status, v_list = self._check_oar(oar_name, metrics, oar_constraints)
-            oar_status[oar_name] = status
-            violations.extend(v_list)
+        for raw_oar_name, metrics in oar_metrics.items():
+            oar_name = _norm(raw_oar_name)
+            metrics = metrics or {}
+            oar_constraints = self._match_constraints(oar_name, constraints)
 
-        all_pass = len(violations) == 0
+            if not oar_constraints:
+                oar_status[raw_oar_name] = {
+                    "status": "NOT_CHECKED",
+                    "reason": "No source-backed constraint matched this OAR name.",
+                }
+                unchecked.append(raw_oar_name)
+                continue
+
+            status, oar_violations = self._check_oar(raw_oar_name, metrics, oar_constraints)
+            oar_status[raw_oar_name] = {
+                "status": status,
+                "constraints": oar_constraints,
+            }
+            violations.extend(oar_violations)
+
+        checked_count = len(oar_metrics) - len(unchecked)
+        all_checked_pass = checked_count > 0 and not violations
+        message = (
+            f"OAR constraint check: {len(violations)} violation(s), "
+            f"{len(unchecked)} unchecked OAR(s), source={source}."
+        )
 
         return ToolResult(
             success=True,
             data={
-                "all_pass": all_pass,
+                "all_checked_pass": all_checked_pass,
                 "violations": violations,
                 "oar_status": oar_status,
+                "unchecked": unchecked,
+                "constraint_source": source,
+                "tumor_type": tumor_type or None,
             },
-            message=f"OAR constraint check: {'ALL PASS' if all_pass else f'{len(violations)} VIOLATION(S)'}",
+            message=message,
             metadata={
-                "all_pass": all_pass,
+                "all_checked_pass": all_checked_pass,
                 "violations": violations,
                 "oar_status": oar_status,
+                "unchecked": unchecked,
+                "constraint_source": source,
+                "tumor_type": tumor_type or None,
             },
         )
 
-    def _check_oar(self, oar_name, metrics, constraints):
+    def _build_constraints(self, tumor_type: str, custom_constraints: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
+        constraints: Dict[str, Any] = {}
+        source_parts = []
+
+        if tumor_type and tumor_type in OAR_STANDARDS:
+            constraints.update({k: dict(v) for k, v in OAR_STANDARDS[tumor_type].items()})
+            source_parts.append(f"clinical_standards_mirror:{tumor_type}")
+
+        if custom_constraints:
+            for name, value in custom_constraints.items():
+                constraints.setdefault(_norm(name), {}).update(value or {})
+            source_parts.append("custom_constraints")
+
+        source = "+".join(source_parts) if source_parts else "missing_constraints"
+        return constraints, source
+
+    def _match_constraints(self, oar_name: str, constraints: Dict[str, Any]) -> Dict[str, Any]:
+        if oar_name in constraints:
+            return constraints[oar_name]
+
+        for standard_name, standard in constraints.items():
+            if standard_name and (standard_name in oar_name or oar_name in standard_name):
+                return standard
+        return {}
+
+    def _check_oar(self, oar_name: str, metrics: Dict[str, Any], constraints: Dict[str, Any]) -> Tuple[str, list]:
         violations = []
-        status = "PASS"
+        checks = [
+            ("max_dose", _metric(metrics, "max_dose", "dmax"), constraints.get("max_dose") or constraints.get("dmax")),
+            ("d2cc", _metric(metrics, "d2cc", "D2cc"), constraints.get("d2cc")),
+            ("d1cc", _metric(metrics, "d1cc", "D1cc"), constraints.get("d1cc")),
+            ("mean_dose", _metric(metrics, "mean_dose", "dmean", "Dmean"), constraints.get("mean_dose") or constraints.get("dmean_max")),
+        ]
 
-        max_dose = metrics.get("max_dose", 0)
-        d2cc = metrics.get("d2cc", 0)
-        mean_dose = metrics.get("mean_dose", 0)
+        for constraint_type, actual, limit in checks:
+            if limit is None:
+                continue
+            try:
+                limit_f = float(limit)
+            except (TypeError, ValueError):
+                continue
+            if actual > limit_f:
+                violations.append({
+                    "oar": oar_name,
+                    "constraint_type": constraint_type,
+                    "actual": float(actual),
+                    "limit": limit_f,
+                    "excess_pct": float((actual - limit_f) / limit_f * 100.0) if limit_f else None,
+                })
 
-        if "max_dose" in constraints and max_dose > constraints["max_dose"]:
-            violations.append({
-                "oar": oar_name,
-                "constraint_type": "max_dose",
-                "actual": float(max_dose),
-                "limit": constraints["max_dose"],
-                "excess_pct": float((max_dose - constraints["max_dose"]) / constraints["max_dose"] * 100),
-            })
-            status = "FAIL"
-
-        if "d2cc" in constraints and d2cc > constraints["d2cc"]:
-            violations.append({
-                "oar": oar_name,
-                "constraint_type": "d2cc",
-                "actual": float(d2cc),
-                "limit": constraints["d2cc"],
-                "excess_pct": float((d2cc - constraints["d2cc"]) / constraints["d2cc"] * 100),
-            })
-            status = "FAIL"
-
-        return status, violations
+        return ("FAIL" if violations else "PASS"), violations
 
 
 def main():
-    import argparse
-    parser = argparse.ArgumentParser(description="OAR Constraint Checker")
+    parser = argparse.ArgumentParser(description="Source-aware OAR constraint checker")
     parser.add_argument("--oar_metrics", required=True, help="JSON dict of OAR metrics")
+    parser.add_argument("--tumor_type", default="", help="Tumor site used for curated KB mirror constraints")
+    parser.add_argument("--custom_constraints", default="{}", help="JSON dict of explicit constraints")
     args = parser.parse_args()
 
-    import json
-    oar_metrics = json.loads(args.oar_metrics)
-
     tool = OARConstraintCheckerTool()
-    result = tool._execute(oar_metrics=oar_metrics)
+    result = tool._execute(
+        oar_metrics=json.loads(args.oar_metrics),
+        tumor_type=args.tumor_type,
+        custom_constraints=json.loads(args.custom_constraints or "{}"),
+    )
     print(result.message)
-    for v in result.metadata["violations"]:
-        print(f"  {v['oar']}: {v['constraint_type']} = {v['actual']:.1f} (limit: {v['limit']:.1f})")
+    for violation in result.metadata["violations"]:
+        print(
+            f"  - {violation['oar']}: {violation['constraint_type']}="
+            f"{violation['actual']:.2f} > {violation['limit']:.2f}"
+        )
 
 
 if __name__ == "__main__":

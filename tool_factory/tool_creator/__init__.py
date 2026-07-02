@@ -11,6 +11,7 @@ import json
 import logging
 import importlib.util
 import inspect
+import re
 from typing import Dict, Any, Optional, Type
 from pathlib import Path
 
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 # Directory for dynamically created tools
 TOOLS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dynamic_tools")
 os.makedirs(TOOLS_DIR, exist_ok=True)
+TOOLS_DIR_PATH = Path(TOOLS_DIR).resolve()
 
 # Registry of dynamically created tools
 _dynamic_tools: Dict[str, BaseTool] = {}
@@ -121,20 +123,39 @@ Capabilities:
         "data": {"type": "object"},
     }
 
+    _TOOL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+    def _normalize_tool_name(self, tool_name: str) -> str:
+        """Return a safe dynamic-tool module name or raise ValueError."""
+        candidate = (tool_name or "").strip().replace(" ", "_").replace("-", "_").lower()
+        if not self._TOOL_NAME_RE.fullmatch(candidate):
+            raise ValueError(
+                "tool_name must match ^[a-z][a-z0-9_]{0,63}$; "
+                "path separators and traversal are not allowed"
+            )
+        return candidate
+
+    def _tool_file(self, tool_name: str) -> Path:
+        """Resolve a dynamic-tool file and keep it inside TOOLS_DIR."""
+        safe_name = self._normalize_tool_name(tool_name)
+        tool_file = (TOOLS_DIR_PATH / f"{safe_name}.py").resolve()
+        if tool_file.parent != TOOLS_DIR_PATH:
+            raise ValueError("Resolved dynamic tool path escaped TOOLS_DIR")
+        return tool_file
+
     def _create_tool(self, tool_name: str, tool_code: str, description: str,
                      input_schema: Dict = None, output_schema: Dict = None) -> ToolResult:
         """Create a new tool from Python code."""
-        if not tool_name:
-            return ToolResult(success=False, error="tool_name required", message="tool_name is required")
+        try:
+            tool_name = self._normalize_tool_name(tool_name)
+        except ValueError as e:
+            return ToolResult(success=False, error=str(e), message=str(e))
 
         if not tool_code:
             return ToolResult(success=False, error="tool_code required", message="tool_code is required")
 
-        # Sanitize tool name
-        tool_name = tool_name.replace(" ", "_").replace("-", "_").lower()
-
         # Create tool file
-        tool_file = Path(TOOLS_DIR) / f"{tool_name}.py"
+        tool_file = self._tool_file(tool_name)
 
         try:
             # Wrap the code in a tool class
@@ -254,11 +275,16 @@ from tool_factory import BaseTool, ToolResult
 
     def _delete_tool(self, tool_name: str) -> ToolResult:
         """Delete a dynamic tool."""
+        try:
+            tool_name = self._normalize_tool_name(tool_name)
+        except ValueError as e:
+            return ToolResult(success=False, error=str(e), message=str(e))
+
         if tool_name in _dynamic_tools:
             del _dynamic_tools[tool_name]
 
             # Also delete the file
-            tool_file = Path(TOOLS_DIR) / f"{tool_name}.py"
+            tool_file = self._tool_file(tool_name)
             if tool_file.exists():
                 tool_file.unlink()
 
@@ -276,6 +302,11 @@ from tool_factory import BaseTool, ToolResult
 
     def _test_tool(self, tool_name: str, test_params: Dict = None) -> ToolResult:
         """Test a dynamic tool."""
+        try:
+            tool_name = self._normalize_tool_name(tool_name)
+        except ValueError as e:
+            return ToolResult(success=False, error=str(e), message=str(e))
+
         if tool_name not in _dynamic_tools:
             return ToolResult(
                 success=False,
@@ -300,7 +331,11 @@ from tool_factory import BaseTool, ToolResult
 
     def _get_code(self, tool_name: str) -> ToolResult:
         """Get the code of a dynamic tool."""
-        tool_file = Path(TOOLS_DIR) / f"{tool_name}.py"
+        try:
+            tool_name = self._normalize_tool_name(tool_name)
+            tool_file = self._tool_file(tool_name)
+        except ValueError as e:
+            return ToolResult(success=False, error=str(e), message=str(e))
 
         if not tool_file.exists():
             return ToolResult(

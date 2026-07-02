@@ -1656,17 +1656,32 @@ agentic planner and a standalone planning workstation:
   generate a final training summary.
 - **Dose-model boundary**: manual dose recomputation uses the trained myDoseNet
   path. Analytical/Gaussian dose simulation is not used for active manual dose
-  feedback.
+  feedback; legacy analytical utility entry points fail closed with explicit
+  `NotImplementedError` messages.
 - **Clinical KB governance**: safety-critical clinical claims, target
   thresholds, OAR constraints, and literature summaries must come from
   `clinical_kb`, clinical web search, actual tool output, or explicit
   `plan_config`. Runtime prompts and validators should not invent standalone
   clinical thresholds.
+- **System readiness checklist**: the Input panel now exposes a `Readiness`
+  action backed by `/api/readiness`. The same action is available to the LLM via
+  `system.readiness` in the UI controller registry, so the assistant can report
+  missing CT, CTV, OAR, planning, dose/DVH, report, and clinical KB prerequisites
+  before the user exports or reviews a plan.
+- **Source-aware reporting**: report auto-fill, the Clinical Evaluation panel,
+  and agent planning summaries now report observed metrics first. They require
+  retrieved `clinical_kb` evidence or explicit `plan_config` before labeling
+  target coverage or OAR dose as pass/fail.
+- **Safe tool creation boundary**: dynamic tool names are normalized and
+  constrained to the dynamic tool directory, preventing path traversal while
+  preserving BrachyBot's ability to create code-based tools when that policy is
+  enabled.
 
 Audit reports:
 
 - [`docs/PRODUCT_READINESS_UI_MANUAL_TRAINING_AUDIT_2026-07-02.md`](docs/PRODUCT_READINESS_UI_MANUAL_TRAINING_AUDIT_2026-07-02.md)
 - [`docs/CLINICAL_KB_PROMPT_ALIGNMENT_AUDIT_2026-07-02.md`](docs/CLINICAL_KB_PROMPT_ALIGNMENT_AUDIT_2026-07-02.md)
+- [`docs/PRODUCT_REAUDIT_AND_SOURCE_AWARE_HARDENING_2026-07-02.md`](docs/PRODUCT_REAUDIT_AND_SOURCE_AWARE_HARDENING_2026-07-02.md)
 
 ---
 ## 📊 Research & Citations

@@ -1251,28 +1251,21 @@ class ToolResultPipeline:
                     "- Plan score (0-100)\n\n"
                     "## 6. OAR Dose Analysis — MUST INCLUDE TABLE\n"
                     "Present ALL OAR metrics returned by dose_evaluation in a TABLE:\n"
-                    "| OAR | Dmax (Gy) | D2cc (Gy) | D1cc (Gy) | Status |\n"
+                    "| OAR | Dmax (Gy) | D2cc (Gy) | D1cc (Gy) | Interpretation status |\n"
                     "|-----|-----------|-----------|-----------|--------|\n"
-                    "Then for each OAR, classify status as: OK / WARN / EXCEEDS based on:\n"
-                    "- ABS / GEC-ESTRO / ICRU 89 / TG-43 / TG-229 / QUANTEC tolerance\n"
-                    "- V100 < 1.0 Gy, D2cc < 1.0 Gy (1xRx) = OK\n"
-                    "- Dmax > 2xRx = EXCEEDS\n"
-                    "- D2cc > 1xRx = WARN\n\n"
-                    "## 7. Flagged Issues\n"
-                    "Bullet list of every metric that does NOT meet clinical tolerance, "
-                    "with the actual value vs. the tolerance and a one-line clinical implication.\n\n"
+                    "Do NOT classify OARs as OK/WARN/EXCEEDS from generic local ratios. "
+                    "Write 'Needs clinical_kb/plan_config review' unless a retrieved source "
+                    "or explicit plan_config provides the exact site-specific constraint.\n\n"
+                    "## 7. Review Items\n"
+                    "Bullet list of observed metrics that require source-backed review. "
+                    "Only call a value a violation when the tolerance and source URL are available.\n\n"
                     "## 8. Clinical Recommendations\n"
                     "3-5 bullet points: actionable next steps (e.g. consider seed repositioning "
                     "near duodenum, validate with secondary dose calculation, consult radiation "
                     "oncologist for plan acceptance).\n\n"
                     "## 9. References\n"
-                    "Inline links to relevant guidelines — pick the most applicable 2-3:\n"
-                    "- [TG-43 AAPM](https://www.aapm.org/pubs/reports/RPT_268.pdf)\n"
-                    "- [GEC-ESTRO](https://www.estro.org/Science/Guidelines)\n"
-                    "- [ICRU Report 89](https://www.icru.org/report/icru-report-89-prescribing-recording-and-reporting-photon-beam-therapy-2nd-edition)\n"
-                    "- [ABS Brachy Guidelines](https://www.americanbrachytherapy.org/)\n"
-                    "- [TG-229 AAPM](https://www.aapm.org/pubs/reports/RPT_229.pdf)\n"
-                    "- [NCCN Guidelines](https://www.nccn.org/guidelines)\n\n"
+                    "Inline links must point to retrieved clinical_kb/web sources used for clinical claims. "
+                    "If no source was retrieved, state that site-specific thresholds were not sourced.\n\n"
                     f"10. **Source attribution**: {source_rule}\n\n"
                     "## Tool results:\n" + "\n\n".join(tool_summary)
                     + (f"\n\nAvailable source URLs:\n{sources_text}" if sources_text else "")
@@ -1908,6 +1901,18 @@ class BrachyAgent:
             self.registry.register(SafetyValidatorTool())
         except ImportError as e:
             logger.warning(f"SafetyValidatorTool not available: {e}")
+
+        try:
+            from tool_factory.plan_quality import (
+                PlanQualityScorerTool,
+                OARConstraintCheckerTool,
+                PlanRefinementTool,
+            )
+            self.registry.register(PlanQualityScorerTool())
+            self.registry.register(OARConstraintCheckerTool())
+            self.registry.register(PlanRefinementTool())
+        except ImportError as e:
+            logger.warning(f"Plan quality tools not available: {e}")
 
         try:
             from tool_factory.report_generator import ReportGeneratorTool
@@ -3470,48 +3475,38 @@ print(json.dumps(result))
         if isinstance(oar_metrics, dict):
             oar_metrics = {_display_organ_name(organ): om for organ, om in oar_metrics.items()}
         if oar_metrics:
-            lines.append(f"| {L('危及器官', 'OAR')} | {L('最大剂量 (Gy)', 'Dmax (Gy)')} | D2cc (Gy) | D1cc (Gy) | {L('状态', 'Status')} |")
+            lines.append(f"| {L('危及器官', 'OAR')} | {L('最大剂量 (Gy)', 'Dmax (Gy)')} | D2cc (Gy) | D1cc (Gy) | {L('解释状态', 'Interpretation status')} |")
             lines.append("|" + "|".join(["---"] * 5) + "|")
             for organ, om in sorted(oar_metrics.items(), key=lambda kv: _metric_dmax(kv[1]), reverse=True):
                 dmax = _metric_dmax(om)
                 d2cc = om.get('d2cc') or 0
                 d1cc = om.get('d1cc') or 0
-                # Status thresholds (clinical brachy practice):
-                # - EXCEEDS: Dmax > 2xRx OR D2cc > 1xRx (critical OARs)
-                #   Note: in brachy, a D2cc > 1xRx for duodenum/small_bowel
-                #   is a real problem because they're serial organs.
-                # - WARN:    Dmax > 1.5xRx OR D2cc > 0.75xRx
-                # - OK:      otherwise
-                if dmax > 2 * rx_gy or d2cc > rx_gy:
-                    status = L('超限', 'EXCEEDS')
-                elif dmax > 1.5 * rx_gy or d2cc > 0.75 * rx_gy:
-                    status = L('警告', 'WARN')
-                else:
-                    status = L('正常', 'OK')
+                # Do not infer PASS/WARN/FAIL from generic local ratios.
+                # OAR tolerances are site-specific; use clinical_kb or explicit
+                # plan_config constraints for clinical interpretation.
+                status = L('需结合 clinical_kb/plan_config 判读', 'Needs clinical_kb/plan_config review')
                 lines.append(f"| {organ} | {dmax:.2f} | {d2cc:.2f} | {d1cc:.2f} | {status} |")
         else:
             lines.append(L('(剂量评估未返回 OAR 指标)', '(No OAR metrics returned by dose evaluation)'))
         lines.append("")
 
-        # Section 7: Flagged Issues
-        lines.append(f"## {L('7. 标记问题', '7. Flagged Issues')}")
+        # Section 7: Review Items
+        lines.append(f"## {L('7. 需复核项目', '7. Review Items')}")
         lines.append("")
-        issues_found = False
+        review_items = []
         if oar_metrics:
-            for organ, om in sorted(oar_metrics.items(), key=lambda kv: _metric_dmax(kv[1]), reverse=True):
+            for organ, om in sorted(oar_metrics.items(), key=lambda kv: _metric_dmax(kv[1]), reverse=True)[:5]:
                 dmax = _metric_dmax(om)
                 d2cc = om.get('d2cc') or 0
-                if dmax > 2 * rx_gy or d2cc > rx_gy:
-                    lines.append(f"- **{L('超限', 'EXCEEDS')}**: {organ} {L('最大剂量', 'Dmax')} {dmax:.2f} Gy, D2cc {d2cc:.2f} Gy — {L('需重点关注,可考虑降低处方或重新规划粒子分布', 'requires attention, consider reducing prescription or replanning seed distribution')}")
-                    issues_found = True
-                elif dmax > 1.5 * rx_gy or d2cc > 0.75 * rx_gy:
-                    lines.append(f"- **{L('警告', 'WARN')}**: {organ} {L('最大剂量', 'Dmax')} {dmax:.2f} Gy > 1.5×Rx ({1.5*rx_gy:.1f} Gy) — {L('接近耐受上限,需评估临床意义', 'near tolerance limit, evaluate clinical relevance')}")
-                    issues_found = True
-        if v200 > 30:
-            lines.append(f"- **{L('热点', 'Hot spot')}**: V200={v200:.1f}% {L('超过 30%,提示剂量分布欠均匀', 'exceeds 30%, indicating non-uniform dose distribution')}")
-            issues_found = True
-        if not issues_found:
-            lines.append(L('所有指标均在临床容许范围内,无需额外关注。', 'All metrics are within clinical tolerance — no action required.'))
+                review_items.append(
+                    f"- {organ}: Dmax={dmax:.2f} Gy, D2cc={d2cc:.2f} Gy. "
+                    f"{L('请用 clinical_kb 或显式 plan_config 的部位特异性限值判读。', 'Interpret with site-specific limits from clinical_kb or explicit plan_config.')}"
+                )
+        review_items.append(
+            f"- V100={v100:.1f}%, V150={v150:.1f}%, V200={v200:.1f}%, D90={d90:.2f} Gy. "
+            f"{L('这些是观测指标,不是本地模板自动达标结论。', 'These are observed metrics, not a local-template acceptability verdict.')}"
+        )
+        lines.extend(review_items)
         lines.append("")
 
         # Section 8: Clinical Recommendations
@@ -3520,19 +3515,16 @@ print(json.dumps(result))
         lines.append(f"- {L('请放射肿瘤科医师审核本计划并签署批准', 'Have a radiation oncologist review and sign off on this plan')}")
         lines.append(f"- {L('使用独立剂量算法进行二次校验(蒙特卡罗或 TG-43)', 'Perform secondary dose verification using an independent algorithm (Monte Carlo or TG-43)')}")
         if oar_metrics:
-            exceed_count = sum(1 for om in oar_metrics.values() if _metric_dmax(om) > 2 * rx_gy)
-            if exceed_count > 0:
-                lines.append(f"- {L(f'重点关注 {exceed_count} 个超限 OAR,可在 Report 面板中调整粒子分布', f'Focus on the {exceed_count} OAR(s) exceeding limits; consider seed repositioning in the Report panel')}")
+            lines.append(f"- {L('在 clinical_kb 中检索当前病种的 OAR 限值后再给出超限/通过结论', 'Query clinical_kb for this tumor site before labeling any OAR as exceeded or passed')}")
         lines.append(f"- {L('术后 1 个月复查 CT,评估粒子迁移和剂量验证', 'Schedule a 1-month follow-up CT to assess seed migration and dose verification')}")
         lines.append("")
 
         # Section 9: References
         lines.append(f"## {L('9. 参考文献', '9. References')}")
         lines.append("")
-        lines.append(f"- [TG-43 AAPM](https://www.aapm.org/pubs/reports/RPT_268.pdf) — {L('放射性粒子源剂量学基础', 'Brachytherapy source dosimetry foundation')}")
-        lines.append(f"- [GEC-ESTRO](https://www.estro.org/Science/Guidelines) — {L('欧洲近距离治疗指南', 'European brachytherapy guidelines')}")
-        lines.append(f"- [ICRU Report 89](https://www.icru.org/report/icru-report-89-prescribing-recording-and-reporting-photon-beam-therapy-2nd-edition) — {L('光子束治疗处方与记录', 'Prescribing, recording, and reporting photon beam therapy')}")
-        lines.append(f"- [NCCN Guidelines](https://www.nccn.org/guidelines) — {L('各癌种临床实践指南', 'Clinical practice guidelines by cancer type')}")
+        lines.append(f"- {L('部位特异性阈值和 OAR 限值应由 clinical_kb 检索结果或显式 plan_config 提供。', 'Site-specific thresholds and OAR limits should come from clinical_kb retrieval results or explicit plan_config.')}")
+        lines.append(f"- [AAPM TG-43U1](https://pubmed.ncbi.nlm.nih.gov/15070264/) — {L('近距离放疗源剂量学报告框架', 'Brachytherapy source dosimetry reporting framework')}")
+        lines.append(f"- [ICRU Report 89](https://www.icru.org/report/icru-report-89-prescribing-recording-and-reporting-photon-beam-therapy-2nd-edition) — {L('处方、记录和报告原则', 'Prescribing, recording, and reporting principles')}")
         lines.append("")
 
         return "\n".join(lines)
@@ -7855,18 +7847,28 @@ Output (JSON array of strings):"""
             return f"Evaluation failed: {eval_result.error}"
         metrics = eval_result.metadata
         suggestions = []
-        if metrics.get("v100", 0) < 0.90:
-            suggestions.append("V100 < 90%, recommend increasing seed count or adjusting positions to improve target coverage.")
-        if metrics.get("v200", 0) > 0.35:
-            suggestions.append("V200 > 35%, over-irradiation detected. Recommend reducing seed count or adjusting positions.")
+        v100 = metrics.get("v100")
+        v200 = metrics.get("v200")
+        if v100 is not None:
+            suggestions.append(
+                f"Observed V100={float(v100):.1%}. Compare this with site-specific clinical_kb or plan_config coverage criteria before judging acceptability."
+            )
+        if v200 is not None:
+            suggestions.append(
+                f"Observed V200={float(v200):.1%}. Review hotspot limits from clinical_kb or plan_config before labeling overdose."
+            )
         if metrics.get("oar_violations"):
             violations = metrics["oar_violations"]
-            suggestions.append(f"Detected {len(violations)} OAR dose violations. Plan needs re-optimization to protect organs at risk.")
+            suggestions.append(
+                f"Detected {len(violations)} source-backed OAR violation(s). Re-optimize only after confirming the constraints apply to this tumor site."
+            )
         plan_score = metrics.get("plan_score", 0)
-        if plan_score >= 80 or (plan_score <= 1 and plan_score >= 0.8):
-            suggestions.append("Plan quality is good and ready for execution.")
+        if plan_score:
+            suggestions.append(
+                f"Plan score={plan_score}. Treat this as an advisory ranking signal, not final clinical approval."
+            )
         if not suggestions:
-            suggestions.append("Plan evaluation complete. No significant issues found.")
+            suggestions.append("Plan evaluation complete. Query clinical_kb or provide plan_config to produce source-backed optimization guidance.")
         return f"Optimization suggestions:\n" + "\n".join(f"  - {s}" for s in suggestions)
     
     def run_preoperative_plan(
