@@ -13,6 +13,7 @@ import time
 import threading
 import secrets
 import hashlib
+import hmac
 import base64
 import binascii
 from datetime import datetime
@@ -334,6 +335,11 @@ def _build_system_readiness(agent, session_id: Optional[str] = None) -> Dict[str
     kb_ready = os.path.exists(os.path.join(kb_root, "sources")) and os.path.exists(
         os.path.join(PROJECT_ROOT, "tool_factory", "clinical_kb", "data", "knowledge_base.json")
     )
+    try:
+        os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
+        screenshots_ready = os.access(SCREENSHOTS_DIR, os.W_OK)
+    except Exception:
+        screenshots_ready = False
     ui_events = list((_ui_bucket(session_id).get("events") or [])[-20:])
 
     checks = [
@@ -356,6 +362,13 @@ def _build_system_readiness(agent, session_id: Optional[str] = None) -> Dict[str
         _readiness_item("dose", "Dose and DVH", dose_ready, "Dose distribution and metrics are available." if dose_ready else "Dose/DVH metrics are not current.", "Recompute dose/DVH after planning edits."),
         _readiness_item("report", "Report data", report_ready, "Report can be auto-filled from current data." if report_ready else "Report data is not ready.", "Auto-fill report after dose evaluation."),
         _readiness_item("clinical_kb", "Clinical KB", kb_ready, "Clinical KB source index is present." if kb_ready else "Clinical KB source index is missing.", "Repair clinical_kb before source-backed clinical claims."),
+        _readiness_item(
+            "screenshots",
+            "Screenshot feedback",
+            screenshots_ready,
+            "Screenshot directory is writable." if screenshots_ready else "Screenshot directory is not writable.",
+            "Fix uploads/screenshots permissions before UI screenshot or training feedback.",
+        ),
     ]
 
     execution_tools = {
@@ -892,19 +905,66 @@ def _decode_png_data_url(image_data: str) -> bytes:
     return img_bytes
 
 
+def _valid_api_key_from_request() -> bool:
+    """Validate the current request's API key header without short-circuiting routes."""
+    if not _API_KEY_REQUIRED:
+        return True
+    request_key = request.headers.get("X-API-Key", "")
+    if not request_key:
+        return False
+    return secrets.compare_digest(
+        hashlib.sha256(request_key.encode()).hexdigest(),
+        hashlib.sha256(API_KEY.encode()).hexdigest(),
+    )
+
+
+def _screenshot_signature(filename: str, expires: int) -> str:
+    """Create a URL signature for browser image loads that cannot set headers."""
+    payload = f"{filename}:{int(expires)}".encode("utf-8")
+    return hmac.new(API_KEY.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+
+
+def _make_screenshot_url(filename: str, ttl_seconds: int = 3600) -> str:
+    if not _API_KEY_REQUIRED:
+        return f"/api/screenshots/{filename}"
+    expires = int(time.time()) + int(ttl_seconds)
+    sig = _screenshot_signature(filename, expires)
+    return f"/api/screenshots/{filename}?expires={expires}&sig={sig}"
+
+
+def _valid_screenshot_request(filename: str) -> bool:
+    """Allow either normal API-key auth or a short-lived signed screenshot URL."""
+    if _valid_api_key_from_request():
+        return True
+    try:
+        expires = int(request.args.get("expires", "0"))
+    except ValueError:
+        return False
+    sig = request.args.get("sig", "")
+    if not sig or expires < int(time.time()):
+        return False
+    return secrets.compare_digest(sig, _screenshot_signature(filename, expires))
+
+
+def _safe_screenshot_path(filename: str) -> str:
+    """Resolve a screenshot filename inside uploads/screenshots only."""
+    if os.path.basename(filename) != filename or _upload_ext(filename) != ".png":
+        raise ValueError("Invalid screenshot filename")
+    screenshots_dir = SCREENSHOTS_DIR
+    filepath = os.path.realpath(os.path.join(screenshots_dir, filename))
+    if not filepath.startswith(screenshots_dir + os.sep):
+        raise ValueError("Invalid screenshot path")
+    return filepath
+
+
 def require_api_key(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         # Local loopback development may run without auth; non-loopback
         # binding is rejected at startup unless a key or trusted-network
         # override is explicitly configured.
-        if _API_KEY_REQUIRED:
-            request_key = request.headers.get("X-API-Key", "")
-            if not request_key or not secrets.compare_digest(
-                hashlib.sha256(request_key.encode()).hexdigest(),
-                hashlib.sha256(API_KEY.encode()).hexdigest(),
-            ):
-                return jsonify({"error": "Invalid or missing API key"}), 401
+        if _API_KEY_REQUIRED and not _valid_api_key_from_request():
+            return jsonify({"error": "Invalid or missing API key"}), 401
         return f(*args, **kwargs)
     return decorated
 
@@ -4723,7 +4783,7 @@ def create_app(config: Optional[Dict] = None):
             with open(filepath, "wb") as f:
                 f.write(img_bytes)
 
-            url = f"/api/screenshots/{filename}"
+            url = _make_screenshot_url(filename)
             logger.info(f"Screenshot saved: {filepath} ({len(img_bytes)} bytes)")
 
             return jsonify({
@@ -4741,15 +4801,20 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/screenshots/<filename>")
-    @require_api_key
     @rate_limit
     def api_serve_screenshot(filename):
         """Serve a saved screenshot file."""
-        screenshots_dir = SCREENSHOTS_DIR
-        filepath = os.path.join(screenshots_dir, filename)
+        if not _valid_screenshot_request(filename):
+            return jsonify({"error": "Invalid or expired screenshot link"}), 401
+        try:
+            filepath = _safe_screenshot_path(filename)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         if not os.path.exists(filepath):
             return jsonify({"error": "File not found"}), 404
-        return send_from_directory(screenshots_dir, filename, mimetype="image/png")
+        response = send_from_directory(SCREENSHOTS_DIR, filename, mimetype="image/png")
+        response.headers["Cache-Control"] = "private, max-age=300"
+        return response
 
     @app.route("/api/reset", methods=["POST"])
     @require_api_key

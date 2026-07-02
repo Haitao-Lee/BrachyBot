@@ -17,6 +17,10 @@ import os
 import math
 import logging
 import uuid
+import time
+import hmac
+import hashlib
+from urllib.parse import urlparse, unquote
 from typing import Dict, Any, List
 from tool_factory import BaseTool, ToolResult
 
@@ -37,6 +41,43 @@ COLORS = {
 }
 
 ANNOTATION_TYPES = ["arrow", "circle", "rect", "text", "crosshair", "line", "ellipse"]
+TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _screenshot_filename_from_url(image_url: str) -> str:
+    """Extract a safe local screenshot filename from a raw or signed screenshot URL."""
+    parsed = urlparse(str(image_url or ""))
+    path = parsed.path or str(image_url or "")
+    filename = os.path.basename(unquote(path))
+    if os.path.basename(filename) != filename or not filename.lower().endswith(".png"):
+        raise ValueError("Invalid screenshot filename")
+    return filename
+
+
+def _safe_screenshot_path(screenshots_dir: str, filename: str) -> str:
+    """Resolve a screenshot path without allowing traversal outside uploads/screenshots."""
+    root = os.path.realpath(screenshots_dir)
+    path = os.path.realpath(os.path.join(root, filename))
+    if not path.startswith(root + os.sep):
+        raise ValueError("Invalid screenshot path")
+    return path
+
+
+def _maybe_signed_screenshot_url(filename: str, ttl_seconds: int = 3600) -> str:
+    """Return a signed screenshot URL when API-key protected image loading is configured."""
+    raw = f"/api/screenshots/{filename}"
+    api_key = os.environ.get("BRACHYBOT_API_KEY")
+    trust_network = os.environ.get("BRACHYBOT_TRUST_NETWORK", "").lower() in TRUE_VALUES
+    require_key = (
+        (bool(api_key) and not trust_network)
+        or os.environ.get("BRACHYBOT_REQUIRE_API_KEY", "").lower() in TRUE_VALUES
+    )
+    if not api_key or not require_key:
+        return raw
+    expires = int(time.time()) + int(ttl_seconds)
+    payload = f"{filename}:{expires}".encode("utf-8")
+    sig = hmac.new(api_key.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+    return f"{raw}?expires={expires}&sig={sig}"
 
 
 def _get_font(size: int = 16):
@@ -245,21 +286,16 @@ class UIAnnotateTool(BaseTool):
         if not annotations:
             return ToolResult(success=False, error="annotations list is required")
 
-        # Resolve image path from URL
-        # URL format: /api/screenshots/filename.png
-        if image_url.startswith("/api/screenshots/"):
-            filename = image_url.split("/")[-1]
-        elif "/" in image_url:
-            filename = image_url.split("/")[-1]
-        else:
-            filename = image_url
-
         screenshots_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             "..", "..", "uploads", "screenshots"
         )
         screenshots_dir = os.path.normpath(screenshots_dir)
-        image_path = os.path.join(screenshots_dir, filename)
+        try:
+            filename = _screenshot_filename_from_url(image_url)
+            image_path = _safe_screenshot_path(screenshots_dir, filename)
+        except ValueError as exc:
+            return ToolResult(success=False, error=str(exc))
 
         if not os.path.exists(image_path):
             return ToolResult(success=False, error=f"Image not found: {image_path}")
@@ -279,7 +315,7 @@ class UIAnnotateTool(BaseTool):
             out_path = os.path.join(screenshots_dir, out_filename)
             img.save(out_path, "PNG")
 
-            out_url = f"/api/screenshots/{out_filename}"
+            out_url = _maybe_signed_screenshot_url(out_filename)
             logger.info(f"Annotated image saved: {out_path}")
 
             return ToolResult(
