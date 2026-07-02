@@ -926,50 +926,6 @@ def shrink_island_by_distance(input_array, target_percentage=0.98):
 
 
 
-def generate_oriented_3d_gaussian(shape, center, direction, sigmas, translation=(0, 0, 0)):
-    # Normalize the direction vector
-    direction = np.array(direction).reshape(-1)
-    direction = direction / np.linalg.norm(direction)
-
-    # Generate coordinates and apply translation
-    x = np.arange(shape[0]) - (center[0] - translation[0])
-    y = np.arange(shape[1]) - (center[1] - translation[1])
-    z = np.arange(shape[2]) - (center[2] - translation[2])
-    x, y, z = np.meshgrid(x, y, z, indexing='ij')
-
-    # Rotation matrix calculation
-    x_axis = np.array([1, 0, 0])  # Assume the Gaussian's long axis originally aligns with the x-axis
-
-    if np.abs(np.dot(x_axis, direction)) >= 0.99:  # If direction is almost aligned with the x-axis
-        rotation_matrix = np.eye(3)  # No rotation needed
-    else:
-        # Calculate the angle and axis for rotation
-        angle = np.arccos(np.dot(x_axis, direction))  # Angle between x-axis and direction
-        axis = np.cross(x_axis, direction)  # Rotation axis
-        axis = axis / np.linalg.norm(axis)  # Normalize the axis
-
-        # Using Rodrigues' rotation formula to construct the rotation matrix
-        cos_theta = np.cos(angle)
-        sin_theta = np.sin(angle)
-        I = np.eye(3)
-        K = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
-        rotation_matrix = I * cos_theta + np.outer(axis, axis) * (1 - cos_theta) + K * sin_theta
-
-    # Rotate coordinates using the rotation matrix
-    coords = np.stack([x, y, z]).reshape(3, -1)  # Reshape to 3xM
-    rotated_coords = rotation_matrix @ coords  # Matrix multiplication for rotation
-    rotated_coords = rotated_coords.reshape(3, *shape)  # Reshape back to 3xNxNxN
-
-    # Unpack the sigmas and compute the Gaussian function
-    sigma_x, sigma_y, sigma_z = sigmas
-    gaussian = np.exp(-((rotated_coords[0]**2) / (2 * sigma_x**2) +
-                        (rotated_coords[1]**2) / (2 * sigma_y**2) +
-                        (rotated_coords[2]**2) / (2 * sigma_z**2)))
-    
-    return gaussian
-
-
-
 def find_island_center(arr, sigma=3):
     """
     Find the center or the farthest point inside an irregularly shaped 'island' of 1s in a 3D array.

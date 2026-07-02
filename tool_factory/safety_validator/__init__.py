@@ -4,21 +4,40 @@ Safety Validator Tool
 Validates treatment plans against clinical safety rules.
 Prevents dangerous plans from being exported or executed.
 
-Per-site thresholds sourced from:
-  - prostate: ABS/AUA/ASTRO 2012 (PMID 22265436)
-  - cervical: EMBRACE II (PMID 42211610)
-  - breast: GEC-ESTRO APBI 2016
-  - lung: ABS lung consensus
-  - pancreatic: Chinese I-125 guideline 2023
-  - liver: ABS liver consensus
-  - head_neck: ABS H&N consensus
+Runtime thresholds are generated from the curated clinical standards mirror. Legacy fallback tables below are retained only for compatibility and should not be used as citation sources.
 """
 
 import logging
+import importlib.util
+from pathlib import Path
 from typing import Dict, Any, Optional, List
 from tool_factory import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
+
+_CLINICAL_STANDARDS_MODULE = None
+
+
+def _load_clinical_standards_module():
+    """Load clinical_standards.py without importing the heavy plan_quality package."""
+    global _CLINICAL_STANDARDS_MODULE
+    if _CLINICAL_STANDARDS_MODULE is not None:
+        return _CLINICAL_STANDARDS_MODULE
+    path = Path(__file__).resolve().parents[1] / "plan_quality" / "clinical_standards.py"
+    spec = importlib.util.spec_from_file_location("_brachybot_clinical_standards", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    _CLINICAL_STANDARDS_MODULE = module
+    return module
+
+
+def _target_standard(site: str) -> Dict[str, Any]:
+    return _load_clinical_standards_module().get_target_standard(site)
+
+
+def _oar_standard(site: str) -> Dict[str, Any]:
+    return _load_clinical_standards_module().get_oar_standard(site)
 
 
 # Per-site safety rules: (metric, operator, threshold, severity, message)
@@ -26,24 +45,24 @@ logger = logging.getLogger(__name__)
 # V100/V150/V200 are fractions (0.90 = 90%).
 _SITE_SAFETY_RULES = {
     "prostate": [
-        ("v100", ">=", 0.80, "CRITICAL", "CTV V100 below 80% — severe underdose (ABS requires ≥95%)"),
-        ("v100", ">=", 0.95, "WARNING",  "CTV V100 below 95% — suboptimal coverage (ABS 2012)"),
+        ("v100", ">=", 0.80, "CRITICAL", "CTV V100 below 80% — severe underdose (curated KB benchmark)"),
+        ("v100", ">=", 0.95, "WARNING",  "CTV V100 below 95% — suboptimal coverage (curated KB benchmark)"),
         ("v200", "<=", 0.50, "CRITICAL", "V200 above 50% — severe overdose risk"),
-        ("v200", "<=", 0.35, "WARNING",  "V200 above 35% — elevated hot spots (ABS limit)"),
+        ("v200", "<=", 0.35, "WARNING",  "V200 above 35% — elevated hot spots (curated KB benchmark)"),
         ("v150", "<=", 0.60, "WARNING",  "V150 above 60% — moderate hot spots"),
         ("d90",  ">=", 0.85, "CRITICAL", "D90 below 85% of Rx — target underdosed"),
-        ("d90",  ">=", 1.00, "WARNING",  "D90 below 100% of Rx — marginal dose (ABS requires ≥100%)"),
+        ("d90",  ">=", 1.00, "WARNING",  "D90 below 100% of Rx — marginal dose (curated KB benchmark)"),
     ],
     "cervical": [
         ("v100", ">=", 0.80, "CRITICAL", "CTV V100 below 80% — severe underdose"),
-        ("v100", ">=", 0.90, "WARNING",  "CTV V100 below 90% — suboptimal (EMBRACE target ≥90%)"),
+        ("v100", ">=", 0.90, "WARNING",  "CTV V100 below 90% — suboptimal (curated KB benchmark)"),
         ("v200", "<=", 0.50, "CRITICAL", "V200 above 50% — severe overdose risk"),
         ("v200", "<=", 0.35, "WARNING",  "V200 above 35% — elevated hot spots"),
         ("d90",  ">=", 0.85, "CRITICAL", "D90 below 85% of Rx — target underdosed"),
     ],
     "breast": [
         ("v100", ">=", 0.80, "CRITICAL", "CTV V100 below 80% — severe underdose"),
-        ("v100", ">=", 0.90, "WARNING",  "CTV V100 below 90% — suboptimal (GEC-ESTRO target ≥90%)"),
+        ("v100", ">=", 0.90, "WARNING",  "CTV V100 below 90% — suboptimal (curated KB benchmark)"),
         ("v200", "<=", 0.50, "CRITICAL", "V200 above 50% — severe overdose risk"),
         ("d90",  ">=", 0.80, "CRITICAL", "D90 below 80% of Rx — target underdosed"),
         ("d90",  ">=", 0.90, "WARNING",  "D90 below 90% of Rx — suboptimal"),
@@ -211,14 +230,38 @@ Capabilities:
     }
 
     def _get_rules_for_site(self, tumor_type: str) -> List[tuple]:
-        """Get safety rules for a given tumor site."""
+        """Get safety rules from the curated clinical standards mirror."""
         site = _normalize_tumor_type(tumor_type)
-        return _SITE_SAFETY_RULES.get(site, _SITE_SAFETY_RULES["default"])
+        std = _target_standard(site)
+        rules = []
+        if "v100_min" in std:
+            rules.append(("v100", ">=", std["v100_min"], "WARNING", f"CTV V100 below curated KB benchmark {std['v100_min']:.0%}"))
+        if "v150_max" in std:
+            rules.append(("v150", "<=", std["v150_max"], "WARNING", f"V150 above curated KB benchmark {std['v150_max']:.0%}"))
+        if "v200_max" in std:
+            rules.append(("v200", "<=", std["v200_max"], "WARNING", f"V200 above curated KB benchmark {std['v200_max']:.0%}"))
+        if "d90_min_pct" in std:
+            rules.append(("d90", ">=", std["d90_min_pct"], "WARNING", f"D90 below curated KB benchmark {std['d90_min_pct']:.0%} of prescription"))
+        return rules or _SITE_SAFETY_RULES.get(site, _SITE_SAFETY_RULES["default"])
 
     def _get_oar_limits_for_site(self, tumor_type: str) -> Dict:
-        """Get OAR limits for a given tumor site."""
+        """Get OAR limits from the curated clinical standards mirror."""
         site = _normalize_tumor_type(tumor_type)
-        return _SITE_OAR_LIMITS.get(site, _SITE_OAR_LIMITS["default"])
+        std = _oar_standard(site)
+        converted = {}
+        for organ, limits in std.items():
+            entry = {}
+            if "d2cc" in limits:
+                entry["d2cc_gy"] = limits["d2cc"]
+            if "max_dose" in limits:
+                entry["dmax_gy"] = limits["max_dose"]
+            if "dmean_max" in limits:
+                entry["dmean_gy"] = limits["dmean_max"]
+            if "max_dose_pct" in limits:
+                entry["dmax_pct"] = limits["max_dose_pct"]
+            if entry:
+                converted[organ] = entry
+        return converted or _SITE_OAR_LIMITS.get(site, _SITE_OAR_LIMITS["default"])
 
     def _check_rule(self, metrics: Dict, rule: tuple, strict: bool) -> Optional[Dict]:
         """Check a single safety rule."""
@@ -386,38 +429,33 @@ Capabilities:
         )
 
     def _check_coverage(self, plan: Dict, strict: bool = False, tumor_type: str = "") -> ToolResult:
-        """Verify target coverage using per-site thresholds."""
+        """Verify target coverage using the curated clinical standards mirror."""
         metrics = plan.get("metrics", plan)
         if not tumor_type:
             tumor_type = metrics.get("tumor_type", "") or plan.get("tumor_type", "")
         v100 = metrics.get("v100", 0)
         d90 = metrics.get("d90", 0)
 
-        # Per-site V100 minimum
         site = _normalize_tumor_type(tumor_type)
-        _v100_mins = {
-            "prostate": 0.95, "lung": 0.95, "head_neck": 0.95,
-            "cervical": 0.90, "pancreatic": 0.90, "liver": 0.90,
-            "breast": 0.90, "esophageal": 0.90,
-        }
-        min_v100 = _v100_mins.get(site, 0.90)
-        min_d90_pct = 1.00  # D90 should be ≥ 100% of Rx
+        target_std = _target_standard(site)
+        min_v100 = target_std.get("v100_min")
+        min_d90_pct = target_std.get("d90_min_pct")
 
         checks = {
-            "v100": {"value": v100, "min": min_v100, "passed": v100 >= min_v100},
-            "d90": {"value": d90, "min_pct": min_d90_pct, "passed": True},  # D90 check needs Rx context
+            "v100": {"value": v100, "min": min_v100, "passed": True if min_v100 is None else v100 >= min_v100},
+            "d90": {"value": d90, "min_pct": min_d90_pct, "passed": True if min_d90_pct is None else d90 >= min_d90_pct},
         }
 
         all_passed = all(c["passed"] for c in checks.values())
 
         return ToolResult(
             success=True,
-            data={"checks": checks, "all_passed": all_passed, "site": site},
+            data={"checks": checks, "all_passed": all_passed, "site": site, "source": "curated_clinical_kb_mirror"},
             message=f"Coverage check ({site}): {'PASSED' if all_passed else 'FAILED'}"
         )
 
     def _check_hotspots(self, plan: Dict, strict: bool = False, tumor_type: str = "") -> ToolResult:
-        """Check for dangerous hot spots using per-site thresholds."""
+        """Check hot-spot metrics using the curated clinical standards mirror."""
         metrics = plan.get("metrics", plan)
         if not tumor_type:
             tumor_type = metrics.get("tumor_type", "") or plan.get("tumor_type", "")
@@ -425,26 +463,21 @@ Capabilities:
         v200 = metrics.get("v200", 0)
 
         site = _normalize_tumor_type(tumor_type)
-        _v200_max = {
-            "prostate": 0.35, "head_neck": 0.25, "lung": 0.30,
-            "pancreatic": 0.30, "cervical": 0.35, "breast": 0.30,
-        }
-        max_v200 = _v200_max.get(site, 0.35)
-        max_v150 = 0.60
+        target_std = _target_standard(site)
+        max_v150 = target_std.get("v150_max")
+        max_v200 = target_std.get("v200_max")
 
         checks = {
-            "v150": {"value": v150, "max": max_v150, "passed": v150 <= max_v150 if v150 else True},
-            "v200": {"value": v200, "max": max_v200, "passed": v200 <= max_v200 if v200 else True},
+            "v150": {"value": v150, "max": max_v150, "passed": True if max_v150 is None else v150 <= max_v150},
+            "v200": {"value": v200, "max": max_v200, "passed": True if max_v200 is None else v200 <= max_v200},
         }
-
         all_passed = all(c["passed"] for c in checks.values())
 
         return ToolResult(
             success=True,
-            data={"checks": checks, "all_passed": all_passed, "site": site},
-            message=f"Hotspot check ({site}): {'PASSED' if all_passed else 'FAILED'}"
+            data={"checks": checks, "all_passed": all_passed, "site": site, "source": "curated_clinical_kb_mirror"},
+            message=f"Hotspot check ({site}): {'PASSED' if all_passed else 'WARNING'}"
         )
-
     def _pre_export_gate(self, plan: Dict, tumor_type: str = "") -> ToolResult:
         """Pre-export safety gate — all checks must pass."""
         result = self._validate_plan(plan, strict=False, tumor_type=tumor_type)

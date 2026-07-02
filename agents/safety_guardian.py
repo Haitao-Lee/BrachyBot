@@ -1,343 +1,290 @@
 """
 Safety Guardian Agent
 =====================
-Ensures clinical safety of all outputs.
-Reads thresholds from plan_config (provided at runtime), not hardcoded.
+Deterministic safety review for brachytherapy outputs.
+
+Clinical pass/fail limits are read from runtime `plan_config`; the agent does
+not invent OAR or target thresholds. Generic sanity checks are reported as data
+integrity concerns, not as sourced clinical criteria.
 """
 
-import logging
-from typing import Dict, List, Any
-from .base_agent import BaseAgent
-from communication.protocol import (
-    AgentRole, AgentMessage, AgentResponse, MessageType,
-    ReviewResult, Priority
-)
+import math
+from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from .base_agent import BaseAgent
+from communication.protocol import AgentMessage, AgentResponse, AgentRole, ReviewResult
 
 
 class SafetyGuardian(BaseAgent):
-    """
-    Ensures clinical safety of treatment plans and recommendations.
-
-    Safety checks:
-    1. Dose safety (max dose, OAR constraints)
-    2. Operation safety (required steps completed)
-    3. Data integrity (valid values, no corruption)
-    4. Risk warnings (potential complications)
-
-    All thresholds derived from plan_config at runtime.
-    """
-
-    # Safety rules (metadata only — no numeric thresholds here)
-    SAFETY_RULES = [
-        {"id": "dose_range_check", "name": "Dose Range Check", "severity": "critical"},
-        {"id": "coverage_check", "name": "Coverage Check", "severity": "high"},
-        {"id": "oar_constraint_check", "name": "OAR Constraint Check", "severity": "critical"},
-        {"id": "data_integrity_check", "name": "Data Integrity Check", "severity": "critical"},
-        {"id": "completeness_check", "name": "Completeness Check", "severity": "high"},
-    ]
+    """Advisory safety guardian for plan output integrity and configured limits."""
 
     def __init__(self, llm_callback=None):
-        # llm_callback accepted for interface compat but NOT used.
-        # This agent is purely deterministic (threshold comparisons).
         super().__init__(AgentRole.SAFETY_GUARDIAN, None)
 
     async def process(self, message: AgentMessage) -> AgentResponse:
         content = message.content
+        dose_metrics = content.get("dose_metrics", {}) or {}
+        plan_info = content.get("plan_info", {}) or {}
+        plan_config = content.get("plan_config", {}) or {}
 
-        dose_metrics = content.get("dose_metrics", {})
-        plan_info = content.get("plan_info", {})
-        plan_config = content.get("plan_config", {})
-
-        # Read actual config — no hardcoded defaults
-        prescription = plan_config.get("in_lowest_energy", 1.0)
-
-        check_results = []
-        check_results.append(self._check_dose_range(dose_metrics, prescription))
-        check_results.append(self._check_coverage(dose_metrics, prescription))
-        check_results.append(self._check_oar_constraints(dose_metrics, prescription))
-        check_results.append(self._check_data_integrity(dose_metrics, plan_info))
-        check_results.append(self._check_completeness(plan_info))
-
-        final_result = self._aggregate_checks(check_results)
+        checks = [
+            self._check_data_integrity(dose_metrics, plan_info),
+            self._check_completeness(plan_info),
+            self._check_configured_target_limits(dose_metrics, plan_config),
+            self._check_configured_oar_limits(dose_metrics, plan_config),
+            self._check_sanity_outliers(dose_metrics, plan_config),
+        ]
+        final_result = self._aggregate_checks(checks)
 
         return AgentResponse(
             agent_role=self.role,
             success=True,
             result=final_result,
             confidence=final_result.confidence,
-            reasoning=self._build_reasoning(check_results),
+            reasoning=self._build_reasoning(checks),
             suggestions=final_result.suggestions,
             warnings=final_result.concerns,
         )
 
-    def _check_dose_range(self, dose_metrics: Dict, prescription: float) -> ReviewResult:
-        """Check dose range using actual prescription threshold."""
-        concerns = []
-        suggestions = []
+    def _check_data_integrity(self, dose_metrics: Dict[str, Any], plan_info: Dict[str, Any]) -> ReviewResult:
+        concerns: List[str] = []
+        suggestions: List[str] = []
 
-        max_dose = dose_metrics.get("max_dose")
-        if max_dose is not None:
-            try:
-                max_dose_val = float(str(max_dose).replace("Gy", ""))
-
-                # Negative → data corruption
-                if max_dose_val < 0:
-                    concerns.append(f"Negative dose value: {max_dose_val}")
-                    return ReviewResult(
-                        reviewer="Dose Range Check",
-                        decision="reject",
-                        score=1.0,
-                        concerns=concerns,
-                        suggestions=["Data corruption detected - verify dose calculation"],
-                        confidence=0.95,
-                    )
-
-                # Max dose > 3x prescription → hot spot concern
-                limit = 3.0 * prescription
-                if max_dose_val > limit:
-                    concerns.append(
-                        f"Max dose ({max_dose_val:.2f}) exceeds 3x prescription ({limit:.2f})"
-                    )
-                    suggestions.append("Verify hot spot location and consider dose reduction")
-
-            except (ValueError, TypeError):
-                concerns.append(f"Invalid max_dose format: {max_dose}")
-                return ReviewResult(
-                    reviewer="Dose Range Check",
-                    decision="reject",
-                    score=2.0,
-                    concerns=concerns,
-                    suggestions=["Fix dose data format"],
-                    confidence=0.9,
-                )
-
-        # Check mean dose
-        mean_dose = dose_metrics.get("mean_dose")
-        if mean_dose is not None:
-            try:
-                mean_dose_val = float(str(mean_dose).replace("Gy", ""))
-                if mean_dose_val < 0:
-                    concerns.append(f"Negative mean dose: {mean_dose_val}")
-            except (ValueError, TypeError):
-                pass
-
-        score = max(1, 10 - len(concerns) * 3)
-
-        return ReviewResult(
-            reviewer="Dose Range Check",
-            decision=self._score_to_decision(score),
-            score=score,
-            concerns=concerns,
-            suggestions=suggestions,
-            confidence=0.9,
-        )
-
-    def _check_coverage(self, dose_metrics: Dict, prescription: float) -> ReviewResult:
-        """Check coverage using actual prescription threshold."""
-        concerns = []
-        suggestions = []
-
-        v100 = dose_metrics.get("v100")
-        if v100 is not None:
-            try:
-                v100_val = float(str(v100).replace("%", ""))
-                min_coverage = 0.80  # Absolute minimum, not from config
-
-                if v100_val < min_coverage:
-                    concerns.append(
-                        f"V100 ({v100_val:.1%}) below minimum coverage ({min_coverage:.0%})"
-                    )
-                    suggestions.append("Plan revision required to meet minimum coverage")
-
-                    if v100_val < 0.70:
-                        return ReviewResult(
-                            reviewer="Coverage Check",
-                            decision="reject",
-                            score=2.0,
-                            concerns=concerns,
-                            suggestions=suggestions,
-                            confidence=0.95,
-                        )
-            except (ValueError, TypeError):
-                concerns.append(f"Invalid V100 format: {v100}")
-
-        score = max(1, 10 - len(concerns) * 3)
-
-        return ReviewResult(
-            reviewer="Coverage Check",
-            decision=self._score_to_decision(score),
-            score=score,
-            concerns=concerns,
-            suggestions=suggestions,
-            confidence=0.9,
-        )
-
-    def _check_oar_constraints(self, dose_metrics: Dict, prescription: float) -> ReviewResult:
-        """Check OAR constraints using actual prescription threshold."""
-        concerns = []
-        suggestions = []
-        violations = 0
-
-        oar_metrics = dose_metrics.get("oar_metrics", {})
-        for organ_name, metrics in oar_metrics.items():
-            max_dose = metrics.get("max_dose")
-            if max_dose is not None:
-                try:
-                    max_val = float(str(max_dose).replace("Gy", ""))
-                    # OAR max dose > 2x prescription is concerning
-                    limit = 2.0 * prescription
-                    if max_val > limit:
-                        violations += 1
-                        concerns.append(f"{organ_name} max dose ({max_val:.2f}) > 2x prescription ({limit:.2f})")
-                        suggestions.append(f"Review dose to {organ_name}")
-                except (ValueError, TypeError):
-                    pass
-
-        max_violations = 2  # Absolute safety limit
-        if violations > max_violations:
-            return ReviewResult(
-                reviewer="OAR Constraint Check",
-                decision="reject",
-                score=2.0,
-                concerns=concerns,
-                suggestions=suggestions,
-                confidence=0.9,
-            )
-
-        score = max(1, 10 - violations * 2)
-
-        return ReviewResult(
-            reviewer="OAR Constraint Check",
-            decision=self._score_to_decision(score),
-            score=score,
-            concerns=concerns,
-            suggestions=suggestions,
-            confidence=0.85,
-        )
-
-    def _check_data_integrity(self, dose_metrics: Dict, plan_info: Dict) -> ReviewResult:
-        """Check data integrity — no hardcoded thresholds needed."""
-        concerns = []
-        suggestions = []
-
-        for key, value in dose_metrics.items():
+        def walk(prefix: str, value: Any):
             if value is None:
-                concerns.append(f"Missing value for {key}")
-            elif isinstance(value, float) and (value != value):
-                concerns.append(f"NaN value for {key}")
-                suggestions.append(f"Recalculate {key}")
+                return
+            if isinstance(value, dict):
+                for k, v in value.items():
+                    walk(f"{prefix}.{k}" if prefix else str(k), v)
+                return
+            if isinstance(value, (list, tuple)):
+                for idx, v in enumerate(value):
+                    walk(f"{prefix}[{idx}]", v)
+                return
+            if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+                concerns.append(f"Invalid numeric value at {prefix}: {value}")
+            if isinstance(value, (int, float)) and "dose" in prefix.lower() and value < 0:
+                concerns.append(f"Negative dose value at {prefix}: {value}")
 
-        total_seeds = plan_info.get("total_seeds", 0)
-        if total_seeds < 0:
-            concerns.append(f"Invalid seed count: {total_seeds}")
+        walk("", dose_metrics)
 
-        num_trajectories = plan_info.get("num_trajectories", 0)
-        if num_trajectories < 0:
-            concerns.append(f"Invalid trajectory count: {num_trajectories}")
+        for key in ("total_seeds", "num_trajectories"):
+            val = plan_info.get(key)
+            if isinstance(val, (int, float)) and val < 0:
+                concerns.append(f"Invalid {key}: {val}")
 
-        score = max(1, 10 - len(concerns) * 2)
+        if concerns:
+            suggestions.append("Recompute dose and verify source data before clinical interpretation.")
 
         return ReviewResult(
             reviewer="Data Integrity Check",
-            decision=self._score_to_decision(score),
-            score=score,
+            decision="reject" if concerns else "pass",
+            score=2.0 if concerns else 10.0,
             concerns=concerns,
             suggestions=suggestions,
             confidence=0.95,
         )
 
-    def _check_completeness(self, plan_info: Dict) -> ReviewResult:
-        """Check completeness — no hardcoded thresholds needed."""
-        concerns = []
-        suggestions = []
+    def _check_completeness(self, plan_info: Dict[str, Any]) -> ReviewResult:
+        concerns: List[str] = []
+        suggestions: List[str] = []
 
-        required_fields = ["total_seeds", "num_trajectories"]
-        for field in required_fields:
+        for field in ("total_seeds", "num_trajectories"):
             if field not in plan_info:
-                concerns.append(f"Missing required field: {field}")
+                concerns.append(f"Missing required plan field: {field}")
 
-        total_seeds = plan_info.get("total_seeds", 0)
-        if total_seeds == 0:
-            concerns.append("No seeds in the plan")
-            suggestions.append("Verify seed planning was executed")
-
-        score = max(1, 10 - len(concerns) * 2)
+        if plan_info.get("total_seeds", 0) == 0:
+            concerns.append("No seeds are reported in the plan.")
+            suggestions.append("Verify seed planning completed before reviewing dose quality.")
 
         return ReviewResult(
             reviewer="Completeness Check",
-            decision=self._score_to_decision(score),
-            score=score,
+            decision="conditional" if concerns else "pass",
+            score=max(4.0, 10.0 - len(concerns) * 2),
             concerns=concerns,
             suggestions=suggestions,
             confidence=0.85,
         )
 
-    def _aggregate_checks(self, checks: List[ReviewResult]) -> ReviewResult:
+    def _check_configured_target_limits(self, dose_metrics: Dict[str, Any], plan_config: Dict[str, Any]) -> ReviewResult:
+        checks = self._target_checks(plan_config)
         if not checks:
             return ReviewResult(
-                reviewer="Safety Guardian (Aggregated)",
+                reviewer="Configured Target Limits",
                 decision="conditional",
-                score=5.0,
-                concerns=["No safety checks performed"],
-                confidence=0.3,
+                score=6.0,
+                concerns=["No source-backed target limits were supplied in plan_config."],
+                suggestions=["Query clinical_kb for site-specific target coverage standards before final approval."],
+                confidence=0.65,
             )
 
-        critical_failures = [c for c in checks if c.decision == "reject"]
+        concerns: List[str] = []
+        for metric, rule in checks.items():
+            value = self._metric_value(dose_metrics, metric)
+            if value is None:
+                continue
+            ok = value >= rule["threshold"] if rule["operator"] == ">=" else value <= rule["threshold"]
+            if not ok:
+                concerns.append(
+                    f"{metric.upper()}={value:.3g} violates configured limit "
+                    f"{rule['operator']} {rule['threshold']:.3g} {rule.get('unit', '')}".strip()
+                )
 
-        if critical_failures:
-            final_decision = "reject"
-            final_score = min(c.score for c in critical_failures)
-        else:
-            weights = {
-                "Dose Range Check": 1.5,
-                "Coverage Check": 1.3,
-                "OAR Constraint Check": 1.4,
-                "Data Integrity Check": 1.2,
-                "Completeness Check": 1.0,
-            }
+        return ReviewResult(
+            reviewer="Configured Target Limits",
+            decision="conditional" if concerns else "pass",
+            score=max(4.0, 10.0 - len(concerns) * 3),
+            concerns=concerns,
+            suggestions=["Adjust seed distribution and recompute dose." ] if concerns else [],
+            confidence=0.9,
+        )
 
-            total_weight = 0
-            weighted_score = 0
-            for check in checks:
-                w = weights.get(check.reviewer, 1.0)
-                weighted_score += check.score * w
-                total_weight += w
+    def _check_configured_oar_limits(self, dose_metrics: Dict[str, Any], plan_config: Dict[str, Any]) -> ReviewResult:
+        oar_metrics = dose_metrics.get("oar_metrics", {})
+        constraints = plan_config.get("oar_constraints", {}) or {}
+        if not isinstance(oar_metrics, dict) or not oar_metrics:
+            return ReviewResult("Configured OAR Limits", "pass", 10.0, [], [], 0.8)
+        if not isinstance(constraints, dict) or not constraints:
+            return ReviewResult(
+                reviewer="Configured OAR Limits",
+                decision="conditional",
+                score=6.0,
+                concerns=["OAR metrics are present, but no source-backed OAR constraints were supplied."],
+                suggestions=["Query clinical_kb for site-specific OAR limits before final approval."],
+                confidence=0.65,
+            )
 
-            final_score = weighted_score / total_weight if total_weight > 0 else 5.0
-            final_decision = self._score_to_decision(final_score)
+        concerns: List[str] = []
+        normalized = {str(k).lower(): v for k, v in constraints.items() if isinstance(v, dict)}
+        for organ_name, metrics in oar_metrics.items():
+            if not isinstance(metrics, dict):
+                continue
+            constraint = self._match_constraint(str(organ_name).lower(), normalized)
+            if not constraint:
+                continue
+            for metric_key, aliases in {
+                "d2cc": ("d2cc", "D2cc"),
+                "max_dose": ("max_dose", "dmax", "Dmax"),
+                "mean_dose": ("mean_dose", "dmean", "Dmean"),
+            }.items():
+                limit = constraint.get(metric_key)
+                value = self._first_numeric(metrics, aliases)
+                if limit is not None and value is not None and value > float(limit):
+                    concerns.append(f"{organ_name} {metric_key}={value:.2f} Gy exceeds configured limit {float(limit):.2f} Gy")
 
-        all_concerns = []
-        all_suggestions = []
+        return ReviewResult(
+            reviewer="Configured OAR Limits",
+            decision="conditional" if concerns else "pass",
+            score=max(3.0, 10.0 - len(concerns) * 2),
+            concerns=concerns,
+            suggestions=["Move seeds away from the affected OARs or adjust needle paths." ] if concerns else [],
+            confidence=0.9,
+        )
+
+    def _check_sanity_outliers(self, dose_metrics: Dict[str, Any], plan_config: Dict[str, Any]) -> ReviewResult:
+        """Flag implausible numeric outliers without treating them as guideline limits."""
+        concerns: List[str] = []
+        prescription = self._first_numeric(plan_config, ("prescribed_dose", "in_lowest_energy"))
+        max_dose = self._first_numeric(dose_metrics, ("max_dose", "dmax", "Dmax"))
+        if prescription and max_dose and max_dose > 10 * prescription:
+            concerns.append(
+                f"Max dose {max_dose:.2f} is >10x configured prescription/context value {prescription:.2f}; verify unit scaling."
+            )
+
+        return ReviewResult(
+            reviewer="Dose Sanity Check",
+            decision="conditional" if concerns else "pass",
+            score=7.0 if concerns else 10.0,
+            concerns=concerns,
+            suggestions=["Verify dose units and scaling before interpreting plan quality."] if concerns else [],
+            confidence=0.75,
+        )
+
+    @staticmethod
+    def _target_checks(plan_config: Dict[str, Any]) -> Dict[str, dict]:
+        checks: Dict[str, dict] = {}
+        for metric, keys in {
+            "v100": ("v100_min", "v100_target"),
+            "v150": ("v150_max", "v150_limit"),
+            "v200": ("v200_max", "v200_limit"),
+        }.items():
+            for key in keys:
+                if key in plan_config:
+                    checks[metric] = {
+                        "threshold": float(plan_config[key]),
+                        "operator": ">=" if metric == "v100" else "<=",
+                        "unit": "fraction",
+                    }
+                    break
+        if "d90_min_gy" in plan_config:
+            checks["d90"] = {"threshold": float(plan_config["d90_min_gy"]), "operator": ">=", "unit": "Gy"}
+        elif "d90_min_pct" in plan_config:
+            checks["d90"] = {"threshold": float(plan_config["d90_min_pct"]), "operator": ">=", "unit": "fraction_of_prescription"}
+        return checks
+
+    @staticmethod
+    def _match_constraint(organ_lower: str, constraints: Dict[str, dict]) -> Optional[dict]:
+        for key, value in constraints.items():
+            if key == organ_lower or key in organ_lower or organ_lower in key:
+                return value
+        return None
+
+    @staticmethod
+    def _metric_value(metrics: Dict[str, Any], key: str) -> Optional[float]:
+        return SafetyGuardian._first_numeric(metrics, (key, key.upper(), key.capitalize()))
+
+    @staticmethod
+    def _first_numeric(values: Dict[str, Any], keys) -> Optional[float]:
+        if not isinstance(values, dict):
+            return None
+        for key in keys:
+            if key not in values:
+                continue
+            try:
+                return float(str(values[key]).replace("%", "").replace("Gy", "").strip())
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _aggregate_checks(self, checks: List[ReviewResult]) -> ReviewResult:
+        concerns: List[str] = []
+        suggestions: List[str] = []
+        reject = False
+        conditional = False
+        weighted_score = 0.0
+        total_weight = 0.0
+
         for check in checks:
-            all_concerns.extend(check.concerns)
-            all_suggestions.extend(check.suggestions)
+            concerns.extend(check.concerns)
+            suggestions.extend(check.suggestions)
+            if check.decision == "reject":
+                reject = True
+            elif check.decision == "conditional":
+                conditional = True
+            weight = 1.0
+            weighted_score += check.score * weight
+            total_weight += weight
 
-        avg_confidence = sum(c.confidence for c in checks) / len(checks)
+        if reject:
+            decision = "reject"
+        elif conditional:
+            decision = "conditional"
+        else:
+            decision = "pass"
 
         return ReviewResult(
             reviewer="Safety Guardian (Aggregated)",
-            decision=final_decision,
-            score=final_score,
-            concerns=list(set(all_concerns)),
-            suggestions=list(set(all_suggestions)),
-            confidence=avg_confidence,
+            decision=decision,
+            score=weighted_score / total_weight if total_weight else 5.0,
+            concerns=list(dict.fromkeys(concerns)),
+            suggestions=list(dict.fromkeys(suggestions)),
+            confidence=sum(c.confidence for c in checks) / len(checks) if checks else 0.3,
         )
-
-    def _score_to_decision(self, score: float) -> str:
-        if score >= 7:
-            return "pass"
-        elif score >= 5:
-            return "conditional"
-        else:
-            return "reject"
 
     def _build_reasoning(self, checks: List[ReviewResult]) -> str:
         lines = ["Safety Check Summary:"]
         for check in checks:
-            status = "✓" if check.decision == "pass" else "⚠" if check.decision == "conditional" else "✗"
-            lines.append(f"{status} {check.reviewer}: {check.decision} (score={check.score:.1f})")
+            lines.append(f"- {check.reviewer}: {check.decision} (score={check.score:.1f})")
             for concern in check.concerns[:1]:
-                lines.append(f"    {concern}")
+                lines.append(f"  {concern}")
         return "\n".join(lines)

@@ -241,19 +241,17 @@ def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any
     plan_score = _extract_metric_value(metrics, "plan_score", "score")
 
     if v100 is not None:
-        if v100 >= 0.90:
-            strengths.append(f"CTV V100 is {v100 * 100:.1f}%, meeting the usual 90% coverage target.")
-        else:
-            issues.append(f"CTV V100 is {v100 * 100:.1f}%, below the 90% coverage target.")
+        strengths.append(
+            f"CTV V100 is {v100 * 100:.1f}%; compare it with the site-specific clinical_kb or plan_config target."
+        )
+        if v100 < 1.0:
             advice.append("Add or shift seeds toward cold CTV regions, then recompute dose and DVH.")
     else:
         advice.append("Run dose evaluation to make V100/D90 advice available.")
 
     if d90 is not None:
-        if d90 >= rx_gy:
-            strengths.append(f"CTV D90 is {d90:.1f} Gy, at or above the {rx_gy:.0f} Gy prescription.")
-        else:
-            issues.append(f"CTV D90 is {d90:.1f} Gy, below the {rx_gy:.0f} Gy prescription.")
+        strengths.append(f"CTV D90 is {d90:.1f} Gy; current report prescription is {rx_gy:.0f} Gy.")
+        if d90 < rx_gy:
             advice.append("Increase peripheral CTV dose before adding more central hot-spot seeds.")
 
     if v200 is not None and v200 > 0.30:
@@ -270,17 +268,17 @@ def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any
                 continue
             dmax = _extract_metric_value(m, "dmax", "max_dose", "Dmax") or 0.0
             d2cc = _extract_metric_value(m, "d2cc", "D2cc") or 0.0
-            if dmax > 2 * rx_gy or d2cc > rx_gy:
+            if dmax > 0 or d2cc > 0:
                 high_oars.append((str(name), dmax, d2cc))
         if high_oars:
             top = sorted(high_oars, key=lambda x: max(x[1], x[2]), reverse=True)[:5]
-            issues.append("High OAR dose: " + ", ".join(f"{n} Dmax={dm:.1f} Gy D2cc={d2:.1f} Gy" for n, dm, d2 in top))
-            advice.append("Move nearby seeds away from high-dose OARs or adjust needle direction to increase clearance.")
+            strengths.append("Top OAR doses: " + ", ".join(f"{n} Dmax={dm:.1f} Gy D2cc={d2:.1f} Gy" for n, dm, d2 in top))
+            advice.append("Compare OAR doses against clinical_kb or plan_config constraints before classifying safety.")
 
     if snapshot.get("total_seeds", 0) == 0:
         advice.append("No seeds are present. Add a needle and place seeds through the CTV before dose evaluation.")
-    elif snapshot.get("total_seeds", 0) < 6 and v100 is not None and v100 < 0.9:
-        advice.append("The current seed count is low for incomplete coverage; add seeds first, then optimize spacing.")
+    elif snapshot.get("total_seeds", 0) < 6 and v100 is not None and v100 < 1.0:
+        advice.append("The current seed count is low and V100 is not complete; add seeds first, then optimize spacing.")
 
     recent_manual = [e for e in events if str(e.get("type", "")).startswith("manual.")]
     if recent_manual:
@@ -1286,41 +1284,31 @@ def create_app(config: Optional[Dict] = None):
     # ----- Report auto-fill helpers -----
     @staticmethod
     def _build_report_interpretation(agent, language="zh"):
-        """Generate clinical-interpretation narrative in the requested language.
-
-        Mirrors the frontend `_autoFillInterpretation()` in index.html but
-        lives on the server so the brachybot tool can return a patch that
-        includes the narrative.
-        """
+        """Generate report interpretation without embedding unsourced clinical thresholds."""
         dose = (agent.memory.retrieve("dose_metrics") or {}) if agent else {}
-        m = dose
-        v100 = (m.get("v100") * 100) if m.get("v100") is not None else None
-        d90 = m.get("d90")
-        d95 = m.get("d95")
-        v150 = (m.get("v150") * 100) if m.get("v150") is not None else None
-        v200 = (m.get("v200") * 100) if m.get("v200") is not None else None
-        ci = m.get("ci")
-        hi = m.get("hi")
-        gi = m.get("gi")
-        score = m.get("plan_score")
-        # Default 120 Gy: I-125 prescription for pancreatic brachytherapy.
-        # Matches DOSE_SCALE (model output 1.0 = 120 Gy).
-        prescribed = m.get("prescribed_dose", 120.0)
+        v100 = (dose.get("v100") * 100) if dose.get("v100") is not None else None
+        d90 = dose.get("d90")
+        d95 = dose.get("d95")
+        v150 = (dose.get("v150") * 100) if dose.get("v150") is not None else None
+        v200 = (dose.get("v200") * 100) if dose.get("v200") is not None else None
+        ci = dose.get("ci")
+        hi = dose.get("hi")
+        gi = dose.get("gi")
+        score = dose.get("plan_score")
+        prescribed = dose.get("prescribed_dose", 120.0)
+
         if language == "zh":
             lines = ["**剂量学评估与临床解读**"]
             if v100 is not None:
-                if v100 >= 90:
-                    lines.append(f"- CTV 覆盖率 V100 = {v100:.1f}% **满足临床要求**（≥ 90%，参考 ESTRO/GEC-ESTRO 推荐）。")
-                else:
-                    lines.append(f"- ⚠️ CTV 覆盖率 V100 = {v100:.1f}% **低于临床标准**（≥ 90%），建议增加粒子数或重新规划路径。")
+                lines.append(f"- CTV 覆盖率 V100 = {v100:.1f}%。")
             if d90 is not None:
-                lines.append(f"- D90 = {d90:.2f} Gy（90% 靶区体积接受的最低剂量），按 ICRU 89 标准报告；处方剂量 {prescribed:.1f} Gy。")
+                lines.append(f"- D90 = {d90:.2f} Gy；处方剂量 {prescribed:.1f} Gy。")
             if d95 is not None:
                 lines.append(f"- D95 = {d95:.2f} Gy。")
             if v150 is not None:
-                lines.append(f"- V150 = {v150:.1f}%（参考 ≤ 50%）。")
+                lines.append(f"- V150 = {v150:.1f}%。")
             if v200 is not None:
-                lines.append(f"- V200 = {v200:.1f}%（参考 ≤ 20%）。")
+                lines.append(f"- V200 = {v200:.1f}%。")
             if ci is not None:
                 lines.append(f"- 适形指数 CI = {ci:.3f}。")
             if hi is not None:
@@ -1329,37 +1317,33 @@ def create_app(config: Optional[Dict] = None):
                 lines.append(f"- 梯度指数 GI = {gi:.3f}。")
             if score is not None:
                 if score >= 80:
-                    lines.append(f"- 计划评分 = {score:.0f}/100（优）。")
+                    lines.append(f"- 内部规划评分 = {score:.0f}/100（较好）。")
                 elif score >= 60:
-                    lines.append(f"- 计划评分 = {score:.0f}/100（良，可优化）。")
+                    lines.append(f"- 内部规划评分 = {score:.0f}/100（可优化）。")
                 else:
-                    lines.append(f"- 计划评分 = {score:.0f}/100（差，建议重新规划）。")
-            lines.append("- 剂量计算基于 TG-43 / TG-229 形式主义（参考 AAPM Task Group 229）。")
-            lines.append("- DVH 报告符合 ICRU Report 89 标准。")
+                    lines.append(f"- 内部规划评分 = {score:.0f}/100（建议复核和重新优化）。")
+            lines.append("- 临床阈值、OAR 限值和最终是否达标需结合 `clinical_kb` 检索到的部位特异性指南或显式 plan_config 判断。")
             lines.append("")
-            lines.append("_本解读由 BrachyBot AI 自动生成，已由规划医师审阅。_")
+            lines.append("_本解读由 BrachyBot 自动生成，需由放疗医师和物理师复核。_")
             safety = (
                 "**安全与质量控制**\n\n"
-                "- 粒子活度校验：建议打印剂量报告并由物理师双签。\n"
-                "- 术前剂量验证：参考 GBZ/T 201.7-2015。\n"
-                "- 术中影像引导：术中 CT/超声 实时确认粒子位置。\n"
-                f"- 剂量限值参考：TG-43 / ICRU 89 / 国家标准 GBZ/T 201.7-2015；处方剂量 {prescribed:.1f} Gy。"
+                "- 核对粒子活度、处方剂量、坐标系、针道和粒子坐标。\n"
+                "- 复核 CTV/OAR 掩膜、DVH、热点区域和 OAR 高剂量区域。\n"
+                "- 最终临床限值请从知识库/指南检索结果或病例的显式 plan_config 读取，不使用报告模板内置阈值。\n"
+                f"- 当前报告处方剂量：{prescribed:.1f} Gy。"
             )
         else:
             lines = ["**Dosimetric Evaluation & Clinical Interpretation**"]
             if v100 is not None:
-                if v100 >= 90:
-                    lines.append(f"- CTV coverage V100 = {v100:.1f}% **meets clinical threshold** (≥ 90%, per ESTRO/GEC-ESTRO).")
-                else:
-                    lines.append(f"- ⚠️ CTV coverage V100 = {v100:.1f}% **below clinical standard** (≥ 90%); consider increasing seeds or replanning.")
+                lines.append(f"- CTV coverage V100 = {v100:.1f}%.")
             if d90 is not None:
-                lines.append(f"- D90 = {d90:.2f} Gy (minimum dose to 90% of CTV), per ICRU 89; prescribed dose {prescribed:.1f} Gy.")
+                lines.append(f"- D90 = {d90:.2f} Gy; prescribed dose {prescribed:.1f} Gy.")
             if d95 is not None:
                 lines.append(f"- D95 = {d95:.2f} Gy.")
             if v150 is not None:
-                lines.append(f"- V150 = {v150:.1f}% (reference ≤ 50%).")
+                lines.append(f"- V150 = {v150:.1f}%.")
             if v200 is not None:
-                lines.append(f"- V200 = {v200:.1f}% (reference ≤ 20%).")
+                lines.append(f"- V200 = {v200:.1f}%.")
             if ci is not None:
                 lines.append(f"- Conformity Index CI = {ci:.3f}.")
             if hi is not None:
@@ -1368,24 +1352,22 @@ def create_app(config: Optional[Dict] = None):
                 lines.append(f"- Gradient Index GI = {gi:.3f}.")
             if score is not None:
                 if score >= 80:
-                    lines.append(f"- Plan score = {score:.0f}/100 (excellent).")
+                    lines.append(f"- Internal plan score = {score:.0f}/100 (good).")
                 elif score >= 60:
-                    lines.append(f"- Plan score = {score:.0f}/100 (good; may be optimizable).")
+                    lines.append(f"- Internal plan score = {score:.0f}/100 (optimizable).")
                 else:
-                    lines.append(f"- Plan score = {score:.0f}/100 (poor; consider replanning).")
-            lines.append("- Dose calculation per TG-43 / TG-229 formalism (AAPM TG-229).")
-            lines.append("- DVH reporting per ICRU Report 89.")
+                    lines.append(f"- Internal plan score = {score:.0f}/100 (review and re-optimization recommended).")
+            lines.append("- Interpret clinical thresholds and OAR limits using `clinical_kb` site-specific evidence or explicit plan_config, not report-template defaults.")
             lines.append("")
-            lines.append("_This interpretation was auto-generated by BrachyBot AI and reviewed by the planner._")
+            lines.append("_This interpretation was auto-generated by BrachyBot and requires clinician/physicist review._")
             safety = (
                 "**Safety & Quality Control**\n\n"
-                "- Seed activity verification: dose report printout + medical physicist double-signature.\n"
-                "- Pre-treatment QA: per GBZ/T 201.7-2015.\n"
-                "- Intra-operative imaging guidance: real-time CT/ultrasound confirmation of seed position.\n"
-                f"- Dose limits: TG-43 / ICRU 89 / GBZ/T 201.7-2015; prescribed dose {prescribed:.1f} Gy."
+                "- Verify seed activity, prescription dose, coordinate system, needle paths, and seed coordinates.\n"
+                "- Review CTV/OAR masks, DVH, hot spots, and high-dose OAR regions.\n"
+                "- Final clinical limits must come from retrieved knowledge-base/guideline evidence or explicit plan_config.\n"
+                f"- Current report prescription dose: {prescribed:.1f} Gy."
             )
         return "\n".join(lines), safety
-
     @app.route("/api/report/auto-fill", methods=["POST"])
     @require_api_key
     @rate_limit
@@ -3810,6 +3792,63 @@ def create_app(config: Optional[Dict] = None):
             "training": training_copy,
         })
 
+    @app.route("/api/ui/capabilities", methods=["GET"])
+    @require_api_key
+    @rate_limit
+    def api_ui_capabilities():
+        """Return the UI-control contract exposed to BrachyBot and tests."""
+        try:
+            from tool_factory.ui_controller import CONTROL_REGISTRY
+            from tool_factory.ui_screenshot import SCREENSHOT_TARGETS
+        except Exception as e:
+            logger.error(f"Failed to load UI capabilities: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+        controls = {
+            key: {
+                "commands": value.get("commands", []),
+                "values": value.get("values"),
+                "value_type": value.get("value_type"),
+                "range": value.get("range"),
+                "destructive": bool(value.get("destructive")),
+                "description": value.get("description", ""),
+            }
+            for key, value in CONTROL_REGISTRY.items()
+        }
+        execution_tools = {
+            "code_executor_enabled": os.environ.get("BRACHYBOT_ENABLE_CODE_EXECUTOR", "").lower() in TRUE_VALUES,
+            "shell_executor_enabled": os.environ.get("BRACHYBOT_ENABLE_SHELL_EXECUTOR", "").lower() in TRUE_VALUES,
+            "shell_mode": "argv_allowlist_no_shell",
+        }
+        return jsonify({
+            "success": True,
+            "version": 1,
+            "control_count": len(controls),
+            "controls": controls,
+            "screenshot_targets": SCREENSHOT_TARGETS,
+            "manual_workflow_steps": [
+                "ctv_segmentation",
+                "oar_segmentation",
+                "trajectory_init",
+                "trajectory_refine",
+                "seed_planning",
+                "dose_calc",
+                "dose_eval",
+            ],
+            "manual_3d_planning": {
+                "needles": ["create", "drag_endpoints", "toggle_visibility", "set_opacity"],
+                "seeds": ["add", "drag", "toggle_visibility", "set_opacity"],
+                "dose_recompute": "myDoseNet",
+            },
+            "training_monitor": {
+                "live_monitoring": True,
+                "retrospective_advice": True,
+                "final_report_on_stop": True,
+                "screenshot_targets": ["dose-overview", "dvh", "viewer-3d"],
+            },
+            "execution_tools": execution_tools,
+        })
+
     @app.route("/api/ui/event", methods=["POST"])
     @require_api_key
     @rate_limit
@@ -3978,6 +4017,11 @@ def create_app(config: Optional[Dict] = None):
 
         status = agent.get_status()
         status["brain_available"] = agent.brain_available
+        status["execution_tools"] = {
+            "code_executor_enabled": os.environ.get("BRACHYBOT_ENABLE_CODE_EXECUTOR", "").lower() in TRUE_VALUES,
+            "shell_executor_enabled": os.environ.get("BRACHYBOT_ENABLE_SHELL_EXECUTOR", "").lower() in TRUE_VALUES,
+            "shell_mode": "argv_allowlist_no_shell",
+        }
         # Surface GPU/CPU device allocation. See plans/device_manager.py
         # for the auto-pick heuristic (best free memory, with concurrent
         # lease penalty so we spread load across GPUs).

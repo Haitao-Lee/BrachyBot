@@ -178,6 +178,38 @@ class RouterAgent(LLMCapableAgent):
             RoutingDecision
         """
         input_lower = user_input.lower()
+
+        # Knowledge-only questions often contain domain words such as
+        # "planning", "seed", or "implant". Short-circuit these before the
+        # score-based matcher so educational questions do not appear as
+        # clinical execution requests in the trace.
+        knowledge_markers = (
+            "介绍", "解释", "说明", "讲讲", "为什么", "为啥", "好处", "优势",
+            "缺点", "局限", "比较", "区别", "对比", "不用其他治疗",
+            "what is", "explain", "why", "benefit", "advantage",
+            "disadvantage", "compare", "comparison", "versus", " vs ",
+            "introduce", "learn",
+        )
+        execution_markers = (
+            "执行", "运行", "开始", "生成", "制定", "计算", "进行规划",
+            "开始规划", "重新规划", "帮我规划", "请规划", "做一个计划",
+            "做治疗计划", "治疗计划生成",
+            "run", "execute", "start planning", "perform planning",
+            "generate a treatment plan", "create a treatment plan",
+            "compute plan", "replan",
+        )
+        if any(k in input_lower for k in knowledge_markers) and not any(k in input_lower for k in execution_markers):
+            config = self.INTENT_PATTERNS["knowledge_query"]
+            return RoutingDecision(
+                intent="knowledge_query",
+                complexity=config["complexity"],
+                agents_needed=config["agents"],
+                requires_review=config["requires_review"],
+                context={"matched_keywords": [k for k in knowledge_markers if k in input_lower][:8]},
+                reasoning="Knowledge-only question; no planning execution intent detected",
+                confidence=0.9,
+            )
+
         best_match = None
         best_score = 0
 
