@@ -34,6 +34,7 @@
 - [Web Interface](#-web-interface)
 - [Code Quality](#-code-quality)
 - [Testing](#-testing)
+- [Product Readiness & Clinical KB Governance](#product-readiness--clinical-kb-governance)
 - [Research & Citations](#-research--citations)
 - [Acknowledgements](#-acknowledgements)
 - [License](#-license)
@@ -483,7 +484,11 @@ BrachyBot can now operate as both an agentic planner and a standalone manual pla
 Important boundary: manual dose recomputation uses the trained myDoseNet AI model and no analytical/Gaussian fallback. Formal clinical review still requires the established planning workflow and independent verification.
 Plan refinement proposes seed candidates from the current dose map only; it does not simulate dose or claim improved metrics until `dose_engine` or `planning_pipeline` reruns myDoseNet.
 
-Implementation details are documented in `docs/UI_CONTROL_MANUAL_TRAINING_REPORT_2026-06-30.md`.
+Implementation and audit details:
+
+- [`docs/UI_CONTROL_MANUAL_TRAINING_REPORT_2026-06-30.md`](docs/UI_CONTROL_MANUAL_TRAINING_REPORT_2026-06-30.md)
+- [`docs/PRODUCT_READINESS_UI_MANUAL_TRAINING_AUDIT_2026-07-02.md`](docs/PRODUCT_READINESS_UI_MANUAL_TRAINING_AUDIT_2026-07-02.md)
+- [`docs/CLINICAL_KB_PROMPT_ALIGNMENT_AUDIT_2026-07-02.md`](docs/CLINICAL_KB_PROMPT_ALIGNMENT_AUDIT_2026-07-02.md)
 
 ### 📸 Visual Interaction System (NEW)
 BrachyBot's LLM can **see and annotate** the UI in real-time:
@@ -1634,6 +1639,36 @@ print('EnhancedAgentIntegration: OK')
 
 ---
 
+## Product Readiness & Clinical KB Governance
+
+The latest product-readiness pass focused on making BrachyBot usable as both an
+agentic planner and a standalone planning workstation:
+
+- **UI-aware assistant control**: BrachyBot can inspect UI state, switch panels,
+  adjust supported controls, run manual workflow steps, request screenshots,
+  and provide planning advice through the same UI capability registry exposed by
+  `/api/ui/capabilities`.
+- **Manual planning path**: the web UI supports LLM-independent CTV/OAR
+  segmentation, trajectory refinement, seed planning, dose recomputation, DVH
+  review, report fill, export, and 3D manual needle/seed editing.
+- **Training monitor**: users can ask BrachyBot to monitor manual or automatic
+  planning, receive step-level feedback, request advice, and stop monitoring to
+  generate a final training summary.
+- **Dose-model boundary**: manual dose recomputation uses the trained myDoseNet
+  path. Analytical/Gaussian dose simulation is not used for active manual dose
+  feedback.
+- **Clinical KB governance**: safety-critical clinical claims, target
+  thresholds, OAR constraints, and literature summaries must come from
+  `clinical_kb`, clinical web search, actual tool output, or explicit
+  `plan_config`. Runtime prompts and validators should not invent standalone
+  clinical thresholds.
+
+Audit reports:
+
+- [`docs/PRODUCT_READINESS_UI_MANUAL_TRAINING_AUDIT_2026-07-02.md`](docs/PRODUCT_READINESS_UI_MANUAL_TRAINING_AUDIT_2026-07-02.md)
+- [`docs/CLINICAL_KB_PROMPT_ALIGNMENT_AUDIT_2026-07-02.md`](docs/CLINICAL_KB_PROMPT_ALIGNMENT_AUDIT_2026-07-02.md)
+
+---
 ## 📊 Research & Citations
 
 ### BrachyBot Architecture Inspired By
