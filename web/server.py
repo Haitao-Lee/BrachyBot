@@ -244,21 +244,19 @@ def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any
         strengths.append(
             f"CTV V100 is {v100 * 100:.1f}%; compare it with the site-specific clinical_kb or plan_config target."
         )
-        if v100 < 1.0:
-            advice.append("Add or shift seeds toward cold CTV regions, then recompute dose and DVH.")
+        advice.append("Inspect cold CTV regions against the intended prescription coverage, then recompute dose and DVH after edits.")
     else:
         advice.append("Run dose evaluation to make V100/D90 advice available.")
 
     if d90 is not None:
         strengths.append(f"CTV D90 is {d90:.1f} Gy; current report prescription is {rx_gy:.0f} Gy.")
-        if d90 < rx_gy:
-            advice.append("Increase peripheral CTV dose before adding more central hot-spot seeds.")
+        advice.append("Compare D90 with the source-backed prescription convention for this tumor site before labeling coverage adequate or inadequate.")
 
-    if v200 is not None and v200 > 0.30:
-        issues.append(f"CTV V200 is {v200 * 100:.1f}%, suggesting a hot spot or over-concentrated seed cluster.")
-        advice.append("Spread central seeds along the needle track or reduce seed density near the hot spot.")
-    elif v150 is not None and v150 > 0.65:
-        issues.append(f"CTV V150 is {v150 * 100:.1f}%, higher than a typical uniformity target.")
+    if v200 is not None:
+        issues.append(f"CTV V200 is {v200 * 100:.1f}%; inspect the corresponding hot-spot location in 2D/3D.")
+        advice.append("If the hot spot is clinically undesirable for this site, spread central seeds along the needle track or reduce local seed density.")
+    if v150 is not None:
+        strengths.append(f"CTV V150 is {v150 * 100:.1f}%; interpret uniformity with the current site-specific criteria.")
 
     oar_metrics = metrics.get("oar_metrics") if isinstance(metrics, dict) else None
     if isinstance(oar_metrics, dict):
@@ -277,18 +275,15 @@ def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any
 
     if snapshot.get("total_seeds", 0) == 0:
         advice.append("No seeds are present. Add a needle and place seeds through the CTV before dose evaluation.")
-    elif snapshot.get("total_seeds", 0) < 6 and v100 is not None and v100 < 1.0:
-        advice.append("The current seed count is low and V100 is not complete; add seeds first, then optimize spacing.")
+    elif v100 is not None:
+        advice.append("Review whether the current seed count and spacing are sufficient for the requested coverage after applying source-backed criteria.")
 
     recent_manual = [e for e in events if str(e.get("type", "")).startswith("manual.")]
     if recent_manual:
         advice.append("Recent manual edits were detected; recompute dose after each seed or needle adjustment to keep DVH current.")
 
     if plan_score is not None:
-        if plan_score >= 80:
-            strengths.append(f"Plan score is {plan_score:.0f}/100.")
-        else:
-            issues.append(f"Plan score is {plan_score:.0f}/100; review coverage, hot spots, and OAR dose before approval.")
+        strengths.append(f"Plan score is {plan_score:.0f}/100; use it as an advisory ranking signal, not approval.")
 
     if not strengths and not issues and not advice:
         advice.append("Load CT, segment CTV/OAR, and run planning or manual AI dose recomputation to generate actionable advice.")
@@ -300,6 +295,93 @@ def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any
         "issues": issues,
         "advice": advice,
         "event_count": len(events),
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+def _readiness_item(key: str, label: str, passed: bool, detail: str, action: str = "") -> Dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "passed": bool(passed),
+        "detail": detail,
+        "action": action,
+    }
+
+
+def _build_system_readiness(agent, session_id: Optional[str] = None) -> Dict[str, Any]:
+    """Build a deterministic product-readiness checklist for the current case."""
+    snapshot = _latest_plan_snapshot(agent)
+    metrics = snapshot.get("metrics", {}) or {}
+    memory = getattr(agent, "memory", None)
+
+    def mem(key: str, default=None):
+        if memory is None:
+            return default
+        try:
+            return memory.retrieve(key) if memory.retrieve(key) is not None else default
+        except Exception:
+            return default
+
+    ct_loaded = mem("ct_image") is not None or bool(mem("ct_path"))
+    ctv_ready = mem("ctv_array") is not None
+    organ_names = mem("organ_names", {}) or {}
+    oar_ready = mem("oar_array") is not None and (bool(mem("oar_is_full")) or len(organ_names) >= 5)
+    planning_ready = snapshot.get("total_seeds", 0) > 0 and snapshot.get("num_trajectories", 0) > 0
+    dose_ready = bool(snapshot.get("has_dose")) and bool(metrics)
+    report_ready = bool(mem("report_form", {}) or metrics)
+    kb_root = os.path.join(PROJECT_ROOT, "clinical_kb")
+    kb_ready = os.path.exists(os.path.join(kb_root, "sources")) and os.path.exists(
+        os.path.join(PROJECT_ROOT, "tool_factory", "clinical_kb", "data", "knowledge_base.json")
+    )
+    ui_events = list((_ui_bucket(session_id).get("events") or [])[-20:])
+
+    checks = [
+        _readiness_item("ct", "CT loaded", ct_loaded, "CT image/path available." if ct_loaded else "No CT image is loaded.", "Upload or load CT first."),
+        _readiness_item("ctv", "CTV segmentation", ctv_ready, "CTV mask is available." if ctv_ready else "CTV mask is missing.", "Run CTV segmentation."),
+        _readiness_item(
+            "oar",
+            "OAR segmentation",
+            oar_ready,
+            f"OAR map has {len(organ_names)} named structure(s)." if oar_ready else "Full OAR map is missing or incomplete.",
+            "Run OAR segmentation before planning/DVH review.",
+        ),
+        _readiness_item(
+            "planning",
+            "Needles and seeds",
+            planning_ready,
+            f"{snapshot.get('num_trajectories', 0)} trajectory(ies), {snapshot.get('total_seeds', 0)} seed(s).",
+            "Run planning_pipeline or manual seed placement.",
+        ),
+        _readiness_item("dose", "Dose and DVH", dose_ready, "Dose distribution and metrics are available." if dose_ready else "Dose/DVH metrics are not current.", "Recompute dose/DVH after planning edits."),
+        _readiness_item("report", "Report data", report_ready, "Report can be auto-filled from current data." if report_ready else "Report data is not ready.", "Auto-fill report after dose evaluation."),
+        _readiness_item("clinical_kb", "Clinical KB", kb_ready, "Clinical KB source index is present." if kb_ready else "Clinical KB source index is missing.", "Repair clinical_kb before source-backed clinical claims."),
+    ]
+
+    execution_tools = {
+        "code_executor_enabled": os.environ.get("BRACHYBOT_ENABLE_CODE_EXECUTOR", "").lower() in TRUE_VALUES,
+        "shell_executor_enabled": os.environ.get("BRACHYBOT_ENABLE_SHELL_EXECUTOR", "").lower() in TRUE_VALUES,
+        "shell_mode": "argv_allowlist_no_shell",
+    }
+    ready_for_review = all(item["passed"] for item in checks[:6])
+    blockers = [item for item in checks if not item["passed"]]
+
+    return {
+        "success": True,
+        "ready": ready_for_review,
+        "items": checks,
+        "ready_for_review": ready_for_review,
+        "checks": checks,
+        "blockers": blockers,
+        "snapshot": snapshot,
+        "recent_ui_events": ui_events,
+        "execution_tools": execution_tools,
+        "clinical_governance": {
+            "clinical_kb_required": True,
+            "constraint_policy": "Use clinical_kb or explicit plan_config for target/OAR thresholds.",
+            "threshold_policy": "Use clinical_kb or explicit plan_config for target/OAR thresholds.",
+            "local_templates": "Metric summaries only; no local-template clinical approval.",
+        },
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }
 
@@ -813,7 +895,9 @@ def _decode_png_data_url(image_data: str) -> bytes:
 def require_api_key(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        # Only require API key if user explicitly set BRACHYBOT_API_KEY
+        # Local loopback development may run without auth; non-loopback
+        # binding is rejected at startup unless a key or trusted-network
+        # override is explicitly configured.
         if _API_KEY_REQUIRED:
             request_key = request.headers.get("X-API-Key", "")
             if not request_key or not secrets.compare_digest(
@@ -1284,90 +1368,60 @@ def create_app(config: Optional[Dict] = None):
     # ----- Report auto-fill helpers -----
     @staticmethod
     def _build_report_interpretation(agent, language="zh"):
-        """Generate report interpretation without embedding unsourced clinical thresholds."""
+        """Generate source-aware report interpretation without local clinical verdicts."""
         dose = (agent.memory.retrieve("dose_metrics") or {}) if agent else {}
-        v100 = (dose.get("v100") * 100) if dose.get("v100") is not None else None
-        d90 = dose.get("d90")
-        d95 = dose.get("d95")
-        v150 = (dose.get("v150") * 100) if dose.get("v150") is not None else None
-        v200 = (dose.get("v200") * 100) if dose.get("v200") is not None else None
-        ci = dose.get("ci")
-        hi = dose.get("hi")
-        gi = dose.get("gi")
-        score = dose.get("plan_score")
         prescribed = dose.get("prescribed_dose", 120.0)
+        metrics = [
+            ("CTV V100", (dose.get("v100") * 100) if dose.get("v100") is not None else None, "%", 1),
+            ("D90", dose.get("d90"), " Gy", 2),
+            ("D95", dose.get("d95"), " Gy", 2),
+            ("V150", (dose.get("v150") * 100) if dose.get("v150") is not None else None, "%", 1),
+            ("V200", (dose.get("v200") * 100) if dose.get("v200") is not None else None, "%", 1),
+            ("Conformity Index CI", dose.get("ci"), "", 3),
+            ("Homogeneity Index HI", dose.get("hi"), "", 3),
+            ("Gradient Index GI", dose.get("gi"), "", 3),
+        ]
 
-        if language == "zh":
-            lines = ["**剂量学评估与临床解读**"]
-            if v100 is not None:
-                lines.append(f"- CTV 覆盖率 V100 = {v100:.1f}%。")
-            if d90 is not None:
-                lines.append(f"- D90 = {d90:.2f} Gy；处方剂量 {prescribed:.1f} Gy。")
-            if d95 is not None:
-                lines.append(f"- D95 = {d95:.2f} Gy。")
-            if v150 is not None:
-                lines.append(f"- V150 = {v150:.1f}%。")
-            if v200 is not None:
-                lines.append(f"- V200 = {v200:.1f}%。")
-            if ci is not None:
-                lines.append(f"- 适形指数 CI = {ci:.3f}。")
-            if hi is not None:
-                lines.append(f"- 均匀性指数 HI = {hi:.3f}。")
-            if gi is not None:
-                lines.append(f"- 梯度指数 GI = {gi:.3f}。")
-            if score is not None:
-                if score >= 80:
-                    lines.append(f"- 内部规划评分 = {score:.0f}/100（较好）。")
-                elif score >= 60:
-                    lines.append(f"- 内部规划评分 = {score:.0f}/100（可优化）。")
-                else:
-                    lines.append(f"- 内部规划评分 = {score:.0f}/100（建议复核和重新优化）。")
-            lines.append("- 临床阈值、OAR 限值和最终是否达标需结合 `clinical_kb` 检索到的部位特异性指南或显式 plan_config 判断。")
-            lines.append("")
-            lines.append("_本解读由 BrachyBot 自动生成，需由放疗医师和物理师复核。_")
-            safety = (
-                "**安全与质量控制**\n\n"
-                "- 核对粒子活度、处方剂量、坐标系、针道和粒子坐标。\n"
-                "- 复核 CTV/OAR 掩膜、DVH、热点区域和 OAR 高剂量区域。\n"
-                "- 最终临床限值请从知识库/指南检索结果或病例的显式 plan_config 读取，不使用报告模板内置阈值。\n"
-                f"- 当前报告处方剂量：{prescribed:.1f} Gy。"
-            )
-        else:
-            lines = ["**Dosimetric Evaluation & Clinical Interpretation**"]
-            if v100 is not None:
-                lines.append(f"- CTV coverage V100 = {v100:.1f}%.")
-            if d90 is not None:
-                lines.append(f"- D90 = {d90:.2f} Gy; prescribed dose {prescribed:.1f} Gy.")
-            if d95 is not None:
-                lines.append(f"- D95 = {d95:.2f} Gy.")
-            if v150 is not None:
-                lines.append(f"- V150 = {v150:.1f}%.")
-            if v200 is not None:
-                lines.append(f"- V200 = {v200:.1f}%.")
-            if ci is not None:
-                lines.append(f"- Conformity Index CI = {ci:.3f}.")
-            if hi is not None:
-                lines.append(f"- Homogeneity Index HI = {hi:.3f}.")
-            if gi is not None:
-                lines.append(f"- Gradient Index GI = {gi:.3f}.")
-            if score is not None:
-                if score >= 80:
-                    lines.append(f"- Internal plan score = {score:.0f}/100 (good).")
-                elif score >= 60:
-                    lines.append(f"- Internal plan score = {score:.0f}/100 (optimizable).")
-                else:
-                    lines.append(f"- Internal plan score = {score:.0f}/100 (review and re-optimization recommended).")
-            lines.append("- Interpret clinical thresholds and OAR limits using `clinical_kb` site-specific evidence or explicit plan_config, not report-template defaults.")
-            lines.append("")
-            lines.append("_This interpretation was auto-generated by BrachyBot and requires clinician/physicist review._")
-            safety = (
-                "**Safety & Quality Control**\n\n"
-                "- Verify seed activity, prescription dose, coordinate system, needle paths, and seed coordinates.\n"
-                "- Review CTV/OAR masks, DVH, hot spots, and high-dose OAR regions.\n"
-                "- Final clinical limits must come from retrieved knowledge-base/guideline evidence or explicit plan_config.\n"
-                f"- Current report prescription dose: {prescribed:.1f} Gy."
-            )
+        lines = [
+            "**Dosimetric Evaluation & Clinical Interpretation**",
+            "",
+            "This auto-filled interpretation reports observed metrics only. Clinical pass/fail decisions must cite `clinical_kb` evidence or explicit case `plan_config` constraints for the current tumor site.",
+            "",
+            "**Observed metrics**",
+        ]
+        for label, value, unit, digits in metrics:
+            if value is None:
+                continue
+            try:
+                lines.append(f"- {label}: {float(value):.{digits}f}{unit}.")
+            except (TypeError, ValueError):
+                lines.append(f"- {label}: {value}{unit}.")
+
+        score = dose.get("plan_score")
+        if score is not None:
+            try:
+                lines.append(f"- Internal plan score: {float(score):.0f}/100. Use as an advisory QA ranking signal, not clinical approval.")
+            except (TypeError, ValueError):
+                lines.append(f"- Internal plan score: {score}. Use as an advisory QA ranking signal, not clinical approval.")
+
+        lines.extend([
+            "",
+            "**Required review before clinical use**",
+            "- Retrieve site-specific target coverage and OAR tolerance criteria from `clinical_kb`, or provide them in `plan_config`.",
+            "- Verify CTV/OAR masks, coordinate registration, needle feasibility, seed coordinates, DVH, and high-dose regions.",
+            "- Perform independent dose verification and obtain radiation oncologist/physicist sign-off.",
+            "",
+            "_Generated by BrachyBot for planning review; not a signed treatment prescription._",
+        ])
+        safety = (
+            "**Safety & Quality Control**\n\n"
+            "- Verify seed activity, prescription dose, coordinate system, needle paths, and seed coordinates.\n"
+            "- Review CTV/OAR masks, DVH, hot spots, and high-dose OAR regions.\n"
+            "- Final clinical limits must come from retrieved knowledge-base/guideline evidence or explicit plan_config.\n"
+            f"- Current report prescription dose: {prescribed:.1f} Gy."
+        )
         return "\n".join(lines), safety
+
     @app.route("/api/report/auto-fill", methods=["POST"])
     @require_api_key
     @rate_limit
@@ -3970,6 +4024,18 @@ def create_app(config: Optional[Dict] = None):
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
         return jsonify(_build_plan_advice(agent, session_id))
+
+    @app.route("/api/readiness", methods=["GET", "POST"])
+    @require_api_key
+    @rate_limit
+    def api_readiness():
+        """Return a product-readiness checklist for the current case."""
+        data = request.get_json(silent=True) or {}
+        session_id = _ui_session_id(data.get("session_id") or request.args.get("session_id") or "web")
+        agent = get_agent(session_id)
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+        return jsonify(_build_system_readiness(agent, session_id))
 
     @app.route("/api/manual_planning/update", methods=["POST"])
     @require_api_key

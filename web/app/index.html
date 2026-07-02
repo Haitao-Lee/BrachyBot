@@ -4842,6 +4842,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
                         <button class="btn btn-outline" onclick="addManualSeed()" style="font-size:0.6rem;padding:5px 6px;">Add Seed</button>
                         <button class="btn btn-outline" onclick="recomputeManualDose('manual_button')" style="font-size:0.6rem;padding:5px 6px;">Recompute AI Dose</button>
                         <button class="btn btn-outline" onclick="requestPlanningAdvice()" style="font-size:0.6rem;padding:5px 6px;">Detailed Advice</button>
+                        <button class="btn btn-outline" onclick="checkSystemReadiness()" style="font-size:0.6rem;padding:5px 6px;">Readiness</button>
                     </div>
                 </div>
             </div>
@@ -10600,6 +10601,10 @@ function _executeUIActionRaw(a) {
             requestPlanningAdvice();
             return;
         }
+        if (target === 'system.readiness') {
+            checkSystemReadiness();
+            return;
+        }
         // ── Report ──
         if (target === 'report.autofill') {
             if (typeof Report !== 'undefined' && Report.autoFill) Report.autoFill.fromAll();
@@ -15294,6 +15299,63 @@ async function requestPlanningAdvice() {
         return data;
     } catch (e) {
         addChat('error', `Detailed advice failed: ${e.message}`);
+        return null;
+    }
+}
+
+function _formatReadinessReport(data) {
+    if (!data) return 'System readiness is not available.';
+    const lines = [];
+    lines.push(`**System Readiness: ${data.ready ? 'Ready for operator review' : 'Not ready'}**`);
+    if (data.blockers && data.blockers.length) {
+        lines.push('');
+        lines.push('**Blocking items**');
+        data.blockers.forEach(x => {
+            if (typeof x === 'string') lines.push(`- ${x}`);
+            else lines.push(`- ${x.label || x.key}: ${x.detail || ''}${x.action ? ` Next: ${x.action}` : ''}`);
+        });
+    }
+    if (data.items && data.items.length) {
+        lines.push('');
+        lines.push('| Area | Status | Detail | Next action |');
+        lines.push('|---|---|---|---|');
+        data.items.forEach(item => {
+            const status = item.passed ? 'OK' : 'Needs action';
+            lines.push(`| ${item.label || item.key} | ${status} | ${item.detail || ''} | ${item.action || ''} |`);
+        });
+    }
+    if (data.execution_tools) {
+        const tools = data.execution_tools;
+        lines.push('');
+        lines.push('**Execution Tools**');
+        lines.push(`- Code execution: ${tools.code_executor_enabled ? 'enabled' : 'disabled by policy'}`);
+        lines.push(`- Shell execution: ${tools.shell_executor_enabled ? 'enabled' : 'disabled by policy'}`);
+        if (tools.note) lines.push(`- ${tools.note}`);
+    }
+    if (data.clinical_governance) {
+        const governance = data.clinical_governance;
+        lines.push('');
+        lines.push('**Clinical Governance**');
+        lines.push(`- ${governance.clinical_kb_required ? 'Clinical KB evidence is required for clinical claims.' : 'Clinical KB evidence is optional.'}`);
+        lines.push(`- ${governance.constraint_policy || governance.threshold_policy || 'Dose constraints must be source-backed.'}`);
+    }
+    return lines.join('\n');
+}
+
+async function checkSystemReadiness() {
+    try {
+        const res = await fetch(API + '/readiness', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: _activeApiSessionId(), ui_state: collectUIState() }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
+        addChat('bot-response', _formatReadinessReport(data));
+        reportUIEvent('system.readiness', 'System readiness checklist requested', { ready: !!data.ready });
+        return data;
+    } catch (e) {
+        addChat('error', `System readiness check failed: ${e.message}`);
         return null;
     }
 }
@@ -20924,99 +20986,79 @@ function updateClinicalEvaluation() {
     const oarMetrics = metrics.oar_metrics || {};
     const rxGy = (window.reportForm && window.reportForm.planning
         && window.reportForm.planning.prescriptionGy) || 120;
-    if (!metrics.v100 && !metrics.d90) {
-        // No plan yet — show a hint rather than an empty box.
-        host.innerHTML = `<div style="color:var(--text-dim);font-style:italic;">${_t('规划完成后此处显示详细评估', 'Detailed evaluation will appear here after planning completes.')}</div>`;
+    const h = (typeof escHtml === 'function')
+        ? escHtml
+        : (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    if (!metrics.v100 && !metrics.d90 && !Object.keys(oarMetrics).length) {
+        host.innerHTML = '<div style="color:var(--text-dim);font-style:italic;">Detailed evaluation will appear here after planning completes.</div>';
         return;
     }
 
-    // 1) Headline metrics table
+    const fmt = (value, digits = 1, suffix = '') => {
+        if (value === null || value === undefined || Number.isNaN(Number(value))) return '--';
+        return `${Number(value).toFixed(digits)}${suffix}`;
+    };
     const headline = [
-        ['Plan Score', metrics.plan_score != null ? `${metrics.plan_score.toFixed(0)} / 100` : '—'],
-        ['D90', metrics.d90 != null ? `${metrics.d90.toFixed(2)} Gy` : '—'],
-        ['V100', metrics.v100 != null ? `${(metrics.v100 * 100).toFixed(1)} %` : '—'],
-        ['V150', metrics.v150 != null ? `${(metrics.v150 * 100).toFixed(1)} %` : '—'],
-        ['D2 (max)', metrics.d2 != null ? `${metrics.d2.toFixed(2)} Gy` : '—'],
-        ['Dmean', metrics.dmean != null ? `${metrics.dmean.toFixed(2)} Gy` : '—'],
-        ['CI', metrics.ci != null ? metrics.ci.toFixed(2) : '—'],
-        ['HI', metrics.hi != null ? metrics.hi.toFixed(2) : '—'],
-        ['Seeds', state.seeds ? state.seeds.length : '—'],
-        ['Prescription', `${rxGy.toFixed(0)} Gy`],
+        ['Plan Score', metrics.plan_score != null ? `${Number(metrics.plan_score).toFixed(0)} / 100` : '--'],
+        ['D90', metrics.d90 != null ? `${Number(metrics.d90).toFixed(2)} Gy` : '--'],
+        ['V100', metrics.v100 != null ? `${(Number(metrics.v100) * 100).toFixed(1)} %` : '--'],
+        ['V150', metrics.v150 != null ? `${(Number(metrics.v150) * 100).toFixed(1)} %` : '--'],
+        ['V200', metrics.v200 != null ? `${(Number(metrics.v200) * 100).toFixed(1)} %` : '--'],
+        ['D2 (max)', metrics.d2 != null ? `${Number(metrics.d2).toFixed(2)} Gy` : '--'],
+        ['Dmean', metrics.dmean != null ? `${Number(metrics.dmean).toFixed(2)} Gy` : '--'],
+        ['CI', metrics.ci != null ? Number(metrics.ci).toFixed(2) : '--'],
+        ['HI', metrics.hi != null ? Number(metrics.hi).toFixed(2) : '--'],
+        ['Seeds', state.seeds ? state.seeds.length : '--'],
+        ['Prescription', `${Number(rxGy).toFixed(0)} Gy`],
     ];
 
-    // 2) Flagged issues: derived from metrics thresholds (real
-    // clinical limits; thresholds match NCCN / TG-229 / GEC-ESTRO).
-    // Each issue is a card with severity + organ + suggested action.
-    const issues = [];
-    // Target coverage
-    if (metrics.v100 != null && metrics.v100 < 0.9) {
-        issues.push({ sev: 'high', organ: 'CTV', msg: `V100 = ${(metrics.v100*100).toFixed(1)}% < 90% target — coverage below clinical threshold.` });
-    } else if (metrics.v100 != null && metrics.v100 >= 0.9) {
-        issues.push({ sev: 'ok', organ: 'CTV', msg: `V100 = ${(metrics.v100*100).toFixed(1)}% meets the ≥90% clinical target.` });
-    }
-    // D90 against prescription
-    if (metrics.d90 != null && metrics.d90 < rxGy) {
-        issues.push({ sev: 'medium', organ: 'CTV', msg: `D90 = ${metrics.d90.toFixed(2)} Gy < prescription ${rxGy.toFixed(0)} Gy — minimum dose to 90% of CTV below prescription.` });
-    }
-    // D2 / hot spot
-    if (metrics.d2 != null && metrics.d2 > 2 * rxGy) {
-        issues.push({ sev: 'high', organ: 'CTV', msg: `D2 = ${metrics.d2.toFixed(2)} Gy > 2× prescription — hot spot in CTV (V150/V200 may exceed).` });
-    }
-    // Per-OAR: each entry has Dmax and D2cc; flag anything > 2× Rx
-    // (TG-229) or > 1× Rx (D2cc, GEC-ESTRO).
-    for (const [rawName, m] of Object.entries(oarMetrics)) {
-        const name = _resolveOARDisplayName(rawName, m);
-        const dmax = m.dmax || m.max_dose || m.Dmax || 0;
-        const d2cc = m.d2cc || 0;
-        if (dmax > 2 * rxGy) {
-            issues.push({ sev: 'high', organ: name, msg: `${name} Dmax = ${dmax.toFixed(2)} Gy > 2× prescription — exceeds tolerance.` });
-        }
-        if (d2cc > rxGy) {
-            issues.push({ sev: 'medium', organ: name, msg: `${name} D2cc = ${d2cc.toFixed(2)} Gy > prescription — exceeds clinical limit.` });
-        }
-    }
+    const observations = [];
+    if (metrics.v100 != null) observations.push(`CTV V100 observed at ${(Number(metrics.v100) * 100).toFixed(1)}%. Compare against source-backed criteria for this tumor site.`);
+    if (metrics.d90 != null) observations.push(`CTV D90 observed at ${Number(metrics.d90).toFixed(2)} Gy. Current report prescription is ${Number(rxGy).toFixed(0)} Gy.`);
+    if (metrics.v200 != null) observations.push(`CTV V200 observed at ${(Number(metrics.v200) * 100).toFixed(1)}%. Inspect corresponding hot spots in 2D/3D before changing seeds.`);
+    if (metrics.plan_score != null) observations.push(`Plan score is ${Number(metrics.plan_score).toFixed(0)}/100. Treat this as an advisory QA ranking signal only.`);
 
-    // 3) Build HTML
-    const sevColor = { high: '#fb7185', medium: '#fbbf24', ok: '#34d399' };
-    const sevLabel = { high: '❌ High', medium: '⚠️ Medium', ok: '✅ OK' };
+    const topOars = Object.entries(oarMetrics)
+        .filter(([_, m]) => m)
+        .sort((a, b) => ((b[1].d2cc || b[1].dmax || b[1].max_dose || 0) - (a[1].d2cc || a[1].dmax || a[1].max_dose || 0)))
+        .slice(0, 8);
+    topOars.forEach(([rawName, m]) => {
+        const name = _resolveOARDisplayName(rawName, m);
+        const dmax = Number(m.dmax || m.max_dose || m.Dmax || 0);
+        const d2cc = Number(m.d2cc || 0);
+        observations.push(`${name}: Dmax ${fmt(dmax, 2, ' Gy')}, D2cc ${fmt(d2cc, 2, ' Gy')}. Interpret using clinical_kb/plan_config OAR limits.`);
+    });
+    if (!topOars.length) observations.push('No OAR dose metrics are available yet. Run OAR segmentation and dose evaluation before OAR review.');
+
     const headlineHtml = `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;margin-bottom:10px;">
             ${headline.map(([k, v]) => `
                 <div style="background:var(--bg-2);border:1px solid var(--border-hairline);border-radius:6px;padding:6px 8px;">
-                    <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em;">${k}</div>
-                    <div style="font-size:0.86rem;color:var(--text);font-weight:600;">${v}</div>
+                    <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em;">${h(k)}</div>
+                    <div style="font-size:0.86rem;color:var(--text);font-weight:600;">${h(v)}</div>
                 </div>
             `).join('')}
         </div>
     `;
-    const issuesHtml = issues.length === 0
-        ? `<div style="color:var(--text-dim);font-style:italic;">${_t('所有指标均符合临床指南。', 'All metrics within clinical tolerance.')}</div>`
-        : `<div style="margin-bottom:10px;">
-            <div style="font-weight:600;color:var(--text);margin-bottom:4px;">${_t('已发现的问题', 'Flagged Issues')} (${issues.length})</div>
+    const observationsHtml = `
+        <div style="margin-bottom:10px;">
+            <div style="font-weight:600;color:var(--text);margin-bottom:4px;">Planning Review Items (${observations.length})</div>
             <ul style="margin:0;padding-left:16px;line-height:1.6;">
-                ${issues.map(it => `
-                    <li>
-                        <span style="color:${sevColor[it.sev] || '#94a3b8'};font-weight:600;">${sevLabel[it.sev] || it.sev}</span>
-                        <span style="color:var(--text-secondary);font-weight:500;">${it.organ}</span> —
-                        <span>${it.msg}</span>
-                    </li>
-                `).join('')}
+                ${observations.map(msg => `<li><span>${h(msg)}</span></li>`).join('')}
             </ul>
-        </div>`;
+        </div>
+    `;
     const refsHtml = `
         <div style="border-top:1px solid var(--border-hairline);padding-top:8px;">
-            <div style="font-weight:600;color:var(--text);margin-bottom:4px;">${_t('📚 参考文献 (点击查看)', '📚 References (click to view)')}</div>
-            <div style="line-height:1.7;font-size:0.66rem;">
-                <div>• AAPM TG-43 / TG-229 (dose calculation)${_refLinkHtml('TG43')}</div>
-                <div>• GEC-ESTRO Handbook of Brachytherapy${_refLinkHtml('GEC_ESTRO')}</div>
-                <div>• ICRU Report 89 (prescribing / reporting)${_refLinkHtml('ICRU89')}</div>
-                <div>• ABS Brachytherapy Consensus Guidelines${_refLinkHtml('ABS')}</div>
-                <div>• NCCN Pancreatic Cancer Guidelines${_refLinkHtml('NCCN_PANC')}</div>
-                <div>• ¹²⁵I seed implantation expert consensus (China)${_refLinkHtml('PICC')}</div>
+            <div style="font-weight:600;color:var(--text);margin-bottom:4px;">Source policy</div>
+            <div style="line-height:1.7;font-size:0.66rem;color:var(--text-secondary);">
+                <div>Clinical pass/fail labels require retrieved <code>clinical_kb</code> evidence or explicit <code>plan_config</code> constraints.</div>
+                <div>General references: AAPM TG-43/TG-229 ${_refLinkHtml('TG43')}, ICRU Report 89 ${_refLinkHtml('ICRU89')}, ABS ${_refLinkHtml('ABS')}, NCCN ${_refLinkHtml('NCCN_PANC')}.</div>
             </div>
         </div>
     `;
-    host.innerHTML = headlineHtml + issuesHtml + refsHtml;
+    host.innerHTML = headlineHtml + observationsHtml + refsHtml;
 }
 
 function updateSeeds(seeds) {
@@ -21234,8 +21276,8 @@ const REPORT_TEMPLATES = {
         i125: true,
         prescriptionGy: 120,
         interpretation: {
-            zh: '本计划针对**胰腺癌**放射性粒子植入。CTV覆盖率达V100要求（≥90%），D90达到处方剂量要求。OAR约束以十二指肠、胰腺、胆管、胃、肠管为主，参考 NCCN 胰腺癌指南和 GBZ/T 201.7-2015。',
-            en: 'This plan targets **pancreatic cancer** with ¹²⁵I seed brachytherapy. CTV coverage V100 meets the clinical threshold (≥90%); D90 reaches the prescribed dose. OAR constraints prioritize duodenum, pancreas, bile duct, stomach, and bowel, following NCCN pancreatic cancer guidelines and GBZ/T 201.7-2015.',
+            zh: 'Pancreatic seed brachytherapy plan. Observed coverage and OAR metrics must be interpreted with retrieved clinical_kb evidence or explicit plan_config constraints for pancreatic disease.',
+            en: 'Pancreatic seed brachytherapy plan. Observed coverage and OAR metrics must be interpreted with retrieved clinical_kb evidence or explicit plan_config constraints for pancreatic disease.',
         },
         defaultReferences: ['NCCN_PANC', 'PANCREAS_TRIAL', 'GBZ_DOSE', 'ICRU_DOSE', 'AAPM_DOSE', 'ESTRO_DVH'],
     },
@@ -21243,8 +21285,8 @@ const REPORT_TEMPLATES = {
         i125: true,
         prescriptionGy: 145,
         interpretation: {
-            zh: '本计划针对**前列腺癌**放射性粒子植入。处方剂量 145 Gy（¹²⁵I）。关注直肠前壁、尿道、膀胱颈剂量限值，参考 ABS 前列腺粒子共识指南。',
-            en: 'This plan targets **prostate cancer** with radioactive seed brachytherapy. Prescription dose 145 Gy (¹²⁵I). Pay attention to rectal wall, urethra, and bladder neck dose limits, per ABS prostate brachytherapy consensus guidelines.',
+            zh: 'Prostate seed brachytherapy plan. Dose and OAR review require source-backed prostate constraints before any pass/fail statement.',
+            en: 'Prostate seed brachytherapy plan. Dose and OAR review require source-backed prostate constraints before any pass/fail statement.',
         },
         defaultReferences: ['PROSTATE', 'ICRU_DOSE', 'AAPM_DOSE', 'ESTRO_DVH'],
     },
@@ -21252,8 +21294,8 @@ const REPORT_TEMPLATES = {
         i125: false,
         prescriptionGy: 60,
         interpretation: {
-            zh: '本计划针对**头颈部肿瘤**HDR/PDR 近距离治疗。处方剂量 60 Gy。关注脊髓、下颌骨、视神经剂量限制，参考 ABS 头颈粒子共识。',
-            en: 'This plan targets **head & neck cancer** with HDR/PDR brachytherapy. Prescription dose 60 Gy. Watch for spinal cord, mandible, optic nerve dose limits, per ABS head & neck brachytherapy consensus.',
+            zh: 'Head and neck brachytherapy plan. Critical-structure limits must be retrieved from clinical_kb or supplied in plan_config for this specific site.',
+            en: 'Head and neck brachytherapy plan. Critical-structure limits must be retrieved from clinical_kb or supplied in plan_config for this specific site.',
         },
         defaultReferences: ['HEAD_NECK', 'ICRU_DOSE', 'AAPM_DOSE'],
     },
@@ -21261,8 +21303,8 @@ const REPORT_TEMPLATES = {
         i125: false,
         prescriptionGy: 85,
         interpretation: {
-            zh: '本计划针对**妇科肿瘤**HDR 近距离治疗。处方 85 Gy（EQD2）。参考 ABS 妇科粒子共识和 GEC-ESTRO 推荐。',
-            en: 'This plan targets **gynecological cancer** with HDR brachytherapy. Prescription 85 Gy (EQD2). Reference ABS gynecologic brachytherapy consensus and GEC-ESTRO recommendations.',
+            zh: 'Gynecologic brachytherapy plan. EQD2 and OAR interpretation require protocol-specific, source-backed criteria.',
+            en: 'Gynecologic brachytherapy plan. EQD2 and OAR interpretation require protocol-specific, source-backed criteria.',
         },
         defaultReferences: ['GYN_GUIDE', 'ASTRO', 'ICRU_DOSE', 'ESTRO_DVH'],
     },
@@ -21270,8 +21312,8 @@ const REPORT_TEMPLATES = {
         i125: true,
         prescriptionGy: 120,
         interpretation: {
-            zh: '本计划针对**肝脏肿瘤**粒子植入。处方 120 Gy。关注胆管、胃肠道剂量，参考肝脏局部消融+粒子联合治疗文献。',
-            en: 'This plan targets **liver cancer** with seed brachytherapy. Prescription 120 Gy. Monitor bile duct and GI tract dose, per literature on combined ablation + brachytherapy for liver tumors.',
+            zh: 'Liver seed brachytherapy plan. Coverage and gastrointestinal/biliary OAR constraints require retrieved clinical_kb evidence or explicit plan_config limits.',
+            en: 'Liver seed brachytherapy plan. Coverage and gastrointestinal/biliary OAR constraints require retrieved clinical_kb evidence or explicit plan_config limits.',
         },
         defaultReferences: ['ICRU_DOSE', 'AAPM_DOSE', 'ESTRO_DVH'],
     },
@@ -23864,106 +23906,52 @@ async function reportAutoFill() {
 function _autoFillInterpretation() {
     const f = window.reportForm;
     const m = (window.state && window.state.metrics) || {};
-    // Use GLOBAL UI language, not f.language which may be stale from localStorage
-    const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : (f.language || 'en');
     const v100 = m.v100 !== undefined ? m.v100 * 100 : null;
     const d90 = m.d90 || null;
     const score = m.plan_score;
     const oarMetrics = m.oar_metrics || {};
-    const isZh = lang === 'zh';
     const lines = [];
-    if (isZh) {
-        lines.push('**剂量学评估与临床解读**');
-        lines.push('');
-    } else {
-        lines.push('**Dosimetric Evaluation & Clinical Interpretation**');
-        lines.push('');
-    }
 
-    // 1. CTV coverage interpretation
+    lines.push('**Planning metric interpretation**');
+    lines.push('');
+    lines.push('This section summarizes observed planning metrics only. Clinical pass/fail decisions must use source-backed thresholds from `clinical_kb` retrieval results or explicit `plan_config` constraints for the current tumor site.');
+    lines.push('');
+
     if (v100 !== null) {
-        if (isZh) {
-            if (v100 >= 90) lines.push(`**靶区覆盖率达标**：CTV 覆盖率 V100 = ${v100.toFixed(1)}% 已超过 ESTRO/GEC-ESTRO 推荐的 90% 临床阈值。提示靶区内粒子分布密度合适，处方剂量覆盖良好。`);
-            else lines.push(`⚠️ **靶区覆盖率不足**：CTV 覆盖率 V100 = ${v100.toFixed(1)}% 低于 90% 临床阈值。建议增加 2-4 颗粒子或重新优化种子轨迹,确保剂量均匀覆盖。`);
-        } else {
-            if (v100 >= 90) lines.push(`**Target coverage adequate**: CTV V100 = ${v100.toFixed(1)}% exceeds the 90% threshold recommended by ESTRO/GEC-ESTRO. Seed distribution within the CTV is appropriate and prescription dose coverage is good.`);
-            else lines.push(`⚠️ **Insufficient target coverage**: CTV V100 = ${v100.toFixed(1)}% is below the 90% clinical threshold. Recommend adding 2-4 more seeds or re-optimizing the needle trajectory for uniform dose distribution.`);
-        }
-        lines.push('');
+        lines.push(`- CTV V100: ${v100.toFixed(1)}%. This is an observed coverage metric, not a local-template pass/fail verdict.`);
     }
-
-    // 2. D90 interpretation
     if (d90 !== null) {
         const rxGy = (window.reportForm && window.reportForm.planning && window.reportForm.planning.prescriptionGy) || 120;
-        const meetsD90 = d90 >= rxGy;
-        if (isZh) {
-            if (meetsD90) lines.push(`**最小靶区剂量满足**：D90 = ${d90.toFixed(2)} Gy ≥ 处方剂量 ${rxGy.toFixed(0)} Gy(ICRU 89),提示 90% 的靶区体积接受了至少处方剂量。`);
-            else lines.push(`⚠️ **最小靶区剂量不足**:D90 = ${d90.toFixed(2)} Gy < 处方剂量 ${rxGy.toFixed(0)} Gy。需考虑增加粒子数或优化分布以提升覆盖。`);
-        } else {
-            if (meetsD90) lines.push(`**Minimum target dose met**: D90 = ${d90.toFixed(2)} Gy ≥ prescription ${rxGy.toFixed(0)} Gy (per ICRU 89 reporting standard). 90% of the CTV volume receives at least the prescription dose.`);
-            else lines.push(`⚠️ **Minimum target dose below prescription**: D90 = ${d90.toFixed(2)} Gy < prescription ${rxGy.toFixed(0)} Gy. Consider increasing seeds or re-optimizing distribution.`);
-        }
-        lines.push('');
+        lines.push(`- CTV D90: ${d90.toFixed(2)} Gy; current report prescription is ${rxGy.toFixed(0)} Gy. Interpret the threshold from the cited source.`);
     }
+    if (score !== undefined) {
+        lines.push(`- Plan score: ${Number(score).toFixed(0)}/100. This score is for ranking and QA triage, not clinical approval.`);
+    }
+    lines.push('');
 
-    // 3. OAR hot-spots interpretation (top 3 OARs by D2cc)
     const sortedOars = Object.entries(oarMetrics)
-        .filter(([_, x]) => x && x.d2cc)
-        .sort((a, b) => (b[1].d2cc || 0) - (a[1].d2cc || 0))
-        .slice(0, 3);
+        .filter(([_, x]) => x && (x.d2cc || x.dmax || x.max_dose))
+        .sort((a, b) => ((b[1].d2cc || b[1].dmax || b[1].max_dose || 0) - (a[1].d2cc || a[1].dmax || a[1].max_dose || 0)))
+        .slice(0, 5);
     if (sortedOars.length > 0) {
-        if (isZh) lines.push('**危及器官剂量评估**(按 D2cc 排序,前 3 位):');
-        else lines.push('**Organ-at-risk dose assessment** (sorted by D2cc, top 3):');
+        lines.push('**Organ-at-risk dose summary** (highest available OAR metrics):');
         for (const [rawName, om] of sortedOars) {
             const name = _resolveOARDisplayName(rawName, om);
             const d2cc = om.d2cc || 0;
             const dmax = om.dmax || om.max_dose || 0;
-            const rxGy = (window.reportForm && window.reportForm.planning && window.reportForm.planning.prescriptionGy) || 120;
-            const exceeds = d2cc > rxGy || dmax > 2 * rxGy;
-            if (isZh) {
-                lines.push(`- **${name}**: D2cc = ${d2cc.toFixed(2)} Gy, Dmax = ${dmax.toFixed(2)} Gy${exceeds ? ' ⚠️ (超限)' : ' (合规)'}`);
-            } else {
-                lines.push(`- **${name}**: D2cc = ${d2cc.toFixed(2)} Gy, Dmax = ${dmax.toFixed(2)} Gy${exceeds ? ' ⚠️ (exceeds tolerance)' : ' (within tolerance)'}`);
-            }
+            lines.push(`- **${name}**: D2cc = ${d2cc.toFixed(2)} Gy, Dmax = ${dmax.toFixed(2)} Gy; interpret with site-specific OAR limits.`);
         }
         lines.push('');
     }
 
-    // 4. Overall plan score with evidence-based clinical context
-    if (score !== undefined) {
-        const meetsStandard = score >= 70;
-        if (isZh) {
-            if (score >= 85) lines.push(`**整体评价**(优):综合评分 ${score.toFixed(0)}/100。计划满足 ABS、GEC-ESTRO、ICRU 89 的临床推荐标准,可直接进入放疗医师审核流程。`);
-            else if (meetsStandard) lines.push(`**整体评价**(良):综合评分 ${score.toFixed(0)}/100。计划基本符合临床要求,仍可通过调整粒子分布或微调处方进一步优化。`);
-            else lines.push(`**整体评价**(待改进):综合评分 ${score.toFixed(0)}/100。建议进入多学科讨论(MDT),由放疗医师和物理师共同决定是否需要重新规划。`);
-        } else {
-            if (score >= 85) lines.push(`**Overall assessment** (excellent): composite score ${score.toFixed(0)}/100. The plan meets ABS, GEC-ESTRO and ICRU 89 clinical recommendations and is ready for radiation oncologist review.`);
-            else if (meetsStandard) lines.push(`**Overall assessment** (good): composite score ${score.toFixed(0)}/100. The plan meets the basic clinical requirements and can be further optimized via seed redistribution or minor prescription adjustment.`);
-            else lines.push(`**Overall assessment** (needs improvement): composite score ${score.toFixed(0)}/100. Recommend multidisciplinary team (MDT) discussion between radiation oncologist and medical physicist to decide whether replanning is needed.`);
-        }
-        lines.push('');
-    }
+    lines.push('**Recommended next steps**:');
+    lines.push('- Query `clinical_kb` for prescription dose, V100/D90/V150/V200 criteria, and OAR limits for the current tumor site; include real links in report references.');
+    lines.push('- Radiation oncologist and physicist review should combine sourced thresholds, image registration, trajectory feasibility, and independent dose verification.');
+    lines.push('');
+    lines.push('_This is an auto-generated metric summary from BrachyBot; it does not replace a signed clinical treatment plan._');
 
-    // 5. Methodology references
-    if (isZh) {
-        lines.push('**方法学参考**:');
-        lines.push('- 剂量学指标基于 AAPM TG-43 / TG-229 一维线源形式计算');
-        lines.push('- DVH 报告符合 ICRU Report 89 标准');
-        lines.push('- 临床阈值参考 ABS Brachytherapy Guidelines (2022) 与 GEC-ESTRO Recommendations');
-        lines.push('');
-        lines.push('_本解读由 BrachyBot AI 自动生成,需经规划医师与物理师双人复核后方可作为最终治疗依据。_');
-    } else {
-        lines.push('**Methodology references**:');
-        lines.push('- Dosimetric indices computed per AAPM TG-43 / TG-229 (1D line-source formalism)');
-        lines.push('- DVH reporting compliant with ICRU Report 89');
-        lines.push('- Clinical thresholds referenced from ABS Brachytherapy Guidelines (2022) and GEC-ESTRO recommendations');
-        lines.push('');
-        lines.push('_This interpretation was auto-generated by BrachyBot AI and requires dual sign-off by the radiation oncologist and medical physicist before being used as the final treatment plan._');
-    }
     f.interpretation = lines.join('\n');
-    f.safety = isZh
-        ? '**安全与质量控制**\n\n- 粒子活度校验:打印剂量报告并由物理师双签确认\n- 术前剂量验证:独立蒙特卡罗或 TG-43 二次计算\n- 术中影像引导:实时 CT/超声确认粒子位置\n- 剂量限值参考:TG-43 / ICRU 89 / GBZ/T 201.7-2015\n- 知情同意:术前需患者签署放疗知情同意书'
-        : '**Safety & Quality Control**\n\n- Seed activity verification: dose report printout + medical physicist dual sign-off\n- Pre-treatment QA: independent Monte Carlo or TG-43 secondary calculation\n- Intra-operative imaging guidance: real-time CT/ultrasound seed position confirmation\n- Dose limits referenced from: TG-43 / ICRU 89 / GBZ/T 201.7-2015\n- Informed consent: patient must sign radiotherapy consent form prior to procedure';
+    f.safety = '**Safety & Quality Control**\n\n- Seed activity and source strength require physicist verification.\n- Pre/post-treatment dose verification should use an independent method.\n- OAR limits and target coverage thresholds must come from `clinical_kb` or explicit `plan_config`, not local report defaults.\n- Informed consent and final sign-off follow institutional workflow.';
 }
 
 // ----- 13. Reset -----

@@ -266,6 +266,10 @@ CONTROL_REGISTRY = {
         "commands": ["run"],
         "description": "Finish/review a manual plan and provide current planning advice"
     },
+    "system.readiness": {
+        "commands": ["check"],
+        "description": "Run a deterministic readiness checklist for the current case and surface missing workflow items"
+    },
     # ── Report actions ──
     "report.autofill": {
         "commands": ["run"],
@@ -637,6 +641,7 @@ class UIControllerTool(BaseTool):
         if target == "manual.seed.add": return "Manual seed added and dose preview requested"
         if target == "manual.dose.recompute": return "Manual dose and DVH preview recomputed"
         if target == "manual.plan.finish": return "Manual plan review requested"
+        if target == "system.readiness": return "System readiness checklist requested"
         if target == "plan.reset": return "⚠️ Planning session reset"
 
         # Report

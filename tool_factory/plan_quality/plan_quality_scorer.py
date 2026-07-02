@@ -1,8 +1,9 @@
 """
 Plan Quality Scorer Tool
 =======================
-Computes overall plan quality score (0-100) based on clinical constraints.
-Used for plan comparison and acceptance criteria.
+Computes an advisory plan quality score (0-100) based on configured or
+curated-mirror clinical constraints. It is intended for plan comparison and
+workflow triage, not final clinical approval.
 
 Uses :mod:`clinical_standards` as the single source of truth for
 per-organ pass criteria (D90, V100, V150, V200) and OAR dose limits
@@ -48,7 +49,8 @@ class PlanQualityScorerTool(BaseTool):
             "Compute overall brachytherapy plan quality score (0-100). "
             "Based on target coverage, dose homogeneity, and OAR constraints. "
             "Input: dose metrics dict or individual Vx/Dx/OAR metrics. "
-            "Output: Score breakdown and pass/fail recommendation."
+            "Output: score breakdown, advisory acceptability, and replanning flag. "
+            "Final clinical approval still requires source-backed review."
         )
 
     @property
