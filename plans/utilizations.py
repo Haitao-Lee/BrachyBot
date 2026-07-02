@@ -1520,7 +1520,7 @@ def calculate_tmp_DVH_rate_v2(pos, direc, dose_image, dose_cal_model, mask_volum
             - direc (tuple or array-like): The unchanged direction vector.
     
     Steps:
-        1. Calculate the radiation distribution from the current seed using a Gaussian dose model.
+        1. Calculate the radiation distribution from the current seed using the supplied dose calculation model.
         2. Add the new seed's radiation to the list of previous seed radiation fields.
         3. Compute the cumulative radiation field by summing all individual seed contributions.
         4. Apply the mask to isolate the target region in the radiation field.

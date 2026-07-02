@@ -1668,6 +1668,10 @@ agentic planner and a standalone planning workstation:
   `system.readiness` in the UI controller registry, so the assistant can report
   missing CT, CTV, OAR, planning, dose/DVH, report, and clinical KB prerequisites
   before the user exports or reviews a plan.
+- **Screenshot feedback hardening**: UI screenshots and annotated screenshots
+  use short-lived signed image URLs when API-key protection is enabled, so chat
+  images continue to render without exposing unrestricted screenshot access.
+  `/api/readiness` also reports whether the screenshot directory is writable.
 - **Source-aware reporting**: report auto-fill, the Clinical Evaluation panel,
   and agent planning summaries now report observed metrics first. They require
   retrieved `clinical_kb` evidence or explicit `plan_config` before labeling
@@ -1682,6 +1686,7 @@ Audit reports:
 - [`docs/PRODUCT_READINESS_UI_MANUAL_TRAINING_AUDIT_2026-07-02.md`](docs/PRODUCT_READINESS_UI_MANUAL_TRAINING_AUDIT_2026-07-02.md)
 - [`docs/CLINICAL_KB_PROMPT_ALIGNMENT_AUDIT_2026-07-02.md`](docs/CLINICAL_KB_PROMPT_ALIGNMENT_AUDIT_2026-07-02.md)
 - [`docs/PRODUCT_REAUDIT_AND_SOURCE_AWARE_HARDENING_2026-07-02.md`](docs/PRODUCT_REAUDIT_AND_SOURCE_AWARE_HARDENING_2026-07-02.md)
+- [`docs/THIRD_PARTY_REAUDIT_2026-07-02.md`](docs/THIRD_PARTY_REAUDIT_2026-07-02.md)
 
 ---
 ## 📊 Research & Citations
