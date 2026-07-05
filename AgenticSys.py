@@ -3376,6 +3376,27 @@ print(json.dumps(result))
         def L(zh, en):
             return zh if is_zh else en
 
+        try:
+            from tool_factory.report_context import (
+                build_report_context,
+                format_prescription_rationale_markdown,
+                format_tumor_assessment_markdown,
+            )
+
+            def _report_lookup(key, default=None):
+                if key == "plan_config":
+                    return self.memory.retrieve(key) or getattr(self, "config", {}) or default
+                return self.memory.retrieve(key, default)
+
+            report_context = build_report_context(_report_lookup)
+            tumor_assessment_md = format_tumor_assessment_markdown(report_context, lang)
+            prescription_rationale_md = format_prescription_rationale_markdown(report_context, lang)
+        except Exception as exc:
+            logger.warning(f"Failed to build report context: {exc}")
+            report_context = {}
+            tumor_assessment_md = ""
+            prescription_rationale_md = ""
+
         def _ctv_source_labels(source):
             source = str(source or "").strip()
             if source in {"manual_label", "label_path", "user_label"}:
@@ -3446,6 +3467,9 @@ print(json.dumps(result))
         lines.append(f"- **{L('肿瘤体积', 'Tumor volume')}**: {ctv_vol_str} ({ctv_voxels:,} {L('体素', 'voxels')})")
         lines.append(f"- **{L('解剖位置', 'Anatomical location')}**: {ctv_location_label}")
         lines.append(f"- **{L('分割算法', 'Segmentation algorithm')}**: {ctv_algorithm_label}")
+        if tumor_assessment_md:
+            lines.append("")
+            lines.append(tumor_assessment_md)
         lines.append("")
 
         # Section 3: OAR Segmentation
@@ -3482,6 +3506,9 @@ print(json.dumps(result))
         lines.append(f"- **{L('适形指数 CI', 'Conformity Index (CI)')}**: {ci:.3f}")
         lines.append(f"- **{L('均匀指数 HI', 'Homogeneity Index (HI)')}**: {hi:.3f}")
         lines.append(f"- **{L('规划评分', 'Plan Score')}**: {ps:.0f}/100")
+        if prescription_rationale_md:
+            lines.append("")
+            lines.append(prescription_rationale_md)
         lines.append("")
 
         # Section 6: OAR Dose Analysis (table)

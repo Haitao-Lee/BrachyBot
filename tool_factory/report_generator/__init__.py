@@ -54,6 +54,12 @@ Capabilities:
         organ = plan.get("organ", "Unknown")
         cancer_type = plan.get("cancer_type", "Unknown")
 
+        def fmt_float(value, digits=2, default="N/A"):
+            try:
+                return f"{float(value):.{digits}f}"
+            except (TypeError, ValueError):
+                return default
+
         lines = [
             f"# Brachytherapy Treatment Plan Report",
             f"**Generated:** {now}",
@@ -78,8 +84,27 @@ Capabilities:
             f"- **Voxel Size:** {plan.get('voxel_size', 'N/A')}",
             "",
             "## Segmentation",
-            f"- **CTV Volume:** {plan.get('ctv_volume_cc', 'N/A'):.2f} cc",
+            f"- **CTV Volume:** {fmt_float(plan.get('ctv_volume_cc'))} cc",
             f"- **OAR Organs Segmented:** {plan.get('oar_count', 'N/A')}",
+        ]
+
+        tumor_assessment = plan.get("tumor_imaging_assessment") or plan.get("tumor_assessment")
+        if isinstance(tumor_assessment, dict) and tumor_assessment.get("available"):
+            dims = tumor_assessment.get("bbox_dimensions_cm_xyz", [0, 0, 0])
+            center = tumor_assessment.get("centroid_world_cm_xyz", [0, 0, 0])
+            lines += [
+                "",
+                "## Tumor Imaging Assessment",
+                f"- **Volume:** {fmt_float(tumor_assessment.get('volume_cm3'))} cm³",
+                f"- **Maximum Diameter:** {fmt_float(tumor_assessment.get('max_diameter_cm'))} cm",
+                f"- **Bounding Dimensions (X/Y/Z):** {fmt_float(dims[0])} / {fmt_float(dims[1])} / {fmt_float(dims[2])} cm",
+                f"- **Centroid World Coordinates:** ({fmt_float(center[0])}, {fmt_float(center[1])}, {fmt_float(center[2])}) cm",
+                f"- **Shape Regularity:** {tumor_assessment.get('edge_regularity', 'N/A')}",
+                f"- **Malignancy Grade:** {tumor_assessment.get('malignancy_assessment', 'Requires pathology/staging confirmation')}",
+                f"- **Boundary:** {tumor_assessment.get('interpretation_boundary', 'Geometry-only planning descriptor')}",
+            ]
+
+        lines += [
             "",
             "## Seed Plan",
             f"- **Total Seeds:** {plan.get('seed_count', 'N/A')}",
@@ -110,6 +135,22 @@ Capabilities:
         lines.append(f"| V200 | {v200:.1%} | ≤35% | {status(v200, 0.35, '<=')} |")
         lines.append(f"| D90 | {d90:.1f} Gy | ≥{rx_gy:.0f} Gy | {status(d90, rx_gy)} |")
         lines.append(f"| Plan Score | {metrics.get('plan_score', 0):.1f}/100 | ≥80 | {status(metrics.get('plan_score', 0), 80)} |")
+
+        prescription_rationale = plan.get("prescription_rationale")
+        if isinstance(prescription_rationale, dict):
+            sources = prescription_rationale.get("sources", []) or []
+            lines += [
+                "",
+                "## Prescription Dose Rationale",
+                f"- **Current Prescription:** {fmt_float(prescription_rationale.get('prescription_gy', rx_gy), 1)} Gy",
+                f"- **Rationale:** {prescription_rationale.get('rationale', 'No case-specific rationale provided')}",
+                f"- **clinical_kb Site:** {prescription_rationale.get('site', 'unknown')}",
+            ]
+            if prescription_rationale.get("target_criteria"):
+                lines.append(f"- **Target Criteria:** {prescription_rationale.get('target_criteria')}")
+            for i, url in enumerate(sources[:5], start=1):
+                lines.append(f"- **Source {i}:** {url}")
+            lines.append(f"- **Boundary:** {prescription_rationale.get('clinical_boundary', 'Clinician must confirm prescription appropriateness')}")
 
         oar_violations = metrics.get("oar_violations", [])
         if oar_violations:
