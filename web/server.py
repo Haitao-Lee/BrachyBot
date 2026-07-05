@@ -1431,6 +1431,27 @@ def create_app(config: Optional[Dict] = None):
         """Generate source-aware report interpretation without local clinical verdicts."""
         dose = (agent.memory.retrieve("dose_metrics") or {}) if agent else {}
         prescribed = dose.get("prescribed_dose", 120.0)
+        try:
+            from tool_factory.report_context import (
+                build_report_context,
+                format_prescription_rationale_markdown,
+                format_tumor_assessment_markdown,
+            )
+
+            def _report_lookup(key, default=None):
+                if not agent:
+                    return default
+                if key == "plan_config":
+                    return agent.memory.retrieve(key) or getattr(agent, "config", {}) or default
+                return agent.memory.retrieve(key, default)
+
+            report_context = build_report_context(_report_lookup)
+            tumor_assessment_md = format_tumor_assessment_markdown(report_context, language)
+            prescription_rationale_md = format_prescription_rationale_markdown(report_context, language)
+        except Exception as exc:
+            logger.warning(f"Report context build failed: {exc}")
+            tumor_assessment_md = ""
+            prescription_rationale_md = ""
         metrics = [
             ("CTV V100", (dose.get("v100") * 100) if dose.get("v100") is not None else None, "%", 1),
             ("D90", dose.get("d90"), " Gy", 2),
@@ -1463,6 +1484,11 @@ def create_app(config: Optional[Dict] = None):
                 lines.append(f"- Internal plan score: {float(score):.0f}/100. Use as an advisory QA ranking signal, not clinical approval.")
             except (TypeError, ValueError):
                 lines.append(f"- Internal plan score: {score}. Use as an advisory QA ranking signal, not clinical approval.")
+
+        if tumor_assessment_md:
+            lines.extend(["", tumor_assessment_md])
+        if prescription_rationale_md:
+            lines.extend(["", prescription_rationale_md])
 
         lines.extend([
             "",
@@ -1660,6 +1686,24 @@ def create_app(config: Optional[Dict] = None):
                         provenance["planning"].append("case.ctvVolumeMm3")
                     except Exception:
                         pass
+
+                try:
+                    from tool_factory.report_context import build_report_context
+
+                    def _report_lookup(key, default=None):
+                        if key == "plan_config":
+                            return agent.memory.retrieve(key) or getattr(agent, "config", {}) or default
+                        return agent.memory.retrieve(key, default)
+
+                    report_context = build_report_context(_report_lookup)
+                    patch["case.tumorImagingAssessment"] = report_context.get("tumor_imaging", {})
+                    patch["planning.prescriptionRationale"] = report_context.get("prescription_rationale", {})
+                    provenance["derived"] += [
+                        "case.tumorImagingAssessment",
+                        "planning.prescriptionRationale",
+                    ]
+                except Exception as e:
+                    logger.warning(f"report context patch failed: {e}")
 
                 # OAR list
                 oar = agent.memory.retrieve("oar_metrics") or {}
@@ -4679,8 +4723,10 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": "Agent not available"}), 500
 
         data = request.get_json() or {}
-        output_path = data.get("output_path", "./report.json")
+        output_path = data.get("output_path", "output/report.json")
         output_format = data.get("format", "json")
+        if not data.get("output_path") and output_format == "html":
+            output_path = "output/report.html"
 
         safe_output_path = _resolve_output_path(output_path)
         if safe_output_path is None:
@@ -4689,34 +4735,65 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": "Invalid format. Use 'json', 'html', or 'pdf'"}), 400
 
         try:
-            metrics = agent.memory.retrieve("metrics", {})
-            plan_score = metrics.get("plan_score", 0)
-            total_seeds = metrics.get("total_seeds", 0)
-            total_trajectories = metrics.get("num_trajectories", 0)
+            if output_format == "pdf":
+                return jsonify({
+                    "error": "Server-side PDF report export is not available. Use the browser Report panel PDF export.",
+                }), 501
 
-            from tool_factory.output.report_generator import ReportGeneratorTool
-            generator = ReportGeneratorTool()
-
-            result = generator.execute(
-                patient_id=agent.memory.patient_data.get("id", "UNKNOWN"),
-                plan_name="BrachyPlan",
-                output_path=safe_output_path,
-                output_format=output_format,
-                ctv_metrics={"voxels": int(metrics.get("ctv_voxel_count", 0))},
-                dose_metrics=metrics,
-                plan_score=plan_score,
-                total_seeds=total_seeds,
-                total_trajectories=total_trajectories,
+            metrics = agent.memory.retrieve("dose_metrics") or agent.memory.retrieve("metrics") or {}
+            from tool_factory.report_context import (
+                build_report_context,
+                format_prescription_rationale_markdown,
+                format_tumor_assessment_markdown,
             )
 
-            if result.success:
-                return jsonify({
-                    "success": True,
-                    "path": result.data,
-                    "message": result.message,
-                })
-            else:
-                return jsonify({"error": result.error}), 500
+            def _report_lookup(key, default=None):
+                if key == "plan_config":
+                    return agent.memory.retrieve(key) or getattr(agent, "config", {}) or default
+                return agent.memory.retrieve(key, default)
+
+            report_context = build_report_context(_report_lookup)
+            lang = data.get("language", agent.memory.user_lang if hasattr(agent.memory, "user_lang") else "zh")
+            tumor_md = format_tumor_assessment_markdown(report_context, lang)
+            dose_md = format_prescription_rationale_markdown(report_context, lang)
+
+            payload = {
+                "generated_at": datetime.now().isoformat(timespec="seconds"),
+                "patient_id": getattr(agent.memory, "patient_data", {}).get("id", "UNKNOWN"),
+                "plan_name": "BrachyPlan",
+                "ct_path": agent.memory.retrieve("ct_path"),
+                "tumor_type": agent.memory.retrieve("tumor_type_used", ""),
+                "tumor_imaging_assessment": report_context.get("tumor_imaging", {}),
+                "prescription_rationale": report_context.get("prescription_rationale", {}),
+                "dose_metrics": metrics,
+                "total_seeds": agent.memory.retrieve("total_seeds", 0),
+                "total_trajectories": agent.memory.retrieve("num_trajectories", 0),
+                "narrative_markdown": "\n\n".join([tumor_md, dose_md]),
+            }
+
+            os.makedirs(os.path.dirname(safe_output_path), exist_ok=True)
+            if output_format == "json":
+                with open(safe_output_path, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, indent=2, ensure_ascii=False, default=str)
+            elif output_format == "html":
+                import html
+                body = html.escape(payload["narrative_markdown"]).replace("\n", "<br>\n")
+                with open(safe_output_path, "w", encoding="utf-8") as f:
+                    f.write(
+                        "<!doctype html><html><head><meta charset='utf-8'>"
+                        "<title>BrachyPlan Report</title></head><body>"
+                        "<h1>BrachyPlan Report</h1>"
+                        f"<pre>{html.escape(json.dumps(payload, indent=2, ensure_ascii=False, default=str))}</pre>"
+                        f"<hr><div>{body}</div>"
+                        "</body></html>"
+                    )
+
+            return jsonify({
+                "success": True,
+                "path": safe_output_path,
+                "report_path": safe_output_path,
+                "message": f"Report generated: {safe_output_path}",
+            })
 
         except Exception as e:
             logger.error(f"Report generation failed: {e}")

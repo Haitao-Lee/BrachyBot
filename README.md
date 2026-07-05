@@ -1691,6 +1691,12 @@ agentic planner and a standalone planning workstation:
   and agent planning summaries now report observed metrics first. They require
   retrieved `clinical_kb` evidence or explicit `plan_config` before labeling
   target coverage or OAR dose as pass/fail.
+- **Tumor and prescription context in reports**: final planning replies,
+  report auto-fill, and report export include deterministic CTV geometry
+  summaries (volume, centimeter-scale location, bounding dimensions, and shape
+  regularity) plus prescription-dose rationale. Pathology or malignancy grade
+  is reported only when explicitly supplied by `plan_config`; otherwise the
+  report states that CT/CTV geometry cannot determine malignancy.
 - **Safe tool creation boundary**: dynamic tool names are normalized and
   constrained to the dynamic tool directory, preventing path traversal while
   preserving BrachyBot's ability to create code-based tools when that policy is
@@ -1702,6 +1708,7 @@ Audit reports:
 - [`docs/CLINICAL_KB_PROMPT_ALIGNMENT_AUDIT_2026-07-02.md`](docs/CLINICAL_KB_PROMPT_ALIGNMENT_AUDIT_2026-07-02.md)
 - [`docs/PRODUCT_REAUDIT_AND_SOURCE_AWARE_HARDENING_2026-07-02.md`](docs/PRODUCT_REAUDIT_AND_SOURCE_AWARE_HARDENING_2026-07-02.md)
 - [`docs/THIRD_PARTY_REAUDIT_2026-07-02.md`](docs/THIRD_PARTY_REAUDIT_2026-07-02.md)
+- [`docs/REPORT_CONTEXT_ENHANCEMENT_2026-07-05.md`](docs/REPORT_CONTEXT_ENHANCEMENT_2026-07-05.md)
 
 ---
 ## 📊 Research & Citations
