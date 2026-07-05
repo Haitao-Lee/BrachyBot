@@ -144,22 +144,41 @@ class CTVSegmentationTool(BaseTool):
         image = kwargs.get("image")
         image_path = kwargs.get("image_path")
         label_path = kwargs.get("label_path")
-        tumor_type = kwargs.get("tumor_type")
+        tumor_type = (kwargs.get("tumor_type") or "").strip()
         target_value = kwargs.get("target_value", 1)
         fast_mode = kwargs.get("fast_mode", False)
         allow_empty = bool(kwargs.get("allow_empty", False))
 
         result = None
+        from_label_path = False
         if label_path and os.path.exists(label_path):
             label_img = sitk.ReadImage(label_path)
             ctv_array = sitk.GetArrayFromImage(label_img)
             ctv_mask = label_img
+            from_label_path = True
         else:
             if image is None and image_path is not None:
                 image = sitk.ReadImage(image_path)
             elif image is None:
                 return ToolResult(success=False, error="Either 'image' or 'image_path' must be provided")
 
+            if not tumor_type:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "CTV tumor site is required before automatic segmentation. "
+                        "Ask the user to specify the tumor site, or provide label_path "
+                        "for an existing/manual CTV mask."
+                    ),
+                    metadata={
+                        "clarification_required": True,
+                        "clarification_question": (
+                            "Which tumor site should BrachyBot segment as CTV? "
+                            "Examples: pancreas, liver, kidney, lung, colon, prostate."
+                        ),
+                        "model_catalog": catalog_with_local_status(),
+                    },
+                )
             if tumor_type:
                 if tumor_type not in TOOL_REGISTRY:
                     return ToolResult(
@@ -175,9 +194,6 @@ class CTVSegmentationTool(BaseTool):
                         },
                     )
                 tool = TOOL_REGISTRY[tumor_type]()
-            else:
-                # Default to nnUNet pancreatic tumor tool
-                tool = NNUNetPancreaticTumorTool()
 
             tool_kwargs = {"image": image, "target_value": target_value, "fast_mode": fast_mode}
             if isinstance(tool, NNUNetPancreaticTumorTool):
@@ -228,7 +244,7 @@ class CTVSegmentationTool(BaseTool):
             # Full multi-label array for data tree display (if available from nnUNet)
             "full_label_array": res_meta.get("full_label_array"),
             "ctv_voxel_count": voxel_count,
-            "tumor_type_used": tumor_type or "auto",
+            "tumor_type_used": tumor_type or ("manual_label" if from_label_path else "auto"),
             "label_counts": res_meta.get("label_counts", {}),
             "label_map": label_map,
             "label_stats": res_meta.get("label_stats", {}),

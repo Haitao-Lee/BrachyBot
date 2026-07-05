@@ -658,7 +658,7 @@ VoCo segmentation model weights are not included in the repository due to size (
 1. Download weights from [Large-Scale-Medical](https://github.com/Luffy03/Large-Scale-Medical)
 2. Place them in the corresponding `VoCo/<dataset>/` directories
 
-Without verified CTV weights or a user-provided `label_path`, CTV segmentation now fails closed. BrachyBot no longer treats TotalSegmentator organ masks or HU-threshold fallbacks as tumor CTV.
+Without a specified tumor site plus verified CTV weights, or a user-provided `label_path`, CTV segmentation now fails closed. BrachyBot no longer treats TotalSegmentator organ masks or HU-threshold fallbacks as tumor CTV.
 
 CTV model discovery is exposed through:
 
