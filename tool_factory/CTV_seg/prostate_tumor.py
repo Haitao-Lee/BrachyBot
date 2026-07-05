@@ -1,7 +1,8 @@
 """
-Prostate Tumor Segmentation Tool
-================================
-Segments prostate tumors from CT/MRI images using specialized models.
+Prostate target segmentation tool.
+
+This tool may return a whole-prostate target volume for prostate brachytherapy
+workflows. It is not a lesion-level prostate tumor segmentation model.
 """
 
 import sys
@@ -24,10 +25,10 @@ logger = logging.getLogger(__name__)
 
 class ProstateTumorSegmentationTool(BaseTool):
     """
-    Tool for segmenting prostate tumors from medical images.
+    Tool for segmenting a whole-prostate target from medical images.
 
-    Uses TotalSegmentator's prostate task for segmentation when available.
-    Falls back to intensity-based thresholding if specialized model is not available.
+    Uses TotalSegmentator's prostate task when available. The resulting mask is
+    a gland/target mask, not an intraprostatic lesion segmentation.
     """
 
     @property
@@ -37,9 +38,9 @@ class ProstateTumorSegmentationTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Segment prostate tumors from CT/MRI images. "
-            "Uses TotalSegmentator prostate task when available. "
-            "Returns a binary mask where target_value indicates tumor tissue."
+            "Segment the whole-prostate target from CT/MRI images when a "
+            "prostate-gland CTV is clinically intended. This is not a "
+            "lesion-level prostate tumor segmentation model."
         )
 
     @property
@@ -57,7 +58,7 @@ class ProstateTumorSegmentationTool(BaseTool):
                 },
                 "target_value": {
                     "type": "number",
-                    "description": "Value to assign to tumor voxels (default: 1)",
+                    "description": "Value to assign to target voxels (default: 1)",
                     "default": 1,
                 },
                 "fast_mode": {
@@ -76,19 +77,19 @@ class ProstateTumorSegmentationTool(BaseTool):
             "properties": {
                 "ctv_mask": {
                     "type": "object",
-                    "description": "SimpleITK Image of the tumor binary mask",
+                    "description": "SimpleITK Image of the prostate target mask",
                 },
                 "ctv_array": {
                     "type": "object",
-                    "description": "NumPy array of the tumor mask",
+                    "description": "NumPy array of the prostate target mask",
                 },
                 "ctv_volume_mm3": {
                     "type": "number",
-                    "description": "Total tumor volume in cubic millimeters",
+                    "description": "Total target volume in cubic millimeters",
                 },
                 "ctv_voxel_count": {
                     "type": "integer",
-                    "description": "Number of voxels in the tumor mask",
+                    "description": "Number of voxels in the prostate target mask",
                 },
             },
         }
@@ -108,19 +109,38 @@ class ProstateTumorSegmentationTool(BaseTool):
             ctv_mask, ctv_array = self._totalsegmentator_segmentation(image, target_value, fast_mode)
             method = "totalsegmentator"
         except Exception as e:
-            logger.warning(f"TotalSegmentator failed: {e}, falling back to threshold")
-            ctv_mask, ctv_array = self._threshold_segmentation(image, target_value)
-            method = "threshold_fallback"
+            logger.warning(f"TotalSegmentator prostate target segmentation failed: {e}")
+            return ToolResult(
+                success=False,
+                error=(
+                    "Prostate target segmentation requires a working TotalSegmentator prostate "
+                    f"task or a user-provided label_path. Cause: {e}"
+                ),
+                metadata={
+                    "target_semantics": "whole_prostate_target_not_lesion",
+                    "site": "prostate",
+                },
+            )
 
         spacing = image.GetSpacing()
         voxel_volume_mm3 = float(spacing[0] * spacing[1] * spacing[2])
         ctv_voxel_count = int(np.sum(ctv_array == target_value))
         ctv_volume_mm3 = ctv_voxel_count * voxel_volume_mm3
+        if ctv_voxel_count <= 0:
+            return ToolResult(
+                success=False,
+                error="Prostate target segmentation returned an empty mask.",
+                metadata={
+                    "target_semantics": "whole_prostate_target_not_lesion",
+                    "site": "prostate",
+                    "method": method,
+                },
+            )
 
         return ToolResult(
             success=True,
             data=ctv_mask,
-            message=f"Prostate tumor segmentation completed using {method}. Found {ctv_voxel_count} tumor voxels ({ctv_volume_mm3:.1f} mm³).",
+            message=f"Prostate target segmentation completed using {method}. Found {ctv_voxel_count} target voxels ({ctv_volume_mm3:.1f} mm3).",
             metadata={
                 "ctv_mask": ctv_mask,
                 "ctv_array": ctv_array,
@@ -128,15 +148,9 @@ class ProstateTumorSegmentationTool(BaseTool):
                 "ctv_voxel_count": ctv_voxel_count,
                 "method": method,
                 "target_value": target_value,
+                "target_semantics": "whole_prostate_target_not_lesion",
             },
         )
-
-    def _threshold_segmentation(self, image: sitk.Image, target_value: float):
-        array = sitk.GetArrayFromImage(image)
-        ctv_array = np.zeros_like(array, dtype=np.float64)  # Empty mask: nnU-Net model not available
-        ctv_mask = sitk.GetImageFromArray(ctv_array)
-        ctv_mask.CopyInformation(image)
-        return ctv_mask, ctv_array
 
     def _totalsegmentator_segmentation(self, image: sitk.Image, target_value: float, fast_mode: bool):
         ts_exe = shutil.which("TotalSegmentator")
