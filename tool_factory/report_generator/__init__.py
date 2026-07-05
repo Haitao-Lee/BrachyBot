@@ -100,7 +100,6 @@ Capabilities:
                 f"- **Bounding Dimensions (X/Y/Z):** {fmt_float(dims[0])} / {fmt_float(dims[1])} / {fmt_float(dims[2])} cm",
                 f"- **Centroid World Coordinates:** ({fmt_float(center[0])}, {fmt_float(center[1])}, {fmt_float(center[2])}) cm",
                 f"- **Shape Regularity:** {tumor_assessment.get('edge_regularity', 'N/A')}",
-                f"- **Malignancy Grade:** {tumor_assessment.get('malignancy_assessment', 'Requires pathology/staging confirmation')}",
                 f"- **Boundary:** {tumor_assessment.get('interpretation_boundary', 'Geometry-only planning descriptor')}",
             ]
 
