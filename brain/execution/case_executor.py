@@ -107,10 +107,7 @@ class CaseExecutor:
                 step_id = int(step["id"])
                 if step_id in executed:
                     continue
-                deps = step.get("input_type", [])
-                if isinstance(deps, int):
-                    deps = [deps]
-                deps = [d for d in deps if d != 0]
+                deps = self._step_input_refs(step, include_zero=False)
                 if all(d in executed for d in deps):
                     current_phase.append(step)
 
@@ -122,6 +119,29 @@ class CaseExecutor:
                 executed.add(int(step["id"]))
 
         return phases
+
+    @staticmethod
+    def _step_input_refs(step: Dict, include_zero: bool = True) -> List[int]:
+        """Normalize MedAgent-Pro input_type and generic dependencies fields."""
+        refs: List[int] = []
+        for key in ("input_type", "dependencies"):
+            raw_refs = step.get(key, [])
+            if raw_refs is None:
+                continue
+            if isinstance(raw_refs, int):
+                raw_refs = [raw_refs]
+            elif not isinstance(raw_refs, (list, tuple, set)):
+                continue
+            for ref in raw_refs:
+                try:
+                    ref_int = int(ref)
+                except (TypeError, ValueError):
+                    continue
+                if ref_int == 0 and not include_zero:
+                    continue
+                if ref_int not in refs:
+                    refs.append(ref_int)
+        return refs
 
     def execute(self, plan: List[Dict], case_input: Any = None,
                 output_dir: str = "./output", plan_id: str = "plan") -> CaseExecutionResult:
@@ -163,9 +183,7 @@ class CaseExecutor:
 
                 action = step_dict.get("action", "")
                 action_type = step_dict.get("action_type", "quantitative")
-                input_type = step_dict.get("input_type", [])
-                if isinstance(input_type, int):
-                    input_type = [input_type]
+                input_type = self._step_input_refs(step_dict, include_zero=True)
                 output_type = step_dict.get("output_type", "intermediate result")
                 output_path = step_dict.get("output_path", "result.json")
 

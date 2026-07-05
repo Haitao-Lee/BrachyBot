@@ -67,6 +67,8 @@ _MESH_CACHE_LOCK = threading.Lock()
 _MESH_CACHE: Dict[tuple, Dict[str, Any]] = {}
 _MESH_CACHE_ORDER: list = []
 _MESH_CACHE_MAX_ITEMS = int(os.environ.get("BRACHYBOT_MESH_CACHE_MAX_ITEMS", "96"))
+DOSE_MODEL_SCALE_GY = 120.0
+DOSE_MODEL_UNITS = "normalized_model_output"
 
 
 class TaskManager:
@@ -201,6 +203,14 @@ def _extract_metric_value(metrics: Dict[str, Any], *names: str) -> Optional[floa
     return None
 
 
+def _metric_as_fraction(value: Optional[float]) -> Optional[float]:
+    """Accept either a 0-1 fraction or a 0-100 percentage metric."""
+    if value is None:
+        return None
+    value = float(value)
+    return value / 100.0 if value > 1.0 else value
+
+
 def _latest_plan_snapshot(agent) -> Dict[str, Any]:
     if agent is None or not hasattr(agent, "memory"):
         return {}
@@ -228,17 +238,17 @@ def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any
     issues: list = []
     strengths: list = []
 
-    rx_gy = 120.0
+    rx_gy = DOSE_MODEL_SCALE_GY
     prescribed = _extract_metric_value(metrics, "prescribed_dose", "prescription")
     if prescribed and prescribed < 10:
-        rx_gy = prescribed * 120.0
+        rx_gy = prescribed * DOSE_MODEL_SCALE_GY
     elif prescribed:
         rx_gy = prescribed
 
-    v100 = _extract_metric_value(metrics, "v100")
+    v100 = _metric_as_fraction(_extract_metric_value(metrics, "v100"))
     d90 = _extract_metric_value(metrics, "d90")
-    v150 = _extract_metric_value(metrics, "v150")
-    v200 = _extract_metric_value(metrics, "v200")
+    v150 = _metric_as_fraction(_extract_metric_value(metrics, "v150"))
+    v200 = _metric_as_fraction(_extract_metric_value(metrics, "v200"))
     plan_score = _extract_metric_value(metrics, "plan_score", "score")
 
     if v100 is not None:
@@ -404,7 +414,7 @@ def _training_feedback_for_event(agent, session_id: Optional[str], event: Dict[s
     label = str(event.get("label", ""))
     snapshot = _latest_plan_snapshot(agent)
     metrics = snapshot.get("metrics", {}) or {}
-    v100 = _extract_metric_value(metrics, "v100")
+    v100 = _metric_as_fraction(_extract_metric_value(metrics, "v100"))
     d90 = _extract_metric_value(metrics, "d90")
 
     if etype.startswith("manual.seed"):
@@ -430,8 +440,8 @@ def _training_screenshot_for_event(agent, session_id: Optional[str], event: Dict
     label = str(event.get("label", ""))
     snapshot = _latest_plan_snapshot(agent)
     metrics = snapshot.get("metrics", {}) or {}
-    v100 = _extract_metric_value(metrics, "v100")
-    v200 = _extract_metric_value(metrics, "v200")
+    v100 = _metric_as_fraction(_extract_metric_value(metrics, "v100"))
+    v200 = _metric_as_fraction(_extract_metric_value(metrics, "v200"))
 
     if etype == "manual.dose":
         if (v100 is not None and v100 < 0.90) or (v200 is not None and v200 > 0.30):
@@ -642,7 +652,7 @@ def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]
     organ_names = agent.memory.retrieve("organ_names") or {}
     spacing = np.asarray(ct_image.GetSpacing(), dtype=np.float32)
     voxel_vol_cm3 = float(np.prod(spacing) / 1000.0)
-    dose_gy = dose_original * 120.0
+    dose_gy = dose_original * DOSE_MODEL_SCALE_GY
 
     metrics: Dict[str, Any] = {
         "prescribed_dose": 1.0,
@@ -673,16 +683,16 @@ def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]
                 "d90": dose_at_pct(90),
                 "d50": dose_at_pct(50),
                 "d2": dose_at_pct(2),
-                "v100": vol_at_dose(120.0),
-                "v150": vol_at_dose(180.0),
-                "v200": vol_at_dose(240.0),
-                "v50": vol_at_dose(60.0),
+                "v100": vol_at_dose(DOSE_MODEL_SCALE_GY),
+                "v150": vol_at_dose(DOSE_MODEL_SCALE_GY * 1.5),
+                "v200": vol_at_dose(DOSE_MODEL_SCALE_GY * 2.0),
+                "v50": vol_at_dose(DOSE_MODEL_SCALE_GY * 0.5),
                 "ctv_voxels": int(np.sum(ctv_mask > 0)),
                 "ctv_volume_cm3": float(np.sum(ctv_mask > 0) * voxel_vol_cm3),
             })
             coverage = metrics["v100"] * 100.0
             hotspot_penalty = max(0.0, metrics["v200"] * 100.0 - 30.0) * 0.7
-            d90_penalty = max(0.0, 120.0 - metrics["d90"]) * 0.25
+            d90_penalty = max(0.0, DOSE_MODEL_SCALE_GY - metrics["d90"]) * 0.25
             metrics["plan_score"] = float(max(0.0, min(100.0, coverage - hotspot_penalty - d90_penalty)))
 
             dose_max_val = max(600.0, float(np.max(target_doses)) * 1.1, 360.0)
@@ -717,8 +727,8 @@ def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]
                 "d0_1cc": dose_at_xcc(0.1),
                 "d1cc": dose_at_xcc(1.0),
                 "d2cc": dose_at_xcc(2.0),
-                "v100": float(np.sum(od >= 120.0) / len(od) * 100.0),
-                "v150": float(np.sum(od >= 180.0) / len(od) * 100.0),
+                "v100": float(np.sum(od >= DOSE_MODEL_SCALE_GY) / len(od) * 100.0),
+                "v150": float(np.sum(od >= DOSE_MODEL_SCALE_GY * 1.5) / len(od) * 100.0),
                 "volume_cm3": float(np.sum(mask) * voxel_vol_cm3),
                 "volume_voxels": int(np.sum(mask)),
             }
@@ -742,6 +752,8 @@ def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]
     agent.memory.store("num_trajectories", len(grouped))
     agent.memory.store("dose_distribution", dose)
     agent.memory.store("dose_distribution_gy", dose_original)
+    agent.memory.store("dose_units", DOSE_MODEL_UNITS)
+    agent.memory.store("dose_scale_gy", DOSE_MODEL_SCALE_GY)
     agent.memory.store("dose_metrics", metrics)
     agent.memory.store("metrics", metrics)
     agent.memory.store("dvh_data", dvh_data)
@@ -754,6 +766,10 @@ def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]
         "num_trajectories": len(grouped),
         "metrics": metrics,
         "dose_range": [float(dose_original.min()), float(dose_original.max())],
+        "dose_range_normalized": [float(dose_original.min()), float(dose_original.max())],
+        "dose_range_gy": [float(dose_gy.min()), float(dose_gy.max())],
+        "dose_units": DOSE_MODEL_UNITS,
+        "dose_scale_gy": DOSE_MODEL_SCALE_GY,
     }
 
 
@@ -1430,7 +1446,7 @@ def create_app(config: Optional[Dict] = None):
     def _build_report_interpretation(agent, language="zh"):
         """Generate source-aware report interpretation without local clinical verdicts."""
         dose = (agent.memory.retrieve("dose_metrics") or {}) if agent else {}
-        prescribed = dose.get("prescribed_dose", 120.0)
+        prescribed = dose.get("prescribed_dose", DOSE_MODEL_SCALE_GY)
         try:
             from tool_factory.report_context import (
                 build_report_context,
@@ -3161,6 +3177,8 @@ def create_app(config: Optional[Dict] = None):
                 "dose_shape": dose_shape,
                 "dose_min": dose_min,
                 "dose_max": dose_max,
+                "dose_units": DOSE_MODEL_UNITS,
+                "dose_scale_gy": DOSE_MODEL_SCALE_GY,
             })
         except Exception as e:
             logger.error(f"Get planning results failed: {e}")
@@ -3204,6 +3222,8 @@ def create_app(config: Optional[Dict] = None):
                 result["has_dose"] = dose_distribution is not None
                 if dose_distribution is not None:
                     result["dose_range"] = [float(np.min(dose_distribution)), float(np.max(dose_distribution))]
+                    result["dose_units"] = DOSE_MODEL_UNITS
+                    result["dose_scale_gy"] = DOSE_MODEL_SCALE_GY
 
             if step in ("dvh", "dose_eval", "metrics", "all"):
                 result["metrics"] = dose_metrics
@@ -3463,13 +3483,13 @@ def create_app(config: Optional[Dict] = None):
             # Include the prescription dose so the frontend can compute
             # absolute Gy from relative multipliers.
             #
-            # DOSE_SCALE (120.0): the myDoseNet dose prediction model was
+            # DOSE_MODEL_SCALE_GY: the myDoseNet dose prediction model was
             # trained with labels where output 1.0 = 120 Gy.  All internal
-            # dose values are in normalized units; multiply by 120 to get Gy.
+            # dose values are normalized; multiply by this constant to get Gy.
             # This constant is shared with planning_pipeline.py and
             # AgenticSys.py — keep them in sync if the model changes.
             _ile = config.get("in_lowest_energy", 1.0)
-            display_3d["_prescriptionGy"] = float(_ile) * 120.0
+            display_3d["_prescriptionGy"] = float(_ile) * DOSE_MODEL_SCALE_GY
 
             return jsonify({
                 "success": True,
@@ -3491,8 +3511,8 @@ def create_app(config: Optional[Dict] = None):
     def api_planning_dose_isosurface():
         """Generate dose isosurface mesh for 3D visualization.
 
-        Threshold is in the SAME UNITS as the dose distribution (normalized).
-        The frontend should display the label accordingly.
+        Threshold is received in Gy for user-facing labels. Stored dose arrays
+        remain normalized model output, so levels are converted before meshing.
         """
         import AgenticSys as _ag
         agent = getattr(_ag, '_global_agent', None) or get_agent()
@@ -3506,10 +3526,8 @@ def create_app(config: Optional[Dict] = None):
             import numpy as np
             from skimage import measure
 
-            # Prefer dose_distribution_gy (resampled to CT space, higher
-            # dose values matching DVH metrics) over dose_distribution
-            # (planning grid, lower range). The Gy version is needed for
-            # isosurfaces at clinical dose levels (50-300 Gy).
+            # Prefer the resampled original-CT dose field. The legacy key name
+            # includes "_gy", but values remain normalized model output.
             dose_array = agent.memory.retrieve("dose_distribution_gy")
             dose_in_original_ct_space = dose_array is not None
             if dose_array is None:
@@ -3561,15 +3579,15 @@ def create_app(config: Optional[Dict] = None):
             level = float(threshold)
             # The frontend sends threshold in Gy (e.g. 50, 100, 145).
             # The dose array is in NORMALIZED units (0-94 range), and
-            # dose_eval multiplies by DOSE_SCALE=120 to get Gy. So we
+            # dose_eval multiplies by DOSE_MODEL_SCALE_GY to get Gy. So we
             # must divide by 120 to match the dose array's range.
-            DOSE_SCALE = 120.0
-            level_normalized = level / DOSE_SCALE
+            level_normalized = level / DOSE_MODEL_SCALE_GY
             logger.info(f"[dose_isosurface] {level} Gy -> {level_normalized:.4f} normalized (data range: {data_min:.4f}-{data_max:.4f})")
             level = level_normalized
             if level <= data_min or level > data_max:
                 return jsonify({"success": True, "vertices": [], "faces": [], "vertex_count": 0,
-                                "face_count": 0, "threshold": threshold, "dose_range": [data_min, data_max]})
+                                "face_count": 0, "threshold": threshold, "dose_range": [data_min, data_max],
+                                "dose_units": DOSE_MODEL_UNITS, "dose_scale_gy": DOSE_MODEL_SCALE_GY})
 
             # Use resampled_ct spacing (z,y,x -> x,y,z for marching cubes)
             spacing_zyx = tuple(float(s) for s in spacing[::-1])
@@ -3596,6 +3614,8 @@ def create_app(config: Optional[Dict] = None):
                 "face_count": len(faces),
                 "threshold": threshold,
                 "dose_range": [data_min, data_max],
+                "dose_units": DOSE_MODEL_UNITS,
+                "dose_scale_gy": DOSE_MODEL_SCALE_GY,
             })
         except Exception as e:
             logger.error(f"Dose isosurface failed: {e}")
@@ -3619,7 +3639,8 @@ def create_app(config: Optional[Dict] = None):
             import numpy as np
             import SimpleITK as sitk
 
-            # Try dose_distribution_gy first (already resampled to original CT space)
+            # Try dose_distribution_gy first (already resampled to original CT space).
+            # Values are normalized model output, not physical Gy.
             dose_np = agent.memory.retrieve("dose_distribution_gy")
             if dose_np is not None:
                 dose_np = np.array(dose_np, dtype=np.float32)
@@ -3673,6 +3694,8 @@ def create_app(config: Optional[Dict] = None):
                 "ct_spacing": ct_spacing,
                 "ct_origin": ct_origin,
                 "ct_size": ct_size,
+                "dose_units": DOSE_MODEL_UNITS,
+                "dose_scale_gy": DOSE_MODEL_SCALE_GY,
                 "peak_voxel": {
                     "x": int(peak_x),
                     "y": int(peak_y),
@@ -3704,7 +3727,8 @@ def create_app(config: Optional[Dict] = None):
             import numpy as np
             import SimpleITK as sitk
 
-            # Try dose_distribution_gy first (already resampled)
+            # Try dose_distribution_gy first (already resampled). Values are
+            # normalized model output, not physical Gy.
             dose_np = agent.memory.retrieve("dose_distribution_gy")
             if dose_np is not None:
                 dose_np = np.array(dose_np, dtype=np.float32)
@@ -3732,14 +3756,14 @@ def create_app(config: Optional[Dict] = None):
                     dose_np = sitk.GetArrayFromImage(dose_original)
 
             # Extract 2D slice (dose_np is in z,y,x order)
-            if axis == "axial":
-                z = min(slice_index, dose_np.shape[0] - 1)
+            if axis in {"axial", "z"}:
+                z = max(0, min(int(slice_index), dose_np.shape[0] - 1))
                 slice_2d = dose_np[z].tolist()
-            elif axis == "coronal":
-                y = min(slice_index, dose_np.shape[1] - 1)
+            elif axis in {"coronal", "y"}:
+                y = max(0, min(int(slice_index), dose_np.shape[1] - 1))
                 slice_2d = dose_np[:, y, :].tolist()
             else:  # sagittal
-                x = min(slice_index, dose_np.shape[2] - 1)
+                x = max(0, min(int(slice_index), dose_np.shape[2] - 1))
                 slice_2d = dose_np[:, :, x].tolist()
 
             return jsonify({
@@ -3747,6 +3771,8 @@ def create_app(config: Optional[Dict] = None):
                 "slice": slice_2d,
                 "dose_min": float(dose_np.min()),
                 "dose_max": float(dose_np.max()),
+                "dose_units": DOSE_MODEL_UNITS,
+                "dose_scale_gy": DOSE_MODEL_SCALE_GY,
             })
         except Exception as e:
             logger.error(f"Dose overlay slice failed: {e}")
@@ -3789,8 +3815,8 @@ def create_app(config: Optional[Dict] = None):
             iso_params = config.get("iso_dose_params", {})
             # iso_dose_values are stored as RELATIVE multipliers of
             # the prescription dose (1.0×Rx, 1.5×Rx, ...). The dose
-            # distribution here is in absolute Gy, so we must multiply
-            # by prescriptionGy to get the contour level in Gy.
+            # distribution here is normalized model output. Contours use
+            # relative levels directly; only labels are converted to Gy.
             #
             # Without this conversion (2026-06-16 user bug), the
             # contour endpoint called find_contours(slice_2d, level=1.0)
@@ -3804,16 +3830,15 @@ def create_app(config: Optional[Dict] = None):
             iso_colors_raw = iso_params.get("iso_colors", [[0,1,0], [0.53,1,0], [1,1,0], [1,0.53,0], [1,0,0]])
             iso_opacities = iso_params.get("iso_opacities", [0.7, 0.6, 0.5, 0.4])  # Increased opacity for better visibility
             # Read prescription in Gy: prefer memory dose_metrics
-            # (already in normalized units * DOSE_SCALE) then fall
+            # (already in normalized units * DOSE_MODEL_SCALE_GY) then fall
             # back to reportForm, then default 120 Gy.
-            # DOSE_SCALE: myDoseNet model output 1.0 = 120 Gy.
-            DOSE_SCALE = 120.0
-            prescription_gy = 120.0  # I-125 pancreatic default
+            # DOSE_MODEL_SCALE_GY: myDoseNet model output 1.0 = 120 Gy.
+            prescription_gy = DOSE_MODEL_SCALE_GY  # I-125 pancreatic default
             try:
                 dm = agent.memory.retrieve("dose_metrics") or {}
                 pnorm = dm.get("prescribed_dose")
                 if isinstance(pnorm, (int, float)) and pnorm > 0:
-                    prescription_gy = float(pnorm) * DOSE_SCALE
+                    prescription_gy = float(pnorm) * DOSE_MODEL_SCALE_GY
             except Exception:
                 pass
             try:
@@ -3825,19 +3850,19 @@ def create_app(config: Optional[Dict] = None):
             # The dose array is in NORMALIZED units (model output, where 1.0 ≈ prescription dose).
             # iso_values_rel are relative multipliers (e.g. 1.0, 1.5, 2.0 × Rx).
             # Since the dose array is already in the same normalized space, use iso_values_rel directly.
-            # DOSE_SCALE=120 converts normalized→Gy for display labels only, NOT for contour levels.
+            # DOSE_MODEL_SCALE_GY converts normalized values to Gy for display labels only.
             iso_values_gy = [float(v) * prescription_gy for v in iso_values_rel]  # Gy for labels
             iso_values_contour = [float(v) for v in iso_values_rel]  # normalized for find_contours
 
             # Extract 2D slice from 3D dose array
             if axis == 'axial' or axis == 'z':
-                z = min(int(slice_index), dose_np.shape[0] - 1)
+                z = max(0, min(int(slice_index), dose_np.shape[0] - 1))
                 slice_2d = dose_np[z]
             elif axis == 'coronal' or axis == 'y':
-                y = min(int(slice_index), dose_np.shape[1] - 1)
+                y = max(0, min(int(slice_index), dose_np.shape[1] - 1))
                 slice_2d = dose_np[:, y, :]
             else:  # sagittal
-                x = min(int(slice_index), dose_np.shape[2] - 1)
+                x = max(0, min(int(slice_index), dose_np.shape[2] - 1))
                 slice_2d = dose_np[:, :, x]
 
             d_min = float(dose_np.min())
@@ -3856,6 +3881,8 @@ def create_app(config: Optional[Dict] = None):
                     "contours": [],
                     "dose_range": [d_min, d_max],
                     "slice_range": [s_min, s_max],
+                    "dose_units": DOSE_MODEL_UNITS,
+                    "dose_scale_gy": DOSE_MODEL_SCALE_GY,
                 })
 
             # Generate contour lines using marching squares
@@ -3893,6 +3920,8 @@ def create_app(config: Optional[Dict] = None):
                 "dose_range": [d_min, d_max],
                 "slice_range": [s_min, s_max],
                 "slice_shape": [int(slice_2d.shape[0]), int(slice_2d.shape[1])],
+                "dose_units": DOSE_MODEL_UNITS,
+                "dose_scale_gy": DOSE_MODEL_SCALE_GY,
             })
         except Exception as e:
             logger.error(f"Dose contour slice failed: {e}")

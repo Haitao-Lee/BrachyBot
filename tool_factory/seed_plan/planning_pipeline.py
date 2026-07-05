@@ -1246,6 +1246,7 @@ class PlanningPipelineTool(BaseTool):
         resampled_ct = agent.memory.retrieve("resampled_ct") if agent else None
 
         # Dose is in normalized units (no Gy conversion)
+        DOSE_SCALE = 120.0
         dose_array = dose_distribution.copy()
 
         if resampled_ct is not None and ct_image is not None:
@@ -1266,6 +1267,8 @@ class PlanningPipelineTool(BaseTool):
         # Store in normalized units
         if agent:
             agent.memory.store("dose_distribution_gy", dose_array)
+            agent.memory.store("dose_units", "normalized_model_output")
+            agent.memory.store("dose_scale_gy", DOSE_SCALE)
 
         max_dose = float(np.max(dose_array))
         mean_dose = float(np.mean(dose_array[dose_array > 0])) if np.any(dose_array > 0) else 0

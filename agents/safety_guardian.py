@@ -32,6 +32,7 @@ class SafetyGuardian(BaseAgent):
             self._check_completeness(plan_info),
             self._check_configured_target_limits(dose_metrics, plan_config),
             self._check_configured_oar_limits(dose_metrics, plan_config),
+            self._check_advisory_dose_distribution(dose_metrics, plan_config),
             self._check_sanity_outliers(dose_metrics, plan_config),
         ]
         final_result = self._aggregate_checks(checks)
@@ -200,6 +201,35 @@ class SafetyGuardian(BaseAgent):
             confidence=0.75,
         )
 
+    def _check_advisory_dose_distribution(self, dose_metrics: Dict[str, Any], plan_config: Dict[str, Any]) -> ReviewResult:
+        """Flag obvious distribution problems as advisory safety concerns."""
+        concerns: List[str] = []
+        v100 = self._normalized_fraction(self._metric_value(dose_metrics, "v100"))
+        v150 = self._normalized_fraction(self._metric_value(dose_metrics, "v150"))
+        v200 = self._normalized_fraction(self._metric_value(dose_metrics, "v200"))
+        d90_ratio = self._dose_ratio_or_fraction(dose_metrics, plan_config, "d90")
+        max_ratio = self._dose_ratio_or_fraction(dose_metrics, plan_config, "max_dose")
+
+        if v100 is not None and v100 < 0.80:
+            concerns.append(f"Advisory dose-distribution concern: V100 is {v100:.1%}; verify coverage before approval.")
+        if d90_ratio is not None and d90_ratio < 0.80:
+            concerns.append(f"Advisory dose-distribution concern: D90 is {d90_ratio:.1%} of prescription/context.")
+        if v150 is not None and v150 > 0.60:
+            concerns.append(f"Advisory dose-distribution concern: V150 is {v150:.1%}; verify high-dose spread.")
+        if v200 is not None and v200 > 0.30:
+            concerns.append(f"Advisory dose-distribution concern: V200 is {v200:.1%}; verify hot spots.")
+        if max_ratio is not None and max_ratio > 3.0:
+            concerns.append(f"Advisory dose-distribution concern: max dose is {max_ratio:.1f}x prescription/context.")
+
+        return ReviewResult(
+            reviewer="Advisory Dose Distribution",
+            decision="conditional" if concerns else "pass",
+            score=max(3.0, 10.0 - len(concerns) * 1.4),
+            concerns=concerns,
+            suggestions=["Recompute dose, inspect DVH, and revise seed placement if concerns persist."] if concerns else [],
+            confidence=0.75,
+        )
+
     @staticmethod
     def _target_checks(plan_config: Dict[str, Any]) -> Dict[str, dict]:
         checks: Dict[str, dict] = {}
@@ -244,6 +274,32 @@ class SafetyGuardian(BaseAgent):
                 return float(str(values[key]).replace("%", "").replace("Gy", "").strip())
             except (TypeError, ValueError):
                 continue
+        return None
+
+    @staticmethod
+    def _normalized_fraction(value: Optional[float]) -> Optional[float]:
+        if value is None:
+            return None
+        return value / 100.0 if value > 1.5 else value
+
+    def _dose_ratio_or_fraction(self, dose_metrics: Dict[str, Any], plan_config: Dict[str, Any], key: str) -> Optional[float]:
+        value = self._metric_value(dose_metrics, key)
+        if value is None:
+            return None
+        if value <= 5.0:
+            return value
+        prescription = self._first_numeric(dose_metrics, ("prescribed_dose", "prescription"))
+        if prescription is None:
+            prescription = self._first_numeric(plan_config, ("prescribed_dose", "in_lowest_energy", "prescription_dose"))
+        if prescription is not None and prescription <= 5.0:
+            dose_scale = (
+                self._first_numeric(dose_metrics, ("dose_scale_gy",))
+                or self._first_numeric(plan_config, ("dose_scale_gy",))
+                or 120.0
+            )
+            prescription *= dose_scale
+        if prescription and prescription > 0:
+            return value / prescription
         return None
 
     def _aggregate_checks(self, checks: List[ReviewResult]) -> ReviewResult:

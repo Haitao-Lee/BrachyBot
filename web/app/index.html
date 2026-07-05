@@ -16339,7 +16339,9 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
         // (one from this push, one from the post-await push).
         const doseRange = data.dose_range || [0, 1];
         const dMax = doseRange[1] || 1;
-        const pct = Math.round((threshold / dMax) * 100);
+        const doseScaleGy = data.dose_scale_gy || 120;
+        const dMaxGy = dMax * doseScaleGy;
+        const pct = dMaxGy > 0 ? Math.round((threshold / dMaxGy) * 100) : 0;
         const existingLevel = dataTreeState.planning.doseLevels.find(d => Math.abs(d.threshold - threshold) < 1e-6);
         // BUG FIX 2026-06-16: detect whether `threshold` is already
         // in absolute Gy (called from loadAllIsoSurfaces with v in Gy)
@@ -16954,6 +16956,8 @@ async function loadDoseOverlay() {
             shape: data.dose_shape,
             doseMin: data.dose_min,
             doseMax: data.dose_max,
+            doseUnits: data.dose_units || 'normalized_model_output',
+            doseScaleGy: data.dose_scale_gy || DOSE_NORM_TO_GY || 120,
             visible: true,
             opacity: 0.5,
             slices: {},  // Cache: {axis_index: sliceData}
@@ -18085,7 +18089,8 @@ async function showStepResults(step) {
         if (step === 'all' || step === 'dose' || step === 'dose_distribution') {
             if (data.has_dose) {
                 const [lo, hi] = data.dose_range || [0, 0];
-                lines.push(`**Dose**: range [${lo.toFixed(2)}, ${hi.toFixed(2)}] Gy`);
+                const scaleGy = data.dose_scale_gy || DOSE_NORM_TO_GY || 120;
+                lines.push(`**Dose**: normalized range [${lo.toFixed(2)}, ${hi.toFixed(2)}] (${(lo * scaleGy).toFixed(1)}-${(hi * scaleGy).toFixed(1)} Gy)`);
             } else {
                 lines.push(`**Dose**: not computed yet`);
             }
