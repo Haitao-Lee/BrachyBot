@@ -3954,9 +3954,11 @@ Output (JSON array of strings):"""
         for key, val in self._TUMOR_TYPE_MAP.items():
             if key in tumor_type or tumor_type in key:
                 return val
-        # Default to pancreatic
-        logger.warning(f"Unknown tumor_type '{tumor_type}', defaulting to nnunet_pancreatic")
-        return "nnunet_pancreatic"
+        # Keep explicit unknown sites unsupported. The unified CTV tool will
+        # fail closed with the model catalog instead of silently running a
+        # pancreatic model on another disease site.
+        logger.warning(f"Unknown tumor_type '{tumor_type}', leaving it unsupported")
+        return tumor_type
 
     def _detect_tumor_type_from_message(self, message: str) -> Optional[str]:
         """Detect tumor type from user message for CTV segmentation routing."""
