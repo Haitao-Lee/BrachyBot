@@ -1783,7 +1783,7 @@ class BrachyAgent:
             return {"accept": False, "reason": f"error: {str(e)}"}
     
     def _load_tools(self):
-        from tool_factory.CTV_seg import CTVSegmentationTool
+        from tool_factory.CTV_seg import CTVModelCatalogTool, CTVSegmentationTool
         from tool_factory.OAR_seg import OARSegmentationTool
         from tool_factory.dose_engine import DoseEngineTool
         from tool_factory.dose_eval import DoseEvaluationTool
@@ -1864,6 +1864,7 @@ class BrachyAgent:
             logger.warning(f"UIAnnotateTool not available: {e}")
 
         self.registry.register(CTVSegmentationTool())
+        self.registry.register(CTVModelCatalogTool())
         self.registry.register(OARSegmentationTool())
         self.registry.register(DoseEngineTool())
         self.registry.register(DoseEvaluationTool())
@@ -3876,6 +3877,40 @@ Output (JSON array of strings):"""
         "pulmonary_embolism": "voco_fumpe",
         "covid": "voco_covid",
         "aorta": "voco_aorta",
+        "pdac": "nnunet_pancreatic",
+        "hepatocellular": "voco_liver",
+        "hcc": "voco_liver",
+        "renal": "voco_kidney",
+        "colorectal": "voco_colon",
+        "nsclc": "voco_lung",
+        "prostate": "prostate_tumor",
+        "prostate_tumor": "prostate_tumor",
+        "head_neck": "head_neck_tumor",
+        "head and neck": "head_neck_tumor",
+        "胰腺癌": "nnunet_pancreatic",
+        "胰腺肿瘤": "nnunet_pancreatic",
+        "胰腺": "nnunet_pancreatic",
+        "肝癌": "voco_liver",
+        "肝肿瘤": "voco_liver",
+        "肝脏": "voco_liver",
+        "肾癌": "voco_kidney",
+        "肾肿瘤": "voco_kidney",
+        "肾脏": "voco_kidney",
+        "结肠癌": "voco_colon",
+        "结直肠癌": "voco_colon",
+        "结肠": "voco_colon",
+        "肺癌": "voco_lung",
+        "肺肿瘤": "voco_lung",
+        "肺部": "voco_lung",
+        "前列腺": "prostate_tumor",
+        "前列腺癌": "prostate_tumor",
+        "头颈部": "head_neck_tumor",
+        "头颈癌": "head_neck_tumor",
+        "脑肿瘤": "voco_brats21",
+        "脑癌": "voco_brats21",
+        "肺栓塞": "voco_fumpe",
+        "新冠": "voco_covid",
+        "主动脉": "voco_aorta",
         # Chinese aliases — pancreatic uses nnUNet (more accurate)
         # These Chinese keys match user input for tumor type detection.
         "胰腺癌": "nnunet_pancreatic",       # pancreatic cancer
@@ -3907,9 +3942,9 @@ Output (JSON array of strings):"""
     def _map_tumor_type(self, tumor_type: str) -> str:
         """Map user-provided tumor type to VoCo tool name."""
         if tumor_type is None:
-            return "voco_pancreatic"
+            return "nnunet_pancreatic"
         # Already a valid VoCo tool name
-        if tumor_type.startswith("voco_"):
+        if tumor_type.startswith("voco_") or tumor_type in {"nnunet_pancreatic", "prostate_tumor", "head_neck_tumor"}:
             return tumor_type
         # Look up in mapping
         mapped = self._TUMOR_TYPE_MAP.get(tumor_type.lower())
@@ -3920,8 +3955,8 @@ Output (JSON array of strings):"""
             if key in tumor_type or tumor_type in key:
                 return val
         # Default to pancreatic
-        logger.warning(f"Unknown tumor_type '{tumor_type}', defaulting to voco_pancreatic")
-        return "voco_pancreatic"
+        logger.warning(f"Unknown tumor_type '{tumor_type}', defaulting to nnunet_pancreatic")
+        return "nnunet_pancreatic"
 
     def _detect_tumor_type_from_message(self, message: str) -> Optional[str]:
         """Detect tumor type from user message for CTV segmentation routing."""

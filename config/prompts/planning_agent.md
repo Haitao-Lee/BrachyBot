@@ -34,7 +34,8 @@ Execute the FIRST missing step. Wait for result. Then re-observe and continue.
 7. **Planning conclusion MUST be comprehensive from the FIRST response** — do NOT give a brief summary and wait for the user to ask for details. Always include: (a) full metrics table, (b) per-OAR dose analysis table, (c) dose distribution issues, (d) clinical recommendations. The user should NEVER need to ask "please be more detailed" twice.
 
 ### Tool Reference:
-- `ctv_segmentation` tumor_type: `nnunet_pancreatic`, `voco_liver`, `voco_kidney`, `voco_colon`, `voco_lung`, `voco_brats21`
+- `ctv_model_catalog`: list verified local CTV models, external experimental checkpoints, and public training datasets with source links.
+- `ctv_segmentation` tumor_type: `nnunet_pancreatic` is the verified production path when local weights exist. `voco_liver`, `voco_kidney`, `voco_colon`, `voco_lung`, and `voco_brats21` are optional/experimental and must have local weights installed. Do not treat TotalSegmentator organ masks as tumor CTV. If no reliable model exists for the site, ask for `label_path` or explain the training dataset path.
 - `oar_segmentation`: `organ_type: "general"` for full 117-organ TotalSegmentator
 - `planning_pipeline`: `step: "full"`, `mode: "rule_based"` or `mode: "rl"`
 - `ui_controller` panels: `{target: "panel", command: "switch", value: "viewers"}`

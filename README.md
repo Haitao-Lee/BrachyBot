@@ -658,7 +658,16 @@ VoCo segmentation model weights are not included in the repository due to size (
 1. Download weights from [Large-Scale-Medical](https://github.com/Luffy03/Large-Scale-Medical)
 2. Place them in the corresponding `VoCo/<dataset>/` directories
 
-Without VoCo weights, the system falls back to nnU-Net or HU-threshold-based segmentation.
+Without verified CTV weights or a user-provided `label_path`, CTV segmentation now fails closed. BrachyBot no longer treats TotalSegmentator organ masks or HU-threshold fallbacks as tumor CTV.
+
+CTV model discovery is exposed through:
+
+```bash
+python scripts/download_ctv_models.py --list
+curl -H "X-API-Key: $BRACHYBOT_API_KEY" http://localhost:8080/api/ctv/models
+```
+
+The catalog currently marks the pancreatic nnU-Net path as the production CTV route when local weights are installed. DiffTumor liver/pancreas/kidney checkpoints can be downloaded for research review, but they are not activated automatically because their checkpoint format is not BrachyBot's native nnU-Net v2 predictor layout.
 
 The myDoseNet CNN dose prediction model weight (`dose_pre/dose_model.pth`, ~24MB) is included in the repository.
 
@@ -1658,6 +1667,10 @@ agentic planner and a standalone planning workstation:
   path. Analytical/Gaussian dose simulation is not used for active manual dose
   feedback; legacy analytical utility entry points fail closed with explicit
   `NotImplementedError` messages.
+- **CTV model governance**: `ctv_model_catalog` and `/api/ctv/models` distinguish
+  production-installed CTV models, external research checkpoints, and public
+  training datasets. Unsupported tumor sites must use a verified model or a
+  user-provided CTV label; organ/OAR masks are not accepted as tumor CTV.
 - **Clinical KB governance**: safety-critical clinical claims, target
   thresholds, OAR constraints, and literature summaries must come from
   `clinical_kb`, clinical web search, actual tool output, or explicit

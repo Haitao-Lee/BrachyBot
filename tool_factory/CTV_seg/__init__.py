@@ -32,18 +32,22 @@ from .covid_voco import VoCoCOVIDSegTool
 from .aorta_voco import VoCoAortaSegTool
 from .brats21_voco import VoCoBRATS21SegTool
 from .pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
+from .model_catalog import CTVModelCatalogTool, catalog_with_local_status
 
 # Removed VoCoProstateTool (was using wrong Amos-MR weights)
 # Removed VoCoPancSegTool (was pointing to PANORAMA weights with wrong out_channels)
 
 
 TOOL_REGISTRY = {
-    # nnU-Net based tools
-    "pancreatic_tumor": PancreaticTumorSegmentationTool,
-    "liver_tumor": LiverTumorSegmentationTool,
-    "kidney_tumor": KidneyTumorSegmentationTool,
+    # CTV models. Tumor aliases point to tumor-trained models when available.
+    "pancreatic_tumor": NNUNetPancreaticTumorTool,
+    "liver_tumor": VoCoLiverTumorTool,
+    "kidney_tumor": VoCoKidneyTumorTool,
+    "lung_tumor": VoCoLungTumorTool,
+    "colon_tumor": VoCoColonTumorTool,
+    # Whole-gland prostate can be a prostate-brachytherapy target in some
+    # workflows, but this is not a lesion segmentation model.
     "prostate_tumor": ProstateTumorSegmentationTool,
-    "lung_tumor": LungTumorSegmentationTool,
     "head_neck_tumor": HeadNeckTumorSegmentationTool,
     # VoCo pre-trained tools (tumor-focused)
     "voco_pancreatic": VoCoPancreaticTumorTool,
@@ -94,9 +98,8 @@ class CTVSegmentationTool(BaseTool):
     def description(self) -> str:
         return (
             "Segment Clinical Target Volume (CTV/tumor) from CT images. "
-            "Supports: pancreatic, liver, kidney, prostate, lung, colon, head_neck, btcv, segthor, "
-            "fumpe, covid, aorta, brats21, panc. "
-            "Uses nnU-Net or VoCo pre-trained models. "
+            "Supports verified local pancreatic nnU-Net and optional external/experimental models "
+            "listed by ctv_model_catalog. "
             "Input: CT image (SimpleITK) or path, optional tumor_type. "
             "Output: CTV binary mask and volume metrics."
         )
@@ -116,6 +119,7 @@ class CTVSegmentationTool(BaseTool):
                 },
                 "target_value": {"type": "number", "default": 1, "description": "Label value for tumor voxels"},
                 "fast_mode": {"type": "boolean", "default": False, "description": "Disable TTA, reduce threads"},
+                "allow_empty": {"type": "boolean", "default": False, "description": "Only for tests; never allow empty clinical CTV by default"},
             },
             "required": [],
         }
@@ -143,6 +147,7 @@ class CTVSegmentationTool(BaseTool):
         tumor_type = kwargs.get("tumor_type")
         target_value = kwargs.get("target_value", 1)
         fast_mode = kwargs.get("fast_mode", False)
+        allow_empty = bool(kwargs.get("allow_empty", False))
 
         result = None
         if label_path and os.path.exists(label_path):
@@ -161,7 +166,10 @@ class CTVSegmentationTool(BaseTool):
                 # Default to nnUNet pancreatic tumor tool
                 tool = NNUNetPancreaticTumorTool()
 
-            result = tool._execute(image=image, target_value=target_value, fast_mode=fast_mode, return_all_labels=True)
+            tool_kwargs = {"image": image, "target_value": target_value, "fast_mode": fast_mode}
+            if isinstance(tool, NNUNetPancreaticTumorTool):
+                tool_kwargs["return_all_labels"] = True
+            result = tool._execute(**tool_kwargs)
             if result.success:
                 ctv_array = result.metadata.get("mask_array", result.data)
                 ctv_mask = result.metadata.get("mask", image)
@@ -169,6 +177,20 @@ class CTVSegmentationTool(BaseTool):
                 return result
 
         voxel_count = int(np.sum(ctv_array > 0))
+        if voxel_count <= 0 and not allow_empty:
+            return ToolResult(
+                success=False,
+                error=(
+                    "CTV segmentation produced an empty mask. This usually means the requested "
+                    "tumor model is not installed, is an experimental checkpoint not wired for "
+                    "inference, or the selected site is unsupported. Use label_path for a manual "
+                    "CTV or run ctv_model_catalog to see verified models and datasets."
+                ),
+                metadata={
+                    "tumor_type_used": tumor_type or "auto",
+                    "model_catalog": catalog_with_local_status(),
+                },
+            )
         spacing = ctv_mask.GetSpacing() if hasattr(ctv_mask, 'GetSpacing') else (1, 1, 1)
         voxel_size = spacing[0] * spacing[1] * spacing[2]
         volume_mm3 = voxel_count * voxel_size
@@ -197,6 +219,7 @@ class CTVSegmentationTool(BaseTool):
             "label_counts": res_meta.get("label_counts", {}),
             "label_map": label_map,
             "label_stats": res_meta.get("label_stats", {}),
+            "model_catalog": catalog_with_local_status(),
         }
         # Pass through OAR data if present (e.g. artery/vein from nnUNet pancreatic)
         if "oar_array" in res_meta:
@@ -236,6 +259,7 @@ __all__ = [
     "VoCoBRATS21SegTool",
     "NNUNetPancreaticTumorTool",
     "CTVSegmentationTool",
+    "CTVModelCatalogTool",
     "get_tool",
     "list_tools",
 ]

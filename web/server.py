@@ -3176,7 +3176,7 @@ def create_app(config: Optional[Dict] = None):
         panel. The user wanted a "manual UI" that doesn't require
         chatting with the LLM at all.
 
-        Request: { kind: 'ctv' | 'oar', image_path: '...' }
+        Request: { kind: 'ctv' | 'oar', image_path: '...', tumor_type?: 'nnunet_pancreatic' | ... }
         Returns: { success, kind, label_counts, total_labels, ... }
         """
         agent = get_agent()
@@ -3186,17 +3186,19 @@ def create_app(config: Optional[Dict] = None):
         data = request.get_json() or {}
         kind = data.get("kind", "ctv")
         image_path = data.get("image_path", "")
+        tumor_type = data.get("tumor_type")
         if not image_path:
             return jsonify({"error": "image_path is required"}), 400
 
         try:
             # Dispatch to the appropriate tool.
             if kind == "ctv":
-                from tool_factory.CTV_seg.pancreatic_tumor_nnunet import (
-                    NNUNetPancreaticTumorTool,
-                )
-                tool = NNUNetPancreaticTumorTool()
-                result = tool.execute(image_path=image_path)
+                from tool_factory.CTV_seg import CTVSegmentationTool
+                tool = CTVSegmentationTool()
+                kwargs = {"image_path": image_path}
+                if tumor_type:
+                    kwargs["tumor_type"] = tumor_type
+                result = tool.execute(**kwargs)
             elif kind == "oar":
                 from tool_factory.OAR_seg.totalsegmentator_oar import (
                     TotalSegmentatorOARTool,
@@ -3207,16 +3209,30 @@ def create_app(config: Optional[Dict] = None):
                 return jsonify({"error": f"Unknown segmentation kind: {kind}"}), 400
 
             if not result.success:
-                return jsonify({"error": result.error or "Segmentation failed"}), 500
+                return jsonify({
+                    "success": False,
+                    "kind": kind,
+                    "tumor_type": tumor_type,
+                    "error": result.error or result.message or "Segmentation failed",
+                }), 422
 
             # Store under the standard memory keys the rest of the
             # system reads from (ctv_label_data, oar_label_data, etc.).
             if kind == "ctv" and hasattr(agent, "memory"):
-                mask = getattr(result, "mask_array", None) or getattr(result, "mask", None)
+                meta = getattr(result, "metadata", {}) or {}
+                mask = None
+                for key in ("ctv_array", "mask_array", "ctv_mask", "mask"):
+                    if meta.get(key) is not None:
+                        mask = meta[key]
+                        break
                 if mask is not None:
                     try:
                         agent.memory.store("ctv_label_data", mask)
+                        agent.memory.store("ctv_array", meta.get("ctv_array", mask))
+                        agent.memory.store("ctv_mask", meta.get("ctv_mask", mask))
                         agent.memory.store("ctv_segmented", True)
+                        if meta.get("tumor_type_used"):
+                            agent.memory.store("tumor_type_used", meta["tumor_type_used"])
                     except Exception as e:
                         logger.warning(f"store ctv_label_data failed: {e}")
             elif kind == "oar" and hasattr(agent, "memory"):
@@ -3236,16 +3252,32 @@ def create_app(config: Optional[Dict] = None):
                         logger.warning(f"store oar data failed: {e}")
 
             meta = getattr(result, "metadata", {}) or {}
-            label_counts = meta.get("organ_counts", {}) or getattr(result, "label_counts", {}) or {}
+            label_counts = meta.get("organ_counts", {}) or meta.get("label_counts", {}) or meta.get("labels_found", {}) or {}
             return jsonify({
                 "success": True,
                 "kind": kind,
+                "tumor_type": tumor_type,
                 "label_counts": label_counts,
                 "total_labels": len(label_counts),
             })
         except Exception as e:
             logger.error(f"Manual segmentation ({kind}) failed: {e}")
             return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/ctv/models", methods=["GET"])
+    @require_api_key
+    def api_ctv_models():
+        """Return CTV model resources with local availability and source links."""
+        try:
+            from tool_factory.CTV_seg.model_catalog import filter_catalog
+
+            site = request.args.get("site") or None
+            include_experimental = request.args.get("include_experimental", "1").lower() not in ("0", "false", "no")
+            models = filter_catalog(site=site, include_experimental=include_experimental)
+            return jsonify({"success": True, "models": models, "count": len(models)})
+        except Exception as e:
+            logger.error(f"CTV model catalog failed: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
 
     @app.route("/api/planning/run_step", methods=["POST"])
     @require_api_key
@@ -3914,6 +3946,7 @@ def create_app(config: Optional[Dict] = None):
         try:
             from tool_factory.ui_controller import CONTROL_REGISTRY
             from tool_factory.ui_screenshot import SCREENSHOT_TARGETS
+            from tool_factory.CTV_seg.model_catalog import catalog_with_local_status
         except Exception as e:
             logger.error(f"Failed to load UI capabilities: {e}")
             return jsonify({"success": False, "error": str(e)}), 500
@@ -3940,6 +3973,7 @@ def create_app(config: Optional[Dict] = None):
             "control_count": len(controls),
             "controls": controls,
             "screenshot_targets": SCREENSHOT_TARGETS,
+            "ctv_models": catalog_with_local_status(),
             "manual_workflow_steps": [
                 "ctv_segmentation",
                 "oar_segmentation",
