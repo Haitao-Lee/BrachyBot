@@ -50,7 +50,8 @@ The main verified gap was CTV model governance for non-pancreatic tumors. The re
 | CTV-05 | Empty CTV could continue downstream if a model returned an empty mask. | Unified CTV path did not reject zero-voxel masks. | `CTVSegmentationTool` now fails unless `allow_empty=True`, which is documented as test-only. |
 | CTV-06 | LLM prompts lacked a safe model-selection boundary. | Prompt review showed generic `ctv_segmentation` model list but no warning against organ masks as CTV. | System/planning prompts now require `ctv_model_catalog` or `label_path` when no verified model exists. |
 | CTV-07 | There was no structured way to tell the UI/agent which CTV resources are local, external, or training-only. | No model catalog endpoint/tool existed. | Added `ctv_model_catalog`, `/api/ctv/models`, and UI capabilities exposure. |
-| CTV-08 | Explicit unknown tumor sites could silently fall back to the pancreatic default. | Route review showed `_map_tumor_type` returned pancreas for unmapped values and the unified CTV tool also defaulted if an unsupported value reached it. | Missing tumor type still defaults to the pancreatic demo path, but explicit unsupported tumor types now fail closed with the model catalog. |
+| CTV-08 | Explicit unknown tumor sites could silently fall back to the pancreatic default. | Route review showed `_map_tumor_type` returned pancreas for unmapped values and the unified CTV tool also defaulted if an unsupported value reached it. | Explicit unsupported tumor types now fail closed with the model catalog. |
+| CTV-09 | Missing or ambiguous tumor site could silently use the pancreatic default. | Product review concluded that a multi-site system should not infer pancreas when the user has not specified the case site. | Automatic CTV segmentation now requires a tumor site or `label_path`; otherwise it returns a clarification-required response. |
 
 ## Public Model and Dataset Review
 
@@ -88,7 +89,7 @@ python scripts/download_ctv_models.py --model difftumor_nnunet_liver
 - Added `tool_factory/CTV_seg/model_catalog.py`.
 - Added `scripts/download_ctv_models.py`.
 - Registered `CTVModelCatalogTool` in `AgenticSys.py`.
-- Updated CTV tumor-type aliases so pancreas defaults to `nnunet_pancreatic`.
+- Updated CTV tumor-type aliases and removed automatic pancreas fallback when the user has not specified the tumor site.
 - Changed `/api/segmentation` to use the unified CTV tool instead of hard-coded pancreatic inference.
 - Added `/api/ctv/models` with local availability metadata and source links.
 - Added CTV model metadata to `/api/ui/capabilities`.

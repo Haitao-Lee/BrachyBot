@@ -2156,11 +2156,14 @@ class BrachyAgent:
             # image_path — producing masks in wrong orientation.
             if ct_image is not None:
                 params["image"] = ct_image
+            if "label_path" not in params and self.memory.retrieve("ctv_path"):
+                params["label_path"] = self.memory.retrieve("ctv_path")
             # Map tumor_type to VoCo tool name if needed, and store for planning pipeline
             if "tumor_type" in params:
                 params["tumor_type"] = self._map_tumor_type(params["tumor_type"])
                 # Store tumor type so planning pipeline can use organ-specific reference direction
-                self.memory.store("tumor_type_used", params["tumor_type"])
+                if params["tumor_type"]:
+                    self.memory.store("tumor_type_used", params["tumor_type"])
         elif tool_name == "oar_segmentation":
             # Same: always force-inject LPI-oriented CT
             if ct_image is not None:
@@ -3942,7 +3945,7 @@ Output (JSON array of strings):"""
     def _map_tumor_type(self, tumor_type: str) -> str:
         """Map user-provided tumor type to VoCo tool name."""
         if tumor_type is None:
-            return "nnunet_pancreatic"
+            return None
         # Already a valid VoCo tool name
         if tumor_type.startswith("voco_") or tumor_type in {"nnunet_pancreatic", "prostate_tumor", "head_neck_tumor"}:
             return tumor_type
@@ -6649,6 +6652,19 @@ Output (JSON array of strings):"""
                                         for key, value in ctv_result.metadata.items():
                                             self.memory.store(key, value)
                                     add_step("tool", "Auto CTV Segmentation", "Auto-executed by workflow enforcer", tool="ctv_segmentation", status="done")
+                                else:
+                                    err = (
+                                        ctv_result.error or ctv_result.message
+                                        if ctv_result is not None else "CTV segmentation failed"
+                                    )
+                                    logger.warning(f"[WORKFLOW-ENFORCER] CTV auto-execution did not run: {err}")
+                                    add_step(
+                                        "tool",
+                                        "Auto CTV Segmentation",
+                                        err,
+                                        tool="ctv_segmentation",
+                                        status="error",
+                                    )
                         except Exception as e:
                             logger.error(f"[WORKFLOW-ENFORCER] CTV auto-execution failed: {e}")
                         finally:
@@ -7314,6 +7330,19 @@ Output (JSON array of strings):"""
                                     ctv_step["status"] = "done"
                                     ctv_step["result"] = str(ctv_result.message)[:200] if ctv_result.message else "Completed"
                                     yield yield_event("step", ctv_step)
+                                else:
+                                    err = (
+                                        ctv_result.error or ctv_result.message
+                                        if ctv_result is not None else "CTV segmentation failed"
+                                    )
+                                    if ctv_result is not None and ctv_result.metadata:
+                                        question = ctv_result.metadata.get("clarification_question")
+                                        if question:
+                                            err = f"{err} {question}"
+                                    logger.warning(f"[WORKFLOW-ENFORCER-STREAM] CTV auto-execution did not run: {err}")
+                                    ctv_step["status"] = "error"
+                                    ctv_step["result"] = str(err)[:200]
+                                    yield yield_event("step", ctv_step)
                         except Exception as e:
                             logger.error(f"[WORKFLOW-ENFORCER-STREAM] CTV auto-execution failed: {e}")
                             ctv_step["status"] = "error"
@@ -7790,6 +7819,11 @@ Output (JSON array of strings):"""
             return "Please provide CT image path first. Use run_preoperative_plan(ct_path=...) to load CT."
         # Detect tumor type from message
         tumor_type = self._detect_tumor_type_from_message(message)
+        if not tumor_type and not ctv_path:
+            return (
+                "请先明确需要分割的肿瘤部位，或提供已有 CTV 标签文件。"
+                "例如：胰腺癌、肝癌、肾癌、肺癌、结直肠癌、前列腺。"
+            )
         params = {"image": ct_image, "label_path": ctv_path}
         if tumor_type:
             params["tumor_type"] = tumor_type
@@ -7815,6 +7849,8 @@ Output (JSON array of strings):"""
                 self.memory.store("ctv_volume_mm3", _cvm3)
             if params.get("tumor_type"):
                 self.memory.store("tumor_type_used", params["tumor_type"])
+            elif result.metadata.get("tumor_type_used"):
+                self.memory.store("tumor_type_used", result.metadata["tumor_type_used"])
             return result.message
         return f"CTV segmentation failed: {result.error}"
 

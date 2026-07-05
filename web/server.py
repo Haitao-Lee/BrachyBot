@@ -3176,7 +3176,7 @@ def create_app(config: Optional[Dict] = None):
         panel. The user wanted a "manual UI" that doesn't require
         chatting with the LLM at all.
 
-        Request: { kind: 'ctv' | 'oar', image_path: '...', tumor_type?: 'nnunet_pancreatic' | ... }
+        Request: { kind: 'ctv' | 'oar', image_path: '...', tumor_type?: 'nnunet_pancreatic' | ..., label_path?: '...' }
         Returns: { success, kind, label_counts, total_labels, ... }
         """
         agent = get_agent()
@@ -3187,6 +3187,7 @@ def create_app(config: Optional[Dict] = None):
         kind = data.get("kind", "ctv")
         image_path = data.get("image_path", "")
         tumor_type = data.get("tumor_type")
+        label_path = data.get("label_path")
         if not image_path:
             return jsonify({"error": "image_path is required"}), 400
 
@@ -3198,6 +3199,8 @@ def create_app(config: Optional[Dict] = None):
                 kwargs = {"image_path": image_path}
                 if tumor_type:
                     kwargs["tumor_type"] = tumor_type
+                if label_path:
+                    kwargs["label_path"] = label_path
                 result = tool.execute(**kwargs)
             elif kind == "oar":
                 from tool_factory.OAR_seg.totalsegmentator_oar import (
@@ -3213,6 +3216,8 @@ def create_app(config: Optional[Dict] = None):
                     "success": False,
                     "kind": kind,
                     "tumor_type": tumor_type,
+                    "clarification_required": bool((getattr(result, "metadata", {}) or {}).get("clarification_required")),
+                    "clarification_question": (getattr(result, "metadata", {}) or {}).get("clarification_question"),
                     "error": result.error or result.message or "Segmentation failed",
                 }), 422
 
