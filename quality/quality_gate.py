@@ -157,8 +157,9 @@ class QualityGate:
             if "fact_checker" in self.agents:
                 selected["fact_checker"] = self.agents["fact_checker"]
 
-        # Safety guardian for all critical outputs
-        if output_type in self.MANDATORY_REVIEWS:
+        # SafetyGuardian reasons over dose/plan structure, so keep it on
+        # clinical plan outputs only. FactChecker handles web-search quality.
+        if output_type in {"treatment_plan", "dose_evaluation", "clinical_recommendation"}:
             if "safety_guardian" in self.agents:
                 selected["safety_guardian"] = self.agents["safety_guardian"]
 
@@ -390,32 +391,53 @@ class QualityGate:
         """Build final message from reviews."""
         lines = [f"Quality Gate: {decision.upper()} (score={score:.1f})"]
 
-        # Add review summaries
+        # Add review summaries.
         for review in reviews:
             status_icon = {
-                "pass": "✓",
-                "conditional": "⚠",
-                "reject": "✗",
-                "escalate": "↑",
+                "pass": "[OK]",
+                "conditional": "[WARN]",
+                "reject": "[REJECT]",
+                "escalate": "[ESCALATE]",
             }.get(review.decision, "?")
-
             lines.append(f"{status_icon} {review.reviewer}: {review.decision}")
 
-        # Add top concerns
-        all_concerns = [c for r in reviews for c in r.concerns]
+        # Add top concerns.
+        all_concerns = self._dedupe_review_text([c for r in reviews for c in r.concerns])
         if all_concerns:
             lines.append("\nKey Concerns:")
-            for concern in list(set(all_concerns))[:3]:
-                lines.append(f"  • {concern}")
+            for concern in all_concerns[:3]:
+                lines.append(f"  - {concern}")
 
-        # Add top suggestions
-        all_suggestions = [s for r in reviews for s in r.suggestions]
+        # Add top suggestions.
+        all_suggestions = self._dedupe_review_text([s for r in reviews for s in r.suggestions])
         if all_suggestions:
             lines.append("\nSuggestions:")
-            for suggestion in list(set(all_suggestions))[:3]:
-                lines.append(f"  • {suggestion}")
+            for suggestion in all_suggestions[:3]:
+                lines.append(f"  - {suggestion}")
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _dedupe_review_text(items: List[str]) -> List[str]:
+        """Deduplicate review text while preserving order and common semantics."""
+        result: List[str] = []
+        seen = set()
+        for item in items:
+            text = str(item).strip()
+            if not text:
+                continue
+            lowered = " ".join(text.lower().split())
+            if "oar" in lowered and "source-backed" in lowered and "constraint" in lowered:
+                key = "missing_oar_constraints"
+            elif "target" in lowered and "source-backed" in lowered:
+                key = "missing_target_thresholds"
+            else:
+                key = lowered
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(text)
+        return result
 
     def get_stats(self) -> Dict:
         """Get quality gate statistics."""

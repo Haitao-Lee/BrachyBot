@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from tool_factory import BaseTool, ToolResult
 import numpy as np
 from typing import Dict, List
+from tool_factory.plan_quality.clinical_standards import get_oar_standard, get_target_standard
 
 
 class ComprehensiveDoseEvaluationTool(BaseTool):
@@ -107,6 +108,9 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
         spacing = kwargs.get("spacing", [1.0, 1.0, 1.0])
         num_bins = kwargs.get("num_dvh_bins", 300)
         structure_type = kwargs.get("structure_type", {})
+        tumor_type = kwargs.get("tumor_type", "")
+        site = self._site_from_tumor_type(tumor_type)
+        oar_standards = get_oar_standard(site)
 
         voxel_volume_mm3 = float(spacing[0] * spacing[1] * spacing[2])
         voxel_volume_cc = voxel_volume_mm3 / 1000.0
@@ -168,18 +172,10 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
             if is_target:
                 target_metrics = struct_metrics
             else:
-                for cc_key in ["D2cc", "D1cc", "D0.5cc"]:
-                    if cc_key in struct_metrics:
-                        constraint = prescribed_dose * 2.0
-                        if struct_metrics[cc_key] > constraint:
-                            oar_violations.append({
-                                "structure": struct_name,
-                                "metric": cc_key,
-                                "actual": struct_metrics[cc_key],
-                                "constraint": constraint,
-                            })
+                constraint = self._match_oar_constraint(struct_name, oar_standards)
+                if constraint:
+                    oar_violations.extend(self._check_oar_violation(struct_name, struct_metrics, constraint))
 
-        tumor_type = kwargs.get("tumor_type", "")
         plan_score = self._compute_plan_score(target_metrics, prescribed_dose, oar_violations, tumor_type)
 
         message = f"Comprehensive evaluation complete for {len(masks)} structure(s). "
@@ -196,31 +192,73 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
                 "plan_score": plan_score,
                 "prescribed_dose": prescribed_dose,
                 "voxel_volume_cc": voxel_volume_cc,
+                "score_standard_site": site,
+                "score_standard_source": "tool_factory.plan_quality.clinical_standards",
             },
         )
 
-    # Per-site V100 thresholds for scoring.
-    # Sources: prostate ABS 2012, cervical EMBRACE II, breast GEC-ESTRO,
-    # lung ABS, pancreatic Chinese I-125 2023.
-    _SITE_V100_THRESHOLDS = {
-        "prostate": {"excellent": 0.95, "good": 0.90, "marginal": 0.80},
-        "lung":     {"excellent": 0.95, "good": 0.90, "marginal": 0.80},
-        "head_neck": {"excellent": 0.95, "good": 0.90, "marginal": 0.80},
-        "cervical": {"excellent": 0.90, "good": 0.85, "marginal": 0.75},
-        "pancreatic": {"excellent": 0.90, "good": 0.85, "marginal": 0.75},
-        "liver":    {"excellent": 0.90, "good": 0.85, "marginal": 0.75},
-        "breast":   {"excellent": 0.90, "good": 0.85, "marginal": 0.75},
-        "esophageal": {"excellent": 0.90, "good": 0.85, "marginal": 0.75},
-        "default":  {"excellent": 0.90, "good": 0.85, "marginal": 0.75},
+    _SITE_ALIASES = {
+        "nnunet_pancreatic": "pancreas",
+        "pancreatic": "pancreas",
+        "pancreas": "pancreas",
+        "voco_liver": "liver",
+        "liver": "liver",
+        "voco_lung": "lung",
+        "lung": "lung",
+        "voco_kidney": "kidney",
+        "kidney": "kidney",
+        "renal": "kidney",
+        "prostate": "prostate",
+        "prostate_tumor": "prostate",
+        "head_neck": "head_neck",
+        "head and neck": "head_neck",
+        "voco_brats21": "head_neck",
+        "cervical": "cervical",
+        "cervix": "cervical",
+        "colon": "colon",
     }
-    # Per-site V200 max thresholds for scoring.
-    _SITE_V200_THRESHOLDS = {
-        "prostate": {"good": 0.35, "ok": 0.45},
-        "head_neck": {"good": 0.25, "ok": 0.35},
-        "lung":     {"good": 0.30, "ok": 0.40},
-        "pancreatic": {"good": 0.30, "ok": 0.40},
-        "default":  {"good": 0.35, "ok": 0.45},
-    }
+
+    @classmethod
+    def _site_from_tumor_type(cls, tumor_type: str) -> str:
+        text = (tumor_type or "").lower().replace("-", "_").strip()
+        for pattern, site in cls._SITE_ALIASES.items():
+            if pattern in text or text in pattern:
+                return site
+        return "default"
+
+    @staticmethod
+    def _match_oar_constraint(struct_name: str, standards: Dict) -> Dict:
+        name = (struct_name or "").lower()
+        for key, constraint in standards.items():
+            key_l = str(key).lower()
+            if key_l == name or key_l in name or name in key_l:
+                return constraint if isinstance(constraint, dict) else {}
+        return {}
+
+    @staticmethod
+    def _check_oar_violation(struct_name: str, struct_metrics: Dict, constraint: Dict) -> List[Dict]:
+        metric_map = {
+            "d2cc": "D2cc",
+            "max_dose": "Dmax",
+            "dmax": "Dmax",
+            "dmean_max": "Dmean",
+            "mean_dose": "Dmean",
+        }
+        violations = []
+        for limit_key, limit in constraint.items():
+            metric_key = metric_map.get(str(limit_key).lower())
+            if not metric_key or metric_key not in struct_metrics:
+                continue
+            actual = float(struct_metrics[metric_key])
+            if actual > float(limit):
+                violations.append({
+                    "structure": struct_name,
+                    "metric": metric_key,
+                    "actual": actual,
+                    "constraint": float(limit),
+                    "source": "clinical_standards_mirror",
+                })
+        return violations
 
     def _compute_plan_score(self, target_metrics, prescribed_dose, oar_violations, tumor_type=""):
         if target_metrics is None:
@@ -232,55 +270,43 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
         v200 = target_metrics.get("V200", 0)
         d90 = target_metrics.get("D90", 0)
 
-        # Normalize tumor_type to site key
-        tt = (tumor_type or "").lower().replace(" ", "_").replace("-", "_")
-        site = "default"
-        for key in self._SITE_V100_THRESHOLDS:
-            if key in tt or tt in key:
-                site = key
-                break
-        _map = {"nnunet_pancreatic": "pancreatic", "pancreas": "pancreatic",
-                "voco_liver": "liver", "voco_lung": "lung", "voco_kidney": "liver",
-                "voco_colon": "liver", "voco_brats21": "head_neck"}
-        for pattern, mapped_site in _map.items():
-            if pattern in tt:
-                site = mapped_site
-                break
+        target_std = get_target_standard(self._site_from_tumor_type(tumor_type))
+        v100_min = target_std.get("v100_min", 0.90)
+        v150_max = target_std.get("v150_max", 0.50)
+        v200_max = target_std.get("v200_max", 0.35)
+        d90_min_pct = target_std.get("d90_min_pct", 1.0)
 
-        v100_t = self._SITE_V100_THRESHOLDS.get(site, self._SITE_V100_THRESHOLDS["default"])
-        v200_t = self._SITE_V200_THRESHOLDS.get(site, self._SITE_V200_THRESHOLDS["default"])
-
-        # V100 scoring (40 pts max) — per-site thresholds
-        if v100 >= v100_t["excellent"]:
+        # V100 scoring (40 pts max) from the clinical standards mirror.
+        if v100 >= v100_min:
             score += 40
-        elif v100 >= v100_t["good"]:
+        elif v100 >= v100_min - 0.05:
             score += 30
-        elif v100 >= v100_t["marginal"]:
+        elif v100 >= v100_min - 0.15:
             score += 20
         else:
             score += 10
 
         # V150 homogeneity (20 pts max)
-        if 0.30 <= v150 <= 0.60:
+        if v150 <= v150_max:
             score += 20
-        elif v150 < 0.70:
+        elif v150 <= v150_max + 0.10:
             score += 15
         else:
             score += 5
 
-        # V200 hot spots (10 pts max) — per-site thresholds
-        if v200 <= v200_t["good"]:
+        # V200 hot spots (10 pts max) from the clinical standards mirror.
+        if v200 <= v200_max:
             score += 10
-        elif v200 <= v200_t["ok"]:
+        elif v200 <= v200_max + 0.10:
             score += 5
 
-        # D90 scoring (20 pts max) — based on % of prescription
+        # D90 scoring (20 pts max) based on fraction of prescription.
         d90_pct = d90 / prescribed_dose if prescribed_dose > 0 else 0
-        if d90_pct >= 1.0:
+        if d90_pct >= d90_min_pct:
             score += 20
-        elif d90_pct >= 0.9:
+        elif d90_pct >= d90_min_pct - 0.10:
             score += 15
-        elif d90_pct >= 0.8:
+        elif d90_pct >= d90_min_pct - 0.20:
             score += 10
 
         score -= len(oar_violations) * 10

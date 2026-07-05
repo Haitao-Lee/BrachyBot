@@ -283,15 +283,21 @@ class FactChecker(LLMCapableAgent):
         if det_results["hallucination_flags"]:
             suggestions.append("Verify flagged claims against PubMed/NCCN")
 
-        # Score
-        issue_count = len(concerns)
-        score = max(5.0, 10.0 - issue_count * 1.0)
+        # Score. Deterministic hallucination patterns are stronger evidence
+        # than an unknown source domain, so a single fabricated-study pattern
+        # must not be reported as a clean pass.
+        unknown_penalty = len(det_results["unknown_domains"]) * 1.0
+        hallucination_penalty = len(det_results["hallucination_flags"]) * 2.5
+        llm_penalty = len(llm_results.get("flagged_claims", [])) * 1.5 if llm_results else 0.0
+        score = max(4.0, 10.0 - unknown_penalty - hallucination_penalty - llm_penalty)
 
         # Decision: FactChecker is advisory — format_as_source_summary() only
         # reads concerns, and the quality gate runs in APPEND-ONLY mode (never
         # blocks). So decision carries no runtime effect. We still set it
         # semantically for logging/inspection.
-        if score >= 8.0:
+        if det_results["hallucination_flags"]:
+            decision = "conditional" if score >= 5.0 else "reject"
+        elif score >= 8.0:
             decision = "pass"
         elif score >= 6.0:
             decision = "conditional"

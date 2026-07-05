@@ -134,21 +134,74 @@ Return JSON only:
         elif isinstance(oar_metrics, dict) and oar_metrics:
             unverified.append("OAR dose metrics are present, but no source-backed OAR constraints were supplied.")
 
+        advisory_issues = self._advisory_sanity_checks(dose_metrics, plan_config)
+
         total_checks = len(metrics_checked) + len(oar_constraints)
         issue_count = len(issues) + len(oar_issues)
         if total_checks == 0:
-            score = 6.0
+            score = max(3.0, 6.0 - len(advisory_issues) * 0.9)
         else:
             score = max(3.0, 10.0 - (issue_count / max(1, total_checks)) * 7.0)
+            if advisory_issues:
+                score = max(3.0, score - len(advisory_issues) * 0.6)
 
         return {
             "score": round(score, 1),
             "issues": issues,
             "oar_issues": oar_issues,
+            "advisory_issues": advisory_issues,
             "metrics_checked": metrics_checked,
             "unverified": unverified,
             "has_clinical_thresholds": total_checks > 0,
         }
+
+    def _advisory_sanity_checks(self, dose_metrics: Dict[str, Any], plan_config: Dict[str, Any]) -> List[str]:
+        """Flag obvious dose-distribution anomalies without inventing clinical limits."""
+        concerns: List[str] = []
+        v100 = self._normalized_fraction(self._metric_value(dose_metrics, "v100"))
+        v150 = self._normalized_fraction(self._metric_value(dose_metrics, "v150"))
+        v200 = self._normalized_fraction(self._metric_value(dose_metrics, "v200"))
+        d90_ratio = self._dose_ratio_or_fraction(dose_metrics, plan_config, "d90")
+        max_ratio = self._dose_ratio_or_fraction(dose_metrics, plan_config, "max_dose")
+
+        if v100 is not None and v100 < 0.80:
+            concerns.append(f"Advisory dose-distribution sanity concern: V100 is {v100:.1%}, suggesting poor target coverage.")
+        if d90_ratio is not None and d90_ratio < 0.80:
+            concerns.append(f"Advisory dose-distribution sanity concern: D90 is {d90_ratio:.1%} of prescription/context.")
+        if v150 is not None and v150 > 0.60:
+            concerns.append(f"Advisory dose-distribution sanity concern: V150 is {v150:.1%}, suggesting extensive high-dose volume.")
+        if v200 is not None and v200 > 0.30:
+            concerns.append(f"Advisory dose-distribution sanity concern: V200 is {v200:.1%}, suggesting extensive hot spots.")
+        if max_ratio is not None and max_ratio > 3.0:
+            concerns.append(f"Advisory dose-distribution sanity concern: max dose is {max_ratio:.1f}x prescription/context.")
+
+        return concerns
+
+    @staticmethod
+    def _normalized_fraction(value: Optional[float]) -> Optional[float]:
+        if value is None:
+            return None
+        return value / 100.0 if value > 1.5 else value
+
+    def _dose_ratio_or_fraction(self, dose_metrics: Dict[str, Any], plan_config: Dict[str, Any], key: str) -> Optional[float]:
+        value = self._metric_value(dose_metrics, key)
+        if value is None:
+            return None
+        if value <= 5.0:
+            return value
+        prescription = self._first_numeric(dose_metrics, ("prescribed_dose", "prescription"))
+        if prescription is None:
+            prescription = self._first_numeric(plan_config, ("prescribed_dose", "in_lowest_energy", "prescription_dose"))
+        if prescription is not None and prescription <= 5.0:
+            dose_scale = (
+                self._first_numeric(dose_metrics, ("dose_scale_gy",))
+                or self._first_numeric(plan_config, ("dose_scale_gy",))
+                or 120.0
+            )
+            prescription *= dose_scale
+        if prescription and prescription > 0:
+            return value / prescription
+        return None
 
     def _configured_target_checks(self, plan_config: Dict[str, Any]) -> Dict[str, dict]:
         checks: Dict[str, dict] = {}
@@ -272,6 +325,8 @@ Return JSON only:
             )
         for item in det_results["unverified"]:
             lines.append(f"- Unverified: {item}")
+        for item in det_results.get("advisory_issues", []):
+            lines.append(f"- Advisory sanity issue: {item}")
         if not lines:
             lines.append("No deterministic concerns.")
 
@@ -339,6 +394,7 @@ Return JSON only:
                 f"{issue['organ']} {issue['metric']}={issue['value']:.1f} Gy, "
                 f"limit={issue['limit']:.1f} Gy ({issue['status']})"
             )
+        concerns.extend(det_results.get("advisory_issues", []))
         concerns.extend(det_results["unverified"])
 
         suggestions: List[str] = []
@@ -347,13 +403,15 @@ Return JSON only:
             summary = llm_results.get("clinical_summary", "")
             if summary and len(summary) > 20:
                 suggestions.insert(0, summary)
+        elif det_results.get("advisory_issues"):
+            suggestions.append("Recheck seed distribution, dose scaling, and DVH before clinical approval.")
         elif det_results["unverified"]:
             suggestions.append("Query clinical_kb for site-specific target and OAR limits before final clinical approval.")
 
         if not plan_info.get("total_seeds"):
             concerns.append("Plan info does not report any seeds.")
 
-        if det_results["issues"] or det_results["oar_issues"]:
+        if det_results["issues"] or det_results["oar_issues"] or det_results.get("advisory_issues"):
             decision = "conditional"
         elif det_results["has_clinical_thresholds"] and not det_results["unverified"]:
             decision = "pass"
@@ -376,6 +434,8 @@ Return JSON only:
     def _build_reasoning(self, det_results: dict, llm_results: Optional[dict]) -> str:
         lines = [f"Deterministic score: {det_results['score']}/10"]
         lines.append(f"Target issues: {len(det_results['issues'])}; OAR issues: {len(det_results['oar_issues'])}")
+        if det_results.get("advisory_issues"):
+            lines.append(f"Advisory sanity issues: {len(det_results['advisory_issues'])}")
         if det_results["unverified"]:
             lines.append(f"Unverified clinical thresholds: {len(det_results['unverified'])}")
         if llm_results:

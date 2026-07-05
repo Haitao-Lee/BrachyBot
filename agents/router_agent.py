@@ -63,7 +63,8 @@ class RouterAgent(LLMCapableAgent):
         },
         "dose_evaluation": {
             # Bilingual: 计算剂量=calculate dose, 评估剂量=evaluate dose
-            "keywords": ["计算剂量", "evaluate dose", "评估剂量", "dose calc", "dvh analysis", "dose_engine", "dose_evaluation"],
+            "keywords": ["计算剂量", "evaluate dose", "dose evaluation", "评估剂量", "剂量评估",
+                         "dose calc", "dvh", "dvh analysis", "dose map", "dose_engine", "dose_evaluation"],
             "complexity": "medium",
             "agents": [AgentRole.CLINICAL_EXECUTOR],
             "requires_review": True,
@@ -207,6 +208,23 @@ class RouterAgent(LLMCapableAgent):
                 requires_review=config["requires_review"],
                 context={"matched_keywords": [k for k in knowledge_markers if k in input_lower][:8]},
                 reasoning="Knowledge-only question; no planning execution intent detected",
+                confidence=0.9,
+            )
+
+        dose_eval_markers = (
+            "evaluate dose", "dose evaluation", "dose eval", "dose distribution",
+            "dose map", "dvh", "dose-volume", "dose volume",
+            "剂量评估", "评估剂量", "剂量分布", "剂量图", "等剂量", "dvh曲线",
+        )
+        if any(k in input_lower for k in dose_eval_markers):
+            config = self.INTENT_PATTERNS["dose_evaluation"]
+            return RoutingDecision(
+                intent="dose_evaluation",
+                complexity=config["complexity"],
+                agents_needed=config["agents"],
+                requires_review=config["requires_review"],
+                context={"matched_keywords": [k for k in dose_eval_markers if k in input_lower][:8]},
+                reasoning="Dose evaluation request detected before generic planning keywords",
                 confidence=0.9,
             )
 
