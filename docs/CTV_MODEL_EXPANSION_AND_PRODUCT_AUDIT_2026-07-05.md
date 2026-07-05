@@ -52,6 +52,8 @@ The main verified gap was CTV model governance for non-pancreatic tumors. The re
 | CTV-07 | There was no structured way to tell the UI/agent which CTV resources are local, external, or training-only. | No model catalog endpoint/tool existed. | Added `ctv_model_catalog`, `/api/ctv/models`, and UI capabilities exposure. |
 | CTV-08 | Explicit unknown tumor sites could silently fall back to the pancreatic default. | Route review showed `_map_tumor_type` returned pancreas for unmapped values and the unified CTV tool also defaulted if an unsupported value reached it. | Explicit unsupported tumor types now fail closed with the model catalog. |
 | CTV-09 | Missing or ambiguous tumor site could silently use the pancreatic default. | Product review concluded that a multi-site system should not infer pancreas when the user has not specified the case site. | Automatic CTV segmentation now requires a tumor site or `label_path`; otherwise it returns a clarification-required response. |
+| CTV-10 | Imported/manual CTV labels could still be displayed or reported as pancreatic tumor when no model name was present. | Full-chain review showed fallback label-map and report text defaulted to `pancreatic tumor` / `nnunet_pancreatic`. | Manual/imported CTV now remains source-aware as `CTV` / `manual/imported CTV label`; model-based CTV names use the selected tumor model. |
+| Runtime-01 | Some external segmentation subprocesses could hang without a timeout if the child process kept stdout open. | Static review found direct `for line in proc.stdout` loops in pancreatic nnU-Net OAR and prostate TotalSegmentator paths. | Both paths now use `communicate(timeout=...)`, terminate the process group on timeout, and include tail output in failure messages. |
 
 ## Public Model and Dataset Review
 
@@ -91,6 +93,8 @@ python scripts/download_ctv_models.py --model difftumor_nnunet_liver
 - Registered `CTVModelCatalogTool` in `AgenticSys.py`.
 - Updated CTV tumor-type aliases and removed automatic pancreas fallback when the user has not specified the tumor site.
 - Changed `/api/segmentation` to use the unified CTV tool instead of hard-coded pancreatic inference.
+- Made CTV label naming source-aware across tool metadata, viewer overlay headers, manual segmentation storage, and planning reports.
+- Added timeout and subprocess-group cleanup protection for pancreatic nnU-Net OAR and prostate target segmentation.
 - Added `/api/ctv/models` with local availability metadata and source links.
 - Added CTV model metadata to `/api/ui/capabilities`.
 - Updated system and planning prompts to avoid organ-as-CTV substitution.

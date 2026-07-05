@@ -2996,9 +2996,10 @@ class BrachyAgent:
             _cvm3 = meta.get("ctv_volume_mm3")
             if _cvm3:
                 self.memory.store("ctv_volume_mm3", _cvm3)
-            if meta.get("tumor_type"):
-                self.memory.store("tumor_type_used", meta["tumor_type"])
-            logger.info(f"[STORE] ctv_segmentation: ctv_voxels={_cv}, ctv_volume_mm3={_cvm3}, tumor_type={meta.get('tumor_type')}")
+            tumor_type_used = meta.get("tumor_type_used") or meta.get("tumor_type")
+            if tumor_type_used:
+                self.memory.store("tumor_type_used", tumor_type_used)
+            logger.info(f"[STORE] ctv_segmentation: ctv_voxels={_cv}, ctv_volume_mm3={_cvm3}, tumor_type={tumor_type_used}")
         elif tool_name == "oar_segmentation":
             if "oar_array" in meta:
                 # Store as plain numpy array (like CTV) — do NOT wrap in SimpleITK
@@ -3324,9 +3325,6 @@ print(json.dumps(result))
             sx, sy, sz = spacing[0], spacing[1], spacing[2]
             vol_mm3 = ctv_voxels * sx * sy * sz
             ctv_vol_cm3 = vol_mm3 / 1000.0
-            sx, sy, sz = spacing[0], spacing[1], spacing[2]
-            vol_mm3 = ctv_voxels * sx * sy * sz
-            ctv_vol_cm3 = vol_mm3 / 1000.0
 
         # Extract prescription dose in Gy.
         #
@@ -3377,6 +3375,18 @@ print(json.dumps(result))
         # Helper for zh/en label lookup
         def L(zh, en):
             return zh if is_zh else en
+
+        def _ctv_source_labels(source):
+            source = str(source or "").strip()
+            if source in {"manual_label", "label_path", "user_label"}:
+                return (
+                    L("用户提供的 CTV", "user-provided CTV"),
+                    L("手动/导入 CTV 标签", "manual/imported CTV label"),
+                )
+            if not source or source == "unknown":
+                return (L("未记录", "not recorded"), L("未记录", "not recorded"))
+            clean = source.replace("_", " ").replace("nnunet ", "").replace("voco ", "")
+            return (clean, f"CTV model ({source})")
 
         def _label_id_from_generic_name(name):
             s = str(name or "").strip().lower().replace("-", "_").replace(" ", "_")
@@ -3430,11 +3440,12 @@ print(json.dumps(result))
 
         # Section 2: CTV Segmentation
         ctv_vol_str = f"{ctv_vol_cm3:.2f} cm³" if ctv_vol_cm3 else "N/A"
+        ctv_location_label, ctv_algorithm_label = _ctv_source_labels(tumor_type)
         lines.append(f"## {L('2. CTV 靶区分割', '2. CTV Segmentation')}")
         lines.append("")
         lines.append(f"- **{L('肿瘤体积', 'Tumor volume')}**: {ctv_vol_str} ({ctv_voxels:,} {L('体素', 'voxels')})")
-        lines.append(f"- **{L('解剖位置', 'Anatomical location')}**: {tumor_type or L('胰腺', 'pancreas')}")
-        lines.append(f"- **{L('分割算法', 'Segmentation algorithm')}**: nnUNet ({tumor_type or 'nnunet_pancreatic'})")
+        lines.append(f"- **{L('解剖位置', 'Anatomical location')}**: {ctv_location_label}")
+        lines.append(f"- **{L('分割算法', 'Segmentation algorithm')}**: {ctv_algorithm_label}")
         lines.append("")
 
         # Section 3: OAR Segmentation
@@ -3942,7 +3953,7 @@ Output (JSON array of strings):"""
         "脑肿瘤患者": "voco_brats21",        # brain tumor patient
     }
 
-    def _map_tumor_type(self, tumor_type: str) -> str:
+    def _map_tumor_type(self, tumor_type: Optional[str]) -> Optional[str]:
         """Map user-provided tumor type to VoCo tool name."""
         if tumor_type is None:
             return None
