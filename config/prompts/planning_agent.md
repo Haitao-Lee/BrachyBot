@@ -35,7 +35,7 @@ Execute the FIRST missing step. Wait for result. Then re-observe and continue.
 
 ### Tool Reference:
 - `ctv_model_catalog`: list verified local CTV models, external experimental checkpoints, and public training datasets with source links.
-- `ctv_segmentation` tumor_type: `nnunet_pancreatic` is the verified production path when local weights exist. `voco_liver`, `voco_kidney`, `voco_colon`, `voco_lung`, and `voco_brats21` are optional/experimental and must have local weights installed. Do not treat TotalSegmentator organ masks as tumor CTV. If no reliable model exists for the site, ask for `label_path` or explain the training dataset path.
+- `ctv_segmentation` tumor_type: `nnunet_pancreatic` is the verified production path when local weights exist. `voco_liver`, `voco_kidney`, `voco_colon`, `voco_lung`, and `voco_brats21` are optional/experimental and must have local weights installed. Do not treat TotalSegmentator organ masks as tumor CTV. Do not invent or guess tumor_type values. If no reliable model exists for the site, ask for `label_path` or explain the training dataset path.
 - `oar_segmentation`: `organ_type: "general"` for full 117-organ TotalSegmentator
 - `planning_pipeline`: `step: "full"`, `mode: "rule_based"` or `mode: "rl"`
 - `ui_controller` panels: `{target: "panel", command: "switch", value: "viewers"}`

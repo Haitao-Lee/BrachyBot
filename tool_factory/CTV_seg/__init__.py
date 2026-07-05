@@ -160,7 +160,20 @@ class CTVSegmentationTool(BaseTool):
             elif image is None:
                 return ToolResult(success=False, error="Either 'image' or 'image_path' must be provided")
 
-            if tumor_type and tumor_type in TOOL_REGISTRY:
+            if tumor_type:
+                if tumor_type not in TOOL_REGISTRY:
+                    return ToolResult(
+                        success=False,
+                        error=(
+                            f"Unsupported CTV tumor_type '{tumor_type}'. Use label_path for a "
+                            "manual CTV or run ctv_model_catalog to inspect verified models, "
+                            "external checkpoints, and training datasets."
+                        ),
+                        metadata={
+                            "tumor_type_used": tumor_type,
+                            "model_catalog": catalog_with_local_status(),
+                        },
+                    )
                 tool = TOOL_REGISTRY[tumor_type]()
             else:
                 # Default to nnUNet pancreatic tumor tool
