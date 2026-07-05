@@ -8,7 +8,6 @@ must include a richer clinical-planning context:
 - tumor size and geometric extent;
 - tumor location expressed in centimeters;
 - edge or shape regularity;
-- malignancy or grade when the user provides pathology/staging context;
 - prescription dose rationale, using explicit case configuration first and
   source-backed clinical knowledge when no case-specific rationale is provided.
 
@@ -30,11 +29,7 @@ The helper computes:
 - bounding-box fill ratio and boundary voxel ratio;
 - a conservative shape regularity descriptor.
 
-The helper deliberately does not infer tumor biology from CT geometry alone.
-If `plan_config` contains pathology, histology, malignancy, malignancy grade, or
-tumor stage, that text is reported. Otherwise the report states that malignancy
-cannot be inferred from planning CT/CTV geometry and requires pathology,
-staging, enhancement pattern, and clinician diagnosis.
+The report focuses on measurable geometry and dosimetric rationale only.
 
 ### Prescription dose rationale
 
@@ -104,9 +99,6 @@ The new fields are planning-support descriptors, not a signed diagnosis.
 
 - Shape regularity is derived from the CTV mask and should be reviewed against
   original imaging by a clinician.
-- Malignancy degree is reported only when pathology/staging context exists.
-  Otherwise the report explicitly says that the information is not inferable
-  from planning CT geometry alone.
 - Dose rationale must be confirmed by the treating radiation oncologist and
   physicist before clinical use.
 
@@ -127,4 +119,3 @@ Validation performed:
 - targeted Python compile check for modified Python files;
 - report-context smoke test using an in-memory CTV mask and plan config;
 - `git diff --check` whitespace validation.
-

@@ -199,22 +199,6 @@ def build_tumor_imaging_assessment(memory: Any) -> Dict[str, Any]:
     max_diameter_cm = float(np.max(dims_mm_xyz) / 10.0)
     equivalent_sphere_diameter_cm = float(((6.0 * volume_cm3 / math.pi) ** (1.0 / 3.0)) if volume_cm3 > 0 else 0.0)
 
-    plan_config = _retrieve(memory, "plan_config", {}) or {}
-    pathology = (
-        plan_config.get("pathology")
-        or plan_config.get("histology")
-        or plan_config.get("malignancy")
-        or plan_config.get("malignancy_grade")
-        or plan_config.get("tumor_stage")
-    )
-    if pathology:
-        malignancy_note = str(pathology)
-    else:
-        malignancy_note = (
-            "Not inferable from planning CT/CTV geometry alone; requires pathology, staging, "
-            "contrast-enhancement pattern, and clinician diagnosis."
-        )
-
     return {
         "available": True,
         "volume_cm3": volume_cm3,
@@ -228,7 +212,6 @@ def build_tumor_imaging_assessment(memory: Any) -> Dict[str, Any]:
         "bbox_fill_ratio": bbox_fill_ratio,
         "surface_to_volume_voxel_ratio": surface_to_volume,
         "edge_regularity": regularity,
-        "malignancy_assessment": malignancy_note,
         "interpretation_boundary": (
             "Shape descriptors are segmentation-derived planning descriptors, not a radiology diagnosis."
         ),
@@ -354,7 +337,6 @@ def format_tumor_assessment_markdown(context: Dict[str, Any], lang: str = "zh") 
             f"- **三向范围**: X/Y/Z 约 {_fmt(dims[0])} / {_fmt(dims[1])} / {_fmt(dims[2])} cm。",
             f"- **位置**: CTV 中心世界坐标约 ({_fmt(center[0])}, {_fmt(center[1])}, {_fmt(center[2])}) cm；相对 CT 体数据中心偏移约 ({_fmt(offset[0])}, {_fmt(offset[1])}, {_fmt(offset[2])}) cm。",
             f"- **边缘/形态规则程度**: {tumor.get('edge_regularity')}；bbox 填充率 {_fmt(tumor.get('bbox_fill_ratio'), 3)}，表面/体素比 {_fmt(tumor.get('surface_to_volume_voxel_ratio'), 3)}。",
-            f"- **恶性程度**: {tumor.get('malignancy_assessment')}",
             f"- **判读边界**: {tumor.get('interpretation_boundary')}",
         ]
     else:
@@ -365,7 +347,6 @@ def format_tumor_assessment_markdown(context: Dict[str, Any], lang: str = "zh") 
             f"- **Bounding dimensions**: X/Y/Z about {_fmt(dims[0])} / {_fmt(dims[1])} / {_fmt(dims[2])} cm.",
             f"- **Location**: CTV centroid world coordinates about ({_fmt(center[0])}, {_fmt(center[1])}, {_fmt(center[2])}) cm; offset from CT volume center about ({_fmt(offset[0])}, {_fmt(offset[1])}, {_fmt(offset[2])}) cm.",
             f"- **Shape regularity**: {tumor.get('edge_regularity')}; bbox fill ratio {_fmt(tumor.get('bbox_fill_ratio'), 3)}, surface/voxel ratio {_fmt(tumor.get('surface_to_volume_voxel_ratio'), 3)}.",
-            f"- **Malignancy grade**: {tumor.get('malignancy_assessment')}",
             f"- **Interpretation boundary**: {tumor.get('interpretation_boundary')}",
         ]
     return "\n".join(lines)

@@ -1694,9 +1694,7 @@ agentic planner and a standalone planning workstation:
 - **Tumor and prescription context in reports**: final planning replies,
   report auto-fill, and report export include deterministic CTV geometry
   summaries (volume, centimeter-scale location, bounding dimensions, and shape
-  regularity) plus prescription-dose rationale. Pathology or malignancy grade
-  is reported only when explicitly supplied by `plan_config`; otherwise the
-  report states that CT/CTV geometry cannot determine malignancy.
+  regularity) plus prescription-dose rationale.
 - **Safe tool creation boundary**: dynamic tool names are normalized and
   constrained to the dynamic tool directory, preventing path traversal while
   preserving BrachyBot's ability to create code-based tools when that policy is
