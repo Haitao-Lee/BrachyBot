@@ -100,7 +100,8 @@ class CTVSegmentationTool(BaseTool):
             "Segment Clinical Target Volume (CTV/tumor) from CT images. "
             "Supports verified local pancreatic nnU-Net and optional external/experimental models "
             "listed by ctv_model_catalog. "
-            "Input: CT image (SimpleITK) or path, optional tumor_type. "
+            "Input: CT image (SimpleITK) or path, required tumor_type for automatic "
+            "segmentation, or label_path for an existing/manual CTV mask. "
             "Output: CTV binary mask and volume metrics."
         )
 
@@ -114,7 +115,7 @@ class CTVSegmentationTool(BaseTool):
                 "label_path": {"type": "string", "description": "Path to existing CTV label file (optional)"},
                 "tumor_type": {
                     "type": "string",
-                    "description": f"Tumor type for specialized model. Options: {self._tumor_types}. Auto-detect if not specified.",
+                    "description": f"Tumor type for specialized model. Options: {self._tumor_types}. Required unless label_path is provided.",
                     "enum": self._tumor_types,
                 },
                 "target_value": {"type": "number", "default": 1, "description": "Label value for tumor voxels"},
@@ -216,7 +217,7 @@ class CTVSegmentationTool(BaseTool):
                     "CTV or run ctv_model_catalog to see verified models and datasets."
                 ),
                 metadata={
-                    "tumor_type_used": tumor_type or "auto",
+                    "tumor_type_used": tumor_type or ("manual_label" if from_label_path else "unknown"),
                     "model_catalog": catalog_with_local_status(),
                 },
             )
@@ -224,15 +225,21 @@ class CTVSegmentationTool(BaseTool):
         voxel_size = spacing[0] * spacing[1] * spacing[2]
         volume_mm3 = voxel_count * voxel_size
 
-        # Update label map with tumor type name (e.g., "pancreatic tumor" instead of just "tumor")
-        label_map = result.metadata.get("label_map", {}) if result is not None else {}
-        tumor_type_name = (tumor_type or "tumor").replace("_", " ").replace("nnunet ", "").replace("voco ", "")
-        if 1 in label_map:
-            if tumor_type_name == "tumor":
-                # Default tool is nnUNet pancreatic — use "pancreatic tumor"
-                label_map[1] = "pancreatic tumor"
-            else:
-                label_map[1] = f"{tumor_type_name} tumor"
+        # Keep CTV display names source-aware.
+        label_map = dict(result.metadata.get("label_map", {}) if result is not None else {})
+        positive_labels = [int(v) for v in np.unique(ctv_array) if int(v) > 0]
+        if not label_map:
+            label_map = {
+                label: ("CTV" if idx == 0 else f"CTV label {label}")
+                for idx, label in enumerate(positive_labels)
+            }
+
+        tumor_type_name = (
+            tumor_type.replace("_", " ").replace("nnunet ", "").replace("voco ", "")
+            if tumor_type else ""
+        )
+        if tumor_type_name and 1 in label_map:
+            label_map[1] = f"{tumor_type_name} tumor"
         import logging
         logging.getLogger(__name__).info(f"CTV label_map updated: {label_map}, tumor_type={tumor_type}, tumor_type_name={tumor_type_name}")
 

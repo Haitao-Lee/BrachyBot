@@ -11,6 +11,7 @@ import logging
 import tempfile
 import shutil
 import subprocess
+import signal
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -194,14 +195,31 @@ class ProstateTumorSegmentationTool(BaseTool):
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,
                 env=env,
+                start_new_session=(os.name == "posix"),
             )
 
-            for line in proc.stdout:
-                logger.debug(line.strip())
-            proc.wait()
+            timeout_s = int(os.getenv("BRACHYBOT_TOTALSEG_TIMEOUT_SEC", "300"))
+            try:
+                output, _ = proc.communicate(timeout=timeout_s)
+            except subprocess.TimeoutExpired:
+                if os.name == "posix":
+                    os.killpg(proc.pid, signal.SIGTERM)
+                else:
+                    proc.kill()
+                try:
+                    output, _ = proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    output, _ = proc.communicate()
+                raise RuntimeError(f"TotalSegmentator prostate timed out after {timeout_s}s")
+
+            output_lines = [line.strip() for line in (output or "").splitlines() if line.strip()]
+            for line in output_lines[-80:]:
+                logger.debug(line)
 
             if proc.returncode != 0:
-                raise RuntimeError(f"TotalSegmentator failed with return code {proc.returncode}")
+                tail = "\n".join(output_lines[-20:])
+                raise RuntimeError(f"TotalSegmentator failed with return code {proc.returncode}. Last output: {tail}")
 
             result_file = os.path.join(output_dir, "prostate.nii.gz")
             if not os.path.exists(result_file):

@@ -660,6 +660,8 @@ VoCo segmentation model weights are not included in the repository due to size (
 
 Without a specified tumor site plus verified CTV weights, or a user-provided `label_path`, CTV segmentation now fails closed. BrachyBot no longer treats TotalSegmentator organ masks or HU-threshold fallbacks as tumor CTV.
 
+Imported/manual `label_path` CTV masks remain source-aware in the Data Tree, viewer overlays, and reports. They are displayed as CTV/manual labels unless a validated tumor model was explicitly selected.
+
 CTV model discovery is exposed through:
 
 ```bash

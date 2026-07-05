@@ -11,6 +11,7 @@ import logging
 import tempfile
 import shutil
 import subprocess
+import signal
 from collections import deque
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -234,18 +235,34 @@ class PancreaticOARTool(BaseTool):
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,
                 startupinfo=startupinfo,
+                start_new_session=(os.name == "posix"),
             )
 
-            output_lines = deque()
-            for line in proc.stdout:
+            timeout_s = int(os.getenv("BRACHYBOT_NNUNET_TIMEOUT_SEC", "300"))
+            try:
+                output, _ = proc.communicate(timeout=timeout_s)
+            except subprocess.TimeoutExpired:
+                if os.name == "posix":
+                    os.killpg(proc.pid, signal.SIGTERM)
+                else:
+                    proc.kill()
+                try:
+                    output, _ = proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    output, _ = proc.communicate()
+                raise RuntimeError(f"nnU-Net timed out after {timeout_s}s")
+
+            output_lines = deque(maxlen=80)
+            for line in (output or "").splitlines():
                 stripped = line.strip()
                 if stripped:
                     output_lines.append(stripped)
                     logger.debug(stripped)
-            proc.wait()
 
             if proc.returncode != 0:
-                raise RuntimeError(f"nnU-Net failed with return code {proc.returncode}")
+                tail = "\n".join(output_lines)
+                raise RuntimeError(f"nnU-Net failed with return code {proc.returncode}. Last output: {tail}")
 
             output_files = [f for f in os.listdir(output_folder) if f.endswith(".nii.gz")]
             if not output_files:

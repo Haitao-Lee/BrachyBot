@@ -2099,8 +2099,12 @@ def create_app(config: Optional[Dict] = None):
             if ctv_label_map:
                 response.headers['X-CTV-Label-Map'] = _json.dumps({str(k): v for k, v in ctv_label_map.items()})
             else:
-                # Fallback: use default label names
-                response.headers['X-CTV-Label-Map'] = _json.dumps({"1": "pancreatic tumor"})
+                tumor_type_used = str(agent.memory.retrieve("tumor_type_used", "") or "").strip()
+                if tumor_type_used and tumor_type_used not in {"manual_label", "label_path", "unknown"}:
+                    ctv_name = tumor_type_used.replace("_", " ").replace("nnunet ", "").replace("voco ", "")
+                    response.headers['X-CTV-Label-Map'] = _json.dumps({"1": f"{ctv_name} tumor"})
+                else:
+                    response.headers['X-CTV-Label-Map'] = _json.dumps({"1": "CTV"})
 
             # Also return organ metadata for data tree
             organ_names = agent.memory.retrieve("organ_names", {})
@@ -3238,6 +3242,14 @@ def create_app(config: Optional[Dict] = None):
                         agent.memory.store("ctv_segmented", True)
                         if meta.get("tumor_type_used"):
                             agent.memory.store("tumor_type_used", meta["tumor_type_used"])
+                        if meta.get("label_map"):
+                            agent.memory.store("ctv_label_map", meta["label_map"])
+                        if meta.get("label_stats"):
+                            agent.memory.store("ctv_label_stats", meta["label_stats"])
+                        if meta.get("ctv_volume_mm3") is not None:
+                            agent.memory.store("ctv_volume_mm3", meta["ctv_volume_mm3"])
+                        if meta.get("ctv_voxel_count") is not None:
+                            agent.memory.store("ctv_voxels", meta["ctv_voxel_count"])
                     except Exception as e:
                         logger.warning(f"store ctv_label_data failed: {e}")
             elif kind == "oar" and hasattr(agent, "memory"):
