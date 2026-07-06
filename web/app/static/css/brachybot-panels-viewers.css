@@ -1,0 +1,1137 @@
+/* ===========================================================
+   RIGHT PANEL (strong glass)
+   =========================================================== */
+.right-panel {
+    width: 45%; min-width: 50px;
+    background: var(--glass-tint-cool);
+    backdrop-filter: var(--blur-lg);
+    -webkit-backdrop-filter: var(--blur-lg);
+    border-left: 1px solid var(--border-default);
+    box-shadow: -1px 0 0 rgba(15, 23, 42, 0.04), var(--inset-top);
+    display: flex; flex-direction: column;
+    overflow: clip; overflow-clip-margin: 20px;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 5;
+}
+
+/* Inner left highlight on right panel (Linear-style edge glow) */
+.right-panel::before {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 1px;
+    background: linear-gradient(180deg,
+        rgba(255,255,255,0.7) 0%,
+        rgba(255,255,255,0.2) 50%,
+        transparent 100%);
+    pointer-events: none;
+    z-index: 1;
+}
+
+.v-splitter {
+    /* 8px wide so the user has a generous click target — 5px is
+       too thin and the user often misses the drag handle on
+       the first click. The center has a colored bar; the side
+       is transparent (still cursor: col-resize). */
+    width: 8px;
+    background: transparent;
+    cursor: col-resize;
+    flex-shrink: 0;
+    position: relative;
+    transition: background var(--t-base) var(--ease);
+    z-index: 10;
+}
+.v-splitter:hover,
+.v-splitter.dragging {
+    background: rgba(59, 130, 246, 0.06);
+}
+/* Always-visible 2px blue bar FULL HEIGHT of the splitter so the
+   user can see where to grab. On hover/dragging it grows to 3px
+   and brightens. pointer-events: none lets the parent .v-splitter
+   receive the click (the bar is purely decorative). */
+.v-splitter::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    background: var(--primary);
+    opacity: 0.35;
+    border-radius: 2px;
+    transition: opacity var(--t-base) var(--ease), width var(--t-base) var(--ease);
+    pointer-events: none;
+}
+.v-splitter:hover::after, .v-splitter.dragging::after {
+    opacity: 1;
+    width: 3px;
+}
+
+.panel-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border-hairline);
+    flex-shrink: 0;
+    /* Prominent frosted glass — semi-transparent dark tint + blur so the
+       underlying canvas gradients shine through, with strong contrast
+       for tab labels (was a hard-coded white gradient that washed out
+       on dark backgrounds). */
+    background: var(--glass-tint-cool);
+    backdrop-filter: var(--blur-md);
+    -webkit-backdrop-filter: var(--blur-md);
+    box-shadow: var(--inset-top), 0 1px 0 var(--glass-border);
+    position: relative;
+    z-index: 5;
+}
+.panel-tab {
+    flex: 1;
+    height: 38px;
+    text-align: center;
+    font-size: 0.72rem;
+    color: var(--text);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all var(--t-base) var(--ease);
+    font-weight: 600;
+    display: flex; align-items: center; justify-content: center; gap: 0.35rem;
+    overflow: hidden; white-space: nowrap;
+    position: relative;
+    letter-spacing: 0.04em;
+}
+.panel-tab:hover {
+    color: var(--text);
+    background: var(--msg-hover);
+}
+.panel-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+    background: var(--msg-user-bg);
+    font-weight: 600;
+}
+
+.panel-content {
+    flex: 1; overflow-y: auto; display: none;
+    min-height: 0;
+}
+.panel-content.active {
+    display: flex;
+    flex-direction: column;
+}
+
+/* ===========================================================
+   INPUT FORM (unified form-control language)
+   =========================================================== */
+.input-form {
+    padding: 0.95rem;
+    display: flex; flex-direction: column; gap: 0.55rem;
+    overflow-y: visible;
+}
+
+.form-section-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin: 6px 0 2px;
+    display: flex; align-items: center; gap: 0.5rem;
+}
+.form-section-title::after {
+    content: '';
+    flex: 1; height: 1px;
+    background: var(--border-soft);
+}
+
+.form-group { display: flex; flex-direction: column; gap: 0.18rem; }
+
+.form-label {
+    font-size: 0.66rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.form-row {
+    display: flex; gap: 0.4rem; align-items: center;
+}
+
+/* Unified control canonical */
+.form-input, .form-select {
+    height: var(--control-h);
+    background: var(--bg-2);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--control-r);
+    color: var(--text);
+    font-size: var(--control-font);
+    padding: 0 var(--control-pad-x);
+    width: 100%;
+    font-family: 'Inter', sans-serif;
+    box-shadow: var(--inset-top), var(--shadow-xs);
+    transition: all var(--t-base) var(--ease);
+}
+.form-input:hover, .form-select:hover { border-color: var(--border-default); }
+.form-input:focus, .form-select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16), var(--inset-top);
+}
+.form-input::placeholder { color: var(--text-faint); font-size: 0.72rem; }
+.form-select {
+    cursor: pointer;
+    background-image:
+        linear-gradient(45deg, transparent 50%, var(--text-secondary) 50%),
+        linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
+    background-position: calc(100% - 14px) 50%, calc(100% - 10px) 50%;
+    background-size: 4px 4px, 4px 4px;
+    background-repeat: no-repeat;
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 1.7rem;
+}
+
+.file-btn {
+    height: var(--control-h);
+    background: var(--bg-2);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--control-r);
+    color: var(--text-secondary);
+    font-size: var(--control-font);
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    padding: 0 0.65rem;
+    transition: all var(--t-base) var(--ease);
+    flex-shrink: 0;
+    box-shadow: var(--inset-top), var(--shadow-xs);
+    user-select: none;
+    -webkit-user-select: none;
+}
+.file-btn:hover {
+    background: var(--msg-user-bg);
+    color: var(--primary-ink);
+    border-color: var(--msg-user-border);
+    transform: translateY(-1px);
+    box-shadow: var(--inset-top), var(--shadow-sm);
+}
+.file-btn.active {
+    background: var(--primary);
+    color: var(--primary-ink);
+    border-color: var(--primary);
+}
+.file-btn:active { transform: translateY(0) scale(0.97); }
+.file-btn:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* Dark-mode overrides for the viewers-panel toolbar (4-up grid) */
+/* Inline styles like style="padding:2px 6px;font-size:0.6rem;" get overridden
+   here with !important so the dark-mode buttons render correctly. */
+.viewers-panel.layout-grid .file-btn,
+.viewers-panel.layout-grid button.file-btn,
+.viewers-panel.layout-grid div[style*="display:flex"] button.file-btn {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    color: #c9d1e0 !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
+    padding: 0 0.55rem !important;
+    height: 26px !important;
+    font-size: 0.66rem !important;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition: all 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.viewers-panel.layout-grid .file-btn:hover {
+    background: rgba(59, 130, 246, 0.20) !important;
+    color: #fff !important;
+    border-color: rgba(96, 165, 250, 0.5) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(59, 130, 246, 0.25) !important;
+}
+.viewers-panel.layout-grid .file-btn:active { transform: translateY(0) scale(0.97); }
+.viewers-panel.layout-grid .file-btn.active {
+    background: var(--primary) !important;
+    color: #fff !important;
+    border-color: rgba(96, 165, 250, 0.6) !important;
+    box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.4), 0 4px 12px rgba(59, 130, 246, 0.35) !important;
+}
+.viewers-panel.layout-grid .file-btn:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 1px;
+}
+.viewers-panel.layout-grid #windowPreset,
+.viewers-panel.layout-grid #viewerWindow,
+.viewers-panel.layout-grid #viewerLevel,
+.viewers-panel.layout-grid #viewerThreshold,
+.viewers-panel.layout-grid #displayMode {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    color: #e6ebff !important;
+    border-radius: 5px !important;
+}
+.viewers-panel.layout-grid #windowPreset:focus,
+.viewers-panel.layout-grid #viewerWindow:focus,
+.viewers-panel.layout-grid #viewerLevel:focus,
+.viewers-panel.layout-grid #viewerThreshold:focus,
+.viewers-panel.layout-grid #displayMode:focus {
+    border-color: rgba(96, 165, 250, 0.6) !important;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+}
+.viewers-panel.layout-grid #huDisplay {
+    color: #93c5fd !important;
+    background: rgba(59, 130, 246, 0.10);
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.62rem !important;
+}
+
+.form-actions { display: flex; gap: 0.45rem; margin-top: 0.45rem; flex-wrap: wrap; }
+
+.btn {
+    height: var(--control-h);
+    padding: 0 0.95rem;
+    border: none;
+    border-radius: var(--control-r);
+    font-size: var(--control-font);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--t-base) var(--ease);
+    display: flex; align-items: center; gap: 0.35rem;
+    letter-spacing: 0.01em;
+    position: relative;
+}
+.btn:active { transform: scale(0.97); }
+
+.btn-primary {
+    background: var(--primary);
+    color: #fff;
+    box-shadow: var(--inset-top), var(--shadow-sm);
+}
+.btn-primary:hover {
+    background: var(--primary-hover);
+    box-shadow: var(--inset-top), var(--shadow-elevated);
+    transform: translateY(-1px);
+}
+
+.btn-warning {
+    background: var(--warning);
+    color: #fff;
+    box-shadow: var(--inset-top), var(--shadow-sm);
+}
+.btn-warning:hover {
+    background: #b45309;
+    box-shadow: var(--inset-top), var(--shadow-elevated);
+    transform: translateY(-1px);
+}
+
+.btn-outline {
+    height: var(--control-h-sm);
+    background: var(--bg-2);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-hairline);
+    box-shadow: var(--inset-top), var(--shadow-xs);
+    padding: 0 0.6rem;
+    font-size: 0.66rem;
+}
+.btn-outline:hover {
+    color: var(--text);
+    border-color: var(--border-default);
+    background: var(--bg-1);
+    transform: translateY(-1px);
+}
+.btn-icon { font-size: 0.9rem; }
+
+/* ===========================================================
+   METRICS — 3-tier depth
+   ===========================================================
+   The metrics panel is a NORMAL block container (NOT a flex column).
+   Each .metrics-section sizes to its own content; if the sum of
+   section heights exceeds the panel's visible area, the OUTER
+   .panel-content scroll handles the overflow. There is exactly ONE
+   scroll bar — on the right edge of the panel — instead of two
+   nested scrollers (which was the bug that hid the OAR table behind
+   a tiny inner scrollbar). The user can grab the panel scrollbar
+   and reach any section regardless of how tall the DVH chart is. */
+.metrics-panel {
+    padding: 0.95rem; flex: 1;
+    display: block;             /* not flex — sections stack naturally */
+    min-height: 0;
+    /* No overflow: the parent .panel-content scrolls. */
+}
+
+.metrics-section {
+    display: flex; flex-direction: column;
+    min-height: 0;
+    margin-bottom: 0.65rem;
+    position: relative;
+    background: var(--bg-2);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-md);
+    overflow: visible;
+    box-shadow: var(--inset-top), var(--shadow-elevated);
+}
+
+/* Lock the DVH section to a fixed default height. Plotly's
+   `responsive: true` recalculates the chart's intrinsic size on every
+   window resize / relayout. With a stable explicit height, Plotly
+   fills exactly that box. The resize handle (#dvhOarHandle, data-min=240
+   data-max=900) lets the user drag to any height in that range; the
+   chosen value is persisted to localStorage. We picked 480px as the
+   default: tall enough to show all 8 DVH curves with legible axis
+   labels and breathing room above the legend. If the user drags it
+   taller than the visible panel area, the OUTER .panel-content
+   scrollbar reaches the rest. The OAR table below is never
+   squeezed — it lives at its natural height (50+ rows = several
+   hundred pixels) below the DVH chart, scrolled into view by the
+   outer scrollbar. */
+#metricsDVH {
+    height: 480px;          /* generous default — fits 8 DVH curves comfortably */
+    max-height: none;       /* no upper cap — user can drag up to 900px and
+                               the outer scrollbar takes care of the rest */
+    overflow: hidden;       /* Plotly hoverlabel is disabled; overflow
+                               hidden prevents any tooltip leakage. */
+}
+#metricsOAR {
+    /* Natural height — the table sets its own size based on row count.
+       If the table is taller than the remaining viewport, the outer
+       panel scrollbar lets the user reach the bottom rows. */
+    min-height: 200px;
+    max-height: none;       /* don't squeeze — let the table breathe */
+}
+
+/* The data-flex attributes are now no-ops (left in HTML for reference) */
+.metrics-section[data-flex] { /* intentional no-op */ }
+
+/* Vertical resize handle between metrics sections. Drag to adjust
+   the height of the previous section. Persists to localStorage. */
+.metrics-resize-handle {
+    height: 8px;
+    margin: 0 -0.95rem;       /* extend to panel edge for easier grab */
+    padding: 0 0.95rem;
+    cursor: ns-resize;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 5;
+    background: transparent;
+    transition: background 160ms var(--ease);
+}
+.metrics-resize-handle::after {
+    content: '';
+    position: absolute;
+    left: 0.95rem; right: 0.95rem;
+    top: 3px; bottom: 3px;
+    background: var(--border-hairline);
+    border-radius: 2px;
+    transition: background 160ms var(--ease), height 160ms var(--ease), top 160ms var(--ease);
+}
+.metrics-resize-handle:hover { background: var(--msg-hover); }
+.metrics-resize-handle:hover::after {
+    background: var(--primary);
+    top: 2px; bottom: 2px;
+}
+.metrics-resize-handle.dragging { background: var(--primary-soft); }
+.metrics-resize-handle.dragging::after { background: var(--primary); }
+
+.metrics-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.55rem;
+    display: flex; align-items: center; gap: 0.5rem;
+    /* TITLE PADDING FIX (2026-06-15): the parent .metrics-section
+       has border-radius:14px and overflow:hidden so the first
+       character of the title was being clipped by the rounded
+       corner. We give the title horizontal + top padding so the
+       label sits inside the safe area. The trailing ::after line
+       (the divider) extends across the full title width, so the
+       visual style is preserved. */
+    padding: 0.55rem 0.85rem 0;
+    margin-top: 0;
+}
+.metrics-title::after {
+    content: '';
+    flex: 1; height: 1px;
+    background: var(--border-soft);
+    margin-left: 0;
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-bottom: 0.55rem;
+}
+
+/* Default: floating card */
+.metric-card {
+    background: var(--bg-2);
+    /* ROUNDED CORNERS CLIPPING FIX (2026-06-15): the previous
+       border-radius of 10px + small padding caused the top-left
+       of the big metric value to get clipped by the corner
+       curve. We reduce the radius to 6px and bump top padding
+       so the value has visual clearance from the corner. */
+    border-radius: 6px;
+    padding: 0.85rem 0.5rem 0.7rem;
+    text-align: center;
+    border: 1px solid transparent;
+    box-shadow: var(--inset-top), var(--shadow-elevated);
+    transition: all var(--t-base) var(--ease);
+    position: relative;
+}
+.metric-card:hover {
+    box-shadow: var(--inset-top), var(--shadow-floating);
+    transform: translateY(-1px);
+}
+/* Status: sunken tinted — vivid */
+.metric-card.good {
+    background: rgba(16, 185, 129, 0.2);
+    border: 1px solid rgba(16, 185, 129, 0.5);
+    box-shadow: var(--inset-bottom), var(--shadow-xs);
+}
+.metric-card.good .metric-val { color: #34d399; font-weight: 700; }
+.metric-card.warn {
+    background: rgba(245, 158, 11, 0.2);
+    border: 1px solid rgba(245, 158, 11, 0.5);
+    border: 1px solid transparent;
+    box-shadow: var(--inset-bottom), var(--shadow-xs);
+}
+.metric-card.bad {
+    background: var(--danger-soft);
+    border: 1px solid transparent;
+    box-shadow: var(--inset-bottom), var(--shadow-xs);
+}
+
+.metric-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: -0.01em;
+}
+.metric-card.good .metric-val { color: var(--success); }
+.metric-card.warn .metric-val { color: var(--warning); }
+.metric-card.bad .metric-val { color: var(--danger); }
+.metric-lbl {
+    font-size: 0.58rem;
+    color: var(--text-secondary);
+    margin-top: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+}
+
+.metric-bar {
+    height: 4px;
+    background: rgba(15, 23, 42, 0.06);
+    border-radius: var(--pill-r);
+    margin-top: 6px;
+    overflow: hidden;
+}
+.metric-bar-fill {
+    height: 100%;
+    border-radius: var(--pill-r);
+    transition: width 0.7s var(--ease);
+}
+.metric-bar-fill.good { background: var(--success); }
+.metric-bar-fill.warn { background: var(--warning); }
+.metric-bar-fill.bad { background: var(--danger); }
+
+/* OAR table */
+.oar-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.7rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    font-family: 'JetBrains Mono', monospace;
+    box-shadow: var(--inset-top), var(--shadow-xs);
+}
+.oar-table th {
+    text-align: left;
+    padding: 0.5rem 0.55rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--border-hairline);
+    background: var(--bg-sunken);
+}
+.oar-table td {
+    padding: 0.4rem 0.55rem;
+    border-bottom: 1px solid var(--border-hairline);
+    color: var(--text-secondary);
+    transition: background var(--t-fast) var(--ease);
+}
+.oar-table tr:last-child td { border-bottom: none; }
+.oar-table tr:hover td { background: var(--msg-hover); }
+
+/* OAR status — canonical pill */
+.oar-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 20px;
+    padding: 0 7px;
+    font-size: 0.6rem;
+    font-weight: 600;
+    border-radius: var(--pill-r);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.oar-status::before {
+    content: '';
+    width: 5px; height: 5px;
+    border-radius: 999px;
+    background: currentColor;
+}
+.oar-status.pass {
+    background: var(--success-soft);
+    color: var(--success);
+    border: 1px solid var(--success-border);
+}
+.oar-status.warn {
+    background: var(--warning-soft);
+    color: var(--warning);
+    border: 1px solid var(--warning-border);
+}
+.oar-status.fail {
+    background: var(--danger-soft);
+    color: var(--danger);
+    border: 1px solid var(--danger-border);
+}
+
+/* ===========================================================
+   DVH — sunken well
+   =========================================================== */
+.dvh-container { padding: 0.95rem; flex: 1; overflow: hidden; position: relative; }
+/* DVH tooltip uses a mousemove-based approach with a fixed-position div
+   appended to document.body. Plotly's native hoverlabel is fully disabled. */
+.dvh-container .hoverlayer {
+    pointer-events: none !important;
+}
+
+.dvh-container {
+    /* Fill the leftover height of the metrics-section, but never grow
+       past the section's fixed box. The section caps the chart at 360px
+       (or 60vh on small viewports), and Plotly's responsive handler
+       paints exactly that box. Without `min-height: 0` Plotly would
+       inherit a 0 height because the parent is a flex container. */
+    flex: 1 1 auto;
+    min-height: 0;
+    position: relative;
+    background: var(--bg-sunken);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-hairline);
+    box-shadow: var(--inset-bottom), var(--shadow-xs);
+    overflow: hidden;  /* Custom DVH tooltip is clamped inside this panel. */
+    margin-bottom: 0.3rem;
+    /* Do NOT use height:0 — it gives the container zero dimensions,
+       causing Plotly's hover tooltip to misposition and overflow.
+       The metrics-section parent already caps height via flex layout. */
+}
+
+#dvhChart {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+
+.dvh-placeholder {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    height: 100%;
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    gap: 0.5rem;
+}
+
+.dvh-legend { display: flex; flex-direction: column; gap: 4px; font-size: 0.7rem; }
+.dvh-legend-item { display: flex; align-items: center; gap: 6px; color: var(--text-dim); }
+
+/* ===========================================================
+   SEEDS
+   =========================================================== */
+.seeds-panel { padding: 0.95rem; flex: 1; } /* kept for backward compat */
+
+/* Report panel: A4 multi-page stack. Pages are exact A4 (210x297mm at 96dpi = 794x1123px)
+   so the user can see the printed page boundaries. We render the document
+   as a vertical stack of A4 pages instead of one long scroll — this is
+   what a PDF reader shows and what the user expects from a formal report. */
+.report-pages { display: flex; flex-direction: column; align-items: center; gap: 0; }
+.report-page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 18mm 16mm 18mm 16mm;
+    background: #fff;
+    color: #000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
+    box-sizing: border-box;
+    position: relative;
+    page-break-after: always;
+    break-after: page;
+    /* Formal hospital typography:
+       - SimSun for Chinese text
+       - All digits and Latin text use Times New Roman
+       - Font size: 12pt
+       - Line height: 1.5 (formal medical document standard)
+       - All text black (#000), no grey tints, for clinical tone
+    */
+    font-family: 'Times New Roman', 'SimSun', 'Liberation Serif', serif;
+    font-size: 12pt;
+    line-height: 1.5;
+    color: #000;
+    overflow: hidden;
+    font-feature-settings: "tnum" 1, "lnum" 1;
+}
+.report-page:last-child { page-break-after: auto; break-after: auto; }
+.report-page::before {
+    /* A4 page boundary indicator (top-right page number) */
+    content: '';
+    position: absolute;
+    top: 8mm; right: 10mm;
+    width: 18mm; height: 4mm;
+    background: linear-gradient(90deg, transparent, #f1f5f9);
+    border-radius: 2px;
+}
+
+/* Hospital letterhead */
+/* BUG FIX 2026-06-17 (report header redesign): the previous
+   header stacked 3 logos + 3 lines of text (Ruijin Hospital, SJTU
+   School of Medicine, Department of Radiation Oncology, etc.)
+   which looked cluttered and not like a real medical report
+   letterhead. The user requested:
+     1. Smaller unified logo size
+     2. Single line of text: "Brachybot by xxxx: github link"
+     3. Keep the professional medical report look (border, divider)
+   The new header is a compact 2-row layout: a small row of 3
+   equally-sized logos, then a single horizontal line with the
+   "Brachybot by ..." credit + GitHub link. Compatible with
+   all existing features (i18n, print, screenshot). */
+.hp-letterhead {
+    /* BUG FIX 2026-06-17 (letterhead split layout): the user
+       asked for 3 logos on the LEFT and 2-line right-aligned
+       credit text on the RIGHT (byline + github). Previous
+       layout had logos + text side-by-side left-justified. */
+    display: flex; align-items: center; gap: 6mm;
+    padding-bottom: 3mm; margin-bottom: 5mm;
+    border-bottom: 2px solid #0c4a6e;
+}
+.hp-logo-group {
+    display: flex; align-items: center; gap: 2mm;
+    flex-shrink: 0;
+}
+.hp-logo-img {
+    width: 10mm; height: 10mm;
+    object-fit: contain;
+    background: transparent;
+    border-radius: 0;
+    border: none;
+    flex-shrink: 0;
+}
+.hp-logo-img-small {
+    width: 10mm; height: 10mm;
+}
+.hp-letterhead-text {
+    margin-left: auto;
+    text-align: right;
+    font-size: 7pt; color: #94a3b8;
+    line-height: 1.4;
+    font-family: 'Helvetica Neue', 'Arial', 'Microsoft YaHei', sans-serif;
+    flex-shrink: 0;
+    max-width: 70%;
+}
+.hp-letterhead-byline {
+    font-weight: 600; color: #64748b; letter-spacing: 0.2px;
+    margin-bottom: 0.4mm;
+    font-size: 7pt;
+}
+.hp-letterhead-github {
+    font-weight: 400; color: #94a3b8; font-size: 6.5pt;
+    letter-spacing: 0.15px;
+}
+.hp-letterhead-github a {
+    color: #0369a1; text-decoration: none;
+    border-bottom: 1px dotted #0369a1;
+    font-family: 'SFMono-Regular', 'Consolas', 'Monaco', monospace;
+    font-size: 8.5pt;
+}
+.hp-letterhead-github a:hover {
+    border-bottom: 1px solid #0369a1;
+}
+.hp-letterhead-credit {
+    font-weight: 600; color: #0c4a6e; letter-spacing: 0.3px;
+}
+.hp-letterhead-credit a {
+    color: #0369a1; text-decoration: none;
+    border-bottom: 1px dotted #0369a1;
+}
+.hp-letterhead-credit a:hover {
+    border-bottom: 1px solid #0369a1;
+}
+.hp-letterhead-en {
+    font-size: 9pt; color: #475569; letter-spacing: 0.3px;
+    font-style: italic;
+    font-family: 'Times New Roman', serif;
+    line-height: 1.3;
+}
+.hp-letterhead-dept {
+    font-size: 8pt; color: #64748b; margin-top: 1mm;
+}
+.hp-letterhead-contact {
+    font-size: 7.5pt; color: #64748b; text-align: right; line-height: 1.4;
+    flex-shrink: 0;
+    max-width: 45%;
+}
+
+/* Document title */
+.hp-title {
+    text-align: center;
+    font-size: 18pt; font-weight: 700;
+    color: #0c4a6e;
+    margin: 6mm 0 4mm 0;
+    letter-spacing: 2px;
+    font-family: 'SimHei', sans-serif;
+}
+.hp-subtitle {
+    text-align: center;
+    font-size: 9pt; color: #64748b;
+    margin-bottom: 6mm;
+    font-style: italic;
+}
+
+/* Patient identification table (three-line table) */
+.hp-id-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 6mm 0;
+    font-size: 9.5pt;
+}
+.hp-id-table th, .hp-id-table td {
+    border: 1px solid #94a3b8;
+    padding: 2mm 3mm;
+    text-align: left;
+    vertical-align: middle;
+}
+.hp-id-table th {
+    background: #f1f5f9;
+    font-weight: 600;
+    width: 22%;
+    color: #0f172a;
+}
+.hp-id-table td { background: #fff; }
+
+/* Section heading */
+.hp-section {
+    margin: 6mm 0 3mm 0;
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+.hp-section-title {
+    font-size: 13pt; font-weight: 700;
+    color: #fff; background: #000;
+    padding: 2.5mm 4mm; margin: 0 0 3mm 0;
+    border-left: 4px solid #000;
+    font-family: 'SimHei', 'Times New Roman', serif;
+    letter-spacing: 1px;
+}
+.hp-section-title-en {
+    font-size: 10pt; color: #f5f5f5;
+    font-style: italic; font-weight: 400;
+    margin-left: 4mm;
+    letter-spacing: 0.5px;
+    font-family: 'Times New Roman', serif;
+}
+.hp-section-body { font-size: 12pt; line-height: 1.5; color: #000; text-align: justify; font-family: 'Times New Roman', 'SimSun', '宋体', serif; }
+.hp-section-body p { margin: 1.5mm 0; text-indent: 2em; }
+.hp-section-body p.no-indent { text-indent: 0; }
+
+/* Standard three-line table for data */
+.hp-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 2mm 0 3mm 0;
+    font-size: 9.5pt;
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+.hp-table th, .hp-table td {
+    padding: 1.5mm 2.5mm;
+    border: none;
+    text-align: left;
+    vertical-align: top;
+}
+.hp-table thead tr { border-top: 2px solid #000; border-bottom: 1px solid #000; }
+.hp-table tbody tr:last-child { border-bottom: 2px solid #000; }
+.hp-table th { font-weight: 700; background: #fff; color: #000; }
+.hp-table td { background: #fff; }
+.hp-table tr:nth-child(even) td { background: #fafafa; }
+
+/* Nested data table (with full grid) for sub-tables like OAR dose */
+.hp-grid-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 2mm 0 3mm 0;
+    font-size: 9pt;
+    page-break-inside: avoid;
+}
+.hp-grid-table th, .hp-grid-table td {
+    border: 1px solid #cbd5e1;
+    padding: 1.2mm 2mm;
+    text-align: left;
+}
+.hp-grid-table th {
+    background: #e0f2fe;
+    color: #0c4a6e;
+    font-weight: 600;
+}
+.hp-grid-table tr:nth-child(even) td { background: #f8fafc; }
+.hp-grid-table .pass { color: #16a34a; font-weight: 600; }
+.hp-grid-table .warn { color: #d97706; font-weight: 600; }
+.hp-grid-table .fail { color: #dc2626; font-weight: 600; }
+
+/* Status badges */
+.hp-badge {
+    display: inline-block;
+    padding: 0.5mm 2mm;
+    border-radius: 1mm;
+    font-size: 8.5pt;
+    font-weight: 600;
+    line-height: 1.3;
+}
+.hp-badge.pass { background: #dcfce7; color: #166534; }
+.hp-badge.warn { background: #fef3c7; color: #92400e; }
+.hp-badge.fail { background: #fee2e2; color: #991b1b; }
+
+/* Inline labels */
+.hp-key { color: #0c4a6e; font-weight: 600; }
+
+/* Disclaimer */
+.hp-disclaimer {
+    background: #fef9e7;
+    border: 1px solid #f59e0b;
+    border-left: 5px solid #f59e0b;
+    padding: 3mm 4mm;
+    margin: 4mm 0;
+    font-size: 9pt;
+    line-height: 1.6;
+    color: #78350f;
+    page-break-inside: avoid;
+}
+
+/* Page footer with page numbers — applied via @page CSS, but also as
+   a visual element on the last page in the stack */
+.hp-page-footer {
+    position: absolute;
+    bottom: 8mm;
+    left: 16mm;
+    right: 16mm;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 10.5pt;
+    color: #000;
+    border-top: 1px solid #000;
+    padding-top: 2mm;
+    font-family: 'Times New Roman', 'SimSun', '宋体', serif;
+    letter-spacing: 0.3px;
+}
+.hp-page-footer .pageno {
+    font-weight: 700;
+    color: #000;
+    font-family: 'Times New Roman', serif;
+    font-feature-settings: "tnum" 1, "lnum" 1;
+}
+.hp-page-footer .footer-left,
+.hp-page-footer .footer-right {
+    position: absolute;
+    top: 2mm;
+    font-size: 8pt;
+    color: #475569;
+    font-weight: 400;
+}
+.hp-page-footer .footer-left { left: 0; }
+.hp-page-footer .footer-right { right: 0; }
+
+/* Signature block */
+.hp-signature {
+    margin-top: 8mm;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4mm;
+    font-size: 9.5pt;
+}
+.hp-signature-block {
+    border: 1px solid #cbd5e1;
+    padding: 3mm 4mm;
+    background: #f8fafc;
+    min-height: 24mm;
+}
+.hp-signature-label {
+    font-size: 7.5pt;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 1mm;
+}
+.hp-signature-name {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #0c4a6e;
+    font-family: 'SimHei', sans-serif;
+}
+.hp-signature-title {
+    font-size: 8.5pt;
+    color: #475569;
+    margin-top: 0.5mm;
+}
+.hp-signature-date {
+    font-size: 8.5pt;
+    color: #475569;
+    margin-top: 1mm;
+    border-top: 1px solid #cbd5e1;
+    padding-top: 1mm;
+}
+.hp-signature-stamp {
+    position: absolute;
+    right: 4mm;
+    bottom: 4mm;
+    width: 18mm; height: 18mm;
+    border: 2px solid #dc2626;
+    border-radius: 50%;
+    color: #dc2626;
+    font-size: 7pt;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    line-height: 1.1;
+    transform: rotate(-8deg);
+    opacity: 0.65;
+    pointer-events: none;
+    letter-spacing: 0.5px;
+}
+
+/* Reference list — formal numbered list with hanging indent */
+.hp-references {
+    font-size: 9pt;
+    line-height: 1.55;
+    padding-left: 6mm;
+}
+.hp-references li {
+    margin-bottom: 1.5mm;
+    text-indent: -5mm;
+    padding-left: 5mm;
+}
+.hp-references a {
+    color: #0c4a6e;
+    text-decoration: none;
+    word-break: break-all;
+}
+.hp-references a:hover { text-decoration: underline; }
+.hp-references .ref-num {
+    font-weight: 700;
+    color: #0c4a6e;
+    margin-right: 2mm;
+}
+
+/* Figures in report */
+.hp-figure {
+    margin: 4mm 0;
+    text-align: center;
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+.hp-figure img {
+    max-width: 100%;
+    max-height: 110mm;
+    border: 1px solid #cbd5e1;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.hp-figure-cap {
+    font-size: 8.5pt;
+    color: #475569;
+    margin-top: 1.5mm;
+    font-style: italic;
+    line-height: 1.4;
+}
+
+/* Edited marker in preview */
+.hp-edited-marker {
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 7pt;
+    padding: 0.3mm 1mm;
+    border-radius: 1mm;
+    margin-left: 1mm;
+    vertical-align: super;
+}
+
+/* Top-of-page running header — shown in print and stack */
+.hp-running-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 7.5pt;
+    color: #94a3b8;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 1.5mm;
+    margin-bottom: 4mm;
+    font-family: 'Inter', sans-serif;
+}
+.hp-running-header .right { font-style: italic; }
+
+/* Logo placeholder customization via hospital name in the form */
+.hp-logo.lg-1 { background: #0c4a6e; }  /* default navy */
+.hp-logo.lg-2 { background: #7c2d12; }  /* warm brown */
+.hp-logo.lg-3 { background: #14532d; }  /* deep green */
+.hp-logo.lg-4 { background: #4c1d95; }  /* royal purple */
+
+.seeds-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 6px;
+    align-content: start;
+}
+
+.seed-chip {
+    background: var(--bg-2);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.6rem;
+    font-size: 0.7rem;
+    transition: all var(--t-base) var(--ease);
+    box-shadow: var(--inset-top), var(--shadow-xs);
+}
+.seed-chip:hover {
+    border-color: var(--border-default);
+    transform: translateY(-1px);
+    box-shadow: var(--inset-top), var(--shadow-sm);
+}
+.seed-chip-header { font-weight: 600; color: var(--text); margin-bottom: 3px; font-size: 0.72rem; }
+.seed-chip-detail { color: var(--text-dim); font-size: 0.62rem; font-family: 'JetBrains Mono', monospace; }
+
+.empty-state {
+    text-align: center;
+    color: var(--text-dim);
+    padding: 2rem 1rem;
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+.empty-state-icon {
+    font-size: 1.8rem;
+    opacity: 0.3;
+    margin-bottom: 0.5rem;
+    color: var(--text-dim);
+}

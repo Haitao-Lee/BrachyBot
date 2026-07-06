@@ -2,7 +2,7 @@
 UI Inspector Tool
 =================
 Allows the LLM to query and understand the UI state and components.
-Dynamically parses the actual HTML to stay up-to-date.
+Dynamically parses the HTML shell and split application scripts to stay up-to-date.
 """
 
 import os
@@ -21,11 +21,15 @@ HTML_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..", "..", "web", "app", "index.html"
 )
+APP_JS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..", "..", "web", "app", "static", "js"
+)
 
 
 class UIInspectorTool(BaseTool):
     """Query UI state and get detailed information about components.
-    Dynamically parses HTML to stay up-to-date."""
+    Dynamically parses the HTML shell and split JavaScript files to stay up-to-date."""
 
     name = "ui_inspector"
     description = """Inspect the UI state and get detailed information about interface components.
@@ -77,6 +81,19 @@ Use this when:
             return ""
 
         return self._html_cache
+
+    def _load_app_scripts(self) -> str:
+        """Load feature-split BrachyBot JavaScript files for behavior searches."""
+        script_root = Path(APP_JS_DIR)
+        if not script_root.exists():
+            return ""
+        chunks: List[str] = []
+        for path in sorted(script_root.glob("brachybot-*.js")):
+            try:
+                chunks.append(f"\n/* {path.name} */\n" + path.read_text(encoding="utf-8", errors="replace"))
+            except OSError as exc:
+                logger.warning("Failed to read UI script %s: %s", path, exc)
+        return "\n".join(chunks)
 
     def _scan_ui_elements(self) -> Dict:
         """Dynamically scan the HTML for UI elements."""
@@ -155,7 +172,8 @@ Use this when:
     def _search_component(self, keyword: str) -> List[Dict]:
         """Search for components matching keyword."""
         html = self._load_html()
-        if not html:
+        source = html + "\n" + self._load_app_scripts()
+        if not source.strip():
             return []
 
         results = []
@@ -177,7 +195,7 @@ Use this when:
 
         # Search in comments
         comment_pattern = r'<!--\s*(.*?)\s*-->'
-        for match in re.finditer(comment_pattern, html, re.DOTALL):
+        for match in re.finditer(comment_pattern, source, re.DOTALL):
             comment = match.group(1).strip()
             if keyword_lower in comment.lower():
                 results.append({
@@ -193,6 +211,19 @@ Use this when:
                 results.append({
                     "type": "element_id",
                     "id": elem_id,
+                })
+
+        # Search split JavaScript behavior functions after modularization.
+        function_pattern = r"(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\("
+        for match in re.finditer(function_pattern, source):
+            fn_name = match.group(1)
+            if keyword_lower in fn_name.lower():
+                start = max(0, match.start() - 120)
+                end = min(len(source), match.end() + 180)
+                results.append({
+                    "type": "function",
+                    "name": fn_name,
+                    "context": source[start:end],
                 })
 
         return results[:20]  # Limit results

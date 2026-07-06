@@ -27,6 +27,7 @@ REPO_ROOT = TOOL_DIR.parents[1]
 KB_DIR = TOOL_DIR / "data"
 SOURCE_ROOT = REPO_ROOT / "clinical_kb" / "sources"
 GUIDELINES_PATH = REPO_ROOT / "clinical_kb" / "guidelines_brachytherapy.md"
+GUIDELINES_DIR = REPO_ROOT / "clinical_kb" / "guidelines"
 KB_DIR.mkdir(parents=True, exist_ok=True)
 
 _GENERIC_QUERY_TERMS = {
@@ -176,6 +177,16 @@ def _collect_urls(obj: Any) -> List[str]:
             seen.add(url)
             deduped.append(url)
     return deduped
+
+
+def _guideline_paths() -> List[Path]:
+    """Return the stable guideline index plus split topic files in search order."""
+    paths: List[Path] = []
+    if GUIDELINES_PATH.exists():
+        paths.append(GUIDELINES_PATH)
+    if GUIDELINES_DIR.exists():
+        paths.extend(sorted(GUIDELINES_DIR.glob("*.md")))
+    return paths
 
 
 class ClinicalKnowledgeBaseTool(BaseTool):
@@ -514,8 +525,8 @@ Actions:
         source_results = self._search_sources(keyword or organ, organ=organ, limit=8)
 
         section_matches = []
-        if GUIDELINES_PATH.exists():
-            content = GUIDELINES_PATH.read_text(encoding="utf-8", errors="replace")
+        for guideline_path in _guideline_paths():
+            content = guideline_path.read_text(encoding="utf-8", errors="replace")
             parts = re.split(r"\n(?=## )", content)
             keyword_lower = _norm(keyword)
             organ_lower = _norm(organ)
@@ -530,9 +541,12 @@ Actions:
                     section_matches.append({
                         "excerpt": section[:3000],
                         "urls": urls[:5],
+                        "source_path": str(guideline_path.relative_to(REPO_ROOT)),
                     })
                 if len(section_matches) >= 3:
                     break
+            if len(section_matches) >= 3:
+                break
 
         sources = [r.get("url", "") for r in source_results]
         for section in section_matches:

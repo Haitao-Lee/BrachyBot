@@ -7,6 +7,19 @@
 
 ---
 
+## Modularization Follow-up - 2026-07-06
+
+The file-size and monolith observations in this report were addressed in the
+follow-up modularization pass documented in
+[`docs/MODULARIZATION_REVIEW_2026-07-06.md`](MODULARIZATION_REVIEW_2026-07-06.md).
+`AgenticSys.py`, `web/server.py`, `web/app/index.html`, and
+`clinical_kb/guidelines_brachytherapy.md` now remain compatibility entry points
+or indexes while implementation code is split into feature modules. Historical
+line references below are preserved as audit evidence, not as the current module
+map.
+
+---
+
 ## Executive Summary
 
 This review covers the entire BrachyBot codebase. The architecture is sound and the clinical safety design has been significantly improved in recent commits (source-aware prompting, fail-closed CTV tools, deterministic safety guardians). However, **21 HIGH-severity issues** were identified that require attention, the most critical being:

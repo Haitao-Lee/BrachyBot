@@ -1,0 +1,704 @@
+/* =============================================================
+   BrachyBot — Quiet Glass v2
+   Frontier 2025-2026 patterns: three-tier surfaces, tinted
+   glass, sunken wells, darker assistant bubble, unified
+   form-control language, status pills. Class names preserved.
+   ============================================================= */
+
+:root {
+    /* Brand */
+    --primary: #3b82f6;
+    --primary-soft: #eff6ff;
+    --primary-hover: #2563eb;
+    --primary-ink: #1e3a8a;
+
+    /* Semantic */
+    --success: #10b981;
+    --success-soft: #ecfdf5;
+    --success-border: #a7f3d0;
+    --warning: #d97706;
+    --warning-soft: #fffbeb;
+    --warning-border: #fde68a;
+    --danger: #e11d48;
+    --danger-soft: #fff1f2;
+    --danger-border: #fecdd3;
+    --info: #0891b2;
+    --info-soft: #ecfeff;
+
+    /* Three-tier surface depth (Linear / Vercel) */
+    --bg-canvas:        #f5f7fb;     /* ground */
+    --bg-1:             #f8fafc;     /* subtle */
+    --bg-2:             #ffffff;     /* base elevated */
+    --bg-3:             #f1f5f9;     /* intermediate */
+    --bg-sunken:        #eef2f7;     /* recessed well */
+    --bg-sunken-strong: #e6ecf3;
+    --bg-elevated:      #ffffff;
+    --bg-card:          rgba(255, 255, 255, 0.72);
+
+    /* Hairline borders (Linear signature) */
+    --glass-border:        rgba(15, 23, 42, 0.06);
+    --glass-border-strong: rgba(15, 23, 42, 0.10);
+    --border-soft:         #e2e8f0;
+    --border:              #cbd5e1;
+    --border-hairline:     rgba(15, 23, 42, 0.06);
+    --border-default:      rgba(15, 23, 42, 0.09);
+    --border-emphasis:     rgba(15, 23, 42, 0.14);
+
+    /* Multi-stop shadows (ambient + ring + contact) */
+    --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+    --shadow-sm:
+        0 1px 0 rgba(15, 23, 42, 0.04),
+        0 1px 2px rgba(15, 23, 42, 0.04);
+    --shadow-elevated:
+        0 1px 0 rgba(15, 23, 42, 0.04),
+        0 0 0 1px rgba(15, 23, 42, 0.05),
+        0 2px 4px rgba(15, 23, 42, 0.04);
+    --shadow-floating:
+        0 0 0 1px rgba(15, 23, 42, 0.06),
+        0 4px 8px rgba(15, 23, 42, 0.04),
+        0 12px 24px rgba(15, 23, 42, 0.06);
+    --shadow-lg:
+        0 0 0 1px rgba(15, 23, 42, 0.06),
+        0 4px 8px rgba(15, 23, 42, 0.04),
+        0 12px 24px rgba(15, 23, 42, 0.06);
+    --shadow-xl:
+        0 0 0 1px rgba(15, 23, 42, 0.08),
+        0 8px 16px rgba(15, 23, 42, 0.08),
+        0 24px 48px rgba(15, 23, 42, 0.12);
+
+    /* Inner highlight (Linear signature) */
+    --inset-top:    inset 0 1px 0 rgba(255, 255, 255, 0.75);
+    --inset-bottom: inset 0 -1px 0 rgba(15, 23, 42, 0.03);
+    --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+
+    /* Tinted glass (Claude / v0 style) */
+    --glass-tint-cool: rgba(248, 250, 252, 0.62);
+    --glass-tint-blue: rgba(239, 246, 255, 0.55);
+    --glass-tint-warm: rgba(252, 250, 247, 0.62);
+    --glass-blur: 16px;
+    --blur-md: blur(14px) saturate(160%);
+    --blur-lg: blur(20px) saturate(180%);
+
+    /* Text */
+    --text: #0f172a;
+    --text-secondary: #475569;
+    --text-dim: #94a3b8;
+    --text-faint: #cbd5e1;
+
+    /* Radii */
+    --radius-xs: 6px;
+    --radius-sm: 10px;
+    --radius-md: 14px;
+    --radius-lg: 18px;
+    --radius-xl: 24px;
+
+    /* Motion */
+    --ease: cubic-bezier(0.32, 0.72, 0, 1);
+    --t-fast: 140ms;
+    --t-base: 200ms;
+    --t-slow: 320ms;
+
+    /* Chat semantics (NEW) */
+    --msg-user-bg:           rgba(59, 130, 246, 0.09);
+    --msg-user-border:       rgba(59, 130, 246, 0.22);
+    --msg-assistant-bg:      #eef2f7;
+    --msg-assistant-border:  rgba(15, 23, 42, 0.08);
+    --msg-hover:             rgba(15, 23, 42, 0.025);
+
+    /* Form-control canonical (Linear) */
+    --control-h:        30px;
+    --control-h-sm:     26px;
+    --control-r:        8px;
+    --control-pad-x:    10px;
+    --control-font:     12.5px;
+    --control-focus-ring: 0 0 0 3px rgba(59, 130, 246, 0.16);
+
+    /* Status pill */
+    --pill-h: 22px;
+    --pill-r: 999px;
+    --pill-pad-x: 8px;
+
+    /* Viewer chrome (overrides light theme on canvas-adjacent surfaces) */
+    --viewer-bg:        #000;
+    --viewer-chrome-bg: #1e293b;
+    --viewer-chrome-fg: #e2e8f0;
+}
+
+/* ===========================================================
+   DARK THEME (data-theme="dark")  —  active by default 2026-06-13
+   To toggle back to light, change <html data-theme="dark"> to
+   data-theme="light" (or remove the attribute).
+   =========================================================== */
+[data-theme="dark"] {
+    color-scheme: dark;
+
+    /* Brand — slightly brighter for dark backgrounds */
+    --primary:        #60a5fa;
+    --primary-soft:   rgba(59, 130, 246, 0.15);
+    --primary-hover:  #93c5fd;
+    --primary-ink:    #bfdbfe;
+
+    /* Semantic — keep hue, lift lightness for AA contrast on dark */
+    --success:        #34d399;
+    --success-soft:   rgba(16, 185, 129, 0.14);
+    --success-border: rgba(16, 185, 129, 0.35);
+    --warning:        #fbbf24;
+    --warning-soft:   rgba(245, 158, 11, 0.14);
+    --warning-border: rgba(245, 158, 11, 0.35);
+    --danger:         #fb7185;
+    --danger-soft:    rgba(244, 63, 94, 0.14);
+    --danger-border:  rgba(244, 63, 94, 0.35);
+    --info:           #22d3ee;
+    --info-soft:      rgba(8, 145, 178, 0.16);
+
+    /* Three-tier surface depth (dark mode — Linear-inspired slate) */
+    --bg-canvas:        #0a0e1a;   /* ground */
+    --bg-1:             #0f1525;   /* subtle */
+    --bg-2:             #161d33;   /* base elevated */
+    --bg-3:             #1d2540;   /* intermediate */
+    --bg-sunken:        #050810;   /* recessed well */
+    --bg-sunken-strong: #020409;
+    --bg-elevated:      #1d2540;
+    --bg-card:          rgba(22, 29, 51, 0.78);
+
+    /* Hairline borders — light tint on dark */
+    --glass-border:        rgba(148, 163, 184, 0.10);
+    --glass-border-strong: rgba(148, 163, 184, 0.16);
+    --border-soft:         #1e2742;
+    --border:              #2a3354;
+    --border-hairline:     rgba(148, 163, 184, 0.08);
+    --border-default:      rgba(148, 163, 184, 0.12);
+    --border-emphasis:     rgba(148, 163, 184, 0.20);
+
+    /* Shadows — deeper, with more lift against dark backgrounds */
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.40);
+    --shadow-sm:
+        0 1px 0 rgba(0, 0, 0, 0.30),
+        0 1px 2px rgba(0, 0, 0, 0.40);
+    --shadow-elevated:
+        0 1px 0 rgba(0, 0, 0, 0.35),
+        0 0 0 1px rgba(148, 163, 184, 0.06),
+        0 2px 4px rgba(0, 0, 0, 0.45);
+    --shadow-floating:
+        0 0 0 1px rgba(148, 163, 184, 0.10),
+        0 6px 12px rgba(0, 0, 0, 0.50),
+        0 14px 28px rgba(0, 0, 0, 0.55);
+    --shadow-lg:
+        0 0 0 1px rgba(148, 163, 184, 0.10),
+        0 6px 12px rgba(0, 0, 0, 0.50),
+        0 14px 28px rgba(0, 0, 0, 0.55);
+    --shadow-xl:
+        0 0 0 1px rgba(148, 163, 184, 0.12),
+        0 10px 20px rgba(0, 0, 0, 0.55),
+        0 28px 56px rgba(0, 0, 0, 0.65);
+
+    /* Inner highlight (inverted: top is now a faint light, bottom a darker line) */
+    --inset-top:    inset 0 1px 0 rgba(148, 163, 184, 0.06);
+    --inset-bottom: inset 0 -1px 0 rgba(0, 0, 0, 0.30);
+    --glass-highlight: inset 0 1px 0 rgba(148, 163, 184, 0.10);
+
+    /* Tinted glass — dark variants */
+    --glass-tint-cool: rgba(15, 21, 37, 0.72);
+    --glass-tint-blue: rgba(15, 25, 50, 0.65);
+    --glass-tint-warm: rgba(28, 22, 18, 0.72);
+    --glass-blur: 16px;
+    --blur-md: blur(14px) saturate(160%);
+    --blur-lg: blur(20px) saturate(180%);
+
+    /* Text — light foreground on dark */
+    --text:          #e8edf5;
+    --text-secondary:#a3afc4;
+    --text-dim:      #6b7791;
+    --text-faint:    #475569;
+
+    /* Chat semantics (dark) */
+    --msg-user-bg:           rgba(96, 165, 250, 0.14);
+    --msg-user-border:       rgba(96, 165, 250, 0.32);
+    --msg-assistant-bg:      #161d33;
+    --msg-assistant-border:  rgba(148, 163, 184, 0.12);
+    --msg-hover:             rgba(148, 163, 184, 0.05);
+
+    /* Viewer chrome */
+    --viewer-bg:        #000;
+    --viewer-chrome-bg: #0f1525;
+    --viewer-chrome-fg: #cbd5e1;
+}
+
+/* ---------- Base ---------- */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { height: 100%; }
+body, html { -webkit-tap-highlight-color: transparent; }
+
+/* Allow text selection in chat messages, panels, viewers, and tables */
+.chat-msg, .chat-msg *,
+.chat-messages, .chat-messages *,
+.thinking-chain, .thinking-chain *,
+.thinking-chain *, .step-block, .step-block *,
+.md-code-block, .md-code-block *,
+.md-table, .md-table *,
+.panel-content, .panel-content *,
+.viewer-card, .viewer-card *,
+.dvh-container, .dvh-container *,
+.oar-table, .oar-table *,
+.metric-card, .metric-card *,
+body input, body textarea, body [contenteditable] {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+}
+body, body *:not(input):not(textarea):not(button):not(select):not([contenteditable]) {
+    /* keep ui chrome unselectable */
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: 0.005em;
+
+    /* Soft warm-paper with three light tints */
+    background:
+        radial-gradient(ellipse 1400px 800px at 8% 4%, rgba(59, 130, 246, 0.09), transparent 55%),
+        radial-gradient(ellipse 1100px 700px at 95% 0%, rgba(16, 185, 129, 0.07), transparent 55%),
+        radial-gradient(ellipse 1200px 800px at 50% 100%, rgba(99, 102, 241, 0.05), transparent 60%),
+        radial-gradient(ellipse 900px 600px at 75% 55%, rgba(167, 139, 250, 0.05), transparent 60%),
+        linear-gradient(180deg, #eff4fa 0%, #e6ecf3 100%);
+    background-attachment: fixed;
+}
+
+/* Subtle paper texture */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image: radial-gradient(circle at 1px 1px, rgba(15, 23, 42, 0.015) 1px, transparent 0);
+    background-size: 24px 24px;
+    opacity: 0.5;
+}
+
+/* Dark theme body — overrides the hard-coded light gradient above.
+   Keeps the multi-radial-tint aesthetic but in cool night hues. */
+[data-theme="dark"] body {
+    background:
+        radial-gradient(ellipse 1400px 800px at 8% 4%, rgba(59, 130, 246, 0.18), transparent 55%),
+        radial-gradient(ellipse 1100px 700px at 95% 0%, rgba(16, 185, 129, 0.10), transparent 55%),
+        radial-gradient(ellipse 1200px 800px at 50% 100%, rgba(99, 102, 241, 0.12), transparent 60%),
+        radial-gradient(ellipse 900px 600px at 75% 55%, rgba(167, 139, 250, 0.10), transparent 60%),
+        linear-gradient(180deg, #0a0e1a 0%, #060912 100%);
+}
+[data-theme="dark"] body::before {
+    background-image: radial-gradient(circle at 1px 1px, rgba(148, 163, 184, 0.04) 1px, transparent 0);
+    opacity: 0.6;
+}
+
+/* ===========================================================
+   HEADER
+   =========================================================== */
+.header {
+    background: var(--glass-tint-cool);
+    backdrop-filter: var(--blur-md);
+    -webkit-backdrop-filter: var(--blur-md);
+    border-bottom: 1px solid var(--border-hairline);
+    box-shadow: var(--inset-top), 0 1px 0 rgba(15, 23, 42, 0.04);
+    padding: 0 1.4rem;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-shrink: 0;
+    z-index: 100;
+    position: relative;
+}
+
+.header-logo {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    flex-shrink: 0;
+    box-shadow: var(--inset-top), var(--shadow-sm);
+    transition: all var(--t-base) var(--ease);
+}
+.header-logo:hover {
+    transform: translateY(-1px);
+}
+
+.header-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--text);
+}
+.header-subtitle {
+    font-size: 0.66rem;
+    color: var(--text-secondary);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 500;
+    margin-top: 1px;
+}
+
+.header-status { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+
+.status-chip {
+    display: flex; align-items: center; gap: 0.4rem;
+    height: var(--pill-h);
+    padding: 0 var(--pill-pad-x);
+    background: var(--bg-2);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--pill-r);
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    box-shadow: var(--inset-top), var(--shadow-xs);
+    font-weight: 500;
+    letter-spacing: 0.005em;
+    transition: all var(--t-base) var(--ease);
+}
+.status-chip:hover {
+    border-color: var(--border-default);
+    color: var(--text);
+}
+.status-chip .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    position: relative;
+    flex-shrink: 0;
+}
+.status-chip .dot.green { background: var(--success); }
+.status-chip .dot.yellow { background: var(--warning); }
+.status-chip .dot.red { background: var(--danger); }
+
+/* UI language toggle (2026-06-16). Sits in the top-right header
+   next to Connected / Brain online / Session. Two pill buttons
+   (EN / 中) styled as a segmented control. The active language
+   gets a brand-tinted background; the inactive one stays neutral
+   so the user can spot the current language at a glance. */
+.lang-toggle {
+    padding: 0 !important;
+    overflow: hidden;
+    gap: 0 !important;
+}
+.lang-btn {
+    height: 100%;
+    padding: 0 0.55rem;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+    font-weight: 600;
+    font-family: 'Inter, sans-serif';
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease);
+}
+.lang-btn:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.04);
+}
+.lang-btn.lang-active {
+    background: var(--primary);
+    color: #fff;
+    box-shadow: var(--inset-top);
+}
+.lang-btn.lang-active:hover {
+    background: var(--primary);
+    color: #fff;
+}
+
+/* ===========================================================
+   MAIN BODY
+   =========================================================== */
+.app-body {
+    display: flex;
+    flex: 1;
+    /* overflow:hidden (in original) was clipping the breathing
+       animation on the active todo item when it scaled to 1.25.
+       Switched to overflow-y: visible; overflow-x: hidden so
+       the splitter handles still clip horizontally but the
+       vertical scale animation is no longer truncated. */
+    overflow-x: hidden;
+    overflow-y: visible;
+    position: relative;
+    z-index: 1;
+}
+
+/* ===========================================================
+   SESSION SIDEBAR (glass)
+   =========================================================== */
+.session-sidebar {
+    width: 268px;
+    background: var(--glass-tint-cool);
+    backdrop-filter: var(--blur-md);
+    -webkit-backdrop-filter: var(--blur-md);
+    border-right: 1px solid var(--border-hairline);
+    box-shadow: var(--inset-top), 1px 0 0 rgba(15, 23, 42, 0.03);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 5;
+}
+.sidebar-resize-handle {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 10;
+    transition: background var(--t-base) var(--ease);
+}
+/* Always-visible 2px blue bar in the center of the splitter so the
+   user can SEE where to click. Hover / dragging lights up the
+   full handle for clearer affordance. */
+.sidebar-resize-handle::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    background: var(--primary);
+    opacity: 0.35;
+    transition: opacity var(--t-base) var(--ease), width var(--t-base) var(--ease);
+    pointer-events: none;
+}
+.sidebar-resize-handle:hover { background: rgba(59, 130, 246, 0.10); }
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle.dragging::after { opacity: 1; width: 3px; }
+
+.session-sidebar-header {
+    padding: 0.95rem 0.85rem;
+    border-bottom: 1px solid var(--border-hairline);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--glass-tint-cool);
+    backdrop-filter: var(--blur-md);
+    -webkit-backdrop-filter: var(--blur-md);
+    box-shadow: var(--inset-top);
+    flex-shrink: 0;
+}
+
+.session-sidebar-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.new-chat-btn {
+    height: var(--control-h);
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: var(--control-r);
+    padding: 0 0.75rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    box-shadow: var(--inset-top), var(--shadow-sm);
+    transition: all var(--t-base) var(--ease);
+    letter-spacing: 0.01em;
+}
+.new-chat-btn:hover {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--inset-top), var(--shadow-elevated);
+}
+.new-chat-btn:active {
+    transform: translateY(0) scale(0.97);
+}
+
+.session-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.55rem 0.5rem;
+    background: transparent;
+}
+
+.session-item {
+    padding: 0.55rem 0.7rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 3px;
+    transition: all var(--t-base) var(--ease);
+    position: relative;
+    border: 1px solid transparent;
+    background: transparent;
+}
+.session-item:hover {
+    background: var(--msg-hover);
+    border-color: var(--border-hairline);
+}
+.session-item.active {
+    background: var(--msg-user-bg);
+    border-color: var(--msg-user-border);
+    box-shadow: var(--inset-top), var(--shadow-xs);
+}
+.session-item.active::before {
+    content: '';
+    position: absolute;
+    left: -0.5rem; top: 50%;
+    transform: translateY(-50%);
+    width: 3px; height: 60%;
+    background: var(--primary);
+    border-radius: 0 2px 2px 0;
+}
+
+.session-item-info { min-width: 0; flex: 1; }
+.session-item-title {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 2px;
+}
+.session-item-time {
+    font-size: 0.62rem;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.session-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.1rem;
+    opacity: 0;
+    transition: opacity var(--t-base) var(--ease);
+}
+.session-item:hover .session-item-actions,
+.session-item.active .session-item-actions { opacity: 1; }
+
+.session-item-btn {
+    width: 22px; height: 22px;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem;
+    transition: all var(--t-fast) var(--ease);
+}
+.session-item-btn:hover {
+    color: var(--primary);
+    background: var(--primary-soft);
+}
+.session-item-btn.delete:hover {
+    color: var(--danger);
+    background: var(--danger-soft);
+}
+
+.session-item-rename-input {
+    background: var(--bg-2);
+    border: 1px solid var(--primary);
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 0.78rem;
+    font-weight: 500;
+    padding: 1px 4px;
+    width: 100%;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+.session-sidebar-footer {
+    padding: 0.75rem 0.85rem;
+    border-top: 1px solid var(--border-hairline);
+    background: var(--glass-tint-cool);
+    backdrop-filter: var(--blur-md);
+    -webkit-backdrop-filter: var(--blur-md);
+    box-shadow: var(--inset-bottom);
+    flex-shrink: 0;
+}
+
+.context-toggle-btn {
+    width: 100%;
+    height: var(--control-h);
+    background: var(--bg-2);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--control-r);
+    padding: 0 0.7rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    transition: all var(--t-base) var(--ease);
+    box-shadow: var(--inset-top), var(--shadow-xs);
+}
+.context-toggle-btn:hover {
+    color: var(--primary);
+    border-color: var(--msg-user-border);
+    background: var(--msg-user-bg);
+    transform: translateY(-1px);
+}
+.context-toggle-btn:active { transform: translateY(0); }
+
+.context-panel {
+    position: absolute;
+    bottom: 56px; left: 0; right: 0;
+    background: var(--glass-tint-cool);
+    backdrop-filter: var(--blur-md);
+    -webkit-backdrop-filter: var(--blur-md);
+    border-top: 1px solid var(--border-hairline);
+    max-height: 50%;
+    display: flex;
+    flex-direction: column;
+    z-index: 8;
+    box-shadow: var(--shadow-floating);
+}
+.context-panel-header {
+    padding: 0.6rem 0.85rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-hairline);
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--glass-tint-cool);
+    backdrop-filter: var(--blur-md);
+    -webkit-backdrop-filter: var(--blur-md);
+    box-shadow: var(--inset-top);
+}
+.context-panel-close {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 1.1rem;
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 4px;
+    transition: all var(--t-fast) var(--ease);
+}
+.context-panel-close:hover { color: var(--primary); background: var(--primary-soft); }
+.context-panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.65rem 0.85rem;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    line-height: 1.55;
+}
