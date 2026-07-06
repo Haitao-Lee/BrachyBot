@@ -181,13 +181,23 @@ def brachy_plan_rf(ctimage, ctvimage, oarimage, dose_model, args, progressDialog
     
     
     try:
-        
+
         dose_image = utilizations.normalize_dose_image(ctimage, args.image_normalize[0], args.image_normalize[1], args.image_normalize[0], args.image_normalize[1])
-        
+
     except Exception as e:
         pass
-        
-        dose_image = sitk.GetArrayFromImage(ctimage).astype(np.float32)
+
+        # REVIEW: previously fell back to `sitk.GetArrayFromImage(ctimage)
+        # .astype(np.float32)` which assigned a NumPy array to `dose_image`.
+        # Downstream calls (`core.optimal_plan_rf` ->
+        # `batch_seed_dose_calculation_dl`) expect a SimpleITK image and call
+        # `.GetDirection() / .GetSpacing() / .GetOrigin()` on it, plus
+        # `sitk.GetArrayFromImage(dose_image)` further downstream; all of
+        # those `AttributeError` on a NumPy array, leaving the plan empty
+        # and silent. Like the non-rf `brachy_plan` path (line 48: `raise`),
+        # surface the underlying failure instead of substituting a wrong
+        # type that corrupts the rest of the pipeline.
+        raise
 
     progressDialog.setValue(25)
     progressDialog.setLabelText("Getting Radiation Volume...")

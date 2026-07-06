@@ -130,12 +130,18 @@ class SkillRegistry:
         for pattern in patterns:
             skill_name = f"learned_{'_'.join(pattern)}"
 
-            if skill_name in self.skills:
-                skill = self.skills[skill_name]
-            else:
+            # REVIEW: previously a freshly-created skill was appended to
+            # `new_or_updated` at line 138 AND again unconditionally at line
+            # 142. The unconditional append duplicated new skills. Only
+            # append once per iteration; for existing skills, the second
+            # append is the unique sink; for new skills, the first append is.
+            is_new_skill = skill_name not in self.skills
+
+            if is_new_skill:
                 skill = self._create_skill_from_pattern(pattern)
                 self.skills[skill_name] = skill
-                new_or_updated.append(skill)
+            else:
+                skill = self.skills[skill_name]
 
             success_rate = interaction_memory.get_success_rate(tool_name=pattern[0])
             skill.success_threshold = success_rate

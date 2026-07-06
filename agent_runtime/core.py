@@ -477,6 +477,19 @@ class AgentMemory:
 
             self.conversation = self.conversation[-keep_last:]
             self.compaction_count += 1
+
+            # REVIEW: previously the SmartContextManager was never notified,
+            # so its `messages` list (and `entities`/`topics` dicts) grew
+            # unbounded across long sessions, and `get_relevant_context`
+            # kept scoring stale messages already summarized here. Prune the
+            # smart-context mirror in lockstep with the LM-trimmed window.
+            if hasattr(self, 'smart_context') and self.smart_context is not None:
+                try:
+                    smart_messages = getattr(self.smart_context, 'messages', None)
+                    if isinstance(smart_messages, list) and len(smart_messages) > keep_last:
+                        del smart_messages[:-keep_last]
+                except Exception:
+                    pass
             return self.context_summary
 
     def clear_conversation(self):

@@ -196,6 +196,17 @@ class ToolCodeWriter:
 
             module = importlib.util.module_from_spec(spec)
             sys.modules[name] = module
+            # REVIEW (SECURITY): `exec_module` runs arbitrary LLM-authored
+            # Python in the host process. `_validate_code` only blocks a
+            # deny-list of substrings (`eval(`, `__import__`, `exec(`, ...),
+            # which is trivially evaded (e.g. `os.environ`, `urllib.request`,
+            # `socket.gethostbyname`). A malicious or hallucinated tool spec
+            # can therefore run anything as the server user. Production
+            # deployment should require human approval before registering
+            # each LLM-generated tool, sandbox execution (no `os`/`socket`/
+            # `subprocess` in the exec namespace), and namespace `name` to
+            # avoid shadowing real packages. NOT FIXED — requires sandbox
+            # architecture; flagged for project security review.
             spec.loader.exec_module(module)
             tool_class = getattr(module, tool_info["class_name"])
             tool_instance = tool_class()

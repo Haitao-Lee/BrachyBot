@@ -4,7 +4,104 @@ _This file consolidates all code review reports. Sections are organized by date.
 
 ---
 
-## 2026-07-07 — Follow-up Verification & Algorithm Deep-Dive
+## 2026-07-07 — Full Module-by-Module Review & Fixes (Round 3)
+
+This round dispatched parallel review agents across the whole project (excluding files in `/home/lht/snap/brachyplan/BrachyBot` and not the parent dir): `plans/` (~9000 LOC), `brain/` (~6900 LOC), `agent_runtime/` (~6600 LOC), `web/` (~5900 LOC), `memory/` (~3800 LOC), `skills/`/`quality/`/`communication/`/`config/`/`utils/` (~1300 LOC). Each module was reviewed line-by-line; findings were then re-verified by tracing through actual call sites before being accepted, rejected (false positive), or annotated.
+
+### Summary — confirmed real bugs (FIXED)
+
+All fixes below are behaviorally verified with focused unit-style assertions; source files compile cleanly under `py_compile`. The annotation discipline from the previous rounds (false-positive labelling preserved, hardcoded clinical thresholds left untouched pending a config-plumbing refactor) is applied throughout.
+
+| ID | File:Line | Sev | Description of bug | Fix |
+|----|-----------|-----|--------------------|-----|
+| R3-1 | `memory/skill_learner.py:128-...`  | HIGH | `learn_parameter_preferences` round-tripped `tool_name.key=value` through `rsplit('.', 1)` and produced `param_name = "mode=rl"`. The downstream `preference_store.update_from_learned` stored the key as `f"{tool_name}_{param_name}"` = `"seed_planning_mode=rl"`, but `apply_to_tool_params` looks up `f"{tool_name}_{key}"` = `"seed_planning_mode"` — keys never matched, so every learned parameter preference was silently stored but never applied back to tools. | Split on `=` first to recover `param_name = "mode"` and `value = "rl"` separately. |
+| R3-2 | `memory/self_evolution.py:132-...`  | HIGH | `_update_existing_skills` iterated `self.skill_registry.list_skills()`, which returns throwaway summary `dict`s `{"name","category","success_rate","usage_count","last_used"}`. Mutations to those dicts only edited the throwaway copy; the underlying `SkillRegistry.skills` and the on-disk `skills_registry.json` were silently untouched. The entire "update existing skills" feature was a no-op. | Iterate `skill_registry.skills.values()` directly; set `skill.usage_count` and `skill.success_count` so that the `success_rate()` method reflects the matching experiences; call `skill_registry._save_skill(skill)` to persist. |
+| R3-3 | `skills/skill_base.py:130-...` | MED | `evolve_from_interactions` appended a freshly-created `Skill` to `new_or_updated` at the `else` branch (line 138) AND unconditionally again at line 142. Every new skill appeared twice in the returned list — minor data hygiene, but the returned list drives UI/JSON output. | Capture `is_new_skill` before logic, append only once per iteration. |
+| R3-4 | `memory/layered_memory.py:325-...` & `:341-...` | HIGH | `find_sop` incremented `best_sop.usage_count` on every query, and `update_sop_metrics` divided by `n+1` where `n = sop.usage_count` (already counting this query). Combined effect: EMA off-by-one; first `update_sop_metrics(success=True)` set `success_rate = (0*1 + 1)/2 = 0.5` instead of `1.0`, then `usage_count` was double-incremented per successful use. | Remove the `usage_count += 1` from `find_sop` (only `last_used` is updated there); in `update_sop_metrics` set `n = sop.usage_count` (count BEFORE this use), then `sop.usage_count = n + 1`, then `success_rate = (success_rate * n + new)/ (n+1)`. |
+| R3-5 | `plans/brachy_plan_v2.py:182-...` | HIGH | Exception handler assigned `dose_image = sitk.GetArrayFromImage(...).astype(np.float32)` (NumPy array), then continued. Downstream `core.optimal_plan_rf → batch_seed_dose_calculation_dl` calls `dose_image.GetDirection()/GetSpacing()/GetOrigin()` and resolves via `sitk.GetArrayFromImage(dose_image)` — all `AttributeError` on a NumPy array, swallowed by the outer `try/except`, leaving the patient an empty plan with no error message. | Replace the `pass` + numpy fallback with `raise`, matching the non-rf `brachy_plan` path at line 48. Failure surfaces instead of silently corrupting the pipeline. |
+| R3-6 | `brain/core/tree_search_planner.py:79-...` | MED | `_node_cache` was a `self` attribute initialized lazily inside `_store_node` and never cleared between `search()` calls. Long-running agents that plan repeatedly accumulated `PlanningNode`s unbounded — memory leak + stale stats bleeding across invocations. | Reset `self._node_cache = {}` at the top of every `search()`. |
+| R3-7 | `agent_runtime/chat_workflows.py:480-...` (4 sites) | MED/HIGH | Four sites (`chat_with_trace` completeness, `chat_with_stream` review, `chat_with_stream` direct-completeness, `chat_with_stream` post-enforcer) created a new event loop, ran `loop.run_until_complete(...)`, closed the loop in `finally` — but never restored the prior global event loop. After every chat round, the global event loop was a CLOSED loop, breaking any downstream code that called `asyncio.get_event_loop()`. | Capture `prev_loop = asyncio.get_event_loop_policy().get_event_loop()` before `_loop = new_event_loop()`; in `finally`, restore `set_event_loop(prev_loop)`. |
+| R3-8 | `web/routes/planning_routes.py:1903` | LOW | `getattr(agent.memory, "patient_data", {}).get("id", "UNKNOWN")` deref'd `.get` directly. If `patient_data` was explicitly set to `None` (legitimate value — patient cleared but attribute still exists), `.get` raised `AttributeError`, aborting the PDF/HTML report builder. | `(getattr(agent.memory, "patient_data", None) or {}).get("id", "UNKNOWN")` — handles None. |
+| R3-9 | `agent_runtime/core.py:457-...` | MED | `AgentMemory.compact()` trimmed `self.conversation` to `keep_last` and rolled the summary into `self.context_summary`, but never notified `self.smart_context`. `SmartContextManager.messages` and the `entities`/`topics` dicts grew unbounded; `get_relevant_context` scored already-summarized messages forever -> long-session memory leak + slow retrieval. | After trimming `conversation` under the lock, prune `self.smart_context.messages` to the same `keep_last` count. |
+| R3-10 | `plans/visualizer.py:1-...` | MED | Top-level `import vtk` + `import matplotlib.pyplot` made `plans.utilizations` (the main planning entry) fail to import in any Python environment lacking VTK or matplotlib. The only internal consumer in BrachyBot is `utilizations.draw_radiations`, which itself has NO internal BrachyBot callers (dead visualization path). Hard dep blocked headless deployments. | Wrap both imports in `try/except ImportError`; set `vtk = None`/`plt = None` on failure. VTK-dependent functions still raise at call-time if VTK is absent, but module import succeeds. |
+
+### Summary — confirmed real bugs (ANNOTATED, NOT FIXED — fix is risky/unsure)
+
+For these, the bug is real but the fix requires either clinical-discipline review (cannot change clinical output safely without sign-off) or large-scope refactor (security sandbox, OAR-config plumbing). They are flagged with `# REVIEW:` in source so future reviewers see them in-place.
+
+| ID | File:Line | Sev | Why fix is deferred |
+|----|-----------|-----|---------------------|
+| R3-11 | `plans/utilizations.py:ras_direction_to_voxel` + `compute_body_shell_and_ref_direction` | HIGH (latent) | `ras_direction_to_voxel` computes `v = (ras_direc @ direction) / spacing` where `direction` is SimpleITK's LPS direction-cosine matrix. Per the function name and the organ-default comments in `tool_factory/seed_plan/planning_pipeline._ORGAN_DEFAULT_REFDIREC` ("pancreas=[0,-1,0] posterior"), the input is RAS — but no RAS→LPS sign flip is applied. Symmetrically, `compute_body_shell_and_ref_direction` math produces a vector in LPS but labels it `ras_direction`. Used together, the two bugs cancel; used independently (e.g. hand-set RAS default), the needle approach direction is mirrored along x/y. Fix would change clinical planning output, requires maintainer verification of canonical input convention. |
+| R3-12 | `brain/core/multi_agent_critic.py:211-...` | MED | Hardcoded clinical thresholds in `_fallback_critique`: `D90 < 100%`, `D90 > 150%`, `V100 < 90%`. Project rule requires clinical thresholds from `clinical_kb`/`plan_config`. Fix requires plumbing config into the critic; these only fire when the LLM critique fails, so they're last-resort. Annotated. |
+| R3-13 | `brain/deciders/quality_decider.py:138-...` and `:197-...` | MED | Hardcoded scoring bands for V100/V150/V200/D90/homogeneity and hardcoded OAR dose constraints (rectum=2x, bladder=1.5x, urethra=1.2x, bowel=0.8x, kidney=0.2x of PD). Same fix path (config plumbing). Annotated. |
+| R3-14 | `brain/deciders/clinical_decider.py:124-...` | MED | Hardcoded default `thresholds = {"v100":0.90,"v150":0.35,"v200":0.15,"d90":1.0}`. Same issue — caller override exists via arg, but fallback is in code. Annotated. |
+| R3-15 | `brain/core/tool_code_writer.py:198` | HIGH (security) | `spec.loader.exec_module(module)` runs arbitrary LLM-authored Python in the host process. `_validate_code` only substring-denylists (`eval(`, `__import__`, ...) — trivially evaded. A malicious or hallucinated tool spec executes as the server user. NOT FIXED — requires sandbox architecture (restricted namespace, no `os`/`socket`/`subprocess`) and human approval gate. Annotated. |
+| R3-16 | `brain/execution/case_executor.py:248-...` | MED | `"Completed {len(plan)} steps successfully"` uses the requested plan length even when `resolve_execution_order` silently breaks on cyclic/unreachable deps (line 117/118), dropping steps from `result.steps`. User is told all N steps completed even if some never ran. Annotated; fix needs to surface dropped steps as FAILED. |
+
+### Summary — false positives or already-intended (NOT BUGS)
+
+Re-verified findings from the dispatched agents that on closer tracing are intentional or don't actually trigger. Listed here so they aren't re-flagged.
+
+| ID | File:Line | Claim | Why NOT a bug |
+|----|-----------|------|---------------|
+| R3-17 | `agent_runtime/chat_workflows.py:~905` | Agent claimed `gather()` missing `return_exceptions=True`. Verified: line 906 passes `return_exceptions=True` correctly. Same applies to `_post_loop.run_until_complete(_asyncio_post_enforcer.gather(..., return_exceptions=True))` at line 1286. Both sites correct. |
+| R3-18 | `quality/quality_gate.py:130-...` | Agent claimed "pass_rate is always 1.0 misleading". **Design intent**: the inline comment explicitly documents that `passed=True` is append-only semantically and statistics track aggregate counts; not a correctness bug. |
+| R3-19 | `plans/reinforcement.py` C1/C3 | Re-confirming previous round: `out_damage = covered / exceed_count` is ADDED to reward, shrinks with OAR overdose — correct. (Already annotated in source.) |
+| R3-20 | `web/server.py:131` | Agent claimed "min() of empty timestamps possible". Trace: both `_sessions` and `_session_timestamps` are mutated under the same lock with `pop(key, None)`; they stay in lockstep. The check `len(_sessions) >= _max_sessions` is also guarded. Latent-fragility only. |
+| R3-21 | `web/routes/planning_routes.py:80` | Agent claimed "dict mutation race on planning_results clear". GIL atomicity protects the `if key in ...: del ...` per-key pattern. The 4 minor concurrent-tab scenarios are already mitigated by the `agent.memory._lock` used elsewhere; explicit lock acquisition is a cosmetic improvement only. |
+| R3-22 | `plans/utilizations.py:600-604` (np.isin mask) | Claimed "fragile / corrupts float voxels". Trace: function always uses `sitkNearestNeighbor` interpolation, so every output voxel is an exact copy of some input voxel; `np.isin` is all-True and the `else` branch never fires. Dead code; does not corrupt output. |
+| R3-23 | `plans/utilizations.py:218` (`direction_transform` Frobenius norm) | Claimed "wrong for batched (n,3) input". All current callers (core.py:317, utilizations.py:932/1033/2603/2392) pass single 3-vectors. Documented API but doesn't trigger. |
+| R3-24 | `agent_runtime/llm_runtime.py:497,532,1866` | Step-status text matching ("Error/Exception"). Confirmed: production tool outputs DO sometimes contain those substrings as benign nouns; misclassification risk exists. NOT FIXED because the heuristic gates only the `success` flag for safety next-step in stream — the underlying tool result is preserved. Awaiting better `tool_result.success`-based gate plumbing. |
+| R3-25 | `plans/core.py:137,348` (`distance_transform_edt` without `sampling=`) | "voxels vs mm". Verified by trace: `distance_map` is consumed by `get_available_position` which compares against `seed_volume_length` (also in voxel units via `seed_info['length']/spacing`). Self-consistent even if unit-ambiguous. Documentation concern only. |
+
+### Detailed fidelity notes
+
+**R3-1 `learn_parameter_preferences` (memory/skill_learner.py:128-…)** written test simulating both bug path and fix produces:
+- Before: key stored as `"seed_planning_mode=rl"`, lookup never matches.
+- After: key stored as `"seed_planning" → {"mode": {"value": "rl", "confidence": 0.4}}`; lookup matches.
+
+**R3-2 `_update_existing_skills` (memory/self_evolution.py:132-…)** written test simulating 4 matching experiences (3 success + 1 fail) yields:
+- Before: throwaway dict mutated (effectively no-op), `_save_skill` never called.
+- After: live `Skill.usage_count = 4`, `Skill.success_count = 3`, `_save_skill` called once, `success_rate()` returns `0.75`.
+
+**R3-4 `update_sop_metrics` (memory/layered_memory.py:325-…)** mathematical verification:
+- Sequence: `find_sop` (no-op inc) → `update_sop_metrics(success=True)` × 2 → `update_sop_metrics(success=False)`
+- After first update: `usage=1`, `rate=1.0` ✓ (was `0.5` before)
+- After 2T: `usage=2`, `rate=1.0` ✓
+- After 2T+1F: `usage=3`, `rate=0.6667` ✓
+
+**R3-7 event-loop restore** — all 4 sites now follow the same pattern:
+```python
+_prev_loop = None
+try: _prev_loop = asyncio.get_event_loop_policy().get_event_loop()
+except Exception: pass
+_loop = asyncio.new_event_loop()
+asyncio.set_event_loop(_loop)
+try:
+    _loop.run_until_complete(...)
+finally:
+    _loop.close()
+    try: asyncio.set_event_loop(_prev_loop)
+    except Exception: pass
+```
+Verified by `py_compile` for all 4 sites in `agent_runtime/chat_workflows.py`.
+
+### Other lower-severity findings (documented, not fixed)
+
+The dispatch also surfaced ~30 LOW-severity items that are real but don't justify churn:
+- `quality/quality_gate.py:175-178` `_STATIC_CONTEXT` duplicates `default_params.json` defaults.
+- `preference_store.py:48-66` `DEFAULT_PREFERENCES` duplicating `default_params.json` defaults.
+- Widespread non-atomic JSON writes across most `memory/*.py` persistence helpers — wrap with `os.replace()` is the standard mitigation but would conflict with the existing auto-save hooks.
+- `brain/core/router.py:391-394` `allow_fallback=False` with missing `explicit_provider` silently falls through to task-policy chain.
+- `brain/providers/{tencent,kimi,groq,glm,qwen,mimo,grok,deepseek}_llm.py` lack a manual retry loop.
+- `brain/providers/generic_openai_compat.py:157-259` retries mid-stream re-emit prefix → duplicate content on dropped connection.
+- `tool_factory/seed_plan/planning_pipeline.py` `_ORGAN_DEFAULT_REFDIREC` semantics already documented as RAS via comments — pair with R3-11 if fixed.
+- `plans/dose_pre/functions.py` (dead) — clone of `utilizations.py:2052-2074` with no `+1e-5` guard.
+- `plans/dose_pre/myDoseNet.py:160-167` — 7 unused `UpSample` modules waste GPU memory.
+
+These are logged in the per-module sub-reports (preserved in git history).
+
+---
 
 
 

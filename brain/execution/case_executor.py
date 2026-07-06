@@ -246,6 +246,14 @@ class CaseExecutor:
                     hook(step_id, tool_id, step_result)
 
         result.status = ExecutionStatus.SUCCESS
+        # REVIEW: `len(plan)` is the requested plan length, not the number
+        # of steps that were actually executed. `resolve_execution_order`
+        # silently drops cyclic/unreachable steps (it breaks at
+        # `if not current_phase: break` without surfacing which steps were
+        # never scheduled). So this summary can over-report the count, and
+        # the user is told "all N steps completed" even if some never ran.
+        # Suggested fix: detect `len(result.steps) < len(plan)` and surface
+        # dropped steps as FAILED with a reason.
         result.summary = f"Completed {len(plan)} steps successfully"
         result.total_time = time.time() - start_time
 

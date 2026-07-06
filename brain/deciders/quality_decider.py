@@ -137,6 +137,11 @@ class QualityDecider(BaseDecider):
 
     def _score_coverage(self, v100: float, v150: float, v200: float, pd: float) -> float:
         """Score target coverage (max 25)."""
+        # REVIEW: thresholds (v100>=0.95, v100>=0.90, v150<=0.35, etc.) are
+        # hardcoded scoring bands; per project rule these should come from
+        # `clinical_kb`/`plan_config` instead of code literals, so they can
+        # be tuned per site/prescription without a code change. Kept here
+        # for safety; fix requires plumbing of plan_config into this decider.
         score = 0.0
         if v100 >= 0.95:
             score += 15
@@ -184,6 +189,13 @@ class QualityDecider(BaseDecider):
         score = 30
         violations = []
 
+        # REVIEW: default OAR dose constraints (rectum=2x, bladder=1.5x,
+        # urethra=1.2x, bowel=0.8x, kidney=0.2x of prescribed dose) are
+        # hardcoded. Per project rule these should come from
+        # `clinical_kb`/`plan_config` so they can be updated by site without
+        # touching code. The `constraints` arg already supports caller-side
+        # override via `+1` here, but the *fallback* dict still encodes site
+        # defaults. Defer fix to OAR-config plumbing refactor.
         default_constraints = {
             "rectum": 2.0 * pd,
             "bladder": 1.5 * pd,

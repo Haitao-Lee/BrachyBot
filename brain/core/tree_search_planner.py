@@ -78,6 +78,12 @@ class PlanningTreeSearch:
 
     def search(self, task_description: str, available_tools: list,
                initial_state: dict = None) -> dict:
+        # REVIEW: previously `_node_cache` was a self attribute that was
+        # initialized lazily inside `_store_node` and never cleared between
+        # `search()` calls, so long-running agents that plan repeatedly
+        # accumulated nodes unbounded (memory leak + stale stats). Clear at
+        # the start of every search so each invocation starts fresh.
+        self._node_cache = {}
         self.root = PlanningNode(
             node_id="root", parent_id=None, tool_name="START",
             tool_params={}, state_description=task_description,

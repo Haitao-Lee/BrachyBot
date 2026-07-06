@@ -333,7 +333,10 @@ class LayeredMemory:
                 best_score = score
                 best_sop = sop
         if best_sop and best_score > 0:
-            best_sop.usage_count += 1
+            # REVIEW: previously incremented `usage_count` here AND (if called)
+            # in `update_sop_metrics`, double-counting every successful match.
+            # `usage_count` should reflect actual uses completed — only
+            # `update_sop_metrics` knows whether the SOP execution succeeded.
             best_sop.last_used = datetime.now().isoformat()
             self._save_layer("l3_sops", self.l3_sops)
         return best_sop
@@ -341,7 +344,13 @@ class LayeredMemory:
     def update_sop_metrics(self, sop_id: str, success: bool, tokens: int = 0, exec_time: float = 0.0):
         if sop_id in self.l3_sops:
             sop = self.l3_sops[sop_id]
+            # REVIEW: previously used `n = sop.usage_count` and divided by `n+1`,
+            # but `find_sop` (or callers) already incremented `usage_count` to
+            # count the current use, so the running average was off by one and
+            # the first `update` halved `success_rate` (0.5 instead of 1.0). Fix
+            # by treating `n` as the count BEFORE this use, then increment first.
             n = sop.usage_count
+            sop.usage_count = n + 1
             sop.success_rate = (sop.success_rate * n + (1 if success else 0)) / (n + 1)
             if tokens > 0:
                 sop.avg_tokens = (sop.avg_tokens * n + tokens) / (n + 1)

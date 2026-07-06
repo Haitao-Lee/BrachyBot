@@ -122,21 +122,31 @@ class SkillLearner:
         preferences = {}
         for param_str, count in param_counter.items():
             if count >= 3:
-                tool_param = param_str.rsplit(".", 1)
-                if len(tool_param) == 2:
-                    tool_name, param_name = tool_param
-                    value = param_str.split("=", 1)[1]
-                    try:
-                        value = int(value) if value.isdigit() else float(value) if "." in value else value
-                    except ValueError:
-                        pass
+                # REVIEW: previously `param_str.rsplit(".", 1)` returned
+                # `["seed_planning", "mode=rl"]` so param_name carried the
+                # `"=rl"` suffix. The downstream `preference_store` looks up
+                # the preference by `f"{tool_name}_{param_name}"` (just the
+                # key, no value), so the suffix caused every learned
+                # preference to be silently stored but never applied. Split
+                # out the param_name and value separately.
+                if "=" not in param_str:
+                    continue
+                key_part, value = param_str.split("=", 1)
+                tool_param = key_part.rsplit(".", 1)
+                if len(tool_param) != 2:
+                    continue
+                tool_name, param_name = tool_param
+                try:
+                    value = int(value) if value.isdigit() else float(value) if "." in value else value
+                except ValueError:
+                    pass
 
-                    if tool_name not in preferences:
-                        preferences[tool_name] = {}
-                    preferences[tool_name][param_name] = {
-                        "value": value,
-                        "confidence": min(count / 10, 1.0),
-                    }
+                if tool_name not in preferences:
+                    preferences[tool_name] = {}
+                preferences[tool_name][param_name] = {
+                    "value": value,
+                    "confidence": min(count / 10, 1.0),
+                }
 
         return preferences
 

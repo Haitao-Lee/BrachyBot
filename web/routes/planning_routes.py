@@ -1901,7 +1901,7 @@ def register_planning_routes(app, get_agent, session_context=None):
 
             payload = {
                 "generated_at": datetime.now().isoformat(timespec="seconds"),
-                "patient_id": getattr(agent.memory, "patient_data", {}).get("id", "UNKNOWN"),
+                "patient_id": (getattr(agent.memory, "patient_data", None) or {}).get("id", "UNKNOWN"),
                 "plan_name": "BrachyPlan",
                 "ct_path": agent.memory.retrieve("ct_path"),
                 "tumor_type": agent.memory.retrieve("tumor_type_used", ""),
