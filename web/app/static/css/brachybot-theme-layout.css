@@ -393,7 +393,7 @@ body::before {
     color: var(--text-secondary);
     font-size: 0.68rem;
     font-weight: 600;
-    font-family: 'Inter, sans-serif';
+    font-family: 'Inter', sans-serif;
     letter-spacing: 0.04em;
     cursor: pointer;
     transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease);

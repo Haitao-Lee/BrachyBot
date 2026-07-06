@@ -135,11 +135,12 @@ def start_agent(agent_id, categories):
     try:
         log_message(f"Starting agent {agent_id} with categories: {categories}")
 
-        # Start the agent in background
-        cmd = f"cd {BENCHMARK_DIR} && python3 aligned_benchmark.py {agent_id} {' '.join(map(str, categories))}"
+        # Start the agent in background without a shell. The categories are
+        # trusted constants today, but argv-style execution avoids future
+        # command-injection regressions if this script becomes configurable.
+        cmd = ["python3", "aligned_benchmark.py", str(agent_id), *[str(c) for c in categories]]
         process = subprocess.Popen(
             cmd,
-            shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=BENCHMARK_DIR

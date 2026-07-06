@@ -83,6 +83,11 @@ function switchPanel(name, el) {
     reportUIEvent('ui.panel', `Panel switched to ${name}`, { panel: name });
 }
 
+function _planningItems(kind) {
+    const planning = dataTreeState && dataTreeState.planning ? dataTreeState.planning : {};
+    return Array.isArray(planning[kind]) ? planning[kind] : [];
+}
+
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
 /******** VOLUME-BASED RENDERING ********/
@@ -1999,9 +2004,9 @@ function showGroupContextMenu(x, y, category) {
 function soloGroup(category) {
     dataTreeState.organs.forEach(o => { o.visible = (o.category === category); });
     dataTreeState.ctv.visible = (category === 'ctv');
-    dataTreeState.planning.seeds.forEach(s => { s.visible = (category === 'planning_seeds'); });
-    dataTreeState.planning.needles.forEach(n => { n.visible = (category === 'planning_needles'); });
-    dataTreeState.planning.doseLevels.forEach(d => { d.visible = (category === 'dose_isosurfaces'); });
+    _planningItems('seeds').forEach(s => { s.visible = (category === 'planning_seeds'); });
+    _planningItems('needles').forEach(n => { n.visible = (category === 'planning_needles'); });
+    _planningItems('doseLevels').forEach(d => { d.visible = (category === 'dose_isosurfaces'); });
     // Update 3D meshes
     Object.entries(scene3D.meshes).forEach(([id, mesh]) => {
         if (id.startsWith('seed_')) {
@@ -2323,18 +2328,18 @@ function soloOrgan(organId) {
 function showAllOrgans() {
     dataTreeState.organs.forEach(o => { o.visible = true; });
     dataTreeState.ctv.visible = true;
-    dataTreeState.planning.seeds.forEach(s => { s.visible = true; });
-    dataTreeState.planning.needles.forEach(n => { n.visible = true; });
-    dataTreeState.planning.doseLevels.forEach(d => { d.visible = true; });
+    _planningItems('seeds').forEach(s => { s.visible = true; });
+    _planningItems('needles').forEach(n => { n.visible = true; });
+    _planningItems('doseLevels').forEach(d => { d.visible = true; });
     // Update 3D meshes visibility
     Object.entries(scene3D.meshes).forEach(([id, mesh]) => {
         if (!mesh) return;
         let opacity = 1;
-        if (id.startsWith('seed_')) opacity = dataTreeState.planning.seeds.find(s => s.id === id)?.opacity ?? 1.0;
-        else if (id.startsWith('needle_')) opacity = dataTreeState.planning.needles.find(n => n.id === id)?.opacity ?? 0.8;
+        if (id.startsWith('seed_')) opacity = _planningItems('seeds').find(s => s.id === id)?.opacity ?? 1.0;
+        else if (id.startsWith('needle_')) opacity = _planningItems('needles').find(n => n.id === id)?.opacity ?? 0.8;
         else if (id.startsWith('dose_iso_')) {
             const threshold = parseFloat(id.replace('dose_iso_', ''));
-            opacity = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold)?.opacity ?? 0.3;
+            opacity = _planningItems('doseLevels').find(d => d.threshold === threshold)?.opacity ?? 0.3;
         }
         else if (id.startsWith('organ_')) opacity = dataTreeState.organs.find(o => o.id === id)?.opacity ?? 0.5;
         else if (id.startsWith('ctv_')) opacity = dataTreeState.ctvLabels?.[id]?.opacity ?? dataTreeState.ctv.opacity ?? 0.7;
@@ -2364,13 +2369,13 @@ function setGroupVisibility(category, visible) {
             if (mesh) applyMeshVisibility(mesh, visible, o.opacity ?? 0.5);
         });
     } else if (category === 'planning_seeds') {
-        dataTreeState.planning.seeds.forEach(seed => {
+        _planningItems('seeds').forEach(seed => {
             seed.visible = visible;
             const mesh = scene3D.meshes[seed.id];
             if (mesh) applyMeshVisibility(mesh, visible, seed.opacity ?? 1.0);
         });
     } else if (category === 'planning_needles') {
-        dataTreeState.planning.needles.forEach(needle => {
+        _planningItems('needles').forEach(needle => {
             needle.visible = visible;
             const mesh = scene3D.meshes[needle.id];
             if (mesh) applyMeshVisibility(mesh, visible, needle.opacity ?? 0.8);
@@ -2379,7 +2384,7 @@ function setGroupVisibility(category, visible) {
             }
         });
     } else if (category === 'dose_isosurfaces') {
-        dataTreeState.planning.doseLevels.forEach(level => {
+        _planningItems('doseLevels').forEach(level => {
             level.visible = visible;
             const mesh = scene3D.meshes[`dose_iso_${level.threshold}`];
             if (mesh) applyMeshVisibility(mesh, visible, level.opacity ?? 0.3);
@@ -2423,12 +2428,12 @@ function setGroupOpacity(category, value) {
             applyMeshOpacity(scene3D.meshes[o.id], opacity, o.visible !== false);
         });
     } else if (category === 'planning_seeds') {
-        dataTreeState.planning.seeds.forEach(seed => {
+        _planningItems('seeds').forEach(seed => {
             seed.opacity = opacity;
             applyMeshOpacity(scene3D.meshes[seed.id], opacity, seed.visible !== false);
         });
     } else if (category === 'planning_needles') {
-        dataTreeState.planning.needles.forEach(needle => {
+        _planningItems('needles').forEach(needle => {
             needle.opacity = opacity;
             applyMeshOpacity(scene3D.meshes[needle.id], opacity, needle.visible !== false);
             if (typeof _setNeedleHandlesVisibility === 'function') {
@@ -2436,7 +2441,7 @@ function setGroupOpacity(category, value) {
             }
         });
     } else if (category === 'dose_isosurfaces') {
-        dataTreeState.planning.doseLevels.forEach(level => {
+        _planningItems('doseLevels').forEach(level => {
             level.opacity = opacity;
             applyMeshOpacity(scene3D.meshes[`dose_iso_${level.threshold}`], opacity, level.visible !== false);
         });

@@ -307,6 +307,10 @@ def register_planning_routes(app, get_agent, session_context=None):
         label_path = data.get("label_path")
         if not image_path:
             return jsonify({"error": "image_path is required"}), 400
+        if not _validate_path(image_path, purpose="read"):
+            return jsonify({"error": "Invalid image_path"}), 400
+        if label_path and not _validate_path(label_path, purpose="read"):
+            return jsonify({"error": "Invalid label_path"}), 400
 
         try:
             # Dispatch to the appropriate tool.
@@ -424,6 +428,8 @@ def register_planning_routes(app, get_agent, session_context=None):
 
         if not ct_image_path:
             return jsonify({"error": "ct_image_path is required"}), 400
+        if not _validate_path(ct_image_path, purpose="read"):
+            return jsonify({"error": "Invalid ct_image_path"}), 400
 
         try:
             # Use planning pipeline tool
@@ -1546,11 +1552,63 @@ def register_planning_routes(app, get_agent, session_context=None):
             if seed_plan is None:
                 return jsonify({"error": "No plan available. Run planning first."}), 400
 
-            ct_image = agent.memory.retrieve("ct_image")
             seed_info = getattr(agent, 'config', {}).get("seed_info", {"length": 4.5, "radius": 0.4})
+            seed_length = float(seed_info.get("length", 4.5) or 4.5)
+            seed_radius = float(seed_info.get("radius", 0.4) or 0.4)
 
-            # Export seeds as STL using visualizer
+            def _seed_cylinder_stl(pos, direction, facets=16):
+                """Return ASCII STL for one seed cylinder in world coordinates."""
+                pos = np.asarray(pos, dtype=float).reshape(3)
+                direction = np.asarray(direction, dtype=float).reshape(3)
+                norm = float(np.linalg.norm(direction))
+                if norm < 1e-8:
+                    direction = np.array([0.0, 0.0, 1.0])
+                else:
+                    direction = direction / norm
+                helper = np.array([1.0, 0.0, 0.0])
+                if abs(float(np.dot(helper, direction))) > 0.9:
+                    helper = np.array([0.0, 1.0, 0.0])
+                u = np.cross(direction, helper)
+                u = u / max(float(np.linalg.norm(u)), 1e-8)
+                v = np.cross(direction, u)
+                half = direction * (seed_length / 2.0)
+                p0 = pos - half
+                p1 = pos + half
+
+                ring0 = []
+                ring1 = []
+                for k in range(facets):
+                    angle = 2.0 * np.pi * k / facets
+                    offset = seed_radius * (np.cos(angle) * u + np.sin(angle) * v)
+                    ring0.append(p0 + offset)
+                    ring1.append(p1 + offset)
+
+                triangles = []
+                for k in range(facets):
+                    nk = (k + 1) % facets
+                    triangles.append((ring0[k], ring1[k], ring1[nk]))
+                    triangles.append((ring0[k], ring1[nk], ring0[nk]))
+                    triangles.append((p0, ring0[nk], ring0[k]))
+                    triangles.append((p1, ring1[k], ring1[nk]))
+
+                lines = ["solid seed"]
+                for a, b, c in triangles:
+                    normal = np.cross(b - a, c - a)
+                    normal = normal / max(float(np.linalg.norm(normal)), 1e-8)
+                    lines.append(f"  facet normal {normal[0]:.8g} {normal[1]:.8g} {normal[2]:.8g}")
+                    lines.append("    outer loop")
+                    for p in (a, b, c):
+                        lines.append(f"      vertex {p[0]:.8g} {p[1]:.8g} {p[2]:.8g}")
+                    lines.append("    endloop")
+                    lines.append("  endfacet")
+                lines.append("endsolid seed")
+                return "\n".join(lines) + "\n"
+
+            # Export seeds as individual ASCII STL files. The endpoint name and
+            # file extensions intentionally match the payload; raw NPY exports
+            # belong in a separate debug/export route if ever needed.
             count = 0
+            files = []
             for i, entry in enumerate(seed_plan):
                 if not isinstance(entry, (list, tuple)) or len(entry) < 2:
                     continue
@@ -1558,14 +1616,16 @@ def register_planning_routes(app, get_agent, session_context=None):
                 for j, seed in enumerate(seeds):
                     if not isinstance(seed, (list, tuple)) or len(seed) < 2:
                         continue
-                    # Save position data as numpy (STL requires pyvista/vtk)
                     pos = np.array(seed[0])
                     direc = np.array(seed[1])
-                    np.save(os.path.join(safe_output_dir, f"seed_{i}_{j}_pos.npy"), pos)
-                    np.save(os.path.join(safe_output_dir, f"seed_{i}_{j}_dir.npy"), direc)
+                    filename = f"seed_{i}_{j}.stl"
+                    output_path = os.path.join(safe_output_dir, filename)
+                    with open(output_path, "w", encoding="utf-8") as f:
+                        f.write(_seed_cylinder_stl(pos, direc))
+                    files.append(filename)
                     count += 1
 
-            return jsonify({"success": True, "count": count, "output_dir": safe_output_dir})
+            return jsonify({"success": True, "count": count, "files": files, "output_dir": safe_output_dir})
         except Exception as e:
             logger.error(f"STL export failed: {e}")
             return jsonify({"error": str(e)}), 500

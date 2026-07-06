@@ -1083,10 +1083,13 @@ async function loadDefaultParams() {
         if (!data.success || !data.defaults) return;
 
         const d = data.defaults;
+        const setVal = (id, val) => {
+            const el = document.getElementById(id);
+            if (el && val !== undefined && val !== null) el.value = val;
+        };
 
         // Seed info
         if (d.seed_info) {
-            const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
             setVal('seedRadius', d.seed_info.radius);
             setVal('seedLength', d.seed_info.length);
             setVal('seedMarginRate', d.seed_info.margin_rate);
@@ -1100,7 +1103,6 @@ async function loadDefaultParams() {
         // Radiation array params
         if (d.radiation_array_params) {
             const r = d.radiation_array_params;
-            const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
             setVal('targetValue', r.target_value);
             setVal('obstacleValue', r.obstacle_value);
             setVal('backgroundValue', r.background_value);
@@ -1116,7 +1118,6 @@ async function loadDefaultParams() {
         // Planning params
         if (d.planning) {
             const p = d.planning;
-            const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
             setVal('inLowestEnergy', p.in_lowest_energy);
             setVal('outHighestEnergy', p.out_highest_energy);
             setVal('dvhRate', p.DVH_rate);
@@ -1133,7 +1134,6 @@ async function loadDefaultParams() {
         // Distance filter
         if (d.distance_filter) {
             const df = d.distance_filter;
-            const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
             setVal('distLowerBound', df.lower_bound);
             setVal('distUpperBound', df.upper_bound);
             setVal('distRate', df.distance_rate);
@@ -1143,7 +1143,6 @@ async function loadDefaultParams() {
         // DL params
         if (d.dl_params) {
             const dl = d.dl_params;
-            const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
             setVal('dlLR', dl.lr);
             setVal('dlLRDecay', dl.lr_decay);
             setVal('dlEpochs', dl.epochs);
@@ -1155,7 +1154,6 @@ async function loadDefaultParams() {
         // RF params
         if (d.rf_params) {
             const rf = d.rf_params;
-            const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
             setVal('rfMaxEpisodes', rf.max_episodes);
             setVal('rfBandwidth', rf.bandwidth);
         }
@@ -2072,12 +2070,11 @@ async function _captureScreenshot(view) {
     const el = _resolveScreenshotTarget(target);
     if (!el) { console.warn('[screenshot] Target not found:', view); return; }
     if (typeof html2canvas !== 'undefined') {
-        html2canvas(el).then(canvas => {
-            const link = document.createElement('a');
-            link.download = `brachybot_${view}_${Date.now()}.png`;
-            link.href = canvas.toDataURL();
-            link.click();
-        });
+        const canvas = await html2canvas(el);
+        const link = document.createElement('a');
+        link.download = `brachybot_${view}_${Date.now()}.png`;
+        link.href = canvas.toDataURL();
+        link.click();
     } else {
         // Fallback: just capture the 3D canvas
         const canvas = el.querySelector('canvas') || el;

@@ -36,7 +36,6 @@ function addTooltips() {
         'overlayOAR': 'Toggle Organs at Risk overlay',
         'toolCrosshair': 'Crosshair tool - click to navigate',
         'toolMeasure': 'Measure distance between two points',
-        'toolMeasure': 'Measure distance between two points',
         'toolAngle': 'Measure angle between three points',
         'toolRect': 'Rectangle measurement tool',
         'toolZoombox': 'Zoom into a region',

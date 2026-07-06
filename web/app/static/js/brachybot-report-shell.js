@@ -168,7 +168,9 @@ window.Report = (function () {
             const src = this.get(key);
             const colors = { auto: '#10b981', user: '#f59e0b', bot: '#3b82f6' };
             const labels = { auto: 'AUTO', user: 'YOU', bot: 'BOT' };
-            return `<span data-source-key="${(key || '').replace(/[^a-zA-Z0-9_]/g, '_')}" style="background:${colors[src]};color:#fff;font-size:0.58rem;padding:1px 6px;border-radius:8px;margin-left:4px;letter-spacing:0.04em;vertical-align:middle;cursor:help;" title="Click ↻ to reset">${labels[src]}</span><span onclick="Report.sources.resetTo('${(key || '').replace(/'/g, "\\'")}')" title="Reset to auto" style="cursor:pointer;margin-left:3px;font-size:0.7rem;color:#94a3b8;">↻</span>`;
+            const safeKey = String(key || '').replace(/[^a-zA-Z0-9_]/g, '_');
+            const callArg = JSON.stringify(String(key || '')).replace(/"/g, '&quot;');
+            return `<span data-source-key="${safeKey}" style="background:${colors[src]};color:#fff;font-size:0.58rem;padding:1px 6px;border-radius:8px;margin-left:4px;letter-spacing:0.04em;vertical-align:middle;cursor:help;" title="Click reset to restore auto">${labels[src] || src}</span><span onclick="Report.sources.resetTo(${callArg})" title="Reset to auto" style="cursor:pointer;margin-left:3px;font-size:0.7rem;color:#94a3b8;">reset</span>`;
         },
         resetTo(key) {
             if (!key) return;

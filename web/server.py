@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(WEB_DIR, ".."))
 try:
     from web.server_support import (
         APP_DIR,
+        DOSE_MODEL_SCALE_GY,
         MAX_UPLOAD_FILES,
         TRUE_VALUES,
         UPLOAD_DIR,
@@ -30,6 +31,7 @@ try:
 except ImportError:  # pragma: no cover - supports direct script execution.
     from server_support import (  # type: ignore
         APP_DIR,
+        DOSE_MODEL_SCALE_GY,
         MAX_UPLOAD_FILES,
         TRUE_VALUES,
         UPLOAD_DIR,
@@ -52,6 +54,7 @@ def create_app(config: Optional[Dict] = None):
     try:
         from flask import Flask, request, jsonify, send_from_directory, Response
         from flask_cors import CORS
+        from werkzeug.exceptions import RequestEntityTooLarge
         HAS_FLASK = True
     except ImportError:
         HAS_FLASK = False
@@ -81,6 +84,18 @@ def create_app(config: Optional[Dict] = None):
         ]
     CORS(app, origins=_allowed_origins)
     app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500MB max upload
+
+    @app.errorhandler(RequestEntityTooLarge)
+    def handle_request_entity_too_large(_error):
+        return jsonify({
+            "error": "Request entity too large",
+            "max_bytes": app.config.get("MAX_CONTENT_LENGTH"),
+        }), 413
+
+    @app.errorhandler(500)
+    def handle_internal_server_error(error):
+        logger.error("Unhandled server error: %s", error, exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
     if config is None:
         config = {}

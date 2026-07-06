@@ -2290,7 +2290,8 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
             ctx.fillStyle = `rgba(${r},${g},${b},0.9)`;
             ctx.strokeStyle = 'rgba(0,0,0,0.6)';
             ctx.lineWidth = 2;
-            const label = contour.level.toFixed(1);
+            const label = Number.isFinite(contour.level) ? contour.level.toFixed(1) : '';
+            if (!label) return;
             ctx.strokeText(label, x + 3, y - 3);
             ctx.fillText(label, x + 3, y - 3);
         }
