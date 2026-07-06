@@ -87,6 +87,18 @@ _SITE_SAFETY_RULES = {
         ("v200", "<=", 0.50, "CRITICAL", "V200 above 50% — severe overdose risk"),
         ("d90",  ">=", 0.85, "CRITICAL", "D90 below 85% of Rx — target underdosed"),
     ],
+    "kidney": [
+        ("v100", ">=", 0.80, "CRITICAL", "CTV V100 below 80% — severe underdose"),
+        ("v100", ">=", 0.90, "WARNING",  "CTV V100 below 90% — suboptimal"),
+        ("v200", "<=", 0.50, "CRITICAL", "V200 above 50% — severe overdose risk"),
+        ("d90",  ">=", 0.85, "CRITICAL", "D90 below 85% of Rx — target underdosed"),
+    ],
+    "colon": [
+        ("v100", ">=", 0.80, "CRITICAL", "CTV V100 below 80% — severe underdose"),
+        ("v100", ">=", 0.90, "WARNING",  "CTV V100 below 90% — suboptimal"),
+        ("v200", "<=", 0.50, "CRITICAL", "V200 above 50% — severe overdose risk"),
+        ("d90",  ">=", 0.85, "CRITICAL", "D90 below 85% of Rx — target underdosed"),
+    ],
     "head_neck": [
         ("v100", ">=", 0.80, "CRITICAL", "CTV V100 below 80% — severe underdose"),
         ("v100", ">=", 0.95, "WARNING",  "CTV V100 below 95% — suboptimal"),
@@ -182,9 +194,9 @@ def _normalize_tumor_type(tumor_type: str) -> str:
         "nnunet_pancreatic": "pancreatic",
         "pancreas": "pancreatic",
         "voco_liver": "liver",
-        "voco_kidney": "liver",  # kidney uses similar constraints
+        "voco_kidney": "kidney",
         "voco_lung": "lung",
-        "voco_colon": "liver",  # GI uses similar
+        "voco_colon": "colon",
         "voco_brats21": "head_neck",
     }
     for pattern, site in _map.items():

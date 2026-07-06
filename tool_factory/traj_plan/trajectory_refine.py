@@ -80,6 +80,11 @@ class TrajectoryRefineTool(BaseTool):
                     "description": "Maximum number of trajectories to return (default: 50)",
                     "default": 50,
                 },
+                "spacing": {
+                    "type": "array",
+                    "description": "Voxel spacing in the same axis order as radiation_volume, used to convert depth_mm to sampling steps.",
+                    "items": {"type": "number"},
+                },
             },
             "required": ["trajectories", "radiation_volume"],
         }
@@ -113,6 +118,12 @@ class TrajectoryRefineTool(BaseTool):
         min_target_coverage = kwargs.get("min_target_coverage", 0.8)
         max_angular_deviation = kwargs.get("max_angular_deviation", 45)
         max_trajectories = kwargs.get("max_trajectories", 50)
+        spacing = kwargs.get("spacing")
+        spacing_arr = None
+        if spacing is not None:
+            spacing_arr = np.asarray(spacing, dtype=np.float64).flatten()
+            if spacing_arr.size != 3 or not np.all(np.isfinite(spacing_arr)) or np.any(spacing_arr <= 0):
+                return ToolResult(success=False, error="spacing must contain three positive finite values")
 
         ref_direc = ref_direc / np.linalg.norm(ref_direc)
         max_angle_rad = np.radians(max_angular_deviation)
@@ -135,7 +146,12 @@ class TrajectoryRefineTool(BaseTool):
             target_mask = radiation_volume == target_value
             obstacle_mask = radiation_volume == obstacle_value
 
-            max_depth_idx = min(int(depth), max(radiation_volume.shape) - 1)
+            if spacing_arr is not None:
+                step_mm = float(np.linalg.norm(direction * spacing_arr))
+                max_depth_idx = int(np.ceil(float(depth) / max(step_mm, 1e-6)))
+            else:
+                max_depth_idx = int(depth)
+            max_depth_idx = max(1, min(max_depth_idx, max(radiation_volume.shape) - 1))
             trajectory_points = origin + np.outer(np.arange(max_depth_idx), direction)
 
             # Check bounds for each point

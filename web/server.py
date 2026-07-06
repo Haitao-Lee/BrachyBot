@@ -567,14 +567,16 @@ def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]
                 resampled_ct.TransformPhysicalPointToContinuousIndex(tuple(float(v) for v in pos)),
                 dtype=np.float64,
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning("Skipping seed with invalid physical coordinate transform: %s", exc)
             continue
         if not np.all(np.isfinite(idx_xyz)) or np.any(idx_xyz < 0.0) or np.any(idx_xyz >= size_xyz):
             continue
 
         try:
             voxel_direction = utilizations.ras_direction_to_voxel(direction_np, resampled_ct).astype(np.float32)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Falling back to default voxel seed direction: %s", exc)
             voxel_direction = np.array([0.0, 0.0, 1.0], dtype=np.float32)
         vdn = float(np.linalg.norm(voxel_direction))
         if vdn <= 1e-8 or not np.all(np.isfinite(voxel_direction)):
@@ -817,6 +819,18 @@ def _check_rate_limit(client_ip: str) -> bool:
     return True
 
 
+def _client_ip_for_rate_limit() -> str:
+    """Honor proxy headers only when the deployment explicitly trusts them."""
+    if os.environ.get("BRACHYBOT_TRUST_PROXY", "").lower() in TRUE_VALUES:
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            return forwarded.split(",", 1)[0].strip()
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip.strip()
+    return request.remote_addr or "unknown"
+
+
 def _is_loopback_host(host: str) -> bool:
     host = (host or "").strip().lower()
     return host in {"127.0.0.1", "localhost", "::1"} or host.startswith("127.")
@@ -865,6 +879,8 @@ def _allowed_write_roots() -> list:
 def _validate_path(path: str, purpose: str = "read") -> bool:
     """Validate a file path against purpose-specific allowlists."""
     if not path:
+        return False
+    if "\x00" in path:
         return False
     if '..' in path.replace('\\', '/').split('/'):
         return False
@@ -989,7 +1005,7 @@ def rate_limit(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not _TRUST_NETWORK:
-            client_ip = request.remote_addr
+            client_ip = _client_ip_for_rate_limit()
             if not _check_rate_limit(client_ip):
                 return jsonify({"error": "Rate limit exceeded"}), 429
         return f(*args, **kwargs)
@@ -1008,16 +1024,26 @@ def create_app(config: Optional[Dict] = None):
         return None
 
     app = Flask(__name__, static_folder=APP_DIR, static_url_path="")
-    # CORS: restrict to localhost origins for security.
-    # When BRACHYBOT_TRUST_NETWORK is set, allow all origins (LAN access).
-    # Override with ALLOWED_ORIGINS env var for explicit control.
-    if _TRUST_NETWORK:
-        _allowed_origins = "*"
+    # CORS: restrict to localhost by default. Trusted LAN mode permits
+    # loopback/private-network browser origins, not arbitrary websites.
+    _origin_env = os.environ.get("ALLOWED_ORIGINS")
+    if _origin_env:
+        _allowed_origins = [o.strip() for o in _origin_env.split(",") if o.strip()]
+    elif _TRUST_NETWORK:
+        _allowed_origins = [
+            r"http://localhost(:\d+)?",
+            r"http://127\.0\.0\.1(:\d+)?",
+            r"http://10\.\d+\.\d+\.\d+(:\d+)?",
+            r"http://192\.168\.\d+\.\d+(:\d+)?",
+            r"http://172\.(1[6-9]|2\d|3[01])\.\d+\.\d+(:\d+)?",
+        ]
     else:
-        _allowed_origins = os.environ.get(
-            "ALLOWED_ORIGINS",
-            "http://localhost,http://127.0.0.1,http://localhost:8080,http://127.0.0.1:8080"
-        ).split(",")
+        _allowed_origins = [
+            "http://localhost",
+            "http://127.0.0.1",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+        ]
     CORS(app, origins=_allowed_origins)
     app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500MB max upload
 
@@ -1219,7 +1245,6 @@ def create_app(config: Optional[Dict] = None):
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-    @staticmethod
     def _load_ct_image(path):
         """Load a medical image from `path` and return (sitk.Image, kind, meta).
 
@@ -1332,7 +1357,6 @@ def create_app(config: Optional[Dict] = None):
         # Unknown extension — try anyway
         return sitk.ReadImage(path), "volume", {"file": os.path.abspath(path)}
 
-    @staticmethod
     def _extract_dicom_tags(sitk_img):
         """Extract clinically relevant DICOM tags via SimpleITK.
 
@@ -1442,7 +1466,6 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"success": False, "error": str(e)}), 500
 
     # ----- Report auto-fill helpers -----
-    @staticmethod
     def _build_report_interpretation(agent, language="zh"):
         """Generate source-aware report interpretation without local clinical verdicts."""
         dose = (agent.memory.retrieve("dose_metrics") or {}) if agent else {}
@@ -3389,7 +3412,7 @@ def create_app(config: Optional[Dict] = None):
             try:
                 import json as _json, os as _os
                 _cfg_path = _os.path.join(_os.path.dirname(__file__), '..', 'plans', 'config.json')
-                with open(_cfg_path) as _f:
+                with open(_cfg_path, encoding="utf-8") as _f:
                     _default_cfg = _json.load(_f)
             except Exception:
                 _default_cfg = {}
@@ -3467,7 +3490,7 @@ def create_app(config: Optional[Dict] = None):
                 import json as _json
                 config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "plans", "config.json")
                 if os.path.exists(config_path):
-                    with open(config_path, "r") as f:
+                    with open(config_path, "r", encoding="utf-8") as f:
                         file_config = _json.load(f)
                     iso_params = file_config.get("iso_dose_params", {})
 
@@ -3477,7 +3500,7 @@ def create_app(config: Optional[Dict] = None):
             import json as _json
             dp_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "default_params.json")
             if os.path.exists(dp_path):
-                with open(dp_path, "r") as f:
+                with open(dp_path, "r", encoding="utf-8") as f:
                     dp_config = _json.load(f)
                 display_3d = dp_config.get("display_3d", {})
             # Include the prescription dose so the frontend can compute
@@ -3935,7 +3958,7 @@ def create_app(config: Optional[Dict] = None):
         try:
             import json
             config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "default_params.json")
-            with open(config_path, 'r') as f:
+            with open(config_path, 'r', encoding="utf-8") as f:
                 defaults = json.load(f)
             return jsonify({"success": True, "defaults": defaults})
         except Exception as e:
@@ -4104,8 +4127,8 @@ def create_app(config: Optional[Dict] = None):
             if agent is not None and hasattr(agent, "memory"):
                 try:
                     agent.memory.set_ui_state(state_payload)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("Failed to persist UI state to agent memory: %s", exc)
 
         event = _append_ui_event(session_id, {
             "type": data.get("type", "ui.event"),
@@ -4638,30 +4661,34 @@ def create_app(config: Optional[Dict] = None):
         def generate():
             deadline = time.time() + 300
             last_payload = None
-            while time.time() < deadline:
-                if task_id:
-                    task = task_manager.get_task(task_id)
-                    payload = {"task": task}
-                    if task:
-                        data = json.dumps(task)
-                        if data != last_payload:
-                            last_payload = data
-                            yield f"event: task\ndata: {data}\n\n".encode("utf-8")
-                        if task.get("status") != "running":
+            try:
+                while time.time() < deadline:
+                    if task_id:
+                        task = task_manager.get_task(task_id)
+                        payload = {"task": task}
+                        if task:
+                            data = json.dumps(task)
+                            if data != last_payload:
+                                last_payload = data
+                                yield f"event: task\ndata: {data}\n\n".encode("utf-8")
+                            if task.get("status") != "running":
+                                break
+                        else:
+                            yield f"event: task\ndata: {json.dumps(payload)}\n\n".encode("utf-8")
                             break
                     else:
-                        yield f"event: task\ndata: {json.dumps(payload)}\n\n".encode("utf-8")
-                        break
-                else:
-                    tasks = task_manager.get_all_tasks()
-                    data = json.dumps(tasks)
-                    if data != last_payload:
-                        last_payload = data
-                        yield f"event: tasks\ndata: {data}\n\n".encode("utf-8")
-                    if not any(task.get("status") == "running" for task in tasks.values()):
-                        break
-                yield b"event: heartbeat\ndata: {}\n\n"
-                time.sleep(5)
+                        tasks = task_manager.get_all_tasks()
+                        data = json.dumps(tasks)
+                        if data != last_payload:
+                            last_payload = data
+                            yield f"event: tasks\ndata: {data}\n\n".encode("utf-8")
+                        if not any(task.get("status") == "running" for task in tasks.values()):
+                            break
+                    yield b"event: heartbeat\ndata: {}\n\n"
+                    time.sleep(5)
+            except GeneratorExit:
+                logger.debug("Task SSE client disconnected")
+                raise
 
         return Response(
             generate(),
@@ -5158,7 +5185,6 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
     _sig.signal(_sig.SIGINT, _signal_handler)
     if hasattr(_sig, "SIGHUP"):
         _sig.signal(_sig.SIGHUP, _signal_handler)
-    _sig.signal(_sig.SIGHUP, _sig.SIG_IGN)
 
     try:
         app.run(host=host, port=port, debug=False, threaded=True)

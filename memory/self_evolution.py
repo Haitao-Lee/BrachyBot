@@ -112,16 +112,20 @@ class SelfEvolutionEngine:
             if self.skill_registry:
                 existing = self.skill_registry.get(skill_name)
                 if existing is None:
-                    from skills.skill_base import Skill
-                    skill = Skill(
-                        name=skill_name,
-                        description=new_skill["description"],
-                        category="learned",
-                        triggers=[trigger],
-                        tool_sequence=tools,
-                        parameters={},
-                    )
-                    self.skill_registry.register(skill)
+                    try:
+                        from skills.skill_base import Skill
+                    except ImportError as exc:
+                        logger.warning("Skill registry is configured but skills.skill_base is unavailable: %s", exc)
+                    else:
+                        skill = Skill(
+                            name=skill_name,
+                            description=new_skill["description"],
+                            category="learned",
+                            triggers=[trigger],
+                            tool_sequence=tools,
+                            parameters={},
+                        )
+                        self.skill_registry.register(skill)
             new_skills.append(new_skill)
         return new_skills
 
@@ -191,7 +195,7 @@ class SelfEvolutionEngine:
             insight = {
                 "error": f["error"],
                 "lesson": f["lesson"],
-                "tools_involved": f["tools"],
+                "tools_involved": f.get("tools", f.get("tool_chain", [])),
                 "tags": f["tags"],
                 "avoidance_strategy": f.get("lesson", ""),
             }

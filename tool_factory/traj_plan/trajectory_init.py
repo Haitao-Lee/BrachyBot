@@ -133,9 +133,16 @@ class TrajectoryInitTool(BaseTool):
         min_depth = kwargs.get("min_depth", 2)
 
         if ref_direc is None:
-            ref_direc = utilizations.get_reference_direction(radiation_volume, target_value)
+            try:
+                ref_direc = utilizations.get_reference_direction(radiation_volume, target_value)
+            except Exception as exc:
+                return ToolResult(success=False, error=f"Failed to derive reference direction: {exc}")
+        if ref_direc is None:
+            return ToolResult(success=False, error="Reference direction is required but could not be derived")
 
         ref_direc = np.array(ref_direc, dtype=np.float64)
+        if not np.all(np.isfinite(ref_direc)) or np.linalg.norm(ref_direc) <= 1e-8:
+            return ToolResult(success=False, error="Reference direction must be finite and non-zero")
         ref_direc = ref_direc / np.linalg.norm(ref_direc)
 
         trajectories = core.init_plan(

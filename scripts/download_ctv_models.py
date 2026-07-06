@@ -42,7 +42,12 @@ def _download(url: str, dest: Path, force: bool = False) -> None:
     print(f"to:       {dest}")
     with urllib.request.urlopen(url) as response, open(tmp, "wb") as fh:
         total = response.headers.get("Content-Length")
-        expected = int(total) if total and total.isdigit() else None
+        expected = None
+        if total:
+            try:
+                expected = int(float(total))
+            except ValueError:
+                expected = None
         copied = 0
         while True:
             chunk = response.read(1024 * 1024)

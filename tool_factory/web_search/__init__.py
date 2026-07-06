@@ -1531,7 +1531,7 @@ class WebSearchTool(BaseTool):
                 try:
                     from tool_factory.web_fetch import WebFetchTool
                     fetch_tool = WebFetchTool()
-                    page = fetch_tool.execute(url=url, extract_text=True, max_length=3000)
+                    page = fetch_tool.execute(url=url, max_length=3000)
                     if page.success and page.data:
                         page_text = page.data.get("text", "") or page.data.get("content", "")
                         if page_text and len(page_text) > 100:
@@ -1590,29 +1590,6 @@ class WebSearchTool(BaseTool):
         """Direct weather API query using wttr.in — returns structured weather data."""
         # This method is kept for backward compatibility but delegates to standalone function
         return _search_weather(query)
-
-        try:
-            resp = requests.get(f"https://wttr.in/{city}?format=j1", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-            if resp.status_code == 200:
-                data = resp.json()
-                current = data.get("current_condition", [{}])[0]
-                temp = current.get("temp_C", "?")
-                weather_desc = current.get("weatherDesc", [{}])[0].get("value", "")
-                humidity = current.get("humidity", "?")
-                wind = current.get("windspeedKmph", "?")
-                feels_like = current.get("FeelsLikeC", "?")
-
-                snippet = f"{city}: {temp}°C, {weather_desc}, Humidity: {humidity}%, Wind: {wind} km/h, Feels like: {feels_like}°C"
-                return [{
-                    "title": f"{city} Weather Today",
-                    "snippet": snippet,
-                    "url": f"https://wttr.in/{city}",
-                    "source": "wttr.in",
-                    "page_content": snippet,
-                }]
-        except Exception as e:
-            logger.warning(f"Weather API error: {e}")
-        return []
 
     def _search_general(self, query: str, max_results: int) -> List[Dict]:
         """General web search with specialized engine priority and multi-engine fallback."""

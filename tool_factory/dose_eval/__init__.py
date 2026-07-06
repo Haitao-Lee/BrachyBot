@@ -98,7 +98,9 @@ class DoseEvaluationTool(BaseTool):
     def _execute(self, **kwargs):
         import numpy as np
 
-        dose_array = kwargs["dose_array"]
+        dose_array = kwargs.get("dose_array")
+        if dose_array is None:
+            return ToolResult(success=False, error="dose_array is required")
         ctv_mask = kwargs.get("ctv_mask")
         oar_mask = kwargs.get("oar_mask")
         prescribed_dose = kwargs.get("prescribed_dose", 1.0)

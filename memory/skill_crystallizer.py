@@ -113,7 +113,7 @@ class SkillCrystallizer:
             "last_evolution_time": self.last_evolution_time,
         }
         with open(path, "w") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+            json.dump(data, f, indent=2, ensure_ascii=False, default=str)
 
     def record_interaction(self):
         self.interaction_count += 1
@@ -132,8 +132,9 @@ class SkillCrystallizer:
         chain_key = " -> ".join(tool_chain)
         for skill in self.skills.values():
             if " -> ".join(skill.tool_chain) == chain_key:
-                skill.usage_count += 1
-                skill.success_rate = (skill.success_rate * skill.usage_count + 1.0) / (skill.usage_count + 1)
+                previous_count = skill.usage_count
+                skill.success_rate = (skill.success_rate * previous_count + 1.0) / (previous_count + 1)
+                skill.usage_count = previous_count + 1
                 self.save()
                 return skill
 
@@ -248,8 +249,9 @@ Provide a brief reason."""
             if len(tool_names) >= 2:
                 existing = self._find_matching_skill(tool_names)
                 if existing:
-                    existing.usage_count += 1
-                    existing.success_rate = (existing.success_rate * existing.usage_count + 1.0) / (existing.usage_count + 1)
+                    previous_count = existing.usage_count
+                    existing.success_rate = (existing.success_rate * previous_count + 1.0) / (previous_count + 1)
+                    existing.usage_count = previous_count + 1
                     skills_updated += 1
                 else:
                     self.crystallize(

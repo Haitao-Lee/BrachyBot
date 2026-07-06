@@ -294,8 +294,6 @@ class PancreaticOARTool(BaseTool):
 
     def _get_clean_subprocess_env(self) -> dict:
         env = os.environ.copy()
-        for var in ("PYTHONPATH", "PYTHONSTARTUP", "PYTHONEXECUTABLE"):
+        for var in ("PYTHONPATH", "PYTHONSTARTUP", "PYTHONEXECUTABLE", "PYTHONHOME", "LD_LIBRARY_PATH"):
             env.pop(var, None)
-        python_home = os.path.dirname(os.path.dirname(os.path.abspath(sys.executable)))
-        env["PYTHONHOME"] = python_home
         return env

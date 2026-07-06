@@ -94,7 +94,7 @@ class ReflexionEngine:
             "success_patterns": self.episodic.success_patterns,
         }
         with open(path, "w") as f:
-            json.dump(serializable, f, indent=2, ensure_ascii=False)
+            json.dump(serializable, f, indent=2, ensure_ascii=False, default=str)
 
     def reflect(self, task_description: str, tool_chain: list, tool_results: list,
                 outcome: str, success: bool, mode: str = "auto") -> ReflexionEntry:
@@ -178,6 +178,8 @@ ALTERNATIVE: ..."""
 
         try:
             response = self.llm_callback(prompt)
+            if not isinstance(response, str) or not response.strip():
+                return self._heuristic_reflection(task, chain, results, outcome, success)
             lines = response.strip().split("\n")
             critique = root_cause = lesson = alternative = ""
             for line in lines:
@@ -224,9 +226,10 @@ Results:
 
             try:
                 response = self.llm_callback(prompt)
-                all_critiques.append(f"[{persona_name}] {response.strip()}")
-            except Exception:
-                pass
+                if isinstance(response, str) and response.strip():
+                    all_critiques.append(f"[{persona_name}] {response.strip()}")
+            except Exception as exc:
+                logger.warning("Multi-agent reflexion persona '%s' failed: %s", persona_name, exc)
 
         combined_critique = "\n".join(all_critiques) if all_critiques else "No critiques generated."
 

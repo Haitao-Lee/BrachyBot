@@ -9,7 +9,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import Dict, List, Any, Optional, Callable, AsyncGenerator
+from typing import Dict, List, Any, Optional, Callable
 from communication.protocol import (
     AgentRole, AgentMessage, AgentResponse, MessageType,
     RoutingDecision, ReviewResult, GateResult, Priority
@@ -93,6 +93,9 @@ class MultiAgentOrchestrator:
 
     def _build_agent_context(self, role_specific: Dict) -> Dict:
         """Build full context for a sub-agent by merging global + role-specific."""
+        overlap = set(self._global_context).intersection(role_specific)
+        if overlap:
+            logger.debug("Role-specific context overrides global keys: %s", sorted(overlap))
         return {**self._global_context, **role_specific}
 
     async def _distill_context(self, role: str, role_specific: Dict) -> Dict:

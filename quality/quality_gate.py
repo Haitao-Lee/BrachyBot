@@ -258,7 +258,7 @@ class QualityGate:
             if isinstance(result, ReviewResult):
                 valid_results.append(result)
             elif isinstance(result, Exception):
-                logger.warning(f"Review agent failed: {result}")
+                logger.warning("Review agent failed", exc_info=(type(result), result, result.__traceback__))
 
         return valid_results
 

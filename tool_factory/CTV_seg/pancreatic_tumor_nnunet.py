@@ -253,8 +253,11 @@ class NNUNetPancreaticTumorTool(BaseTool):
             # Create properties dict
             properties = {
                 "spacing": image.GetSpacing()[::-1],  # z, y, x
-                "origin": image.GetOrigin()[::-1],
-                "direction": image.GetDirection()[::-1],
+                # Origin and direction remain physical metadata in x/y/z
+                # coordinates. Reversing the flat 3x3 direction matrix would
+                # corrupt rotated acquisitions.
+                "origin": image.GetOrigin(),
+                "direction": image.GetDirection(),
             }
 
             logger.info(f"Running nnUNet inference on shape {arr.shape}...")

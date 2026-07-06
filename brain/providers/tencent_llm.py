@@ -5,6 +5,7 @@ Tencent's Hunyuan and QQ AI models.
 """
 
 import os
+import time
 from typing import List, Dict, Any, Optional
 
 from ..core.base import BaseLLM, LLMResponse

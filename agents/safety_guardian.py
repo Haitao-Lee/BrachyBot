@@ -8,18 +8,21 @@ not invent OAR or target thresholds. Generic sanity checks are reported as data
 integrity concerns, not as sourced clinical criteria.
 """
 
+import logging
 import math
 from typing import Any, Dict, List, Optional
 
 from .base_agent import BaseAgent
 from communication.protocol import AgentMessage, AgentResponse, AgentRole, ReviewResult
 
+logger = logging.getLogger(__name__)
+
 
 class SafetyGuardian(BaseAgent):
     """Advisory safety guardian for plan output integrity and configured limits."""
 
     def __init__(self, llm_callback=None):
-        super().__init__(AgentRole.SAFETY_GUARDIAN, None)
+        super().__init__(AgentRole.SAFETY_GUARDIAN, llm_callback)
 
     async def process(self, message: AgentMessage) -> AgentResponse:
         content = message.content
@@ -144,7 +147,14 @@ class SafetyGuardian(BaseAgent):
         oar_metrics = dose_metrics.get("oar_metrics", {})
         constraints = plan_config.get("oar_constraints", {}) or {}
         if not isinstance(oar_metrics, dict) or not oar_metrics:
-            return ReviewResult("Configured OAR Limits", "pass", 10.0, [], [], 0.8)
+            return ReviewResult(
+                reviewer="Configured OAR Limits",
+                decision="pass",
+                score=10.0,
+                concerns=[],
+                suggestions=[],
+                confidence=0.8,
+            )
         if not isinstance(constraints, dict) or not constraints:
             return ReviewResult(
                 reviewer="Configured OAR Limits",

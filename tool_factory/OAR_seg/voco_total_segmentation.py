@@ -176,7 +176,7 @@ class VoCoTotalSegmentatorTool(BaseTool):
             use_v2=True,
         )
 
-        checkpoint = torch.load(model_path, map_location=self._device, weights_only=False)
+        checkpoint = torch.load(model_path, map_location=self._device, weights_only=True)
         if "state_dict" in checkpoint:
             state_dict = checkpoint["state_dict"]
         else:

@@ -150,12 +150,6 @@ class PlannerDecider(BaseDecider):
         for i, step in enumerate(cleaned):
             step.id = i + 1
 
-        expected = list(range(1, len(cleaned) + 1))
-        actual = [s.id for s in cleaned]
-        if actual != expected:
-            for step in cleaned:
-                step.id = cleaned.index(step) + 1
-
         return cleaned
 
     def _fallback_plan(self, task: str) -> List[Dict]:

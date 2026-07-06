@@ -350,8 +350,8 @@ Supported formats:
                     metadata["shape"] = list(img.shape)
                     metadata["spacing"] = list(img.header.get_zooms())
                     metadata["dtype"] = str(img.get_data_dtype())
-                except:
-                    pass
+                except Exception as exc:
+                    logger.warning("Failed to read NIfTI metadata for %s: %s", file_path, exc)
 
             elif ext in ['.mhd', '.raw']:
                 try:
@@ -360,8 +360,8 @@ Supported formats:
                     metadata["format"] = "MetaImage"
                     metadata["shape"] = list(img.GetSize())
                     metadata["spacing"] = list(img.GetSpacing())
-                except:
-                    pass
+                except Exception as exc:
+                    logger.warning("Failed to read MetaImage metadata for %s: %s", file_path, exc)
 
             elif ext in ['.png', '.jpg', '.jpeg', '.bmp', '.gif']:
                 try:
@@ -370,8 +370,8 @@ Supported formats:
                     metadata["format"] = "Image"
                     metadata["size"] = img.size
                     metadata["mode"] = img.mode
-                except:
-                    pass
+                except Exception as exc:
+                    logger.warning("Failed to read image metadata for %s: %s", file_path, exc)
 
             return ToolResult(
                 success=True,

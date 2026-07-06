@@ -300,8 +300,8 @@ class SkillLearner:
         """Save a skill to disk."""
         skills_file = os.path.join(self.storage_dir, "skills.json")
         skills_data = {k: v.to_dict() for k, v in self.skills.items()}
-        with open(skills_file, "w") as f:
-            json.dump(skills_data, f, indent=2)
+        with open(skills_file, "w", encoding="utf-8") as f:
+            json.dump(skills_data, f, indent=2, default=str)
 
     def export_skills(self, path: str = None) -> str:
         """Export all learned skills to JSON."""
@@ -309,10 +309,10 @@ class SkillLearner:
             path = os.path.join(self.storage_dir, f"skills_export_{int(time.time())}.json")
 
         skills_data = {k: v.to_dict() for k, v in self.skills.items()}
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump({
                 "export_time": time.time(),
                 "skills": skills_data,
-            }, f, indent=2)
+            }, f, indent=2, default=str)
 
         return path
