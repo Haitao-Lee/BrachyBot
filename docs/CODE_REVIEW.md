@@ -4,6 +4,426 @@ _This file consolidates all code review reports. Sections are organized by date.
 
 ---
 
+## 2026-07-07 — Follow-up Verification & Algorithm Deep-Dive
+
+
+
+### Follow-up Verification and Fixes
+
+This section records the verification pass performed after commit `130ecde`.
+Each item below was checked against the current code before changing it. Items
+that were intentional or already safe are called out so they are not repeatedly
+misdiagnosed in later reviews.
+
+### Fixed in this follow-up
+
+| Report item | Disposition | Files changed |
+|---|---|---|
+| C1 `AgentMemory` import | Confirmed real. Added the missing import used by both LLM execution paths. | `agent_runtime/llm_runtime.py` |
+| C2 `DOSE_MODEL_SCALE_GY` import | Confirmed real. Imported the constant into the web server facade for report auto-fill interpretation. | `web/server.py` |
+| C3 streaming forced-search indentation | Confirmed real. Forced-search finalization and context injection now run for both success and failure. | `agent_runtime/llm_runtime.py` |
+| C4 missing path validation | Confirmed real. Manual segmentation and run-step routes now validate image, label, and CT paths through the centralized allowlist. | `web/routes/planning_routes.py` |
+| C5 rate-limit concurrency | Confirmed real. Added a shared lock and atomic cleanup/update behavior for the in-memory limiter. | `web/server_support.py` |
+| C9 enhanced clear methods | Confirmed real edge case. Enhanced-memory clear calls now check `callable(...)` before invoking optional component methods. | `agent_runtime/core.py` |
+| C10 duplicate report registration | Confirmed real noise. Removed the invalid `tool_factory.output.report_generator` registration path; the real `tool_factory.report_generator` registration remains. | `AgenticSys.py` |
+| C11 `loadDefaultParams` TDZ | Confirmed real JavaScript syntax/runtime issue. Hoisted `setVal` to one helper inside the function. | `web/app/static/js/brachybot-ui-api.js` |
+| C13/I7 planning completion detection | Confirmed real for stepwise/manual paths. Completion now recognizes `planning_pipeline`, `seed_planning`, `dose_engine`, `dose_evaluation`, and `dose_calc`. | `AgenticSys.py` |
+| C15 STL export mismatch | Confirmed real product/API mismatch. `/api/export/stl` now writes actual ASCII `.stl` seed cylinders instead of debug `.npy` arrays. | `web/routes/planning_routes.py` |
+| C16/C18/H2 CSS issues | Confirmed real. Added `.step-num`, preserved warning borders, and fixed invalid font-family quoting. | `web/app/static/css/*.css` |
+| H7 JSON 413 and 500 handlers | Confirmed real API consistency gap. Added JSON response for oversized uploads and exception logging for unhandled 500s. | `web/server.py` |
+| H11/M10 fragile Python repr parsing | Confirmed real. Python-style `tool_use` blocks now use `ast.literal_eval` instead of global quote replacement. | `agent_runtime/chat_workflows.py` |
+| H14 int16 overflow risk | Confirmed real edge case. CT volume transfer clips before int16 conversion. | `web/routes/viewer_routes.py` |
+| H15 mesh cache eviction | Confirmed real performance issue. Cache order now uses `deque.popleft()`. | `web/server_support.py`, `web/routes/viewer_routes.py` |
+| H18 contour label null guard | Confirmed real edge case. Dose contour labels now guard `Number.isFinite(contour.level)`. | `web/app/static/js/brachybot-3d-manual.js` |
+| H20 mesh cache key collision | Confirmed real edge case. 3D mask cache keys now include a BLAKE2 digest of the binary mask instead of `id(mask_data)`. | `web/routes/viewer_routes.py` |
+| H22 API key `None` crash | Confirmed real. Explicit auth without a configured key now fails closed instead of calling `.encode()` on `None`. | `web/server_support.py` |
+| I10 planning data-tree null guards | Confirmed real. Planning group visibility paths now tolerate missing seed/needle/dose arrays. | `web/app/static/js/brachybot-viewer-volume.js` |
+| I18 screenshot promise handling | Confirmed real. Direct screenshot capture now awaits `html2canvas` consistently. | `web/app/static/js/brachybot-ui-api.js` |
+| M25 API-key comparison | Confirmed real hardening opportunity. Header key comparison now uses direct constant-time comparison and fails closed when auth is misconfigured. | `web/server_support.py` |
+| M27 duplicate tooltip key | Confirmed real. Removed the duplicate `toolMeasure` key. | `web/app/static/js/brachybot-viewer-layout.js` |
+| M29 report source badge injection | Confirmed real. The reset onclick argument now uses JSON string serialization and attribute-safe escaping. | `web/app/static/js/brachybot-report-shell.js` |
+| H9 missing Anthropic dependency | Confirmed real for the configured Anthropic provider. Added `anthropic>=0.34.0`. | `requirements.txt` |
+| Additional shell invocation scan | Confirmed real in a benchmark helper. Replaced the background benchmark launch with argv-style `subprocess.Popen(...)` and no shell. | `benchmarks/auto_monitor.py` |
+
+### Verified as intentional, stale, or not a defect in current code
+
+| Report item | Current disposition |
+|---|---|
+| C6 `str.format()` with untrusted context | False positive. Python `str.format()` does not recursively parse braces inside argument values; a smoke test with `enhanced_context="{literal}"` passes. |
+| C12/I25 `{current_date}` prompt replacement | Already implemented in both streaming and non-streaming prompt construction. |
+| H4 CT-loaded gate inconsistency | Current code checks UI state plus memory state and preserves non-CT developer tools (`tool_creator`, `env_manager`, `shell_executor`, `code_executor`) for trusted-local use. |
+| H17 dual dose overlay functions | Intentional compatibility surface during the 2D overlay refactor. The active separate-layer path remains the source of truth for current viewers. |
+| H19/M19 language globals | Intentional transitional state: `_uiLanguage` follows detected conversation language; `_i18nLang` follows the manual UI toggle. They are synchronized where dynamic labels need it. |
+| I24/M20 test coverage/config | Valid engineering debt, not a runtime defect. This follow-up adds smoke coverage through explicit validation commands rather than introducing a new test framework migration. |
+| M4 inline styles | Valid maintainability debt but not safe to mass-refactor during this bug-fix pass because report rendering and screenshot layout are sensitive to exact inline dimensions. |
+| M17 requestAnimationFrame loop | Intentional for the interactive 3D viewer. It is acceptable while the viewer is visible; a future optimization can pause when hidden. |
+| M23 `normalize_dose_image` naming | Naming concern only; no functional bug confirmed in this pass. |
+| `code_executor` internal `exec(...)` | Intentional trusted-local developer capability. It remains disabled unless `BRACHYBOT_ENABLE_CODE_EXECUTOR=1` is set, uses AST checks, restricted builtins, and an import allowlist. The safer posture is explicit opt-in rather than removing the capability. |
+| Worktree-copy warnings | Operational hygiene concern. Current tracked repo state was verified and pushed; stale external worktrees should be handled separately to avoid deleting user work. |
+
+### Validation evidence
+
+- `py_compile` over 207 tracked Python files: passed.
+- `node --check` over 21 frontend JavaScript files: passed.
+- `git diff --check`: passed, with only Git line-ending warnings.
+- Targeted smoke: parser preserves apostrophes in Python-repr `tool_use`, prompt formatting accepts literal braces in dynamic context, rate limiter mutates safely, and the `BrachyAgent` mixin contract validates.
+
+---
+
+
+---
+
+### Remaining Issues After adfc27a — Re-verified & Fixed
+
+## Verification Results
+
+| ID | Severity | Claim | Re-verdict | Fixed? |
+|----|----------|-------|------------|--------|
+| H1 | HIGH | `_record_experience` crashes if `_init_self_evolution` fails | **CONFIRMED REAL.** Line 1472 uses bare `if not self.exp_memory:` → `AttributeError` if import fails. `get_status()` at line 1944 already uses safe `getattr(self, "exp_memory", None)` pattern. | ✅ Yes |
+| H3 | HIGH | Missing `_cancelled()` at streaming loop top | **CONFIRMED REAL.** Non-stream has it (line 338); stream does not. User cancel between LLM rounds is silently ignored. | ✅ Yes |
+| H6 | HIGH | `api_viewer_image` bypasses centralized `_validate_path` | **CONFIRMED REAL — low impact.** The inline `startswith(upload_dir)` is secure against traversal, but ignores `BRACHYBOT_{CT,MR,US}_DATA_ROOTS` env-var expansion. Users with custom data roots cannot view images here. | ✅ Yes |
+| I20 | IMPORTANT | Hardcoded label IDs `[1,2,3,4,5,6]` miss labels >6 | **CONFIRMED REAL.** `window._ctvLabelMap` IS populated from server (viewer-volume.js:251) but unused in `reconstructOrgan3D`. Labels >6 (e.g. stomach, duodenum) never reconstruct in 3D. | ✅ Yes |
+| I21 | IMPORTANT | Sequential HTTP per vertex — "10 minutes" | **PARTIALLY CORRECTED.** `_fetchDoseRawAxialSlice` caches by Z-slice (`state.doseTexture.rawAxialSlices`), so unique requests = number of Z-slices (50-200), not vertex count (12,500). Actual latency is ~2-10 seconds for typical volumes, not 10 minutes. Still worth batching for near-instant response. | ✅ Yes |
+
+## Fix Details
+
+### H1 — `chat_workflows.py:1472` (1 line)
+
+```diff
+-       if not self.exp_memory:
++       if not getattr(self, "exp_memory", None):
+```
+
+Changed bare attribute access to `getattr` with safe default, matching the existing pattern in `get_status()` at line 1944.
+
+### H3 — `llm_runtime.py:1288-1297` (6 lines)
+
+Added cancel check at top of streaming while-loop:
+
+```python
+while iteration < max_iterations:
+    iteration += 1
+    if _cancelled():
+        logger.info("Streaming cancelled by user between LLM rounds")
+        yield_event("done", {"final": "", "cancelled": True})
+        return
+```
+
+### H6 — `server.py:285-290` (3 lines)
+
+Replaced inline `startswith(upload_dir)` with centralized `_validate_path`:
+
+```python
+if not _validate_path(image_path, purpose="read"):
+    return jsonify({"error": "Access denied"}), 403
+real_image_path = os.path.realpath(image_path)
+```
+
+### I20 — `viewer-layout.js:679` (3 lines)
+
+Read actual label IDs from `window._ctvLabelMap` instead of hardcoding [1..6]:
+
+```javascript
+const _lm = window._ctvLabelMap || {};
+const ids = Object.keys(_lm).map(Number).filter(k => Number.isFinite(k) && k > 0);
+const labelIds = ids.length > 0 ? ids : [1, 2, 3, 4, 5, 6];
+```
+
+### I21 — `viewer-layout.js:1002-1015` (+15 lines for pre-warm)
+
+Added a pre-warm phase that collects all unique Z-slice indices referenced by mesh vertices and fetches them in parallel via `Promise.all(...zSet.map(z => _fetchDoseRawAxialSlice(z)))`. After the warm-up, the per-vertex loop in lines 1012+ gets a cache hit for every vertex, so `await _sampleDoseNormalizedAtIndex(idx)` returns instantly. No sequential HTTP.
+
+## Issues Re-classified After Re-verification
+
+| Original ID | Original severity | New assessment |
+|-------------|-------------------|----------------|
+| H6 | HIGH | HIGH — functional gap for users with custom data roots |
+| I21 | IMPORTANT (10 min) | IMPORTANT (~2-10 sec without fix, instant with fix) |
+
+
+---
+
+### Deep Algorithm Code Review
+
+**Review scope:** Algorithm core files outside the modularized web/agent pipeline
+**Files reviewed:** `core.py`, `reinforcement.py`, `utilizations.py`, `fitting_model.py`, `data_preprocess.py`, `geometry.py`, `brachy_plan.py`, `exp.py`, `external_exp.py`, `config.py`
+**Method:** Independent review agent + line-by-line verification of every finding
+**Status:** **9 confirmed issues** — 3 CRITICAL, 2 HIGH, 4 MEDIUM, 4 LOW
+
+---
+
+## CRITICAL BUGS
+
+### C1. `reinforcement.py:40,285-286,741` — Inverted OAR damage formula
+
+The OAR ("organ at risk") damage penalty is computed using a ratio that
+**decreases as OAR damage increases** — the exact opposite of the intended
+behavior.
+
+**`_dvh_oar_jit_fallback` at line 40:**
+```python
+out_damage = float(n_target) * dvh_rate / float(exceed_count)
+```
+where `n_target` = target (CTV) voxel count, `exceed_count` = OAR voxels
+exceeding the dose threshold.
+
+**`SeedPlacementReward` at line 285-286:**
+```python
+reward = min(cur_DVH_rate, self.DVH_rate) + \
+         ((cur_DVH_rate - self.DVH_rate) >= 0) * (out_damage)
+```
+
+**`DVH2Rewards` at line 741:**
+```python
+out_damage = len(target_idx[0]) * cur_DVH_rate / exceed_count
+```
+
+**Impact:** As `exceed_count` grows (more OAR voxels overdosed), `out_damage`
+shrinks, and the reward increases. The agent is **rewarded for overdosing OARs**
+instead of being penalized. The correct formula should have `exceed_count` in
+the numerator:
+```python
+out_damage = exceed_count * dvh_rate / float(n_target)   # fraction of OAR overdosed
+```
+
+**Severity: CRITICAL** — Systematically undermines the clinical objective of
+sparing organs at risk.
+
+### C2. `reinforcement.py:67,79,122,191,205,255` — Typo `target_valueimage_normalize_max`
+
+Parameter name `target_valueimage_normalize_max` is missing an underscore
+between `value` and `image`. Correct name: `target_value_image_normalize_max`.
+
+The code explicitly acknowledges the typo with inline comments
+(`# typo kept` / `# REVIEW: typo left for compatibility`), but it is frozen
+because callers pass it by keyword and fixing the parameter name would break
+existing call sites.
+
+**Occurrences:**
+| Line | Context |
+|------|---------|
+| 67 | Commented-out `__init__` (legacy) |
+| 79 | Commented-out assignment (legacy) |
+| 122 | Commented-out call (legacy) |
+| 191 | **Active `__init__` parameter** |
+| 205 | **Active instance assignment** |
+| 255 | **Active call to `single_seed_dose_calculation_dl`** |
+| 842 | `out_damage` formula (not the typo, but same method) |
+
+**Impact:** Any external caller trying to pass `target_value_image_normalize_max`
+(with correct underscore) gets `TypeError: unexpected keyword argument`.
+Internal consistency masks the problem, but it propagates to the DL dose model
+API.
+
+**Severity: CRITICAL** — API-level defect that blocks proper integration for
+external callers.
+
+### C3. `reinforcement.py:842` — Wrong denominator in OAR damage penalty
+
+```python
+cur_out_damage = reward_calculator.target_v / max(0.1, non_target_sum)
+```
+
+Here `target_v` = CTV voxel count, `non_target_sum` = OAR voxels exceeding
+threshold. The target count appears in the numerator when computing an **OAR
+damage** metric. As with C1, this inverts the penalty — a large target volume
+amplifies the OAR damage score for the same absolute OAR injury.
+
+**Severity: CRITICAL** — Another instance of the inverted OAR formula in a
+different code path.
+
+---
+
+## HIGH-SEVERITY ISSUES
+
+### H1. `core.py:386-389` — Dead code in `trajectory_plan`
+
+```python
+sorted_trajectories = utilizations.sort_candidate_tracjectories(
+    radiation_volume, candidate_trajectories)
+# Further processing of candidate_trajectories is needed
+pass
+```
+
+The sorted trajectories are computed but never used. The function ends with
+`pass` and returns `None`. This appears to be an incomplete implementation of
+trajectory optimization — the most promising trajectories are identified but
+never selected or applied.
+
+**Severity: HIGH** — The function is dead code, but it signals that trajectory
+optimization was planned but never delivered. If this code path is ever
+activated, it silently does nothing.
+
+### H2. `exp.py` vs `external_exp.py` — ~99% identical, ~1300 lines each
+
+These two files are near-identical duplicates. The only meaningful difference:
+- `exp.py` calls `core.optimal_plan(...)` (rule-based) and saves to `./exp/comparison/`
+- `external_exp.py` calls `core.optimal_plan_rf(...)` (RL-based) and saves to `./output_rf_msd/`
+
+Every other function (`sensitivity_k`, `sensitivity_e`, `ablation_study`,
+`robustness_study1`, `robustness_study2`, `calculate_metric`,
+`find_latest_dose_file`, `NumpyEncoder`, `comparison`) is copied verbatim.
+
+**Impact:** Any bug fix or enhancement must be applied to both files
+independently. They will diverge over time. ~50% of the codebase's top-level
+scripts is duplicated.
+
+**Recommendation:** Extract common functions into a shared module (e.g.,
+`exp_utils.py`) and have both files import from it. Keep only the
+optimization-strategy-specific call in each file.
+
+**Severity: HIGH** — Maintenance liability.
+
+---
+
+## MEDIUM-SEVERITY ISSUES
+
+### M1. `utilizations.py:558` — Hardcoded resampling to [128,128,128]
+
+```python
+def ImageResample_size(sitk_image, new_size=[128, 128, 128], is_label=False):
+```
+
+`read_nii_image` (line 224) calls `ImageResample_size(sitk.ReadImage(path))`
+with no `new_size` argument, so every loaded image is unconditionally resampled
+to 128³ voxels. This discards spatial detail in high-resolution volumes and
+unnecessarily upsamples low-resolution volumes.
+
+**Impact:** Downstream dose calculations operate on a fixed grid regardless of
+the original imaging protocol. Needle placement optimization loses accuracy for
+high-resolution inputs.
+
+**Severity: MEDIUM** — Functional limitation.
+
+### M2. `fitting_model.py:30,61` — Parameter named `search_region` used as scaling weight
+
+```python
+self.weight = search_region   # line 30
+...
+sigmoid_normalized = torch.clamp(
+    self.weight * (2 * torch.sigmoid(out[even_mask]) - 1) + x[even_mask], 0, 1)   # line 61
+```
+
+The constructor parameter `search_region` suggests a spatial extent or range,
+but it is used as a linear gain on a sigmoid-transformed activation. This makes
+the code misleading to readers.
+
+**Severity: MEDIUM** — Poor naming obscures intent.
+
+### M3. `data_preprocess.py:312-313` — Gaussian smoothing after morphological operations
+
+```python
+if self.gaussian_sigma > 0:
+    binary = (gaussian_filter(binary.astype(np.float64), sigma=self.gaussian_sigma) > 0.5).astype(np.uint8)
+```
+
+Gaussian smoothing is applied after erosion and dilation. Since morphological
+operations produce crisp binary boundaries, the subsequent blur (even with
+`> 0.5` re-thresholding) can shift edges and re-introduce artifacts depending
+on sigma.
+
+**Severity: MEDIUM** — Mask quality may degrade; the order should be
+reconsidered or documented.
+
+### M4. `fitting_model.py:302-304` — Verbose matrix construction
+
+```python
+K = torch.stack([
+    torch.stack([torch.tensor(0, device=self.device), -axis[2], axis[1]]),
+    torch.stack([axis[2], torch.tensor(0, device=self.device), -axis[0]]),
+    torch.stack([-axis[1], axis[0], torch.tensor(0, device=self.device)])
+])
+```
+
+9 separate `torch.tensor`/`torch.stack` calls for a 3×3 skew-symmetric matrix.
+The same file has a cleaner pattern at lines 168-172 using literal syntax.
+This function is called once per seed in a loop (line 282).
+
+**Severity: MEDIUM** — Readability and minor performance overhead.
+
+---
+
+## LOW-SEVERITY ISSUES
+
+### L1. `brachy_plan.py:3` — `sys.path.append` mutates module search path
+
+```python
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+```
+
+Common pattern for entry-point scripts, but breaks when the file is imported as
+part of a larger application (e.g., from `plans/`). Should use relative imports
+or a proper package structure.
+
+### L2. `core.py:330` — Unused variable `opt_DVH_rate`
+
+```python
+opt_DVH_rate = np.sum(opti_radiation * mask_volume > in_lowest_dose) / volume
+return opti_planned_seeds, opti_single_seed_radiations
+```
+
+Computed but never referenced. Possibly a debugging remnant or incomplete
+return value.
+
+### L3. `brachy_plan.py:63` — Hardcoded reference direction
+
+```python
+ref_direc = np.array([0, 1, 0])  # Manually set direction if needed
+```
+
+The PCA-based anatomical direction calculation (commented out at lines 59-61)
+is ignored in favor of a hardcoded `[0, 1, 0]` (anterior). This is incorrect
+for non-prostate sites or non-supine patient orientations.
+
+### L4. `fitting_model.py:157,291` — Hardcoded 0.99 alignment threshold
+
+```python
+if torch.abs(torch.dot(x_axis, direction)) >= 0.99:
+    rotation_matrix = torch.eye(3, device=self.device)
+```
+
+The threshold `0.99` (≈ cos(8°)) determines whether two vectors are aligned
+enough to skip rotation. Directions near this boundary may produce
+discontinuous behavior. Should be a named constant.
+
+---
+
+## Summary
+
+| ID | File | Line(s) | Severity | Description |
+|----|------|---------|----------|-------------|
+| C1 | `reinforcement.py` | 40, 285-286, 741 | CRITICAL | Inverted OAR damage formula |
+| C2 | `reinforcement.py` | 67,79,122,191,205,255 | CRITICAL | Typo `target_valueimage_normalize_max` |
+| C3 | `reinforcement.py` | 842 | CRITICAL | Wrong denominator in OAR penalty |
+| H1 | `core.py` | 386-389 | HIGH | Dead code in `trajectory_plan` |
+| H2 | `exp.py` / `external_exp.py` | — | HIGH | ~1300-line duplicate (~99% identical) |
+| M1 | `utilizations.py` | 558 | MEDIUM | Hardcoded resampling to 128³ |
+| M2 | `fitting_model.py` | 30,61 | MEDIUM | `search_region` used as weight |
+| M3 | `data_preprocess.py` | 312-313 | MEDIUM | Gaussian after morphological ops |
+| M4 | `fitting_model.py` | 302-304 | MEDIUM | Verbose matrix construction |
+| L1 | `brachy_plan.py` | 3 | LOW | `sys.path.append` |
+| L2 | `core.py` | 330 | LOW | Unused `opt_DVH_rate` |
+| L3 | `brachy_plan.py` | 63 | LOW | Hardcoded `ref_direc` |
+| L4 | `fitting_model.py` | 157,291 | LOW | Hardcoded 0.99 threshold |
+
+**Not confirmed after verification (from initial report):** 7 items were
+either wrong file/line numbers, already fixed, or false positives:
+- `core.py:294-296` wrong function call arguments — function is dead code, no callers
+- `core.py:447` wrong inequality — line does not exist in any relevant function
+- `reinforcement.py:680` UnboundLocalError — `cur_DVH_rate = 0.0` already initialized
+- `reinforcement.py:738` division by zero — guarded by `if exceed_count == 0`
+- `geometry.py:937` 0.99 threshold — is in `fitting_model.py`, not `geometry.py`
+- `utilizations.py:1011-1017` insertion sort off-by-one — no insertion sort exists
+- `config.py:49-51,76` misleading help / unrealistic defaults — wrong locations
+
+**Relationship to prior reviews:** This review covers the **algorithm core**
+(`plans/` and root-level scripts) that was not examined in the
+2026-07-06 modularization-focused review. The 5 should-fix items fixed in
+commit `7cfd1d0` were in the web/agent layers and are unrelated to the
+findings here.
+
+---
+
 ## 2026-07-06 — Comprehensive Deep-Dive Review
 
 # CRITICAL (18)
@@ -2647,422 +3067,3 @@ Only single quotes are escaped. If `key` contains `"`, it breaks out of the `onc
 
 
 ---
-
-## 2026-07-07 — Follow-up Verification & Algorithm Deep-Dive
-
-
-
-### Follow-up Verification and Fixes
-
-This section records the verification pass performed after commit `130ecde`.
-Each item below was checked against the current code before changing it. Items
-that were intentional or already safe are called out so they are not repeatedly
-misdiagnosed in later reviews.
-
-### Fixed in this follow-up
-
-| Report item | Disposition | Files changed |
-|---|---|---|
-| C1 `AgentMemory` import | Confirmed real. Added the missing import used by both LLM execution paths. | `agent_runtime/llm_runtime.py` |
-| C2 `DOSE_MODEL_SCALE_GY` import | Confirmed real. Imported the constant into the web server facade for report auto-fill interpretation. | `web/server.py` |
-| C3 streaming forced-search indentation | Confirmed real. Forced-search finalization and context injection now run for both success and failure. | `agent_runtime/llm_runtime.py` |
-| C4 missing path validation | Confirmed real. Manual segmentation and run-step routes now validate image, label, and CT paths through the centralized allowlist. | `web/routes/planning_routes.py` |
-| C5 rate-limit concurrency | Confirmed real. Added a shared lock and atomic cleanup/update behavior for the in-memory limiter. | `web/server_support.py` |
-| C9 enhanced clear methods | Confirmed real edge case. Enhanced-memory clear calls now check `callable(...)` before invoking optional component methods. | `agent_runtime/core.py` |
-| C10 duplicate report registration | Confirmed real noise. Removed the invalid `tool_factory.output.report_generator` registration path; the real `tool_factory.report_generator` registration remains. | `AgenticSys.py` |
-| C11 `loadDefaultParams` TDZ | Confirmed real JavaScript syntax/runtime issue. Hoisted `setVal` to one helper inside the function. | `web/app/static/js/brachybot-ui-api.js` |
-| C13/I7 planning completion detection | Confirmed real for stepwise/manual paths. Completion now recognizes `planning_pipeline`, `seed_planning`, `dose_engine`, `dose_evaluation`, and `dose_calc`. | `AgenticSys.py` |
-| C15 STL export mismatch | Confirmed real product/API mismatch. `/api/export/stl` now writes actual ASCII `.stl` seed cylinders instead of debug `.npy` arrays. | `web/routes/planning_routes.py` |
-| C16/C18/H2 CSS issues | Confirmed real. Added `.step-num`, preserved warning borders, and fixed invalid font-family quoting. | `web/app/static/css/*.css` |
-| H7 JSON 413 and 500 handlers | Confirmed real API consistency gap. Added JSON response for oversized uploads and exception logging for unhandled 500s. | `web/server.py` |
-| H11/M10 fragile Python repr parsing | Confirmed real. Python-style `tool_use` blocks now use `ast.literal_eval` instead of global quote replacement. | `agent_runtime/chat_workflows.py` |
-| H14 int16 overflow risk | Confirmed real edge case. CT volume transfer clips before int16 conversion. | `web/routes/viewer_routes.py` |
-| H15 mesh cache eviction | Confirmed real performance issue. Cache order now uses `deque.popleft()`. | `web/server_support.py`, `web/routes/viewer_routes.py` |
-| H18 contour label null guard | Confirmed real edge case. Dose contour labels now guard `Number.isFinite(contour.level)`. | `web/app/static/js/brachybot-3d-manual.js` |
-| H20 mesh cache key collision | Confirmed real edge case. 3D mask cache keys now include a BLAKE2 digest of the binary mask instead of `id(mask_data)`. | `web/routes/viewer_routes.py` |
-| H22 API key `None` crash | Confirmed real. Explicit auth without a configured key now fails closed instead of calling `.encode()` on `None`. | `web/server_support.py` |
-| I10 planning data-tree null guards | Confirmed real. Planning group visibility paths now tolerate missing seed/needle/dose arrays. | `web/app/static/js/brachybot-viewer-volume.js` |
-| I18 screenshot promise handling | Confirmed real. Direct screenshot capture now awaits `html2canvas` consistently. | `web/app/static/js/brachybot-ui-api.js` |
-| M25 API-key comparison | Confirmed real hardening opportunity. Header key comparison now uses direct constant-time comparison and fails closed when auth is misconfigured. | `web/server_support.py` |
-| M27 duplicate tooltip key | Confirmed real. Removed the duplicate `toolMeasure` key. | `web/app/static/js/brachybot-viewer-layout.js` |
-| M29 report source badge injection | Confirmed real. The reset onclick argument now uses JSON string serialization and attribute-safe escaping. | `web/app/static/js/brachybot-report-shell.js` |
-| H9 missing Anthropic dependency | Confirmed real for the configured Anthropic provider. Added `anthropic>=0.34.0`. | `requirements.txt` |
-| Additional shell invocation scan | Confirmed real in a benchmark helper. Replaced the background benchmark launch with argv-style `subprocess.Popen(...)` and no shell. | `benchmarks/auto_monitor.py` |
-
-### Verified as intentional, stale, or not a defect in current code
-
-| Report item | Current disposition |
-|---|---|
-| C6 `str.format()` with untrusted context | False positive. Python `str.format()` does not recursively parse braces inside argument values; a smoke test with `enhanced_context="{literal}"` passes. |
-| C12/I25 `{current_date}` prompt replacement | Already implemented in both streaming and non-streaming prompt construction. |
-| H4 CT-loaded gate inconsistency | Current code checks UI state plus memory state and preserves non-CT developer tools (`tool_creator`, `env_manager`, `shell_executor`, `code_executor`) for trusted-local use. |
-| H17 dual dose overlay functions | Intentional compatibility surface during the 2D overlay refactor. The active separate-layer path remains the source of truth for current viewers. |
-| H19/M19 language globals | Intentional transitional state: `_uiLanguage` follows detected conversation language; `_i18nLang` follows the manual UI toggle. They are synchronized where dynamic labels need it. |
-| I24/M20 test coverage/config | Valid engineering debt, not a runtime defect. This follow-up adds smoke coverage through explicit validation commands rather than introducing a new test framework migration. |
-| M4 inline styles | Valid maintainability debt but not safe to mass-refactor during this bug-fix pass because report rendering and screenshot layout are sensitive to exact inline dimensions. |
-| M17 requestAnimationFrame loop | Intentional for the interactive 3D viewer. It is acceptable while the viewer is visible; a future optimization can pause when hidden. |
-| M23 `normalize_dose_image` naming | Naming concern only; no functional bug confirmed in this pass. |
-| `code_executor` internal `exec(...)` | Intentional trusted-local developer capability. It remains disabled unless `BRACHYBOT_ENABLE_CODE_EXECUTOR=1` is set, uses AST checks, restricted builtins, and an import allowlist. The safer posture is explicit opt-in rather than removing the capability. |
-| Worktree-copy warnings | Operational hygiene concern. Current tracked repo state was verified and pushed; stale external worktrees should be handled separately to avoid deleting user work. |
-
-### Validation evidence
-
-- `py_compile` over 207 tracked Python files: passed.
-- `node --check` over 21 frontend JavaScript files: passed.
-- `git diff --check`: passed, with only Git line-ending warnings.
-- Targeted smoke: parser preserves apostrophes in Python-repr `tool_use`, prompt formatting accepts literal braces in dynamic context, rate limiter mutates safely, and the `BrachyAgent` mixin contract validates.
-
----
-
-
----
-
-### Remaining Issues After adfc27a — Re-verified & Fixed
-
-## Verification Results
-
-| ID | Severity | Claim | Re-verdict | Fixed? |
-|----|----------|-------|------------|--------|
-| H1 | HIGH | `_record_experience` crashes if `_init_self_evolution` fails | **CONFIRMED REAL.** Line 1472 uses bare `if not self.exp_memory:` → `AttributeError` if import fails. `get_status()` at line 1944 already uses safe `getattr(self, "exp_memory", None)` pattern. | ✅ Yes |
-| H3 | HIGH | Missing `_cancelled()` at streaming loop top | **CONFIRMED REAL.** Non-stream has it (line 338); stream does not. User cancel between LLM rounds is silently ignored. | ✅ Yes |
-| H6 | HIGH | `api_viewer_image` bypasses centralized `_validate_path` | **CONFIRMED REAL — low impact.** The inline `startswith(upload_dir)` is secure against traversal, but ignores `BRACHYBOT_{CT,MR,US}_DATA_ROOTS` env-var expansion. Users with custom data roots cannot view images here. | ✅ Yes |
-| I20 | IMPORTANT | Hardcoded label IDs `[1,2,3,4,5,6]` miss labels >6 | **CONFIRMED REAL.** `window._ctvLabelMap` IS populated from server (viewer-volume.js:251) but unused in `reconstructOrgan3D`. Labels >6 (e.g. stomach, duodenum) never reconstruct in 3D. | ✅ Yes |
-| I21 | IMPORTANT | Sequential HTTP per vertex — "10 minutes" | **PARTIALLY CORRECTED.** `_fetchDoseRawAxialSlice` caches by Z-slice (`state.doseTexture.rawAxialSlices`), so unique requests = number of Z-slices (50-200), not vertex count (12,500). Actual latency is ~2-10 seconds for typical volumes, not 10 minutes. Still worth batching for near-instant response. | ✅ Yes |
-
-## Fix Details
-
-### H1 — `chat_workflows.py:1472` (1 line)
-
-```diff
--       if not self.exp_memory:
-+       if not getattr(self, "exp_memory", None):
-```
-
-Changed bare attribute access to `getattr` with safe default, matching the existing pattern in `get_status()` at line 1944.
-
-### H3 — `llm_runtime.py:1288-1297` (6 lines)
-
-Added cancel check at top of streaming while-loop:
-
-```python
-while iteration < max_iterations:
-    iteration += 1
-    if _cancelled():
-        logger.info("Streaming cancelled by user between LLM rounds")
-        yield_event("done", {"final": "", "cancelled": True})
-        return
-```
-
-### H6 — `server.py:285-290` (3 lines)
-
-Replaced inline `startswith(upload_dir)` with centralized `_validate_path`:
-
-```python
-if not _validate_path(image_path, purpose="read"):
-    return jsonify({"error": "Access denied"}), 403
-real_image_path = os.path.realpath(image_path)
-```
-
-### I20 — `viewer-layout.js:679` (3 lines)
-
-Read actual label IDs from `window._ctvLabelMap` instead of hardcoding [1..6]:
-
-```javascript
-const _lm = window._ctvLabelMap || {};
-const ids = Object.keys(_lm).map(Number).filter(k => Number.isFinite(k) && k > 0);
-const labelIds = ids.length > 0 ? ids : [1, 2, 3, 4, 5, 6];
-```
-
-### I21 — `viewer-layout.js:1002-1015` (+15 lines for pre-warm)
-
-Added a pre-warm phase that collects all unique Z-slice indices referenced by mesh vertices and fetches them in parallel via `Promise.all(...zSet.map(z => _fetchDoseRawAxialSlice(z)))`. After the warm-up, the per-vertex loop in lines 1012+ gets a cache hit for every vertex, so `await _sampleDoseNormalizedAtIndex(idx)` returns instantly. No sequential HTTP.
-
-## Issues Re-classified After Re-verification
-
-| Original ID | Original severity | New assessment |
-|-------------|-------------------|----------------|
-| H6 | HIGH | HIGH — functional gap for users with custom data roots |
-| I21 | IMPORTANT (10 min) | IMPORTANT (~2-10 sec without fix, instant with fix) |
-
-
----
-
-### Deep Algorithm Code Review
-
-**Review scope:** Algorithm core files outside the modularized web/agent pipeline
-**Files reviewed:** `core.py`, `reinforcement.py`, `utilizations.py`, `fitting_model.py`, `data_preprocess.py`, `geometry.py`, `brachy_plan.py`, `exp.py`, `external_exp.py`, `config.py`
-**Method:** Independent review agent + line-by-line verification of every finding
-**Status:** **9 confirmed issues** — 3 CRITICAL, 2 HIGH, 4 MEDIUM, 4 LOW
-
----
-
-## CRITICAL BUGS
-
-### C1. `reinforcement.py:40,285-286,741` — Inverted OAR damage formula
-
-The OAR ("organ at risk") damage penalty is computed using a ratio that
-**decreases as OAR damage increases** — the exact opposite of the intended
-behavior.
-
-**`_dvh_oar_jit_fallback` at line 40:**
-```python
-out_damage = float(n_target) * dvh_rate / float(exceed_count)
-```
-where `n_target` = target (CTV) voxel count, `exceed_count` = OAR voxels
-exceeding the dose threshold.
-
-**`SeedPlacementReward` at line 285-286:**
-```python
-reward = min(cur_DVH_rate, self.DVH_rate) + \
-         ((cur_DVH_rate - self.DVH_rate) >= 0) * (out_damage)
-```
-
-**`DVH2Rewards` at line 741:**
-```python
-out_damage = len(target_idx[0]) * cur_DVH_rate / exceed_count
-```
-
-**Impact:** As `exceed_count` grows (more OAR voxels overdosed), `out_damage`
-shrinks, and the reward increases. The agent is **rewarded for overdosing OARs**
-instead of being penalized. The correct formula should have `exceed_count` in
-the numerator:
-```python
-out_damage = exceed_count * dvh_rate / float(n_target)   # fraction of OAR overdosed
-```
-
-**Severity: CRITICAL** — Systematically undermines the clinical objective of
-sparing organs at risk.
-
-### C2. `reinforcement.py:67,79,122,191,205,255` — Typo `target_valueimage_normalize_max`
-
-Parameter name `target_valueimage_normalize_max` is missing an underscore
-between `value` and `image`. Correct name: `target_value_image_normalize_max`.
-
-The code explicitly acknowledges the typo with inline comments
-(`# typo kept` / `# REVIEW: typo left for compatibility`), but it is frozen
-because callers pass it by keyword and fixing the parameter name would break
-existing call sites.
-
-**Occurrences:**
-| Line | Context |
-|------|---------|
-| 67 | Commented-out `__init__` (legacy) |
-| 79 | Commented-out assignment (legacy) |
-| 122 | Commented-out call (legacy) |
-| 191 | **Active `__init__` parameter** |
-| 205 | **Active instance assignment** |
-| 255 | **Active call to `single_seed_dose_calculation_dl`** |
-| 842 | `out_damage` formula (not the typo, but same method) |
-
-**Impact:** Any external caller trying to pass `target_value_image_normalize_max`
-(with correct underscore) gets `TypeError: unexpected keyword argument`.
-Internal consistency masks the problem, but it propagates to the DL dose model
-API.
-
-**Severity: CRITICAL** — API-level defect that blocks proper integration for
-external callers.
-
-### C3. `reinforcement.py:842` — Wrong denominator in OAR damage penalty
-
-```python
-cur_out_damage = reward_calculator.target_v / max(0.1, non_target_sum)
-```
-
-Here `target_v` = CTV voxel count, `non_target_sum` = OAR voxels exceeding
-threshold. The target count appears in the numerator when computing an **OAR
-damage** metric. As with C1, this inverts the penalty — a large target volume
-amplifies the OAR damage score for the same absolute OAR injury.
-
-**Severity: CRITICAL** — Another instance of the inverted OAR formula in a
-different code path.
-
----
-
-## HIGH-SEVERITY ISSUES
-
-### H1. `core.py:386-389` — Dead code in `trajectory_plan`
-
-```python
-sorted_trajectories = utilizations.sort_candidate_tracjectories(
-    radiation_volume, candidate_trajectories)
-# Further processing of candidate_trajectories is needed
-pass
-```
-
-The sorted trajectories are computed but never used. The function ends with
-`pass` and returns `None`. This appears to be an incomplete implementation of
-trajectory optimization — the most promising trajectories are identified but
-never selected or applied.
-
-**Severity: HIGH** — The function is dead code, but it signals that trajectory
-optimization was planned but never delivered. If this code path is ever
-activated, it silently does nothing.
-
-### H2. `exp.py` vs `external_exp.py` — ~99% identical, ~1300 lines each
-
-These two files are near-identical duplicates. The only meaningful difference:
-- `exp.py` calls `core.optimal_plan(...)` (rule-based) and saves to `./exp/comparison/`
-- `external_exp.py` calls `core.optimal_plan_rf(...)` (RL-based) and saves to `./output_rf_msd/`
-
-Every other function (`sensitivity_k`, `sensitivity_e`, `ablation_study`,
-`robustness_study1`, `robustness_study2`, `calculate_metric`,
-`find_latest_dose_file`, `NumpyEncoder`, `comparison`) is copied verbatim.
-
-**Impact:** Any bug fix or enhancement must be applied to both files
-independently. They will diverge over time. ~50% of the codebase's top-level
-scripts is duplicated.
-
-**Recommendation:** Extract common functions into a shared module (e.g.,
-`exp_utils.py`) and have both files import from it. Keep only the
-optimization-strategy-specific call in each file.
-
-**Severity: HIGH** — Maintenance liability.
-
----
-
-## MEDIUM-SEVERITY ISSUES
-
-### M1. `utilizations.py:558` — Hardcoded resampling to [128,128,128]
-
-```python
-def ImageResample_size(sitk_image, new_size=[128, 128, 128], is_label=False):
-```
-
-`read_nii_image` (line 224) calls `ImageResample_size(sitk.ReadImage(path))`
-with no `new_size` argument, so every loaded image is unconditionally resampled
-to 128³ voxels. This discards spatial detail in high-resolution volumes and
-unnecessarily upsamples low-resolution volumes.
-
-**Impact:** Downstream dose calculations operate on a fixed grid regardless of
-the original imaging protocol. Needle placement optimization loses accuracy for
-high-resolution inputs.
-
-**Severity: MEDIUM** — Functional limitation.
-
-### M2. `fitting_model.py:30,61` — Parameter named `search_region` used as scaling weight
-
-```python
-self.weight = search_region   # line 30
-...
-sigmoid_normalized = torch.clamp(
-    self.weight * (2 * torch.sigmoid(out[even_mask]) - 1) + x[even_mask], 0, 1)   # line 61
-```
-
-The constructor parameter `search_region` suggests a spatial extent or range,
-but it is used as a linear gain on a sigmoid-transformed activation. This makes
-the code misleading to readers.
-
-**Severity: MEDIUM** — Poor naming obscures intent.
-
-### M3. `data_preprocess.py:312-313` — Gaussian smoothing after morphological operations
-
-```python
-if self.gaussian_sigma > 0:
-    binary = (gaussian_filter(binary.astype(np.float64), sigma=self.gaussian_sigma) > 0.5).astype(np.uint8)
-```
-
-Gaussian smoothing is applied after erosion and dilation. Since morphological
-operations produce crisp binary boundaries, the subsequent blur (even with
-`> 0.5` re-thresholding) can shift edges and re-introduce artifacts depending
-on sigma.
-
-**Severity: MEDIUM** — Mask quality may degrade; the order should be
-reconsidered or documented.
-
-### M4. `fitting_model.py:302-304` — Verbose matrix construction
-
-```python
-K = torch.stack([
-    torch.stack([torch.tensor(0, device=self.device), -axis[2], axis[1]]),
-    torch.stack([axis[2], torch.tensor(0, device=self.device), -axis[0]]),
-    torch.stack([-axis[1], axis[0], torch.tensor(0, device=self.device)])
-])
-```
-
-9 separate `torch.tensor`/`torch.stack` calls for a 3×3 skew-symmetric matrix.
-The same file has a cleaner pattern at lines 168-172 using literal syntax.
-This function is called once per seed in a loop (line 282).
-
-**Severity: MEDIUM** — Readability and minor performance overhead.
-
----
-
-## LOW-SEVERITY ISSUES
-
-### L1. `brachy_plan.py:3` — `sys.path.append` mutates module search path
-
-```python
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-```
-
-Common pattern for entry-point scripts, but breaks when the file is imported as
-part of a larger application (e.g., from `plans/`). Should use relative imports
-or a proper package structure.
-
-### L2. `core.py:330` — Unused variable `opt_DVH_rate`
-
-```python
-opt_DVH_rate = np.sum(opti_radiation * mask_volume > in_lowest_dose) / volume
-return opti_planned_seeds, opti_single_seed_radiations
-```
-
-Computed but never referenced. Possibly a debugging remnant or incomplete
-return value.
-
-### L3. `brachy_plan.py:63` — Hardcoded reference direction
-
-```python
-ref_direc = np.array([0, 1, 0])  # Manually set direction if needed
-```
-
-The PCA-based anatomical direction calculation (commented out at lines 59-61)
-is ignored in favor of a hardcoded `[0, 1, 0]` (anterior). This is incorrect
-for non-prostate sites or non-supine patient orientations.
-
-### L4. `fitting_model.py:157,291` — Hardcoded 0.99 alignment threshold
-
-```python
-if torch.abs(torch.dot(x_axis, direction)) >= 0.99:
-    rotation_matrix = torch.eye(3, device=self.device)
-```
-
-The threshold `0.99` (≈ cos(8°)) determines whether two vectors are aligned
-enough to skip rotation. Directions near this boundary may produce
-discontinuous behavior. Should be a named constant.
-
----
-
-## Summary
-
-| ID | File | Line(s) | Severity | Description |
-|----|------|---------|----------|-------------|
-| C1 | `reinforcement.py` | 40, 285-286, 741 | CRITICAL | Inverted OAR damage formula |
-| C2 | `reinforcement.py` | 67,79,122,191,205,255 | CRITICAL | Typo `target_valueimage_normalize_max` |
-| C3 | `reinforcement.py` | 842 | CRITICAL | Wrong denominator in OAR penalty |
-| H1 | `core.py` | 386-389 | HIGH | Dead code in `trajectory_plan` |
-| H2 | `exp.py` / `external_exp.py` | — | HIGH | ~1300-line duplicate (~99% identical) |
-| M1 | `utilizations.py` | 558 | MEDIUM | Hardcoded resampling to 128³ |
-| M2 | `fitting_model.py` | 30,61 | MEDIUM | `search_region` used as weight |
-| M3 | `data_preprocess.py` | 312-313 | MEDIUM | Gaussian after morphological ops |
-| M4 | `fitting_model.py` | 302-304 | MEDIUM | Verbose matrix construction |
-| L1 | `brachy_plan.py` | 3 | LOW | `sys.path.append` |
-| L2 | `core.py` | 330 | LOW | Unused `opt_DVH_rate` |
-| L3 | `brachy_plan.py` | 63 | LOW | Hardcoded `ref_direc` |
-| L4 | `fitting_model.py` | 157,291 | LOW | Hardcoded 0.99 threshold |
-
-**Not confirmed after verification (from initial report):** 7 items were
-either wrong file/line numbers, already fixed, or false positives:
-- `core.py:294-296` wrong function call arguments — function is dead code, no callers
-- `core.py:447` wrong inequality — line does not exist in any relevant function
-- `reinforcement.py:680` UnboundLocalError — `cur_DVH_rate = 0.0` already initialized
-- `reinforcement.py:738` division by zero — guarded by `if exceed_count == 0`
-- `geometry.py:937` 0.99 threshold — is in `fitting_model.py`, not `geometry.py`
-- `utilizations.py:1011-1017` insertion sort off-by-one — no insertion sort exists
-- `config.py:49-51,76` misleading help / unrealistic defaults — wrong locations
-
-**Relationship to prior reviews:** This review covers the **algorithm core**
-(`plans/` and root-level scripts) that was not examined in the
-2026-07-06 modularization-focused review. The 5 should-fix items fixed in
-commit `7cfd1d0` were in the web/agent layers and are unrelated to the
-findings here.
-
