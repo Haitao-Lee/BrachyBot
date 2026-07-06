@@ -282,12 +282,14 @@ def create_app(config: Optional[Dict] = None):
         if not image_path or not os.path.exists(image_path):
             return jsonify({"error": "Image not found"}), 404
 
-        # Security check: only serve files from uploads directory
-        # Use realpath to resolve symlinks and prevent traversal attacks
-        upload_dir = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads"))
-        real_image_path = os.path.realpath(image_path)
-        if not real_image_path.startswith(upload_dir + os.sep) and real_image_path != upload_dir:
+        # Security check: delegate to the centralized allowlist that respects
+        # BRACHYBOT_{CT,MR,US}_DATA_ROOTS and resolves symlinks.  The old
+        # startswith(upload_dir) check was narrower and bypassed env-var
+        # data-roots expansion, so users who configured custom data directories
+        # could not view images via this endpoint.
+        if not _validate_path(image_path, purpose="read"):
             return jsonify({"error": "Access denied"}), 403
+        real_image_path = os.path.realpath(image_path)
 
         try:
             from flask import send_file

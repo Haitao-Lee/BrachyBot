@@ -1469,7 +1469,7 @@ class ChatWorkflowMixin:
 
     def _record_experience(self, message: str, response: str, steps: List[Dict] = None):
         """Record the interaction as an experience for self-evolution."""
-        if not self.exp_memory:
+        if not getattr(self, "exp_memory", None):
             return
         tool_chain = []
         for step in (steps or []):

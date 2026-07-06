@@ -676,7 +676,12 @@ async function reconstructOrgan3D(id, silent = false) {
     try {
         // CTV: reconstruct all labels (multi-label)
         if (id === 'ctv') {
-            const labelIds = [1, 2, 3, 4, 5, 6]; // All non-background labels
+            // Read actual non-background label IDs from the label map that was
+            // populated at load time.  Fall back to [1..6] if the map is empty
+            // (pre-CTV-era sessions or server that doesn't send a label map).
+            const _lm = window._ctvLabelMap || {};
+            const ids = Object.keys(_lm).map(Number).filter(k => Number.isFinite(k) && k > 0);
+            const labelIds = ids.length > 0 ? ids : [1, 2, 3, 4, 5, 6];
             let successCount = 0;
             for (let i = 0; i < labelIds.length; i++) {
                 try {
@@ -993,6 +998,23 @@ async function _applyDoseTextureToMesh(id, mesh) {
     const dMaxGy = COLORBAR_MAX_GY;
     const baseRgb = _meshBaseColor(mesh);
     const sampleEvery = posAttr.count > 25000 ? 2 : 1;
+
+    // Warm the dose-slice cache before the color loop so that the per-vertex
+    // _sampleDoseNormalizedAtIndex calls return from cache (the old code
+    // fetched slices one-at-a-time inside the loop, adding O(Z) sequential
+    // latency).  Pre-fetch every unique Z slice in parallel.
+    const doseZ = state.doseOverlay?.shape?.[0];
+    if (doseZ) {
+        const zSet = new Set();
+        for (let i = 0; i < posAttr.count; i += sampleEvery) {
+            v.fromBufferAttribute(posAttr, i);
+            surface.localToWorld(v);
+            const idx = _worldToIndex(v.x, v.y, v.z);
+            if (idx) zSet.add(Math.max(0, Math.min(doseZ - 1, Math.round(idx[0]))));
+        }
+        await Promise.all([...zSet].map(z => _fetchDoseRawAxialSlice(z).catch(() => null)));
+    }
+
     let lastRgb = [0, 0, 0];
     for (let i = 0; i < posAttr.count; i++) {
         if (sampleEvery > 1 && (i % sampleEvery) !== 0) {
