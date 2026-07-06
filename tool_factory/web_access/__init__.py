@@ -35,7 +35,33 @@ from urllib.parse import urlparse, quote_plus
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from tool_factory import BaseTool, ToolResult
-from utils.retry import retry_with_backoff, SEARCH_RETRY_CONFIG
+try:
+    from utils.retry import retry_with_backoff, SEARCH_RETRY_CONFIG
+except ImportError:
+    class _RetryConfig:
+        max_retries = 2
+        initial_delay = 0.5
+        backoff_factor = 2.0
+        max_delay = 5.0
+        retryable_exceptions = (TimeoutError, ConnectionError)
+
+    SEARCH_RETRY_CONFIG = _RetryConfig()
+
+    def retry_with_backoff(func, config=None, on_retry=None):
+        config = config or SEARCH_RETRY_CONFIG
+        last_error = None
+        for attempt in range(config.max_retries + 1):
+            try:
+                return func()
+            except config.retryable_exceptions as exc:
+                last_error = exc
+                if attempt >= config.max_retries:
+                    raise
+                delay = min(config.initial_delay * (config.backoff_factor ** attempt), config.max_delay)
+                if on_retry:
+                    on_retry(attempt + 1, delay, exc)
+                time.sleep(delay)
+        raise last_error
 
 logger = logging.getLogger(__name__)
 

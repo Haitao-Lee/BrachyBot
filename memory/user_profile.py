@@ -111,7 +111,7 @@ class UserProfile:
                                     for k, v in self.interaction_patterns.items()},
         }
         with open(self._path, "w") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+            json.dump(data, f, indent=2, ensure_ascii=False, default=str)
 
     def record_explicit_preference(self, name: str, value: str, category: str = "general"):
         pref_id = name.lower().replace(" ", "_")

@@ -123,7 +123,7 @@ class ToolCodeWriter:
         os.makedirs(tool_dir, exist_ok=True)
 
         file_path = os.path.join(tool_dir, f"{name}.py")
-        with open(file_path, "w") as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             f.write(code)
 
         tool_info = {
@@ -201,7 +201,15 @@ class ToolCodeWriter:
             tool_instance = tool_class()
 
             if self.tool_registry:
-                self.tool_registry.register(tool_instance)
+                self.tool_registry.register(
+                    name=name,
+                    description=getattr(tool_instance, "description", tool_info.get("description", "")),
+                    category=tool_info.get("category", "generated"),
+                    parameters=getattr(tool_instance, "input_schema", {}) or {},
+                    input_schema=json.dumps(getattr(tool_instance, "input_schema", {}) or {}, ensure_ascii=False),
+                    output_schema=json.dumps(getattr(tool_instance, "output_schema", {}) or {}, ensure_ascii=False),
+                    execute_fn=tool_instance.execute,
+                )
                 logger.info(f"Tool registered: {name}")
                 return {"success": True, "message": f"Tool {name} registered"}
             else:

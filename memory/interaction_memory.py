@@ -180,12 +180,13 @@ class InteractionMemory:
 
     def _sanitize(self, data: Dict) -> Dict:
         """Remove large/unserializable fields."""
+        blocked_type_markers = ("numpy", "torch", "SimpleITK")
         sanitized = {}
         for k, v in data.items():
             if isinstance(v, (str, int, float, bool, list, dict, type(None))):
                 if isinstance(v, dict):
                     sanitized[k] = {kk: vv for kk, vv in v.items()
-                                   if str(type(vv)) not in ['<class numpy', '<class torch', '<class SimpleITK']}
+                                   if not any(marker in f"{type(vv).__module__}.{type(vv).__name__}" for marker in blocked_type_markers)}
                 elif isinstance(v, (list, tuple)):
                     sanitized[k] = str(v)[:200] if len(str(v)) > 200 else v
                 else:

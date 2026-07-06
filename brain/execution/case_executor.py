@@ -8,12 +8,15 @@ Inspired by MedAgent-Pro's Case_level.py execution pattern.
 import os
 import json
 import time
+import logging
 from typing import Dict, List, Any, Optional, Callable, Tuple
 from dataclasses import dataclass
 
 from ..core.tool_registry import ToolRegistry, get_tool_registry
 from ..core.base import PlanStep
 from .types import ExecutionStatus
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -307,8 +310,11 @@ class CaseExecutor:
         step_result.execution_time = time.time() - exec_start
 
         if os.path.exists(full_output_path):
-            with open(full_output_path, "r", encoding="utf-8") as f:
-                result = json.load(f)
+            try:
+                with open(full_output_path, "r", encoding="utf-8") as f:
+                    result = json.load(f)
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("Could not load step output JSON %s; keeping tool return value: %s", full_output_path, exc)
 
         step_result.result = result
         step_result.status = ExecutionStatus.SUCCESS

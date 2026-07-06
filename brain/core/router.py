@@ -98,7 +98,7 @@ class LLMRouter:
 
         if not self.providers and os.environ.get("OPENAI_API_KEY"):
             try:
-                from .openai_llm import OpenAILLM
+                from ..providers.openai_llm import OpenAILLM
                 self.providers["openai"] = OpenAILLM()
                 self.default_provider = "openai"
             except Exception as e:

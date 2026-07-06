@@ -132,10 +132,17 @@ class PlanExecutor:
             elif isinstance(value, dict):
                 resolved[key] = self._resolve_args(value, context)
             elif isinstance(value, list):
-                resolved[key] = [
-                    self._resolve_args({k: v}, context)[k] if isinstance(v, str) and v.startswith("$") else v
-                    for v in value
-                ]
+                resolved_list = []
+                for item in value:
+                    if isinstance(item, str) and item.startswith("$"):
+                        resolved_list.append(context.get(item[1:]))
+                    elif isinstance(item, dict):
+                        resolved_list.append(self._resolve_args(item, context))
+                    elif isinstance(item, list):
+                        resolved_list.append(self._resolve_args({"_": item}, context)["_"])
+                    else:
+                        resolved_list.append(item)
+                resolved[key] = resolved_list
             else:
                 resolved[key] = value
         return resolved

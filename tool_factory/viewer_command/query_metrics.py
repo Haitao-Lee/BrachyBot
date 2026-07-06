@@ -145,6 +145,6 @@ class QueryMetricsTool(BaseTool):
                 r = getter(kw)
                 if r.success and r.metadata:
                     result.update(r.metadata)
-            except:
-                pass
+            except Exception as exc:
+                logger.warning("Metric getter %s failed: %s", getattr(getter, "__name__", getter), exc)
         return ToolResult(success=True, message=json.dumps(result, indent=2), metadata=result)

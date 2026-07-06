@@ -89,7 +89,7 @@ class VoCoProstateTool(BaseTool):
             use_v2=True,
         )
 
-        checkpoint = torch.load(self.MODEL_PATH, map_location=self._device, weights_only=False)
+        checkpoint = torch.load(self.MODEL_PATH, map_location=self._device, weights_only=True)
         state_dict = checkpoint.get("state_dict", checkpoint)
         model.load_state_dict(state_dict, strict=True)
         model.to(self._device)

@@ -126,7 +126,7 @@ class ContextDensityOptimizer:
                 optional.append(seg)
 
         required_tokens = sum(s.token_estimate for s in required)
-        remaining_budget = self.max_tokens - required_tokens
+        remaining_budget = max(0, self.max_tokens - required_tokens)
 
         result = list(required)
         for seg in optional:
@@ -134,6 +134,8 @@ class ContextDensityOptimizer:
                 result.append(seg)
                 remaining_budget -= seg.token_estimate
             else:
+                if remaining_budget <= 0:
+                    continue
                 compressed = self._compress_segment(seg, remaining_budget)
                 if compressed and self.estimate_tokens(compressed) > 50:
                     result.append(ContextSegment(

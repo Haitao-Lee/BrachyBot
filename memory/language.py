@@ -48,7 +48,10 @@ from __future__ import annotations
 
 import re
 import unicodedata
+import logging
 from typing import Dict, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 # Character ranges per language. Each entry is (name, code, regex).
@@ -152,6 +155,6 @@ def get_session_language(agent_memory) -> Dict[str, str]:
         prev = agent_memory.retrieve("session_language") or {}
         if prev.get("code") in _LANG_DISPLAY:
             return prev
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Could not read session language from agent memory: %s", exc)
     return {"code": "en", "name": _LANG_DISPLAY["en"], "source": "default"}

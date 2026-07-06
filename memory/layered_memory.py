@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Layered Memory System for BrachyBot
 ====================================
@@ -173,7 +175,7 @@ class LayeredMemory:
             else:
                 serializable[k] = v
         with open(path, "w") as f:
-            json.dump(serializable, f, indent=2, ensure_ascii=False)
+            json.dump(serializable, f, indent=2, ensure_ascii=False, default=str)
 
     def save_all(self):
         self._save_layer("l0_rules", self.l0_rules)

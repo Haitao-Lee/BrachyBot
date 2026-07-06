@@ -62,6 +62,7 @@ class CompletenessChecker(LLMCapableAgent):
 
     def __init__(self, llm_callback=None):
         super().__init__(AgentRole.COMPLETENESS_CHECKER, llm_callback)
+        self._conversation_state = {}
 
     @property
     def name(self) -> str:

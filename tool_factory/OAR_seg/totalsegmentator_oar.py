@@ -274,6 +274,7 @@ class TotalSegmentatorOARTool(BaseTool):
         oar_mask = sitk.GetImageFromArray(oar_array_ordered)
         oar_mask.SetSpacing(spacing)
         oar_mask.SetOrigin(image.GetOrigin())
+        oar_mask.SetDirection(image.GetDirection())
 
         num_organs = len(organ_volumes)
         return ToolResult(
@@ -450,6 +451,9 @@ class TotalSegmentatorOARTool(BaseTool):
 
     def _get_clean_subprocess_env(self) -> dict:
         env = os.environ.copy()
-        for var in ("PYTHONPATH", "PYTHONSTARTUP", "PYTHONEXECUTABLE"):
+        # Keep PATH so the resolved TotalSegmentator executable can find its
+        # environment, but remove Python/library variables that commonly leak
+        # from the host process into the subprocess.
+        for var in ("PYTHONPATH", "PYTHONSTARTUP", "PYTHONEXECUTABLE", "PYTHONHOME", "LD_LIBRARY_PATH"):
             env.pop(var, None)
         return env

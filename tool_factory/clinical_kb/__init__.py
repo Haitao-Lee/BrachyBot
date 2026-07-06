@@ -89,6 +89,14 @@ def _ensure_default_kb() -> None:
     if not kb_file.exists():
         kb_file.write_text(json.dumps(_DEFAULT_KB, indent=2, ensure_ascii=False), encoding="utf-8")
         logger.info("Initialized default clinical knowledge base")
+        return
+    try:
+        json.loads(kb_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        backup = kb_file.with_suffix(".invalid.json")
+        kb_file.replace(backup)
+        kb_file.write_text(json.dumps(_DEFAULT_KB, indent=2, ensure_ascii=False), encoding="utf-8")
+        logger.warning("Reinitialized corrupt clinical knowledge base; backup saved to %s: %s", backup, exc)
 
 
 _ensure_default_kb()
@@ -142,8 +150,6 @@ def _canonical_source_url(meta: Dict[str, Any]) -> str:
         return f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
     if doi and doi != "N/A":
         return f"https://doi.org/{doi}"
-    if url.startswith("http") and "pubmed.ncbi.nlm.nih.gov/?term=" not in url:
-        return url
     if url.startswith("http"):
         return url
     return ""

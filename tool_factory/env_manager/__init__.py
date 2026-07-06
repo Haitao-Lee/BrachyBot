@@ -31,8 +31,14 @@ logger = logging.getLogger(__name__)
 ENVS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "envs")
 os.makedirs(ENVS_DIR, exist_ok=True)
 
-# Audit log path
-_AUDIT_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "audit.log")
+# Audit log path. Keep audit output outside the package directory so read-only
+# deployments still record operations.
+_AUDIT_DIR = os.environ.get(
+    "BRACHYBOT_AUDIT_DIR",
+    os.path.join(os.path.expanduser("~"), ".brachybot", "audit"),
+)
+os.makedirs(_AUDIT_DIR, exist_ok=True)
+_AUDIT_LOG = os.path.join(_AUDIT_DIR, "env_manager.log")
 
 
 def _audit(action: str, detail: str, env_name: str = ""):

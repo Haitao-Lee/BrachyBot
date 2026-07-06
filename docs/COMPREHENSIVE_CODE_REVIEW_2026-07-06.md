@@ -19,6 +19,49 @@ This review covers the entire BrachyBot codebase. The architecture is sound and 
 
 ---
 
+## Remediation Update — 2026-07-06
+
+The findings in this report were re-checked against the current `main` branch before patching. Verified runtime defects, security hardening gaps, stale frontend paths, and diagnostic blind spots were fixed in the same remediation pass. Items that were false positives or intentional compatibility behavior are called out below.
+
+### Fixed and Verified
+
+| Area | Resolution |
+|------|------------|
+| Agent cancellation and streaming | Added non-streaming cancellation support and removed the invalid `yield yield_event(...)` pattern from the non-streaming path. |
+| Agent formatting/i18n | Removed the doubled closing-parenthesis localization bug, added `web_access` to CT-independent tools, logged session-language persistence failures, and logged workflow operation tracking failures instead of silently swallowing them. |
+| Agent workflow enforcer | Added diagnostic logging around auto CTV/OAR/planning operation setup/cleanup, fixed a streaming auto-OAR `try/except/finally` indentation regression found during compile validation, and preserved the existing recovery behavior. |
+| LLM providers and router | Added missing `import time` in DeepSeek, Kimi, GLM, Groq, Grok, Mimo, and Tencent providers; fixed OpenAI auto-provider import path in the router. |
+| Brain executors/deciders | Fixed nested-list argument resolution in `PlanExecutor`, corrected `ToolCodeWriter` dynamic tool registration, prevented corrupt output JSON from overwriting valid tool results, aligned `BaseDecider.decide()` with actual optional-context implementations, removed unreachable PlannerDecider ID code, and added critique fallback logging. |
+| Memory system | Fixed success-rate evolution math, serialized non-JSON-native memory values with `default=str`, prevented negative context budgets, logged multi-persona reflexion failures, and made self-evolution tolerate missing optional skill-base imports. |
+| Dose metrics | Corrected Dx percentile indexing in both `dx_metrics.py` and `comprehensive_dose_evaluation.py`; targeted checks now verify D20/D40/D100 and D90/D50 behavior on synthetic dose arrays. |
+| Segmentation metadata and model loading | Preserved SimpleITK direction metadata for TotalSegmentator OAR masks, kept nnUNet physical metadata in native order, removed unsafe `weights_only=False` model loading, and cleaned subprocess Python environments without injecting `PYTHONHOME`. |
+| DICOM/image loading | Replaced invalid `ImageFileReaderWarningOff()` with `SetWarningOff()` and logged modality fallback failures. |
+| Shell/code executors | Made trusted-local enable flags runtime checks, replaced substring code blocking with AST-based call detection, preserved developer-mode capability posture, and refined shell operator detection to avoid false positives on harmless `->`/`=>` text. |
+| Web server | Hardened CORS defaults, made proxy IP trust explicit via `BRACHYBOT_TRUST_PROXY`, rejected null bytes in path validation, added UTF-8 config reads, logged UI-state sync failures, handled SSE `GeneratorExit`, and removed duplicate SIGHUP handler override. |
+| Frontend | Fixed stale overlay pixels when labels are hidden, guarded language-toggle calls, corrected step-button target ID, moved CT-loaded state until after volume load succeeds, removed duplicate `_petRainbow2` and `renderSeedsOverlay` definitions, enabled the language hook, and removed the leaking DVH tooltip implementation while retaining the cleaned tooltip path. |
+| Tooling and KB | Added corrupt clinical-KB recovery, moved env-manager audit logs out of the package directory, fixed Content-Length parsing for model downloads, and added warnings for previously silent metrics/doc-reader/viewer-command fallbacks. |
+
+### Re-checked / Not Changed
+
+| Finding | Decision |
+|---------|----------|
+| `web_search` weather recursion | The current implementation delegates from the method to the module-level `_search_weather`; it is not recursive. Dead code after the delegation was removed. |
+| `brain/integration/enhanced_agent.py` imports | The current repository has a root `memory` package and exported brain core symbols, so the reported import failure was not reproducible in this tree. |
+| JSON tool-call parser `except ...: pass` blocks | Retained intentionally. These blocks are parser fallbacks: one failed format probe must fall through to the next provider-specific format. |
+| `request.remote_addr` usage | Retained only inside `_client_ip_for_rate_limit()`, where proxy headers are ignored unless `BRACHYBOT_TRUST_PROXY=1`. |
+| Remaining single `_petRainbow2` / `renderSeedsOverlay` definitions | Verified there is exactly one remaining definition of each after duplicate cleanup. |
+
+### Validation Performed
+
+- `py -3 -m py_compile` over every changed Python file.
+- Bundled Python targeted dose-metric checks for `DxMetricsTool` and `ComprehensiveDoseEvaluationTool`.
+- Standard-library targeted checks for `PlanExecutor._resolve_args`, `CodeExecutorTool._sanitize_code`, and `ShellExecutorTool._validate_command`.
+- Extracted and checked both inline scripts from `web/app/index.html` with `node --check`.
+- `git diff --check`.
+- Static scans for removed high-risk patterns: invalid SimpleITK API, unsafe `weights_only=False`, stale frontend duplicate functions, disabled language hook, stale step-button ID, import-time executor toggles, and report-listed silent `except: pass` patterns outside intentional parser fallbacks.
+
+---
+
 ## 1. AgenticSys.py — Core Agent Engine
 
 **File:** `AgenticSys.py` (8,306 lines)
@@ -252,4 +295,4 @@ This review covers the entire BrachyBot codebase. The architecture is sound and 
 
 ---
 
-*Generated by comprehensive static analysis. This report catalogs all identified issues without modifying any source code.*
+*Initial report generated by comprehensive static analysis. Remediation notes above document the verified fixes applied on 2026-07-06.*

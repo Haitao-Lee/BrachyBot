@@ -24,8 +24,8 @@ class DxMetricsTool(BaseTool):
     Dx = minimum dose (in Gy) that covers x% of the structure volume.
     Example: D90 = minimum dose covering 90% of target volume.
 
-    The dose array is sorted in descending order, and Dx is the dose
-    at the position corresponding to (100 - x)% of the sorted array.
+    The dose array is sorted in descending order, and Dx is the lowest
+    dose among the hottest x% of the structure volume.
     """
 
     @property
@@ -97,7 +97,7 @@ class DxMetricsTool(BaseTool):
                     struct_results[f"D{dx}"] = {"error": "Invalid Dx value (must be 0-100)"}
                     continue
 
-                idx = int((100 - dx) / 100.0 * total_voxels)
+                idx = int(np.ceil(dx / 100.0 * total_voxels)) - 1
                 idx = max(0, min(idx, total_voxels - 1))
                 dx_value = float(sorted_doses[idx])
                 struct_results[f"D{dx}"] = dx_value

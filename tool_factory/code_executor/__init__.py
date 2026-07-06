@@ -7,6 +7,7 @@ BRACHYBOT_ENABLE_CODE_EXECUTOR=1 is explicitly set.
 """
 
 import os
+import ast
 import json
 import logging
 import time
@@ -27,16 +28,12 @@ ALLOWED_MODULES = {
     "skimage", "pandas",
 }
 
-DANGEROUS_PATTERNS = [
-    "__import__", "importlib", "subprocess", "os.system",
-    "os.popen", "exec(", "eval(", "compile(",
-    "shutil.rmtree", "shutil.move",
-    "socket.socket", "os.remove", "os.rmdir",
-    "open(", "pathlib", "sys.modules", "globals(", "locals(",
-]
-
 TRUE_VALUES = {"1", "true", "yes", "on"}
-EXECUTION_ENABLED = os.environ.get("BRACHYBOT_ENABLE_CODE_EXECUTOR", "").lower() in TRUE_VALUES
+
+
+def _execution_enabled() -> bool:
+    """Read the trusted-local toggle at execution time, not import time."""
+    return os.environ.get("BRACHYBOT_ENABLE_CODE_EXECUTOR", "").lower() in TRUE_VALUES
 
 
 class CodeExecutorTool(BaseTool):
@@ -58,10 +55,38 @@ class CodeExecutorTool(BaseTool):
     def _sanitize_code(self, code: str) -> tuple:
         """Check for dangerous patterns. Returns (safe, warnings)."""
         warnings = []
-        lowered = code.lower()
-        for pattern in DANGEROUS_PATTERNS:
-            if pattern.lower() in lowered:
-                warnings.append(f"Potentially dangerous pattern: {pattern}")
+        try:
+            tree = ast.parse(code)
+        except SyntaxError as exc:
+            return False, [f"Syntax error: {exc}"]
+
+        dangerous_names = {"__import__", "eval", "exec", "compile", "globals", "locals"}
+        dangerous_attrs = {
+            "os.system", "os.popen", "os.remove", "os.rmdir",
+            "shutil.rmtree", "shutil.move", "socket.socket", "sys.modules",
+        }
+
+        def attr_path(node):
+            parts = []
+            while isinstance(node, ast.Attribute):
+                parts.append(node.attr)
+                node = node.value
+            if isinstance(node, ast.Name):
+                parts.append(node.id)
+            return ".".join(reversed(parts))
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id in dangerous_names:
+                    warnings.append(f"Potentially dangerous call: {node.func.id}")
+                elif isinstance(node.func, ast.Attribute):
+                    call_name = attr_path(node.func)
+                    if call_name in dangerous_attrs:
+                        warnings.append(f"Potentially dangerous call: {call_name}")
+            elif isinstance(node, ast.Attribute):
+                attr_name = attr_path(node)
+                if attr_name in dangerous_attrs:
+                    warnings.append(f"Potentially dangerous attribute: {attr_name}")
 
         return len(warnings) == 0, warnings
 
@@ -75,7 +100,7 @@ class CodeExecutorTool(BaseTool):
         code = kwargs.get("code", "")
         description = kwargs.get("description", "")
 
-        if not EXECUTION_ENABLED:
+        if not _execution_enabled():
             return ToolResult(
                 success=False,
                 error="code_executor is disabled",

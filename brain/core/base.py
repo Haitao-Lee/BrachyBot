@@ -66,7 +66,7 @@ class BaseDecider(ABC):
         self.llm = llm
 
     @abstractmethod
-    def decide(self, task: str, context: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+    def decide(self, task: str, context: Optional[Dict[str, Any]] = None, **kwargs) -> Dict[str, Any]:
         """Make a decision based on task and context."""
         pass
 

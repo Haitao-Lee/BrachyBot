@@ -9,8 +9,11 @@ Inspired by: Multi-Agent Reflexion (MAR) and MedAgent-Pro's decider architecture
 
 import json
 import os
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -138,8 +141,8 @@ CONFIDENCE: (0.0-1.0, how confident you are in this assessment)"""
             try:
                 response = self.llm_callback(prompt)
                 return self._parse_critique_response(persona["name"], response)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Critique LLM callback failed for %s; using fallback critique: %s", persona["name"], exc)
 
         return self._fallback_critique(persona, plan_desc, dose_metrics)
 
@@ -211,8 +214,8 @@ CONFIDENCE: (0.0-1.0, how confident you are in this assessment)"""
                     elif d90_val > 150:
                         concerns.append(f"D90 ({d90_val}%) is unusually high, may indicate overdosing")
                         recommendations.append("Verify dose calculation and consider reducing seed activity")
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as exc:
+                    logger.debug("Ignoring unparsable D90 metric %r: %s", d90, exc)
 
             v100 = dose_metrics.get("V100", dose_metrics.get("v100", None))
             if v100 is not None:
@@ -221,8 +224,8 @@ CONFIDENCE: (0.0-1.0, how confident you are in this assessment)"""
                     if v100_val < 90:
                         concerns.append(f"V100 ({v100_val}%) is below the recommended 90% threshold")
                         recommendations.append("CTV coverage is insufficient; adjust seed placement")
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as exc:
+                    logger.debug("Ignoring unparsable V100 metric %r: %s", v100, exc)
 
         verdict = "REJECT" if concerns else "APPROVE"
         score = max(1, 10 - len(concerns) * 2)

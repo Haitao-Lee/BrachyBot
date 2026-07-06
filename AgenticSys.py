@@ -302,8 +302,8 @@ class AgentMemory:
                     mask = (ctv_arr == ctv_lid_int)
                     if mask.any():
                         existing_arr[mask] = oar_lid_int
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as exc:
+                    logger.debug("Skipping non-integer OAR label during CTV/OAR merge: %s", exc)
                 # Keep the existing OAR's display name (CTV's name
                 # might be longer / different formatting).
             else:
@@ -321,8 +321,8 @@ class AgentMemory:
                     if mask.any():
                         existing_arr[mask] = int(new_id)
                         merged_names[new_id] = ctv_name
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as exc:
+                    logger.debug("Skipping CTV label merge after label conversion failure: %s", exc)
 
         self.store("oar_array", existing_arr)
         self.store("organ_names", merged_names)
@@ -368,8 +368,8 @@ class AgentMemory:
                     # Zero out voxels for this label
                     try:
                         arr[arr == int(lid)] = 0
-                    except (ValueError, TypeError):
-                        pass
+                    except (ValueError, TypeError) as exc:
+                        logger.debug("Skipping OAR label strip after label conversion failure: %s", exc)
                     # Don't add to filtered_names — drop the label
                 else:
                     filtered_names[lid] = name
@@ -741,8 +741,6 @@ class ToolResultPipeline:
             msg = msg.replace("Error: ", "错误: ").replace("Command executed successfully", "命令执行成功")
             msg = msg.replace("Command executed with return code 0 successfully", "命令执行成功（返回码 0）")
             msg = msg.replace("Command failed with return code ", "命令执行失败（返回码 ")
-            if msg.endswith(")"):
-                msg += ")"
             msg = msg.replace("Listed ", "已列出 ").replace(" items in ", " 个项目，路径: ")
             msg = msg.replace("File info for ", "文件信息: ")
             msg = msg.replace("Filesystem browse failed: ", "文件浏览失败: ")
@@ -883,8 +881,8 @@ class ToolResultPipeline:
                                 for t in tissues:
                                     lines.append(f"| {t['name']} | {t['range']} | {t['pct']}% |")
                         return "\n".join(lines)
-                except (ValueError, KeyError, TypeError):
-                    pass
+                except (ValueError, KeyError, TypeError) as exc:
+                    logger.debug("Falling back to raw image-processing output formatting: %s", exc)
                 return "\n".join(l.strip() for l in stdout.split('\n') if l.strip())
         return result.message or f"{tool_name} completed."
 
@@ -2371,8 +2369,9 @@ class BrachyAgent:
                         result.metadata.get("label_stats"),
                         result.metadata.get("label_map"),
                     )
-                except AttributeError:
+                except AttributeError as exc:
                     # Fallback if memory helper is missing (defensive)
+                    logger.debug("Memory label merge helper unavailable: %s", exc)
                     if "oar_array" in result.metadata:
                         self.memory.store("oar_array", result.metadata["oar_array"])
                     if "organ_names" in result.metadata:
@@ -2400,8 +2399,8 @@ class BrachyAgent:
                         oar_array, organ_names, organ_counts = self.memory._strip_oar_labels_in_ctv(
                             oar_array, organ_names, organ_counts
                         )
-                    except AttributeError:
-                        pass
+                    except AttributeError as exc:
+                        logger.debug("Memory OAR label strip helper unavailable: %s", exc)
                 if oar_array is not None:
                     self.memory.store("oar_array", oar_array)
                 if organ_names is not None:
@@ -2486,16 +2485,16 @@ class BrachyAgent:
                                 if hasattr(_bi_auto, 'track_operation'):
                                     _auto_oar_op = _bi_auto.track_operation("oar_segmentation")
                                     _auto_oar_op.__enter__()
-                            except Exception:
-                                pass
+                            except Exception as exc:
+                                logger.debug("Auto-OAR operation tracker setup failed: %s", exc)
                             try:
                                 oar_result = self.registry.execute("oar_segmentation", **oar_params)
                             finally:
                                 if _auto_oar_op is not None:
                                     try:
                                         _auto_oar_op.__exit__(None, None, None)
-                                    except Exception:
-                                        pass
+                                    except Exception as exc:
+                                        logger.debug("Auto-OAR operation tracker cleanup failed: %s", exc)
                             if oar_result and oar_result.success:
                                 if "oar_array" in (oar_result.metadata or {}):
                                     # BUG FIX 2026-06-16 (CTV/OAR priority):
@@ -2511,8 +2510,8 @@ class BrachyAgent:
                                         oar_a, oar_n, oar_c = self.memory._strip_oar_labels_in_ctv(
                                             oar_a, oar_n, oar_c
                                         )
-                                    except AttributeError:
-                                        pass
+                                    except AttributeError as exc:
+                                        logger.debug("Memory OAR label merge helper unavailable: %s", exc)
                                     self.memory.store("oar_array", oar_a)
                                     if oar_n:
                                         self.memory.store("organ_names", oar_n)
@@ -2529,8 +2528,8 @@ class BrachyAgent:
                                         _, oar_n, oar_c = self.memory._strip_oar_labels_in_ctv(
                                             None, oar_n, oar_c
                                         )
-                                    except AttributeError:
-                                        pass
+                                    except AttributeError as exc:
+                                        logger.debug("Memory OAR label metadata merge helper unavailable: %s", exc)
                                     self.memory.store("organ_names", oar_n)
                                     if oar_c:
                                         self.memory.store("organ_counts", oar_c)
@@ -2659,8 +2658,8 @@ class BrachyAgent:
                         if hasattr(_bi_auto_plan, 'track_operation'):
                             _auto_plan_op = _bi_auto_plan.track_operation("planning_pipeline")
                             _auto_plan_op.__enter__()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("Auto-planning operation tracker setup failed: %s", exc)
                     try:
                         planning_tool = self.registry.get("planning_pipeline")
                         if planning_tool:
@@ -2690,8 +2689,8 @@ class BrachyAgent:
                         if _auto_plan_op is not None:
                             try:
                                 _auto_plan_op.__exit__(None, None, None)
-                            except Exception:
-                                pass
+                            except Exception as exc:
+                                logger.debug("Auto-planning operation tracker cleanup failed: %s", exc)
 
         return result
 
@@ -3309,8 +3308,8 @@ print(json.dumps(result))
                     import numpy as _np
                     ctv_voxels = int(_np.sum(_np.asarray(ctv_array) > 0))
                     self.memory.store("ctv_voxels", ctv_voxels)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Could not derive CTV voxel count from ctv_array: %s", exc)
         tumor_type = self.memory.retrieve("tumor_type_used", "")
         oar_array = self.memory.retrieve("oar_array")
         organ_names = self.memory.retrieve("organ_names", {}) or {}
@@ -3344,8 +3343,8 @@ print(json.dumps(result))
             _rx_norm = _plan_cfg.get("in_lowest_energy",
                          _plan_cfg.get("prescription_dose", 1.0))
             rx_gy = float(_rx_norm) * DOSE_SCALE
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Could not parse prescription dose from plan_config; using default 120 Gy: %s", exc)
 
         # BUG FIX 2026-06-17 (None format): wrap metric reads with
         # `or 0` so None values don't crash :.1f / :.0f format specs.
@@ -3434,8 +3433,8 @@ print(json.dumps(result))
                 resolved = TOTALSEG_LABEL_MAPPING.get(label_id)
                 if resolved:
                     return resolved
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Could not import TotalSegmentator label mapping for label %s: %s", label_id, exc)
             return f"Organ {label_id}"
 
         def _metric_dmax(om):
@@ -3952,27 +3951,7 @@ Output (JSON array of strings):"""
         "肺栓塞": "voco_fumpe",
         "新冠": "voco_covid",
         "主动脉": "voco_aorta",
-        # Chinese aliases — pancreatic uses nnUNet (more accurate)
-        # These Chinese keys match user input for tumor type detection.
-        "胰腺癌": "nnunet_pancreatic",       # pancreatic cancer
-        "胰腺肿瘤": "nnunet_pancreatic",     # pancreatic tumor
-        "胰腺": "nnunet_pancreatic",          # pancreas
-        "肝癌": "voco_liver",                 # liver cancer
-        "肝肿瘤": "voco_liver",              # liver tumor
-        "肝脏": "voco_liver",                # liver
-        "肾癌": "voco_kidney",               # kidney cancer
-        "肾肿瘤": "voco_kidney",             # kidney tumor
-        "肾脏": "voco_kidney",               # kidney
-        "结肠癌": "voco_colon",              # colon cancer
-        "结肠": "voco_colon",                # colon
-        "肺癌": "voco_lung",                 # lung cancer
-        "肺部": "voco_lung",                 # lung
-        "脑肿瘤": "voco_brats21",            # brain tumor
-        "脑癌": "voco_brats21",              # brain cancer
-        "肺栓塞": "voco_fumpe",              # pulmonary embolism
-        "新冠": "voco_covid",                # covid
-        "主动脉": "voco_aorta",              # aorta
-        "胰腺癌患者": "voco_pancreatic",     # pancreatic cancer patient
+        "胰腺癌患者": "nnunet_pancreatic",   # pancreatic cancer patient
         "肝癌患者": "voco_liver",            # liver cancer patient
         "肾癌患者": "voco_kidney",           # kidney cancer patient
         "肺癌患者": "voco_lung",             # lung cancer patient
@@ -4185,8 +4164,8 @@ Output (JSON array of strings):"""
             # of being re-classified as English).
             try:
                 self.memory.store("session_language", _lang_info)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Could not persist session language: %s", exc)
         except Exception as _e:
             logger.debug(f"language detection failed: {_e}")
         if _no_files_loaded:
@@ -4448,6 +4427,9 @@ Output (JSON array of strings):"""
         total_latency_ms = 0.0
         llm_calls = 0
 
+        def _cancelled():
+            return bool(getattr(self, "_cancel_requested", False))
+
         while iteration < max_iterations:
             if _cancelled():
                 step_id_ref[0] += 1
@@ -4459,13 +4441,7 @@ Output (JSON array of strings):"""
                     "status": "done",
                 }
                 steps.append(cancel_step)
-                yield yield_event("step", cancel_step)
-                yield {
-                    "type": "_result",
-                    "response": "已停止本次响应。请修改输入后重新发送，我会按新的请求重新执行。",
-                    "llm_meta": {"usage": total_usage, "latency_ms": total_latency_ms, "llm_calls": llm_calls},
-                }
-                return
+                return "已停止本次响应。请修改输入后重新发送，我会按新的请求重新执行。"
             iteration += 1
 
             try:
@@ -5148,8 +5124,8 @@ Output (JSON array of strings):"""
             enhanced_context += "\n" + _lang_clause(_lang_info) + "\n"
             try:
                 self.memory.store("session_language", _lang_info)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Could not persist session language: %s", exc)
         except Exception as _e:
             logger.debug(f"language detection failed: {_e}")
         if _no_files_loaded:
@@ -5440,7 +5416,7 @@ Output (JSON array of strings):"""
                         "ui_inspector", "ui_controller", "ui_screenshot", "ui_annotate",
                         "filesystem_browser", "safety_validator",
                         "plan_comparator", "dicom_rt_exporter",
-                        "web_search", "web_fetch"  # Allow web tools (no CT dependency)
+                        "web_search", "web_fetch", "web_access"  # Allow web tools (no CT dependency)
                     }
                     tools_for_llm = [t for t in tools_for_llm
                                       if t.get("function", {}).get("name", "") in _allowed_without_ct]
@@ -6101,8 +6077,8 @@ Output (JSON array of strings):"""
                                         if hasattr(_bi, 'track_operation'):
                                             _op = _bi.track_operation("oar_segmentation")
                                             _op.__enter__()
-                                    except Exception:
-                                        pass
+                                    except Exception as exc:
+                                        logger.debug("Streaming auto-OAR operation tracker setup failed: %s", exc)
                                     try:
                                         _oar_result_box[0] = self.registry.execute("oar_segmentation", **_oar_params)
                                     except Exception as _oe:
@@ -6111,8 +6087,8 @@ Output (JSON array of strings):"""
                                         if _op is not None:
                                             try:
                                                 _op.__exit__(None, None, None)
-                                            except Exception:
-                                                pass
+                                            except Exception as exc:
+                                                logger.debug("Streaming auto-OAR operation tracker cleanup failed: %s", exc)
                                 _oar_thread = _thr_o.Thread(target=_run_oar, daemon=True)
                                 _oar_thread.start()
                                 _oar_heartbeat = 0
@@ -6132,8 +6108,8 @@ Output (JSON array of strings):"""
                                         _oc = _oar_result.metadata.get("organ_counts", {})
                                         try:
                                             _oa, _on, _oc = self.memory._strip_oar_labels_in_ctv(_oa, _on, _oc)
-                                        except AttributeError:
-                                            pass
+                                        except AttributeError as exc:
+                                            logger.debug("Memory OAR label strip helper unavailable: %s", exc)
                                         self.memory.store("oar_array", _oa)
                                         if _on:
                                             self.memory.store("organ_names", _on)
@@ -6674,8 +6650,8 @@ Output (JSON array of strings):"""
                             if hasattr(_bi_we_ctv, 'track_operation'):
                                 _we_ctv_op = _bi_we_ctv.track_operation("ctv_segmentation")
                                 _we_ctv_op.__enter__()
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.debug("Workflow CTV operation tracker setup failed: %s", exc)
                         try:
                             ctv_tool = self.registry.get("ctv_segmentation")
                             if ctv_tool:
@@ -6709,8 +6685,8 @@ Output (JSON array of strings):"""
                             if _we_ctv_op is not None:
                                 try:
                                     _we_ctv_op.__exit__(None, None, None)
-                                except Exception:
-                                    pass
+                                except Exception as exc:
+                                    logger.debug("Workflow CTV operation tracker cleanup failed: %s", exc)
 
                     # Re-check after CTV
                     has_ctv = (
@@ -6739,8 +6715,8 @@ Output (JSON array of strings):"""
                             if hasattr(_bi_we, 'track_operation'):
                                 _we_oar_op = _bi_we.track_operation("oar_segmentation")
                                 _we_oar_op.__enter__()
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.debug("Workflow OAR operation tracker setup failed: %s", exc)
                         try:
                             oar_tool = self.registry.get("oar_segmentation")
                             if oar_tool:
@@ -6760,8 +6736,8 @@ Output (JSON array of strings):"""
                             if _we_oar_op is not None:
                                 try:
                                     _we_oar_op.__exit__(None, None, None)
-                                except Exception:
-                                    pass
+                                except Exception as exc:
+                                    logger.debug("Workflow OAR operation tracker cleanup failed: %s", exc)
 
                     # Re-check after OAR
                     has_oar = (
@@ -7268,8 +7244,8 @@ Output (JSON array of strings):"""
             finally:
                 try:
                     _loop.close()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Review event loop close failed: %s", exc)
         elif _needs_review:
             logger.info(f"[Review phase] Running fallback completeness check: {_review_reason}")
             try:
@@ -7334,8 +7310,8 @@ Output (JSON array of strings):"""
                             if hasattr(_bi_we_s_ctv, 'track_operation'):
                                 _we_stream_ctv_op = _bi_we_s_ctv.track_operation("ctv_segmentation")
                                 _we_stream_ctv_op.__enter__()
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.debug("Streaming workflow CTV operation tracker setup failed: %s", exc)
                         try:
                             ctv_tool = self.registry.get("ctv_segmentation")
                             if ctv_tool:
@@ -7390,8 +7366,8 @@ Output (JSON array of strings):"""
                             if _we_stream_ctv_op is not None:
                                 try:
                                     _we_stream_ctv_op.__exit__(None, None, None)
-                                except Exception:
-                                    pass
+                                except Exception as exc:
+                                    logger.debug("Streaming workflow CTV operation tracker cleanup failed: %s", exc)
 
                     # Re-check after CTV
                     has_ctv = (
@@ -7423,8 +7399,8 @@ Output (JSON array of strings):"""
                             if hasattr(_bi_we_s_oar, 'track_operation'):
                                 _we_stream_oar_op = _bi_we_s_oar.track_operation("oar_segmentation")
                                 _we_stream_oar_op.__enter__()
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.debug("Streaming workflow OAR operation tracker setup failed: %s", exc)
                         try:
                             oar_tool = self.registry.get("oar_segmentation")
                             if oar_tool:
@@ -7468,8 +7444,8 @@ Output (JSON array of strings):"""
                             if _we_stream_oar_op is not None:
                                 try:
                                     _we_stream_oar_op.__exit__(None, None, None)
-                                except Exception:
-                                    pass
+                                except Exception as exc:
+                                    logger.debug("Streaming workflow OAR operation tracker cleanup failed: %s", exc)
 
                     # Re-check after OAR
                     has_oar = (
@@ -7612,8 +7588,8 @@ Output (JSON array of strings):"""
                 if _post_loop is not None:
                     try:
                         _post_loop.close()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("Post-enforcer review event loop close failed: %s", exc)
 
         # Append review sections to response after any workflow enforcement so
         # the final message reflects the actual tool chain that ran.

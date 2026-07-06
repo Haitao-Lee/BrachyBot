@@ -138,7 +138,7 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
 
             for dx in dx_values:
                 if 0 <= dx <= 100:
-                    idx = int((100 - dx) / 100.0 * total_voxels)
+                    idx = int(np.ceil(dx / 100.0 * total_voxels)) - 1
                     idx = max(0, min(idx, total_voxels - 1))
                     struct_metrics[f"D{dx}"] = float(sorted_doses[idx])
 

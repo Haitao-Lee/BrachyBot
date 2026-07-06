@@ -5,6 +5,7 @@ Zhipu AI's ChatGLM series models.
 """
 
 import os
+import time
 from typing import List, Dict, Any, Optional
 
 from ..core.base import BaseLLM, LLMResponse

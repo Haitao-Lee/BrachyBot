@@ -83,7 +83,7 @@ def _safe_dicom_orient(image, target_orientation='LPI', context=""):
 def load_config() -> Dict:
     """Load planning configuration from Zhiyuan config.json."""
     try:
-        with open(CONFIG_PATH, 'r') as f:
+        with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
         logger.warning(f"Failed to load config: {e}")
@@ -1393,7 +1393,8 @@ class PlanningPipelineTool(BaseTool):
         n = len(sorted_doses)
 
         def dose_at_volume(vol_pct):
-            idx = min(int(n * vol_pct / 100.0), n - 1)
+            idx = int(np.ceil(n * vol_pct / 100.0)) - 1
+            idx = max(0, min(idx, n - 1))
             return float(sorted_doses[idx])
 
         def volume_at_dose(dose_threshold):

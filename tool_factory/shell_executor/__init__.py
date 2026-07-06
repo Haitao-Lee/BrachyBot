@@ -19,7 +19,11 @@ from tool_factory import BaseTool, ToolResult
 logger = logging.getLogger(__name__)
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
-EXECUTION_ENABLED = os.environ.get("BRACHYBOT_ENABLE_SHELL_EXECUTOR", "").lower() in TRUE_VALUES
+
+
+def _execution_enabled() -> bool:
+    """Read the trusted-local toggle at execution time, not import time."""
+    return os.environ.get("BRACHYBOT_ENABLE_SHELL_EXECUTOR", "").lower() in TRUE_VALUES
 
 # Blocked commands for safety
 BLOCKED_COMMANDS = [
@@ -90,8 +94,8 @@ Commands are executed without shell expansion and must start with an allowed exe
         if executable not in allowed:
             return False, f"Executable '{parts[0]}' is not allowlisted"
 
-        shell_operators = {";", "&&", "||", "|", "`", "$(", ">", "<", "2>", "&>"}
-        if any(op in command for op in shell_operators):
+        shell_operators = {";", "&&", "||", "|", ">", "<", "2>", "&>"}
+        if any(token in shell_operators or token.startswith("$(") or "`" in token for token in parts):
             return False, "Shell operators and command chaining are not allowed"
 
         # Check blocked commands
@@ -123,7 +127,7 @@ Commands are executed without shell expansion and must start with an allowed exe
                 message="shell_executor requires a 'command' parameter"
             )
 
-        if not EXECUTION_ENABLED:
+        if not _execution_enabled():
             return ToolResult(
                 success=False,
                 error="shell_executor is disabled",

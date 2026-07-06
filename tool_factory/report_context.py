@@ -159,7 +159,10 @@ def build_tumor_imaging_assessment(memory: Any) -> Dict[str, Any]:
     shape_zyx = _retrieve(memory, "ct_shape", arr.shape)
     if not shape_zyx:
         shape_zyx = arr.shape
-    shape_zyx = [int(v) for v in list(shape_zyx)[:3]]
+    try:
+        shape_zyx = [int(v) for v in list(shape_zyx)[:3]]
+    except (TypeError, ValueError):
+        shape_zyx = [int(v) for v in arr.shape[:3]]
 
     min_zyx = coords.min(axis=0)
     max_zyx = coords.max(axis=0)

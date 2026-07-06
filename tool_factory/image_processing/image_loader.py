@@ -7,12 +7,15 @@ Supports .nii.gz, .mhd, .dcm, and directory-based DICOM loading.
 
 import sys
 import os
+import logging
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from tool_factory import BaseTool, ToolResult
 from typing import Dict, Optional, Tuple
 import SimpleITK as sitk
+
+logger = logging.getLogger(__name__)
 
 
 class ImageLoaderTool(BaseTool):
@@ -128,10 +131,9 @@ class ImageLoaderTool(BaseTool):
 
     def _load_dicom(self, dicom_dir: str, series_id=None) -> sitk.Image:
         reader = sitk.ImageFileReader()
-        reader.ImageFileReaderWarningOff()
+        reader.SetWarningOff()
 
         if series_id is not None:
-            import sitk as s
             if isinstance(series_id, int):
                 series_reader = sitk.ImageSeriesReader()
                 series_ids = series_reader.GetGDCMSeriesIDs(dicom_dir)
@@ -163,8 +165,8 @@ class ImageLoaderTool(BaseTool):
             if hasattr(image, "GetMetaData"):
                 modality = image.GetMetaData("0008|0060")
                 return modality
-        except:
-            pass
+        except Exception as exc:
+            logger.debug("Could not infer DICOM modality; defaulting to CT: %s", exc)
         return "CT"
 
 

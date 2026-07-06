@@ -1,5 +1,6 @@
 # ===== Standard library =====
 import copy
+import logging
 import math
 import os
 import time
@@ -10,7 +11,6 @@ import heapq
 import numpy as np
 import scipy
 import torch
-import torch.optim as optim
 # import vtk  # not needed for headless mode
 # from sklearn.cluster import DBSCAN  # not needed for headless mode
 from sklearn.decomposition import PCA
@@ -20,7 +20,8 @@ try:
     import slicer
 except ImportError:
     from . import slicer_mock as slicer
-import traceback as _tb
+
+logger = logging.getLogger(__name__)
 
 
 # ===== Local modules =====
@@ -86,7 +87,7 @@ class DoseImageContext:
         self.image_direction = dose_image.GetDirection()
         self.image_spacing = dose_image.GetSpacing()
         self.image_origin = dose_image.GetOrigin()
-        self.image_shape = sitk.GetArrayFromImage(dose_image).shape
+        self.image_shape = dose_image.GetSize()[::-1]
         self.device = next(dose_cal_model.parameters()).device
 
         self.norm_dose_image = normalize_dose_image(
@@ -468,7 +469,8 @@ def compute_body_shell_and_ref_direction(ct_array, ctv_mask, spacing, target_val
 
         return ref_direction_ras, clean_shell, closest_point_voxel, ctv_centroid_voxel
 
-    except Exception:
+    except Exception as exc:
+        logger.warning("Reference direction computation failed: %s", exc)
         return None, None, None, None
 
 

@@ -29,8 +29,8 @@ def _load_metrics() -> Dict:
         try:
             with open(METRICS_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to load performance metrics from %s: %s", METRICS_FILE, exc)
     return {
         "sessions": [],
         "plan_scores": [],
