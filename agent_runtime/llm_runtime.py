@@ -1288,6 +1288,15 @@ class LLMRuntimeMixin:
         while iteration < max_iterations:
             iteration += 1
 
+            # Stream cancel check: unlike the non-streaming path, the streaming
+            # loop processes one LLM round at a time and can hang between rounds
+            # while waiting for tool results. Check cancel at the top so the
+            # UI cancel button is responsive during the tool-result gap.
+            if _cancelled():
+                logger.info("Streaming cancelled by user between LLM rounds")
+                yield_event("done", {"final": "", "cancelled": True})
+                return
+
             # Thinking step
             step_id_ref[0] += 1
             thinking_step = {
