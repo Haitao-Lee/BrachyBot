@@ -122,6 +122,12 @@ class ClinicalDecider(BaseDecider):
             Weighted decision result
         """
         if thresholds is None:
+            # REVIEW: hardcoded default clinical thresholds (V100=0.90,
+            # V150=0.35, V200=0.15, D90=1.0). Per project rule these should
+            # be loaded from `clinical_kb`/`plan_config` so site-specific
+            # prescriptions can change them without code edits. The
+            # `thresholds` arg already supports caller override; only the
+            # fallback literals need to be plumbed into config.
             thresholds = {
                 "v100": 0.90,
                 "v150": 0.35,

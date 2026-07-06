@@ -477,6 +477,16 @@ class ChatWorkflowMixin:
         if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
             try:
                 import asyncio
+                # REVIEW: previously called `asyncio.set_event_loop(_loop)`
+                # and closed it in `finally` without restoring the prior
+                # global loop. After every chat the global event loop was
+                # a CLOSED loop, breaking any downstream code that later
+                # calls `asyncio.get_event_loop()` (raises on closed loop).
+                _prev_loop = None
+                try:
+                    _prev_loop = asyncio.get_event_loop_policy().get_event_loop()
+                except Exception:
+                    _prev_loop = None
                 _loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(_loop)
                 try:
@@ -489,6 +499,10 @@ class ChatWorkflowMixin:
                         response += "\n\n" + _cc_result
                 finally:
                     _loop.close()
+                    try:
+                        asyncio.set_event_loop(_prev_loop)
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.debug(f"Completeness check failed: {e}")
 
@@ -680,6 +694,14 @@ class ChatWorkflowMixin:
                 yield yield_event("step", _direct_cc_step)
                 try:
                     import asyncio as _asyncio_direct_review
+                    # REVIEW: restore previous global event loop in finally to
+                    # avoid leaving a closed loop as the global (breaks any
+                    # downstream code calling `asyncio.get_event_loop()`).
+                    _direct_prev_loop = None
+                    try:
+                        _direct_prev_loop = _asyncio_direct_review.get_event_loop_policy().get_event_loop()
+                    except Exception:
+                        _direct_prev_loop = None
                     _direct_loop = _asyncio_direct_review.new_event_loop()
                     try:
                         _asyncio_direct_review.set_event_loop(_direct_loop)
@@ -690,6 +712,10 @@ class ChatWorkflowMixin:
                         )
                     finally:
                         _direct_loop.close()
+                        try:
+                            _asyncio_direct_review.set_event_loop(_direct_prev_loop)
+                        except Exception:
+                            pass
                     if isinstance(_cc_result, str) and _cc_result:
                         response += "\n\n---\n" + _cc_result
                     _direct_cc_step["status"] = "done"
@@ -821,6 +847,14 @@ class ChatWorkflowMixin:
             _lang = self.memory.user_lang
             try:
                 import asyncio
+                # REVIEW: restore previous global event loop in finally to
+                # avoid leaving a closed loop as the global (breaks any
+                # downstream code calling `asyncio.get_event_loop()`).
+                _prev_loop = None
+                try:
+                    _prev_loop = asyncio.get_event_loop_policy().get_event_loop()
+                except Exception:
+                    _prev_loop = None
                 _loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(_loop)
 
@@ -945,6 +979,10 @@ class ChatWorkflowMixin:
                     _loop.close()
                 except Exception as exc:
                     logger.debug("Review event loop close failed: %s", exc)
+                try:
+                    asyncio.set_event_loop(_prev_loop)
+                except Exception as exc:
+                    logger.debug("Review event loop restore failed: %s", exc)
         elif _needs_review:
             logger.info(f"[Review phase] Running fallback completeness check: {_review_reason}")
             try:
@@ -1212,6 +1250,14 @@ class ChatWorkflowMixin:
             _post_loop = None
             try:
                 import asyncio as _asyncio_post_enforcer
+                # REVIEW: restore previous global event loop in finally to
+                # avoid leaving a closed loop as the global (breaks any
+                # downstream code calling `asyncio.get_event_loop()`).
+                _post_prev_loop = None
+                try:
+                    _post_prev_loop = _asyncio_post_enforcer.get_event_loop_policy().get_event_loop()
+                except Exception:
+                    _post_prev_loop = None
                 _post_loop = _asyncio_post_enforcer.new_event_loop()
                 _asyncio_post_enforcer.set_event_loop(_post_loop)
                 _post_review_step = None
@@ -1289,6 +1335,10 @@ class ChatWorkflowMixin:
                         _post_loop.close()
                     except Exception as exc:
                         logger.debug("Post-enforcer review event loop close failed: %s", exc)
+                try:
+                    _asyncio_post_enforcer.set_event_loop(_post_prev_loop)
+                except Exception as exc:
+                    logger.debug("Post-enforcer review event loop restore failed: %s", exc)
 
         # Append review sections to response after any workflow enforcement so
         # the final message reflects the actual tool chain that ran.

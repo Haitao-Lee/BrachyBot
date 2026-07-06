@@ -134,19 +134,36 @@ class SelfEvolutionEngine:
         updated = []
         if not self.skill_registry:
             return updated
-        for skill in self.skill_registry.list_skills():
-            if skill.get("category") != "learned":
+        # REVIEW: previously iterated `self.skill_registry.list_skills()`, which
+        # returns throwaway summary dicts; mutating them updated nothing and the
+        # underlying SkillRegistry.skills dict was never persisted. Iterate the
+        # live Skill instances and call `_save_skill` to persist changes.
+        skills_dict = getattr(self.skill_registry, "skills", None)
+        if not isinstance(skills_dict, dict):
+            return updated
+        for skill in skills_dict.values():
+            if skill.category != "learned":
                 continue
-            name = skill.get("name", "")
+            name = skill.name
             matching = [
                 e for e in self.exp_memory.experiences
                 if name in str(e.tool_chain)
             ]
             if matching:
                 success_rate = sum(1 for m in matching if m.success) / len(matching)
-                skill["success_rate"] = success_rate
-                skill["usage_count"] = len(matching)
-                updated.append(skill)
+                # Reset cumulative counters and resync usage_count with the
+                # matching experience list directly (the underlying Skill
+                # dataclass tracks usage_count and success_count separately).
+                skill.usage_count = len(matching)
+                skill.success_count = sum(1 for m in matching if m.success)
+                save_skill = getattr(self.skill_registry, "_save_skill", None)
+                if callable(save_skill):
+                    save_skill(skill)
+                updated.append({
+                    "name": name,
+                    "success_rate": success_rate,
+                    "usage_count": len(matching),
+                })
         return updated
 
     def _optimize_parameters(self) -> List[Dict]:

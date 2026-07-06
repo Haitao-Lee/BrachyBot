@@ -461,6 +461,14 @@ def compute_body_shell_and_ref_direction(ct_array, ctv_mask, spacing, target_val
         if direction_matrix is None:
             direction_matrix = np.eye(3)
         normal_phys_xyz = normal_phys[::-1]
+        # REVIEW: see ras_direction_to_voxel above. The math here multiplies
+        # `normal_phys_xyz @ direction_matrix.T` where `direction_matrix` is
+        # SimpleITK's LPS direction cosines, so the result is in LPS — but
+        # it's returned under the variable name `ras_direction` and
+        # documented as "ref_direction_ras". When consumed by
+        # `ras_direction_to_voxel` (which also treats its input as LPS),
+        # the two label bugs cancel. Correct only when consumed paired;
+        # wrong when consumed by anything expecting true RAS.
         ras_direction = normal_phys_xyz @ direction_matrix.T
         norm = np.linalg.norm(ras_direction)
         if norm < 1e-10:
@@ -484,6 +492,24 @@ def ras_direction_to_voxel(ras_direc, image):
     Returns:
         np.ndarray: 3-element unit vector in voxel space [k, j, i] order.
     """
+    # REVIEW: this function computes `v = (ras_direc @ direction) / spacing`
+    # where `direction` is SimpleITK's direction-cosine matrix — which by
+    # convention is in LPS, not RAS. RAS and LPS differ by a sign flip of x
+    # and y (`lps = ras * [-1,-1,1]`). The function name and docstring claim
+    # RAS input, but the math treats the input as though it were already
+    # LPS. Organ default directions in `tool_factory/seed_plan/planning_pipeline._ORGAN_DEFAULT_REFDIREC`
+    # (pancreas=[0,-1,0]) are documented as RAS ([0,-1,0] => posterior in
+    # RAS, anterior in LPS); if those are truly RAS, the conversion here
+    # would mirror needle approach direction along x/y and plan from the
+    # wrong side of the body. NOT FIXED because the fix is clinically
+    # significant (would change clinical planning output) and requires
+    # verification against canonical input conventions by the maintainer.
+    # Suggested fix when ready:
+    #     ras_direc = np.asarray(ras_direc) * np.array([-1.0, -1.0, 1.0])
+    # before applying `@ direction`. See G-4 for the symmetrical issue with
+    # `compute_body_shell_and_ref_direction` (return labeled "RAS" but the
+    # math yields LPS — both ends cancel when used together, but a single
+    # end breaks when consumed independently).
     spacing = np.array(image.GetSpacing())
     direction = np.array(image.GetDirection()).reshape(3, 3)
     v = (np.array(ras_direc) @ direction) / spacing

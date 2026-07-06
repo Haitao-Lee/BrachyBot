@@ -1,9 +1,24 @@
-import vtk
+# REVIEW: `import vtk` and `import matplotlib.pyplot` at module top made
+# `plans.utilizations` (and thus the whole `plans` package) fail to import
+# in any Python environment without VTK + a display matplotlib backend
+# installed. In BrachyBot, the only consumer is `utilizations.draw_radiations`
+# (itself never called from any active BrachyBot pipeline — see grep), so
+# making these optional keeps the headless planning pipeline importable.
+# VTK-dependent functions still raise at call-time if VTK is absent.
+try:
+    import vtk  # noqa: F401
+except ImportError:  # pragma: no cover - depends on env
+    vtk = None  # type: ignore[assignment]
 import numpy as np
 from . import geometry
 import os
 import SimpleITK as  sitk
-import matplotlib.pyplot as plt
+try:
+    import matplotlib
+    matplotlib.use("Agg", force=False)  # be defensive but don't override user
+    import matplotlib.pyplot as plt
+except ImportError:  # pragma: no cover - depends on env
+    plt = None  # type: ignore[assignment]
 import threading
 from . import utilizations
 

@@ -204,6 +204,14 @@ CONFIDENCE: (0.0-1.0, how confident you are in this assessment)"""
         recommendations = []
 
         if dose_metrics:
+            # REVIEW: thresholds below (D90<100%, D90>150%, V100<90%) are
+            # hardcoded fallback values used only when the LLM critique
+            # fails. KV-based clinical thresholds belong in `clinical_kb`
+            # or `plan_config`; for now these sanity bounds are wide enough
+            # that they only fire on actually-broken plans, but they should
+            # eventually be sourced from runtime config to satisfy the
+            # project rule that dose constraints come from
+            # `clinical_kb`/`plan_config` and not from code literals.
             d90 = dose_metrics.get("D90", dose_metrics.get("d90", None))
             if d90 is not None:
                 try:
