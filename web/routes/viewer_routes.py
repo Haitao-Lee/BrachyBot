@@ -13,11 +13,20 @@ import SimpleITK as sitk
 from flask import Response, jsonify, request, send_from_directory
 
 try:
-    from web.server_support import *  # noqa: F401,F403 - route modules share server helpers.
+    from web.server_support import rate_limit, require_api_key
+    from web import server_support as _server_support
 except ImportError:  # pragma: no cover - supports `python web/server.py`.
-    from server_support import *  # noqa: F401,F403
+    from server_support import rate_limit, require_api_key  # type: ignore
+    import server_support as _server_support  # type: ignore
 
 logger = logging.getLogger(__name__)
+
+_MESH_CACHE = _server_support._MESH_CACHE
+_MESH_CACHE_LOCK = _server_support._MESH_CACHE_LOCK
+_MESH_CACHE_MAX_ITEMS = _server_support._MESH_CACHE_MAX_ITEMS
+_MESH_CACHE_ORDER = _server_support._MESH_CACHE_ORDER
+_label_color = _server_support._label_color
+_validate_path = _server_support._validate_path
 
 
 def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):

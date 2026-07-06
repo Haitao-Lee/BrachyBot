@@ -95,7 +95,7 @@ def pad_to_original_size(cropped_image: sitk.Image,
 if __name__ == "__main__":
     ########################### Parameter Setup ###########################
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    Dataset_root = 'D:\LJX_Data\dose_calculation\\train-data\\full-test-data'
+    Dataset_root = r'D:\LJX_Data\dose_calculation\train-data\full-test-data'
     Dataset_image_path = os.path.join(Dataset_root, 'ct')
     Dataset_map_path = os.path.join(Dataset_root, 'map')
     Dataset_label_path = os.path.join(Dataset_root, 'pos')
