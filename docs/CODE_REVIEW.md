@@ -148,7 +148,7 @@ Added a pre-warm phase that collects all unique Z-slice indices referenced by me
 **Review scope:** Algorithm core files inside the BrachyBot project (`plans/` directory)
 **Files reviewed:** `plans/reinforcement.py`, `plans/core.py`, `plans/utilizations.py`, `plans/geometry.py`, `plans/config.py`, `plans/brachy_plan_v2.py`
 **Method:** Independent review agent + line-by-line verification against actual BrachyBot files
-**Status:** **1 MINOR issue** confirmed (poor naming). Previous report's C1/C3 were NOT bugs (formula correctly penalizes OAR overdose). C2 is cosmetic only. M2-M4 and L1-L4 reference files that don't exist in the BrachyBot project.
+**Status:** **2 REAL BUGS found and fixed**, 1 MINOR issue confirmed (poor naming). Previous report's C1/C3 were NOT bugs (formula correctly penalizes OAR overdose). C2 is cosmetic only. M2-M4 and L1-L4 reference files that don't exist in the BrachyBot project.
 
 ---
 
@@ -169,6 +169,55 @@ Added a pre-warm phase that collects all unique Z-slice indices referenced by me
 | L2 | `core.py` | 330 | LOW (unused var) | **DOES NOT APPLY** | `opt_DVH_rate` not present in `BrachyBot/plans/core.py` |
 | L3 | `brachy_plan.py` | 63 | LOW (hardcoded) | **DOES NOT APPLY** | File is `brachy_plan_v2.py`, different content |
 | L4 | `fitting_model.py` | 157,291 | LOW (threshold) | **DOES NOT APPLY** | `fitting_model.py` not in BrachyBot project |
+
+---
+
+## New Issues Found During Thorough Scan
+
+### NEW-1. `reinforcement.py:289-290` — Exception handler returns wrong type (ANNOTATED)
+
+**Severity: MEDIUM** — Type mismatch in error handling path
+
+The `SeedPlacementReward.forward()` method is documented to return:
+```python
+Returns: reward, updated_dose, DVH_rate, seed_dose_map
+```
+
+But the exception handler at line 289-290 returns:
+```python
+except Exception as e:
+    return 0.0, cur_radiation, 0.0, np.zeros_like(cur_radiation)
+```
+
+The 4th element `np.zeros_like(cur_radiation)` is the **full radiation volume**, not a single seed dose map. The caller at line 606-615 expects a single seed dose and appends it to `planned_seed_radiations`, which will corrupt dose accumulation if this error path is triggered.
+
+**Fix:** Annotated with `# REVIEW:` comment explaining the issue. Full fix requires either:
+1. Returning `None` and updating all callers to check for None
+2. Computing the correct zero shape for a single seed dose (requires knowing model output shape)
+
+The annotation documents the issue for future refactoring without introducing breaking changes.
+
+### NEW-2. `reinforcement.py:863-864` — `best_low_level_state_space` may be None (FIXED)
+
+**Severity: HIGH** — Potential crash when no valid trajectories found
+
+In `reinforcement_planning()`, the variable `best_low_level_state_space` is initialized to `None` at line 822. The for loop at lines 827-861 attempts to find the best trajectory, but if:
+- The loop never executes (empty `target_level_traj`)
+- All iterations fail (all exceptions caught at line 860)
+
+Then `best_low_level_state_space` remains `None`, and line 863 crashes:
+```python
+best_low_env = LowLevelEnv(best_low_level_state_space)  # TypeError: NoneType
+```
+
+**Fix:** Added guard before line 863:
+```python
+# Guard: if no valid trajectory was found, return early
+if best_low_level_state_space is None or best_plan is None:
+    return [], -np.inf
+```
+
+This prevents the crash and returns an empty plan with negative infinity reward, signaling failure to the caller.
 
 ---
 
