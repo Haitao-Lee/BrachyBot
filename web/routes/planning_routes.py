@@ -13,11 +13,45 @@ import SimpleITK as sitk
 from flask import Response, jsonify, request, send_from_directory
 
 try:
-    from web.server_support import *  # noqa: F401,F403 - route modules share server helpers.
+    from web.server_support import (
+        DOSE_MODEL_SCALE_GY,
+        DOSE_MODEL_UNITS,
+        SCREENSHOTS_DIR,
+        TRUE_VALUES,
+        rate_limit,
+        require_api_key,
+        task_manager,
+    )
+    from web import server_support as _server_support
 except ImportError:  # pragma: no cover - supports `python web/server.py`.
-    from server_support import *  # noqa: F401,F403
+    from server_support import (  # type: ignore
+        DOSE_MODEL_SCALE_GY,
+        DOSE_MODEL_UNITS,
+        SCREENSHOTS_DIR,
+        TRUE_VALUES,
+        rate_limit,
+        require_api_key,
+        task_manager,
+    )
+    import server_support as _server_support  # type: ignore
 
 logger = logging.getLogger(__name__)
+
+_UI_BRIDGE_LOCK = _server_support._UI_BRIDGE_LOCK
+_append_ui_event = _server_support._append_ui_event
+_build_plan_advice = _server_support._build_plan_advice
+_build_system_readiness = _server_support._build_system_readiness
+_compute_manual_ai_dose = _server_support._compute_manual_ai_dose
+_decode_png_data_url = _server_support._decode_png_data_url
+_make_screenshot_url = _server_support._make_screenshot_url
+_resolve_output_path = _server_support._resolve_output_path
+_safe_screenshot_path = _server_support._safe_screenshot_path
+_training_feedback_for_event = _server_support._training_feedback_for_event
+_training_screenshot_for_event = _server_support._training_screenshot_for_event
+_ui_bucket = _server_support._ui_bucket
+_ui_session_id = _server_support._ui_session_id
+_valid_screenshot_request = _server_support._valid_screenshot_request
+_validate_path = _server_support._validate_path
 
 
 def register_planning_routes(app, get_agent, session_context=None):

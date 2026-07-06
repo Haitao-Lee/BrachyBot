@@ -6,18 +6,46 @@ groups live in smaller modules so each file is easier to audit.
 
 import os
 import sys
+import threading
+import time
+from datetime import datetime
+from typing import Any, Dict, Optional
 
 WEB_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(WEB_DIR, ".."))
 
 try:
-    from web.server_support import *  # noqa: F401,F403
+    from web.server_support import (
+        APP_DIR,
+        MAX_UPLOAD_FILES,
+        TRUE_VALUES,
+        UPLOAD_DIR,
+        logger,
+        rate_limit,
+        require_api_key,
+    )
+    from web import server_support as _server_support
     from web.routes.viewer_routes import register_viewer_routes
     from web.routes.planning_routes import register_planning_routes
 except ImportError:  # pragma: no cover - supports direct script execution.
-    from server_support import *  # noqa: F401,F403
+    from server_support import (  # type: ignore
+        APP_DIR,
+        MAX_UPLOAD_FILES,
+        TRUE_VALUES,
+        UPLOAD_DIR,
+        logger,
+        rate_limit,
+        require_api_key,
+    )
+    import server_support as _server_support  # type: ignore
     from routes.viewer_routes import register_viewer_routes
     from routes.planning_routes import register_planning_routes
+
+_TRUST_NETWORK = _server_support._TRUST_NETWORK
+_is_loopback_host = _server_support._is_loopback_host
+_validate_path = _server_support._validate_path
+_validate_upload_name = _server_support._validate_upload_name
+
 
 def create_app(config: Optional[Dict] = None):
     """Create and configure the Flask application."""

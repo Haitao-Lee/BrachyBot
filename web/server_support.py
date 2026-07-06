@@ -1012,8 +1012,28 @@ def rate_limit(f):
     return decorated
 
 
-# Extracted route modules intentionally import this support surface with
-# `import *` so their route bodies stay close to the original implementation.
-# Python excludes leading-underscore names from wildcard imports unless
-# `__all__` is explicit, but most shared helpers remain private by convention.
-__all__ = [name for name in globals() if not name.startswith("__")]
+# Public support surface. Route modules import private helpers explicitly via
+# the module object, so wildcard imports never expose leading-underscore names.
+__all__ = [
+    "ALLOWED_DICOM_SERIES_EXTENSIONS",
+    "ALLOWED_UPLOAD_EXTENSIONS",
+    "API_KEY",
+    "APP_DIR",
+    "DOSE_MODEL_SCALE_GY",
+    "DOSE_MODEL_UNITS",
+    "MAX_SCREENSHOT_BYTES",
+    "MAX_UPLOAD_FILES",
+    "OUTPUT_DIRS",
+    "PROJECT_ROOT",
+    "RATE_LIMIT_REQUESTS",
+    "RATE_LIMIT_WINDOW",
+    "SCREENSHOTS_DIR",
+    "TRUE_VALUES",
+    "TaskManager",
+    "UPLOAD_DIR",
+    "WEB_DIR",
+    "logger",
+    "rate_limit",
+    "require_api_key",
+    "task_manager",
+]

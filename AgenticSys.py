@@ -58,7 +58,30 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
     5. Code Writing: Can generate new tool code and register it dynamically
     """
 
+    _REQUIRED_MIXIN_METHODS = (
+        "_build_planning_report",
+        "_check_search_reliability",
+        "_clean_response_text",
+        "_format_tool_result",
+        "_parse_tool_calls",
+        "_prepare_fact_check_brief",
+    )
+
+    @classmethod
+    def _validate_mixin_contract(cls) -> None:
+        """Fail fast if the runtime mixin composition is incomplete."""
+        missing = [
+            name for name in cls._REQUIRED_MIXIN_METHODS
+            if not callable(getattr(cls, name, None))
+        ]
+        if missing:
+            raise RuntimeError(
+                "BrachyAgent runtime mixin contract is incomplete: "
+                + ", ".join(missing)
+            )
+
     def __init__(self, session_id: str = "default", config: Optional[Dict] = None):
+        self._validate_mixin_contract()
         self.memory = AgentMemory(session_id)
         self.registry = ToolRegistry()
         self.config = config or {}

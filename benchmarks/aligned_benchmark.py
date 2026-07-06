@@ -488,7 +488,7 @@ def run_test_with_aligned_screenshot(test_case, cat_num, agent_id, case_index):
                             // Check input enabled
                             const chatInput = document.querySelector('#chatInput, [placeholder*="Describe"]');
                             const inputEnabled = chatInput && !chatInput.disabled;
-                            const hasStopped = /stopped\.|llm error/i.test(bodyText);
+                            const hasStopped = /stopped\\.|llm error/i.test(bodyText);
 
                             if (currentLen > 0 && currentLen === lastLen && !isStreaming && thinkingComplete && (inputEnabled || hasStopped)) {
                                 stableCount++;
