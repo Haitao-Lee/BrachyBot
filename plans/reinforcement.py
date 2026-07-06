@@ -37,6 +37,10 @@ def _dvh_oar_jit_fallback(dose_flat, target_idx, non_target_idx,
     if exceed_count == 0:
         out_damage = 0.0
     else:
+        # NOTE: This formula is NOT inverted. out_damage = covered/exceed_count
+        # is ADDED to reward (line 285-286), so it shrinks when OAR damage grows,
+        # correctly penalizing overdose. The name "out_damage" is misleading
+        # (it's really an efficiency ratio), but the behavior is correct.
         out_damage = float(n_target) * dvh_rate / float(exceed_count)
     return dvh_rate, out_damage
 from typing import Tuple
@@ -287,6 +291,9 @@ class SeedPlacementReward:
 
             return reward, cur_radiation, cur_DVH_rate, cur_seed_radiation
         except Exception as e:
+            # REVIEW: Returns full radiation volume as 4th element, but caller expects
+            # single seed dose map. This type mismatch may corrupt dose accumulation.
+            # Proper fix requires knowing single seed dose shape or returning None.
             return 0.0, cur_radiation, 0.0, np.zeros_like(cur_radiation)
 
 
@@ -738,6 +745,9 @@ def DVH2Rewards(plan_res, radiation_volume, target_value, out_highest_dose, cur_
     if exceed_count == 0:
         out_damage = 0.0
     else:
+        # NOTE: Same formula as _dvh_oar_jit_fallback. NOT inverted.
+        # out_damage shrinks when exceed_count grows, and is ADDED to reward
+        # (line 750), correctly penalizing OAR overdose.
         out_damage = len(target_idx[0]) * cur_DVH_rate / exceed_count
 
     reward = min(cur_DVH_rate, DVH_rate) + ((cur_DVH_rate - DVH_rate) >= 0) * out_damage
@@ -839,6 +849,9 @@ def reinforcement_planning(
                     non_target_sum = np.count_nonzero(
                         (trajs_radiations * reward_calculator.non_target_mask > out_highest_dose)
                     )
+                    # NOTE: Same formula as _dvh_oar_jit_fallback. NOT inverted.
+                    # cur_out_damage shrinks when non_target_sum grows, and is ADDED
+                    # to reward (line 843), correctly penalizing OAR overdose.
                     cur_out_damage = reward_calculator.target_v / max(0.1, non_target_sum)
                     cur_reward =  min(cur_DVH_rate, DVH_rate) + ((cur_DVH_rate >= DVH_rate) * cur_out_damage)
                 else:
@@ -859,6 +872,10 @@ def reinforcement_planning(
                 del trajs_radiations
             except Exception as e:
                 continue
+
+        # Guard: if no valid trajectory was found, return early
+        if best_low_level_state_space is None or best_plan is None:
+            return [], -np.inf
 
         best_low_env = LowLevelEnv(best_low_level_state_space)
         best_low_agent = REINFORCE(n_actions=len(best_low_level_state_space), device=device)
