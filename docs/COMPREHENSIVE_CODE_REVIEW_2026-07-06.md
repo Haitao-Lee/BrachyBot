@@ -7,6 +7,68 @@
 
 ---
 
+## Follow-up Verification and Fixes - 2026-07-07
+
+This section records the verification pass performed after commit `130ecde`.
+Each item below was checked against the current code before changing it. Items
+that were intentional or already safe are called out so they are not repeatedly
+misdiagnosed in later reviews.
+
+### Fixed in this follow-up
+
+| Report item | Disposition | Files changed |
+|---|---|---|
+| C1 `AgentMemory` import | Confirmed real. Added the missing import used by both LLM execution paths. | `agent_runtime/llm_runtime.py` |
+| C2 `DOSE_MODEL_SCALE_GY` import | Confirmed real. Imported the constant into the web server facade for report auto-fill interpretation. | `web/server.py` |
+| C3 streaming forced-search indentation | Confirmed real. Forced-search finalization and context injection now run for both success and failure. | `agent_runtime/llm_runtime.py` |
+| C4 missing path validation | Confirmed real. Manual segmentation and run-step routes now validate image, label, and CT paths through the centralized allowlist. | `web/routes/planning_routes.py` |
+| C5 rate-limit concurrency | Confirmed real. Added a shared lock and atomic cleanup/update behavior for the in-memory limiter. | `web/server_support.py` |
+| C9 enhanced clear methods | Confirmed real edge case. Enhanced-memory clear calls now check `callable(...)` before invoking optional component methods. | `agent_runtime/core.py` |
+| C10 duplicate report registration | Confirmed real noise. Removed the invalid `tool_factory.output.report_generator` registration path; the real `tool_factory.report_generator` registration remains. | `AgenticSys.py` |
+| C11 `loadDefaultParams` TDZ | Confirmed real JavaScript syntax/runtime issue. Hoisted `setVal` to one helper inside the function. | `web/app/static/js/brachybot-ui-api.js` |
+| C13/I7 planning completion detection | Confirmed real for stepwise/manual paths. Completion now recognizes `planning_pipeline`, `seed_planning`, `dose_engine`, `dose_evaluation`, and `dose_calc`. | `AgenticSys.py` |
+| C15 STL export mismatch | Confirmed real product/API mismatch. `/api/export/stl` now writes actual ASCII `.stl` seed cylinders instead of debug `.npy` arrays. | `web/routes/planning_routes.py` |
+| C16/C18/H2 CSS issues | Confirmed real. Added `.step-num`, preserved warning borders, and fixed invalid font-family quoting. | `web/app/static/css/*.css` |
+| H7 JSON 413 and 500 handlers | Confirmed real API consistency gap. Added JSON response for oversized uploads and exception logging for unhandled 500s. | `web/server.py` |
+| H11/M10 fragile Python repr parsing | Confirmed real. Python-style `tool_use` blocks now use `ast.literal_eval` instead of global quote replacement. | `agent_runtime/chat_workflows.py` |
+| H14 int16 overflow risk | Confirmed real edge case. CT volume transfer clips before int16 conversion. | `web/routes/viewer_routes.py` |
+| H15 mesh cache eviction | Confirmed real performance issue. Cache order now uses `deque.popleft()`. | `web/server_support.py`, `web/routes/viewer_routes.py` |
+| H18 contour label null guard | Confirmed real edge case. Dose contour labels now guard `Number.isFinite(contour.level)`. | `web/app/static/js/brachybot-3d-manual.js` |
+| H20 mesh cache key collision | Confirmed real edge case. 3D mask cache keys now include a BLAKE2 digest of the binary mask instead of `id(mask_data)`. | `web/routes/viewer_routes.py` |
+| H22 API key `None` crash | Confirmed real. Explicit auth without a configured key now fails closed instead of calling `.encode()` on `None`. | `web/server_support.py` |
+| I10 planning data-tree null guards | Confirmed real. Planning group visibility paths now tolerate missing seed/needle/dose arrays. | `web/app/static/js/brachybot-viewer-volume.js` |
+| I18 screenshot promise handling | Confirmed real. Direct screenshot capture now awaits `html2canvas` consistently. | `web/app/static/js/brachybot-ui-api.js` |
+| M25 API-key comparison | Confirmed real hardening opportunity. Header key comparison now uses direct constant-time comparison and fails closed when auth is misconfigured. | `web/server_support.py` |
+| M27 duplicate tooltip key | Confirmed real. Removed the duplicate `toolMeasure` key. | `web/app/static/js/brachybot-viewer-layout.js` |
+| M29 report source badge injection | Confirmed real. The reset onclick argument now uses JSON string serialization and attribute-safe escaping. | `web/app/static/js/brachybot-report-shell.js` |
+| H9 missing Anthropic dependency | Confirmed real for the configured Anthropic provider. Added `anthropic>=0.34.0`. | `requirements.txt` |
+| Additional shell invocation scan | Confirmed real in a benchmark helper. Replaced the background benchmark launch with argv-style `subprocess.Popen(...)` and no shell. | `benchmarks/auto_monitor.py` |
+
+### Verified as intentional, stale, or not a defect in current code
+
+| Report item | Current disposition |
+|---|---|
+| C6 `str.format()` with untrusted context | False positive. Python `str.format()` does not recursively parse braces inside argument values; a smoke test with `enhanced_context="{literal}"` passes. |
+| C12/I25 `{current_date}` prompt replacement | Already implemented in both streaming and non-streaming prompt construction. |
+| H4 CT-loaded gate inconsistency | Current code checks UI state plus memory state and preserves non-CT developer tools (`tool_creator`, `env_manager`, `shell_executor`, `code_executor`) for trusted-local use. |
+| H17 dual dose overlay functions | Intentional compatibility surface during the 2D overlay refactor. The active separate-layer path remains the source of truth for current viewers. |
+| H19/M19 language globals | Intentional transitional state: `_uiLanguage` follows detected conversation language; `_i18nLang` follows the manual UI toggle. They are synchronized where dynamic labels need it. |
+| I24/M20 test coverage/config | Valid engineering debt, not a runtime defect. This follow-up adds smoke coverage through explicit validation commands rather than introducing a new test framework migration. |
+| M4 inline styles | Valid maintainability debt but not safe to mass-refactor during this bug-fix pass because report rendering and screenshot layout are sensitive to exact inline dimensions. |
+| M17 requestAnimationFrame loop | Intentional for the interactive 3D viewer. It is acceptable while the viewer is visible; a future optimization can pause when hidden. |
+| M23 `normalize_dose_image` naming | Naming concern only; no functional bug confirmed in this pass. |
+| `code_executor` internal `exec(...)` | Intentional trusted-local developer capability. It remains disabled unless `BRACHYBOT_ENABLE_CODE_EXECUTOR=1` is set, uses AST checks, restricted builtins, and an import allowlist. The safer posture is explicit opt-in rather than removing the capability. |
+| Worktree-copy warnings | Operational hygiene concern. Current tracked repo state was verified and pushed; stale external worktrees should be handled separately to avoid deleting user work. |
+
+### Validation evidence
+
+- `py_compile` over 207 tracked Python files: passed.
+- `node --check` over 21 frontend JavaScript files: passed.
+- `git diff --check`: passed, with only Git line-ending warnings.
+- Targeted smoke: parser preserves apostrophes in Python-repr `tool_use`, prompt formatting accepts literal braces in dynamic context, rate limiter mutates safely, and the `BrachyAgent` mixin contract validates.
+
+---
+
 # CRITICAL (18)
 
 ---

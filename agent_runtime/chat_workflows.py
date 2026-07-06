@@ -5,6 +5,7 @@ API remains compatible while the monolithic implementation is easier to review.
 """
 
 import asyncio
+import ast
 import base64
 import io
 import json
@@ -69,9 +70,11 @@ class ChatWorkflowMixin:
             py_tool_use = re.search(r"\[[\s]*\{[\s]*['\"]type['\"]\s*:\s*['\"]tool_use['\"].*?\}[\s]*\]", content, re.DOTALL)
             if py_tool_use:
                 try:
-                    # Replace single quotes with double quotes for JSON parsing
-                    raw = py_tool_use.group(0).replace("'", '"')
-                    parsed = json.loads(raw)
+                    raw = py_tool_use.group(0)
+                    # MiniMax may emit Python repr style tool_use blocks. Use
+                    # literal_eval instead of global quote replacement so
+                    # apostrophes inside user strings are preserved.
+                    parsed = ast.literal_eval(raw) if "'" in raw else json.loads(raw)
                     if isinstance(parsed, list):
                         for item in parsed:
                             if isinstance(item, dict) and item.get("type") == "tool_use":

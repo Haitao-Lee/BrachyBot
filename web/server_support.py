@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import base64
 import binascii
+from collections import deque
 from datetime import datetime
 from typing import Dict, Any, Optional, Iterable
 from functools import wraps
@@ -62,10 +63,11 @@ if not API_KEY and not _TRUST_NETWORK:
 RATE_LIMIT_REQUESTS = 9999 if _TRUST_NETWORK else 120
 RATE_LIMIT_WINDOW = 60
 _rate_limit_store: Dict[str, list] = {}
+_rate_limit_lock = threading.Lock()
 
 _MESH_CACHE_LOCK = threading.Lock()
 _MESH_CACHE: Dict[tuple, Dict[str, Any]] = {}
-_MESH_CACHE_ORDER: list = []
+_MESH_CACHE_ORDER = deque()
 _MESH_CACHE_MAX_ITEMS = int(os.environ.get("BRACHYBOT_MESH_CACHE_MAX_ITEMS", "96"))
 DOSE_MODEL_SCALE_GY = 120.0
 DOSE_MODEL_UNITS = "normalized_model_output"
@@ -797,26 +799,30 @@ def _check_rate_limit(client_ip: str) -> bool:
     global _rate_limit_cleanup_counter
     now = datetime.now().timestamp()
 
-    # Lazy cleanup: every 100 requests, purge all expired entries
-    _rate_limit_cleanup_counter += 1
-    if _rate_limit_cleanup_counter >= 100:
-        _rate_limit_cleanup_counter = 0
-        expired_ips = [
-            ip for ip, timestamps in _rate_limit_store.items()
-            if all(now - t >= RATE_LIMIT_WINDOW for t in timestamps)
-        ]
-        for ip in expired_ips:
-            del _rate_limit_store[ip]
+    with _rate_limit_lock:
+        # The limiter is shared by Flask worker threads. Keep cleanup and
+        # per-client mutation under one lock so the timestamp lists cannot be
+        # overwritten or deleted while another request is updating them.
+        _rate_limit_cleanup_counter += 1
+        if _rate_limit_cleanup_counter >= 100:
+            _rate_limit_cleanup_counter = 0
+            expired_ips = [
+                ip for ip, timestamps in _rate_limit_store.items()
+                if all(now - t >= RATE_LIMIT_WINDOW for t in timestamps)
+            ]
+            for ip in expired_ips:
+                _rate_limit_store.pop(ip, None)
 
-    if client_ip not in _rate_limit_store:
-        _rate_limit_store[client_ip] = []
-    _rate_limit_store[client_ip] = [
-        t for t in _rate_limit_store[client_ip] if now - t < RATE_LIMIT_WINDOW
-    ]
-    if len(_rate_limit_store[client_ip]) >= RATE_LIMIT_REQUESTS:
-        return False
-    _rate_limit_store[client_ip].append(now)
-    return True
+        timestamps = [
+            t for t in _rate_limit_store.get(client_ip, [])
+            if now - t < RATE_LIMIT_WINDOW
+        ]
+        if len(timestamps) >= RATE_LIMIT_REQUESTS:
+            _rate_limit_store[client_ip] = timestamps
+            return False
+        timestamps.append(now)
+        _rate_limit_store[client_ip] = timestamps
+        return True
 
 
 def _client_ip_for_rate_limit() -> str:
@@ -941,23 +947,28 @@ def _valid_api_key_from_request() -> bool:
     """Validate the current request's API key header without short-circuiting routes."""
     if not _API_KEY_REQUIRED:
         return True
+    if not API_KEY:
+        # Explicit auth was requested but no secret was configured. Fail closed
+        # instead of raising AttributeError on API_KEY.encode().
+        return False
     request_key = request.headers.get("X-API-Key", "")
     if not request_key:
         return False
-    return secrets.compare_digest(
-        hashlib.sha256(request_key.encode()).hexdigest(),
-        hashlib.sha256(API_KEY.encode()).hexdigest(),
-    )
+    return secrets.compare_digest(request_key, API_KEY)
 
 
 def _screenshot_signature(filename: str, expires: int) -> str:
     """Create a URL signature for browser image loads that cannot set headers."""
+    if not API_KEY:
+        raise RuntimeError("BRACHYBOT_API_KEY is required for signed screenshot URLs")
     payload = f"{filename}:{int(expires)}".encode("utf-8")
     return hmac.new(API_KEY.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 
 
 def _make_screenshot_url(filename: str, ttl_seconds: int = 3600) -> str:
     if not _API_KEY_REQUIRED:
+        return f"/api/screenshots/{filename}"
+    if not API_KEY:
         return f"/api/screenshots/{filename}"
     expires = int(time.time()) + int(ttl_seconds)
     sig = _screenshot_signature(filename, expires)

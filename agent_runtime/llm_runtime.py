@@ -22,7 +22,7 @@ import numpy as np
 import SimpleITK as sitk
 
 from config.prompts import SYSTEM_PROMPT_TEMPLATE, get_prompt_modules
-from agent_runtime.core import PlanningPhase, ToolResultPipeline
+from agent_runtime.core import AgentMemory, PlanningPhase, ToolResultPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -1242,15 +1242,17 @@ class LLMRuntimeMixin:
                     logger.warning(f"Forced search failed: {search_result.error if search_result else 'no tool'}")
                     result_text = "No real-time results found."
 
-                    forced_step["status"] = "done"
-                    forced_step["result"] = result_text[:200]
-                    yield_event("step", forced_step)
+                forced_step["status"] = "done"
+                forced_step["result"] = result_text[:200]
+                yield_event("step", forced_step)
 
-                    # Inject search results into messages so LLM uses them
-                    messages.append({"role": "user", "content": f"[MANDATORY: The following are real-time search results. You MUST use this information to answer the user's question directly. DO NOT search again. Just answer based on these results.]\n\nSearch results for '{_forced_search_query}':\n{result_text[:3000]}"})
-                    enhanced_context += f"\n### ⚠️ OVERRIDE: REAL-TIME SEARCH COMPLETED\nSearch for '{_forced_search_query}' has already been executed. The results are in the conversation. You MUST answer the user's question directly using these results. DO NOT call web_search again."
-                    _had_forced_search = True
-                    logger.info(f"Forced search for real-time query: {_forced_search_query}")
+                # Inject search results into messages so LLM uses them. This
+                # must run for successful searches too; otherwise streaming
+                # mode leaves the UI step pending and answers without evidence.
+                messages.append({"role": "user", "content": f"[MANDATORY: The following are real-time search results. You MUST use this information to answer the user's question directly. DO NOT search again. Just answer based on these results.]\n\nSearch results for '{_forced_search_query}':\n{result_text[:3000]}"})
+                enhanced_context += f"\n### OVERRIDE: REAL-TIME SEARCH COMPLETED\nSearch for '{_forced_search_query}' has already been executed. The results are in the conversation. You MUST answer the user's question directly using these results. DO NOT call web_search again."
+                _had_forced_search = True
+                logger.info(f"Forced search for real-time query: {_forced_search_query}")
             except Exception as e:
                 logger.warning(f"Forced search failed: {e}")
 

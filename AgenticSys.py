@@ -570,12 +570,6 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             logger.warning(f"DicomRTExporterTool not available: {e}")
 
         try:
-            from tool_factory.output.report_generator import ReportGeneratorTool
-            self.registry.register(ReportGeneratorTool())
-        except ImportError as e:
-            logger.warning(f"ReportGeneratorTool not available: {e}")
-
-        try:
             from tool_factory.code_executor import CodeExecutorTool
             self.registry.register(CodeExecutorTool())
         except ImportError as e:
@@ -738,10 +732,17 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
 
     def _has_completed_planning_in_steps(self, steps: List[Dict] = None) -> bool:
         """Return True only when planning completed in the current turn."""
+        completed_tools = {
+            "planning_pipeline",
+            "seed_planning",
+            "dose_engine",
+            "dose_evaluation",
+            "dose_calc",
+        }
         return bool(steps) and any(
             s.get("type") == "tool"
             and s.get("status") == "done"
-            and s.get("tool") == "planning_pipeline"
+            and s.get("tool") in completed_tools
             for s in steps
         )
 

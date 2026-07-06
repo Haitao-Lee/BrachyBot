@@ -276,8 +276,9 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         try:
             import numpy as np
 
-            # Convert to int16 (Hounsfield units)
-            ct_int16 = ct_data.astype(np.int16)
+            # Convert to int16 for compact HU transfer. Clip first so unusual
+            # scanner/private values cannot wrap around during dtype casting.
+            ct_int16 = np.clip(ct_data, np.iinfo(np.int16).min, np.iinfo(np.int16).max).astype(np.int16)
             raw_bytes = ct_int16.tobytes()
 
             response = Response(raw_bytes, mimetype='application/octet-stream')
@@ -834,6 +835,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             return jsonify({"error": "label_id required"}), 400
 
         try:
+            import hashlib
             import numpy as np
             from skimage import measure
             from scipy.ndimage import binary_closing, binary_fill_holes, binary_dilation, gaussian_filter
@@ -858,7 +860,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             total_voxels = int(binary_mask.sum())
             if total_voxels == 0:
                 return jsonify({"error": f"Label {label_id} not found in mask"}), 400
-            cache_key = (source, label_id, str(smoothing_key), id(mask_data), mask_shape_key, total_voxels)
+            mask_digest = hashlib.blake2b(binary_mask.tobytes(), digest_size=8).hexdigest()
+            cache_key = (source, label_id, str(smoothing_key), mask_shape_key, total_voxels, mask_digest)
             with _MESH_CACHE_LOCK:
                 cached = _MESH_CACHE.get(cache_key)
             if cached is not None:
@@ -962,7 +965,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 _MESH_CACHE[cache_key] = payload
                 _MESH_CACHE_ORDER.append(cache_key)
                 while len(_MESH_CACHE_ORDER) > _MESH_CACHE_MAX_ITEMS:
-                    old_key = _MESH_CACHE_ORDER.pop(0)
+                    old_key = _MESH_CACHE_ORDER.popleft()
                     _MESH_CACHE.pop(old_key, None)
 
             return jsonify(payload)

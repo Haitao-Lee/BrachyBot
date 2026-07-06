@@ -515,17 +515,23 @@ class AgentMemory:
             try:
                 # Clear layered memory session data
                 if hasattr(self.enhanced, 'layered_memory'):
-                    self.enhanced.layered_memory.clear_session_data()
+                    clear_session = getattr(self.enhanced.layered_memory, "clear_session_data", None)
+                    if callable(clear_session):
+                        clear_session()
                     logger.info("Layered memory session data cleared")
 
                 # Clear skill crystallizer
                 if hasattr(self.enhanced, 'skill_crystallizer'):
-                    self.enhanced.skill_crystallizer.clear()
+                    clear_skills = getattr(self.enhanced.skill_crystallizer, "clear", None)
+                    if callable(clear_skills):
+                        clear_skills()
                     logger.info("Skill crystallizer cleared")
 
                 # Clear reflexion engine
                 if hasattr(self.enhanced, 'reflexion'):
-                    self.enhanced.reflexion.clear()
+                    clear_reflexion = getattr(self.enhanced.reflexion, "clear", None)
+                    if callable(clear_reflexion):
+                        clear_reflexion()
                     logger.info("Reflexion engine cleared")
 
                 # Reinitialize enhanced integration for fresh start
