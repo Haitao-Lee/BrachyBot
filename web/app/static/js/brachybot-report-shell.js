@@ -1,0 +1,1152 @@
+// =============================================================================
+// window.Report — additive upgrade layer (P4-P19)
+// =============================================================================
+// This block is inserted BEFORE the legacy Report module (which begins at
+// the next `// ----- 1. Static reference catalog -----` marker).  It:
+//   1. Declares the window.Report namespace with all P4-P19 features.
+//   2. Uses getters to transparently forward to the legacy state
+//      (window.reportForm) and functions (renderReportEditor, etc.).
+//   3. Adds sources/audit/snapshots/sign/persist/export/validation/shortcuts.
+//   4. Boots after the legacy module has initialized.
+// =============================================================================
+
+window.Report = (function () {
+    'use strict';
+
+    // ---------- Forward declarations of legacy bits ----------
+    // These names are defined later in the legacy block.  We reference them
+    // via window.* at call time so the order doesn't matter.
+    function _legacy(name) { return window[name]; }
+
+    // ---------- State (forward to window.reportForm) ----------
+    const stateProxy = {
+        get language() { return (window.reportForm && window.reportForm.language) || 'en'; },
+        set language(v) { if (window.reportForm) window.reportForm.language = v; },
+        get editedFields() { return (window.reportForm && window.reportForm.editedFields) || new Set(); },
+        set editedFields(v) { if (window.reportForm) window.reportForm.editedFields = v; },
+    };
+    // The state object — direct reference, but reads/writes flow to window.reportForm
+    const state = new Proxy({}, {
+        get(_, k) { return window.reportForm ? window.reportForm[k] : undefined; },
+        set(_, k, v) { if (window.reportForm) window.reportForm[k] = v; return true; },
+        has(_, k) { return window.reportForm ? (k in window.reportForm) : false; },
+    });
+
+    // ---------- Helpers ----------
+    function _getByPath(obj, dottedKey) {
+        const parts = dottedKey.split('.');
+        let cur = obj;
+        for (const p of parts) {
+            if (cur == null) return undefined;
+            cur = cur[p];
+        }
+        return cur;
+    }
+    function _setByPath(obj, dottedKey, val) {
+        const parts = dottedKey.split('.');
+        let cur = obj;
+        for (let i = 0; i < parts.length - 1; i++) {
+            if (cur[parts[i]] === undefined || cur[parts[i]] === null || typeof cur[parts[i]] !== 'object') {
+                cur[parts[i]] = {};
+            }
+            cur = cur[parts[i]];
+        }
+        cur[parts[parts.length - 1]] = val;
+    }
+    function _detectLanguageFromText(text) {
+        if (!text) return null;
+        if (/[一-鿿]/.test(text)) return 'zh';
+        return 'en';
+    }
+    function _escHtml(s) {
+        if (s === null || s === undefined) return '';
+        return String(s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    // ---------- i18n (P4 + P6) ----------
+    const i18n = {
+        detect() {
+            // BUG FIX 2026-06-17: respect the global UI language toggle
+            // (window._i18nLang, set by getInitialLang() from
+            // 'brachybot_ui_lang' in localStorage). Previously this
+            // method only checked 'brachyplan_report_lang' (a separate
+            // Report-specific key), so the Report panel could show
+            // Chinese when the global toggle was English.
+            if (typeof window._i18nLang === 'string'
+                && (window._i18nLang === 'zh' || window._i18nLang === 'en')) {
+                return window._i18nLang;
+            }
+            try {
+                const stored = localStorage.getItem('brachyplan_report_lang');
+                if (stored && (stored === 'zh' || stored === 'en')) return stored;
+            } catch (e) {}
+            const nav = ((typeof navigator !== 'undefined' && navigator.language) || 'zh').toLowerCase();
+            if (nav.startsWith('en')) return 'en';
+            return 'zh';
+        },
+        set(lang, opts = {}) {
+            if (lang !== 'zh' && lang !== 'en') return;
+            const prevLang = window.reportForm ? window.reportForm.language : null;
+            if (window.reportForm) window.reportForm.language = lang;
+            if (!opts.silent) {
+                try { localStorage.setItem('brachyplan_report_lang', lang); } catch (e) {}
+            }
+            // ---- Refresh localized defaults that the user has not edited ----
+            // The form's default values (gender / department / technique)
+            // are language-localized. When the user switches language we
+            // want any untouched default to also switch, otherwise an
+            // English PDF would still show 男 / 放射治疗科 / 永久粒子植入.
+            // We do NOT overwrite fields the user has actually edited.
+            if (window.reportForm && prevLang && prevLang !== lang
+                && typeof _localizedEmptyReportForm === 'function') {
+                const tpl = _localizedEmptyReportForm(lang);
+                const f = window.reportForm;
+                const edited = f.editedFields || new Set();
+                // gender
+                if (!edited.has('patient.gender')) f.patient.gender = tpl.patient.gender;
+                // department
+                if (!edited.has('patient.department')) f.patient.department = tpl.patient.department;
+                // technique (planning.technique is the famous 永久粒子植入 leak)
+                if (!edited.has('planning.technique')) f.planning.technique = tpl.planning.technique;
+            }
+            if (opts.userInitiated && window.reportForm && window.reportForm.editedFields) {
+                window.reportForm.editedFields.add('language');
+            }
+            if (window.reportForm && !window.reportForm.editedFields.has('interpretation')) {
+                autoFill.interpret();
+            }
+            _updateLanguageButtons();
+            panels.editor(); panels.preview();
+            persist.autoSave();
+            audit.log('i18n.set', 'language', null, lang);
+        },
+        _tr(key) {
+            const lang = stateProxy.language;
+            const dict = (typeof REPORT_STRINGS !== 'undefined') ? REPORT_STRINGS[lang] : null;
+            return (dict && dict[key]) || key;
+        },
+    };
+
+    function _updateLanguageButtons() {
+        // 2026-06-16: scope to `.rp-lang-toggle` only. The header
+        // language toggle uses `.lang-btn` too but is managed by
+        // its own `setUiLanguage()` — touching it here would
+        // override the active state with a flat white background.
+        const lang = stateProxy.language;
+        document.querySelectorAll('.rp-lang-toggle .lang-btn').forEach(btn => {
+            const isActive = btn.dataset.lang === lang;
+            btn.style.background = isActive ? '#0ea5e9' : '#fff';
+            btn.style.color = isActive ? '#fff' : '#334155';
+        });
+    }
+
+    // ---------- Sources (badges) — P5 ----------
+    const sources = {
+        _map: new Map(),
+        get(key) { return this._map.get(key) || 'auto'; },
+        set(key, src) {
+            this._map.set(key, src);
+            try {
+                const safe = (key || '').replace(/[^a-zA-Z0-9_]/g, '_');
+                document.querySelectorAll(`[data-source-key="${safe}"]`).forEach(badge => {
+                    const colors = { auto: '#10b981', user: '#f59e0b', bot: '#3b82f6' };
+                    const labels = { auto: 'AUTO', user: 'YOU', bot: 'BOT' };
+                    badge.style.background = colors[src] || colors.auto;
+                    badge.textContent = labels[src] || src;
+                    badge.title = (src === 'user' ? 'Edited by you' : src === 'bot' ? 'Filled by brachybot' : 'Auto-extracted');
+                });
+            } catch (e) {}
+        },
+        bulkSet(patch, defaultSrc = 'auto') {
+            Object.entries(patch || {}).forEach(([k, v]) => {
+                if (v !== null && v !== undefined && v !== '') this._map.set(k, defaultSrc);
+            });
+        },
+        badgeHtml(key) {
+            const src = this.get(key);
+            const colors = { auto: '#10b981', user: '#f59e0b', bot: '#3b82f6' };
+            const labels = { auto: 'AUTO', user: 'YOU', bot: 'BOT' };
+            return `<span data-source-key="${(key || '').replace(/[^a-zA-Z0-9_]/g, '_')}" style="background:${colors[src]};color:#fff;font-size:0.58rem;padding:1px 6px;border-radius:8px;margin-left:4px;letter-spacing:0.04em;vertical-align:middle;cursor:help;" title="Click ↻ to reset">${labels[src]}</span><span onclick="Report.sources.resetTo('${(key || '').replace(/'/g, "\\'")}')" title="Reset to auto" style="cursor:pointer;margin-left:3px;font-size:0.7rem;color:#94a3b8;">↻</span>`;
+        },
+        resetTo(key) {
+            if (!key) return;
+            this._map.set(key, 'auto');
+            if (window.reportForm && window.reportForm.editedFields) {
+                window.reportForm.editedFields.delete(key);
+            }
+            autoFill.fromAll({ onlyKey: key });
+        },
+    };
+
+    // ---------- Panels ----------
+    const panels = {
+        editor() { const fn = _legacy('renderReportEditor'); if (fn) fn(); },
+        preview() { const fn = _legacy('_updateReportPreview'); if (fn) fn(); },
+        switch(mode) { /* In the new top/bottom layout both panes are always visible. */ },
+        layout2col(on) {
+            try { document.body.classList.toggle('report-2col', !!on); } catch (e) {}
+            try { localStorage.setItem('brachyplan_report_2col', on ? '1' : '0'); } catch (e) {}
+            // BUG FIX 2026-06-16: sync the actual checkbox UI when
+            // layout2col is called from anywhere (auto-restore, the
+            // toolbar toggle, etc.) so the visible state matches the
+            // body class.
+            try {
+                const cb = document.querySelector('.rp-2col-toggle input[type="checkbox"]');
+                if (cb && cb.checked !== !!on) cb.checked = !!on;
+            } catch (_) {}
+        },
+    };
+
+    // ---------- Preview zoom (P+user) ----------
+    // Ctrl+滚轮 在 PDF 预览区缩放 A4 页面
+    const preview = (function() {
+        let _zoom = 1.0;
+        const MIN = 0.5, MAX = 2.0, STEP = 0.1;
+        function _update() {
+            const wrap = document.getElementById('reportPagesWrapper');
+            const ind = document.getElementById('rpZoomIndicator');
+            if (wrap) wrap.style.transform = `scale(${_zoom})`;
+            if (ind) {
+                ind.textContent = Math.round(_zoom * 100) + '%';
+                ind.title = `当前缩放 ${Math.round(_zoom * 100)}% — 点击重置 100%（Ctrl+0）`;
+            }
+        }
+        function _persist() {
+            try { localStorage.setItem('brachyplan_report_zoom', String(_zoom)); } catch (e) {}
+        }
+        function _restore() {
+            try {
+                const v = parseFloat(localStorage.getItem('brachyplan_report_zoom'));
+                if (!isNaN(v) && v >= MIN && v <= MAX) _zoom = v;
+            } catch (e) {}
+        }
+        function setZoom(z) {
+            _zoom = Math.max(MIN, Math.min(MAX, z));
+            _update(); _persist();
+        }
+        function zoomIn() { setZoom(_zoom + STEP); }
+        function zoomOut() { setZoom(_zoom - STEP); }
+        function zoomReset() { setZoom(1.0); }
+        function getZoom() { return _zoom; }
+
+        // Install wheel listener on the preview area
+        function _installWheelHandler() {
+            const preview = document.getElementById('reportPreview');
+            if (!preview || preview._rpZoomWired) return;
+            preview._rpZoomWired = true;
+            preview.addEventListener('wheel', (e) => {
+                if (!e.ctrlKey && !e.metaKey) return; // 只在 Ctrl/Cmd 修饰时缩放
+                e.preventDefault();
+                if (e.deltaY < 0) zoomIn();
+                else if (e.deltaY > 0) zoomOut();
+            }, { passive: false });
+        }
+        _restore();
+        _update();
+        // Re-install when preview element is re-created (preview re-renders)
+        const _origPreview = panels.preview;
+        panels.preview = function() {
+            _origPreview();
+            // Restore transform after re-render
+            setTimeout(() => { _installWheelHandler(); _update(); }, 0);
+        };
+        // Also install once on boot via DOMContentLoaded
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', _installWheelHandler);
+        } else {
+            _installWheelHandler();
+        }
+        return { setZoom, zoomIn, zoomOut, zoomReset, getZoom };
+    })();
+
+    // Ctrl+0 reset shortcut
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && (e.key === '0' || e.key === ')')) {
+            const ed = document.activeElement;
+            if (ed && (ed.tagName === 'INPUT' || ed.tagName === 'TEXTAREA' || ed.isContentEditable)) return;
+            e.preventDefault();
+            preview.zoomReset();
+        }
+    });
+
+    // ---------- Status ----------
+    function _setReportStatus(text, kind = 'info') {
+        const el = document.getElementById('reportStatusText');
+        if (!el) return;
+        el.textContent = text;
+        el.classList.remove('ok', 'warn', 'error');
+        if (kind === 'ok' || kind === 'warn' || kind === 'error') el.classList.add(kind);
+        setTimeout(() => { if (el.textContent === text) { el.textContent = 'Ready'; el.classList.remove('ok','warn','error'); } }, 3000);
+    }
+
+    // ---------- Auto-fill (P7) ----------
+    async function _fetchHeader() {
+        try {
+            const ws = window.state || {};
+            if (!ws.ctPath) return {};
+            const r = await fetch('/api/header/info', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ct_path: ws.ctPath }),
+            });
+            const j = await r.json();
+            return (j && j.success && j.tags) || {};
+        } catch (e) { return {}; }
+    }
+
+    const autoFill = {
+        async fromAll(opts = {}) {
+            const onlyKey = opts.onlyKey || null;
+            const f = window.reportForm;
+            if (!f) { _setReportStatus('No report form', 'error'); return; }
+            // 1. DICOM
+            try {
+                const tags = await _fetchHeader();
+                this.fromDicom(tags, onlyKey);
+            } catch (e) { console.warn('DICOM auto-fill failed:', e); }
+            // 2. NIfTI
+            this.fromNifti(onlyKey);
+            // 3. Planning
+            this.fromPlanning(onlyKey);
+            // 4. Interpretation (if not user-edited)
+            if ((!onlyKey || onlyKey === 'interpretation') && (!f.editedFields || !f.editedFields.has('interpretation'))) {
+                this.interpret();
+            }
+            // BUG FIX 2026-06-17 (auto-screenshots in report):
+            // auto-capture visual evidence (CT + masks, dose heatmap,
+            // 3D plan, DVH curve) as report figures. The previous
+            // version only triggered on panel-open, but users who
+            // hit "Auto-fill" expected everything to land together.
+            try {
+                if (typeof autoCaptureReportFigures === 'function') {
+                    setTimeout(() => autoCaptureReportFigures(), 0);
+                }
+            } catch (_) {}
+            panels.editor(); panels.preview();
+            persist.autoSave();
+            audit.log('autoFill.fromAll', '*', null, 'filled');
+            _setReportStatus('Auto-filled from NIfTI + planning', 'ok');
+        },
+        fromDicom(tags, onlyKey = null) {
+            if (!tags || Object.keys(tags).length === 0) return;
+            const f = window.reportForm;
+            if (!f) return;
+            const lang = (window._i18nLang) || f.language || 'en';
+            const map = [];
+            if (tags.patient_name)        map.push(['patient.name', tags.patient_name]);
+            if (tags.patient_id)          map.push(['patient.id', tags.patient_id]);
+            if (lang === 'zh' && tags.patient_sex_label_zh) map.push(['patient.gender', tags.patient_sex_label_zh]);
+            if (lang === 'en' && tags.patient_sex_label_en) map.push(['patient.gender', tags.patient_sex_label_en]);
+            if (tags.patient_birth_date)  map.push(['patient.birthDate', tags.patient_birth_date]);
+            if (tags.study_date)          map.push(['study.scanDate', tags.study_date]);
+            if (tags.accession_number)    map.push(['study.accession', tags.accession_number]);
+            if (tags.modality)            map.push(['study.modality', tags.modality]);
+            if (tags.institution_name)    map.push(['hospital.name', tags.institution_name]);
+            if (tags.performing_physician) map.push(['study.radiologist', tags.performing_physician]);
+            if (tags.referring_physician)  map.push(['study.referring', tags.referring_physician]);
+            if (tags.manufacturer)        map.push(['imaging.scanner', tags.manufacturer]);
+            if (tags.study_description)   map.push(['study.description', tags.study_description]);
+            if (tags.series_description)  map.push(['study.series', tags.series_description]);
+            for (const [k, v] of map) {
+                if (onlyKey && k !== onlyKey) continue;
+                if (f.editedFields && f.editedFields.has(k)) continue;
+                _setByPath(f, k, v);
+                sources.set(k, 'auto');
+            }
+        },
+        fromNifti(onlyKey = null) {
+            try {
+                const f = window.reportForm;
+                const ws = window.state || {};
+                if (!f) return;
+                if (ws.ctPath) {
+                    if (!onlyKey || onlyKey === 'case.patientId') {
+                        if (!f.editedFields || !f.editedFields.has('case.patientId')) {
+                            f.case.patientId = ws.ctPath.split(/[\/\\]/).pop().replace(/\.nii(\.gz)?$/i, '');
+                            sources.set('case.patientId', 'auto');
+                        }
+                    }
+                }
+                if (ws.ctShape && ws.ctSpacing) {
+                    const writes = [
+                        ['imaging.sliceCount', ws.ctShape[2] || null],
+                        ['imaging.pixelSpacingMm', ws.ctSpacing[0] || null],
+                        ['imaging.sliceThicknessMm', ws.ctSpacing[2] || null],
+                    ];
+                    for (const [k, v] of writes) {
+                        if (onlyKey && k !== onlyKey) continue;
+                        if (f.editedFields && f.editedFields.has(k)) continue;
+                        if (v !== null) { _setByPath(f, k, v); sources.set(k, 'auto'); }
+                    }
+                }
+            } catch (e) { console.warn('NIfTI auto-fill failed:', e); }
+        },
+        fromPlanning(onlyKey = null) {
+            try {
+                const f = window.reportForm;
+                const ws = window.state || {};
+                if (!f) return;
+                const m = ws.metrics || {};
+                const dataTree = (typeof dataTreeState !== 'undefined') ? dataTreeState : (window.dataTreeState || null);
+                const writes = [];
+                if (m.total_seeds !== undefined) writes.push(['planning.totalSeeds', m.total_seeds]);
+                if (m.num_trajectories !== undefined) writes.push(['planning.trajectoryCount', m.num_trajectories]);
+                // BUG FIX 2026-06-17: auto-compute total activity.
+                // The planning_pipeline doesn't return seed activity
+                // directly, so we estimate it from the standard
+                // I-125 seed activity (0.5 mCi per seed) which the
+                // system uses by default. The user can edit the
+                // field if their institution uses a different seed
+                // model (Pd-103, Sr-90, etc.).
+                if (m.total_seeds !== undefined && (f.planning.totalActivityMBq == null)) {
+                    const seedActivityMBq = 18.5; // ~0.5 mCi / seed (I-125)
+                    const totalMBq = m.total_seeds * seedActivityMBq;
+                    writes.push(['planning.totalActivityMBq', parseFloat(totalMBq.toFixed(1))]);
+                    writes.push(['planning.seedActivityMBq', seedActivityMBq]);
+                    // Also store the seed model so the user can see
+                    // what assumption was made.
+                    if (!f.planning.seedModel) writes.push(['planning.seedModel', 'I-125 (0.5 mCi/seed, default)']);
+                }
+                if (m.ctv_voxels !== undefined && ws.ctSpacing) {
+                    const v = m.ctv_voxels * ws.ctSpacing[0] * ws.ctSpacing[1] * ws.ctSpacing[2];
+                    writes.push(['case.ctvVolumeMm3', v]);
+                    writes.push(['segmentation.ctvVoxels', m.ctv_voxels]);
+                }
+                if (m.v100 !== undefined) writes.push(['metrics.v100', m.v100 * 100]);
+                if (m.d90 !== undefined)  writes.push(['metrics.d90', m.d90]);
+                if (m.d95 !== undefined)  writes.push(['metrics.d95', m.d95]);
+                if (m.v150 !== undefined) writes.push(['metrics.v150', m.v150 * 100]);
+                if (m.v200 !== undefined) writes.push(['metrics.v200', m.v200 * 100]);
+                if (m.ci !== undefined)   writes.push(['metrics.ci', m.ci]);
+                if (m.hi !== undefined)   writes.push(['metrics.hi', m.hi]);
+                if (m.gi !== undefined)   writes.push(['metrics.gi', m.gi]);
+                if (m.plan_score !== undefined) writes.push(['metrics.score', m.plan_score]);
+                for (const [k, v] of writes) {
+                    if (onlyKey && k !== onlyKey) continue;
+                    if (f.editedFields && f.editedFields.has(k)) continue;
+                    _setByPath(f, k, v);
+                    sources.set(k, 'auto');
+                }
+                if ((!onlyKey || onlyKey === 'oarDose') && m.oar_metrics) {
+                    if (!f.editedFields || !f.editedFields.has('oarDose')) {
+                        // BUG FIX 2026-06-17: previously capped at 12
+                        // OARs, hiding many clinically relevant organs
+                        // (stomach, kidney, liver, lung, vessels). Now
+                        // we include ALL OARs that received any dose
+                        // (D2cc, D1cc, D0.1cc, OR Dmax > 5 Gy), sorted
+                        // by D2cc descending so the highest-dose
+                        // organs appear first. User can still mark
+                        // rows hidden via editedFields.
+                        f.oarDose = Object.entries(m.oar_metrics)
+                            .filter(([n, x]) => x && (
+                                x.d2cc || x.d1cc || x.d0_1cc ||
+                                (x.dmax && x.dmax > 5)
+                            ))
+                            .map(([n, x]) => ({
+                                organ: _resolveOARDisplayName(n, x),
+                                label_id: x.label_id ?? x.labelId ?? null,
+                                d2cc: x.d2cc || null,
+                                d1cc: x.d1cc || null,
+                                d0_1cc: x.d0_1cc || null,
+                                dmax: x.dmax || x.max_dose || null,
+                                v100: x.v100 ? x.v100 * 100 : null,
+                            }))
+                            .sort((a, b) => (b.d2cc || 0) - (a.d2cc || 0));
+                        sources.set('oarDose', 'auto');
+                    }
+                }
+                if ((!onlyKey || onlyKey === 'case.oarCount') && dataTree && dataTree.organs) {
+                    if (!f.editedFields || !f.editedFields.has('case.oarCount')) {
+                        f.case.oarCount = dataTree.organs.length || null;
+                        sources.set('case.oarCount', 'auto');
+                    }
+                }
+            } catch (e) { console.warn('Planning auto-fill failed:', e); }
+        },
+        interpret() {
+            const fn = _legacy('_autoFillInterpretation');
+            if (fn) fn();
+        },
+    };
+
+    // ---------- Brachybot (P10) ----------
+    const brachybot = {
+        async onChatCommand(msg) {
+            if (!msg) return false;
+            const m = String(msg).trim();
+            // /report en | /report zh
+            let mm = m.match(/^\/report\s+(zh|zh-CN|chinese|中文|en|english)\b/i);
+            if (mm) {
+                const lang = /^zh|chinese|中文/i.test(mm[1]) ? 'zh' : 'en';
+                i18n.set(lang, { userInitiated: true });
+                _setReportStatus('Language set to ' + (lang === 'zh' ? '中文' : 'English'), 'ok');
+                return true;
+            }
+            // /report fill [scope]
+            mm = m.match(/^\/report\s+fill(?:\s+([a-zA-Z_-]+))?\s*$/i);
+            if (mm) {
+                const scope = (mm[1] || 'all').toLowerCase();
+                const valid = ['all', 'patient', 'metrics', 'oar', 'interpretation', 'safety'];
+                const finalScope = valid.includes(scope) ? scope : 'all';
+                // Use GLOBAL UI language, not stateProxy.language which
+                // may be stale from localStorage.
+                const _fillLang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
+                await this.fillFromServer({ scope: finalScope, language: _fillLang });
+                return true;
+            }
+            // /report export
+            if (/^\/report\s+export(\s+(pdf|html|md|markdown|json))?\s*$/i.test(m)) {
+                const kind = (m.match(/export\s+(\w+)/i) || [])[1] || 'pdf';
+                _exportCmd(kind);
+                return true;
+            }
+            // /report snapshot
+            if (/^\/report\s+snapshot/i.test(m)) {
+                snapshots.save('');
+                _setReportStatus('Snapshot saved', 'ok');
+                return true;
+            }
+            // /report reset
+            if (/^\/report\s+reset/i.test(m)) {
+                persist.clear();
+                return true;
+            }
+            // Natural language: 用中文生成报告 / 用英文生成报告 / 英文报告 / 中文报告
+            const nat = m.match(/(用|use\s+in|switch\s+to)?\s*(中文|zh|chinese|英文|english|en)(的|生成|的)?\s*(报告|report)/i);
+            if (nat) {
+                const lang = /中文|zh|chinese/i.test(nat[2]) ? 'zh' : 'en';
+                i18n.set(lang, { userInitiated: true });
+                _setReportStatus('Language set to ' + (lang === 'zh' ? '中文' : 'English'), 'ok');
+                return true;
+            }
+            return false;
+        },
+        async fillFromServer({ scope = 'all', language = 'en' } = {}) {
+            _setReportStatus('Filling from server…', 'info');
+            try {
+                const r = await fetch('/api/report/auto-fill', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scope, language, sources: ['nifti', 'dicom', 'planning'] }),
+                });
+                const j = await r.json();
+                if (!j.success) throw new Error(j.error || 'failed');
+                const result = this.applyPatch(j.patch || {}, 'bot');
+                _setReportStatus(`Bot updated ${result.applied} field(s)`, 'ok');
+            } catch (e) {
+                _setReportStatus('Bot fill failed: ' + e.message, 'error');
+            }
+        },
+        applyPatch(patch, source = 'bot') {
+            const f = window.reportForm;
+            if (!f) return { applied: 0, skipped: 0 };
+            let applied = 0, skipped = 0;
+            for (const [k, v] of Object.entries(patch || {})) {
+                if (f.editedFields && f.editedFields.has(k)) { skipped++; continue; }
+                _setByPath(f, k, v);
+                sources.set(k, source);
+                applied++;
+            }
+            panels.editor(); panels.preview();
+            persist.autoSave();
+            audit.log('brachybot.applyPatch', '*', null, `applied=${applied} skipped=${skipped}`);
+            return { applied, skipped };
+        },
+        scanChatResponse(text) {
+            if (!text) return false;
+            const m = text.match(/```json\s*(\{[\s\S]*?"marker"\s*:\s*"report-update"[\s\S]*?\})\s*```/);
+            if (!m) return false;
+            try {
+                const j = JSON.parse(m[1]);
+                const patch = j.data || j.patch || {};
+                const result = this.applyPatch(patch, 'bot');
+                _setReportStatus(`Bot updated ${result.applied} field(s)`, 'ok');
+                return true;
+            } catch (e) {
+                console.warn('Bad report-update JSON', e);
+                return false;
+            }
+        },
+    };
+
+    function _exportCmd(kind) {
+        const k = (kind || 'pdf').toLowerCase();
+        if (k === 'pdf' && _legacy('exportReportPDF')) _legacy('exportReportPDF')();
+        else if (k === 'html' && _legacy('exportReportHTML')) _legacy('exportReportHTML')();
+        else if ((k === 'md' || k === 'markdown') && _legacy('exportReportMarkdown')) _legacy('exportReportMarkdown')();
+        else if (k === 'json') persist.exportJSON();
+    }
+
+    // ---------- Refs (P14) ----------
+    const refs = {
+        addFromCatalog(citeKey) { const fn = _legacy('addReportReferenceFromCatalog'); if (fn) fn(citeKey); },
+        addCustom() { const fn = _legacy('addReportReferenceCustom'); if (fn) fn(); },
+        remove(i) { const fn = _legacy('removeReportReference'); if (fn) fn(i); },
+        catalog() { return (typeof REPORT_REFERENCES_CATALOG !== 'undefined') ? REPORT_REFERENCES_CATALOG : {}; },
+        search(q) {
+            q = (q || '').toLowerCase();
+            const cat = this.catalog();
+            const out = [];
+            for (const k of Object.keys(cat)) {
+                const r = cat[k];
+                if (!q || (r.title || '').toLowerCase().includes(q) || (r.publisher || '').toLowerCase().includes(q) || (k || '').toLowerCase().includes(q)) {
+                    out.push(r);
+                }
+            }
+            return out;
+        },
+        async resolveDoi(doi) {
+            try {
+                const r = await fetch('/api/refs/resolve', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ doi }),
+                });
+                if (r.ok) { const j = await r.json(); if (j && j.success && j.ref) return j.ref; }
+            } catch (e) {}
+            return null;
+        },
+    };
+
+    // ---------- Figures (P15) ----------
+    const figures = {
+        capture2D() { const fn = _legacy('captureReportFigure2D'); if (fn) fn(); },
+        capture3D() { const fn = _legacy('captureReportFigure3D'); if (fn) fn(); },
+        upload(e) { const fn = _legacy('uploadReportFigure'); if (fn) fn(e); },
+        remove(i) { const fn = _legacy('removeReportFigure'); if (fn) fn(i); },
+        reorder(fromIdx, toIdx) {
+            const f = window.reportForm;
+            if (!f || !f.figures) return;
+            if (fromIdx === toIdx) return;
+            const [m] = f.figures.splice(fromIdx, 1);
+            f.figures.splice(toIdx, 0, m);
+            panels.editor(); panels.preview();
+            persist.autoSave();
+        },
+        setCaption(i, text) {
+            const f = window.reportForm;
+            if (!f || !f.figures || !f.figures[i]) return;
+            f.figures[i].caption = text;
+            persist.autoSave();
+        },
+    };
+
+    // ---------- OAR (P12) ----------
+    const oar = {
+        add() { const fn = _legacy('addOARDoseRow'); if (fn) fn(); },
+        remove(i) { const fn = _legacy('removeOARDoseRow'); if (fn) fn(i); },
+        update(i, k, v) { const fn = _legacy('updateOARDoseRow'); if (fn) fn(i, k, v); },
+        sparkline() {
+            // Placeholder mini-DVH (P12). Future: read from dose_distribution.
+            const path = 'M 0 22 L 8 22 L 16 18 L 24 12 L 32 8 L 40 5 L 48 3 L 56 2 L 64 2';
+            return `<svg width="64" height="24" viewBox="0 0 64 24" style="vertical-align:middle;"><path d="${path}" fill="none" stroke="#0c4a6e" stroke-width="1"/></svg>`;
+        },
+    };
+
+    // ---------- Audit log (P11) ----------
+    const audit = {
+        log(action, key, before, after) {
+            try {
+                const arr = JSON.parse(localStorage.getItem('brachyplan_report_audit') || '[]');
+                arr.push({ t: Date.now(), action, key, before, after, lang: stateProxy.language });
+                localStorage.setItem('brachyplan_report_audit', JSON.stringify(arr.slice(-500)));
+            } catch (e) {}
+        },
+        list() { try { return JSON.parse(localStorage.getItem('brachyplan_report_audit') || '[]'); } catch (e) { return []; } },
+        openModal() {
+            const list = this.list();
+            const html = list.slice().reverse().slice(0, 100).map(e => {
+                const ts = new Date(e.t).toLocaleString();
+                return `<div style="padding:4px 0;border-bottom:1px solid var(--card-border,#334155);font-size:0.7rem;">
+                    <span style="color:var(--text-dim,#94a3b8);">${ts}</span> · <b style="color:var(--text,#e2e8f0);">${_escHtml(e.action)}</b> · <span style="color:var(--text-dim,#94a3b8);">${_escHtml(e.key || '')}</span>
+                </div>`;
+            }).join('');
+            _showModal('审计日志 / Audit log (' + list.length + ')', html || '<i>Empty</i>');
+        },
+    };
+
+    // ---------- Snapshots (P11) ----------
+    const snapshots = {
+        save(label = '') {
+            try {
+                const f = window.reportForm;
+                if (!f) return -1;
+                const arr = JSON.parse(localStorage.getItem('brachyplan_report_snapshots') || '[]');
+                const clone = JSON.parse(JSON.stringify(f, (k, v) => v instanceof Set ? Array.from(v) : v));
+                arr.push({ t: Date.now(), label, form: clone });
+                localStorage.setItem('brachyplan_report_snapshots', JSON.stringify(arr.slice(-30)));
+                _setReportStatus('Snapshot saved', 'ok');
+                return arr.length - 1;
+            } catch (e) { _setReportStatus('Snapshot failed: ' + e.message, 'error'); return -1; }
+        },
+        list() { try { return JSON.parse(localStorage.getItem('brachyplan_report_snapshots') || '[]'); } catch (e) { return []; } },
+        restore(idx) {
+            const arr = this.list();
+            const snap = arr[idx];
+            if (!snap) return;
+            if (!confirm(`Restore snapshot from ${new Date(snap.t).toLocaleString()}?`)) return;
+            const clone = JSON.parse(JSON.stringify(snap.form));
+            clone.editedFields = new Set(clone.editedFields || []);
+            const f = window.reportForm;
+            if (f) {
+                Object.keys(f).forEach(k => delete f[k]);
+                Object.assign(f, clone);
+                f.editedFields = new Set(clone.editedFields);
+            }
+            sources._map = new Map();
+            panels.editor(); panels.preview();
+            persist.autoSave();
+            _setReportStatus('Snapshot restored', 'ok');
+        },
+        openModal() {
+            const arr = this.list();
+            const html = arr.slice().reverse().map((s, i) => {
+                const realIdx = arr.length - 1 - i;
+                return `<div style="display:flex;justify-content:space-between;padding:6px;border-bottom:1px solid var(--card-border,#334155);font-size:0.7rem;">
+                    <span><b style="color:var(--text,#e2e8f0);">${new Date(s.t).toLocaleString()}</b> · <span style="color:var(--text-dim,#94a3b8);">${_escHtml(s.label || '(no label)')}</span></span>
+                    <button onclick="Report.snapshots.restore(${realIdx}); Report._closeModal();" style="background:#0ea5e9;color:#fff;border:none;padding:3px 10px;border-radius:3px;cursor:pointer;">Restore</button>
+                </div>`;
+            }).join('');
+            _showModal('版本快照 / Snapshots (' + arr.length + ')', html || '<i>No snapshots</i>');
+        },
+    };
+
+    // ---------- Sign (P16) ----------
+    const sign = {
+        type(name, title) {
+            const f = window.reportForm;
+            if (!f) return;
+            if (name !== undefined) f.signature.name = name;
+            if (title !== undefined) f.signature.title = title;
+            persist.autoSave();
+        },
+        draw(dataUrl) {
+            const f = window.reportForm;
+            if (!f) return;
+            f.signature.drawnDataUrl = dataUrl || '';
+            persist.autoSave();
+        },
+    };
+
+    // ---------- Validation (P13, P19) ----------
+    // Per-site dose constraints sourced from clinical_kb/guidelines_brachytherapy.md:
+    //   prostate: ABS/AUA/ASTRO 2012 (PMID 22265436) — V100≥95%, D90≥100%Rx, V200≤35%
+    //   cervical: EMBRACE II (PMID 42211610) — V100≥90%, D90≥85 Gy EQD2
+    //   breast: GEC-ESTRO APBI 2016 — D90≥90%Rx
+    //   lung: ABS lung consensus — V100≥95%, V200≤30%
+    //   pancreatic: Chinese I-125 guideline 2023 — V100≥90%
+    //   head_neck: ABS H&N — V100≥95%, V200≤25%
+    //   liver: ABS liver — V100≥90%
+    //   esophageal: ABS 2014 — V100≥90%
+    const _SITE_THRESHOLDS = {
+        prostate:   { v100_ok: 95, v100_warn: 90, v200_ok: 35, v200_warn: 45 },
+        cervical:   { v100_ok: 90, v100_warn: 80, v200_ok: 35, v200_warn: 45 },
+        breast:     { v100_ok: 90, v100_warn: 80, v200_ok: 30, v200_warn: 40 },
+        lung:       { v100_ok: 95, v100_warn: 90, v200_ok: 30, v200_warn: 40 },
+        pancreatic: { v100_ok: 90, v100_warn: 80, v200_ok: 30, v200_warn: 40 },
+        liver:      { v100_ok: 90, v100_warn: 80, v200_ok: 30, v200_warn: 40 },
+        head_neck:  { v100_ok: 95, v100_warn: 90, v200_ok: 25, v200_warn: 35 },
+        esophageal: { v100_ok: 90, v100_warn: 80, v200_ok: 30, v200_warn: 40 },
+        default:    { v100_ok: 90, v100_warn: 80, v200_ok: 35, v200_warn: 45 },
+    };
+    function _getSiteThresholds() {
+        // Determine tumor site from multiple sources
+        let tt = '';
+        try {
+            tt = (state.metrics && state.metrics.tumor_type) || window._tumorSite || '';
+        } catch(_) {}
+        if (!tt) {
+            try {
+                const tr = window._lastToolResults;
+                if (tr && tr.ctv_segmentation && tr.ctv_segmentation.tumor_type)
+                    tt = tr.ctv_segmentation.tumor_type;
+            } catch(_) {}
+        }
+        if (!tt) {
+            try {
+                const f = window.reportForm;
+                if (f && f.study && f.study.diagnosis) tt = f.study.diagnosis;
+            } catch(_) {}
+        }
+        tt = (tt || '').toLowerCase().replace(/[\s-]/g, '_');
+        // Map common names
+        const _map = { nnunet_pancreatic: 'pancreatic', pancreas: 'pancreatic',
+            voco_liver: 'liver', voco_lung: 'lung', voco_kidney: 'liver',
+            voco_colon: 'liver', voco_brats21: 'head_neck' };
+        for (const [k, v] of Object.entries(_map)) { if (tt.includes(k)) return _SITE_THRESHOLDS[v]; }
+        for (const k of Object.keys(_SITE_THRESHOLDS)) { if (tt.includes(k)) return _SITE_THRESHOLDS[k]; }
+        return _SITE_THRESHOLDS.default;
+    }
+    function THRESHOLDS() {
+        // Dynamic thresholds based on current tumor site
+        const site = _getSiteThresholds();
+        // D90: ok = ≥100% of Rx, warn = ≥90% of Rx
+        // Rx dose comes from reportForm or defaults to 120 Gy (DOSE_SCALE)
+        let rxGy = 120;
+        try {
+            const f = window.reportForm;
+            if (f && f.planning && Number.isFinite(f.planning.prescriptionGy))
+                rxGy = f.planning.prescriptionGy;
+        } catch(_) {}
+        return {
+            'metrics.v100':  { ok: v => v >= site.v100_ok, warn: v => v >= site.v100_warn, unit: '%', label: 'V100' },
+            'metrics.d90':   { ok: v => v >= rxGy, warn: v => v >= rxGy * 0.90, unit: 'Gy', label: 'D90' },
+            'metrics.v150':  { ok: v => v <= 50, warn: v => v <= 70, unit: '%', label: 'V150' },
+            'metrics.v200':  { ok: v => v <= site.v200_ok, warn: v => v <= site.v200_warn, unit: '%', label: 'V200' },
+            'metrics.ci':    { ok: v => v >= 0.6, warn: v => v >= 0.4, unit: '', label: 'CI' },
+            'metrics.hi':    { ok: v => v <= 0.35, warn: v => v <= 0.5, unit: '', label: 'HI' },
+            'metrics.score': { ok: v => v >= 80, warn: v => v >= 60, unit: '/100', label: 'Score' },
+        };
+    }
+    const validation = {
+        check() {
+            const f = window.reportForm;
+            const issues = [];
+            if (!f) return issues;
+            if (!f.patient.name) issues.push({ key: 'patient.name', msg: 'Patient name is required' });
+            if (!f.patient.gender) issues.push({ key: 'patient.gender', msg: 'Gender is required' });
+            if (!f.patient.id && !f.case.patientId) issues.push({ key: 'patient.id', msg: 'Patient ID is required' });
+            if (!f.study.diagnosis) issues.push({ key: 'study.diagnosis', msg: 'Clinical diagnosis is required' });
+            if (f.metrics.d90 !== null && f.metrics.d90 !== undefined && (f.metrics.d90 < 0 || f.metrics.d90 > 250))
+                issues.push({ key: 'metrics.d90', msg: 'D90 out of plausible range (0–250 Gy)' });
+            if (f.metrics.v100 !== null && f.metrics.v100 !== undefined && (f.metrics.v100 < 0 || f.metrics.v100 > 100))
+                issues.push({ key: 'metrics.v100', msg: 'V100 out of 0–100%' });
+            if (f.metrics.ci !== null && f.metrics.ci !== undefined && (f.metrics.ci < 0 || f.metrics.ci > 1))
+                issues.push({ key: 'metrics.ci', msg: 'CI should be 0–1' });
+            return issues;
+        },
+        openModal() {
+            const issues = this.check();
+            const html = issues.length === 0
+                ? '<div style="color:#4ade80;padding:8px;">✅ All required fields present and within plausible ranges.</div>'
+                : issues.map(i => `<div style="padding:4px;border-left:3px solid #ef4444;background:rgba(239,68,68,0.1);margin:4px 0;font-size:0.72rem;color:var(--text,#e2e8f0);"><b>${_escHtml(i.key)}</b>: ${_escHtml(i.msg)}</div>`).join('');
+            _showModal('校验 / Validation', html);
+        },
+    };
+
+    function metricBadge(key, val) {
+        const T = THRESHOLDS();
+        const r = T[key];
+        if (!r || val === null || val === undefined) return '';
+        const cls = r.ok(val) ? 'pass' : r.warn(val) ? 'warn' : 'fail';
+        const labels = { pass: 'PASS', warn: 'WARN', fail: 'FAIL' };
+        const colors = { pass: '#dcfce7|#166534', warn: '#fef3c7|#92400e', fail: '#fee2e2|#991b1b' };
+        const [bg, fg] = colors[cls].split('|');
+        return `<span style="background:${bg};color:${fg};font-size:0.6rem;padding:1px 5px;border-radius:6px;margin-left:3px;vertical-align:middle;">${labels[cls]}</span>`;
+    }
+
+    // ---------- Modal helper ----------
+    function _showModal(title, body) {
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+        ov.innerHTML = `<div style="background:var(--bg-2,#1e293b);border:1px solid var(--card-border,#334155);border-radius:8px;max-width:600px;width:90%;max-height:80vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,0.5);color:var(--text,#e2e8f0);">
+            <div style="padding:12px 16px;border-bottom:1px solid var(--card-border,#334155);display:flex;justify-content:space-between;align-items:center;">
+                <b style="font-size:0.85rem;color:var(--text,#e2e8f0);">${_escHtml(title)}</b>
+                <button onclick="this.closest('[data-rp-modal]').remove()" style="background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--text-dim,#94a3b8);">✕</button>
+            </div>
+            <div style="padding:16px;color:var(--text,#e2e8f0);">${body}</div>
+        </div>`;
+        ov.setAttribute('data-rp-modal', '1');
+        ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+        document.body.appendChild(ov);
+    }
+    function _closeModal() { document.querySelectorAll('[data-rp-modal]').forEach(e => e.remove()); }
+
+    // ---------- Inline language hint (P8) ----------
+    function _attachLangHint(el) {
+        if (!el) return;
+        let hint = el.parentElement && el.parentElement.querySelector('.rp-lang-hint');
+        if (!hint) {
+            hint = document.createElement('div');
+            hint.className = 'rp-lang-hint';
+            hint.style.cssText = 'font-size:0.62rem;color:#94a3b8;margin-top:2px;font-style:italic;';
+            (el.parentElement || el).appendChild(hint);
+        }
+        const update = () => {
+            const d = _detectLanguageFromText(el.value);
+            if (!d || !el.value) { hint.textContent = ''; return; }
+            hint.textContent = `Detected: ${d === 'zh' ? '中文' : 'English'} (report language not auto-switched)`;
+        };
+        el.addEventListener('input', update);
+        update();
+    }
+
+    // ---------- Persistence ----------
+    let _autoSaveTimer = null;
+    const persist = {
+        autoSave() {
+            if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
+            _autoSaveTimer = setTimeout(() => this._save(), 800);
+            const t = document.getElementById('reportAutoSaveText');
+            if (t) t.textContent = 'Auto-save: pending…';
+        },
+        _save() {
+            try {
+                const f = window.reportForm;
+                if (!f) return;
+                const clone = JSON.parse(JSON.stringify(f, (k, v) => v instanceof Set ? Array.from(v) : v));
+                localStorage.setItem('brachyplan_reportForm', JSON.stringify(clone));
+                const t = document.getElementById('reportAutoSaveText');
+                if (t) t.textContent = 'Auto-save: ' + new Date().toLocaleTimeString();
+            } catch (e) {
+                const t = document.getElementById('reportAutoSaveText');
+                if (t) t.textContent = 'Auto-save: quota exceeded';
+            }
+        },
+        exportJSON() { const fn = _legacy('reportSaveJSON'); if (fn) fn(); },
+        importJSON() { const fn = _legacy('reportLoadJSON'); if (fn) fn(); },
+        clear() {
+            if (!confirm('Reset all report fields? (A snapshot will be saved.)')) return;
+            snapshots.save('pre-reset');
+            const lang = stateProxy.language;
+            const fn = _legacy('_newEmptyReportForm');
+            if (fn) {
+                const empty = fn();
+                empty.language = lang;
+                const f = window.reportForm;
+                if (f) {
+                    Object.keys(f).forEach(k => delete f[k]);
+                    Object.assign(f, empty);
+                    f.editedFields = new Set();
+                }
+                sources._map = new Map();
+                panels.editor(); panels.preview();
+                this.autoSave();
+                _setReportStatus('Reset complete', 'ok');
+            }
+        },
+    };
+
+    // ---------- Export ----------
+    const exportFns = {
+        pdf() { const fn = _legacy('exportReportPDF'); if (fn) fn(); },
+        html() { const fn = _legacy('exportReportHTML'); if (fn) fn(); },
+        markdown() { const fn = _legacy('exportReportMarkdown'); if (fn) fn(); },
+        json() { persist.exportJSON(); },
+    };
+
+    // ---------- Export menu helpers ----------
+    function _toggleExportMenu() {
+        const m = document.getElementById('exportMenu');
+        if (m) m.style.display = m.style.display === 'none' ? 'block' : 'none';
+    }
+    function _hideExportMenu() {
+        const m = document.getElementById('exportMenu');
+        if (m) m.style.display = 'none';
+    }
+    // Click-outside to close export menu
+    function _installExportMenuClickOutside() {
+        if (window._rpExportClickHooked) return;
+        window._rpExportClickHooked = true;
+        document.addEventListener('click', (e) => {
+            const menu = document.getElementById('exportMenu');
+            if (!menu || menu.style.display === 'none') return;
+            // Check if click was on the export button or inside the menu
+            if (e.target.closest('#exportMenu') || e.target.closest('[onclick*="_toggleExportMenu"]')) return;
+            menu.style.display = 'none';
+        });
+    }
+
+    // ---------- Chat palette (P9) ----------
+    function _installChatPalette() {
+        const inp = document.getElementById('chatInput') || document.querySelector('[data-role="chat-input"]') || document.querySelector('textarea[placeholder*="chat" i]');
+        if (!inp || inp._rpPaletteHooked) return;
+        inp._rpPaletteHooked = true;
+        let pop = null;
+        const hide = () => { if (pop) { pop.remove(); pop = null; } };
+        const show = (anchor, items) => {
+            hide();
+            pop = document.createElement('div');
+            pop.style.cssText = 'position:absolute;z-index:9999;background:#fff;border:1px solid #cbd5e1;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,0.15);min-width:260px;font-size:0.78rem;';
+            const rect = anchor.getBoundingClientRect();
+            pop.style.top = (window.scrollY + rect.bottom + 4) + 'px';
+            pop.style.left = (window.scrollX + rect.left) + 'px';
+            pop.innerHTML = items.map((it, i) => `<div data-idx="${i}" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;">${_escHtml(it.label)}<div style="font-size:0.62rem;color:#94a3b8;">${_escHtml(it.cmd)}</div></div>`).join('');
+            pop.querySelectorAll('[data-idx]').forEach(el => {
+                el.addEventListener('mouseenter', () => { el.style.background = '#f0f9ff'; });
+                el.addEventListener('mouseleave', () => { el.style.background = ''; });
+                el.addEventListener('click', () => {
+                    anchor.value = items[el.dataset.idx].cmd;
+                    anchor.focus();
+                    hide();
+                    const form = anchor.closest('form');
+                    if (form) { try { form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); } catch (e) {} }
+                    else if (typeof window.sendChat === 'function') {
+                        try { window.sendChat(anchor.value); } catch (e) {}
+                    }
+                });
+            });
+            document.body.appendChild(pop);
+        };
+        const items = [
+            { cmd: '/report fill',            label: '📝 Fill all from current data' },
+            { cmd: '/report fill patient',     label: '👤 Fill patient fields only' },
+            { cmd: '/report fill metrics',     label: '📊 Fill metrics & OAR' },
+            { cmd: '/report fill interpretation', label: '📝 Fill narrative only' },
+            { cmd: '/report zh',               label: '🇨🇳 切换到中文' },
+            { cmd: '/report en',               label: '🇺🇸 Switch to English' },
+            { cmd: '/report export pdf',       label: '🖨️ Export PDF' },
+            { cmd: '/report export json',      label: '💾 Export JSON' },
+            { cmd: '/report snapshot',         label: '📸 Save snapshot' },
+        ];
+        inp.addEventListener('input', () => {
+            if (inp.value.startsWith('/report')) show(inp, items);
+            else hide();
+        });
+        inp.addEventListener('blur', () => setTimeout(hide, 200));
+    }
+
+    // ---------- Chat response patch scanner (P10) ----------
+    function _installChatScanner() {
+        if (window._reportBotResponseHooked) return;
+        window._reportBotResponseHooked = true;
+        // Hook the existing sendChat wrapper so /report commands are processed
+        // (the legacy module already wraps sendChat for language detection;
+        // we replace that wrap with one that also handles fill/export/etc.).
+        const orig = window.sendChat;
+        const self = this;
+        window.sendChat = function (...args) {
+            const msg = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].value) || '';
+            window._lastUserMessage = msg;
+            // Process our commands first
+            const handled = brachybot.onChatCommand(msg);
+            // If we consumed the command, intercept the legacy hook
+            if (handled) {
+                // Let the original sendChat still run if it was a fill (so the bot
+                // is also notified). For pure UI commands (en/zh), skip.
+                if (/^\/report\s+(en|zh|fill|fill|export|snapshot|reset)/i.test(msg.trim())) {
+                    return orig.apply(this, args);
+                }
+            }
+            return orig.apply(this, args);
+        };
+        // Poll for new bot messages and scan them for report-update markers
+        setInterval(() => {
+            try {
+                document.querySelectorAll('.chat-message, .bot-message, [data-role="assistant"]').forEach(el => {
+                    if (el.dataset && el.dataset.rpScanned) return;
+                    el.dataset.rpScanned = '1';
+                    const text = el.textContent || el.innerText || '';
+                    brachybot.scanChatResponse(text);
+                });
+            } catch (e) {}
+        }, 1500);
+    }
+
+    // ---------- Keyboard shortcuts (P18) ----------
+    function _installShortcuts() {
+        if (window._rpShortcutsHooked) return;
+        window._rpShortcutsHooked = true;
+        document.addEventListener('keydown', (e) => {
+            const tag = (e.target && e.target.tagName) || '';
+            const inForm = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) && !e.ctrlKey && !e.metaKey;
+            if (inForm) return;
+            if (e.ctrlKey && !e.shiftKey && (e.key === 's' || e.key === 'S')) {
+                e.preventDefault();
+                exportFns.json();
+            } else if (e.ctrlKey && !e.shiftKey && (e.key === 'p' || e.key === 'P')) {
+                e.preventDefault();
+                exportFns.pdf();
+            } else if (e.ctrlKey && e.shiftKey && (e.key === 'L' || e.key === 'l')) {
+                e.preventDefault();
+                i18n.set(stateProxy.language === 'zh' ? 'en' : 'zh', { userInitiated: true });
+            } else if (e.ctrlKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+                e.preventDefault();
+                panels.switch('preview');
+            }
+        });
+    }
+
+    // ---------- 2-col CSS (P17) ----------
+    function _install2colCss() {
+        if (document.getElementById('rp-2col-css')) return;
+        const s = document.createElement('style');
+        s.id = 'rp-2col-css';
+        s.textContent = `
+            /* 2-col mode: side-by-side editor + preview */
+            body.report-2col #panelReport .rp-root { flex-direction:row !important; }
+            body.report-2col .rp-edit-area,
+            body.report-2col #reportEditor {
+                flex: 1 1 50% !important; min-width: 0; height: auto !important;
+                max-height: none !important;
+                border-right: 1px solid var(--border-hairline);
+                border-bottom: none !important;
+            }
+            body.report-2col .rp-preview-area,
+            body.report-2col #reportPreview {
+                flex: 1 1 50% !important; min-width: 0; height: auto !important;
+                max-height: none !important;
+            }
+            /* Force 2-col toolbars to be more compact */
+            body.report-2col .rp-toolbar-primary,
+            body.report-2col .rp-toolbar-secondary {
+                flex: 1 1 100%; min-width: 0;
+            }
+            body.report-2col .rp-root { flex-wrap: wrap; }
+            .oar-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+            .oar-card { background:var(--bg-2); border:1px solid var(--border-hairline); border-radius:var(--radius-xs); padding:8px 10px; }
+            .oar-card-head { display:flex; justify-content:space-between; align-items:center; }
+        `;
+        document.head.appendChild(s);
+        try {
+            // BUG FIX 2026-06-16: user reported that the "2-col layout"
+            // checkbox was defaulting to ON even though the HTML markup
+            // had no `checked` attribute. Root cause: localStorage was
+            // restoring the body.report-2col class from a previous
+            // session, which silently made the layout 2-col WITHOUT
+            // checking the actual checkbox. Now we ALSO sync the
+            // checkbox element from the same stored value so the UI
+            // and the layout are always consistent.
+            //
+            // The user explicitly wants 2-col to DEFAULT TO OFF. If
+            // no user-initiated value is stored, ensure the class is
+            // absent and the checkbox is unchecked.
+            const stored = localStorage.getItem('brachyplan_report_2col');
+            const cb = document.querySelector('.rp-2col-toggle input[type="checkbox"]');
+            if (stored === '1') {
+                document.body.classList.add('report-2col');
+                if (cb) cb.checked = true;
+            } else {
+                document.body.classList.remove('report-2col');
+                if (cb) cb.checked = false;
+            }
+        } catch (e) {}
+    }
+
+    // ---------- Boot ----------
+    function boot() {
+        _install2colCss();
+        _installChatPalette();
+        _installChatScanner();
+        _installShortcuts();
+        _installExportMenuClickOutside();
+        _updateLanguageButtons();
+        panels.editor();
+        panels.preview();
+        _setReportStatus('Ready', 'info');
+    }
+
+    return {
+        state, i18n, sources, panels, autoFill, brachybot,
+        refs, figures, oar, audit, snapshots, sign, persist,
+        export: exportFns, validation,
+        boot, metricBadge, preview,
+        _closeModal, _escHtml, _setByPath, _getByPath, _attachLangHint, _showModal,
+        _toggleExportMenu, _hideExportMenu,
+    };
+})();
+
+// =============================================================================
+// Boot the new module after the legacy module has initialized.
+// =============================================================================
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => Report.boot(), 200);
+    });
+} else {
+    setTimeout(() => Report.boot(), 200);
+}
+
+
+// =============================================================================
+// Legacy Report module follows below (preserved verbatim)
+// =============================================================================

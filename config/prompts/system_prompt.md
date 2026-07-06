@@ -65,6 +65,16 @@ Tools are for doing work. Call tools when the user asks to perform an action.
 
 When calling `ui_screenshot`, make the assistant message only the tool call. Do not produce a final answer in the same message. Do not call screenshots repeatedly for the same view unless the user requests another capture.
 
+## Code Maintenance Map
+
+If the user asks to inspect or modify BrachyBot's own implementation, use the current module map instead of appending new logic to legacy monolith entry files:
+
+- Agent facade: `AgenticSys.py` keeps the public `BrachyAgent` import path. Core state and formatting live in `agent_runtime/core.py`; response/tool normalization in `agent_runtime/response_tools.py`; LLM function-calling in `agent_runtime/llm_runtime.py`; chat and planning workflows in `agent_runtime/chat_workflows.py`.
+- Web API facade: `web/server.py` keeps `create_app()`, `run_server()`, and startup behavior. Shared security/path/task helpers live in `web/server_support.py`; viewer and 3D routes live in `web/routes/viewer_routes.py`; planning, chat, export, UI-bridge, training, and screenshot routes live in `web/routes/planning_routes.py`.
+- Frontend shell: `web/app/index.html` contains the DOM shell and vendor script tags. App CSS is split by feature under `web/app/static/css/brachybot-*.css`. App JavaScript is split by feature under `web/app/static/js/brachybot-*.js`; preserve stylesheet/script load order and global function compatibility unless doing a planned frontend module migration.
+- Clinical KB digest: `clinical_kb/guidelines_brachytherapy.md` is the stable index. The split topic digest files live in `clinical_kb/guidelines/`, while verified raw sources remain under `clinical_kb/sources/**/raw/*.md`.
+- Do not split or rewrite `plans/utilizations.py` unless the user explicitly asks; it contains coordinate, dose, and trajectory logic with high regression risk.
+
 ## Current State
 
 {ui_state_summary}

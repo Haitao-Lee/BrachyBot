@@ -61,7 +61,7 @@ The system grows smarter with every use — automatically extracting patterns fr
 BrachyBot automates the complete brachytherapy planning workflow:
 
 ```
-CT Scan → CTV Segmentation → OAR Segmentation → Trajectory Planning → 
+CT Scan → CTV Segmentation → OAR Segmentation → Trajectory Planning →
 Seed Placement → Dose Calculation → Dose Evaluation → DICOM Export
 ```
 
@@ -1301,22 +1301,22 @@ When existing tools are insufficient, the LLM can create new tools:
 ```python
 class BrachyAgent:
     def __init__(self, session_id: str = "default", config: dict = None)
-    
+
     # Core planning
-    def run_preoperative_plan(ct_path, ctv_path=None, oar_path=None, 
+    def run_preoperative_plan(ct_path, ctv_path=None, oar_path=None,
                               mode="rule_based", output_dir="./output") -> dict
-    def run_intraoperative_replan(intra_op_ct_path, original_plan, 
+    def run_intraoperative_replan(intra_op_ct_path, original_plan,
                                    deviation_threshold_mm=2.0) -> dict
-    
+
     # Natural language interface
     def chat(message: str) -> str
     def chat_with_trace(message: str) -> dict  # {response, steps}
-    
+
     # Status and evolution
     def get_status() -> dict
     def evolve_from_interactions() -> dict
     def get_recommended_skill(message: str) -> dict
-    
+
     # Enhanced integration (auto-initialized)
     # Available via self.enhanced:
     #   enhanced.pre_task_hook(message) -> context dict
@@ -1436,7 +1436,26 @@ BRACHY_HOST="0.0.0.0"             # Web server host
 
 ### Frontend Features
 
-Single-page HTML interface at `web/app/index.html`:
+The browser UI keeps `web/app/index.html` as a small DOM shell and loads
+feature-split static assets:
+
+- `web/app/static/css/brachybot-theme-layout.css` — theme variables, base layout, header/sidebar shell.
+- `web/app/static/css/brachybot-chat-status.css` — chat, markdown, execution trace, and live status styling.
+- `web/app/static/css/brachybot-panels-viewers.css` — control panels, viewer cards, data tree, and visualization chrome.
+- `web/app/static/css/brachybot-report-controls.css` — report editor/export and remaining control styles.
+- `web/app/static/js/brachybot-chat-core.js` — chat rendering, markdown, streaming chain UI.
+- `web/app/static/js/brachybot-chat-todo.js` — live task/todo progress.
+- `web/app/static/js/brachybot-ui-api.js` — API wrapper, upload/reset, UI bridge, screenshot capture.
+- `web/app/static/js/brachybot-viewer-volume.js` — CT/label volume loading and 2D slice rendering.
+- `web/app/static/js/brachybot-viewer-layout.js` — viewer layout, resize, zoom, data-tree operations.
+- `web/app/static/js/brachybot-3d-manual.js` — 3D meshes, dose surfaces, manual needles/seeds, training monitor.
+- `web/app/static/js/brachybot-manual-annotation.js` — manual planning steps and annotation tools.
+- `web/app/static/js/brachybot-dvh-planning.js` — DVH, metrics, OAR table, clinical evaluation widgets.
+- `web/app/static/js/brachybot-report-*.js` — report editor, figure capture, export.
+
+The script tags are intentionally ordered in `index.html` so legacy global
+functions remain compatible. Preserve that order unless doing a planned module
+migration.
 
 **Chat Panel (Left)**
 - Real-time streaming output (text_chunk events)

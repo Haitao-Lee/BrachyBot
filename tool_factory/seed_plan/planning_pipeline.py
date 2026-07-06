@@ -1378,8 +1378,8 @@ class PlanningPipelineTool(BaseTool):
         #   - CNN raw output: 0 ~ 255 (uint8 image_normalize_scale)
         #   - After normalization: 0 ~ 1.0 (prescription = 1.0)
         #   - To convert to Gy: dose_normalized × 120.0
-        # This constant appears in planning_pipeline.py, web/server.py,
-        # and AgenticSys.py. Keep them in sync if the model changes.
+        # This constant also appears in the web planning routes and agent runtime.
+        # Keep the display scale in sync if the dose model calibration changes.
         DOSE_SCALE = 120.0
         target_mask = ctv_mask > 0
         target_doses = dose_distribution[target_mask]

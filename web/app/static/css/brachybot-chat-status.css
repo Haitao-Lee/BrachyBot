@@ -1,0 +1,1285 @@
+/* ===========================================================
+   CHAT AREA
+   =========================================================== */
+.chat-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    /* Hide horizontal overflow (breathing animation extends slightly
+       beyond the dock, but only vertically — horizontal is safe to clip).
+       overflow-y must NOT be hidden — that would clip the dock when
+       messages are long. The flex layout (messages=flex:1 auto-scroll,
+       dock=flex-shrink:0) already keeps the dock at the bottom. */
+    overflow-x: hidden;
+    overflow-y: clip;
+    /* DEEPER CHAT THEME (2026-06-15): user wants the chat panel to
+       read as a focused, dark, medical-grade surface — not the same
+       light slate as the rest of the app. We push the entire chat
+       column down to bg-sunken level (#050810) and let the message
+       cards lift UP from that well with subtle elevation. The
+       gradient was a light→mid blue; it's now a mid→sunken gradient
+       for a "looking into a deep display panel" feel. */
+    background:
+        linear-gradient(180deg, var(--bg-1) 0%, var(--bg-sunken) 100%),
+        radial-gradient(ellipse at 50% 0%, rgba(96, 165, 250, 0.04) 0%, transparent 60%);
+    position: relative;
+    border-left: 1px solid var(--border-hairline);
+    border-right: 1px solid var(--border-hairline);
+}
+/* Subtle inner glow at the top of the chat panel for the
+   "depth" effect the user asked for. */
+.chat-area::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 60px;
+    background: linear-gradient(180deg, rgba(96, 165, 250, 0.06) 0%, transparent 100%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Drag handle on the LEFT edge of the chat column so the user can
+   resize the LLM chat column. The chat column's siblings are the
+   session sidebar (left) and the right-panel (right); without this
+   handle the chat column was effectively fixed-width and the user
+   complained they couldn't drag the "middle" column.
+
+   The handle is 6px wide, sticks 3px to the LEFT of the chat area
+   (overlapping the session sidebar boundary), and has cursor:col-resize.
+   A transparent background by default; on hover a subtle blue tint
+   lights up so the user can see the affordance. The visible 3px bar
+   in the center is a ::after pseudo-element so the actual hit area
+   is bigger than the visual bar (helps mobile / trackpad users). */
+.chat-area-resize-handle {
+    position: absolute;
+    top: 0;
+    left: -3px;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 10;
+    transition: background var(--t-base) var(--ease);
+}
+/* Always-visible 2px blue bar. The chat column's resize handle sits
+   right on top of the sidebar's resize handle (both at the same
+   3px boundary), so the visible bar must NOT rely on hover to be
+   seen — by default the user can't tell where to grab. */
+.chat-area-resize-handle::before {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    background: var(--primary);
+    opacity: 0.35;
+    transition: opacity var(--t-base) var(--ease), width var(--t-base) var(--ease);
+    pointer-events: none;
+}
+.chat-area-resize-handle:hover,
+.chat-area-resize-handle.dragging {
+    background: rgba(59, 130, 246, 0.10);
+}
+.chat-area-resize-handle:hover::before,
+.chat-area-resize-handle.dragging::before { opacity: 1; width: 3px; }
+.chat-area-resize-handle:hover,
+.chat-area-resize-handle.dragging {
+    background: rgba(59, 130, 246, 0.10);
+}
+.chat-area-resize-handle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: 40px;
+    background: var(--border-soft);
+    border-radius: 1px;
+    transition: background var(--t-base) var(--ease), height var(--t-base) var(--ease);
+}
+.chat-area-resize-handle:hover::after,
+.chat-area-resize-handle.dragging::after {
+    background: var(--primary);
+    height: 56px;
+}
+
+.chat-header {
+    padding: 0.85rem 1.1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    border-bottom: 1px solid var(--border-hairline);
+    background: var(--glass-tint-cool);
+    backdrop-filter: var(--blur-md);
+    -webkit-backdrop-filter: var(--blur-md);
+    box-shadow: var(--inset-top), 0 1px 0 rgba(15, 23, 42, 0.03);
+    flex-shrink: 0;
+}
+.chat-header-icon {
+    width: 32px; height: 32px;
+    border-radius: 9px;
+    background: var(--primary);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    box-shadow: var(--inset-top), var(--shadow-sm);
+}
+.chat-header-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.005em;
+}
+.chat-header-sub {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    font-weight: 500;
+}
+
+.context-badge {
+    display: flex; align-items: center; gap: 0.3rem;
+    height: 22px;
+    padding: 0 0.55rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--pill-r);
+    font-size: 0.66rem;
+    color: var(--text-secondary);
+    box-shadow: var(--inset-top), var(--shadow-xs);
+    transition: all var(--t-base) var(--ease);
+    cursor: default;
+}
+.context-badge:hover {
+    border-color: var(--msg-user-border);
+    color: var(--primary);
+}
+.context-badge span { font-weight: 600; color: var(--text); font-family: 'JetBrains Mono', monospace; }
+
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.1rem 1.1rem 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    min-height: 0;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+/* ----- Chat messages: USER = tinted brand, BOT = sunken darker -----
+   DEEP THEME (2026-06-15): cards now sit on the bg-sunken chat
+   panel and lift UP with a slight elevation halo. We want the
+   reading area to feel like a focused, calm, dark cockpit. */
+.chat-msg {
+    padding: 0.7rem 0.95rem;
+    border-radius: var(--radius-md);
+    font-size: 0.82rem;
+    line-height: 1.55;
+    max-width: 100%;
+    position: relative;
+    border: 1px solid transparent;
+    box-shadow: var(--shadow-xs);
+    transition: all var(--t-base) var(--ease);
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+    z-index: 1;
+    /* CHATGPT-STYLE TEXT ALIGNMENT (2026-06-15): explicitly set
+       text-align: left/start. Without this, in some flex contexts
+       (chat-msg-wrapper.bot with align-items: flex-start), text
+       inside can look "centered" because there's no anchor
+       declaration. Defensive — doesn't hurt, prevents drift. */
+    text-align: left;
+}
+.chat-msg p { margin: 0.2rem 0; }
+.chat-msg p:first-child { margin-top: 0; }
+.chat-msg p:last-child { margin-bottom: 0; }
+
+.chat-msg.user {
+    /* Deep theme: user card is a subtle blue-tinted dark surface.
+       Lifts off the sunken chat panel. */
+    background: linear-gradient(135deg, rgba(96, 165, 250, 0.14) 0%, rgba(59, 130, 246, 0.10) 100%);
+    color: #e0eaff;
+    border-color: rgba(96, 165, 250, 0.28);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 8px rgba(0, 0, 0, 0.25);
+    font-weight: 500;
+}
+.chat-msg.user:hover {
+    background: linear-gradient(135deg, rgba(96, 165, 250, 0.20) 0%, rgba(59, 130, 246, 0.16) 100%);
+    border-color: rgba(96, 165, 250, 0.45);
+}
+
+.chat-msg.bot {
+    /* SUNKEN PANEL EFFECT (2026-06-15 round 2): user feedback
+       round 1 made the bot response fully transparent (no card
+       styling) and the text blended into the bg-sunken chat
+       column — no visual distinction between "container" and
+       "background". This iteration restores a SUBTLE panel: a
+       slightly-elevated gradient + hairline border so the LLM
+       reply reads as a distinct surface, while still spanning
+       the full chat column width (ChatGPT-style prose flow). The
+       panel uses a translucent inner shadow on top + a soft
+       bottom shadow so it appears to "float" within the sunken
+       chat column. */
+    background: linear-gradient(180deg, var(--bg-2) 0%, var(--bg-1) 100%);
+    color: #dde3f0;
+    border-color: var(--border-default);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 4px 16px rgba(0, 0, 0, 0.32);
+    padding: 0.95rem 1.15rem;
+    border-radius: var(--radius-md);
+}
+.chat-msg.bot:hover {
+    background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
+    border-color: var(--border-emphasis);
+}
+
+/* Links inside chat responses — clickable, styled, open in new tab */
+.chat-msg a[href], .md-table a[href],
+.chat-msg li a, .chat-msg p a, .md-list a, .md-ordered-list a {
+    color: #60a5fa;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(96, 165, 250, 0.3);
+    transition: color 0.15s, border-color 0.15s;
+    word-break: break-all;
+    pointer-events: auto !important;
+    cursor: pointer;
+}
+.chat-msg a[href]:hover, .md-table a[href]:hover,
+.chat-msg li a:hover, .chat-msg p a:hover {
+    color: #93c5fd;
+    border-bottom-color: #93c5fd;
+}
+
+.chat-msg.system {
+    background: var(--bg-sunken);
+    color: var(--text-secondary);
+    border-style: dashed;
+    border-color: var(--border-soft);
+    font-size: 0.78rem;
+    text-align: center;
+    align-self: center;
+    max-width: 90%;
+}
+.chat-msg.error {
+    background: var(--danger-soft);
+    color: var(--danger);
+    border-color: var(--danger-border);
+    box-shadow: var(--inset-bottom), var(--shadow-xs);
+}
+
+/* Markdown — code block blends with dark chat theme */
+.md-code-block {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    border-radius: var(--radius-sm);
+    padding: 0.65rem 0.85rem;
+    margin: 0.5rem 0;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    line-height: 1.55;
+    position: relative;
+    color: var(--text);
+    box-shadow: none;
+}
+.md-code-block code { color: var(--text); font-family: inherit; }
+.md-code-block .token.comment,
+.md-code-block .token.prolog,
+.md-code-block .token.doctype,
+.md-code-block .token.cdata { color: var(--text-dim); font-style: italic; }
+.md-code-block .token.punctuation { color: var(--text-secondary); }
+.md-code-block .token.property,
+.md-code-block .token.tag,
+.md-code-block .token.boolean,
+.md-code-block .token.number,
+.md-code-block .token.constant,
+.md-code-block .token.symbol { color: var(--danger); }
+.md-code-block .token.selector,
+.md-code-block .token.attr-name,
+.md-code-block .token.string,
+.md-code-block .token.char,
+.md-code-block .token.builtin { color: var(--success); }
+.md-code-block .token.operator,
+.md-code-block .token.entity,
+.md-code-block .token.url { color: var(--primary); }
+.md-code-block .token.atrule,
+.md-code-block .token.attr-value,
+.md-code-block .token.keyword { color: var(--primary-ink); }
+.md-code-block .token.function,
+.md-code-block .token.class-name { color: var(--info); }
+.md-code-block .token.regex,
+.md-code-block .token.important,
+.md-code-block .token.variable { color: var(--warning); }
+.md-code-block .token.decorator,
+.md-code-block .token.annotation { color: var(--primary); }
+
+.md-inline-code, code:not([class*="language-"]) {
+    background: var(--bg-sunken);
+    color: var(--primary-ink);
+    border: 1px solid var(--border-hairline);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78em;
+    font-weight: 500;
+}
+
+.code-copy-btn {
+    position: absolute;
+    top: 0.4rem; right: 0.5rem;
+    height: 22px;
+    background: var(--bg-2);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-hairline);
+    border-radius: 5px;
+    font-size: 0.65rem;
+    padding: 0 0.5rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: all var(--t-base) var(--ease);
+    box-shadow: var(--shadow-xs);
+}
+.md-code-block:hover .code-copy-btn { opacity: 1; }
+.code-copy-btn:hover {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+}
+
+.md-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 0.6rem 0 0.8rem;
+    width: 100%;
+    font-size: 0.76rem;
+    /* Frosted glass — semi-transparent so the sunken chat column
+       bleeds through. Sits as a quiet elevated surface, never "white". */
+    background: rgba(255, 255, 255, 0.035);
+    color: var(--text);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    backdrop-filter: blur(8px) saturate(140%);
+    -webkit-backdrop-filter: blur(8px) saturate(140%);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset,
+                0 4px 14px rgba(0, 0, 0, 0.32);
+}
+.md-table th, .md-table td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    text-align: left;
+    vertical-align: top;
+    line-height: 1.5;
+    color: var(--text);
+}
+.md-table th {
+    background: rgba(255, 255, 255, 0.055);
+    color: #cbd5e1;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    font-size: 0.68rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+    text-transform: uppercase;
+}
+.md-table tr:last-child td { border-bottom: none; }
+.md-table tbody tr:nth-child(even) td {
+    background: rgba(255, 255, 255, 0.018);
+}
+.md-table tbody tr:hover td {
+    background: rgba(14, 165, 233, 0.10);
+}
+.md-table code {
+    background: rgba(255, 255, 255, 0.06);
+    color: #c2d8ff;
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+    font-size: 0.72rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.md-list, .md-ordered-list {
+    margin: 0.4rem 0 0.4rem 1.2rem;
+    color: var(--text);
+}
+.md-list-item, .md-ordered-item { margin: 0.15rem 0; }
+.md-list-item::marker, .md-ordered-item::marker { color: var(--primary); }
+
+.md-hr {
+    border: none;
+    height: 1px;
+    background: var(--border-soft);
+    margin: 0.85rem 0;
+}
+
+.md-h1, .md-h2, .md-h3, .md-h4, .md-h5 {
+    font-family: 'Space Grotesk', sans-serif;
+    color: var(--text);
+    font-weight: 600;
+    margin: 0.65rem 0 0.3rem;
+    letter-spacing: -0.005em;
+    /* CLEAN HEADINGS (2026-06-22): ChatGPT-style clean headings.
+       Hierarchy through font size, weight, color, and spacing.
+       No left border bars, no injected emoji icons. H2 gets a
+       subtle bottom border for section separation. */
+}
+.md-h1 { font-size: 1.1rem; margin-top: 0.85rem; }
+.md-h2 {
+    font-size: 0.95rem;
+    margin-top: 0.85rem;
+    color: #d6e4ff;
+    border-bottom: 1px solid var(--border-soft);
+    padding-bottom: 0.2rem;
+}
+.md-h3 {
+    font-size: 0.85rem;
+    margin-top: 0.6rem;
+    color: #c8d2e3;
+}
+.md-h4 { font-size: 0.8rem; margin-top: 0.45rem; color: #b8c1d3; }
+.md-h5 { font-size: 0.78rem; margin-top: 0.35rem; color: var(--text-dim); }
+.md-h1:first-child, .md-h2:first-child, .md-h3:first-child, .md-h4:first-child, .md-h5:first-child { margin-top: 0; }
+
+/* Heading styling (2026-06-22): clean ChatGPT-style headings with no
+   left bars or injected icons. Hierarchy is communicated through font
+   size, weight, color, and spacing alone — no decorative borders. */
+.md-h1::first-letter,
+.md-h2::first-letter,
+.md-h3::first-letter,
+.md-h4::first-letter { font-weight: 600; }
+.md-h2 + p, .md-h3 + p, .md-h4 + p { margin-top: 0.35rem; }
+
+.chat-row {
+    display: flex;
+    gap: 0.6rem;
+    align-items: flex-start;
+    width: 100%;
+    padding: 6px 8px;
+    margin: 0 -8px;
+    border-radius: var(--radius-md);
+    transition: background var(--t-fast) var(--ease);
+    user-select: text;
+    -webkit-user-select: text;
+}
+.chat-row:hover { background: var(--msg-hover); }
+.chat-row.user { align-self: flex-end; flex-direction: row-reverse; max-width: 85%; }
+/* CHATGPT-STYLE BOT ROW (2026-06-15): the bot response should span
+   the full chat column width (not be a "card" with max-width 92%),
+   so prose flows naturally like a long-form article. The avatar
+   stays as a fixed 28px slot on the left, and the response text
+   fills the remaining space. The previous card-style max-width
+   made long responses look "centered" / constrained which the
+   user explicitly compared against ChatGPT's layout and disliked. */
+.chat-row.bot { align-self: stretch; max-width: 100%; }
+.chat-row.bot.bot-continuation .chat-avatar {
+    visibility: hidden;
+}
+
+.chat-avatar {
+    width: 28px; height: 28px;
+    border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; font-weight: 700; flex-shrink: 0;
+    color: #fff;
+    margin-top: 2px;
+}
+.chat-avatar.bot-avatar {
+    background: var(--primary);
+    box-shadow: var(--inset-top), var(--shadow-xs);
+}
+.chat-avatar.user-avatar {
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border-hairline);
+    box-shadow: var(--inset-top), var(--shadow-xs);
+}
+.chat-row .chat-msg { flex: 1; min-width: 0; }
+.chat-msg-wrapper { position: relative; max-width: 100%; display: flex; flex-direction: column; }
+.chat-msg-wrapper.user { align-items: flex-end; }
+.chat-msg-wrapper.bot { align-items: flex-start; }
+
+.chat-timestamp {
+    font-size: 0.6rem;
+    color: var(--text-faint);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 4px;
+    padding: 0 0.4rem;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.chat-row.user .chat-timestamp { text-align: right; }
+
+.chat-image-container {
+    position: relative;
+    margin: 0.4rem 0;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    display: inline-block;
+    border: 1px solid var(--border-hairline);
+    background: var(--bg-1);
+    box-shadow: var(--inset-top), var(--shadow-xs);
+}
+.chat-image-container img {
+    display: block;
+    max-width: 100%;
+    border-radius: var(--radius-sm);
+    transition: transform var(--t-base) var(--ease);
+}
+.chat-image-container img:hover { transform: scale(1.02); }
+.chat-image-caption {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    padding: 0 0.2rem;
+}
+.chat-image-caption .screenshot-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    background: var(--msg-user-bg);
+    color: var(--primary-ink);
+    border: 1px solid var(--msg-user-border);
+    border-radius: 4px;
+    font-size: 0.6rem;
+    font-weight: 600;
+    margin-right: 0.4rem;
+}
+.chat-image-zoom-icon {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, transparent 50%, rgba(15, 23, 42, 0.5) 100%);
+    color: #fff;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    padding: 0.5rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--t-base) var(--ease);
+}
+.chat-image-container:hover .chat-image-zoom-icon { opacity: 1; }
+
+.image-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.65);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: zoom-out;
+    animation: fadeIn 0.2s ease;
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+.image-modal-overlay img {
+    max-width: 92vw;
+    max-height: 92vh;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-xl);
+    cursor: default;
+    border: 1px solid var(--border-default);
+}
+.image-modal-close {
+    position: absolute;
+    top: 16px; right: 20px;
+    background: var(--bg-2);
+    color: var(--text);
+    border: 1px solid var(--border-hairline);
+    border-radius: 50%;
+    width: 38px; height: 38px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all var(--t-base) var(--ease);
+    box-shadow: var(--shadow-floating);
+}
+.image-modal-close:hover {
+    background: var(--danger-soft);
+    color: var(--danger);
+    border-color: var(--danger-border);
+    transform: rotate(90deg);
+}
+.image-modal-info {
+    position: absolute;
+    bottom: 16px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-2);
+    color: var(--text);
+    border: 1px solid var(--border-hairline);
+    padding: 0.45rem 1.1rem;
+    border-radius: var(--pill-r);
+    font-size: 0.75rem;
+    max-width: 80vw;
+    text-align: center;
+    box-shadow: var(--shadow-floating);
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.chat-msg-actions {
+    display: none;
+    position: absolute;
+    top: 6px; right: 6px;
+    background: var(--bg-2);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-sm);
+    padding: 0.18rem;
+    gap: 2px;
+    z-index: 10;
+    transition: opacity var(--t-base) var(--ease);
+    box-shadow: var(--shadow-floating);
+}
+.chat-msg-wrapper:hover .chat-msg-actions { display: flex; }
+
+/* ----- Todo list (persistent at bottom of bot reply, breathes on active) ----- */
+/* Visual style modeled on Claude Code CLI: empty circle for pending,
+   filled circle with strong breathing glow for active, checkmark for
+   done, X for error. The active step's left bar pulses so the user's
+   eye lands there. Done items are dimmed with strikethrough. */
+.chat-todo {
+    /* BOTTOM-OF-CHAT DOCK (2026-06-15): the todo list is now a
+       dock pinned to the bottom of the chat column (just above the
+       input area), not a per-message widget. The dock style is a
+       compact horizontal pill list — header on the left, scrollable
+       steps to the right when overflow. The chat-msg side margins
+       are now 0 because it's not a message anymore. */
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    background: linear-gradient(180deg, rgba(96, 165, 250, 0.06) 0%, transparent 100%);
+    border: none;
+    border-bottom: 1px solid var(--border-hairline);
+    border-radius: 0;
+    font-size: 0.72rem;
+    color: var(--text);
+    box-shadow: none;
+    max-width: 100%;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    transform-origin: top left;
+}
+.chat-todo-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 0.45rem;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    font-weight: 600;
+}
+.chat-todo-toggle {
+    cursor: pointer; user-select: none;
+    color: var(--text-secondary);
+    display: inline-flex; align-items: center; gap: 4px;
+}
+.chat-todo-toggle:hover { color: var(--primary); }
+.chat-todo-list {
+    list-style: none; padding: 0; margin: 0;
+    display: flex; flex-direction: column; gap: 0.15rem;
+}
+.chat-todo-list.collapsed { display: none; }
+
+.chat-todo-item {
+    position: relative;
+    display: flex; align-items: center; gap: 0.55rem;
+    padding: 0.32rem 0.55rem 0.32rem 0.75rem;
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 0.72rem;
+    transition: background 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+    overflow: hidden;
+}
+/* Left bar — invisible for predicted/done, breathing for active */
+.chat-todo-item::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 6px; bottom: 6px;
+    width: 3px;
+    background: transparent;
+    border-radius: 2px;
+    transition: background 0.2s ease;
+}
+
+/* ===== Status styles — Claude Code CLI-inspired ===== */
+
+/* Done — green check, dimmed grey text with strikethrough */
+.chat-todo-item.done {
+    color: var(--text-dim);
+    opacity: 0.7;
+    text-decoration: line-through;
+    text-decoration-color: var(--text-dim);
+    text-decoration-thickness: 1px;
+}
+.chat-todo-item.done::before { background: var(--success); }
+.chat-todo-item.done .chat-todo-dot {
+    background: var(--success);
+    color: #fff;
+    font-size: 0.6rem;
+    line-height: 7px;
+    text-align: center;
+}
+
+/* Predicted (not yet fired) — empty circle, white text */
+.chat-todo-item.predicted {
+    color: var(--text);
+    opacity: 0.75;
+}
+.chat-todo-item.predicted .chat-todo-dot {
+    background: transparent;
+    border: 1.5px solid var(--text-secondary);
+}
+.chat-todo-item.predicted::before { background: transparent; }
+
+/* Error — red, no strikethrough */
+.chat-todo-item.error {
+    color: var(--danger);
+    opacity: 0.9;
+}
+.chat-todo-item.error::before { background: var(--danger); }
+.chat-todo-item.error .chat-todo-dot {
+    background: var(--danger);
+    color: #fff;
+    font-size: 0.55rem;
+    line-height: 7px;
+    text-align: center;
+}
+
+/* Active — high-contrast: blue background tint + bright text + pulsing
+   left bar + filled dot with breathing glow + WHOLE-ITEM SCALE
+   PULSE so the user's eye lands there even when scanning fast.
+   The 1.0 -> 1.25 scale + 0.6->1.0 background opacity pulse is
+   obvious enough to feel "alive" even at a glance. transform-origin
+   centers the pulse on the left edge so the text doesn't slide. */
+.chat-todo-item.active {
+    color: var(--primary-ink);
+    font-weight: 600;
+    background: linear-gradient(90deg, rgba(14,165,233,0.30) 0%, rgba(14,165,233,0.08) 100%);
+    /* Pulsing glow — the primary "breathing" visual. box-shadow
+       is NOT affected by overflow:hidden or transition conflicts. */
+    animation: todo-active-breathe 1.4s ease-in-out infinite;
+}
+/* Font-size pulse on label — secondary effect */
+.chat-todo-item.active .chat-todo-label {
+    animation: todo-label-breathe 1.4s ease-in-out infinite;
+}
+.chat-todo-item.active::before {
+    background: var(--primary);
+    box-shadow: 0 0 8px 2px rgba(14,165,233,0.8);
+    animation: todo-bar-breathe 1.6s ease-in-out infinite;
+}
+
+/* Center dot — sized for the new font */
+.chat-todo-dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--border);
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+.chat-todo-item.done .chat-todo-dot { background: var(--success); }
+.chat-todo-item.error .chat-todo-dot { background: var(--danger); }
+.chat-todo-item.active .chat-todo-dot {
+    background: var(--primary);
+    color: #fff;
+    font-size: 0.6rem;
+    line-height: 1;
+    transform: scale(1.15);
+    animation: todo-dot-breathe 1.4s ease-in-out infinite;
+}
+.chat-todo-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-todo-time {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-dim);
+    font-size: 0.62rem;
+    flex-shrink: 0;
+}
+.chat-todo-item.active .chat-todo-time { color: var(--primary); opacity: 0.95; font-weight: 500; }
+
+/* GPU badge (2026-06-16): only shown while a step is active.
+   Polled from /api/device/status every 2s. Sits to the LEFT of
+   the elapsed time. The 🎮 emoji + cyan tint signals hardware
+   acceleration, addressing the user complaint that they couldn't
+   tell if a step was actually using GPU or stuck on CPU. */
+.chat-todo-gpu {
+    flex-shrink: 0;
+    margin-left: 0.45rem;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(14, 165, 233, 0.10);
+    color: var(--primary);
+    font-size: 0.58rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    border: 1px solid rgba(14, 165, 233, 0.25);
+    white-space: nowrap;
+    min-width: 0;
+    /* Hidden by default — only visible while the step is active.
+       The JS keeps the DOM node around (with empty text) so the
+       layout doesn't reflow when the badge appears/disappears. */
+    visibility: hidden;
+}
+.chat-todo-item.active .chat-todo-gpu {
+    visibility: visible;
+    animation: todo-gpu-pulse 1.4s ease-in-out infinite;
+}
+.chat-todo-gpu.cpu {
+    background: rgba(234, 179, 8, 0.12);
+    color: #fbbf24;
+    border-color: rgba(234, 179, 8, 0.32);
+}
+@keyframes todo-gpu-pulse {
+    0%, 100% { opacity: 0.7; }
+    50%      { opacity: 1.0; }
+}
+
+/* Folding animation when final AI response arrives */
+.chat-todo.folded {
+    opacity: 0.85;
+}
+.chat-todo.folded .chat-todo-list { display: none; }
+.chat-todo.folded .chat-todo-header { margin-bottom: 0; }
+
+/* Breathing keyframes — stronger glow on both the left bar and the
+   dot so the active step is unmistakable. Modeled on the soft
+   cyan pulse used by Claude Code's todo list. */
+@keyframes todo-bar-breathe {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.0); opacity: 0.6; }
+    50%      { box-shadow: 0 0 14px 3px rgba(14, 165, 233, 0.9); opacity: 1.0; }
+}
+@keyframes todo-dot-breathe {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.0); transform: scale(1.0); }
+    50%      { box-shadow: 0 0 14px 4px rgba(14, 165, 233, 0.9); transform: scale(1.4); }
+}
+/* Whole-item breathing scale (1.0 -> 1.25 -> 1.0). The 1.25
+   peak is dramatic enough to be visible at a glance but not so
+   much that it disrupts adjacent rows. transform-origin: center
+   left keeps the row anchored on its left edge so it doesn't
+   slide sideways. Background-color also pulses from 30% -> 60%
+   opacity so the eye picks up the active state even if the
+   scale change is missed (e.g., peripheral vision or slow scan). */
+@keyframes todo-item-breathe {
+    0%, 100% { transform: scale(1.0);   background: linear-gradient(90deg, rgba(14,165,233,0.30) 0%, rgba(14,165,233,0.08) 100%); }
+    50%      { transform: scale(1.25);  background: linear-gradient(90deg, rgba(14,165,233,0.60) 0%, rgba(14,165,233,0.20) 100%); }
+}
+/* Font-size breathing for the active step label — avoids conflict
+   with .chat-todo-item's transition:transform which cancels the
+   scale animation. font-size pulsing is more targeted and visible. */
+@keyframes todo-label-breathe {
+    0%, 100% { font-size: 0.72rem; }
+    50%      { font-size: 0.88rem; }
+}
+/* Box-shadow breathing pulse — always visible regardless of
+   overflow or transition conflicts. */
+@keyframes todo-active-breathe {
+    0%, 100% {
+        box-shadow: inset 0 0 0 1px rgba(14,165,233,0.45),
+                    0 0 6px 1px rgba(14,165,233,0.15);
+    }
+    50% {
+        box-shadow: inset 0 0 0 1px rgba(14,165,233,0.80),
+                    0 0 18px 6px rgba(14,165,233,0.45);
+    }
+}
+
+.chat-msg-action-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 0.25rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    transition: all var(--t-fast) var(--ease);
+}
+.chat-msg-action-btn:hover { color: var(--primary); background: var(--primary-soft); }
+
+.chat-msg.bot-response {
+    /* Mirror .chat-msg.bot: subtle sunken-panel effect (gradient +
+       hairline border + soft shadow). Both the streaming response
+       and the finalized addChat('bot-response') use this class. */
+    background: linear-gradient(180deg, var(--bg-2) 0%, var(--bg-1) 100%);
+    color: #dde3f0;
+    border-color: var(--border-default);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 4px 16px rgba(0, 0, 0, 0.32);
+    padding: 0.95rem 1.15rem;
+    border-radius: var(--radius-md);
+}
+.chat-msg.user { /* keep */ }
+.chat-msg.system { /* keep */ }
+.chat-msg.error { /* keep */ }
+
+.thinking-steps { padding: 0; }
+.tool-progress-text { color: var(--text-secondary); }
+.chat-msg.system { /* keep */ }
+
+.thinking-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.6rem 0.85rem;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+.thinking-dots { display: flex; gap: 5px; }
+.thinking-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    animation: dot-bounce 1.4s ease-in-out infinite;
+}
+.thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dot-bounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+    30% { transform: translateY(-3px); opacity: 1; }
+}
+.thinking-text { color: var(--text-secondary); font-weight: 500; }
+.thinking-time { color: var(--text-dim); font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; }
+
+#pipeline_box {
+    background: var(--bg-sunken);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-md);
+    margin: 0.4rem 0;
+    box-shadow: var(--inset-bottom), var(--shadow-xs);
+}
+.pipeline-progress { padding: 0; }
+.pipeline-steps { display: flex; flex-direction: column; gap: 0.18rem; }
+.pipeline-step {
+    display: flex; align-items: center; gap: 0.55rem;
+    padding: 0.4rem 0.65rem;
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+    border-radius: 6px;
+    transition: all var(--t-base) var(--ease);
+}
+.pipeline-step.completed { color: var(--success); opacity: 0.85; }
+.pipeline-step.active {
+    color: var(--primary);
+    font-weight: 600;
+    background: var(--msg-user-bg);
+    box-shadow: inset 2px 0 0 var(--primary);
+    animation: pipeline-active-glow 1.6s ease-in-out infinite;
+}
+.pipeline-step.pending { opacity: 0.55; }
+.pipeline-step.error { color: var(--danger); }
+.pipeline-step-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    flex-shrink: 0;
+    transition: all var(--t-base) var(--ease);
+}
+.pipeline-step.completed .pipeline-step-dot { background: var(--success); }
+.pipeline-step.active .pipeline-step-dot {
+    background: var(--primary);
+    animation: pipeline-dot-breathe 1.4s ease-in-out infinite;
+}
+.pipeline-step.error .pipeline-step-dot { background: var(--danger); }
+@keyframes pipeline-active-glow {
+    0%, 100% { background: var(--msg-user-bg); box-shadow: inset 2px 0 0 var(--primary), 0 0 0 0 rgba(59, 130, 246, 0); }
+    50%      { background: rgba(59, 130, 246, 0.14); box-shadow: inset 2px 0 0 var(--primary), 0 0 0 4px rgba(59, 130, 246, 0.10); }
+}
+@keyframes pipeline-dot-breathe {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); transform: scale(1); }
+    50%      { box-shadow: 0 0 0 5px rgba(59, 130, 246, 0);  transform: scale(1.25); }
+}
+.pipeline-step-text {
+    flex: 1; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+}
+.pipeline-step-time {
+    font-size: 0.58rem;
+    color: var(--text-faint);
+    margin-left: auto;
+    flex-shrink: 0;
+    font-family: 'JetBrains Mono', monospace;
+}
+.pipeline-step.active .pipeline-step-icon::before { content: '●'; }
+.pipeline-step.completed .pipeline-step-icon::before { content: '✓'; }
+.pipeline-step.pending .pipeline-step-icon::before { content: '○'; }
+.pipeline-step.error .pipeline-step-icon::before { content: '✕'; }
+
+.usage-bar {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.4rem 0.7rem;
+    margin-top: 0.55rem;
+    background: var(--bg-sunken);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-sm);
+    font-size: 0.68rem;
+    box-shadow: var(--inset-bottom), var(--shadow-xs);
+    align-self: flex-start;
+}
+.usage-item { display: inline-flex; align-items: center; gap: 0.28rem; }
+.usage-label {
+    color: var(--text-dim);
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.usage-value {
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+}    color: var(--primary);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    font-family: 'JetBrains Mono', monospace;
+}
+.usage-sep { width: 1px; height: 12px; background: var(--border-soft); }
+
+/* Thinking chain (collapsible) — sunken */
+.thinking-chain {
+    background: var(--bg-sunken);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-sm);
+    margin: 0.4rem 0;
+    overflow: hidden;
+    box-shadow: var(--inset-bottom), var(--shadow-xs);
+}
+.thinking-header {
+    padding: 0.45rem 0.75rem;
+    display: flex; align-items: center; gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    user-select: none;
+    transition: color var(--t-fast) var(--ease);
+}
+.thinking-header:hover { color: var(--text); }
+.thinking-toggle {
+    transition: transform var(--t-base) var(--ease);
+    color: var(--text-dim);
+    font-size: 0.6rem;
+}
+.thinking-toggle.expanded { transform: rotate(90deg); }
+.thinking-label { font-weight: 600; color: var(--text); letter-spacing: 0.02em; }
+.thinking-count {
+    color: var(--text-dim);
+    font-size: 0.62rem;
+    font-family: 'JetBrains Mono', monospace;
+}
+.thinking-steps { display: none; flex-direction: column; gap: 2px; padding: 0 0.5rem 0.5rem; }
+.thinking-steps.expanded { display: flex; }
+
+.step-block {
+    border-left: 2px solid var(--border-soft);
+    margin-left: 0.4rem;
+    padding-left: 0.6rem;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    transition: border-color var(--t-base) var(--ease);
+}
+.step-block:hover { border-left-color: var(--primary); }
+.step-header {
+    display: flex; align-items: center; gap: 0.45rem;
+    padding: 0.35rem 0.5rem;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background var(--t-fast) var(--ease);
+}
+.step-header:hover { background: var(--bg-sunken-strong); }
+.step-icon { font-size: 0.7rem; }
+.step-icon.user { color: #a78bfa; }        /* purple */
+.step-icon.thinking { color: #fbbf24; }    /* amber/yellow */
+.step-icon.tool { color: #38bdf8; }        /* sky blue */
+.step-icon.result { color: #34d399; }      /* green */
+.step-icon.error { color: #fb7185; }       /* rose red */
+.step-icon.assistant { color: #a78bfa; }   /* purple */
+.step-icon.memory { color: #c084fc; }      /* violet */
+.step-icon.review { color: #f59e0b; }      /* orange */
+
+.step-title { flex: 1; font-size: 0.72rem; color: var(--text); }
+
+/* Step status — canonical pill (22px) */
+.step-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 20px;
+    padding: 0 7px;
+    font-size: 0.6rem;
+    font-weight: 600;
+    border-radius: var(--pill-r);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.step-status::before {
+    content: '';
+    width: 5px; height: 5px;
+    border-radius: 999px;
+    background: currentColor;
+}
+.step-status.done {
+    background: var(--success-soft);
+    color: var(--success);
+    border: 1px solid var(--success-border);
+}
+.step-status.error {
+    background: var(--danger-soft);
+    color: var(--danger);
+    border: 1px solid var(--danger-border);
+}
+.step-status.pending {
+    background: var(--warning-soft);
+    color: var(--warning);
+    border: 1px solid var(--warning-border);
+    animation: pill-breathe 1.6s ease-in-out infinite;
+}
+.step-status.pending::before {
+    animation: dot-pulse 1.6s ease-in-out infinite;
+    box-shadow: 0 0 0 0 currentColor;
+}
+.step-block:has(.step-status.pending) {
+    border-left-color: rgba(245, 158, 11, 0.45);
+    animation: step-glow 1.6s ease-in-out infinite;
+}
+.step-block:has(.step-status.pending) .step-title {
+    color: var(--text);
+    font-weight: 500;
+}
+
+@keyframes pill-breathe {
+    0%, 100% {
+        background: var(--warning-soft);
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+        transform: scale(1);
+    }
+    50% {
+        background: rgba(245, 158, 11, 0.28);
+        box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.18), 0 0 14px rgba(245, 158, 11, 0.25);
+        transform: scale(1.08);
+    }
+}
+@keyframes dot-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); opacity: 1; transform: scale(1); }
+    50%      { box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.4); opacity: 0.85; transform: scale(1.4); }
+}
+@keyframes step-glow {
+    0%, 100% { border-left-color: rgba(245, 158, 11, 0.30); background-color: transparent; }
+    50%      { border-left-color: rgba(245, 158, 11, 0.95); background-color: rgba(245, 158, 11, 0.04); }
+}
+
+.step-body {
+    display: none;
+    padding: 0.35rem 0.65rem 0.45rem;
+    border-top: 1px solid var(--border-hairline);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    line-height: 1.5;
+    background: var(--bg-1);
+}
+.step-body.expanded { display: block; }
+
+.step-tool-name {
+    display: inline-block;
+    background: var(--msg-user-bg);
+    color: var(--primary-ink);
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    border: 1px solid var(--msg-user-border);
+    font-family: 'JetBrains Mono', monospace;
+}
+.step-params {
+    background: var(--bg-2);
+    border: 1px solid var(--border-hairline);
+    border-radius: 5px;
+    padding: 0.3rem 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    margin: 0.25rem 0;
+    word-break: break-all;
+    box-shadow: var(--inset-top), var(--shadow-xs);
+}
+.step-result { color: var(--success); font-size: 0.72rem; }
+.step-content {
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    white-space: pre-wrap;
+}
+
+/* Chat input area — glass on outside, lifted input on inside */
+.chat-input-area {
+    padding: 0.85rem 1.1rem 0.9rem;
+    border-top: 1px solid var(--border-hairline);
+    background: var(--glass-tint-cool);
+    backdrop-filter: var(--blur-md);
+    -webkit-backdrop-filter: var(--blur-md);
+    box-shadow: 0 -1px 0 rgba(15, 23, 42, 0.03), var(--inset-top);
+    flex-shrink: 0;
+    position: relative;
+}
+
+.chat-input-row {
+    display: flex; gap: 0.55rem; align-items: center;
+}
+
+.chat-input-row textarea {
+    flex: 1;
+    height: var(--control-h);
+    background: var(--bg-2);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-md);
+    color: var(--text);
+    font-size: 0.85rem;
+    padding: 0.4rem 0.85rem;
+    resize: none;
+    min-height: var(--control-h);
+    max-height: 8.5rem;
+    line-height: 1.45;
+    font-family: inherit;
+    box-shadow: var(--inset-top), var(--shadow-xs);
+    transition: all var(--t-base) var(--ease);
+}
+.chat-input-row textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16), var(--inset-top);
+    background: var(--bg-2);
+}
+.chat-input-row textarea::placeholder { color: var(--text-faint); }
+
+.chat-send {
+    width: var(--control-h); height: var(--control-h);
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 1.05rem; font-weight: 700;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all var(--t-base) var(--ease);
+    flex-shrink: 0;
+    box-shadow: var(--inset-top), var(--shadow-sm);
+}
+.chat-send:hover {
+    background: var(--primary-hover);
+    box-shadow: var(--inset-top), var(--shadow-elevated);
+    transform: translateY(-1px);
+}
+.chat-send:active {
+    transform: translateY(0) scale(0.96);
+}
+.chat-send.streaming {
+    background: var(--danger);
+    color: #fff;
+    box-shadow: var(--inset-top), var(--shadow-sm);
+    animation: pulse-stop 1.5s ease-in-out infinite;
+}
+.chat-send.streaming:hover { background: var(--danger); }
+@keyframes pulse-stop { 0%, 100% { opacity: 1; } 50% { opacity: 0.75; } }
+
+.chat-hint {
+    font-size: 0.65rem;
+    color: var(--text-faint);
+    margin-top: 0.5rem;
+    padding-left: 0.3rem;
+    font-family: 'JetBrains Mono', monospace;
+}

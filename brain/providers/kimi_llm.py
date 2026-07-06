@@ -81,7 +81,7 @@ class KimiLLM(BaseLLM):
             return LLMResponse(
                 content=response.choices[0].message.content or "",
                 # Nested format: {"function": {"name", "arguments"}}.
-                # Consumers handle both flat and nested. See AgenticSys.py:4098-4119.
+                # Consumers in agent_runtime.llm_runtime handle both flat and nested formats.
                 tool_calls=[
                     {"function": {"name": tc.function.name, "arguments": tc.function.arguments}}
                     for tc in response.choices[0].message.tool_calls or []

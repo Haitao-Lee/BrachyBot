@@ -64,7 +64,7 @@ class MiniMaxLLM(BaseLLM):
                 # openai imported inside try: if missing, ImportError propagates
                 # to the outer except Exception (line 108). The except
                 # openai.RateLimitError (line 99) is safe because openai is in
-                # requirements.txt — if somehow missing, the ImportError hits
+                # requirements.txt 鈥?if somehow missing, the ImportError hits
                 # first and we never reach the RateLimitError handler.
                 import openai
                 client = openai.OpenAI(
@@ -84,7 +84,7 @@ class MiniMaxLLM(BaseLLM):
                 return LLMResponse(
                     content=response.choices[0].message.content or "",
                     # Nested format: {"function": {"name", "arguments"}}.
-                    # Consumers handle both flat and nested. See AgenticSys.py:4098-4119.
+                    # Consumers in agent_runtime.llm_runtime handle both flat and nested formats.
                     tool_calls=[
                         {"function": {"name": tc.function.name, "arguments": tc.function.arguments}}
                         for tc in response.choices[0].message.tool_calls or []
