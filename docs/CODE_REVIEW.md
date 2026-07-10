@@ -3611,7 +3611,7 @@ Only single quotes are escaped. If `key` contains `"`, it breaks out of the `onc
 
 ---
 
-*Report generated 2026-07-07. 95 total issues found: 18 CRITICAL, 22 HIGH, 25 IMPORTANT, 30 MINOR.*
+*Report updated 2026-07-07. ~145 total issues found across 4 rounds: 18 CRITICAL, 32 HIGH, 44 MEDIUM, 51 LOW (Round 4 added 4 CRITICAL, 10 HIGH, 19 MEDIUM, 16 LOW).*
 
 
 ---
