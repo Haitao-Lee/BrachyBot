@@ -4,9 +4,380 @@ _This file consolidates all code review reports. Sections are organized by date.
 
 ---
 
-## 2026-07-07 — Full Module-by-Module Review & Fixes (Round 3)
+## 2026-07-07 — Round 4: Remaining Modules Deep Scan (AgenticSys, agents, tool_factory, prompts, knowledge, dose_pre)
 
-This round dispatched parallel review agents across the whole project (excluding files in `/home/lht/snap/brachyplan/BrachyBot` and not the parent dir): `plans/` (~9000 LOC), `brain/` (~6900 LOC), `agent_runtime/` (~6600 LOC), `web/` (~5900 LOC), `memory/` (~3800 LOC), `skills/`/`quality/`/`communication/`/`config/`/`utils/` (~1300 LOC). Each module was reviewed line-by-line; findings were then re-verified by tracing through actual call sites before being accepted, rejected (false positive), or annotated.
+This round scanned all code that was missed by previous rounds (Round 1–3 focused on `plans/`, `brain/`, `agent_runtime/`, `web/`, `memory/`, `skills/`, `quality/`, `communication/`, `utils/`). Still-unreviewed modules were dispatched to 4 parallel review agents. Every finding below was confirmed by tracing at least one level into the call chain.
+
+**Newly reviewed (unreviewed in previous rounds):**
+| Module | LOC | Agent coverage |
+|--------|-----|----------------|
+| `AgenticSys.py` | 1829 | Top-level orchestration: tool execution, memory wiring, auto-planning trigger |
+| `agents/` | 2715 | Multi-agent orchestration: `orchestrator`, `plan_reviewer`, `safety_guardian`, `router_agent`, `fact_checker`, `completeness_checker`, `brachy_agent_wrapper`, `base_agent` |
+| `tool_factory/seed_plan/planning_pipeline.py` | 1726 | Clinical planning pipeline: trajectory init/refine, seed planning orchestration, dose computation, OAR metrics |
+| `tool_factory/seed_plan/seed_planning.py`, `seed_planning_rule_based.py`, `seed_planning_rl.py` | ~600 | Standalone seed-planning tool wrappers |
+| `tool_factory/clinical_kb/__init__.py` | 651 | Clinical knowledge base loading and constraint retrieval |
+| `tool_factory/safety_validator/__init__.py` | 540 | Safety validation rules, OAR constraint checking |
+| `config/prompts/` + `config/prompts/multi_agent/` | 218 | LLM system prompts (markdown files + __init__) |
+| `brain/knowledge/rag.py` + `knowledge_base.json` | 130+81 | Knowledge retrieval (RAG) + indexed knowledge chunks |
+| `brain/knowledge/ui_knowledge.json` | 358 | UI knowledge for LLM reference |
+| `brain/prompts/` | 10 | Empty (placeholder) |
+| `dose_pre/` (root) | 513 | Dose prediction model (duplicate of `plans/dose_pre/`) |
+| `brachybot.py` | 124 | CLI entry point |
+| `brain/demos/demo.py` | 316 | Integration demo script |
+| `tests/` | 1327 | Test suite (basic + multi-agent phase 2/3) |
+
+**NOT reviewed in this pass (already covered in Rounds 1–3 or non-code):**
+- `plans/`, `brain/` (core), `agent_runtime/`, `web/`, `memory/`, `skills/`, `quality/`, `communication/`, `utils/` (Round 3)
+- `benchmarks/` (20K LOC but mostly JSON test vectors; `aligned_benchmark.py` is test-runner code — low priority for algorithmic review)
+- `docs/ref.py` (7.5K LOC reference file — helper functions only, not production)
+- `tool_factory/env_manager/envs/` (vendored venvs — not project code)
+- `tool_factory/auto_generated/` (auto-generated tool stubs)
+
+---
+
+### Round 4: CRITICAL findings (production-triggered crashes or wrong clinical output)
+
+---
+
+**R4-1. `core.optimal_plan` return-value unpacking crash in `seed_planning.py` and `seed_planning_rule_based.py`**
+
+**Files:**
+- `tool_factory/seed_plan/seed_planning.py:189`
+- `tool_factory/seed_plan/seed_planning_rule_based.py:174`
+
+**Code:**
+```python
+optimal_plan, _ = core.optimal_plan(
+    init_trajectories=trajectories, ...
+)
+```
+
+`core.optimal_plan` (defined in `plans/core.py:117`, return at line 320) returns a list of N trajectory-result lists: `[ [traj_info, seeds, doses], ... ]`. It does NOT return a 2-tuple. The unpacking `optimal_plan, _ = ...` crashes with `ValueError: too many values to unpack` for any clinical case that produces more or fewer than 2 trajectories.
+- Typical clinical cases: 5–50 trajectories.
+- SeedPlanningTool and RuleBasedSeedPlanningTool are **non-functional for all realistic clinical cases** — any user calling these explicit tool endpoints gets an immediate crash.
+- The RL-based tool (`seed_planning_rl.py:152`) correctly calls `optimal_plan = core.optimal_plan_rf(...)` with single-assignment, confirming the other two paths were copy-paste errors.
+- The `planning_pipeline.py:1117` path calls the same `core.optimal_plan` and correctly assigns the whole list to `plan_res` without unpacking — so the pipeline path works but the standalone tools are broken.
+
+**Suggested fix:** Change both sites to `optimal_plan = core.optimal_plan(...)` (single assignment).
+
+---
+
+**R4-2. Literal string `"auto"` passed as `ref_direc` to `_step_trajectory_init` (trajectory refine path)**
+
+**File:** `tool_factory/seed_plan/planning_pipeline.py:949`
+
+**Code:**
+```python
+# Pass sentinel "auto" so the init step picks an organ-aware default
+init_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, "auto", {}, agent)
+```
+
+The literal string `"auto"` is passed where `_step_trajectory_init` expects a direction vector. Inside `_step_trajectory_init` (line 867):
+```python
+ras_direc = np.array(ref_direc).reshape(-1)      # array(['auto']) dtype='<U4'
+voxel_direc = _convert_ref_direc_to_voxel(ras_direc, resampled_ct)  # string × float → exception
+```
+`np.array("auto").reshape(-1)` → `array(['auto'])` (shape `(1,)`, dtype string). Then `ras_direction_to_voxel` does `ras_direc @ direction` which is string × float → fails at NumPy level. Exception caught at line 870 → falls back to `voxel_direc = np.array([0, 0, 1])`.
+
+A `_resolve_ref_direc` function exists (line 353) that correctly handles `"auto"` by resolving to organ-specific defaults, geometric detection, or a global default. The main path (line 656) uses it — the refine path at line 949 does not.
+
+**Impact:** When `_step_trajectory_refine` auto-recovery triggers (trajectories missing from memory), the fallback direction `[0, 0, 1]` (= "inferior" in LPS, needle from feet up) is used instead of the correct organ-aware approach direction (e.g., posterior for pancreas). Resulting trajectories may miss the CTV entirely.
+
+**Suggested fix:** Resolve through `_resolve_ref_direc` before passing:
+```python
+resolved_ref_direc = _resolve_ref_direc("auto", ct_image, ctv_mask, agent)
+init_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, resolved_ref_direc, {}, agent)
+```
+
+---
+
+**R4-3. OAR Dxcc metrics computed with wrong voxel volume (wrong spacing used)**
+
+**File:** `tool_factory/seed_plan/planning_pipeline.py:1435`
+
+**Code:**
+```python
+spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
+voxel_vol_cm3 = float(spacing[0] * spacing[1] * spacing[2]) / 1000.0
+```
+
+`"ct_spacing"` is stored as the **original CT spacing** (e.g., 0.68×0.68×5.0 mm from a 512×512×48 CT). But the dose distribution and OAR masks are on a **resampled planning grid** (128×128×64 with spacing ~2.7×2.7×~3.8 mm). The resampled CT with its correct spacing is stored in `agent.memory.retrieve("resampled_ct")` but never used here.
+
+Voxel volume comparison:
+- Original CT: 0.68 × 0.68 × 5.0 = 2.31 mm³
+- Resampled grid: ~2.72 × 2.72 × ~3.75 = ~27.7 mm³
+- Error factor: **~12×**
+
+Because the Dxcc formula sorts doses descending and picks the top N voxels corresponding to x cm³, using a 12× smaller voxel volume means D2cc selects only 1/12 of the actual hottest voxels, overestimating the dose. All OAR metrics (D2cc, D1cc, D0.1cc, D50, etc.) are systematically wrong. A physician reviewing D2cc constraints would see misleading values — possibly causing false clearance of dangerous plans or false rejection of safe plans.
+
+**Suggested fix:**
+```python
+resampled_ct = agent.memory.retrieve("resampled_ct") if agent else None
+if resampled_ct is not None:
+    spacing = resampled_ct.GetSpacing()
+else:
+    spacing = (0.68, 0.68, 5.0)  # fallback
+voxel_vol_cm3 = float(spacing[0] * spacing[1] * spacing[2]) / 1000.0
+```
+
+---
+
+**R4-4. `AgenticSys.py:_execute_tool_with_memory` — `result.metadata` is `None` crash**
+
+**File:** `AgenticSys.py:1101, 1158-1159`
+
+**Code (line 1101):**
+```python
+if tool_name == "ctv_segmentation" and "ctv_array" in result.metadata:
+```
+And (line 1159):
+```python
+logger.info(f"OAR segmentation result: oar_array={'oar_array' in result.metadata}, ...")
+```
+
+If any tool returns `ToolResult(success=True, metadata=None)`, both `in` operations crash with `TypeError: argument of type 'NoneType' is not iterable`. The connected path at lines 1274+ already uses the safe pattern `(oar_result.metadata or {})` but these two sites were not updated.
+
+**Impact:** A tool that returns metadata=None (e.g., a buggy version of segmentation, or a newly registered third-party tool) crashes the entire `_execute_tool_with_memory` flow, aborting post-execution processing (memory stores, label merging, auto-planning trigger). The user sees a 500 error with no recovery.
+
+**Suggested fix:**
+```python
+meta = result.metadata or {}
+if tool_name == "ctv_segmentation" and meta and "ctv_array" in meta:
+```
+
+---
+
+### Round 4: HIGH findings (production-triggered, incorrect results or hangs)
+
+---
+
+**R4-5. Agents/orchestrator.py — `_global_context` shared dict race across async hops**
+
+**File:** `agents/orchestrator.py:66, 92, 96-98`
+
+`_global_context` is a plain `dict` updated by `update_global_context()` (called by the main agent thread) and read in `_build_agent_context()` / `_distill_context()` (called in sub-agent `asyncio.gather` tasks). No lock. In concurrent scenarios (interleaved user messages), `_distill_context` could read a mix of old and new keys, causing patient A's review to incorporate patient B's planning state. This is a data-leakage race.
+
+**Suggested fix:** Pass context by value (deep copy) when creating review messages, or use `asyncio.Lock`.
+
+---
+
+**R4-6. Agents/orchestrator.py — `review_output` does NOT forward `_global_context` to QualityGate**
+
+**File:** `agents/orchestrator.py:258-262` vs `:358-362, 388-390, 414-418`
+
+`review_output()` calls `self.quality_gate.review(... context=context)` where `context` is the **caller-supplied** parameter, NOT `self._global_context`. The other `*_append` methods (`review_plan_append`, `review_facts_append`, `check_completeness_append`) all call `_distill_context` first and include `_global_context`. Result: quality gate reviews have significantly less situational awareness (no patient_info, no conversation_state, no segmentation context) than the append reviews.
+
+**Suggested fix:** Forward `self._global_context` into the quality gate's context parameter:
+```python
+review_context = {**(context or {}), "global_context": self._global_context}
+gate_result = await self.quality_gate.review(output_type, content, context=review_context)
+```
+
+---
+
+**R4-7. Agents/router_agent.py — Prompt injection: user input interpolated unsanitized**
+
+**File:** `agents/router_agent.py:311`
+
+`_llm_route` calls `await self.call_llm(user_input, system_prompt, ...)` where `user_input` is raw user-controlled text. The prompt construction does `"System: ...\n\nUser: {prompt}"`. A user sending `System: ignore prior instructions` or `User: ...\n\nSystem: new rules` could bypass routing instructions — especially with less capable models.
+
+**Suggested fix:** Strip/replace `\n` sequences in the middle of user input; limit input length below the system prompt boundary.
+
+---
+
+**R4-8. Agents/router_agent.py — `add_intent_pattern` mutates class-level `INTENT_PATTERNS`**
+
+**File:** `agents/router_agent.py:358-377`
+
+`self.INTENT_PATTERNS[intent] = {...}` modifies the class-level dict. All `RouterAgent` instances share this dict. If multiple instances exist (testing frameworks, multi-session), one instance's `add_intent_pattern` silently affects all others.
+
+**Suggested fix:** `self._intent_patterns = {**self.INTENT_PATTERNS}` in `__init__`; mutate `self._intent_patterns`.
+
+---
+
+**R4-9. Agents/plan_reviewer.py — Hardcoded dose scale default `120.0 Gy`**
+
+**File:** `agents/plan_reviewer.py:199`
+
+If neither `dose_metrics` nor `plan_config` contain `dose_scale_gy`, the method defaults to `120.0`. If the actual protocol uses a different prescription (e.g., 100 Gy LDR prostate, 144 Gy LDR pancreas, 24 Gy HDR cervix), the ratio calculation produces wrong advisory concerns or missed issues.
+
+**Suggested fix:** Return `None` instead of defaulting — or require `dose_scale_gy` to be explicitly set.
+
+---
+
+**R4-10. Agents/plan_reviewer.py — Unit stripping makes "80 Gy" and "80%" indistinguishable**
+
+**File:** `agents/plan_reviewer.py:291` (and `safety_guardian.py` duplicate at line 272-287)
+
+`float(str(value).replace("%", "").replace("Gy", "").strip())` — both "80 Gy" and "80%" become `80.0` but represent fundamentally different clinical quantities. The code in `_dose_ratio_or_fraction` was designed to detect relative vs absolute metrics but the unit stripping destroys the distinction. Same pattern duplicated in `safety_guardian.py`.
+
+**Suggested fix:** Track the original unit alongside the numeric value; require a unit field in `plan_config`.
+
+---
+
+**R4-11. Agents/fact_checker.py:239 + completeness_checker.py:229 — `str.format()` crash on `{` in user/claim text**
+
+**Files:**
+- `agents/fact_checker.py:239`: `_CLAIM_PROMPT.format(claims=..., sources=...)`
+- `agents/completeness_checker.py:229`: `_COMPLETENESS_PROMPT.format(user_message=..., ...)`
+
+If any claim, source, user_message, or tool_step text contains literal `{` or `}` characters (e.g., "dose value {80 Gy}" in a claim, or API error messages), Python's `str.format()` raises `KeyError`/`IndexError`. The entire fact-check or completeness check fails and silently falls back to deterministic-only results.
+
+**Suggested fix:** Escape braces before formatting: `.replace('{', '{{').replace('}', '}}')`, then use `.format()`.
+
+---
+
+**R4-12. `brain/knowledge/rag.py:96-111` — Hardcoded dose constraints with contradictions to `knowledge_base.json`**
+
+**File:** `brain/knowledge/rag.py`
+
+The `_default_response` dict and `DoseRAG` contain hardcoded dose constraint tables:
+```python
+"prostate": {"rectum": {"D2cc": 35.0}, "urethra": {"D0.1cc": 38.0}, "bladder": {"D2cc": 40.0}}}
+"pancreas": {"duodenum": {"D0.1cc": 30.0}, "stomach": {"D0.1cc": 30.0}}
+"lung": {"spinal_cord": {"D0.1cc": 10.0}, "heart": {"V100": 25.0}}
+```
+These have **no source citations** and **directly contradict** the data in `knowledge_base.json` (chunks 8-9):
+- RAG.py: `prostate.rectum.D2cc = 35.0 Gy`
+- knowledge_base.json chunk 8: `rectum` → `D2cc < 75 Gy (EQD2)` — 40 Gy higher!
+- This is a 40 Gy discrepancy with no explanation.
+
+The `DoseRAG` class at lines 113-120 provides a separate parallel code path from `SimpleRAG.retrieve()`, creating two paths for dose constraints that can give different answers.
+
+**Suggested fix:** Remove hardcoded dose constraints from `rag.py`. Load all constraints from `knowledge_base.json` (with cited sources) or from `clinical_kb/`. Reconcile the contradictions.
+
+---
+
+**R4-13. `brain/knowledge/rag.py:47` — "RAG" is keyword token overlap, not semantic retrieval**
+
+**File:** `brain/knowledge/rag.py:47`
+
+`SimpleRAG.retrieve()` does `any(keyword in text for keyword in query_lower.split())` — plain substring keyword matching. No embeddings, no vector search, no semantic similarity. A query like "What is the spinal cord dose constraint?" would match any chunk containing the word "dose" or "cord", flooding results with irrelevant chunks. This is pattern matching, not Retrieval-Augmented Generation.
+
+**Suggested fix:** Implement proper embedding-based retrieval or BM25/TF-IDF at minimum.
+
+---
+
+**R4-14. `agents/completeness_checker.py:194` — 30% keyword overlap threshold is arbitrary and untuned**
+
+**File:** `agents/completeness_checker.py:194,199`
+
+`len(req_words & resp_words) >= max(1, len(req_words) * 0.3)`. For a 1-keyword requirement ("segment"), threshold is 1 match — trivially satisfied by any sentence containing "segment" (false pass). For a 10-keyword requirement, needs 3 matches — may miss semantically equivalent but lexically different responses (false miss). No synonym expansion for clinical terms.
+
+---
+
+**R4-15. `agents/base_agent.py:17-22, 145-159` — Silent fallback when prompts absent**
+
+**File:** `agents/base_agent.py`
+
+If `from config.prompts.multi_agent import get_prompt` raises `ImportError`, `_PROMPTS_AVAILABLE = False` and `_load_system_prompt()` returns `""` silently. All agents run with ZERO system prompt — model behavior changes radically with no observable error.
+
+---
+
+### Round 4: MEDIUM findings (latent bugs, silent failures, performance)
+
+---
+
+**R4-16.** `planning_pipeline.py:527-534` — Documented `seed_info`/`planning_params` input kwargs accepted but silently ignored (latent — no caller passes them)
+
+**R4-17.** `planning_pipeline.py:1098` — Python precedence bug: `agent.memory.retrieve(...) or agent.memory.retrieve(...) if agent else None` — when `agent is None`, the `agent.memory` raises `AttributeError` before the `if agent else None` guard because `or` binds before `if-else`. Fix: `(...) if agent else None`
+
+**R4-18.** `AgenticSys.py:1041` — OAR dedup threshold `>= 50` hardcoded. Works for TotalSegmentator v2 (104 classes) but a subset model (~30 classes) never triggers dedup; OAR re-runs every time (30-60s GPU waste).
+
+**R4-19.** `AgenticSys.py:1443-1445` — Auto-planning trigger hardcodes `mode="rl"` regardless of user config. If user configured `rule_based` planning, the auto-trigger uses RL mode anyway, producing different clinical output.
+
+**R4-20.** `agents/orchestrator.py:193-195` — `asyncio.get_event_loop()` (deprecated in Python 3.12, may raise `RuntimeError` in 3.14+). Potential hard failure on Python upgrade.
+
+**R4-21.** `agents/plan_reviewer.py:167-176` — Hardcoded advisory thresholds (`V100 < 0.80`, `V150 > 0.60`, etc.) contradicting the docstring statement that "thresholds are accepted only from runtime configuration." Incorrect for HDR brachytherapy where V150 > 0.60 is expected.
+
+**R4-22.** `agents/safety_guardian.py:289-313` — Code duplication: `_dose_ratio_or_fraction`, `_normalized_fraction`, `_metric_value`, `_first_numeric`, `_target_checks` all duplicated from `plan_reviewer.py` with slight differences. Maintenance hazard.
+
+**R4-23.** `brain/knowledge/knowledge_base.json` — Only 15 chunks, very limited coverage. Missing: pancreas-specific constraints, liver, cervical cancer, fractionation schedules, isotope activity ranges, TG-43/TG-186 formalism. No source citations (no PMID/DOI) for any constraint — LLM cannot cite sources.
+
+**R4-24.** `config/prompts/orchestrator.md:20-24` — Hardcoded quality-gate thresholds in LLM prompt: `Score ≥ 7: pass`, `Score 5-6: conditional`, `Score < 5: reject`, `Reviewer confidence < 0.5: escalate`, `Score divergence > 3: escalate`. Should be configurable.
+
+**R4-25.** `config/prompts/__init__.py` — `_load_prompt` silently returns `""` on file-not-found. Missing `clinical_kb.md` or `medical_safety.md` silently strips safety from system prompt.
+
+**R4-26.** `config/prompts/system_prompt.md:80-84` — Template variables `{ui_state_summary}`, `{enhanced_context}`, `{clean_context}` — if the rendering side doesn't sanitize these, user-controlled content can inject instructions. Latent injection vector — depends on caller.
+
+**R4-27.** `dose_pre/` is a byte-for-byte duplicate of `plans/dose_pre/` with minor divergences. `myDoseNet.py` imports `import os; import sys` dead code (lines 5-7). `Predict_crop.py` has `min=-1000; max=3000` shadowing Python builtins. No `__init__.py` so `from dose_pre import Predict_crop` fails.
+
+**R4-28.** `dose_pre/myDoseNet.py:131` — `inplace=True` on LeakyReLU can interfere with gradient checkpointing if model is ever re-used for training. Inference-only currently, but latent risk.
+
+**R4-29.** `brachybot.py:121` — `_run_server` calls `web.server.run_server(port=port)` with no try/except. If port is in use, Flask raises OSError with full traceback — no helpful error message.
+
+**R4-30.** `brachybot.py:106` — `import web.server` inside `_run_server` not wrapped in try/except. If `web/server.py` has an import error, the server crashes with traceback rather than a user-friendly message.
+
+**R4-31.** `brachybot.py:108-117` — Startup message duplicates LLM-detection logic. Only checks Anthropic and OpenAI — users of DeepSeek, Qwen, Gemini, etc. see no startup message.
+
+**R4-32.** `brachybot.py:11-12` — `sys.path.insert(0, ...)` shadows system packages. If a PyPI package named `config` or `skills` existed, the local module shadows it.
+
+**R4-33.** `brain/demos/demo.py:124` — `OpenRouterLLM.__new__(OpenRouterLLM)` bypasses `__init__()`, potentially omitting credential/config loading from the demo.
+
+**R4-34.** `tests/` — Only 4 test files with limited coverage. `test_multi_agent_phase3.py` (409 lines) is the only substantive integration test. No tests for: planning_pipeline, AgenticSys state management, planning_routes endpoints, agents/orchestrator.
+
+**R4-35.** `planning_pipeline.py:397-423` — No GPU memory cleanup after dose model inference. `torch.cuda.empty_cache()` is not called. Long-running agent sessions may accumulate GPU memory.
+
+---
+
+### Round 4: LOW findings
+
+---
+
+**R4-36.** `brain/knowledge/rag.py:34` — `hashlib.md5(...)` raises `ValueError` in FIPS-compliant environments. Use `hashlib.md5(usedforsecurity=False)`.
+
+**R4-37.** `clinical_kb/__init__.py:31,103` — `KB_DIR.mkdir(...)` and `_ensure_default_kb()` run on module import. Read-only filesystem crash.
+
+**R4-38.** `safety_validator/__init__.py:284-288` — Strict mode threshold mapping only covers 10 specific values. Any threshold not in the map (e.g., 0.92) is not tightened.
+
+**R4-39.** `safety_validator/__init__.py:340-341` — `oar_data.get("dmax", 0) or oar_data.get("Dmax", 0)` — if dmax is exactly 0, falls through to Dmax. If both are 0, correct value is lost.
+
+**R4-40.** `AgenticSys.py:1623` — `list(self.memory.planning_results.keys())[:10]` assumes `planning_results` is always a dict. Latent — safe today because `clear_all_data()` does `.clear()` not `= None`.
+
+**R4-41.** `AgenticSys.py:41` — Dead import: `SYSTEM_PROMPT_TEMPLATE`, `get_prompt_modules` imported but never used.
+
+**R4-42.** `AgenticSys.py:1036,1051,1266,1535` — `from tool_factory import ToolResult` inside method bodies (4 places). Python caches imports, but violates convention and breaks linting.
+
+**R4-43.** `AgenticSys.py:1476-1498` — `_VALIDATORS`/`_RECOVERY_ACTIONS` defined as class attributes (shared across instances). Not mutated today, but latent if code evolves.
+
+**R4-44.** `agents/base_agent.py:188` — `call_llm` type-annotated as `Optional[Callable]` (sync). If caller passes async callback, `json.loads()`/`strip()` on the returned coroutine crashes.
+
+**R4-45.** `agents/base_agent.py:67-68` — Failed messages remain in `message_history`. `get_stats()["success_rate"]` skews.
+
+**R4-46.** `agents/fact_checker.py:341,345` — Uses hardcoded emoji "📌" in output. On CLI/log without emoji support, renders as garbled.
+
+**R4-47.** `agents/plan_reviewer.py:346` — `_MEDICAL_SYSTEM_PROMPT[:2500]` silently truncates the medical knowledge base beyond 2500 chars.
+
+**R4-48.** `agents/safety_guardian.py:24-25` — `SafetyGuardian` accepts `llm_callback` but never uses it. Dead parameter.
+
+**R4-49.** `agents/plan_reviewer.py:250-254` — OAR constraint matching uses `key in organ_lower or organ_lower in key` substring overlap — "rectum" matches "rectum_sigmoid" (reasonable) but "bowel" matches "small_bowel" (potentially wrong limit).
+
+**R4-50.** `agents/router_agent.py:238-241` — `keyword.lower() in input_lower` — `"plan"` matches "implantation", "explanation", "planetary". For short keywords (<5 chars), use word-boundary regex.
+
+---
+
+### Round 4: Verified false positives (NOT bugs — intentional or canceled)
+
+These were flagged by review agents but on tracing are intentional or don't trigger:
+
+- `planning_pipeline.py:1111-1114` normalized dose with output_range = window_range. Intentional identity normalization; actual scaling happens later in `normalize_dose_array`. Harmless.
+- `planning_pipeline.py:1142-1145` iterates `plan_res` as flat list. The pipeline path stores `core.optimal_plan` result as `plan_res`, then iterates `for entry in plan_res`. Each entry is `[traj, seeds, doses]` — works correctly with the flat return. Only the `seed_planning.py` standalone tools have the unpacking bug (R4-1).
+- `seed_planning_rl.py:175` checks `len(entry) >= 3`. `seed_planning.py:220` checks `len(entry) >= 2`. These are different tools with different output schemas — intentional.
+- `quality/quality_gate.py` `passed=True` design is documented append-only semantics. Not a bug.
+- `clinical_kb/__init__.py:394` — `kb.get("dose_constraints", {}) or kb.get("legacy_dose_constraints", {})` — empty dict falls through to legacy. Intentional backward-compat.
+
+---
+
+### Round 4: Existing report findings re-confirmed
+
+- R3-11 (RAS↔LPS coordinate frame in `utilizations.py`): confirmed through full call chain trace and connected to pipeline lines 867-870.
+- R3-12/13/14 (hardcoded clinical thresholds): confirmed in `plan_reviewer.py:167-176`, `quality_decider.py`, `clinical_decider.py`. New instances found in `orchestrator.md:20-24` (prompt-side thresholds).
+- R3-15 (tool_code_writer arbitrary code execution): unchanged.
+- R3-16 (case_executor silent step-dropping): unchanged.
+
+---
+
+
 
 ### Summary — confirmed real bugs (FIXED)
 
