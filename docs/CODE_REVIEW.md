@@ -4,7 +4,24 @@ _This file consolidates all code review reports. Sections are organized by date.
 
 ---
 
-## 2026-07-07 — Round 4: Remaining Modules Deep Scan (AgenticSys, agents, tool_factory, prompts, knowledge, dose_pre)
+## 2026-07-10 — Round 5: Final sweep pass (no code changes)
+
+This round re-verified all CRITICAL/HIGH findings from Rounds 1–4 and confirmed they remain open. No code was modified — this is a purely documentary update. Total findings across all rounds: **18 CRITICAL, 32 HIGH, 44 MEDIUM, 51 LOW** (~145 issues).
+
+The four most clinically impactful unremediated findings are:
+
+| Round | ID | Severity | Summary |
+|-------|----|----------|---------|
+| R4-1 | seed_planning.py + seed_planning_rule_based.py | CRITICAL | `core.optimal_plan` return-value unpacking crashes on >2 trajectories — both standalone seed-planning tools are non-functional for all realistic cases |
+| R4-2 | planning_pipeline.py:949 | CRITICAL | Literal `"auto"` string passed as `ref_direc` — falls back to `[0,0,1]` needle direction instead of organ-aware default |
+| R4-3 | planning_pipeline.py:1435 | CRITICAL | OAR Dxcc metrics use original CT voxel volume (~2.3 mm³) instead of resampled-grid volume (~28 mm³) — metrics off by ~12× |
+| R4-4 | AgenticSys.py:1101 | CRITICAL | `result.metadata is None` crash on tools returning success with no metadata |
+
+No new issues were identified in this pass beyond what Rounds 1–4 already document.
+
+---
+
+
 
 This round scanned all code that was missed by previous rounds (Round 1–3 focused on `plans/`, `brain/`, `agent_runtime/`, `web/`, `memory/`, `skills/`, `quality/`, `communication/`, `utils/`). Still-unreviewed modules were dispatched to 4 parallel review agents. Every finding below was confirmed by tracing at least one level into the call chain.
 
@@ -3611,7 +3628,7 @@ Only single quotes are escaped. If `key` contains `"`, it breaks out of the `onc
 
 ---
 
-*Report updated 2026-07-07. ~145 total issues found across 4 rounds: 18 CRITICAL, 32 HIGH, 44 MEDIUM, 51 LOW (Round 4 added 4 CRITICAL, 10 HIGH, 19 MEDIUM, 16 LOW).*
+*Report updated 2026-07-10. ~145 total issues found across 5 rounds: 18 CRITICAL, 32 HIGH, 44 MEDIUM, 51 LOW.*
 
 
 ---
