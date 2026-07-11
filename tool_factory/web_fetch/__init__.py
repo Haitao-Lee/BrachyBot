@@ -13,10 +13,12 @@ Use cases:
 
 import os
 import re
+import ipaddress
 import logging
+import socket
 import requests
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from tool_factory import BaseTool, ToolResult
 
@@ -72,6 +74,52 @@ The tool will:
         }
     }
 
+    @staticmethod
+    def _validate_public_url(url: str) -> tuple[bool, str]:
+        """Reject credentials and hosts that resolve outside the public Internet."""
+        try:
+            parsed = urlparse(url)
+            if parsed.scheme not in {"http", "https"}:
+                return False, "URL must use http:// or https://"
+            if parsed.username is not None or parsed.password is not None:
+                return False, "Credentials in URLs are not allowed"
+            hostname = parsed.hostname
+            if not hostname:
+                return False, "URL must include a hostname"
+            # Accessing parsed.port validates malformed/out-of-range ports.
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        except ValueError as exc:
+            return False, f"Invalid URL: {exc}"
+
+        normalized_host = hostname.rstrip(".").lower()
+        if normalized_host == "localhost" or normalized_host.endswith(".localhost"):
+            return False, "Local/private URLs are not allowed"
+
+        try:
+            literal = ipaddress.ip_address(normalized_host)
+            addresses = {literal}
+        except ValueError:
+            try:
+                resolved = socket.getaddrinfo(
+                    normalized_host,
+                    port,
+                    type=socket.SOCK_STREAM,
+                )
+            except OSError as exc:
+                return False, f"Hostname resolution failed: {exc}"
+            addresses = set()
+            for entry in resolved:
+                try:
+                    addresses.add(ipaddress.ip_address(entry[4][0]))
+                except (IndexError, ValueError):
+                    continue
+
+        if not addresses:
+            return False, "Hostname did not resolve to an IP address"
+        if any(not address.is_global for address in addresses):
+            return False, "Local/private URLs are not allowed"
+        return True, ""
+
     def _html_to_text(self, html: str) -> str:
         """Convert HTML to clean plain text."""
         # Remove script and style elements
@@ -113,7 +161,10 @@ The tool will:
     def _execute(self, **kwargs):
         """Execute web fetch with multiple strategies."""
         url = kwargs.get("url", "")
-        max_length = kwargs.get("max_length", 5000)
+        try:
+            max_length = max(256, min(int(kwargs.get("max_length", 5000)), 100_000))
+        except (TypeError, ValueError):
+            return ToolResult(success=False, message="max_length must be an integer")
 
         if not url:
             return ToolResult(
@@ -121,23 +172,9 @@ The tool will:
                 message="No URL provided"
             )
 
-        # Validate URL
-        parsed = urlparse(url)
-        if parsed.scheme not in ('http', 'https'):
-            return ToolResult(
-                success=False,
-                message="URL must start with http:// or https://"
-            )
-
-        # Check for blocked domains (security)
-        blocked_domains = ['localhost', '127.0.0.1', '0.0.0.0', '10.', '192.168.', '172.16.']
-        hostname = parsed.hostname or ""
-        for blocked in blocked_domains:
-            if hostname.startswith(blocked):
-                return ToolResult(
-                    success=False,
-                    message="Cannot fetch local/private URLs"
-                )
+        is_public, reason = self._validate_public_url(url)
+        if not is_public:
+            return ToolResult(success=False, message=reason)
 
         logger.info(f"Fetching URL: {url}")
 
@@ -145,24 +182,23 @@ The tool will:
         result = self._fetch_direct(url, max_length)
         if result.success:
             return result
+        direct_failure = result
 
         # Strategy 2: Try PubMed API for PubMed/Nature URLs
-        if 'pubmed.ncbi.nlm.nih.gov' in url or 'nature.com' in url:
+        hostname = (urlparse(url).hostname or "").lower()
+        if hostname == 'pubmed.ncbi.nlm.nih.gov' or hostname.endswith('.nature.com') or hostname == 'nature.com':
             result = self._fetch_pubmed_api(url, max_length)
             if result.success:
                 return result
 
         # Strategy 3: Try GitHub API for GitHub URLs
-        if 'github.com' in url:
+        if hostname == 'github.com' or hostname.endswith('.github.com'):
             result = self._fetch_github_api(url, max_length)
             if result.success:
                 return result
 
         # All strategies failed
-        return ToolResult(
-            success=False,
-            message=f"Failed to fetch URL after trying multiple strategies"
-        )
+        return direct_failure
 
     def _fetch_direct(self, url: str, max_length: int) -> ToolResult:
         """Direct HTTP fetch."""
@@ -173,40 +209,101 @@ The tool will:
                 'Accept-Language': 'en-US,en;q=0.5',
             }
 
-            response = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
+            current_url = url
+            response = None
+            for _ in range(6):
+                is_public, reason = self._validate_public_url(current_url)
+                if not is_public:
+                    return ToolResult(success=False, message=reason)
+                response = requests.get(
+                    current_url,
+                    headers=headers,
+                    timeout=(3.05, 10),
+                    allow_redirects=False,
+                    stream=True,
+                )
+                if response.status_code not in {301, 302, 303, 307, 308}:
+                    break
+                location = response.headers.get('location')
+                response.close()
+                if not location:
+                    return ToolResult(success=False, message="Redirect missing Location header")
+                current_url = urljoin(current_url, location)
+            else:
+                return ToolResult(success=False, message="Too many redirects")
+
+            if response is None:
+                return ToolResult(success=False, message="No response received")
             status_code = response.status_code
 
             if status_code != 200:
+                response.close()
                 return ToolResult(success=False, message=f"HTTP {status_code}")
+
+            content_type = response.headers.get('content-type', '').lower()
+            media_type = content_type.split(';', 1)[0].strip()
+            allowed_content = (
+                not media_type
+                or media_type.startswith('text/')
+                or media_type == 'application/json'
+                or media_type == 'application/xml'
+                or media_type.endswith('+xml')
+            )
+            if not allowed_content:
+                response.close()
+                return ToolResult(success=False, message=f"Unsupported content type: {content_type}")
+
+            max_download_bytes = min(max(max_length * 8, 128 * 1024), 2 * 1024 * 1024)
+            chunks = []
+            downloaded = 0
+            for chunk in response.iter_content(chunk_size=16 * 1024):
+                if not chunk:
+                    continue
+                remaining = max_download_bytes - downloaded
+                if remaining <= 0:
+                    break
+                chunks.append(chunk[:remaining])
+                downloaded += min(len(chunk), remaining)
+                if len(chunk) > remaining or downloaded >= max_download_bytes:
+                    break
+            raw_content = b''.join(chunks)
 
             # Fix encoding: requests defaults to ISO-8859-1 when charset not specified
             # which garbles CJK characters. Use apparent_encoding as fallback.
-            if response.encoding and response.encoding.lower() in ('iso-8859-1', 'latin-1', 'ascii'):
-                response.encoding = response.apparent_encoding or 'utf-8'
-
-            content_type = response.headers.get('content-type', '')
+            encoding = response.encoding
+            if not encoding or encoding.lower() in ('iso-8859-1', 'latin-1', 'ascii'):
+                # apparent_encoding reads response.content, so expose only the
+                # bounded payload collected above before consulting it.
+                response._content = raw_content
+                encoding = response.apparent_encoding or 'utf-8'
+            text_content = raw_content.decode(encoding, errors='replace')
+            response.close()
 
             # Handle different content types
             if 'application/json' in content_type:
-                text = response.text[:max_length]
+                text = text_content[:max_length]
                 title = "JSON Response"
             elif 'text/plain' in content_type or 'text/markdown' in content_type:
-                text = response.text[:max_length]
-                title = self._extract_title(response.text) or "Text Document"
+                text = text_content[:max_length]
+                title = self._extract_title(text_content) or "Text Document"
             else:
-                html = response.text
+                html = text_content
                 title = self._extract_title(html) or "Web Page"
                 text = self._html_to_text(html)[:max_length]
 
             return ToolResult(
                 success=True,
-                data={"url": url, "title": title, "content": text, "status_code": status_code},
+                data={"url": current_url, "title": title, "content": text, "status_code": status_code},
                 message=f"Fetched: {title}"
             )
 
         except requests.Timeout:
+            if 'response' in locals() and response is not None:
+                response.close()
             return ToolResult(success=False, message="Request timed out")
         except Exception as e:
+            if 'response' in locals() and response is not None:
+                response.close()
             return ToolResult(success=False, message=str(e))
 
     def _fetch_pubmed_api(self, url: str, max_length: int) -> ToolResult:

@@ -256,7 +256,7 @@ class SkillLearner:
     def _pattern_to_skill_name(self, pattern: List[str]) -> str:
         """Convert a tool pattern to a skill name."""
         name = "_".join(pattern)
-        name_hash = hashlib.md5(name.encode()).hexdigest()[:6]
+        name_hash = hashlib.md5(name.encode(), usedforsecurity=False).hexdigest()[:6]
         return f"learned_{name_hash}"
 
     def _create_skill_from_pattern(self, pattern: List[str]) -> LearnedSkill:

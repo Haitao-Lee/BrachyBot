@@ -26,10 +26,10 @@ Use this context to make informed judgments. For example:
 4. **Report gaps**: List any requirements that were NOT addressed
 
 ## Rules
-- A requirement is "addressed" if the response or tool steps mention it — regardless of success/failure
-- If a tool was called for a requirement, it counts as addressed even if the tool returned an error
+- A requested action is fulfilled only if its tool step completed successfully
+- A failed or cancelled tool does not fulfill the action; require the response to report the failure and next step clearly
 - Short greetings / simple questions → always pass
-- Do NOT judge the quality of the response — only whether each requirement was acted upon
+- Do NOT judge clinical quality — only whether each requirement was completed or explicitly reported as blocked
 
 ## Output Format
 ```json

@@ -1049,7 +1049,6 @@ class BingSearch(SearchEngine):
     """Bing search (API or cn.bing.com scraping)."""
 
     def search(self, query: str, max_results: int = 5) -> List[Dict]:
-        results = []
         api_key = os.environ.get("BING_SEARCH_API_KEY")
 
         if api_key:
@@ -1065,13 +1064,15 @@ class BingSearch(SearchEngine):
                 timeout=5,
             )
             if resp.status_code == 200:
+                results = []
                 for item in resp.json().get("webPages", {}).get("value", [])[:max_results]:
-                    return [{
+                    results.append({
                         "title": item.get("name", ""),
                         "snippet": item.get("snippet", ""),
                         "url": item.get("url", ""),
                         "source": "Bing API",
-                    }]
+                    })
+                return results
         except Exception as e:
             logger.warning(f"Bing API error: {e}")
         return []
@@ -1422,7 +1423,9 @@ class SearchCache:
         os.makedirs(self.CACHE_DIR, exist_ok=True)
 
     def _key(self, query: str) -> str:
-        return hashlib.md5(query.lower().strip().encode()).hexdigest()
+        return hashlib.md5(
+            query.lower().strip().encode(), usedforsecurity=False
+        ).hexdigest()
 
     def get(self, query: str) -> Optional[Dict]:
         """Get cached result if not expired."""

@@ -26,21 +26,8 @@ function _todoI18n() {
     return _TODO_I18N[_activeTodoLang] || _TODO_I18N.en;
 }
 
-const _TODO_LABELS = {
-    user:        'User input',       // legacy, replaced by _todoI18n()
-    thinking:    'LLM thinking / routing',
-    memory:      'Memory recall',
-    tool:        null,
-    assistant:   'Final response',
-    error:       'Error',
-    done:        'Done',
-};
-
 function _todoLabelForStep(step) {
-    // Pick the language-aware dictionary. The detection happens
-    // server-side (memory/language.py) and is broadcast to the
-    // frontend via the chat SSE start event; we read it from
-    // window._uiLanguage (set by sendChat on every turn).
+    // Pick labels from the explicit workstation language preference.
     const i18n = _todoI18n();
     if (step.type === 'tool' && step.tool) {
         return i18n.tools[step.tool] || (i18n.call_prefix + step.tool);
@@ -564,22 +551,14 @@ function _planningTemplates() {
 }
 const PLANNING_PIPELINE_TEMPLATES = _planningTemplates();
 
-const GENERIC_TEMPLATES = [
-    { type: 'thinking',  label_en: 'Understand user request', label_zh: '理解用户请求' },
-    { type: 'memory',    label_en: 'Memory recall',           label_zh: '记忆检索 / 经验匹配' },
-    { type: 'thinking',  label_en: 'Tool selection / routing',label_zh: '选择工具 / 路由' },
-    { type: 'tool',      label_en: 'Invoke tool',             label_zh: '调用工具' },
-    { type: 'thinking',  label_en: 'Parse results',          label_zh: '解析结果' },
-    { type: 'assistant', label_en: 'Final response',          label_zh: '生成最终回复' },
-];
-
 function _todoSeed(todo, userMessage) {
     if (!todo) return;
     const text = (userMessage || '').toLowerCase();
     // Detect "full planning" requests
-    const isFullPlan = /规划|规划|execute|plan|运行|执行|开始|开始做|做一次|do|run|pl\.?anning/i.test(text)
-        && /放射性|粒子|植入|brachy|seed|tumor|规划|planning|胰|pancrea|前列|pros|肝|liver|肺|lung|头|head|neck|妇科|gyne/i.test(text)
-        || /规划/.test(text) || /planning/i.test(text) || /规划/.test(text);
+    const asksToExecute = /(?:请|帮我|立即|现在)?(?:执行|开始|运行|生成|制定|做一次|重新规划)|\b(?:run|execute|perform|generate|create|start|replan|plan)\b/i.test(text);
+    const hasPlanningSubject = /放射性|粒子|植入|近距离|brachy|seed|tumou?r|planning|规划|胰|pancrea|前列|prostate|肝|liver|肺|lung|头颈|head|neck|妇科|gyne/i.test(text);
+    const knowledgeOnly = /介绍|解释|好处|为什么|区别|比较|科普|原理|\b(?:what is|explain|benefit|why|compare|difference)\b/i.test(text);
+    const isFullPlan = asksToExecute && hasPlanningSubject && !knowledgeOnly;
     if (isFullPlan) {
         // Re-read the templates on every seed call so the language
         // switch (zh → en mid-session) takes effect for the next
@@ -622,6 +601,7 @@ function _todoFindPredicted(todo, step) {
 // Enter-to-send handler for #chatInput
 // Command history for up/down arrow cycling (like a terminal)
 const _chatHistory = [];
+const _CHAT_HISTORY_LIMIT = 100;
 let _chatHistoryIdx = -1;
 
 function handleChatKeypress(ev) {
@@ -632,6 +612,9 @@ function handleChatKeypress(ev) {
         const text = (input ? input.value : '').trim();
         if (text) {
             _chatHistory.push(text);
+            if (_chatHistory.length > _CHAT_HISTORY_LIMIT) {
+                _chatHistory.splice(0, _chatHistory.length - _CHAT_HISTORY_LIMIT);
+            }
             _chatHistoryIdx = _chatHistory.length;
         }
         if (typeof sendChat === 'function') sendChat();
@@ -695,8 +678,11 @@ function _isMonitorStopRequest(text) {
 }
 
 function _isAdviceRequest(text) {
-    return /(?:advice|suggest|review|improve|优化|建议|评价|哪里|怎么调|如何调整|详细建议|规划评价)/i.test(text || '')
-        && /(?:plan|planning|dose|seed|needle|CTV|OAR|规划|剂量|粒子|穿刺针|靶区|危及器官)/i.test(text || '');
+    const value = String(text || '').trim();
+    const explicitAdvice = /\b(?:advice|suggest(?:ion)?s?|recommend(?:ation)?s?|improve|optimi[sz]e|assessment)\b|(?:优化|建议|评价|哪里需要|怎么调|如何调整|详细建议|规划评价)/i.test(value);
+    const explicitReview = /\b(?:review|evaluate|assess)\s+(?:(?:my|the|this|current)\s+)?(?:plan|planning|dose|seed|needle|ctv|oar)\b|\b(?:plan|planning|dose)\s+(?:review|assessment)\b/i.test(value);
+    const planningContext = /\b(?:plan|planning|dose|seed|needle|ctv|oar)\b|(?:规划|剂量|粒子|穿刺针|靶区|危及器官)/i.test(value);
+    return (explicitAdvice || explicitReview) && planningContext;
 }
 
 window._pendingHiddenChats = window._pendingHiddenChats || [];
@@ -817,6 +803,7 @@ async function sendChat(prefill, options) {
     let progressEl = null;
     let lastToolName = '';
     const steps = [];
+    const screenshotTasks = [];
     const uiState = (typeof collectUIState === 'function') ? collectUIState() : {};
 
     try {
@@ -897,9 +884,9 @@ async function sendChat(prefill, options) {
                         // LLM reply, which is a "顶层问题"
                         // (top-level consistency bug).
                         if (data.language && data.language.code) {
-                            window._uiLanguage = data.language.code;
+                            window._responseLanguage = data.language.code;
                             if (typeof _setActiveTodoLang === 'function') {
-                                _setActiveTodoLang(data.language.code);
+                                _setActiveTodoLang(effectiveUiLanguage());
                             }
                         }
                         // Start-of-turn clock for the response-time
@@ -1048,7 +1035,7 @@ async function sendChat(prefill, options) {
                                         actions = data.result.actions;
                                     }
                                     if (Array.isArray(actions) && actions.length > 0) {
-                                        console.log('[SSE-UI] Executing', actions.length, 'UI actions');
+                                        uiDebugLog('[SSE-UI] Executing', actions.length, 'UI actions');
                                         actions.forEach(a => _executeUIAction(a));
                                     }
                                 } catch (e) { console.warn('[SSE-UI] Failed to parse ui_controller result:', e); }
@@ -1059,9 +1046,11 @@ async function sendChat(prefill, options) {
                                 const _ssCmd = data.metadata.screenshot_command || data.metadata;
                                 const _ssTarget = _ssCmd.target || 'full';
                                 const _ssQuestion = _ssCmd.question || '';
-                                console.log('[SSE-STEP] Intercepting ui_screenshot, target:', _ssTarget);
+                                uiDebugLog('[SSE-STEP] Intercepting ui_screenshot, target:', _ssTarget);
                                 try {
-                                    _interceptScreenshot(_ssTarget, _ssQuestion);
+                                    screenshotTasks.push(Promise.resolve(
+                                        _interceptScreenshot(_ssTarget, _ssQuestion)
+                                    ));
                                 } catch (e) {
                                     console.warn('[SSE-STEP] Screenshot interception failed:', e);
                                 }
@@ -1102,18 +1091,18 @@ async function sendChat(prefill, options) {
                             // (which fires AFTER all sub-steps drain).
                             const FINAL_PLANNING_TOOLS = ['planning_pipeline', 'dose_evaluation'];
                             const SEG_TOOLS = ['ctv_segmentation', 'oar_segmentation'];
-                            console.log('[SSE-STEP]', 'type:', data.type, 'tool:', data.tool, 'status:', data.status, 'in FINAL:', FINAL_PLANNING_TOOLS.includes(data.tool));
+                            uiDebugLog('[SSE-STEP]', 'type:', data.type, 'tool:', data.tool, 'status:', data.status, 'in FINAL:', FINAL_PLANNING_TOOLS.includes(data.tool));
                             if (data.status === 'done' && data.tool && FINAL_PLANNING_TOOLS.includes(data.tool)) {
-                                console.log('[SSE-STEP] FINAL tool done:', data.tool, '- scheduling refreshPlanningUI');
+                                uiDebugLog('[SSE-STEP] FINAL tool done:', data.tool, '- scheduling refreshPlanningUI');
                                 if (typeof refreshPlanningUI === 'function' && !window._planningRefreshScheduled) {
                                     window._planningRefreshScheduled = true;
                                     setTimeout(() => {
-                                        console.log('[SSE-STEP] Calling refreshPlanningUI now');
+                                        uiDebugLog('[SSE-STEP] Calling refreshPlanningUI now');
                                         try { refreshPlanningUI(); } catch (e) { console.error('[SSE-STEP] refreshPlanningUI ERROR:', e); }
                                         window._planningRefreshScheduled = false;
                                     }, 250);
                                 } else {
-                                    console.log('[SSE-STEP] refreshPlanningUI NOT scheduled:', typeof refreshPlanningUI, '_scheduled:', window._planningRefreshScheduled);
+                                    uiDebugLog('[SSE-STEP] refreshPlanningUI NOT scheduled:', typeof refreshPlanningUI, '_scheduled:', window._planningRefreshScheduled);
                                 }
                             }
                             // SEGMENTATION TOOLS: after CTV/OAR seg completes,
@@ -1121,7 +1110,7 @@ async function sendChat(prefill, options) {
                             // Without this, masks are stored server-side but never
                             // fetched by the frontend.
                             if (data.status === 'done' && data.tool && SEG_TOOLS.includes(data.tool)) {
-                                console.log('[SSE-STEP] Segmentation done:', data.tool, '- loading label volumes');
+                                uiDebugLog('[SSE-STEP] Segmentation done:', data.tool, '- loading label volumes');
                                 if (typeof loadLabelVolumes === 'function') {
                                     loadLabelVolumes().then(() => {
                                         if (typeof renderDataTree === 'function') renderDataTree();
@@ -1235,9 +1224,9 @@ async function sendChat(prefill, options) {
                         // trigger a refresh now on stream completion.
                         const _planningToolsInSteps = steps.filter(s => s.type === 'tool' && s.status === 'done'
                             && ['planning_pipeline', 'dose_evaluation', 'seed_planning'].includes(s.tool));
-                        console.log('[SSE-done] planning tools in steps:', _planningToolsInSteps.map(s => s.tool));
+                        uiDebugLog('[SSE-done] planning tools in steps:', _planningToolsInSteps.map(s => s.tool));
                         if (_planningToolsInSteps.length > 0 && !window._planningRefreshScheduled) {
-                            console.log('[SSE-done] Triggering fallback refreshPlanningUI');
+                            uiDebugLog('[SSE-done] Triggering fallback refreshPlanningUI');
                             window._planningRefreshScheduled = true;
                             setTimeout(() => {
                                 try { refreshPlanningUI(); } catch (e) { console.error('[SSE-done] refreshPlanningUI ERROR:', e); }
@@ -1247,6 +1236,13 @@ async function sendChat(prefill, options) {
                     }
                 }
             }
+        }
+
+        // Keep screenshot capture/upload inside the same logical turn. This
+        // guarantees that the hidden multimodal follow-up is queued before the
+        // stream transitions to idle and starts flushing follow-up requests.
+        if (screenshotTasks.length) {
+            await Promise.allSettled(screenshotTasks);
         }
 
         // No steps arrived — clean up the thinking indicator

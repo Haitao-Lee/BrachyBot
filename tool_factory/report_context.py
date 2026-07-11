@@ -14,8 +14,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
-
-DOSE_SCALE_GY = 120.0
+from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
 
 
 def _retrieve(memory: Any, key: str, default: Any = None) -> Any:
@@ -83,7 +82,10 @@ def _standard_for_site(kb: Dict[str, Any], site: str) -> Tuple[str, Dict[str, An
     for key, value in standards.items():
         if site and (site in key or key in site):
             return key, value
-    return "default", standards.get("default", {})
+    # Composite defaults span incompatible diseases and modalities. They are
+    # retained in the KB for search/explanation, but a patient report must not
+    # apply them when the treatment site is unknown.
+    return "unknown", {}
 
 
 def _protocol_for_site(kb: Dict[str, Any], site: str) -> Dict[str, Any]:
@@ -241,7 +243,7 @@ def _prescription_gy(memory: Any) -> Tuple[float, str]:
         source = "dose_metrics.prescribed_dose"
     raw = float(raw)
     if raw <= 10.0:
-        return raw * DOSE_SCALE_GY, f"{source} normalized to {DOSE_SCALE_GY:.0f} Gy"
+        return raw * DOSE_MODEL_SCALE_GY, f"{source} normalized to {DOSE_MODEL_SCALE_GY:.0f} Gy"
     return raw, source
 
 
@@ -279,22 +281,36 @@ def build_prescription_rationale(memory: Any) -> Dict[str, Any]:
             sources.insert(0, url)
 
     target = {}
+    oar = {}
+    selected_standard = standard
     if isinstance(standard, dict):
         if "ldr" in standard and isinstance(standard["ldr"], dict):
-            target = standard["ldr"].get("target", {}) or {}
+            selected_standard = standard["ldr"]
         elif "hdr" in standard and isinstance(standard["hdr"], dict):
-            target = standard["hdr"].get("target", {}) or {}
+            selected_standard = standard["hdr"]
+        elif "apbi" in standard and isinstance(standard["apbi"], dict):
+            selected_standard = standard["apbi"]
         else:
-            target = standard.get("target", {}) or {}
+            selected_standard = standard
+    if isinstance(selected_standard, dict):
+        target = selected_standard.get("target", {}) or {}
+        oar = selected_standard.get("oar", {}) or {}
 
     rationale = explicit_reason
     if not rationale:
-        rationale = (
-            f"Prescription is reported as {rx_gy:.1f} Gy from {rx_source}. "
-            f"When no case-specific prescription rationale is provided, BrachyBot uses the current "
-            f"planning convention and evaluates target coverage relative to site-specific clinical_kb "
-            f"standards for {standard_site}."
-        )
+        if standard:
+            rationale = (
+                f"Prescription is reported as {rx_gy:.1f} Gy from {rx_source}. "
+                f"When no case-specific prescription rationale is provided, BrachyBot uses the current "
+                f"planning convention and evaluates target coverage relative to site-specific clinical_kb "
+                f"standards for {standard_site}."
+            )
+        else:
+            rationale = (
+                f"Prescription is reported as {rx_gy:.1f} Gy from {rx_source}. "
+                "The treatment site is unknown, so no cross-site clinical threshold or dose-selection "
+                "rationale has been applied. A clinician must confirm the site and prescription."
+            )
 
     return {
         "prescription_gy": rx_gy,
@@ -302,9 +318,10 @@ def build_prescription_rationale(memory: Any) -> Dict[str, Any]:
         "site": standard_site,
         "rationale": rationale,
         "target_criteria": target,
+        "oar_criteria": oar,
         "sources": sources,
         "clinical_boundary": (
-            "If the clinician provides a prescription dose or rationale in plan_config, it overrides this default text."
+            "If the clinician provides a prescription dose or rationale in plan_config, it overrides this generated text."
         ),
     }
 

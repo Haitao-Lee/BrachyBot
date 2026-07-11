@@ -201,8 +201,9 @@ class CTVSegmentationTool(BaseTool):
                 tool_kwargs["return_all_labels"] = True
             result = tool._execute(**tool_kwargs)
             if result.success:
-                ctv_array = result.metadata.get("mask_array", result.data)
-                ctv_mask = result.metadata.get("mask", image)
+                result_meta = result.metadata or {}
+                ctv_array = result_meta.get("mask_array", result.data)
+                ctv_mask = result_meta.get("mask", image)
             else:
                 return result
 
@@ -226,7 +227,8 @@ class CTVSegmentationTool(BaseTool):
         volume_mm3 = voxel_count * voxel_size
 
         # Keep CTV display names source-aware.
-        label_map = dict(result.metadata.get("label_map", {}) if result is not None else {})
+        res_meta = (result.metadata or {}) if result is not None else {}
+        label_map = dict(res_meta.get("label_map", {}))
         positive_labels = [int(v) for v in np.unique(ctv_array) if int(v) > 0]
         if not label_map:
             label_map = {
@@ -243,7 +245,6 @@ class CTVSegmentationTool(BaseTool):
         import logging
         logging.getLogger(__name__).info(f"CTV label_map updated: {label_map}, tumor_type={tumor_type}, tumor_type_name={tumor_type_name}")
 
-        res_meta = result.metadata if result is not None else {}
         meta = {
             "ctv_mask": ctv_mask,
             "ctv_array": ctv_array,

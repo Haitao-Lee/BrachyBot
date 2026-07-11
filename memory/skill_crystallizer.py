@@ -140,7 +140,7 @@ class SkillCrystallizer:
 
         name = self._generate_skill_name(task_description, tool_chain)
         keywords = self._extract_keywords(task_description)
-        skill_id = f"cs{hashlib.md5(chain_key.encode()).hexdigest()[:8]}"
+        skill_id = f"cs{hashlib.md5(chain_key.encode(), usedforsecurity=False).hexdigest()[:8]}"
 
         skill = CrystallizedSkill(
             skill_id=skill_id, name=name, trigger_keywords=keywords,
@@ -228,7 +228,7 @@ Provide a brief reason."""
         if not force and not self.should_auto_evolve():
             return None
 
-        cycle_id = f"ev{hashlib.md5(f'{datetime.now().isoformat()}'.encode()).hexdigest()[:6]}"
+        cycle_id = f"ev{hashlib.md5(f'{datetime.now().isoformat()}'.encode(), usedforsecurity=False).hexdigest()[:6]}"
         skills_created = 0
         skills_updated = 0
         params_optimized = 0

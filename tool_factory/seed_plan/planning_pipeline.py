@@ -18,6 +18,7 @@ Steps:
 import sys
 import os
 import json
+import copy
 import logging
 import numpy as np
 from typing import Dict, List, Optional, Any
@@ -25,6 +26,7 @@ from typing import Dict, List, Optional, Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from tool_factory import BaseTool, ToolResult
+from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
 
 logger = logging.getLogger(__name__)
 
@@ -93,26 +95,6 @@ def load_config() -> Dict:
 CONFIG = load_config()
 
 
-def _get_agent():
-    """Get the global agent instance."""
-    try:
-        import AgenticSys
-        agent = getattr(AgenticSys, '_global_agent', None)
-        if agent:
-            ctv = agent.memory.retrieve("ctv_array")
-            print(f"[GET_AGENT] agent id={id(agent)}, ctv_array={'exists' if ctv is not None else 'None'}, planning_results keys={list(agent.memory.planning_results.keys()) if hasattr(agent.memory, 'planning_results') else 'N/A'}")
-        else:
-            print("[GET_AGENT] _global_agent is None — trying module-level fallback")
-            # Fallback: check if AgenticSys module has the agent
-            agent = getattr(AgenticSys, '_global_agent', None)
-            if agent:
-                print(f"[GET_AGENT] Fallback found agent id={id(agent)}")
-        return agent
-    except Exception as e:
-        print(f"[GET_AGENT] Error: {e}")
-        return None
-
-
 def _resample_for_planning(ct_image, ctv_mask, oar_mask, new_size=[128, 128, 64]):
     """Resample CT/CTV/OAR to planning grid size.
 
@@ -172,13 +154,14 @@ def _resample_for_planning(ct_image, ctv_mask, oar_mask, new_size=[128, 128, 64]
 
 
 def _convert_ref_direc_to_voxel(ref_direc_ras, ct_image):
-    """Convert RAS reference direction to voxel space.
+    """Convert the legacy LPS planning direction to voxel space.
 
     This is critical because the planning algorithm operates in voxel space.
     The reference direction must be in the same coordinate system.
 
     Args:
-        ref_direc_ras: 3-element direction in RAS space
+        ref_direc_ras: 3-element direction in SimpleITK physical LPS. The
+            argument name is retained for backward compatibility.
         ct_image: SimpleITK image with direction/spacing metadata
 
     Returns:
@@ -192,23 +175,17 @@ def _convert_ref_direc_to_voxel(ref_direc_ras, ct_image):
 # Reference direction resolution
 # ----------------------------------------------------------------------
 # Sentinel values for ``ref_direc`` resolution:
-#   - list/tuple/array of 3 numbers  → use as-is (RAS, will be normalized)
+#   - list/tuple/array of 3 numbers  → use as-is (legacy LPS, normalized)
 #   - "auto" or None                  → organ-aware default from _ORGAN_DEFAULT_REFDIREC
 #                                        (falls back to global config, then "auto_detect")
 #   - "auto_detect"                   → geometric detection from CTV center to skin
 #                                        (slowest but most adaptive)
 # ----------------------------------------------------------------------
 
-# Organ-specific default approach direction in RAS (pointing INTO the body
-# toward the tumor). These were chosen to avoid the most common OAR
-# obstructions seen in clinical brachytherapy cases:
-#   - pancreas  : posterior [-Y]      avoids stomach/duodenum in front
-#   - prostate  : posterior [-Y]      standard perineal template
-#   - liver     : lateral  [+X]       avoids central vessels
-#   - lung      : anterior [+Y]       avoids scapula/posterior ribs
-#   - kidney    : posterior [-Y]      standard posterior oblique
-#   - colon     : posterior [-Y]
-#   - head_neck : superior [+Z]       most tumors reachable from above
+# Organ-specific legacy LPS approach vectors. Their numeric values are part of
+# the deployed coordinate contract and are validated with the current viewer
+# and planning transforms. Do not reinterpret them as true RAS vectors or flip
+# individual axes without a versioned end-to-end migration.
 _ORGAN_DEFAULT_REFDIREC = {
     "pancreas":  [0.0, -1.0, 0.0],
     "pancreatic": [0.0, -1.0, 0.0],
@@ -302,7 +279,6 @@ def _auto_detect_ref_direc(ct_image, ctv_mask) -> np.ndarray:
     # Image extent in world coords
     size = np.array(ct_image.GetSize())  # (nx, ny, nz) in (x, y, z)
     extent_world = origin + direction @ (spacing * (size - 1))
-    min_world = np.minimum(origin, extent_world)
     max_world = np.maximum(origin, extent_world)
 
     # For each of 6 cardinal directions in WORLD space, find skin distance
@@ -400,27 +376,9 @@ def _load_dose_model():
     Returns:
         (model, error_message) - model is None if loading failed
     """
-    import torch
-
-    model_path = os.path.join(PLANS_DIR, "dose_pre", "dose_model.pth")
-    if not os.path.exists(model_path):
-        model_path = os.path.join(os.path.dirname(PLANS_DIR), "dose_pre", "dose_model.pth")
-    if not os.path.exists(model_path):
-        return None, f"Dose model not found. Expected at: {model_path}"
-
-    try:
-        from plans.dose_pre.myDoseNet import myDoseNet
-        model = myDoseNet(
-            spatial_dims=3,
-            in_channels=3,
-            out_channels=1,
-            features=(16, 32, 64, 128, 256, 32)
-        )
-        model.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=True))
-        model.eval()
-        return model, None
-    except Exception as e:
-        return None, f"Failed to load dose model: {e}"
+    from plans.dose_pre.model_loader import load_dose_model
+    model, error, _ = load_dose_model(device="cpu")
+    return model, error
 
 
 def _build_radiation_volume(ctv_mask, oar_mask, target_value=1, obstacle_value=2):
@@ -571,9 +529,18 @@ class PlanningPipelineTool(BaseTool):
         import SimpleITK as sitk
 
         step = kwargs.get("step", "trajectory_init")
-        # Accept injected agent from _execute_tool_with_memory,
-        # fall back to global agent lookup.
-        agent = kwargs.pop("_agent", None) or _get_agent()
+        # The caller must inject its session-local agent. A module-level global
+        # previously let concurrent web sessions read and overwrite each
+        # other's planning memory.
+        agent = kwargs.pop("_agent", None)
+        if agent is None:
+            return ToolResult(
+                success=False,
+                error=(
+                    "planning_pipeline requires a session-local agent context. "
+                    "Invoke it through BrachyAgent or /api/planning/run_step."
+                ),
+            )
 
         # step_callback: optional, called for each sub-step with
         #   (substep_name, status) where status is 'pending' or 'done'.
@@ -642,8 +609,29 @@ class PlanningPipelineTool(BaseTool):
                         error=f"OAR mask is required but CT path not found. Please upload a CT image first."
                     )
 
-        # Get agent config
-        agent_config = getattr(agent, 'config', {}) if agent else {}
+        # Build an invocation-local configuration. Planning overrides belong to
+        # this tool call and must never mutate the session-wide agent config.
+        agent_config = copy.deepcopy(getattr(agent, 'config', {}) or {}) if agent else {}
+        seed_info = kwargs.get("seed_info")
+        if seed_info is not None:
+            if not isinstance(seed_info, dict):
+                return ToolResult(success=False, error="seed_info must be an object")
+            agent_config.setdefault("seed_info", {}).update(seed_info)
+        planning_params = kwargs.get("planning_params")
+        if planning_params is not None:
+            if not isinstance(planning_params, dict):
+                return ToolResult(success=False, error="planning_params must be an object")
+            allowed_planning_params = {
+                "in_lowest_energy", "out_highest_energy", "DVH_rate",
+                "reference_direc", "iter_rate", "distance_filtter",
+            }
+            unknown = sorted(set(planning_params) - allowed_planning_params)
+            if unknown:
+                return ToolResult(
+                    success=False,
+                    error=f"Unsupported planning_params: {', '.join(unknown)}",
+                )
+            agent_config.update(copy.deepcopy(planning_params))
 
         # Get reference direction — accepts explicit array, "auto", or "auto_detect"
         ref_direc_input = kwargs.get("ref_direc")
@@ -739,10 +727,17 @@ class PlanningPipelineTool(BaseTool):
             # Try _get_label_array first (handles DICOMOrient)
             if hasattr(agent, '_get_label_array'):
                 ctv_mask = agent._get_label_array("ctv_array")
-                print(f"[LOAD_CTV] _get_label_array returned: {'exists' if ctv_mask is not None else 'None'}, type={type(ctv_mask).__name__ if ctv_mask is not None else 'N/A'}")
+                logger.debug(
+                    "[LOAD_CTV] _get_label_array returned: %s, type=%s",
+                    "exists" if ctv_mask is not None else "None",
+                    type(ctv_mask).__name__ if ctv_mask is not None else "N/A",
+                )
             else:
                 ctv_mask = agent.memory.retrieve("ctv_array")
-                print(f"[LOAD_CTV] memory.retrieve returned: {'exists' if ctv_mask is not None else 'None'}")
+                logger.debug(
+                    "[LOAD_CTV] memory.retrieve returned: %s",
+                    "exists" if ctv_mask is not None else "None",
+                )
 
             if ctv_mask is not None:
                 # Ensure it's a numpy array
@@ -750,13 +745,20 @@ class PlanningPipelineTool(BaseTool):
                     ctv_mask = sitk.GetArrayFromImage(ctv_mask)
                 # Validate it has content
                 if hasattr(ctv_mask, 'shape'):
-                    print(f"[LOAD_CTV] CTV from memory: shape={ctv_mask.shape}, non-zero={int(ctv_mask.sum()) if ctv_mask.dtype in [int, float] else 'N/A'}")
+                    logger.debug(
+                        "[LOAD_CTV] CTV from memory: shape=%s, non-zero=%s",
+                        ctv_mask.shape,
+                        int(np.count_nonzero(ctv_mask)),
+                    )
                 return ctv_mask
             else:
-                print("[LOAD_CTV] CTV mask NOT found in agent memory")
+                logger.debug("[LOAD_CTV] CTV mask not found in agent memory")
                 # Debug: check what's in planning_results
                 if hasattr(agent, 'memory') and hasattr(agent.memory, 'planning_results'):
-                    print(f"[LOAD_CTV] planning_results keys: {list(agent.memory.planning_results.keys())}")
+                    logger.debug(
+                        "[LOAD_CTV] planning_results keys: %s",
+                        list(agent.memory.planning_results.keys()),
+                    )
 
         return None
 
@@ -945,8 +947,14 @@ class PlanningPipelineTool(BaseTool):
 
         if not trajectories:
             logger.info("No trajectories found, running trajectory_init first...")
-            # Pass sentinel "auto" so the init step picks an organ-aware default
-            init_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, "auto", {}, agent)
+            ref_input = (getattr(agent, "config", {}) or {}).get(
+                "reference_direc", CONFIG.get("reference_direc", "auto")
+            )
+            ref_direc = _resolve_ref_direc(ref_input, ct_image, ctv_mask, agent)
+            init_result = self._step_trajectory_init(
+                ct_image, ctv_mask, oar_mask, ref_direc,
+                copy.deepcopy(getattr(agent, "config", {}) or {}), agent,
+            )
             if not init_result.success:
                 return ToolResult(success=False, error=f"[trajectory_refine] Cannot generate trajectories: {init_result.error}")
             trajectories = init_result.metadata.get("trajectories", [])
@@ -1095,10 +1103,17 @@ class PlanningPipelineTool(BaseTool):
 
         # Use the pipeline's radiation volume (already built with whitelist filter)
         # and the trajectories from trajectory_init/refine
-        trajectories = agent.memory.retrieve("refined_trajectories") or agent.memory.retrieve("trajectories") if agent else None
+        trajectories = (
+            agent.memory.retrieve("refined_trajectories")
+            or agent.memory.retrieve("trajectories")
+        ) if agent else None
         if not trajectories:
             logger.warning("[seed_planning] No trajectories found in memory, running trajectory_init...")
-            init_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, "auto", agent_config, agent)
+            ref_input = agent_config.get("reference_direc", CONFIG.get("reference_direc", "auto"))
+            ref_direc = _resolve_ref_direc(ref_input, ct_image, ctv_mask, agent)
+            init_result = self._step_trajectory_init(
+                ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent
+            )
             if init_result.success:
                 trajectories = init_result.metadata.get("trajectories", [])
 
@@ -1159,7 +1174,6 @@ class PlanningPipelineTool(BaseTool):
                 if isinstance(entry, (list, tuple)) and len(entry) >= 2:
                     trajectory = entry[0]
                     seeds = entry[1]
-                    seed_radiations = entry[2] if len(entry) >= 3 else []
                     total_seeds += len(seeds)
                     seed_plan.append({
                         "trajectory": trajectory,
@@ -1246,7 +1260,7 @@ class PlanningPipelineTool(BaseTool):
         resampled_ct = agent.memory.retrieve("resampled_ct") if agent else None
 
         # Dose is in normalized units (no Gy conversion)
-        DOSE_SCALE = 120.0
+        DOSE_SCALE = DOSE_MODEL_SCALE_GY
         dose_array = dose_distribution.copy()
 
         if resampled_ct is not None and ct_image is not None:
@@ -1365,10 +1379,40 @@ class PlanningPipelineTool(BaseTool):
                 return f"Organ {label_int}"
             return str(label_val)
 
-        # Verify shapes match
-        logger.info(f"[dose_eval] dose_distribution shape: {dose_distribution.shape}, ctv_mask shape: {ctv_mask.shape}")
+        # Validate every grid before boolean indexing.  This ordering matters:
+        # NumPy otherwise raises an opaque IndexError before the actionable
+        # planning-grid error below can be returned to the agent and UI.
+        dose_distribution = np.asarray(dose_distribution, dtype=np.float32)
+        ctv_mask = np.asarray(ctv_mask)
+        logger.info(
+            "[dose_eval] dose_distribution shape: %s, ctv_mask shape: %s",
+            dose_distribution.shape,
+            ctv_mask.shape,
+        )
+        if dose_distribution.shape != ctv_mask.shape:
+            return ToolResult(
+                success=False,
+                error=(
+                    "[dose_eval] Dose and CTV grids do not match: "
+                    f"dose={dose_distribution.shape}, CTV={ctv_mask.shape}. "
+                    "Run dose_calc on the current planning grid before evaluation."
+                ),
+            )
         if oar_mask is not None:
-            logger.info(f"[dose_eval] oar_mask shape: {oar_mask.shape}, unique labels: {np.unique(oar_mask).tolist()}")
+            oar_mask = np.asarray(oar_mask)
+            logger.info(
+                "[dose_eval] oar_mask shape: %s, unique labels: %s",
+                oar_mask.shape,
+                np.unique(oar_mask).tolist(),
+            )
+            if oar_mask.shape != dose_distribution.shape:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "[dose_eval] Dose and OAR grids do not match: "
+                        f"dose={dose_distribution.shape}, OAR={oar_mask.shape}."
+                    ),
+                )
 
         # Compute DVH metrics (reference: Zhiyuan BrachyPlan.calculate_dvh)
         #
@@ -1380,7 +1424,7 @@ class PlanningPipelineTool(BaseTool):
         #   - To convert to Gy: dose_normalized × 120.0
         # This constant also appears in the web planning routes and agent runtime.
         # Keep the display scale in sync if the dose model calibration changes.
-        DOSE_SCALE = 120.0
+        DOSE_SCALE = DOSE_MODEL_SCALE_GY
         target_mask = ctv_mask > 0
         target_doses = dose_distribution[target_mask]
 
@@ -1400,8 +1444,24 @@ class PlanningPipelineTool(BaseTool):
         def volume_at_dose(dose_threshold):
             return float(np.sum(target_doses_gy >= dose_threshold) / n * 100.0)
 
-        prescribed_dose = 1.0  # Normalized prescription dose
-        prescription_gy = prescribed_dose * DOSE_SCALE  # 120 Gy
+        prescribed_dose = 1.0
+        candidate = 1.0
+        if agent:
+            plan_config = agent.memory.retrieve("plan_config") or {}
+            candidate = plan_config.get(
+                "in_lowest_energy",
+                getattr(agent, "config", {}).get("in_lowest_energy", 1.0),
+            )
+        try:
+            candidate = float(candidate)
+            if candidate > 0:
+                prescribed_dose = candidate
+        except (TypeError, ValueError):
+            logger.warning(
+                "Invalid in_lowest_energy=%r; using normalized prescription 1.0",
+                candidate,
+            )
+        prescription_gy = prescribed_dose * DOSE_SCALE
 
         # D metrics in Gy (reference: dose_at_volume)
         max_dose = float(np.max(target_doses_gy))
@@ -1428,11 +1488,19 @@ class PlanningPipelineTool(BaseTool):
 
         # OAR metrics in Gy (use organ names if available)
         # Include Dxcc, Dx%, Vx metrics like Zhiyuan
-        DOSE_SCALE = 120.0
+        DOSE_SCALE = DOSE_MODEL_SCALE_GY
         oar_metrics = {}
         if oar_mask is not None:
-            # Calculate voxel volume in cm³ from spacing
-            spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
+            # dose_distribution and oar_mask are both on the planning grid.
+            # Dxcc must therefore use that grid's spacing, never the original
+            # CT spacing (which can have a much larger slice thickness).
+            resampled_ct = agent.memory.retrieve("resampled_ct") if agent else None
+            if resampled_ct is None:
+                return ToolResult(
+                    success=False,
+                    error="[dose_eval] Planning-grid metadata is missing; run dose_calc before dose_eval.",
+                )
+            spacing = resampled_ct.GetSpacing()
             voxel_vol_cm3 = float(spacing[0] * spacing[1] * spacing[2]) / 1000.0  # mm³ → cm³
 
             for label_val in np.unique(oar_mask):
@@ -1442,7 +1510,6 @@ class PlanningPipelineTool(BaseTool):
                         oar_name = _lookup_oar_name(label_val)
 
                         sorted_doses_desc = np.sort(oar_doses)[::-1]
-                        sorted_doses_asc = np.sort(oar_doses)
                         organ_vol_cm3 = len(oar_doses) * voxel_vol_cm3
                         n = len(oar_doses)
 
@@ -1456,8 +1523,9 @@ class PlanningPipelineTool(BaseTool):
 
                         # Dx%: dose received by x% of organ volume
                         def dose_at_pct(pct):
-                            idx = min(int(n * pct / 100.0), n - 1)
-                            return float(sorted_doses_asc[idx])
+                            idx = int(np.ceil(n * pct / 100.0)) - 1
+                            idx = max(0, min(idx, n - 1))
+                            return float(sorted_doses_desc[idx])
 
                         # Vx Gy: volume (%) receiving at least x Gy
                         def volume_pct_at_dose(dose_gy):
@@ -1485,7 +1553,7 @@ class PlanningPipelineTool(BaseTool):
         # Compute DVH curve data (cumulative dose-volume histogram)
         # Reference: Zhiyuan BrachyPlan.calculate_dvh
         # DVH range: max(prescription*3, 250, dose_max*1.1) — ensures meaningful display
-        DOSE_SCALE = 120.0  # Gy normalization factor for dose model
+        DOSE_SCALE = DOSE_MODEL_SCALE_GY
         prescription_gy = prescribed_dose * DOSE_SCALE  # e.g. 1.0 * 120 = 120 Gy
         dvh_data = {}
         if len(target_doses) > 0:
@@ -1557,10 +1625,17 @@ class PlanningPipelineTool(BaseTool):
             "max_dose": max_dose,
             "mean_dose": mean_dose,
             "prescribed_dose": prescribed_dose,
+            "prescription_gy": prescription_gy,
+            "dose_scale_gy": DOSE_SCALE,
             "plan_score": plan_score,
             "oar_metrics": oar_metrics,
             "dvh_data": dvh_data,
             "ctv_voxels": int(len(target_doses)),
+            "ctv_volume_mm3": (
+                float(agent.memory.retrieve("ctv_volume_mm3"))
+                if agent and agent.memory.retrieve("ctv_volume_mm3") is not None
+                else None
+            ),
             "total_seeds": agent.memory.retrieve("total_seeds") if agent else 0,
         }
 

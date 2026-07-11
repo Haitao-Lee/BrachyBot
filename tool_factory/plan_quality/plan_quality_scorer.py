@@ -26,6 +26,7 @@ from .clinical_standards import (
     should_replan,
     WEIGHTS,
 )
+from agents.clinical_metrics import match_constraint_name
 
 
 class PlanQualityScorerTool(BaseTool):
@@ -68,10 +69,14 @@ class PlanQualityScorerTool(BaseTool):
                     "description": (
                         "Target organ / tumor type. Picks the corresponding clinical "
                         "pass criteria from clinical_standards (prostate / pancreas / "
-                        "liver / lung / kidney / colon / head_neck). Defaults to "
-                        "curated clinical KB mirror values."
+                        "liver / lung / kidney / colon / head_neck). Unknown sites "
+                        "remain UNVERIFIED instead of using generic limits."
                     ),
                     "default": "default",
+                },
+                "target_constraints": {
+                    "type": "object",
+                    "description": "Explicit target criteria that override/complete the selected site's source-backed criteria",
                 },
                 "oar_metrics": {
                     "type": "object",
@@ -101,11 +106,11 @@ class PlanQualityScorerTool(BaseTool):
         return {
             "type": "object",
             "properties": {
-                "overall_score": {"type": "number", "description": "Composite weighted score 0-100"},
-                "coverage_score": {"type": "number", "description": "Coverage sub-score 0-100 (weight 0.40)"},
-                "homogeneity_score": {"type": "number", "description": "Homogeneity sub-score 0-100 (weight 0.20)"},
-                "oar_score": {"type": "number", "description": "OAR sparing sub-score 0-100 (weight 0.30)"},
-                "conformance_score": {"type": "number", "description": "Hot-spot control sub-score 0-100 (weight 0.10)"},
+                "overall_score": {"type": ["number", "null"], "description": "Composite weighted score 0-100, or null when criteria are unavailable"},
+                "coverage_score": {"type": ["number", "null"], "description": "Coverage sub-score 0-100 (weight 0.40)"},
+                "homogeneity_score": {"type": ["number", "null"], "description": "Homogeneity sub-score 0-100 (weight 0.20)"},
+                "oar_score": {"type": ["number", "null"], "description": "OAR sparing sub-score 0-100 (weight 0.30)"},
+                "conformance_score": {"type": ["number", "null"], "description": "Hot-spot control sub-score 0-100 (weight 0.10)"},
                 "acceptability": {"type": "string", "description": "'ACCEPTABLE', 'BORDERLINE', or 'UNACCEPTABLE'"},
                 "violations": {"type": "array", "description": "List of constraint violations"},
                 "needs_replan": {"type": "boolean", "description": "True if composite < threshold or >1 hard violation"},
@@ -120,58 +125,96 @@ class PlanQualityScorerTool(BaseTool):
         v200 = kwargs.get("v200", 0)
         d90 = kwargs.get("d90", 0)
         prescribed_dose = kwargs["prescribed_dose"]
-        organ = (kwargs.get("organ") or "default").lower()
+        organ = (kwargs.get("organ") or "").lower()
         oar_metrics = kwargs.get("oar_metrics", {})
         oar_constraints = kwargs.get("oar_constraints", {})
         replan_threshold = float(kwargs.get("auto_replan_threshold", 60.0))
 
         # Look up the per-organ clinical standard; merge with any caller overrides
         target_std = get_target_standard(organ)
+        target_std.update(kwargs.get("target_constraints") or {})
         oar_std = get_oar_standard(organ)
         if oar_constraints:
             for k, v in oar_constraints.items():
                 oar_std.setdefault(k.lower(), {}).update(v)
+
+        if not target_std:
+            data = {
+                "overall_score": None,
+                "coverage_score": None,
+                "homogeneity_score": None,
+                "oar_score": None,
+                "conformance_score": None,
+                "acceptability": "UNVERIFIED",
+                "violations": [],
+                "needs_replan": False,
+                "organ": organ or "unknown",
+                "weights": dict(WEIGHTS),
+                "standards_available": False,
+            }
+            return ToolResult(
+                success=True,
+                data=data,
+                message="Plan quality is UNVERIFIED: specify a supported tumor site or explicit target constraints.",
+                metadata=dict(data),
+            )
 
         coverage_score, coverage_notes = self._score_coverage(v100, v150, v200, target_std)
         homogeneity_score = self._score_homogeneity(d90, prescribed_dose, target_std)
         oar_score, violations = self._score_oars(oar_metrics, oar_std)
         conformance_score = self._score_conformance(v150, v200, target_std)
 
-        overall = composite_score(coverage_score, homogeneity_score, oar_score, conformance_score)
+        component_values = {
+            "coverage": coverage_score,
+            "homogeneity": homogeneity_score,
+            "oar_sparing": oar_score,
+            "conformance": conformance_score,
+        }
+        available_weight = sum(WEIGHTS[name] for name, value in component_values.items() if value is not None)
+        overall = sum(
+            WEIGHTS[name] * value for name, value in component_values.items() if value is not None
+        ) / available_weight if available_weight else None
 
-        if overall >= 80 and len(violations) == 0:
+        if overall is None:
+            acceptability = "UNVERIFIED"
+            needs_replan = False
+        elif overall >= 80 and len(violations) == 0:
             acceptability = "ACCEPTABLE"
+            needs_replan = False
         elif overall >= replan_threshold and len(violations) <= 1:
             acceptability = "BORDERLINE"
+            needs_replan = should_replan(overall, len(violations))
         else:
             acceptability = "UNACCEPTABLE"
+            needs_replan = True
 
-        needs_replan = should_replan(overall, len(violations)) or acceptability == "UNACCEPTABLE"
+        rounded = lambda value: round(value, 2) if value is not None else None
 
         return ToolResult(
             success=True,
             data={
-                "overall_score": round(overall, 2),
-                "coverage_score": round(coverage_score, 2),
-                "homogeneity_score": round(homogeneity_score, 2),
-                "oar_score": round(oar_score, 2),
-                "conformance_score": round(conformance_score, 2),
+                "overall_score": rounded(overall),
+                "coverage_score": rounded(coverage_score),
+                "homogeneity_score": rounded(homogeneity_score),
+                "oar_score": rounded(oar_score),
+                "conformance_score": rounded(conformance_score),
                 "acceptability": acceptability,
                 "violations": violations,
                 "needs_replan": needs_replan,
                 "organ": organ,
                 "weights": dict(WEIGHTS),
+                "standards_available": True,
             },
             message=(
                 f"Plan quality score: {overall:.1f}/100 ({acceptability}) "
                 f"organ={organ}, needs_replan={needs_replan}"
             ),
             metadata={
-                "overall_score": round(overall, 2),
-                "coverage_score": round(coverage_score, 2),
-                "homogeneity_score": round(homogeneity_score, 2),
-                "oar_score": round(oar_score, 2),
-                "conformance_score": round(conformance_score, 2),
+                "overall_score": rounded(overall),
+                "coverage_score": rounded(coverage_score),
+                "homogeneity_score": rounded(homogeneity_score),
+                "oar_score": rounded(oar_score),
+                "conformance_score": rounded(conformance_score),
                 "acceptability": acceptability,
                 "violations": violations,
                 "needs_replan": needs_replan,
@@ -187,49 +230,54 @@ class PlanQualityScorerTool(BaseTool):
 
         Returns (score 0-100, notes list).
         """
-        v100_min = target_std.get("v100_min", 0.90)
         score = 0.0
+        available = 0.0
         notes = []
 
-        # V100 is the dominant coverage metric; full credit at 100%+ of standard
-        if v100 >= v100_min:
-            score += 70
-        elif v100 >= v100_min - 0.05:
-            score += 55
-            notes.append(f"V100={v100:.1%} slightly below {v100_min:.0%}")
-        elif v100 >= v100_min - 0.10:
-            score += 35
-            notes.append(f"V100={v100:.1%} notably below {v100_min:.0%}")
-        else:
-            score += 10
-            notes.append(f"V100={v100:.1%} severely below {v100_min:.0%}")
+        if "v100_min" in target_std:
+            available += 70
+            v100_min = float(target_std["v100_min"])
+            if v100 >= v100_min:
+                score += 70
+            elif v100 >= v100_min - 0.05:
+                score += 55
+                notes.append(f"V100={v100:.1%} slightly below {v100_min:.0%}")
+            elif v100 >= v100_min - 0.10:
+                score += 35
+                notes.append(f"V100={v100:.1%} notably below {v100_min:.0%}")
+            else:
+                score += 10
+                notes.append(f"V100={v100:.1%} severely below {v100_min:.0%}")
 
         # V100 above 100% is fine (over-coverage), no penalty
         # Partial credit if V150 is within bounds
-        v150_max = target_std.get("v150_max", 0.50)
-        if v150 <= v150_max:
-            score += 20
-        elif v150 <= v150_max + 0.10:
-            score += 10
-            notes.append(f"V150={v150:.1%} above {v150_max:.0%}")
-        else:
-            score += 0
-            notes.append(f"V150={v150:.1%} much above {v150_max:.0%}")
+        if "v150_max" in target_std:
+            available += 20
+            v150_max = float(target_std["v150_max"])
+            if v150 <= v150_max:
+                score += 20
+            elif v150 <= v150_max + 0.10:
+                score += 10
+                notes.append(f"V150={v150:.1%} above {v150_max:.0%}")
+            else:
+                notes.append(f"V150={v150:.1%} much above {v150_max:.0%}")
 
         # V200 severe hot-spot penalty
-        v200_max = target_std.get("v200_max", 0.20)
-        if v200 <= v200_max:
-            score += 10
-        else:
-            notes.append(f"V200={v200:.1%} above {v200_max:.0%}")
+        if "v200_max" in target_std:
+            available += 10
+            v200_max = float(target_std["v200_max"])
+            if v200 <= v200_max:
+                score += 10
+            else:
+                notes.append(f"V200={v200:.1%} above {v200_max:.0%}")
 
-        return min(100.0, score), notes
+        return (min(100.0, score / available * 100.0), notes) if available else (None, notes)
 
     def _score_homogeneity(self, d90, prescribed_dose, target_std) -> float:
         """Score dose homogeneity against per-organ D90 standard (0-100)."""
-        if prescribed_dose <= 0:
-            return 0.0
-        d90_min_pct = target_std.get("d90_min_pct", 1.0)
+        if prescribed_dose <= 0 or "d90_min_pct" not in target_std:
+            return None
+        d90_min_pct = float(target_std["d90_min_pct"])
         ratio = d90 / prescribed_dose
         if ratio >= d90_min_pct:
             return 100.0
@@ -249,10 +297,11 @@ class PlanQualityScorerTool(BaseTool):
         """
         score = 100.0
         violations = []
+        applicable = 0
 
         for oar_name, metrics in oar_metrics.items():
-            oar_name_l = oar_name.lower()
-            constraints = oar_constraints.get(oar_name_l, {})
+            matched = match_constraint_name(oar_name, oar_constraints)
+            constraints = oar_constraints.get(matched, {}) if matched else {}
             if not constraints:
                 # No standard for this OAR — be lenient (no penalty)
                 continue
@@ -260,6 +309,7 @@ class PlanQualityScorerTool(BaseTool):
             for constraint_type, limit in constraints.items():
                 if constraint_type not in metrics:
                     continue
+                applicable += 1
                 actual = float(metrics[constraint_type])
                 if actual > limit:
                     excess_pct = (actual - limit) / limit * 100.0
@@ -275,23 +325,27 @@ class PlanQualityScorerTool(BaseTool):
                         "penalty": round(penalty, 2),
                     })
 
-        return max(0.0, score), violations
+        return (max(0.0, score), violations) if applicable else (None, violations)
 
     def _score_conformance(self, v150, v200, target_std) -> float:
         """Score hot-spot control (V150/V200) — 0-100."""
-        v150_max = target_std.get("v150_max", 0.50)
-        v200_max = target_std.get("v200_max", 0.20)
-
         score = 0.0
-        if v150 <= v150_max:
-            score += 60
-        elif v150 <= v150_max + 0.10:
-            score += 30
-        if v200 <= v200_max:
-            score += 40
-        elif v200 <= v200_max + 0.05:
-            score += 20
-        return min(100.0, score)
+        available = 0.0
+        if "v150_max" in target_std:
+            available += 60
+            v150_max = float(target_std["v150_max"])
+            if v150 <= v150_max:
+                score += 60
+            elif v150 <= v150_max + 0.10:
+                score += 30
+        if "v200_max" in target_std:
+            available += 40
+            v200_max = float(target_std["v200_max"])
+            if v200 <= v200_max:
+                score += 40
+            elif v200 <= v200_max + 0.05:
+                score += 20
+        return min(100.0, score / available * 100.0) if available else None
 
 
 def main():

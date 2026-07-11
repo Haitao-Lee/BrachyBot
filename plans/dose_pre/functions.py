@@ -5,7 +5,10 @@ import numpy as np
 
 def position_soft_method(seed, image_origin, image_size, image_spacing):
     """
-    Generate a soft treatment plan based on a spherical distribution around a given seed point.
+    Generate a seed-location conditioning channel for myDoseNet.
+
+    This is model input geometry, not a dose estimator or fallback. The final
+    dose is always the trained network output.
 
     Parameters:
     seed (np.ndarray): The seed point in 3D space, represented as [x, y, z].
@@ -77,7 +80,7 @@ def position_soft_method(seed, image_origin, image_size, image_spacing):
 
 
 def line_source_map(seed, direction, image_origin, image_size, image_spacing):
-     # seed: seed coordinates, direction: seed direction vector
+     # Geometric myDoseNet conditioning only; this is not a dose calculation.
         x = image_origin[0] + np.arange(image_size[0]) * image_spacing[0]
         y = image_origin[1] + np.arange(image_size[1]) * image_spacing[1]
         z = image_origin[2] + np.arange(image_size[2]) * image_spacing[2]
@@ -90,7 +93,6 @@ def line_source_map(seed, direction, image_origin, image_size, image_spacing):
         distance_squared = Vx**2 + Vy**2 + Vz**2
         # print(np.where(distance_squared<0.01))
         distance_squared[np.where(distance_squared<0.01)] = 0.01
-        v0 = np.array([0, 0, 1])
         L = 4.5
         
         norm_direction_vector = direction / np.linalg.norm(direction)

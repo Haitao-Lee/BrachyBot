@@ -121,14 +121,10 @@ def demo_llm_providers():
         print(f"  - {name}: {desc}")
 
     print("\nOpenRouterLLM top models:")
-    openrouter = OpenRouterLLM.__new__(OpenRouterLLM)
-    openrouter.SUPPORTED_MODELS = OpenRouterLLM.SUPPORTED_MODELS
-    openrouter.model = "hy3-preview"
-
     top_models = ["hy3-preview", "claude-opus-4.7", "kimi-k2.6", "deepseek-v4-flash",
                   "gemini-3-flash", "minimax-m2.7", "gpt-5.5-pro", "grok-3"]
     for model_id in top_models:
-        info = openrouter.get_model_info(model_id)
+        info = OpenRouterLLM.model_info(model_id)
         print(f"  {model_id}: {info['name']} ({info['provider']})")
 
 

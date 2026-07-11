@@ -1,3 +1,14 @@
+// Production logging is quiet by default. Enable detailed UI diagnostics from
+// the browser console with `window.BRACHYBOT_DEBUG_UI = true`.
+function uiDebugLog(...args) {
+    if (window.BRACHYBOT_DEBUG_UI) console.debug(...args);
+}
+
+function effectiveUiLanguage() {
+    return window._i18nLang || 'en';
+}
+window.effectiveUiLanguage = effectiveUiLanguage;
+
 function escHtml(str) {
     if (!str) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -9,6 +20,24 @@ const ACTIVE_KEY = 'brachybot_active_session';
 
 let sessions = {};
 let activeSessionId = null;
+
+function caseStorageKey(base, sessionId = activeSessionId) {
+    const safeId = String(sessionId || 'web').replace(/[^a-zA-Z0-9_.-]/g, '_');
+    return `${base}:${safeId}`;
+}
+window.caseStorageKey = caseStorageKey;
+
+function removeSessionScopedLocalState(sessionId) {
+    const bases = [
+        'brachybot_manual_state',
+        'brachyplan_reportForm',
+        'brachyplan_report_audit',
+        'brachyplan_report_snapshots',
+    ];
+    for (const base of bases) {
+        try { localStorage.removeItem(caseStorageKey(base, sessionId)); } catch (_) {}
+    }
+}
 
 function loadSessions() {
     // PERSISTENT + AUTO-NEW (2026-06-15): the user wants two
@@ -26,7 +55,7 @@ function loadSessions() {
     try {
         const data = localStorage.getItem(SESSIONS_KEY);
         sessions = data ? JSON.parse(data) : {};
-        console.log(`[Session] Loaded ${Object.keys(sessions).length} sessions from localStorage`);
+        uiDebugLog(`[Session] Loaded ${Object.keys(sessions).length} sessions from localStorage`);
     } catch {
         sessions = {};
     }
@@ -88,7 +117,7 @@ function ensurePendingSession() {
 function saveSessions() {
     localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
     localStorage.setItem(ACTIVE_KEY, activeSessionId);
-    console.log(`[Session] Saved ${Object.keys(sessions).length} sessions, active=${activeSessionId}`);
+    uiDebugLog(`[Session] Saved ${Object.keys(sessions).length} sessions, active=${activeSessionId}`);
 }
 
 function generateSessionId() {
@@ -103,8 +132,8 @@ function generateSessionId() {
 // Input panel. The user asked for clean data isolation between
 // page loads; this is the manual way to enforce it if the
 // auto-clear-on-page-load behavior isn't enough.
-function clearLocalChatData() {
-    const ok = window.confirm(
+function clearLocalChatData(options = {}) {
+    const ok = options.skipConfirm === true || window.confirm(
         'Clear all locally stored chat data?\n' +
         'This will delete:\n' +
         '  · All saved chat sessions\n' +
@@ -121,6 +150,9 @@ function clearLocalChatData() {
         localStorage.removeItem('brachybot_active_session');
         // Report form (saved data)
         localStorage.removeItem('brachyplan_reportForm');
+        localStorage.removeItem('brachybot_manual_state');
+        localStorage.removeItem('brachyplan_report_audit');
+        localStorage.removeItem('brachyplan_report_snapshots');
         // Report auto-save data
         try { localStorage.removeItem('brachybot_report_autosave'); } catch (_) {}
         // Layout preferences (column widths) — but keep the
@@ -128,6 +160,18 @@ function clearLocalChatData() {
         ['layout.sidebar.width', 'layout.right.width'].forEach(k => {
             try { localStorage.removeItem(k); } catch (_) {}
         });
+        const scopedPrefixes = [
+            'brachybot_manual_state:',
+            'brachyplan_reportForm:',
+            'brachyplan_report_audit:',
+            'brachyplan_report_snapshots:',
+        ];
+        for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+            const key = localStorage.key(index);
+            if (key && scopedPrefixes.some(prefix => key.startsWith(prefix))) {
+                localStorage.removeItem(key);
+            }
+        }
     } catch (e) {
         console.warn('clearLocalChatData: partial failure', e);
     }
@@ -139,6 +183,11 @@ function clearLocalChatData() {
 function toggleSessionSidebar() {
     const sidebar = document.getElementById('sessionSidebar');
     if (!sidebar) return;
+    if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
+        sidebar.style.display = '';
+        sidebar.classList.toggle('mobile-open');
+        return;
+    }
     if (sidebar.style.display === 'none') {
         sidebar.style.display = '';
     } else {
@@ -146,7 +195,28 @@ function toggleSessionSidebar() {
     }
 }
 
-function newChat() {
+function closeSessionSidebar() {
+    const sidebar = document.getElementById('sessionSidebar');
+    if (!sidebar) return;
+    sidebar.classList.remove('mobile-open');
+    if (!(window.matchMedia && window.matchMedia('(max-width: 900px)').matches)) {
+        sidebar.style.display = 'none';
+    }
+}
+
+function _canChangeChatSession() {
+    const activeStream = (typeof window._chatStreaming === 'boolean' && window._chatStreaming)
+        || (typeof isStreaming !== 'undefined' && isStreaming);
+    if (!activeStream) return true;
+    if (typeof addChat === 'function') {
+        addChat('system', 'Stop the current response before changing sessions.');
+    }
+    return false;
+}
+
+async function newChat() {
+    if (!_canChangeChatSession()) return;
+    if (typeof flushActiveReportState === 'function') flushActiveReportState();
     const id = generateSessionId();
     sessions[id] = { id, title: 'New chat', messages: [], created: Date.now() };
     activeSessionId = id;
@@ -154,47 +224,84 @@ function newChat() {
     renderSessionList();
     loadSessionChat(id);
 
-    // Clear server-side data (CT, CTV, OAR, planning results)
-    fetch(API + '/clear_all', { method: 'POST' }).catch(() => {});
-
-    // Clear client-side data tree state
-    dataTreeState.ctv.loaded = false;
-    dataTreeState.oar.loaded = false;
-    dataTreeState.organs = [];
-    dataTreeState.dose.loaded = false;
-    dataTreeState.seeds.loaded = false;
-    dataTreeState.needles.loaded = false;
-    dataTreeState.planning.trajectories = [];
-    dataTreeState.planning.trajectoriesLoaded = false;
-    dataTreeState.planning.seeds = [];
-    dataTreeState.planning.needles = [];
-    dataTreeState.planning.doseLevels = [];
-    dataTreeState.planning.meshes = [];
-    ctvLabelData = null;
-    oarLabelData = null;
-    state.ctLoaded = false;
-    state.seeds = [];
-    state.metrics = {};
-    renderDataTree();
+    // The request wrapper attaches the newly selected session ID, so this
+    // cannot clear another chat's case data.
+    try { await fetch(API + '/clear_all', { method: 'POST' }); } catch (_) {}
+    if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
 }
 
-function switchSession(id) {
-    if (id === activeSessionId) return;
+async function switchSession(id) {
+    document.getElementById('sessionSidebar')?.classList.remove('mobile-open');
+    if (id === activeSessionId || !sessions[id] || !_canChangeChatSession()) return;
+    if (typeof flushActiveReportState === 'function') flushActiveReportState();
     activeSessionId = id;
     saveSessions();
     renderSessionList();
     loadSessionChat(id);
+    if (typeof restoreActiveSessionWorkspace === 'function') {
+        try { await restoreActiveSessionWorkspace({ clearReport: true }); }
+        catch (error) { console.warn('Session workspace restore failed:', error); }
+    }
 }
 
-function deleteSession(id) {
-    if (Object.keys(sessions).length <= 1) return;
+async function deleteSession(id, options = {}) {
+    if (Object.keys(sessions).length <= 1 || !sessions[id] || !_canChangeChatSession()) return;
+    if (options.skipConfirm !== true) {
+        const prompt = `Delete session "${sessions[id].title || id}"? This cannot be undone.`;
+        const confirmed = typeof _confirmAction === 'function'
+            ? await _confirmAction(prompt)
+            : window.confirm(prompt);
+        if (!confirmed) return;
+    }
+    const wasActive = activeSessionId === id;
+    if (wasActive && typeof flushActiveReportState === 'function') flushActiveReportState();
     delete sessions[id];
-    if (activeSessionId === id) {
+    removeSessionScopedLocalState(id);
+    if (wasActive) {
         activeSessionId = Object.keys(sessions)[0];
     }
     saveSessions();
     renderSessionList();
+    if (wasActive) loadSessionChat(activeSessionId);
+
+    // Reset the deleted backend agent explicitly; its ID differs from the
+    // now-active session and therefore cannot rely on the implicit header.
+    try {
+        await fetch(API + '/reset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: id }),
+        });
+    } catch (_) {}
+    if (wasActive && typeof restoreActiveSessionWorkspace === 'function') {
+        try { await restoreActiveSessionWorkspace({ clearReport: true }); }
+        catch (error) { console.warn('Session workspace restore failed:', error); }
+    }
+}
+
+async function clearCurrentChatHistory(options = {}) {
+    if (!activeSessionId || !sessions[activeSessionId] || !_canChangeChatSession()) return false;
+    if (options.skipConfirm !== true) {
+        const prompt = 'Clear the current conversation history? Planning and image data will be retained.';
+        const confirmed = typeof _confirmAction === 'function'
+            ? await _confirmAction(prompt)
+            : window.confirm(prompt);
+        if (!confirmed) return false;
+    }
+    sessions[activeSessionId].messages = [];
+    sessions[activeSessionId].pending = false;
+    saveSessions();
     loadSessionChat(activeSessionId);
+    try {
+        await fetch(API + '/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clear_context: true, stream: false, session_id: activeSessionId }),
+        });
+    } catch (error) {
+        console.warn('Backend conversation clear failed:', error);
+    }
+    return true;
 }
 
 function startRenameSession(id, event) {
@@ -232,8 +339,9 @@ function startRenameSession(id, event) {
 function renderSessionList() {
     const list = document.getElementById('sessionList');
     const sorted = Object.values(sessions).sort((a, b) => b.created - a.created);
+    const locale = effectiveUiLanguage() === 'zh' ? 'zh-CN' : 'en-US';
     list.innerHTML = sorted.map(s => {
-        const time = new Date(s.created).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const time = new Date(s.created).toLocaleDateString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
         const active = s.id === activeSessionId ? ' active' : '';
         return `<div class="session-item${active}" onclick="switchSession('${s.id}')">
             <div class="session-item-info">
@@ -254,7 +362,13 @@ function loadSessionChat(id) {
     const container = document.getElementById('chatMessages');
     container.innerHTML = '';
     if (session.messages.length === 0) {
-        container.innerHTML = '<div class="chat-msg system">Welcome to BrachyBot. Describe your brachytherapy case — tumor location, type, patient condition — and I will help you generate an optimal treatment plan. You can also load CT data directly via the Input panel on the right.</div>';
+        const welcome = window._t
+            ? window._t(
+                '欢迎使用 BrachyBot。请描述你的近距离治疗病例——肿瘤位置、类型、患者情况——我会帮助你生成治疗计划。也可以直接在右侧的输入面板加载 CT 数据。',
+                'Welcome to BrachyBot. Describe your brachytherapy case — tumor location, type, patient condition — and I will help you generate a treatment plan. You can also load CT data directly from the Input panel.'
+            )
+            : 'Welcome to BrachyBot. Describe your brachytherapy case or load CT data from the Input panel.';
+        container.innerHTML = '<div class="chat-msg system">' + escHtml(welcome) + '</div>';
     } else {
         // DEDUP ON RENDER (2026-06-15): the user had a bug where on
         // page refresh, the same chat message was rendered 2-4
@@ -375,10 +489,8 @@ const CHAT_AVATAR_SVGS = {
 // Language-aware labels for the usage-bar footer. The footer is
 // one of the few UI elements whose labels are user-facing text
 // (not class names / IDs), so it needs to follow the same
-// language detection as the todo list. We read the active
-// language from window._uiLanguage (set by the SSE start handler
-// when the server emits its detected language) and pick the
-// matching label set. The fallback is English.
+// explicit interface language as the todo list. Server-detected response
+// language affects the LLM reply only and must not silently switch controls.
 //
 // Key mapping mirrors memory/language.py server-side detection:
 //   zh → Chinese, en → English, ja → Japanese, ko → Korean,
@@ -440,7 +552,7 @@ const FOOTER_I18N = {
     },
 };
 function _footerI18n() {
-    const code = (typeof window !== 'undefined' && window._uiLanguage) || 'en';
+    const code = effectiveUiLanguage();
     return FOOTER_I18N[code] || FOOTER_I18N.en;
 }
 
@@ -711,13 +823,13 @@ const _CHAIN_I18N = {
     },
 };
 function _chainI18n(key) {
-    const lang = window._uiLanguage || window._i18nLang || 'en';
+    const lang = effectiveUiLanguage();
     return (_CHAIN_I18N[lang] || _CHAIN_I18N.en)[key] || (_CHAIN_I18N.en[key] || key);
 }
 // Localize a step title: "LLM Call 1" → "LLM 调用 1", "Calling foo" → "调用 foo"
 function _localizeStepTitle(title) {
     if (!title) return '';
-    const lang = window._uiLanguage || window._i18nLang || 'en';
+    const lang = effectiveUiLanguage();
     if (lang === 'en') return title;
     // "LLM Call N" → "LLM 调用 N"
     title = title.replace(/^LLM Call (\d+)/, _chainI18n('llm_call') + ' $1');
@@ -1715,7 +1827,7 @@ function showThinkingIndicator() {
 
     const text = document.createElement('div');
     text.className = 'thinking-text';
-    text.textContent = 'Thinking';
+    text.textContent = window._t ? window._t('正在思考', 'Thinking') : 'Thinking';
 
     const timeEl = document.createElement('div');
     timeEl.className = 'thinking-time';
@@ -1782,7 +1894,7 @@ function showToolProgress(toolName, params) {
 
     const text = document.createElement('span');
     text.className = 'tool-progress-text';
-    const _zh = (window._uiLanguage === 'zh');
+    const _zh = (effectiveUiLanguage() === 'zh');
     // Use i18n tool name if available
     const _toolLabel = (function() {
         try {
@@ -1808,7 +1920,7 @@ function updateToolProgress(el, toolName, status, result) {
     if (!el) return;
     const textEl = el.querySelector('.tool-progress-text');
     const spinner = el.querySelector('.spinner-ring');
-    const _zh = (window._uiLanguage === 'zh');
+    const _zh = (effectiveUiLanguage() === 'zh');
     const _toolLabel = (function() {
         try {
             const i18n = _todoI18n();
@@ -1853,14 +1965,8 @@ function updateToolProgress(el, toolName, status, result) {
 // Language-aware todo labels. The user complained that typing
 // English but seeing Chinese todo entries is a "顶层问题" — to
 // fix it top-level, the todo list now picks labels from a
-// per-language dictionary. The chosen language is detected
-// server-side from the user's input (see memory/language.py) and
-// surfaced in /api/status; the frontend reads it via
-// `window._uiLanguage` (set by the chat SSE handler at the
-// start of every turn). When the language flips, every NEW
-// todo list uses the new labels; in-flight todo lists keep
-// their existing labels (no retroactive re-render — that
-// would just flash the user with content that disappears).
+// per-language dictionary. The explicit EN/中文 toggle is the single source
+// of truth, including for in-flight todo rows.
 const _TODO_I18N = {
     zh: {
         header: '执行进度',

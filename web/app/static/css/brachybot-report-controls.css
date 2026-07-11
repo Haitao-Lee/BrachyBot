@@ -20,6 +20,40 @@
     resize: horizontal;
     box-shadow: var(--inset-top), 1px 0 0 rgba(15, 23, 42, 0.02);
 }
+
+/* The right workspace is user-resizable. Keep the data tree readable without
+   allowing it to consume nearly the entire viewer at intermediate widths. */
+#panelViewers { container-type: inline-size; }
+
+@container (max-width: 1000px) {
+    .data-tree-container {
+        width: clamp(220px, 32cqw, 320px);
+        max-width: 42cqw;
+    }
+}
+
+@container (max-width: 620px) {
+    .viewer-workspace { flex-direction: column; }
+    .data-tree-container {
+        width: 100% !important;
+        max-width: none;
+        min-width: 0;
+        flex: 0 0 128px;
+        resize: none;
+        border-right: 0;
+        border-bottom: 1px solid var(--border-hairline);
+    }
+    .data-tree-resize { display: none; }
+    .viewers-panel.layout-grid {
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+    }
+    .viewers-panel.layout-grid > .viewer-card {
+        flex: 0 0 300px;
+        min-height: 260px;
+    }
+}
 .viewers-panel.layout-grid .data-tree-container {
     background: linear-gradient(180deg, rgba(30, 38, 55, 0.9) 0%, rgba(20, 25, 40, 0.9) 100%);
     border-right-color: rgba(255, 255, 255, 0.08);
@@ -635,12 +669,20 @@
     z-index: 50;
     gap: 0.65rem;
     opacity: 0;
+    visibility: hidden;
     pointer-events: none;
-    transition: opacity var(--t-base) var(--ease);
+    transition:
+        opacity var(--t-base) var(--ease),
+        visibility 0s linear var(--t-base);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
 }
-.loading-overlay.active { opacity: 1; pointer-events: all; }
+.loading-overlay.active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: all;
+    transition-delay: 0s;
+}
 
 .spinner-ring {
     width: 28px; height: 28px;
@@ -1037,6 +1079,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     display: flex;
     flex-direction: column;
     align-items: center;
+    will-change: transform;
 }
 .rp-zoom-indicator {
     display: inline-flex; align-items: center; gap: 4px;

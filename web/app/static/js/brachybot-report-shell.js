@@ -202,18 +202,61 @@ window.Report = (function () {
     };
 
     // ---------- Preview zoom (P+user) ----------
-    // Ctrl+滚轮 在 PDF 预览区缩放 A4 页面
+    // Keep the report pages at their real A4 dimensions for export. The visual
+    // preview applies a separate fit-to-panel scale so narrow and split layouts
+    // never crop the document at the default zoom.
     const preview = (function() {
         let _zoom = 1.0;
+        let _fitScale = 1.0;
+        let _resizeObserver = null;
+        let _updateFrame = 0;
         const MIN = 0.5, MAX = 2.0, STEP = 0.1;
+
+        function _measureFitScale() {
+            const host = document.getElementById('reportPreview');
+            const page = document.querySelector('#reportPages .report-page');
+            if (!host || !page) return 1.0;
+            const style = window.getComputedStyle(host);
+            const horizontalPadding = (parseFloat(style.paddingLeft) || 0)
+                + (parseFloat(style.paddingRight) || 0);
+            const availableWidth = Math.max(0, host.clientWidth - horizontalPadding - 2);
+            const pageWidth = page.offsetWidth;
+            if (availableWidth <= 0 || pageWidth <= 0) return 1.0;
+            return Math.min(1.0, availableWidth / pageWidth);
+        }
+
         function _update() {
             const wrap = document.getElementById('reportPagesWrapper');
+            const pages = document.getElementById('reportPages');
             const ind = document.getElementById('rpZoomIndicator');
-            if (wrap) wrap.style.transform = `scale(${_zoom})`;
-            if (ind) {
-                ind.textContent = Math.round(_zoom * 100) + '%';
-                ind.title = `当前缩放 ${Math.round(_zoom * 100)}% — 点击重置 100%（Ctrl+0）`;
+            _fitScale = _measureFitScale();
+            const effectiveZoom = Math.max(0.2, Math.min(MAX, _zoom * _fitScale));
+            if (wrap) {
+                wrap.style.transform = `scale(${effectiveZoom})`;
+                // Transforms do not affect normal-flow height. Reserve the
+                // scaled height explicitly to avoid a large blank area below
+                // the preview or overlap with the status bar.
+                wrap.style.height = pages
+                    ? `${Math.ceil(pages.scrollHeight * effectiveZoom)}px`
+                    : '';
+                wrap.dataset.fitScale = String(_fitScale);
+                wrap.dataset.effectiveZoom = String(effectiveZoom);
             }
+            if (ind) {
+                const percent = Math.round(effectiveZoom * 100);
+                ind.textContent = percent + '%';
+                ind.title = _fitScale < 0.999
+                    ? `Preview ${percent}% (fit-to-panel ${Math.round(_fitScale * 100)}%). Click to reset (Ctrl+0).`
+                    : `Preview ${percent}%. Click to reset (Ctrl+0).`;
+            }
+        }
+
+        function refresh() {
+            if (_updateFrame) window.cancelAnimationFrame(_updateFrame);
+            _updateFrame = window.requestAnimationFrame(() => {
+                _updateFrame = 0;
+                _update();
+            });
         }
         function _persist() {
             try { localStorage.setItem('brachyplan_report_zoom', String(_zoom)); } catch (e) {}
@@ -226,33 +269,44 @@ window.Report = (function () {
         }
         function setZoom(z) {
             _zoom = Math.max(MIN, Math.min(MAX, z));
-            _update(); _persist();
+            refresh(); _persist();
         }
         function zoomIn() { setZoom(_zoom + STEP); }
         function zoomOut() { setZoom(_zoom - STEP); }
         function zoomReset() { setZoom(1.0); }
         function getZoom() { return _zoom; }
 
-        // Install wheel listener on the preview area
+        // Install interaction and resize listeners on the preview area.
         function _installWheelHandler() {
-            const preview = document.getElementById('reportPreview');
-            if (!preview || preview._rpZoomWired) return;
-            preview._rpZoomWired = true;
-            preview.addEventListener('wheel', (e) => {
-                if (!e.ctrlKey && !e.metaKey) return; // 只在 Ctrl/Cmd 修饰时缩放
+            const host = document.getElementById('reportPreview');
+            if (!host) return;
+            if (!host._rpZoomWired) host.addEventListener('wheel', (e) => {
+                if (!e.ctrlKey && !e.metaKey) return;
                 e.preventDefault();
                 if (e.deltaY < 0) zoomIn();
                 else if (e.deltaY > 0) zoomOut();
             }, { passive: false });
+            host._rpZoomWired = true;
+
+            if (!host._rpImageLoadWired) {
+                host.addEventListener('load', refresh, true);
+                host._rpImageLoadWired = true;
+            }
+            if (typeof ResizeObserver !== 'undefined') {
+                if (_resizeObserver) _resizeObserver.disconnect();
+                _resizeObserver = new ResizeObserver(refresh);
+                _resizeObserver.observe(host);
+            }
+            refresh();
         }
         _restore();
-        _update();
+        refresh();
         // Re-install when preview element is re-created (preview re-renders)
         const _origPreview = panels.preview;
         panels.preview = function() {
             _origPreview();
             // Restore transform after re-render
-            setTimeout(() => { _installWheelHandler(); _update(); }, 0);
+            setTimeout(_installWheelHandler, 0);
         };
         // Also install once on boot via DOMContentLoaded
         if (document.readyState === 'loading') {
@@ -260,7 +314,7 @@ window.Report = (function () {
         } else {
             _installWheelHandler();
         }
-        return { setZoom, zoomIn, zoomOut, zoomReset, getZoom };
+        return { setZoom, zoomIn, zoomOut, zoomReset, getZoom, refresh };
     })();
 
     // Ctrl+0 reset shortcut
@@ -297,6 +351,61 @@ window.Report = (function () {
         } catch (e) { return {}; }
     }
 
+    async function _fetchServerReportPatch(scope, language) {
+        const response = await fetch('/api/report/auto-fill', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                scope: scope || 'all',
+                language: language || 'en',
+                sources: ['nifti', 'dicom', 'planning'],
+            }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.error || `HTTP ${response.status}`);
+        }
+        return payload;
+    }
+
+    function _applyReportPatch(patch, source = 'bot', options = {}) {
+        const f = window.reportForm;
+        if (!f) return { applied: 0, skipped: 0 };
+        const onlyKey = options.onlyKey || null;
+        let applied = 0, skipped = 0;
+        for (const [key, value] of Object.entries(patch || {})) {
+            if (onlyKey && key !== onlyKey) continue;
+            if (f.editedFields && f.editedFields.has(key)) {
+                skipped++;
+                continue;
+            }
+            _setByPath(f, key, value);
+            sources.set(key, source);
+            if (key === 'planning.prescriptionRationale' && value && Array.isArray(value.sources)) {
+                if (!Array.isArray(f.references)) f.references = [];
+                value.sources.forEach((url, index) => {
+                    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return;
+                    if (f.references.some(ref => ref && ref.url === url)) return;
+                    f.references.push({
+                        citeKey: `clinical-kb-${value.site || 'case'}-${index + 1}`,
+                        title: `Clinical criterion source (${value.site || 'case'})`,
+                        publisher: 'clinical_kb verified source',
+                        year: '',
+                        url,
+                        custom: false,
+                    });
+                });
+            }
+            applied++;
+        }
+        if (options.render !== false) {
+            panels.editor();
+            panels.preview();
+            persist.autoSave();
+        }
+        return { applied, skipped };
+    }
+
     const autoFill = {
         async fromAll(opts = {}) {
             const onlyKey = opts.onlyKey || null;
@@ -315,6 +424,20 @@ window.Report = (function () {
             if ((!onlyKey || onlyKey === 'interpretation') && (!f.editedFields || !f.editedFields.has('interpretation'))) {
                 this.interpret();
             }
+            // The server contributes source-backed prescription rationale,
+            // target/OAR criteria, and geometry-derived tumor assessment. The
+            // local path remains an offline fallback when the server is down.
+            let serverApplied = 0;
+            try {
+                const language = (typeof window._i18nLang === 'string') ? window._i18nLang : (f.language || 'en');
+                const payload = await _fetchServerReportPatch('all', language);
+                serverApplied = _applyReportPatch(payload.patch || {}, 'bot', {
+                    onlyKey,
+                    render: false,
+                }).applied;
+            } catch (e) {
+                console.warn('Server report auto-fill unavailable; using local data:', e);
+            }
             // BUG FIX 2026-06-17 (auto-screenshots in report):
             // auto-capture visual evidence (CT + masks, dose heatmap,
             // 3D plan, DVH curve) as report figures. The previous
@@ -328,7 +451,9 @@ window.Report = (function () {
             panels.editor(); panels.preview();
             persist.autoSave();
             audit.log('autoFill.fromAll', '*', null, 'filled');
-            _setReportStatus('Auto-filled from NIfTI + planning', 'ok');
+            _setReportStatus(serverApplied > 0
+                ? `Auto-filled with ${serverApplied} source-backed server field(s)`
+                : 'Auto-filled from local NIfTI + planning data', 'ok');
         },
         fromDicom(tags, onlyKey = null) {
             if (!tags || Object.keys(tags).length === 0) return;
@@ -372,7 +497,8 @@ window.Report = (function () {
                 }
                 if (ws.ctShape && ws.ctSpacing) {
                     const writes = [
-                        ['imaging.sliceCount', ws.ctShape[2] || null],
+                        // Volume arrays are stored as Z, Y, X throughout the viewer.
+                        ['imaging.sliceCount', ws.ctShape[0] || null],
                         ['imaging.pixelSpacingMm', ws.ctSpacing[0] || null],
                         ['imaging.sliceThicknessMm', ws.ctSpacing[2] || null],
                     ];
@@ -394,25 +520,13 @@ window.Report = (function () {
                 const writes = [];
                 if (m.total_seeds !== undefined) writes.push(['planning.totalSeeds', m.total_seeds]);
                 if (m.num_trajectories !== undefined) writes.push(['planning.trajectoryCount', m.num_trajectories]);
-                // BUG FIX 2026-06-17: auto-compute total activity.
-                // The planning_pipeline doesn't return seed activity
-                // directly, so we estimate it from the standard
-                // I-125 seed activity (0.5 mCi per seed) which the
-                // system uses by default. The user can edit the
-                // field if their institution uses a different seed
-                // model (Pd-103, Sr-90, etc.).
-                if (m.total_seeds !== undefined && (f.planning.totalActivityMBq == null)) {
-                    const seedActivityMBq = 18.5; // ~0.5 mCi / seed (I-125)
-                    const totalMBq = m.total_seeds * seedActivityMBq;
-                    writes.push(['planning.totalActivityMBq', parseFloat(totalMBq.toFixed(1))]);
-                    writes.push(['planning.seedActivityMBq', seedActivityMBq]);
-                    // Also store the seed model so the user can see
-                    // what assumption was made.
-                    if (!f.planning.seedModel) writes.push(['planning.seedModel', 'I-125 (0.5 mCi/seed, default)']);
+                // Activity is intentionally not inferred from seed count.
+                // Source strength varies by radionuclide and vendor; only an
+                // explicit backend/plan_config value may populate it.
+                if (Number.isFinite(Number(m.ctv_volume_mm3))) {
+                    writes.push(['case.ctvVolumeMm3', Number(m.ctv_volume_mm3)]);
                 }
-                if (m.ctv_voxels !== undefined && ws.ctSpacing) {
-                    const v = m.ctv_voxels * ws.ctSpacing[0] * ws.ctSpacing[1] * ws.ctSpacing[2];
-                    writes.push(['case.ctvVolumeMm3', v]);
+                if (m.ctv_voxels !== undefined) {
                     writes.push(['segmentation.ctvVoxels', m.ctv_voxels]);
                 }
                 if (m.v100 !== undefined) writes.push(['metrics.v100', m.v100 * 100]);
@@ -527,32 +641,20 @@ window.Report = (function () {
         async fillFromServer({ scope = 'all', language = 'en' } = {}) {
             _setReportStatus('Filling from server…', 'info');
             try {
-                const r = await fetch('/api/report/auto-fill', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ scope, language, sources: ['nifti', 'dicom', 'planning'] }),
-                });
-                const j = await r.json();
-                if (!j.success) throw new Error(j.error || 'failed');
-                const result = this.applyPatch(j.patch || {}, 'bot');
+                const payload = await _fetchServerReportPatch(scope, language);
+                const result = this.applyPatch(payload.patch || {}, 'bot');
                 _setReportStatus(`Bot updated ${result.applied} field(s)`, 'ok');
+                return { success: true, ...result, provenance: payload.provenance || {} };
             } catch (e) {
                 _setReportStatus('Bot fill failed: ' + e.message, 'error');
+                return { success: false, error: e.message || String(e), applied: 0, skipped: 0 };
             }
         },
         applyPatch(patch, source = 'bot') {
-            const f = window.reportForm;
-            if (!f) return { applied: 0, skipped: 0 };
-            let applied = 0, skipped = 0;
-            for (const [k, v] of Object.entries(patch || {})) {
-                if (f.editedFields && f.editedFields.has(k)) { skipped++; continue; }
-                _setByPath(f, k, v);
-                sources.set(k, source);
-                applied++;
-            }
-            panels.editor(); panels.preview();
-            persist.autoSave();
+            const result = _applyReportPatch(patch, source);
+            const { applied, skipped } = result;
             audit.log('brachybot.applyPatch', '*', null, `applied=${applied} skipped=${skipped}`);
-            return { applied, skipped };
+            return result;
         },
         scanChatResponse(text) {
             if (!text) return false;
@@ -597,16 +699,6 @@ window.Report = (function () {
             }
             return out;
         },
-        async resolveDoi(doi) {
-            try {
-                const r = await fetch('/api/refs/resolve', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ doi }),
-                });
-                if (r.ok) { const j = await r.json(); if (j && j.success && j.ref) return j.ref; }
-            } catch (e) {}
-            return null;
-        },
     };
 
     // ---------- Figures (P15) ----------
@@ -646,14 +738,20 @@ window.Report = (function () {
 
     // ---------- Audit log (P11) ----------
     const audit = {
+        storageKey() {
+            return typeof caseStorageKey === 'function'
+                ? caseStorageKey('brachyplan_report_audit')
+                : 'brachyplan_report_audit:web';
+        },
         log(action, key, before, after) {
             try {
-                const arr = JSON.parse(localStorage.getItem('brachyplan_report_audit') || '[]');
+                const storageKey = this.storageKey();
+                const arr = JSON.parse(localStorage.getItem(storageKey) || '[]');
                 arr.push({ t: Date.now(), action, key, before, after, lang: stateProxy.language });
-                localStorage.setItem('brachyplan_report_audit', JSON.stringify(arr.slice(-500)));
+                localStorage.setItem(storageKey, JSON.stringify(arr.slice(-500)));
             } catch (e) {}
         },
-        list() { try { return JSON.parse(localStorage.getItem('brachyplan_report_audit') || '[]'); } catch (e) { return []; } },
+        list() { try { return JSON.parse(localStorage.getItem(this.storageKey()) || '[]'); } catch (e) { return []; } },
         openModal() {
             const list = this.list();
             const html = list.slice().reverse().slice(0, 100).map(e => {
@@ -668,19 +766,25 @@ window.Report = (function () {
 
     // ---------- Snapshots (P11) ----------
     const snapshots = {
+        storageKey() {
+            return typeof caseStorageKey === 'function'
+                ? caseStorageKey('brachyplan_report_snapshots')
+                : 'brachyplan_report_snapshots:web';
+        },
         save(label = '') {
             try {
                 const f = window.reportForm;
                 if (!f) return -1;
-                const arr = JSON.parse(localStorage.getItem('brachyplan_report_snapshots') || '[]');
+                const storageKey = this.storageKey();
+                const arr = JSON.parse(localStorage.getItem(storageKey) || '[]');
                 const clone = JSON.parse(JSON.stringify(f, (k, v) => v instanceof Set ? Array.from(v) : v));
                 arr.push({ t: Date.now(), label, form: clone });
-                localStorage.setItem('brachyplan_report_snapshots', JSON.stringify(arr.slice(-30)));
+                localStorage.setItem(storageKey, JSON.stringify(arr.slice(-30)));
                 _setReportStatus('Snapshot saved', 'ok');
                 return arr.length - 1;
             } catch (e) { _setReportStatus('Snapshot failed: ' + e.message, 'error'); return -1; }
         },
-        list() { try { return JSON.parse(localStorage.getItem('brachyplan_report_snapshots') || '[]'); } catch (e) { return []; } },
+        list() { try { return JSON.parse(localStorage.getItem(this.storageKey()) || '[]'); } catch (e) { return []; } },
         restore(idx) {
             const arr = this.list();
             const snap = arr[idx];
@@ -730,74 +834,35 @@ window.Report = (function () {
     };
 
     // ---------- Validation (P13, P19) ----------
-    // Per-site dose constraints sourced from clinical_kb/guidelines_brachytherapy.md:
-    //   prostate: ABS/AUA/ASTRO 2012 (PMID 22265436) — V100≥95%, D90≥100%Rx, V200≤35%
-    //   cervical: EMBRACE II (PMID 42211610) — V100≥90%, D90≥85 Gy EQD2
-    //   breast: GEC-ESTRO APBI 2016 — D90≥90%Rx
-    //   lung: ABS lung consensus — V100≥95%, V200≤30%
-    //   pancreatic: Chinese I-125 guideline 2023 — V100≥90%
-    //   head_neck: ABS H&N — V100≥95%, V200≤25%
-    //   liver: ABS liver — V100≥90%
-    //   esophageal: ABS 2014 — V100≥90%
-    const _SITE_THRESHOLDS = {
-        prostate:   { v100_ok: 95, v100_warn: 90, v200_ok: 35, v200_warn: 45 },
-        cervical:   { v100_ok: 90, v100_warn: 80, v200_ok: 35, v200_warn: 45 },
-        breast:     { v100_ok: 90, v100_warn: 80, v200_ok: 30, v200_warn: 40 },
-        lung:       { v100_ok: 95, v100_warn: 90, v200_ok: 30, v200_warn: 40 },
-        pancreatic: { v100_ok: 90, v100_warn: 80, v200_ok: 30, v200_warn: 40 },
-        liver:      { v100_ok: 90, v100_warn: 80, v200_ok: 30, v200_warn: 40 },
-        head_neck:  { v100_ok: 95, v100_warn: 90, v200_ok: 25, v200_warn: 35 },
-        esophageal: { v100_ok: 90, v100_warn: 80, v200_ok: 30, v200_warn: 40 },
-        default:    { v100_ok: 90, v100_warn: 80, v200_ok: 35, v200_warn: 45 },
-    };
-    function _getSiteThresholds() {
-        // Determine tumor site from multiple sources
-        let tt = '';
-        try {
-            tt = (state.metrics && state.metrics.tumor_type) || window._tumorSite || '';
-        } catch(_) {}
-        if (!tt) {
-            try {
-                const tr = window._lastToolResults;
-                if (tr && tr.ctv_segmentation && tr.ctv_segmentation.tumor_type)
-                    tt = tr.ctv_segmentation.tumor_type;
-            } catch(_) {}
-        }
-        if (!tt) {
-            try {
-                const f = window.reportForm;
-                if (f && f.study && f.study.diagnosis) tt = f.study.diagnosis;
-            } catch(_) {}
-        }
-        tt = (tt || '').toLowerCase().replace(/[\s-]/g, '_');
-        // Map common names
-        const _map = { nnunet_pancreatic: 'pancreatic', pancreas: 'pancreatic',
-            voco_liver: 'liver', voco_lung: 'lung', voco_kidney: 'liver',
-            voco_colon: 'liver', voco_brats21: 'head_neck' };
-        for (const [k, v] of Object.entries(_map)) { if (tt.includes(k)) return _SITE_THRESHOLDS[v]; }
-        for (const k of Object.keys(_SITE_THRESHOLDS)) { if (tt.includes(k)) return _SITE_THRESHOLDS[k]; }
-        return _SITE_THRESHOLDS.default;
-    }
+    // Clinical badges are built only from the source-backed criteria returned
+    // by /api/report/auto-fill. Local tumor-name heuristics must never create
+    // treatment thresholds or imply clinical approval.
     function THRESHOLDS() {
-        // Dynamic thresholds based on current tumor site
-        const site = _getSiteThresholds();
-        // D90: ok = ≥100% of Rx, warn = ≥90% of Rx
-        // Rx dose comes from reportForm or defaults to 120 Gy (DOSE_SCALE)
-        let rxGy = 120;
-        try {
-            const f = window.reportForm;
-            if (f && f.planning && Number.isFinite(f.planning.prescriptionGy))
-                rxGy = f.planning.prescriptionGy;
-        } catch(_) {}
-        return {
-            'metrics.v100':  { ok: v => v >= site.v100_ok, warn: v => v >= site.v100_warn, unit: '%', label: 'V100' },
-            'metrics.d90':   { ok: v => v >= rxGy, warn: v => v >= rxGy * 0.90, unit: 'Gy', label: 'D90' },
-            'metrics.v150':  { ok: v => v <= 50, warn: v => v <= 70, unit: '%', label: 'V150' },
-            'metrics.v200':  { ok: v => v <= site.v200_ok, warn: v => v <= site.v200_warn, unit: '%', label: 'V200' },
-            'metrics.ci':    { ok: v => v >= 0.6, warn: v => v >= 0.4, unit: '', label: 'CI' },
-            'metrics.hi':    { ok: v => v <= 0.35, warn: v => v <= 0.5, unit: '', label: 'HI' },
-            'metrics.score': { ok: v => v >= 80, warn: v => v >= 60, unit: '/100', label: 'Score' },
-        };
+        const planning = window.reportForm?.planning || {};
+        const rationale = planning.prescriptionRationale || {};
+        const criteria = rationale.target_criteria || {};
+        const sourceUrls = Array.isArray(rationale.sources) ? rationale.sources : [];
+        if (!sourceUrls.length || !criteria || typeof criteria !== 'object') return {};
+        const rules = {};
+        const fraction = value => Number(value) * 100;
+        if (Number.isFinite(Number(criteria.v100_min))) {
+            const limit = fraction(criteria.v100_min);
+            rules['metrics.v100'] = { ok: v => v >= limit, warn: () => false, unit: '%', label: 'V100' };
+        }
+        if (Number.isFinite(Number(criteria.v150_max))) {
+            const limit = fraction(criteria.v150_max);
+            rules['metrics.v150'] = { ok: v => v <= limit, warn: () => false, unit: '%', label: 'V150' };
+        }
+        if (Number.isFinite(Number(criteria.v200_max))) {
+            const limit = fraction(criteria.v200_max);
+            rules['metrics.v200'] = { ok: v => v <= limit, warn: () => false, unit: '%', label: 'V200' };
+        }
+        const rxGy = Number(planning.prescriptionGy);
+        if (Number.isFinite(rxGy) && rxGy > 0 && Number.isFinite(Number(criteria.d90_min_pct))) {
+            const limit = rxGy * Number(criteria.d90_min_pct);
+            rules['metrics.d90'] = { ok: v => v >= limit, warn: () => false, unit: 'Gy', label: 'D90' };
+        }
+        return rules;
     }
     const validation = {
         check() {
@@ -881,12 +946,22 @@ window.Report = (function () {
             const t = document.getElementById('reportAutoSaveText');
             if (t) t.textContent = 'Auto-save: pending…';
         },
+        flush() {
+            if (_autoSaveTimer) {
+                clearTimeout(_autoSaveTimer);
+                _autoSaveTimer = null;
+            }
+            this._save();
+        },
         _save() {
             try {
                 const f = window.reportForm;
                 if (!f) return;
                 const clone = JSON.parse(JSON.stringify(f, (k, v) => v instanceof Set ? Array.from(v) : v));
-                localStorage.setItem('brachyplan_reportForm', JSON.stringify(clone));
+                const key = typeof caseStorageKey === 'function'
+                    ? caseStorageKey('brachyplan_reportForm')
+                    : 'brachyplan_reportForm:web';
+                localStorage.setItem(key, JSON.stringify(clone));
                 const t = document.getElementById('reportAutoSaveText');
                 if (t) t.textContent = 'Auto-save: ' + new Date().toLocaleTimeString();
             } catch (e) {
@@ -1065,25 +1140,44 @@ window.Report = (function () {
         s.id = 'rp-2col-css';
         s.textContent = `
             /* 2-col mode: side-by-side editor + preview */
-            body.report-2col #panelReport .rp-root { flex-direction:row !important; }
-            body.report-2col .rp-edit-area,
-            body.report-2col #reportEditor {
-                flex: 1 1 50% !important; min-width: 0; height: auto !important;
+            body.report-2col #panelReport .rp-body {
+                display: flex;
+                flex-direction: row;
+                align-items: flex-start;
+            }
+            body.report-2col #panelReport .rp-edit-area,
+            body.report-2col #panelReport #reportEditor {
+                flex: 1 1 50% !important;
+                min-width: 0;
+                height: auto !important;
                 max-height: none !important;
                 border-right: 1px solid var(--border-hairline);
                 border-bottom: none !important;
             }
-            body.report-2col .rp-preview-area,
-            body.report-2col #reportPreview {
-                flex: 1 1 50% !important; min-width: 0; height: auto !important;
+            body.report-2col #panelReport .rp-preview-area,
+            body.report-2col #panelReport #reportPreview {
+                flex: 1 1 50% !important;
+                min-width: 0;
+                height: auto !important;
                 max-height: none !important;
             }
-            /* Force 2-col toolbars to be more compact */
-            body.report-2col .rp-toolbar-primary,
-            body.report-2col .rp-toolbar-secondary {
-                flex: 1 1 100%; min-width: 0;
+            @media (max-width: 900px) {
+                body.report-2col #panelReport .rp-body {
+                    flex-direction: column;
+                }
+                body.report-2col #panelReport .rp-edit-area,
+                body.report-2col #panelReport #reportEditor,
+                body.report-2col #panelReport .rp-preview-area,
+                body.report-2col #panelReport #reportPreview {
+                    flex: 0 0 auto !important;
+                    width: 100%;
+                    border-right: none;
+                }
+                body.report-2col #panelReport .rp-edit-area,
+                body.report-2col #panelReport #reportEditor {
+                    border-bottom: 1px solid var(--border-hairline) !important;
+                }
             }
-            body.report-2col .rp-root { flex-wrap: wrap; }
             .oar-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
             .oar-card { background:var(--bg-2); border:1px solid var(--border-hairline); border-radius:var(--radius-xs); padding:8px 10px; }
             .oar-card-head { display:flex; justify-content:space-between; align-items:center; }

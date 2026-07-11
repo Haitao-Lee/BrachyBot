@@ -26,7 +26,7 @@ Use this context to make informed judgments. For example:
 
 ## Key Principles
 - Do NOT flag standard clinical terms (V100, D90, D2cc) as unverified
-- Do NOT flag normalized dose values (0-255) as hallucinations
+- Do not flag a raw normalized model value solely because it is not in Gy; verify that the response labels its unit and scaling correctly
 - Be CONSERVATIVE: only flag obvious problems, not borderline cases
 - When uncertain, state uncertainty — do not over-flag
 

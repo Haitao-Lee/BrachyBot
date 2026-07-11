@@ -12,13 +12,18 @@ from pathlib import Path
 _PROMPT_DIR = Path(__file__).parent
 
 
-def _load_prompt(filename: str) -> str:
-    """Load a prompt file with error handling."""
+def _load_prompt(filename: str, *, required: bool = True) -> str:
+    """Load a prompt file and fail loudly when required policy is absent."""
     filepath = _PROMPT_DIR / filename
     if not filepath.exists():
+        if required:
+            raise FileNotFoundError(f"Required prompt file is missing: {filepath}")
         return ""
     with open(filepath, "r", encoding="utf-8") as f:
-        return f.read()
+        content = f.read().strip()
+    if required and not content:
+        raise ValueError(f"Required prompt file is empty: {filepath}")
+    return content
 
 
 SYSTEM_PROMPT_TEMPLATE = _load_prompt("system_prompt.md")

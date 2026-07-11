@@ -65,6 +65,9 @@ class TrajectoryPlanningTool(BaseTool):
                 "radiation_volume": {"type": "array", "description": "3D NumPy array (1=target, 0=background, 3=OAR)"},
                 "ref_direc": {"type": "array", "description": "Reference direction [x,y,z] (auto-compute if None)"},
                 "direc_resolution": {"type": "array", "description": "[cone_angle, angular_step, n_rings]"},
+                "extract_angle": {"type": "number", "description": "Candidate extraction half-angle in radians"},
+                "maximum_candidate_trajectories": {"type": "integer", "default": 500},
+                "min_depth": {"type": "number", "description": "Minimum valid target depth in mm", "default": 2},
                 "target_value": {"type": "number", "default": 1},
                 "background_value": {"type": "number", "default": 0},
                 "obstacle_value": {"type": "number", "default": 3},
@@ -91,14 +94,23 @@ class TrajectoryPlanningTool(BaseTool):
         obstacle_value = kwargs.get("obstacle_value", 3)
 
         init_tool = TrajectoryInitTool()
-        result = init_tool._execute(
-            dose_image=dose_image,
-            radiation_volume=radiation_volume,
-            ref_direc=ref_direc,
-            target_value=target_value,
-            background_value=background_value,
-            obstacle_value=obstacle_value,
-        )
+        init_kwargs = {
+            "dose_image": dose_image,
+            "radiation_volume": radiation_volume,
+            "ref_direc": ref_direc,
+            "target_value": target_value,
+            "background_value": background_value,
+            "obstacle_value": obstacle_value,
+        }
+        for key in (
+            "direc_resolution",
+            "extract_angle",
+            "maximum_candidate_trajectories",
+            "min_depth",
+        ):
+            if key in kwargs and kwargs[key] is not None:
+                init_kwargs[key] = kwargs[key]
+        result = init_tool._execute(**init_kwargs)
 
         if not result.success:
             return result

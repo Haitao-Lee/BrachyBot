@@ -8,6 +8,12 @@ import json
 from typing import Dict, List, Any, Optional
 
 from ..core.base import BaseLLM, BaseDecider
+from agents.clinical_metrics import (
+    dose_ratio,
+    first_numeric,
+    match_constraint_name,
+    normalized_fraction,
+)
 
 
 class QualityDecider(BaseDecider):
@@ -18,7 +24,7 @@ class QualityDecider(BaseDecider):
     - Target coverage (V100, V150, V200)
     - Dose homogeneity (D90, D95, D99)
     - OAR sparing compliance
-    - Overall quality score (0-80)
+    - Compliance with caller-supplied, source-backed criteria
     """
 
     def __init__(self, llm: BaseLLM):
@@ -38,9 +44,12 @@ class QualityDecider(BaseDecider):
         metrics = context.get("metrics", {})
         oar_metrics = context.get("oar_metrics", {})
         constraints = context.get("constraints", {})
-        prescribed_dose = context.get("prescribed_dose", 1.0)
+        target_constraints = context.get("target_constraints", {})
+        prescribed_dose = context.get("prescribed_dose")
 
-        assessment = self._assess_quality(metrics, oar_metrics, constraints, prescribed_dose)
+        assessment = self._assess_quality(
+            metrics, oar_metrics, constraints, prescribed_dose, target_constraints
+        )
         return assessment
 
     def decide_with_llm(
@@ -56,7 +65,9 @@ class QualityDecider(BaseDecider):
         """
         metrics = context.get("metrics", {})
         oar_metrics = context.get("oar_metrics", {})
-        prescribed_dose = context.get("prescribed_dose", 1.0)
+        constraints = context.get("constraints", {})
+        target_constraints = context.get("target_constraints", {})
+        prescribed_dose = context.get("prescribed_dose")
 
         metrics_text = self._format_metrics(metrics, prescribed_dose)
         oar_text = self._format_oar_metrics(oar_metrics)
@@ -76,7 +87,9 @@ class QualityDecider(BaseDecider):
 
         response = self.llm.chat(prompt=user_text, system=system_msg)
 
-        rule_based = self._assess_quality(metrics, oar_metrics, {}, prescribed_dose)
+        rule_based = self._assess_quality(
+            metrics, oar_metrics, constraints, prescribed_dose, target_constraints
+        )
 
         if not response.content:
             return rule_based
@@ -91,170 +104,188 @@ class QualityDecider(BaseDecider):
         self,
         metrics: Dict[str, float],
         oar_metrics: Dict[str, Dict],
-        constraints: Dict[str, float],
-        prescribed_dose: float,
+        constraints: Dict[str, Any],
+        prescribed_dose: Optional[float],
+        target_constraints: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Rule-based quality assessment."""
+        """Assess only criteria explicitly supplied by a source-backed caller."""
         pd = prescribed_dose
 
-        v100 = metrics.get("v100", 0)
-        v150 = metrics.get("v150", 0)
-        v200 = metrics.get("v200", 0)
-        d90 = metrics.get("d90", 0)
+        v100 = metrics.get("v100")
+        v150 = metrics.get("v150")
+        v200 = metrics.get("v200")
+        d90 = metrics.get("d90")
 
-        coverage_score = self._score_coverage(v100, v150, v200, pd)
-        homogeneity_score = self._score_homogeneity(d90, pd)
-        oar_score, violations = self._score_oars(oar_metrics, constraints, pd)
-
-        overall = coverage_score + homogeneity_score + oar_score
-
-        if overall >= 65 and not violations:
-            acceptability = "ACCEPTABLE"
-        elif overall >= 50:
-            acceptability = "BORDERLINE"
-        else:
-            acceptability = "UNACCEPTABLE"
-
-        suggestions = self._generate_suggestions(metrics, violations, pd)
+        target_score, target_checks, target_violations = self._score_coverage(
+            v100, v150, v200, d90, pd, target_constraints or {}
+        )
+        oar_score, oar_checks, oar_violations = self._score_oars(
+            oar_metrics, constraints, pd
+        )
+        checks = target_checks + oar_checks
+        violations = target_violations + oar_violations
+        overall = ((target_score + oar_score) / checks * 100.0) if checks else None
+        acceptability = (
+            "UNVERIFIED" if not checks
+            else "REVIEW_REQUIRED" if violations
+            else "MEETS_CONFIGURED_CRITERIA"
+        )
+        suggestions = self._generate_suggestions(violations, checks)
 
         return {
-            "quality_score": overall,
+            "quality_score": round(overall, 1) if overall is not None else None,
             "acceptability": acceptability,
             "sub_scores": {
-                "coverage": coverage_score,
-                "homogeneity": homogeneity_score,
-                "oar_sparing": oar_score,
+                "target_passed": target_score,
+                "target_checked": target_checks,
+                "oar_passed": oar_score,
+                "oar_checked": oar_checks,
             },
             "violations": violations,
             "suggestions": suggestions,
             "metrics_summary": {
-                "v100": f"{v100:.1%}",
-                "v150": f"{v150:.1%}",
-                "v200": f"{v200:.1%}",
-                "d90": f"{d90:.2f} Gy",
+                "v100": f"{v100:.1%}" if v100 is not None else "N/A",
+                "v150": f"{v150:.1%}" if v150 is not None else "N/A",
+                "v200": f"{v200:.1%}" if v200 is not None else "N/A",
+                "d90": f"{d90:.2f} Gy" if d90 is not None else "N/A",
             },
         }
 
-    def _score_coverage(self, v100: float, v150: float, v200: float, pd: float) -> float:
-        """Score target coverage (max 25)."""
-        # REVIEW: thresholds (v100>=0.95, v100>=0.90, v150<=0.35, etc.) are
-        # hardcoded scoring bands; per project rule these should come from
-        # `clinical_kb`/`plan_config` instead of code literals, so they can
-        # be tuned per site/prescription without a code change. Kept here
-        # for safety; fix requires plumbing of plan_config into this decider.
-        score = 0.0
-        if v100 >= 0.95:
-            score += 15
-        elif v100 >= 0.90:
-            score += 12
-        elif v100 >= 0.85:
-            score += 8
-        elif v100 >= 0.80:
-            score += 4
+    def _score_coverage(self, v100: Optional[float], v150: Optional[float],
+                        v200: Optional[float], d90: Optional[float],
+                        pd: Optional[float],
+                        criteria: Dict[str, Any]) -> tuple:
+        """Return (passed, checked, violations) for configured target limits."""
+        passed = 0
+        checked = 0
+        violations = []
+        values = {
+            "v100": normalized_fraction(v100),
+            "v150": normalized_fraction(v150),
+            "v200": normalized_fraction(v200),
+        }
+        for metric, key, operator in (
+            ("v100", "v100_min", ">="),
+            ("v150", "v150_max", "<="),
+            ("v200", "v200_max", "<="),
+        ):
+            if key not in criteria or values[metric] is None:
+                continue
+            checked += 1
+            threshold = normalized_fraction(criteria[key])
+            ok = threshold is not None and (
+                values[metric] >= threshold if operator == ">="
+                else values[metric] <= threshold
+            )
+            if ok:
+                passed += 1
+            else:
+                violations.append({
+                    "structure": "CTV",
+                    "metric": metric,
+                    "value": values[metric],
+                    "constraint": threshold,
+                    "operator": operator,
+                })
 
-        if v150 <= 0.35:
-            score += 5
-        elif v150 <= 0.50:
-            score += 3
-
-        if v200 <= 0.15:
-            score += 5
-        elif v200 <= 0.25:
-            score += 3
-
-        return min(25, score)
-
-    def _score_homogeneity(self, d90: float, pd: float) -> float:
-        """Score dose homogeneity (max 25)."""
-        ratio = d90 / pd if pd > 0 else 0
-        if ratio >= 1.0:
-            return 25
-        elif ratio >= 0.95:
-            return 22
-        elif ratio >= 0.90:
-            return 18
-        elif ratio >= 0.85:
-            return 12
-        elif ratio >= 0.80:
-            return 6
-        return 0
+        if "d90_min_gy" in criteria and d90 is not None:
+            checked += 1
+            threshold = float(criteria["d90_min_gy"])
+            if float(d90) >= threshold:
+                passed += 1
+            else:
+                violations.append({
+                    "structure": "CTV", "metric": "d90", "value": float(d90),
+                    "constraint": threshold, "operator": ">=", "unit": "Gy",
+                })
+        elif "d90_min_pct" in criteria and d90 is not None and pd is not None and pd > 0:
+            checked += 1
+            ratio = dose_ratio(
+                {"d90": d90, "prescription_dose": pd},
+                {"prescription_dose": pd},
+                "d90",
+            )
+            threshold = normalized_fraction(criteria["d90_min_pct"])
+            if ratio is not None and threshold is not None and ratio >= threshold:
+                passed += 1
+            else:
+                violations.append({
+                    "structure": "CTV", "metric": "d90_ratio", "value": ratio,
+                    "constraint": threshold, "operator": ">=",
+                })
+        return passed, checked, violations
 
     def _score_oars(
         self,
         oar_metrics: Dict[str, Dict],
-        constraints: Dict[str, float],
-        pd: float,
+        constraints: Dict[str, Any],
+        pd: Optional[float],
     ) -> tuple:
-        """Score OAR sparing (max 30). Returns (score, violations)."""
-        score = 30
+        """Return (passed, checked, violations) for configured OAR limits."""
+        passed = 0
+        checked = 0
         violations = []
-
-        # REVIEW: default OAR dose constraints (rectum=2x, bladder=1.5x,
-        # urethra=1.2x, bowel=0.8x, kidney=0.2x of prescribed dose) are
-        # hardcoded. Per project rule these should come from
-        # `clinical_kb`/`plan_config` so they can be updated by site without
-        # touching code. The `constraints` arg already supports caller-side
-        # override via `+1` here, but the *fallback* dict still encodes site
-        # defaults. Defer fix to OAR-config plumbing refactor.
-        default_constraints = {
-            "rectum": 2.0 * pd,
-            "bladder": 1.5 * pd,
-            "urethra": 1.2 * pd,
-            "bowel": 0.8 * pd,
-            "kidney": 0.2 * pd,
-        }
-        all_constraints = {**default_constraints, **constraints}
-
         for oar_name, metrics in oar_metrics.items():
-            max_dose = metrics.get("max_dose", 0)
-            constraint = all_constraints.get(oar_name.lower(), 2.0 * pd)
+            if not isinstance(metrics, dict):
+                continue
+            matched = match_constraint_name(oar_name, constraints)
+            rule = constraints.get(matched) if matched else None
+            if rule is None:
+                continue
+            if isinstance(rule, (int, float)):
+                rule = {"max_dose": float(rule)}
+            if not isinstance(rule, dict):
+                continue
+            for metric_name, aliases in {
+                "max_dose": ("max_dose", "dmax", "Dmax"),
+                "d2cc": ("d2cc", "D2cc"),
+                "mean_dose": ("mean_dose", "dmean", "Dmean"),
+            }.items():
+                limit = first_numeric(rule, (metric_name, f"{metric_name}_gy"))
+                value = first_numeric(metrics, aliases)
+                if limit is None or value is None:
+                    continue
+                checked += 1
+                if value <= limit:
+                    passed += 1
+                else:
+                    violations.append({
+                        "structure": oar_name,
+                        "matched_constraint": matched,
+                        "metric": metric_name,
+                        "value": float(value),
+                        "constraint": float(limit),
+                        "operator": "<=",
+                        "unit": "Gy",
+                    })
+        return passed, checked, violations
 
-            if max_dose > constraint:
-                excess = (max_dose - constraint) / constraint * 100
-                penalty = min(15, excess / 10 * 5)
-                score -= penalty
-                violations.append({
-                    "structure": oar_name,
-                    "max_dose": float(max_dose),
-                    "constraint": float(constraint),
-                    "excess_pct": float(excess),
-                })
-
-        return max(0, score), violations
-
-    def _generate_suggestions(self, metrics: Dict, violations: List, pd: float) -> List[str]:
-        """Generate improvement suggestions."""
+    def _generate_suggestions(self, violations: List, checks: int) -> List[str]:
+        """Generate suggestions only from explicit configured violations."""
+        if not checks:
+            return [
+                "Load source-backed target and OAR criteria from clinical_kb "
+                "before assessing plan acceptability."
+            ]
         suggestions = []
-        v100 = metrics.get("v100", 0)
-        v200 = metrics.get("v200", 0)
-
-        if v100 < 0.90:
-            suggestions.append(f"V100={v100:.1%} < 90%. Consider adding seeds in underdosed regions.")
-        if v100 < 0.95:
-            suggestions.append(f"V100={v100:.1%} < 95%. Adjust seed positions to improve coverage.")
-        if v200 > 0.35:
-            suggestions.append(f"V200={v200:.1%} > 35%. Reduce seed density in hot-spot areas.")
-        if metrics.get("d90", 0) < pd * 0.9:
-            suggestions.append(f"D90 below target. Increase seed strength or add seeds.")
-
         for v in violations:
-            suggestions.append(
-                f"{v['structure']} max dose {v['max_dose']:.1f}Gy exceeds "
-                f"constraint {v['constraint']:.1f}Gy. Reposition seeds away from this OAR."
-            )
+            structure = v.get("structure", "Structure")
+            metric = v.get("metric", "metric")
+            suggestions.append(f"Review {structure} {metric} against its configured criterion.")
 
         if not suggestions:
-            suggestions.append("Plan quality is acceptable. No immediate changes recommended.")
+            suggestions.append("All supplied source-backed criteria were met.")
 
         return suggestions
 
-    def _format_metrics(self, metrics: Dict, pd: float) -> str:
+    def _format_metrics(self, metrics: Dict, pd: Optional[float]) -> str:
         lines = []
         for k, v in metrics.items():
             if k in {"v100", "v150", "v200"}:
                 lines.append(f"- {k}: {v:.1%} (target: see clinical guidelines)")
             elif k in {"d90", "d95", "d99"}:
-                lines.append(f"- {k}: {v:.2f} Gy (prescribed: {pd:.2f} Gy)")
+                prescribed = f" (prescribed: {pd:.2f} Gy)" if pd is not None else ""
+                lines.append(f"- {k}: {v:.2f} Gy{prescribed}")
             else:
                 lines.append(f"- {k}: {v}")
         return "\n".join(lines) if lines else "No metrics available"

@@ -47,10 +47,11 @@
     <script src="static/js/three.min.js?v=2" onerror="console.error('Failed to load three.min.js')"></script>
     <script src="static/js/OrbitControls.js?v=2" onerror="console.error('Failed to load OrbitControls.js')"></script>
     <script src="static/js/html2canvas.min.js?v=2" onerror="console.error('Failed to load html2canvas.min.js')"></script>
-    <link rel="stylesheet" href="static/css/brachybot-theme-layout.css?v=3">
-    <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=3">
-    <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=3">
-    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=3">
+    <link rel="stylesheet" href="static/css/brachybot-theme-layout.css?v=5">
+    <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=5">
+    <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=5">
+    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=6">
+    <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=3">
 </head>
 <body>
 
@@ -70,7 +71,7 @@
             <span class="dot green" id="brainDot"></span>
             <span><span data-i18n-zh="" data-i18n-en="Brain">Brain</span> <span id="brainStatusText" data-i18n-zh="在线" data-i18n-en="Online">Online</span></span>
         </div>
-        <div class="status-chip"><span data-i18n-zh="会话" data-i18n-en="Session">Session</span>: <span id="sessionDisplay">web</span></div>
+        <div class="status-chip status-session"><span data-i18n-zh="会话" data-i18n-en="Session">Session</span>: <span id="sessionDisplay">web</span></div>
         <!-- GLOBAL UI LANGUAGE TOGGLE (2026-06-16). Defaults to EN.
              Toggles only UI labels, NOT LLM input/output language. -->
         <div class="lang-toggle status-chip" role="group" aria-label="UI language"
@@ -89,7 +90,11 @@
     <div class="session-sidebar" id="sessionSidebar">
         <div class="session-sidebar-header">
             <span class="session-sidebar-title" data-i18n-zh="对话" data-i18n-en="Chats">Chats</span>
-            <button class="new-chat-btn" onclick="newChat()"><span data-i18n-zh="+ 新建" data-i18n-en="+ New">+ New</span></button>
+            <div class="session-sidebar-actions">
+                <button class="new-chat-btn" onclick="newChat()"><span data-i18n-zh="+ 新建" data-i18n-en="+ New">+ New</span></button>
+                <button class="session-sidebar-close" type="button" onclick="closeSessionSidebar()"
+                        aria-label="Close chat history" title="Close chat history">&times;</button>
+            </div>
         </div>
         <div class="session-list" id="sessionList"></div>
         <div class="sidebar-resize-handle" id="sidebarResizeHandle" data-splitter-version="v3-2026-06-15" style="cursor:col-resize;pointer-events:auto !important;isolation:isolate;transform:translateZ(0);" title="Drag to resize the chat history sidebar"></div>
@@ -146,7 +151,9 @@
         </div>
 
         <div class="chat-messages" id="chatMessages">
-            <div class="chat-msg system">Welcome to BrachyBot. Describe your brachytherapy case — tumor location, type, patient condition — and I will help you generate an optimal treatment plan. You can also load CT data directly via the Input panel on the right.</div>
+            <div class="chat-msg system"
+                 data-i18n-zh="欢迎使用 BrachyBot。请描述你的近距离治疗病例——肿瘤位置、类型、患者情况——我会帮助你生成治疗计划。也可以直接在右侧的输入面板加载 CT 数据。"
+                 data-i18n-en="Welcome to BrachyBot. Describe your brachytherapy case — tumor location, type, patient condition — and I will help you generate a treatment plan. You can also load CT data directly from the Input panel.">Welcome to BrachyBot. Describe your brachytherapy case — tumor location, type, patient condition — and I will help you generate a treatment plan. You can also load CT data directly from the Input panel.</div>
         </div>
 
         <!-- TODO DOCK (2026-06-15): the persistent workflow indicator
@@ -215,19 +222,19 @@
     <div class="right-panel">
 
         <!-- Tabs -->
-        <div class="panel-tabs">
-            <div class="panel-tab active" data-panel="input" onclick="switchPanel('input', this)">
+        <div class="panel-tabs" role="tablist" aria-label="Workspace panels">
+            <button type="button" class="panel-tab active" data-panel="input" role="tab" aria-selected="true" aria-controls="panelInput" onclick="switchPanel('input', this)">
                 <span>&#9881;</span> <span data-i18n-zh="输入" data-i18n-en="Input">Input</span>
-            </div>
-            <div class="panel-tab" data-panel="metrics" onclick="switchPanel('metrics', this)">
+            </button>
+            <button type="button" class="panel-tab" data-panel="metrics" role="tab" aria-selected="false" aria-controls="panelMetrics" onclick="switchPanel('metrics', this)">
                 <span>&#128200;</span> <span data-i18n-zh="分析" data-i18n-en="Analysis">Analysis</span>
-            </div>
-            <div class="panel-tab" data-panel="viewers" onclick="switchPanel('viewers', this)">
+            </button>
+            <button type="button" class="panel-tab" data-panel="viewers" role="tab" aria-selected="false" aria-controls="panelViewers" onclick="switchPanel('viewers', this)">
                 <span>&#9638;</span> <span data-i18n-zh="视图" data-i18n-en="Viewers">Viewers</span>
-            </div>
-            <div class="panel-tab" data-panel="report" onclick="switchPanel('report', this)">
+            </button>
+            <button type="button" class="panel-tab" data-panel="report" role="tab" aria-selected="false" aria-controls="panelReport" onclick="switchPanel('report', this)">
                 <span>&#128203;</span> <span data-i18n-zh="报告" data-i18n-en="Report">Report</span>
-            </div>
+            </button>
         </div>
 
         <!-- INPUT PANEL -->
@@ -441,7 +448,7 @@
 
                     <!-- Row 1: CTV / OAR segmentation -->
                     <div style="display:flex;gap:4px;">
-                        <button class="btn btn-outline" id="stepBtn_ctv_segmentation" onclick="runSegmentationStep('ctv_segmentation')" style="flex:1;font-size:0.65rem;padding:6px 4px;display:flex;align-items:center;justify-content:center;gap:4px;">
+                        <button class="btn btn-outline" id="stepBtn_ctv_segmentation" onclick="runSegmentationStep('ctv_segmentation')" style="flex:1;font-size:0.65rem;padding:6px 4px;display:flex;align-items:center;justify-content:center;gap:4px;" disabled>
                             <span class="step-num">0</span> CTV Seg
                         </button>
                         <button class="btn btn-outline" id="stepBtn_oar_segmentation" onclick="runSegmentationStep('oar_segmentation')" style="flex:1;font-size:0.65rem;padding:6px 4px;display:flex;align-items:center;justify-content:center;gap:4px;" disabled>
@@ -832,7 +839,7 @@
                 <div id="huDisplay" style="margin-left:auto;font-size:0.65rem;color:var(--accent);font-family:monospace;"></div>
             </div>
 
-            <div style="display:flex;flex:1;min-height:0;overflow:hidden;">
+            <div class="viewer-workspace" style="display:flex;flex:1;min-height:0;overflow:hidden;">
                 <!-- Data Tree Sidebar -->
                 <div class="data-tree-container" id="dataTreeContainer" style="position:relative;">
                     <div class="data-tree-header">
@@ -1031,7 +1038,7 @@
                         <label>Op</label>
                         <input type="range" min="0" max="100" value="60" id="labelOp3d" oninput="updateLabelImage('3d')">
                     </div>
-                    <div class="loading-overlay" id="loading3D">
+                    <div class="loading-overlay" id="loading3D" role="status" aria-live="polite" aria-hidden="true">
                         <div class="spinner-ring"></div>
                         <div class="loading-text">Rendering...</div>
                     </div>
@@ -1062,16 +1069,16 @@
     </div>
 </div>
 
-<script src="static/js/brachybot-chat-core.js?v=3"></script>
-<script src="static/js/brachybot-chat-todo.js?v=3"></script>
-<script src="static/js/brachybot-ui-api.js?v=3"></script>
-<script src="static/js/brachybot-viewer-volume.js?v=3"></script>
-<script src="static/js/brachybot-viewer-layout.js?v=3"></script>
-<script src="static/js/brachybot-3d-manual.js?v=3"></script>
-<script src="static/js/brachybot-manual-annotation.js?v=3"></script>
-<script src="static/js/brachybot-dvh-planning.js?v=3"></script>
-<script src="static/js/brachybot-report-shell.js?v=3"></script>
-<script src="static/js/brachybot-report-editor.js?v=3"></script>
-<script src="static/js/brachybot-report-export.js?v=3"></script>
+<script src="static/js/brachybot-chat-core.js?v=5"></script>
+<script src="static/js/brachybot-chat-todo.js?v=5"></script>
+<script src="static/js/brachybot-ui-api.js?v=5"></script>
+<script src="static/js/brachybot-viewer-volume.js?v=6"></script>
+<script src="static/js/brachybot-viewer-layout.js?v=5"></script>
+<script src="static/js/brachybot-3d-manual.js?v=5"></script>
+<script src="static/js/brachybot-manual-annotation.js?v=5"></script>
+<script src="static/js/brachybot-dvh-planning.js?v=5"></script>
+<script src="static/js/brachybot-report-shell.js?v=7"></script>
+<script src="static/js/brachybot-report-editor.js?v=6"></script>
+<script src="static/js/brachybot-report-export.js?v=7"></script>
 </body>
 </html>

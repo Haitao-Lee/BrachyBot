@@ -31,6 +31,10 @@ class ToolRegistry:
     def register(self, tool):
         self._tools[tool.name] = tool
 
+    def unregister(self, name: str) -> bool:
+        """Remove a runtime-generated tool without exposing registry internals."""
+        return self._tools.pop(name, None) is not None
+
     def get(self, name: str):
         if name not in self._tools:
             raise KeyError(f"Tool not found: {name}. Available: {list(self._tools.keys())}")
@@ -142,6 +146,15 @@ class AgentMemory:
     def store(self, key: str, value: Any):
         with self._lock:
             self.planning_results[key] = value
+            # Keep router-visible state synchronized without copying clinical
+            # arrays into the prompt context. Only the available key names are
+            # exposed through conversation_state.
+            available = set(self.conversation_state.get("data_available", []))
+            if value is None:
+                available.discard(key)
+            else:
+                available.add(key)
+            self.conversation_state["data_available"] = sorted(available)
 
     def retrieve(self, key: str, default: Any = None) -> Any:
         with self._lock:
@@ -505,7 +518,9 @@ class AgentMemory:
             self.smart_context.clear()
             logger.info("Smart context cleared")
 
-        # Clear experience memory
+        # Optional embedders may attach a session-scoped experience store
+        # directly to AgentMemory. The standard BrachyAgent keeps its own
+        # store, so this defensive hook is intentionally conditional.
         if hasattr(self, 'exp_memory') and self.exp_memory:
             self.exp_memory.clear()
             logger.info("Experience memory cleared")
@@ -521,6 +536,13 @@ class AgentMemory:
             self.tool_results.clear()
             # Reset planning phase
             self.current_phase = PlanningPhase.IDLE
+            self.conversation_state.update({
+                "ctv_segmented": False,
+                "oar_segmented": False,
+                "planning_completed": False,
+                "last_tool_calls": [],
+                "data_available": [],
+            })
         logger.info("All data cleared (CT, CTV, OAR, planning results)")
 
         # Clear all enhanced integration components
@@ -1198,8 +1220,9 @@ class ToolResultPipeline:
             # structure the response like a real clinical report.
             planning_tools = {"ctv_segmentation", "oar_segmentation",
                               "planning_pipeline", "seed_planning",
-                              "dose_calc", "dose_evaluation",
-                              "trajectory_init", "trajectory_refine"}
+                              "dose_engine", "dose_calc", "dose_evaluation",
+                              "trajectory_planning", "trajectory_init",
+                              "trajectory_refine"}
             is_planning = any(
                 r.get("tool") in planning_tools
                 for r in formatted_results

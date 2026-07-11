@@ -6,7 +6,7 @@ import SimpleITK as sitk
 from tqdm import tqdm
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
-import dose_pre.myDoseNet as myDoseNet
+from plans.dose_pre import myDoseNet
 
 
 def crop_from_pos(center_point_index, image, patch_size=(32, 32, 32)):

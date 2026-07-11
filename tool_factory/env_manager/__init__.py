@@ -29,7 +29,12 @@ logger = logging.getLogger(__name__)
 
 # Base directory for virtual environments
 ENVS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "envs")
-os.makedirs(ENVS_DIR, exist_ok=True)
+TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _execution_enabled() -> bool:
+    """Environment mutation is available only in trusted local Developer Mode."""
+    return os.environ.get("BRACHYBOT_ENABLE_ENV_MANAGER", "").lower() in TRUE_VALUES
 
 # Audit log path. Keep audit output outside the package directory so read-only
 # deployments still record operations.
@@ -37,13 +42,13 @@ _AUDIT_DIR = os.environ.get(
     "BRACHYBOT_AUDIT_DIR",
     os.path.join(os.path.expanduser("~"), ".brachybot", "audit"),
 )
-os.makedirs(_AUDIT_DIR, exist_ok=True)
 _AUDIT_LOG = os.path.join(_AUDIT_DIR, "env_manager.log")
 
 
 def _audit(action: str, detail: str, env_name: str = ""):
     """Append an audit entry. Never raises."""
     try:
+        os.makedirs(_AUDIT_DIR, exist_ok=True)
         ts = time.strftime("%Y-%m-%d %H:%M:%S")
         entry = f"[{ts}] action={action} env={env_name!r} detail={detail}\n"
         with open(_AUDIT_LOG, "a", encoding="utf-8") as f:
@@ -68,7 +73,8 @@ def _validate_env_name(name: str) -> Optional[str]:
         )
     # Resolve the path and ensure it stays inside ENVS_DIR
     resolved = (Path(ENVS_DIR) / name).resolve()
-    if not str(resolved).startswith(str(Path(ENVS_DIR).resolve())):
+    allowed_root = Path(ENVS_DIR).resolve()
+    if os.path.commonpath((str(resolved), str(allowed_root))) != str(allowed_root):
         return "env_name resolves outside the allowed directory"
     return None
 
@@ -143,7 +149,7 @@ class EnvManagerTool(BaseTool):
     """Manage Python virtual environments and install packages."""
 
     name = "env_manager"
-    description = """Create virtual environments, install Python packages, and manage dependencies.
+    description = """Manage isolated Python environments when BRACHYBOT_ENABLE_ENV_MANAGER=1 in trusted local Developer Mode.
 Capabilities:
 - create_env: Create a new virtual environment
 - install: Install packages using pip
@@ -210,6 +216,21 @@ Capabilities:
         if "--" in full:
             return f"pip flags in package name are not allowed: '{package}'"
 
+        allowed = {
+            item.lower().replace("-", "_").replace(".", "_")
+            for item in ALLOWED_PACKAGE_PATTERNS
+        }
+        configured = os.environ.get("BRACHYBOT_ENV_PACKAGE_ALLOWLIST", "")
+        allowed.update(
+            item.strip().lower().replace("-", "_").replace(".", "_")
+            for item in configured.split(",") if item.strip()
+        )
+        if pkg_base not in allowed:
+            return (
+                f"Package '{package}' is not allowlisted. Add its canonical name to "
+                "BRACHYBOT_ENV_PACKAGE_ALLOWLIST in trusted Developer Mode."
+            )
+
         return None  # valid
 
     def _create_env(self, env_name: str, python_version: Optional[str] = None) -> ToolResult:
@@ -222,6 +243,16 @@ Capabilities:
 
         env_path = self._get_env_path(env_name)
 
+        if python_version:
+            current = f"{sys.version_info.major}.{sys.version_info.minor}"
+            requested = str(python_version).strip()
+            if requested not in {current, f"python{current}"}:
+                return ToolResult(
+                    success=False,
+                    error=f"Requested Python {requested} is unavailable",
+                    message=f"This manager creates environments with the running Python {current}.",
+                )
+
         if env_path.exists():
             return ToolResult(
                 success=False,
@@ -230,6 +261,7 @@ Capabilities:
             )
 
         try:
+            Path(ENVS_DIR).mkdir(parents=True, exist_ok=True)
             # Create virtual environment
             builder = venv.EnvBuilder(
                 system_site_packages=False,
@@ -440,6 +472,36 @@ Capabilities:
                 message=f"Failed to list packages in '{env_name}'"
             )
 
+    def _uninstall_packages(self, env_name: str, packages: str) -> ToolResult:
+        """Uninstall validated packages from an existing managed environment."""
+        err = _validate_env_name(env_name)
+        if err:
+            return ToolResult(success=False, error=err, message=err)
+        pkg_list = [item.strip() for item in packages.split(",") if item.strip()]
+        invalid = [error for item in pkg_list if (error := self._validate_package_name(item))]
+        if invalid:
+            return ToolResult(success=False, error="; ".join(invalid), message="Package validation failed")
+        env_path = self._get_env_path(env_name)
+        pip_path = env_path / ("Scripts/pip.exe" if sys.platform == "win32" else "bin/pip")
+        if not pip_path.exists():
+            return ToolResult(success=False, error="Managed environment or pip not found", message=f"Environment '{env_name}' is unavailable")
+        try:
+            result = subprocess.run(
+                [str(pip_path), "uninstall", "-y", *pkg_list],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            _audit("uninstall", f"packages={pkg_list} returncode={result.returncode}", env_name)
+            return ToolResult(
+                success=result.returncode == 0,
+                error=result.stderr[-1000:] if result.returncode else None,
+                message=(f"Uninstalled packages from '{env_name}'" if result.returncode == 0 else "Uninstall failed"),
+                data={"stdout": result.stdout[-1000:], "stderr": result.stderr[-1000:]},
+            )
+        except Exception as exc:
+            return ToolResult(success=False, error=str(exc), message=f"Failed to uninstall from '{env_name}'")
+
     def _delete_env(self, env_name: str) -> ToolResult:
         """Delete a virtual environment."""
         err = _validate_env_name(env_name)
@@ -548,6 +610,16 @@ Capabilities:
         command = kwargs.get("command", "")
         python_version = kwargs.get("python_version")
 
+        if not _execution_enabled():
+            return ToolResult(
+                success=False,
+                error="env_manager is disabled",
+                message=(
+                    "Environment management is disabled by default. Set "
+                    "BRACHYBOT_ENABLE_ENV_MANAGER=1 only in trusted local Developer Mode."
+                ),
+            )
+
         if not action:
             return ToolResult(
                 success=False,
@@ -572,25 +644,7 @@ Capabilities:
                 return ToolResult(success=False, error="env_name required", message="env_name is required for uninstall")
             if not packages:
                 return ToolResult(success=False, error="packages required", message="packages is required for uninstall")
-            # Use pip to uninstall
-            env_path = self._get_env_path(env_name)
-            if sys.platform == "win32":
-                pip_path = env_path / "Scripts" / "pip.exe"
-            else:
-                pip_path = env_path / "bin" / "pip"
-            pkg_list = [p.strip() for p in packages.split(",")]
-            try:
-                result = subprocess.run(
-                    [str(pip_path), "uninstall", "-y"] + pkg_list,
-                    capture_output=True, text=True, timeout=60
-                )
-                return ToolResult(
-                    success=result.returncode == 0,
-                    message=f"Uninstalled packages from '{env_name}'" if result.returncode == 0 else "Uninstall failed",
-                    data={"stdout": result.stdout[-1000:], "stderr": result.stderr[-1000:]}
-                )
-            except Exception as e:
-                return ToolResult(success=False, error=str(e), message=f"Failed to uninstall from '{env_name}'")
+            return self._uninstall_packages(env_name, packages)
 
         elif action == "list_envs":
             return self._list_envs()

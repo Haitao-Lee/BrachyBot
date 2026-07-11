@@ -4,13 +4,17 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import Categorical
 import gymnasium as gym
+import logging
 from gymnasium import spaces
 from tqdm import tqdm
 from . import utilizations
+from .reward_metrics import normalized_oar_damage
 try:
     from . import _reward_core
 except ImportError:
     _reward_core = None
+
+logger = logging.getLogger(__name__)
 
 
 def _dvh_oar_jit_fallback(dose_flat, target_idx, non_target_idx,
@@ -34,14 +38,9 @@ def _dvh_oar_jit_fallback(dose_flat, target_idx, non_target_idx,
 
     non_target_doses = dose_flat[non_target_idx]
     exceed_count = np.count_nonzero(non_target_doses > out_highest_dose)
-    if exceed_count == 0:
-        out_damage = 0.0
-    else:
-        # NOTE: This formula is NOT inverted. out_damage = covered/exceed_count
-        # is ADDED to reward (line 285-286), so it shrinks when OAR damage grows,
-        # correctly penalizing overdose. The name "out_damage" is misleading
-        # (it's really an efficiency ratio), but the behavior is correct.
-        out_damage = float(n_target) * dvh_rate / float(exceed_count)
+    # Normalize overdose burden to the target volume and bound it. This makes
+    # reward monotonic: more OAR overdose can never increase the reward.
+    out_damage = normalized_oar_damage(exceed_count, n_target)
     return dvh_rate, out_damage
 from typing import Tuple
 try:
@@ -287,13 +286,13 @@ class SeedPlacementReward:
                     count_out=True
                 )
                 reward = min(cur_DVH_rate, self.DVH_rate) + \
-                         ((cur_DVH_rate - self.DVH_rate) >= 0) * (out_damage)
+                         ((cur_DVH_rate - self.DVH_rate) >= 0) * (1.0 - out_damage)
 
             return reward, cur_radiation, cur_DVH_rate, cur_seed_radiation
         except Exception as e:
-            # REVIEW: Returns full radiation volume as 4th element, but caller expects
-            # single seed dose map. This type mismatch may corrupt dose accumulation.
-            # Proper fix requires knowing single seed dose shape or returning None.
+            logger.exception("Seed-placement reward calculation failed: %s", e)
+            # A single-seed dose map has the same full-volume shape as the
+            # cumulative radiation array; a zero map preserves that contract.
             return 0.0, cur_radiation, 0.0, np.zeros_like(cur_radiation)
 
 
@@ -679,12 +678,14 @@ class HighLevelEnv(gym.Env):
                             low_env.done = True
                     else:
                         low_env.done = True
-                except Exception as e:
+                except Exception:
+                    logger.debug("Low-level environment step failed", exc_info=True)
                     low_env.done = True
 
             planned_res = self.planned_position2planned_res()
             return total_reward, planned_res, cur_DVH_rate, mask, self.group_idx, self.low_level_state_space, low_env, low_agent
-        except Exception as e:
+        except Exception:
+            logger.debug("High-level environment step failed", exc_info=True)
             planned_res = self.planned_position2planned_res() if self.group_idx is not None else []
             return -np.inf, planned_res, 0.0, None, self.group_idx, self.low_level_state_space if hasattr(self, 'low_level_state_space') else [], LowLevelEnv([]), REINFORCE(1)
 
@@ -741,16 +742,9 @@ def DVH2Rewards(plan_res, radiation_volume, target_value, out_highest_dose, cur_
     non_target_voxels = total_radiation[non_target_idx]
     exceed_count = np.count_nonzero(non_target_voxels > out_highest_dose)
 
-    # Guard against division by zero: no voxels exceed threshold = no damage
-    if exceed_count == 0:
-        out_damage = 0.0
-    else:
-        # NOTE: Same formula as _dvh_oar_jit_fallback. NOT inverted.
-        # out_damage shrinks when exceed_count grows, and is ADDED to reward
-        # (line 750), correctly penalizing OAR overdose.
-        out_damage = len(target_idx[0]) * cur_DVH_rate / exceed_count
+    out_damage = normalized_oar_damage(exceed_count, len(target_idx[0]))
 
-    reward = min(cur_DVH_rate, DVH_rate) + ((cur_DVH_rate - DVH_rate) >= 0) * out_damage
+    reward = min(cur_DVH_rate, DVH_rate) + ((cur_DVH_rate - DVH_rate) >= 0) * (1.0 - out_damage)
 
     return reward
 
@@ -802,6 +796,10 @@ def reinforcement_planning(
     Hierarchical reinforcement learning driver for a single patient case.
     Logic preserved; internal calls use optimized env and caches.
     """
+    # Initialize the recovery state before any model access so the exception
+    # path can always return a valid result instead of masking the root error.
+    best_plan = None
+    best_reward = -np.inf
     try:
         device = next(dose_cal_model.parameters()).device
 
@@ -825,15 +823,11 @@ def reinforcement_planning(
             seed_info, reward_calculator, DVH_rate, rf_params['segmented_rewards']
         )
 
-        best_reward = -np.inf
-        best_DVH_rate = 0.0
-        best_plan = None
         best_group_idx = None
         best_low_level_state_space = None
         best_low_env = None
         best_low_agent = None
-        best_D90 = 0
-    
+
         for idx, elem in enumerate(target_level_traj):
             try:
                 progressDialog.setValue(65)
@@ -849,28 +843,26 @@ def reinforcement_planning(
                     non_target_sum = np.count_nonzero(
                         (trajs_radiations * reward_calculator.non_target_mask > out_highest_dose)
                     )
-                    # NOTE: Same formula as _dvh_oar_jit_fallback. NOT inverted.
-                    # cur_out_damage shrinks when non_target_sum grows, and is ADDED
-                    # to reward (line 843), correctly penalizing OAR overdose.
-                    cur_out_damage = reward_calculator.target_v / max(0.1, non_target_sum)
-                    cur_reward =  min(cur_DVH_rate, DVH_rate) + ((cur_DVH_rate >= DVH_rate) * cur_out_damage)
+                    cur_out_damage = normalized_oar_damage(
+                        non_target_sum, reward_calculator.target_v
+                    )
+                    cur_reward = min(cur_DVH_rate, DVH_rate) + (
+                        (cur_DVH_rate >= DVH_rate) * (1.0 - cur_out_damage)
+                    )
                 else:
                     target_sum = np.sum(trajs_radiations * reward_calculator.mask_volume > in_lowest_dose)
                     cur_reward = cur_DVH_rate = target_sum / reward_calculator.target_v
 
-                D90 = percentile_value_in_mask(trajs_radiations, reward_calculator.mask_volume)
-
                 if cur_reward > best_reward:
                     best_reward = cur_reward
-                    best_DVH_rate = cur_DVH_rate
                     best_plan = generate_plan_res(dose_image, elem)
                     best_group_idx = idx
                     best_low_level_state_space = generate_baseline_state_space(
                         low_level_state_spaces, target_level, idx
                     )
-                    best_D90 = D90
                 del trajs_radiations
-            except Exception as e:
+            except Exception:
+                logger.debug("Initial RL trajectory evaluation failed", exc_info=True)
                 continue
 
         # Guard: if no valid trajectory was found, return early
@@ -880,8 +872,6 @@ def reinforcement_planning(
         best_low_env = LowLevelEnv(best_low_level_state_space)
         best_low_agent = REINFORCE(n_actions=len(best_low_level_state_space), device=device)
         
-        import time
-        start_time = time.time()
         if rf_params['hierarchical_optimization']:
             for _ in range(rf_params['max_episodes'] // 2):
                 try:
@@ -899,7 +889,6 @@ def reinforcement_planning(
 
                     if low_agent.rewards and low_agent.rewards[-1] > best_reward:
                         best_plan = plan
-                        best_DVH_rate = cur_DVH_rate
                         best_group_idx = group_idx
                         best_low_level_state_space = low_level_state_space
                         best_low_env = low_env
@@ -907,7 +896,8 @@ def reinforcement_planning(
                         best_reward = low_agent.rewards[-1]
                     
                     low_agent.finish_episode()
-                except Exception as e:
+                except Exception:
+                    logger.debug("Hierarchical RL episode failed", exc_info=True)
                     try:
                         low_agent.finish_episode()
                     except Exception:
@@ -1002,7 +992,8 @@ def reinforcement_planning(
                                     best_low_env.done = True
                             else:
                                 best_low_env.done = True
-                        except Exception as e:
+                        except Exception:
+                            logger.debug("RL seed placement step failed", exc_info=True)
                             best_low_env.done = True
 
                     planned_res = []
@@ -1015,25 +1006,11 @@ def reinforcement_planning(
                     if best_low_agent.rewards and best_low_agent.rewards[-1] > best_reward:
                         best_reward = best_low_agent.rewards[-1]
                         best_plan = planned_res
-                        best_DVH_rate = cur_DVH_rate
-                        best_mask = []
-
-                        for lv, (_, _, _, _, world_p, effective_range) in enumerate(traj_cache):
-                            lv_mask = np.ones(len(effective_range), dtype=bool)
-
-                            if planned_positions[lv]:
-                                all_pos = np.array([pos_cache[(lv, x)] for x in effective_range])
-                                for planned_pos in planned_positions[lv]:
-                                    dist = np.linalg.norm(planned_pos - world_p)
-                                    start, end = dist - seed_info['length'], dist + seed_info['length']
-                                    dists = np.linalg.norm(all_pos - world_p, axis=1)
-                                    lv_mask[(dists > start) & (dists < end)] = False
-
-                            best_mask.extend(lv_mask)
 
                     del cur_radiation
                     best_low_agent.finish_episode()
-                except Exception as e:
+                except Exception:
+                    logger.debug("Low-level RL optimization episode failed", exc_info=True)
                     try:
                         best_low_agent.finish_episode()
                     except Exception:
@@ -1058,19 +1035,17 @@ def reinforcement_planning(
                     if low_agent.rewards and low_agent.rewards[-1] > best_reward:
                         best_reward = low_agent.rewards[-1]
                         best_plan = plan
-                        best_DVH_rate = cur_DVH_rate
-
                     low_agent.finish_episode()
-                except Exception as e:
+                except Exception:
+                    logger.debug("Flat RL optimization episode failed", exc_info=True)
                     try:
                         low_agent.finish_episode()
                     except Exception:
                         pass
                     continue
-        end_time = time.time()
-                
         return best_plan, best_reward
-    except Exception as e:
+    except Exception:
+        logger.exception("Reinforcement planning failed")
         if best_plan is not None:
             return best_plan, best_reward
         return [], -np.inf

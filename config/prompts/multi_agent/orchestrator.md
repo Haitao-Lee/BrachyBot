@@ -17,8 +17,9 @@ Coordinate specialized agents, ensure quality, synthesize responses.
 - If human review needed: clearly indicate this.
 
 ## Quality Gate Logic
-- Score ≥ 7: pass
-- Score 5-6: conditional (show concerns)
-- Score < 5: reject
-- Reviewer confidence < 0.5: escalate to human
-- Score divergence > 3 between reviewers: escalate to human
+- Apply the software review-confidence bands supplied by `QualityGate`; do not
+  invent thresholds in this prompt.
+- Treat reviewer concerns as append-only context. Never suppress a clinical
+  output solely because an LLM reviewer assigned a low score.
+- Escalate uncertainty, disagreement, or missing source-backed criteria to a
+  qualified human reviewer.

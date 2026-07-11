@@ -119,23 +119,41 @@ Capabilities:
         v150 = metrics.get("v150", 0)
         v200 = metrics.get("v200", 0)
         d90 = metrics.get("d90", 0)
-        rx_gy = plan.get("prescription_dose_gy", 120)  # Default I-125 pancreatic
-        if not isinstance(rx_gy, (int, float)) or rx_gy <= 0:
-            rx_gy = 120
-
-        def status(val, target, op=">="):
-            if not val: return "N/A"
-            if op == ">=": return "✅" if val >= target else "❌"
-            if op == "<=": return "✅" if val <= target else "❌"
-            return ""
-
-        lines.append(f"| V100 | {v100:.1%} | ≥90% | {status(v100, 0.90)} |")
-        lines.append(f"| V150 | {v150:.1%} | ≤60% | {status(v150, 0.60, '<=')} |")
-        lines.append(f"| V200 | {v200:.1%} | ≤35% | {status(v200, 0.35, '<=')} |")
-        lines.append(f"| D90 | {d90:.1f} Gy | ≥{rx_gy:.0f} Gy | {status(d90, rx_gy)} |")
-        lines.append(f"| Plan Score | {metrics.get('plan_score', 0):.1f}/100 | ≥80 | {status(metrics.get('plan_score', 0), 80)} |")
-
         prescription_rationale = plan.get("prescription_rationale")
+        rx_gy = plan.get("prescription_dose_gy")
+        if isinstance(prescription_rationale, dict) and not isinstance(rx_gy, (int, float)):
+            rx_gy = prescription_rationale.get("prescription_gy")
+        if not isinstance(rx_gy, (int, float)) or rx_gy <= 0:
+            rx_gy = None
+
+        sources = prescription_rationale.get("sources", []) if isinstance(prescription_rationale, dict) else []
+        criteria = prescription_rationale.get("target_criteria", {}) if sources else {}
+
+        def sourced_rule(key, value, op, unit="fraction"):
+            raw = criteria.get(key) if isinstance(criteria, dict) else None
+            if not isinstance(raw, (int, float)):
+                return "See cited case criteria", "Not assessed"
+            threshold = float(raw)
+            if unit == "rx":
+                if rx_gy is None:
+                    return f"{threshold:.0%} Rx", "Not assessed"
+                absolute = threshold * rx_gy
+                passed = value >= absolute
+                return f">={threshold:.0%} Rx ({absolute:.1f} Gy)", "Pass" if passed else "Review"
+            passed = value >= threshold if op == ">=" else value <= threshold
+            symbol = ">=" if op == ">=" else "<="
+            return f"{symbol}{threshold:.0%}", "Pass" if passed else "Review"
+
+        v100_ref, v100_status = sourced_rule("v100_min", v100, ">=")
+        v150_ref, v150_status = sourced_rule("v150_max", v150, "<=")
+        v200_ref, v200_status = sourced_rule("v200_max", v200, "<=")
+        d90_ref, d90_status = sourced_rule("d90_min_pct", d90, ">=", "rx")
+        lines.append(f"| V100 | {v100:.1%} | {v100_ref} | {v100_status} |")
+        lines.append(f"| V150 | {v150:.1%} | {v150_ref} | {v150_status} |")
+        lines.append(f"| V200 | {v200:.1%} | {v200_ref} | {v200_status} |")
+        lines.append(f"| D90 | {d90:.1f} Gy | {d90_ref} | {d90_status} |")
+        lines.append(f"| Plan Score | {metrics.get('plan_score', 0):.1f}/100 | Internal advisory metric | Not clinical approval |")
+
         if isinstance(prescription_rationale, dict):
             sources = prescription_rationale.get("sources", []) or []
             lines += [

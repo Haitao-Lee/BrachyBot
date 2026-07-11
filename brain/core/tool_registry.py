@@ -81,8 +81,17 @@ class ToolRegistry:
                 pass
 
         if execute_fn is None:
-            execute_fn = lambda **kw: {"status": "placeholder", "warning": "Tool not yet connected to implementation"}
-            logger.debug(f"Tool '{name}' registered with placeholder execute_fn")
+            # A catalog entry is useful to the planner, but it must never be
+            # mistaken for an executable tool. PlanExecutor treats any normal
+            # return value as success, so a placeholder dictionary would create
+            # a false-success clinical workflow.
+            def unavailable_tool(_tool_name=name, **_kwargs):
+                raise RuntimeError(
+                    f"Tool '{_tool_name}' is described in toolset.json but has no connected implementation"
+                )
+
+            execute_fn = unavailable_tool
+            logger.debug("Tool '%s' registered as unavailable", name)
 
         spec = ToolSpec(
             name=name,

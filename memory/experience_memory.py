@@ -108,7 +108,9 @@ class ExperienceMemory:
                outcome: str, success: bool, metrics: Dict = None,
                lesson: str = "", tags: List[str] = None) -> ExperienceEntry:
         """Record a new experience."""
-        entry_id = hashlib.md5(f"{user_intent}{time.time()}".encode()).hexdigest()[:12]
+        entry_id = hashlib.md5(
+            f"{user_intent}{time.time()}".encode(), usedforsecurity=False
+        ).hexdigest()[:12]
         entry = ExperienceEntry(
             id=entry_id,
             timestamp=time.time(),

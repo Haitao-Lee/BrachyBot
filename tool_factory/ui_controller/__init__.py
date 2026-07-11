@@ -282,8 +282,7 @@ CONTROL_REGISTRY = {
     },
     "report.import": {
         "commands": ["run"],
-        "value_type": "string",
-        "description": "Import report from JSON file path"
+        "description": "Open the browser file picker and import a report JSON file"
     },
     "report.snapshot.save": {
         "commands": ["run"],
@@ -393,7 +392,7 @@ CONTROL_REGISTRY = {
     # ── Screenshot ──
     "screenshot": {
         "commands": ["run"],
-        "values": ["axial", "sagittal", "coronal", "3d", "dvh", "full"],
+        "values": ["axial", "sagittal", "coronal", "3d", "dvh", "dose-overview", "full"],
         "description": "Capture a screenshot of the specified view"
     },
     # ── Tools ──
@@ -647,7 +646,7 @@ class UIControllerTool(BaseTool):
         # Report
         if target == "report.autofill": return "Report auto-filled from planning data"
         if target == "report.export": return f"Report exported as {value}"
-        if target == "report.import": return f"Report imported from {value}"
+        if target == "report.import": return "Report JSON file picker opened"
         if target == "report.snapshot.save": return "Report snapshot saved"
         if target == "report.snapshot.open": return "Snapshot manager opened"
         if target == "report.audit.open": return "Audit trail opened"

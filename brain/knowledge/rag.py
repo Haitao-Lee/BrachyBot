@@ -1,123 +1,171 @@
-"""
-RAG Module for BrachyAgent
-==========================
-Retrieval-Augmented Generation for domain knowledge.
-Based on MedAgent-Pro's RAG.py approach.
-"""
+"""Lightweight retrieval over BrachyBot's authoritative clinical KB."""
 
-import os
-import json
+from __future__ import annotations
+
 import hashlib
-from typing import List, Dict, Any, Optional
+import json
+import math
+import re
+from collections import Counter
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_AUTHORITATIVE_KB = (
+    _REPO_ROOT / "tool_factory" / "clinical_kb" / "data" / "knowledge_base.json"
+)
+
+
+def _tokens(text: str) -> List[str]:
+    lowered = str(text).lower()
+    tokens = re.findall(r"[a-z0-9][a-z0-9_.-]*", lowered)
+    for sequence in re.findall(r"[\u3400-\u9fff]+", lowered):
+        tokens.extend(
+            [sequence] if len(sequence) == 1
+            else [sequence[i:i + 2] for i in range(len(sequence) - 1)]
+        )
+    return tokens
+
+
+def _urls(value: Any) -> List[str]:
+    found: List[str] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in {"source_url", "url", "doi_url"} and isinstance(item, str):
+                if item.startswith("http"):
+                    found.append(item)
+            elif key in {"source_urls", "sources"} and isinstance(item, list):
+                found.extend(str(url) for url in item if str(url).startswith("http"))
+            else:
+                found.extend(_urls(item))
+    elif isinstance(value, list):
+        for item in value:
+            found.extend(_urls(item))
+    return list(dict.fromkeys(found))
 
 
 class SimpleRAG:
-    """
-    Simple RAG implementation for brachytherapy domain knowledge.
-    In production, could be connected to a vector database.
-    """
+    """Dependency-free BM25 retrieval with citation-bearing output chunks."""
 
     def __init__(self, knowledge_base: Optional[str] = None):
-        self.knowledge_base = knowledge_base or self._default_knowledge_base()
-        self._cache: Dict[str, Any] = {}
+        self.knowledge_base = Path(knowledge_base) if knowledge_base else _AUTHORITATIVE_KB
+        self._cache: Dict[str, List[str]] = {}
+        self._documents: Optional[List[Dict[str, Any]]] = None
 
-    def _default_knowledge_base(self) -> str:
-        kb_path = os.path.join(os.path.dirname(__file__), "knowledge_base.json")
-        if os.path.exists(kb_path):
-            return kb_path
-        return ""
+    def _load(self) -> Dict[str, Any]:
+        if not self.knowledge_base.exists():
+            return {}
+        return json.loads(self.knowledge_base.read_text(encoding="utf-8"))
+
+    def _build_documents(self) -> List[Dict[str, Any]]:
+        data = self._load()
+        documents: List[Dict[str, Any]] = []
+
+        for site, site_data in (data.get("dose_standards") or {}).items():
+            modalities = site_data if isinstance(site_data, dict) else {}
+            if any(key in modalities for key in ("target", "oar", "source")):
+                modalities = {"unspecified": modalities}
+            for modality, standard in modalities.items():
+                if not isinstance(standard, dict):
+                    continue
+                links = _urls(standard)
+                documents.append({
+                    "title": f"{site} {modality} dose standard",
+                    "body": json.dumps(standard, ensure_ascii=False, sort_keys=True),
+                    "urls": links,
+                })
+
+        for source_id, source in (data.get("evidence_sources") or {}).items():
+            if not isinstance(source, dict):
+                continue
+            documents.append({
+                "title": str(source.get("title") or source_id),
+                "body": json.dumps(source, ensure_ascii=False, sort_keys=True),
+                "urls": _urls(source),
+            })
+
+        for section in ("organ_tolerances", "treatment_protocols"):
+            for name, entry in (data.get(section) or {}).items():
+                documents.append({
+                    "title": f"{section.replace('_', ' ')}: {name}",
+                    "body": json.dumps(entry, ensure_ascii=False, sort_keys=True),
+                    "urls": _urls(entry),
+                })
+
+        for document in documents:
+            document["tokens"] = _tokens(document["title"] + " " + document["body"])
+        return documents
 
     def retrieve(self, query: str, top_k: int = 5) -> List[str]:
-        """
-        Retrieve relevant knowledge chunks for a query.
-        """
-        cache_key = hashlib.md5(f"{query}:{top_k}".encode()).hexdigest()
+        cache_key = hashlib.sha256(f"{query}:{top_k}".encode("utf-8")).hexdigest()
         if cache_key in self._cache:
-            return self._cache[cache_key]
+            return list(self._cache[cache_key])
 
-        results = []
+        if self._documents is None:
+            self._documents = self._build_documents()
+        query_terms = _tokens(query)
+        if not query_terms or not self._documents:
+            return []
 
-        if os.path.exists(self.knowledge_base):
-            with open(self.knowledge_base, "r", encoding="utf-8") as f:
-                kb_data = json.load(f)
-                chunks = kb_data.get("chunks", [])
-                query_lower = query.lower()
-                for chunk in chunks:
-                    text = chunk.get("text", "").lower()
-                    if any(keyword in text for keyword in query_lower.split()):
-                        results.append(chunk.get("text"))
-                        if len(results) >= top_k:
-                            break
+        doc_freq = Counter()
+        for document in self._documents:
+            doc_freq.update(set(document["tokens"]))
+        avg_len = sum(len(d["tokens"]) for d in self._documents) / len(self._documents)
+        scored = []
+        for document in self._documents:
+            frequencies = Counter(document["tokens"])
+            score = 0.0
+            for term in query_terms:
+                frequency = frequencies.get(term, 0)
+                if not frequency:
+                    continue
+                idf = math.log(1 + (len(self._documents) - doc_freq[term] + 0.5) / (doc_freq[term] + 0.5))
+                denominator = frequency + 1.2 * (
+                    1 - 0.75 + 0.75 * len(document["tokens"]) / max(avg_len, 1)
+                )
+                score += idf * frequency * 2.2 / denominator
+            if score:
+                scored.append((score, document))
 
-        if not results:
-            results = self._default_response(query)
-
+        results: List[str] = []
+        for _, document in sorted(scored, key=lambda item: item[0], reverse=True)[:top_k]:
+            citations = " ".join(f"[{url}]({url})" for url in document["urls"])
+            suffix = f" Sources: {citations}" if citations else " Source link unavailable; do not use as a clinical limit."
+            results.append(f"{document['title']}: {document['body']}{suffix}")
         self._cache[cache_key] = results
-        return results
-
-    def _default_response(self, query: str) -> List[str]:
-        """Default responses when no specific knowledge found."""
-        defaults = {
-            "ctv": [
-                "CTV (Clinical Target Volume) includes the visible tumor and suspected subclinical spread.",
-                "CTV segmentation requires anatomical knowledge and clinical judgment."
-            ],
-            "oar": [
-                "OAR (Organ at Risk) are normal tissues that may be affected by radiation.",
-                "OAR constraints are based on clinical tolerance doses (TD5/5, TD50/5)."
-            ],
-            "dose": [
-                "Dose evaluation uses metrics like V100, V150, D90, D2cc for plan assessment.",
-                "Prescription dose depends on cancer type and treatment intent."
-            ],
-            "seed": [
-                "Seed placement follows established patterns for uniform dose distribution.",
-                "Pd-103 and I-125 are common isotopes for permanent brachytherapy."
-            ],
-            "trajectory": [
-                "Trajectory planning optimizes needle paths to minimize OAR exposure.",
-                "Parallel catheters are typically used for uniformity."
-            ],
-        }
-
-        results = []
-        query_lower = query.lower()
-        for key, texts in defaults.items():
-            if key in query_lower:
-                results.extend(texts)
-        return results[:3]
+        return list(results)
 
 
 class DoseRAG(SimpleRAG):
-    """RAG specialized for dose constraints and tolerances."""
+    """Compatibility API backed by the same source-traceable KB."""
 
-    def __init__(self):
-        super().__init__()
-        self._dose_constraints = {
-            "pancreas": {
-                "duodenum": {"D0.1cc": 30.0, "D2cc": 18.0, "unit": "Gy"},
-                "stomach": {"D0.1cc": 30.0, "D2cc": 18.0, "unit": "Gy"},
-                "small_bowel": {"D0.1cc": 30.0, "D2cc": 18.0, "unit": "Gy"},
-            },
-            "prostate": {
-                "rectum": {"D0.1cc": 50.0, "D2cc": 35.0, "D10": 30.0, "unit": "Gy"},
-                "bladder": {"D0.1cc": 50.0, "D2cc": 35.0, "D10": 30.0, "unit": "Gy"},
-                "urethra": {"D10": 55.0, "D30": 50.0, "unit": "Gy"},
-            },
-            "lung": {
-                "spinal_cord": {"D0.1cc": 10.0, "D1cc": 7.0, "unit": "Gy"},
-                "heart": {"D1cc": 30.0, "D2cc": 25.0, "unit": "Gy"},
-            }
-        }
+    _ALIASES = {"pancreas": "pancreatic", "cervix": "cervical"}
 
     def get_constraints(self, anatomy: str) -> Dict[str, Any]:
-        """Get dose constraints for a specific anatomy."""
-        return self._dose_constraints.get(anatomy.lower(), {})
+        data = self._load().get("dose_standards", {})
+        site = self._ALIASES.get(str(anatomy).lower(), str(anatomy).lower())
+        site_data = data.get(site, {})
+        if not isinstance(site_data, dict):
+            return {}
+        if "oar" in site_data:
+            return dict(site_data.get("oar") or {})
+        for modality in ("ldr", "hdr", "apbi"):
+            standard = site_data.get(modality)
+            if isinstance(standard, dict):
+                result = dict(standard.get("oar") or {})
+                result["_source"] = {
+                    "title": standard.get("source", ""),
+                    "urls": standard.get("source_urls", []),
+                    "modality": modality,
+                }
+                return result
+        return {}
 
-    def retrieve_dose_constraints(self, anatomy: str, oar_name: str) -> Optional[Dict]:
-        """Get specific OAR constraints."""
+    def retrieve_dose_constraints(self, anatomy: str,
+                                    oar_name: str) -> Optional[Dict[str, Any]]:
         constraints = self.get_constraints(anatomy)
-        return constraints.get(oar_name.lower())
+        return constraints.get(str(oar_name).lower())
 
 
 _rag_instance: Optional[DoseRAG] = None

@@ -46,13 +46,14 @@ Examples:
     args = parser.parse_args()
 
     if args.chat:
-        _run_chat(args.session)
+        return _run_chat(args.session)
     elif args.server:
-        _run_server(args.port)
+        return _run_server(args.port)
     elif args.ct_path:
-        _run_planning(args)
+        return _run_planning(args)
     else:
         parser.print_help()
+        return 0
 
 
 def _run_planning(args):
@@ -103,23 +104,52 @@ def _run_chat(session_id):
 
 
 def _run_server(port):
-    import web.server
+    try:
+        import web.server
+    except ImportError as exc:
+        print(f"Cannot start the web server: {exc}", file=sys.stderr)
+        print("Install server dependencies with: pip install -r requirements.txt", file=sys.stderr)
+        return 2
 
-    # Auto-detect LLM provider from environment
-    # Supports: ANTHROPIC_*, OPENAI_*, QWEN_*, OPENROUTER_*
-    _anthropic_base = os.environ.get("ANTHROPIC_BASE_URL", "")
-    _anthropic_key = os.environ.get("ANTHROPIC_AUTH_TOKEN", "") or os.environ.get("ANTHROPIC_API_KEY", "")
-    if _anthropic_base and _anthropic_key:
-        print(f"Using Anthropic-compatible provider: {_anthropic_base}")
-        print(f"Model: {os.environ.get('ANTHROPIC_MODEL', 'default')}")
-    elif os.environ.get("OPENAI_API_KEY"):
-        print(f"Using OpenAI provider")
-        print(f"Model: {os.environ.get('OPENAI_MODEL', 'gpt-4o')}")
+    provider_env = (
+        ("Anthropic", ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"), "ANTHROPIC_MODEL"),
+        ("OpenAI", ("OPENAI_API_KEY",), "OPENAI_MODEL"),
+        ("OpenRouter", ("OPENROUTER_API_KEY",), "OPENROUTER_MODEL"),
+        ("Qwen", ("DASHSCOPE_API_KEY",), "QWEN_MODEL"),
+        ("Kimi", ("MOONSHOT_API_KEY",), "KIMI_MODEL"),
+        ("MiniMax", ("MINIMAX_API_KEY",), "MINIMAX_MODEL"),
+        ("GLM", ("ZHIPU_API_KEY",), "GLM_MODEL"),
+        ("Gemini", ("GOOGLE_API_KEY",), "GEMINI_MODEL"),
+        ("Groq", ("GROQ_API_KEY",), "GROQ_MODEL"),
+        ("Grok", ("XAI_API_KEY",), "GROK_MODEL"),
+        ("MiMo", ("MIMO_API_KEY",), "MIMO_MODEL"),
+        ("DeepSeek", ("DEEPSEEK_API_KEY",), "DEEPSEEK_MODEL"),
+        ("Tencent", ("TENCENT_API_KEY",), "TENCENT_MODEL"),
+    )
+    configured = []
+    for provider, key_names, model_name in provider_env:
+        if any(os.environ.get(name) for name in key_names):
+            configured.append(
+                f"{provider}" + (f" ({os.environ[model_name]})" if os.environ.get(model_name) else "")
+            )
+    print("Configured LLM providers: " + (", ".join(configured) if configured else "none"))
 
     print(f"\nStarting BrachyBot web server on port {port}...")
     print(f"Open http://localhost:{port} in your browser")
-    web.server.run_server(port=port)
+    try:
+        web.server.run_server(port=port)
+    except OSError as exc:
+        print(f"Web server failed to bind to port {port}: {exc}", file=sys.stderr)
+        return 2
+    except SystemExit as exc:
+        if exc.code not in (None, 0):
+            print(
+                f"Web server stopped during startup. Port {port} may already be in use.",
+                file=sys.stderr,
+            )
+        return int(exc.code or 0)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

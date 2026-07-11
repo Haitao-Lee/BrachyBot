@@ -65,7 +65,10 @@ import os
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    import torch
 
 logger = logging.getLogger(__name__)
 

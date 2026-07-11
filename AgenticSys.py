@@ -35,11 +35,9 @@ from urllib.parse import urlparse, unquote
 
 import numpy as np
 import SimpleITK as sitk
+from tool_factory import ToolResult
 
 logger = logging.getLogger(__name__)
-
-from config.prompts import SYSTEM_PROMPT_TEMPLATE, get_prompt_modules
-
 
 from agent_runtime.core import AgentMemory, PlanningPhase, ToolRegistry, ToolResultPipeline
 from agent_runtime.response_tools import ResponseToolMixin
@@ -87,15 +85,10 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         self.config = config or {}
         self._load_tools()
         self._cancel_requested = False
-
-        # Register as global agent for tools that need it (e.g. planning_pipeline).
-        # ARCHITECTURAL NOTE: This is a module-level singleton pattern, not a bug.
-        # Tools like planning_pipeline.py access agent memory via this global ref
-        # because they don't receive the agent instance as a parameter.
-        # web/server.py has fallback logic (getattr + get_agent()) for multi-session.
-        # Refactoring to dependency injection would require changing all tool signatures.
-        import AgenticSys as _self_module
-        _self_module._global_agent = self
+        self._turn_generation = 0
+        self._active_turn_token = 0
+        self._turn_state_lock = threading.RLock()
+        self._turn_local = threading.local()
 
         from memory import InteractionMemory, SkillLearner, PreferenceStore
         from skills import SkillRegistry
@@ -459,8 +452,14 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             # Create LLM callback for multi-agent system
             llm_callback = None
             if self.brain_available and hasattr(self, "brain_router") and self.brain_router:
-                def _ma_llm_cb(prompt):
-                    resp = self.brain_router.chat(prompt)
+                def _ma_llm_cb(prompt, system_prompt=None, temperature=0.3):
+                    messages = []
+                    if system_prompt:
+                        messages.append({"role": "system", "content": system_prompt})
+                    messages.append({"role": "user", "content": prompt})
+                    resp = self.brain_router.chat_messages(
+                        messages=messages, temperature=temperature
+                    )
                     return resp.content if hasattr(resp, "content") else str(resp)
                 llm_callback = _ma_llm_cb
 
@@ -472,8 +471,14 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
     def _get_llm_callback(self):
         """Return the shared synchronous LLM callback used by sub-agents."""
         if self.brain_available and hasattr(self, "brain_router") and self.brain_router:
-            def _llm_cb(prompt):
-                resp = self.brain_router.chat(prompt)
+            def _llm_cb(prompt, system_prompt=None, temperature=0.3):
+                messages = []
+                if system_prompt:
+                    messages.append({"role": "system", "content": system_prompt})
+                messages.append({"role": "user", "content": prompt})
+                resp = self.brain_router.chat_messages(
+                    messages=messages, temperature=temperature
+                )
                 return resp.content if hasattr(resp, "content") else str(resp)
             return _llm_cb
         enhanced_cb = getattr(getattr(self, "enhanced", None), "llm_callback", None)
@@ -731,14 +736,10 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         return True
 
     def _has_completed_planning_in_steps(self, steps: List[Dict] = None) -> bool:
-        """Return True only when planning completed in the current turn."""
-        completed_tools = {
-            "planning_pipeline",
-            "seed_planning",
-            "dose_engine",
-            "dose_evaluation",
-            "dose_calc",
-        }
+        """Return whether this turn reached a plan-finalizing tool."""
+        # Seed placement and raw dose calculation are intermediate products;
+        # neither proves that target/OAR metrics were evaluated.
+        completed_tools = {"planning_pipeline", "dose_evaluation"}
         return bool(steps) and any(
             s.get("type") == "tool"
             and s.get("status") == "done"
@@ -747,9 +748,9 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         )
 
     def _has_completed_planning(self, steps: List[Dict] = None) -> bool:
-        """Planning is complete only after dose metrics plus seed/dose payloads exist."""
-        if self._has_completed_planning_in_steps(steps):
-            return True
+        """Require current-turn completion evidence and all durable plan products."""
+        if steps is not None and not self._has_completed_planning_in_steps(steps):
+            return False
 
         metrics = self.memory.retrieve("dose_metrics")
         seed_payload = self.memory.retrieve("seed_plan")
@@ -835,6 +836,10 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         )
         planning_ready = self._has_completed_planning()
         ct_path = self._current_ct_path(tool_calls)
+        tumor_type = (
+            self.memory.retrieve("tumor_type_used")
+            or self._detect_tumor_type_from_message(message)
+        )
 
         def clone_call(tc):
             return {
@@ -869,7 +874,10 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
 
         ordered = []
         if not ctv_ready:
-            ordered.append(ensure_call("ctv_segmentation", {"image_path": ct_path}))
+            ordered.append(ensure_call("ctv_segmentation", {
+                "image_path": ct_path,
+                "tumor_type": tumor_type,
+            }))
         if not oar_ready:
             ordered.append(ensure_call("oar_segmentation", {"image_path": ct_path}))
         if not planning_ready:
@@ -886,7 +894,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             )
         return ordered + rest
 
-    def _execute_tool_with_memory(self, tool_name: str, params: Dict, progress_callback=None, step_callback=None, skip_auto_oar=False) -> Any:
+    def _execute_tool_with_memory(self, tool_name: str, params: Dict, progress_callback=None, step_callback=None) -> Any:
         """Execute a tool, automatically injecting memory-stored data.
 
         step_callback (optional): callable(substep_name, status, content)
@@ -994,7 +1002,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         # be set in all code paths).
         if tool_name == "planning_pipeline":
             params["_agent"] = self
-        elif tool_name == "report_auto_fill":
+        elif tool_name in {"report_auto_fill", "tool_creator"}:
             params["_agent"] = self
 
         # BUG FIX 2026-06-17 (duplicate oar_segmentation): the LLM
@@ -1022,14 +1030,17 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                     )
                     if progress_callback:
                         progress_callback("CTV already segmented (skipped)", 90)
-                    from tool_factory import ToolResult as _TR
-                    result = _TR(
+                    result = ToolResult(
                         success=True,
                         data={"ctv_array": _existing_ctv},
                         message="CTV already segmented (skipped redundant call).",
                         metadata={
                             "ctv_array": _existing_ctv,
-                            "ctv_mask": self.memory.retrieve("ctv_mask") or _existing_ctv,
+                            "ctv_mask": (
+                                self.memory.retrieve("ctv_mask")
+                                if self.memory.retrieve("ctv_mask") is not None
+                                else _existing_ctv
+                            ),
                             "skipped_duplicate": True,
                         },
                     )
@@ -1038,7 +1049,10 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             _existing_oar = self.memory.retrieve("oar_array")
             _existing_names = self.memory.retrieve("organ_names") or {}
             _existing_path = self.memory.retrieve("ct_path")
-            if _existing_oar is not None and len(_existing_names) >= 50:
+            # Fullness is an explicit provenance flag. Organ count is not a
+            # reliable proxy because model/task variants legitimately expose
+            # different label sets.
+            if _existing_oar is not None and bool(self.memory.retrieve("oar_is_full")):
                 _req_path = params.get("image_path", _existing_path)
                 if _req_path in (None, _existing_path):
                     logger.info(
@@ -1048,8 +1062,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                     )
                     if progress_callback:
                         progress_callback("OAR already segmented (skipped)", 90)
-                    from tool_factory import ToolResult as _TR
-                    result = _TR(
+                    result = ToolResult(
                         success=True,
                         data={"oar_array": _existing_oar, "organ_names": _existing_names,
                               "organ_counts": self.memory.retrieve("organ_counts") or {}},
@@ -1067,55 +1080,39 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                     _skip_tool = True
 
         if not _skip_tool:
-            # Track this operation so server shutdown waits for completion
-            _op_ctx = None
-            try:
-                import builtins
-                if hasattr(builtins, 'track_operation'):
-                    _op_ctx = builtins.track_operation(tool_name)
-                    _op_ctx.__enter__()
-                    logger.debug(f"[TOOL-TRACK] Started tracking: {tool_name}")
-            except Exception as e:
-                logger.warning(f"Could not track operation {tool_name}: {e}")
-
-            try:
-                # Use validation + recovery for critical tools
-                if tool_name in self._VALIDATORS:
-                    result = self._validate_and_execute(tool_name, params)
-                else:
-                    result = self.registry.execute(tool_name, **params)
-            finally:
-                # End operation tracking
-                if _op_ctx is not None:
-                    try:
-                        _op_ctx.__exit__(None, None, None)
-                        logger.debug(f"[TOOL-TRACK] Finished tracking: {tool_name}")
-                    except Exception as e:
-                        logger.warning(f"Error in __exit__ for {tool_name}: {e}")
+            # BaseTool.execute owns operation tracking. Outer wrappers used to
+            # double-track every registry call and depended on global builtins.
+            if tool_name in self._VALIDATORS:
+                result = self._validate_and_execute(tool_name, params)
+            else:
+                result = self.registry.execute(tool_name, **params)
 
         if progress_callback:
             progress_callback(f"Processing results...", 90)
 
         if result.success:
-            logger.info(f"Tool {tool_name} succeeded. Metadata keys: {list(result.metadata.keys()) if result.metadata else 'None'}")
-            if tool_name == "ctv_segmentation" and "ctv_array" in result.metadata:
-                self.memory.store("ctv_array", result.metadata["ctv_array"])
-                if "ctv_mask" in result.metadata:
-                    self.memory.store("ctv_mask", result.metadata["ctv_mask"])
-                if "label_stats" in result.metadata:
-                    self.memory.store("ctv_label_stats", result.metadata["label_stats"])
-                if "label_map" in result.metadata:
-                    self.memory.store("ctv_label_map", result.metadata["label_map"])
+            metadata = result.metadata or {}
+            logger.info("Tool %s succeeded. Metadata keys: %s", tool_name, list(metadata))
+            if tool_name == "ctv_segmentation" and "ctv_array" in metadata:
+                self.memory.store("ctv_array", metadata["ctv_array"])
+                if "ctv_mask" in metadata:
+                    self.memory.store("ctv_mask", metadata["ctv_mask"])
+                if "label_stats" in metadata:
+                    self.memory.store("ctv_label_stats", metadata["label_stats"])
+                if "label_map" in metadata:
+                    self.memory.store("ctv_label_map", metadata["label_map"])
+                if metadata.get("full_label_array") is not None:
+                    self.memory.store("ctv_full_labels", metadata["full_label_array"])
                 # Store ctv_voxels and ctv_volume directly so
                 # _build_planning_report can read them from memory.
-                _cv = result.metadata.get("ctv_voxel_count")
+                _cv = metadata.get("ctv_voxel_count")
                 if not _cv:
                     try:
-                        _cv = int(np.sum(np.asarray(result.metadata["ctv_array"]) > 0))
+                        _cv = int(np.sum(np.asarray(metadata["ctv_array"]) > 0))
                     except Exception:
                         _cv = 0
                 self.memory.store("ctv_voxels", _cv)
-                _cvm3 = result.metadata.get("ctv_volume_mm3")
+                _cvm3 = metadata.get("ctv_volume_mm3")
                 if _cvm3:
                     self.memory.store("ctv_volume_mm3", _cvm3)
                 if params.get("tumor_type"):
@@ -1139,23 +1136,23 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 # arrays). Route through self.memory to call them.
                 try:
                     self.memory._merge_ctv_labels_into_oar(
-                        result.metadata.get("oar_array"),
-                        result.metadata.get("organ_names"),
-                        result.metadata.get("label_stats"),
-                        result.metadata.get("label_map"),
+                        metadata.get("oar_array"),
+                        metadata.get("organ_names"),
+                        metadata.get("label_stats"),
+                        metadata.get("label_map"),
                     )
                 except AttributeError as exc:
                     # Fallback if memory helper is missing (defensive)
                     logger.debug("Memory label merge helper unavailable: %s", exc)
-                    if "oar_array" in result.metadata:
-                        self.memory.store("oar_array", result.metadata["oar_array"])
-                    if "organ_names" in result.metadata:
-                        self.memory.store("organ_names", result.metadata["organ_names"])
-                if result.metadata.get("oar_array") is not None and not self.memory.retrieve("oar_is_full"):
+                    if "oar_array" in metadata:
+                        self.memory.store("oar_array", metadata["oar_array"])
+                    if "organ_names" in metadata:
+                        self.memory.store("organ_names", metadata["organ_names"])
+                if metadata.get("oar_array") is not None and not self.memory.retrieve("oar_is_full"):
                     self.memory.store("oar_source", "ctv_embedded")
                     self.memory.store("oar_is_full", False)
             elif tool_name == "oar_segmentation":
-                logger.info(f"OAR segmentation result: oar_array={'oar_array' in result.metadata}, organ_names={'organ_names' in result.metadata}")
+                logger.info("OAR segmentation result: oar_array=%s, organ_names=%s", "oar_array" in metadata, "organ_names" in metadata)
                 # BUG FIX 2026-06-16: BEFORE storing the new OAR
                 # array, REMOVE any labels that are also in the
                 # CTV label map (CTV wins). This handles the case
@@ -1165,9 +1162,9 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 # user runs OAR again after CTV, this prevents the
                 # OAR's `pancreas` from overwriting the CTV's
                 # `pancreas`.
-                oar_array = result.metadata.get("oar_array")
-                organ_names = result.metadata.get("organ_names")
-                organ_counts = result.metadata.get("organ_counts")
+                oar_array = metadata.get("oar_array")
+                organ_names = metadata.get("organ_names")
+                organ_counts = metadata.get("organ_counts")
                 if oar_array is not None:
                     # BUG FIX 2026-06-16: route helper through self.memory
                     try:
@@ -1186,155 +1183,14 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 self.memory.store("oar_source", "totalsegmentator")
                 self.memory.store("oar_is_full", True)
 
-            # If CTV segmentation completed but the resulting OAR map is
-            # missing or only carries a few labels (the CTV pipeline also
-            # extracts a tiny set of "vessel" labels), auto-trigger a
-            # full OAR segmentation so the planning pipeline can use the
-            # real organ map (TotalSegmentator's 117 organs) for dose
-            # evaluation and trajectory avoidance. Without this, the
-            # LLM sometimes skips oar_segmentation and planning_pipeline
-            # runs with only the 2-3 vessel labels, producing a poor
-            # V100 / D90 and a wrong "2 organs" report.
-            #
-            # skip_auto_oar: when True, skip this block so the caller
-            # (streaming handler) can yield CTV "done" before running OAR.
-            if not skip_auto_oar and tool_name == "ctv_segmentation" and result.success:
-                # Skip auto-OAR if planning already completed successfully
-                _planning_already_done_non_stream = (
-                    self.memory.retrieve("dose_metrics") is not None
-                    or self.memory.retrieve("planning_results") is not None
-                )
-                if _planning_already_done_non_stream:
-                    logger.info("[auto-oar] Skipping auto-OAR: planning already done")
-                else:
-                    oar_array = self.memory.retrieve("oar_array")
-                    oar_source = self.memory.retrieve("oar_source") or "unknown"
-                    oar_is_full = bool(self.memory.retrieve("oar_is_full"))
-                    organ_count = 0
-                    if oar_array is not None:
-                        try:
-                            import numpy as _np
-                            organ_count = int(len(_np.unique(oar_array)) - 1)  # subtract background
-                        except Exception:
-                            organ_count = 0
-                    if oar_is_full:
-                        logger.info(f"[auto-oar] Skipping auto-OAR: full OAR already available ({organ_count} labels)")
-                    else:
-                        logger.info(
-                            "[auto-oar] Full OAR not available "
-                            f"(source={oar_source}, labels={organ_count}) — auto-running TotalSegmentator"
-                        )
-                        # Emit a 'pending' step event so the todo list ticks
-                        # through oar_segmentation just like the LLM had
-                        # called it explicitly. The user's complaint:
-                        # "OAR was silently auto-run by the agent but the
-                        # todo list never showed it, so the workflow
-                        # appeared incomplete." With this emit, the
-                        # predicted oar_segmentation row gets the
-                        # breathing animation, then transitions to done
-                        # when auto-OAR completes.
-                        if step_callback is not None:
-                            try:
-                                step_callback("oar_segmentation", "pending", "Auto-running OAR (CTV map had <5 organs)")
-                            except Exception as _e:
-                                logger.debug(f"step_callback (oar pending) failed: {_e}")
-                        try:
-                            # The oar_segmentation tool accepts EITHER an in-memory
-                            # `image` (SimpleITK Image) or an on-disk `image_path`.
-                            # The in-memory path is faster (skips re-reading the
-                            # file from disk) but the tool's validator rejects
-                            # when the image is passed without image_path. Pass
-                            # both, with image_path coming from the agent's
-                            # memory if available (so the tool can also write
-                            # cached side files consistently).
-                            oar_params = {"organ_type": "general"}
-                            ct_image = self.memory.retrieve("ct_image")
-                            ct_path = self.memory.retrieve("ct_path")
-                            if ct_image is not None:
-                                oar_params["image"] = ct_image
-                            if ct_path:
-                                oar_params["image_path"] = ct_path
-                            _auto_oar_op = None
-                            try:
-                                import builtins as _bi_auto
-                                if hasattr(_bi_auto, 'track_operation'):
-                                    _auto_oar_op = _bi_auto.track_operation("oar_segmentation")
-                                    _auto_oar_op.__enter__()
-                            except Exception as exc:
-                                logger.debug("Auto-OAR operation tracker setup failed: %s", exc)
-                            try:
-                                oar_result = self.registry.execute("oar_segmentation", **oar_params)
-                            finally:
-                                if _auto_oar_op is not None:
-                                    try:
-                                        _auto_oar_op.__exit__(None, None, None)
-                                    except Exception as exc:
-                                        logger.debug("Auto-OAR operation tracker cleanup failed: %s", exc)
-                            if oar_result and oar_result.success:
-                                if "oar_array" in (oar_result.metadata or {}):
-                                    # BUG FIX 2026-06-16 (CTV/OAR priority):
-                                    # strip any OAR labels that overlap with
-                                    # the CTV's label map so the auto-OAR
-                                    # doesn't overwrite the CTV's pancreas
-                                    # with the TotalSegmentator version.
-                                    oar_a = oar_result.metadata["oar_array"]
-                                    oar_n = oar_result.metadata.get("organ_names", {})
-                                    oar_c = oar_result.metadata.get("organ_counts", {})
-                                    # BUG FIX 2026-06-16: route helper through self.memory
-                                    try:
-                                        oar_a, oar_n, oar_c = self.memory._strip_oar_labels_in_ctv(
-                                            oar_a, oar_n, oar_c
-                                        )
-                                    except AttributeError as exc:
-                                        logger.debug("Memory OAR label merge helper unavailable: %s", exc)
-                                    self.memory.store("oar_array", oar_a)
-                                    if oar_n:
-                                        self.memory.store("organ_names", oar_n)
-                                    if oar_c:
-                                        self.memory.store("organ_counts", oar_c)
-                                    self.memory.store("oar_source", "totalsegmentator")
-                                    self.memory.store("oar_is_full", True)
-                                elif "organ_names" in (oar_result.metadata or {}):
-                                    # Fallback: OAR has no array but has names
-                                    # (rare). Still strip overlapping labels.
-                                    oar_n = oar_result.metadata["organ_names"]
-                                    oar_c = oar_result.metadata.get("organ_counts", {})
-                                    try:
-                                        _, oar_n, oar_c = self.memory._strip_oar_labels_in_ctv(
-                                            None, oar_n, oar_c
-                                        )
-                                    except AttributeError as exc:
-                                        logger.debug("Memory OAR label metadata merge helper unavailable: %s", exc)
-                                    self.memory.store("organ_names", oar_n)
-                                    if oar_c:
-                                        self.memory.store("organ_counts", oar_c)
-                                    self.memory.store("oar_source", "totalsegmentator")
-                                    self.memory.store("oar_is_full", True)
-                                logger.info(f"[auto-oar] OAR seg done: {len(oar_result.metadata.get('organ_names', {}))} organs (after CTV-strip)")
-                                # Emit 'done' for the predicted oar row.
-                                if step_callback is not None:
-                                    try:
-                                        n_organs = len(oar_result.metadata.get("organ_names", {}))
-                                        step_callback("oar_segmentation", "done", f"{n_organs} organs")
-                                    except Exception as _e:
-                                        logger.debug(f"step_callback (oar done) failed: {_e}")
-                            else:
-                                logger.warning(f"[auto-oar] OAR seg failed: {oar_result.error if oar_result else 'no result'}")
-                                if step_callback is not None:
-                                    try:
-                                        step_callback("oar_segmentation", "error", oar_result.error if oar_result else "no result")
-                                    except Exception as _e:
-                                        logger.debug(f"step_callback (oar error) failed: {_e}")
-                        except Exception as e:
-                            logger.warning(f"[auto-oar] exception: {e}")
-            elif tool_name == "trajectory_planning" and "trajectories" in result.metadata:
-                self.memory.store("trajectories", result.metadata["trajectories"])
+            if tool_name == "trajectory_planning" and "trajectories" in metadata:
+                self.memory.store("trajectories", metadata["trajectories"])
             elif tool_name == "seed_planning":
-                if "optimal_plan" in result.metadata:
-                    self.memory.store("seed_positions", result.metadata["optimal_plan"])
-                    self.memory.store("total_seeds", result.metadata.get("total_seeds", 0))
-                if "dose_distribution" in result.metadata:
-                    self.memory.store("dose_distribution", result.metadata["dose_distribution"])
+                if "optimal_plan" in metadata:
+                    self.memory.store("seed_positions", metadata["optimal_plan"])
+                    self.memory.store("total_seeds", metadata.get("total_seeds", 0))
+                if "dose_distribution" in metadata:
+                    self.memory.store("dose_distribution", metadata["dose_distribution"])
             elif tool_name == "dose_engine" and result.data is not None:
                 self.memory.store("dose_distribution", result.data)
             elif tool_name == "dose_evaluation":
@@ -1408,64 +1264,31 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 _flat["oar_metrics"] = _oar
                 self.memory.store("metrics", _flat)
 
+            # This execution path is the canonical owner of successful LLM
+            # tool-call state. Callers must not store the same result again:
+            # duplicate OAR storage can overwrite the CTV-priority merge.
+            cs = self.memory.conversation_state
+            if tool_name == "ctv_segmentation":
+                cs["ctv_segmented"] = True
+            elif tool_name == "oar_segmentation":
+                cs["oar_segmented"] = True
+            elif tool_name == "planning_pipeline":
+                cs["planning_completed"] = True
+                if "dose_metrics" in metadata:
+                    self.memory.store("dose_metrics", metadata["dose_metrics"])
+                if "total_seeds" in metadata:
+                    self.memory.store("total_seeds", metadata["total_seeds"])
+                seed_plan = self.memory.retrieve("seed_plan")
+                if seed_plan is not None:
+                    self.memory.store("seed_positions", seed_plan)
+            if tool_name not in cs["last_tool_calls"]:
+                cs["last_tool_calls"].append(tool_name)
+            cs["last_tool_calls"] = cs["last_tool_calls"][-10:]
+
         self.memory.log_tool_call(tool_name, params, result)
 
         if progress_callback:
             progress_callback(f"{tool_name} completed", 100)
-
-        # AUTO-TRIGGER: After any tool completes, check if both CTV and OAR
-        # are done. If so, automatically run planning_pipeline. This ensures
-        # the workflow completes even if the LLM stops early.
-        if tool_name in ("ctv_segmentation", "oar_segmentation") and result.success:
-            ctv_array = self.memory.retrieve("ctv_array")
-            oar_array = self.memory.retrieve("oar_array")
-            oar_is_full = bool(self.memory.retrieve("oar_is_full"))
-            if ctv_array is not None and oar_array is not None and not oar_is_full:
-                logger.info("[AUTO-PLANNING] Waiting for full OAR before planning; current OAR is partial/embedded")
-            if ctv_array is not None and oar_array is not None and oar_is_full:
-                # Both segmentations complete - check if planning has been done
-                planning_done = self.memory.retrieve("planning_results") is not None
-                if not planning_done:
-                    logger.info("[AUTO-PLANNING] CTV and OAR both complete, planning not done — auto-triggering planning_pipeline")
-                    _auto_plan_op = None
-                    try:
-                        import builtins as _bi_auto_plan
-                        if hasattr(_bi_auto_plan, 'track_operation'):
-                            _auto_plan_op = _bi_auto_plan.track_operation("planning_pipeline")
-                            _auto_plan_op.__enter__()
-                    except Exception as exc:
-                        logger.debug("Auto-planning operation tracker setup failed: %s", exc)
-                    try:
-                        planning_tool = self.registry.get("planning_pipeline")
-                        if planning_tool:
-                            ct_path = self.memory.retrieve("ct_path")
-                            if ct_path:
-                                planning_result = planning_tool.execute(
-                                    ct_image_path=ct_path,
-                                    mode="rl",
-                                    step="full"
-                                )
-                                if planning_result and planning_result.success:
-                                    logger.info("[AUTO-PLANNING] ✓ Planning pipeline completed successfully")
-                                    # Store results
-                                    if planning_result.metadata:
-                                        for key, value in planning_result.metadata.items():
-                                            self.memory.store(key, value)
-                                    result.message = (result.message or "") + "\n\n✅ 自动完成规划管线（CTV+OAR 已完成）"
-                                else:
-                                    logger.warning(f"[AUTO-PLANNING] Planning failed: {planning_result.error if planning_result else 'no result'}")
-                            else:
-                                logger.warning("[AUTO-PLANNING] No CT path found")
-                        else:
-                            logger.warning("[AUTO-PLANNING] planning_pipeline tool not found")
-                    except Exception as e:
-                        logger.error(f"[AUTO-PLANNING] Error: {e}", exc_info=True)
-                    finally:
-                        if _auto_plan_op is not None:
-                            try:
-                                _auto_plan_op.__exit__(None, None, None)
-                            except Exception as exc:
-                                logger.debug("Auto-planning operation tracker cleanup failed: %s", exc)
 
         return result
 
@@ -1473,6 +1296,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
     # Validates tool results and automatically recovers from failures.
     # This is the core mechanism for reducing tool execution failures.
 
+    # Immutable callable/config tables are intentionally class-scoped. Runtime
+    # code reads them but never mutates them, so instances cannot leak state.
     _VALIDATORS = {
         "ctv_segmentation": lambda r, m: (
             r.success and m.get("ctv_volume_mm3", 0) > 0,
@@ -1489,9 +1314,9 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
     }
 
     _RECOVERY_ACTIONS = {
-        "ctv_segmentation": [
-            {"param_overrides": {"tumor_type": None}, "note": "Retry with auto-detect tumor type"},
-        ],
+        # CTV site ambiguity requires user clarification. Retrying after
+        # deleting tumor_type would repeat the same request without adding
+        # evidence and could select the wrong model in a future fallback.
         "oar_segmentation": [
             {"param_overrides": {"organ_type": "general"}, "note": "Retry with general organ model"},
         ],
@@ -1532,7 +1357,6 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                         )
                         params["image_path"] = remembered
                     else:
-                        from tool_factory import ToolResult
                         return ToolResult(success=False, error=f"File not found: {path}")
             # Store ct_path in memory for 3D reconstruction and other tools
             if tool_name in ("ctv_segmentation", "oar_segmentation"):
@@ -1668,7 +1492,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                     # Try to convert list items
                     try:
                         sanitized[key] = [str(item) if not isinstance(item, (str, int, float, bool, type(None))) else item for item in value]
-                    except:
+                    except Exception:
                         sanitized[key] = f"<{type(value).__name__} with {len(value)} items>"
                 elif isinstance(value, dict):
                     # Recursively sanitize dict
@@ -1679,69 +1503,20 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
 
         return sanitized
 
-    def _convert_anthropic_to_openai_messages(self, messages: List[Dict]) -> List[Dict]:
-        """Convert Anthropic-format messages to OpenAI format.
-
-        Anthropic format:
-          {"role": "assistant", "content": [{"type": "tool_use", ...}]}
-          {"role": "user", "content": [{"type": "tool_result", ...}]}
-
-        OpenAI format:
-          {"role": "assistant", "tool_calls": [{"type": "function", ...}]}
-          {"role": "tool", "tool_call_id": "...", "content": "..."}
-        """
-        converted = []
-        for msg in messages:
-            role = msg.get("role", "")
-            content = msg.get("content", "")
-
-            # Check if content is a list (Anthropic format)
-            if isinstance(content, list):
-                # Check if it contains tool_use or tool_result
-                tool_uses = [item for item in content if item.get("type") == "tool_use"]
-                tool_results = [item for item in content if item.get("type") == "tool_result"]
-
-                if tool_uses:
-                    # Convert tool_use to OpenAI format
-                    openai_msg = {"role": role, "content": None, "tool_calls": []}
-                    for tu in tool_uses:
-                        openai_msg["tool_calls"].append({
-                            "id": tu.get("id", ""),
-                            "type": "function",
-                            "function": {
-                                "name": tu.get("name", ""),
-                                "arguments": json.dumps(tu.get("input", {}), ensure_ascii=False)
-                            }
-                        })
-                    converted.append(openai_msg)
-                elif tool_results:
-                    # Convert tool_result to OpenAI format
-                    for tr in tool_results:
-                        converted.append({
-                            "role": "tool",
-                            "tool_call_id": tr.get("tool_use_id", ""),
-                            "content": tr.get("content", "")
-                        })
-                else:
-                    # Regular content list (text blocks) - concatenate
-                    text_parts = [item.get("text", "") for item in content if item.get("type") == "text"]
-                    converted.append({"role": role, "content": "".join(text_parts)})
-            else:
-                # Already in OpenAI format or simple string
-                converted.append(msg)
-
-        return converted
-
     def _store_tool_result(self, tool_name: str, result):
         """Store tool result in memory based on tool type."""
         if not result.success:
-            print(f"[STORE] Skipping {tool_name}: not successful")
+            logger.debug("[STORE] Skipping %s: not successful", tool_name)
             return
         meta = result.metadata or {}
-        print(f"[STORE] {tool_name}: metadata keys={list(meta.keys())}")
+        logger.debug("[STORE] %s: metadata keys=%s", tool_name, list(meta.keys()))
         ct_image = self.memory.retrieve("ct_image")
         if tool_name == "ctv_segmentation" and "ctv_array" in meta:
-            print(f"[STORE] Storing ctv_array, shape={meta['ctv_array'].shape if hasattr(meta['ctv_array'], 'shape') else 'N/A'}, ct_image={'exists' if ct_image is not None else 'None'}")
+            logger.debug(
+                "[STORE] Storing ctv_array, shape=%s, ct_image=%s",
+                getattr(meta["ctv_array"], "shape", "N/A"),
+                "exists" if ct_image is not None else "None",
+            )
             # Store as plain numpy array (like OAR) — do NOT wrap in SimpleITK
             # with LPI metadata. The 3D mask endpoint uses ct_spacing/ct_origin/
             # ct_direction for the world transform, and DICOMOrient('LPI') in

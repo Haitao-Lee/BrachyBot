@@ -177,7 +177,6 @@ class SmartContextManager:
     def _extract_entities(self, text: str) -> List[str]:
         """Extract entities from text using pattern matching."""
         entities = []
-        text_lower = text.lower()
 
         for entity_type, patterns in self.ENTITY_PATTERNS.items():
             for pattern in patterns:

@@ -461,14 +461,9 @@ def compute_body_shell_and_ref_direction(ct_array, ctv_mask, spacing, target_val
         if direction_matrix is None:
             direction_matrix = np.eye(3)
         normal_phys_xyz = normal_phys[::-1]
-        # REVIEW: see ras_direction_to_voxel above. The math here multiplies
-        # `normal_phys_xyz @ direction_matrix.T` where `direction_matrix` is
-        # SimpleITK's LPS direction cosines, so the result is in LPS — but
-        # it's returned under the variable name `ras_direction` and
-        # documented as "ref_direction_ras". When consumed by
-        # `ras_direction_to_voxel` (which also treats its input as LPS),
-        # the two label bugs cancel. Correct only when consumed paired;
-        # wrong when consumed by anything expecting true RAS.
+        # The public variable names predate the LPS convention used by this
+        # planning chain. Keep this paired with ras_direction_to_voxel; an
+        # isolated sign flip would mirror already validated trajectories.
         ras_direction = normal_phys_xyz @ direction_matrix.T
         norm = np.linalg.norm(ras_direction)
         if norm < 1e-10:
@@ -483,33 +478,19 @@ def compute_body_shell_and_ref_direction(ct_array, ctv_mask, spacing, target_val
 
 
 def ras_direction_to_voxel(ras_direc, image):
-    """Convert a RAS physical direction vector to voxel space.
+    """Convert a legacy planning-direction vector to voxel space.
 
     Args:
-        ras_direc: 3-element unit vector in RAS physical space.
+        ras_direc: 3-element unit vector in SimpleITK physical LPS. The
+            parameter name is retained for API compatibility.
         image: SimpleITK.Image with direction/spacing metadata.
 
     Returns:
         np.ndarray: 3-element unit vector in voxel space [k, j, i] order.
     """
-    # REVIEW: this function computes `v = (ras_direc @ direction) / spacing`
-    # where `direction` is SimpleITK's direction-cosine matrix — which by
-    # convention is in LPS, not RAS. RAS and LPS differ by a sign flip of x
-    # and y (`lps = ras * [-1,-1,1]`). The function name and docstring claim
-    # RAS input, but the math treats the input as though it were already
-    # LPS. Organ default directions in `tool_factory/seed_plan/planning_pipeline._ORGAN_DEFAULT_REFDIREC`
-    # (pancreas=[0,-1,0]) are documented as RAS ([0,-1,0] => posterior in
-    # RAS, anterior in LPS); if those are truly RAS, the conversion here
-    # would mirror needle approach direction along x/y and plan from the
-    # wrong side of the body. NOT FIXED because the fix is clinically
-    # significant (would change clinical planning output) and requires
-    # verification against canonical input conventions by the maintainer.
-    # Suggested fix when ready:
-    #     ras_direc = np.asarray(ras_direc) * np.array([-1.0, -1.0, 1.0])
-    # before applying `@ direction`. See G-4 for the symmetrical issue with
-    # `compute_body_shell_and_ref_direction` (return labeled "RAS" but the
-    # math yields LPS — both ends cancel when used together, but a single
-    # end breaks when consumed independently).
+    # Compatibility contract: callers and auto-detection both supply LPS even
+    # though the legacy function name says RAS. Do not add a sign flip without
+    # a versioned coordinate migration and end-to-end clinical validation.
     spacing = np.array(image.GetSpacing())
     direction = np.array(image.GetDirection()).reshape(3, 3)
     v = (np.array(ras_direc) @ direction) / spacing
@@ -1161,44 +1142,6 @@ def crop_from_pos_np(image_np, center, crop_size):
 
 
 
-def pad_to_original_size_np(crop_img_sitk, ref_image, crop_info):
-    """
-    Restore cropped/predicted image back to the original image size.
-    Works in numpy space, then wraps back to SimpleITK.
-
-    Args:
-        crop_img_sitk (sitk.Image): Predicted crop (SimpleITK, already from np array)
-        ref_image (sitk.Image): Original reference image
-        crop_info (dict): Stored crop metadata
-
-    Returns:
-        sitk.Image: Restored image with original shape
-    """
-    import SimpleITK as sitk
-
-    crop_np = sitk.GetArrayFromImage(crop_img_sitk)
-    D, H, W = crop_info["shape"]
-    dz, dy, dx = crop_info["crop_size"]
-
-    # Allocate full-size array
-    full_np = np.zeros((D, H, W), dtype=crop_np.dtype)
-
-    # Insert crop back into correct location
-    z0, z1 = crop_info["z0"], crop_info["z1"]
-    y0, y1 = crop_info["y0"], crop_info["y1"]
-    x0, x1 = crop_info["x0"], crop_info["x1"]
-
-    full_np[z0:z1, y0:y1, x0:x1] = crop_np[:(z1 - z0), :(y1 - y0), :(x1 - x0)]
-
-    # Convert back to SimpleITK
-    full_img = sitk.GetImageFromArray(full_np)
-    full_img.CopyInformation(ref_image)  # restore spacing/origin/direction
-
-    return full_img
-
-
-
-
 # def batch_seed_dose_calculation_dl(seeds, dose_image, dose_cal_model, infer_image_size, seed_info,
 #                                    image_normalize_min, image_normalize_max, image_normalize_scale):
 #     """
@@ -1686,7 +1629,11 @@ def from_x_to_seeds(x):
 
 def position_soft_method(seed, image_origin, image_size, image_spacing):
     """
-    Generate a soft treatment plan based on a spherical distribution around a given seed point.
+    Generate the seed-location conditioning channel consumed by myDoseNet.
+
+    This geometric feature is never returned as dose and is not an analytical
+    dose fallback. The trained model receives it together with CT and the line
+    orientation channel, then predicts the actual dose grid.
 
     Parameters:
     seed (np.ndarray): The seed point in 3D space, represented as [x, y, z].
@@ -2037,10 +1984,11 @@ def pad_to_original_size_np(cropped_image, original_image, crop_info):
 
 def line_source_map(seed, direction, image_origin, image_size, image_spacing, seed_length):
     """
-    Generate a radiation dose distribution map from a line source defined by a seed and direction.
+    Generate the line-orientation conditioning channel consumed by myDoseNet.
 
-    This function models the radiation dose from a line source by calculating the influence 
-    of the source along a specified direction in a 3D grid.
+    The returned geometry map encodes source orientation; it is not interpreted
+    or exposed as a dose distribution. Dose is produced only by the trained
+    model that consumes this map.
 
     Parameters:
     ----------
@@ -2058,7 +2006,7 @@ def line_source_map(seed, direction, image_origin, image_size, image_spacing, se
     Returns:
     -------
     line_map (SimpleITK Image): 
-        A 3D image representing the radiation distribution map from the line source.
+        A 3D image containing the model's line-orientation input feature.
     """
     # Create physical coordinate grids
     x = image_origin[0] + np.arange(image_size[0]) * image_spacing[0]
@@ -2209,9 +2157,9 @@ def train_model(epochs, x, BrachyPlanNet, optimizer, criterion, fitting_loss, ea
                 print('Early stopping triggered')
                 return best_x, fitting_loss, seeds_variation
         
-        except Exception as e:
+        except Exception:
             # Catch and handle any exceptions (e.g., RuntimeError, ValueError)
-            print("Critical error encountered during training. Stopping early.")
+            logger.exception("Critical error encountered during training; returning the best state")
             return best_x, fitting_loss, seeds_variation  # Return the best prediction found so far
 
     # Return the best model's predictions (best_x) and training history (fitting_loss) after all epochs
@@ -2642,8 +2590,7 @@ def get_candidate_traj_distance(planned_trajectories, candidate_trajectories, do
                 direction_transform(dose_image, candidate_trajectory[1])[0],
                 planned_lines
             )
-        except Exception as e:
-            
+        except Exception:
             raise
         # throttled_process_events()  # Moved outside to reduce thread issues
 
@@ -2834,7 +2781,6 @@ def get_candidate_traj_edge_distance(trajectories, distance_map):
                                           target_depths[i] + 1 + sum(background_depths[:i]) + sum(target_depths[:i])))
         
         # Initialize the effective radiation for the current trajectory
-        edge_distance = 0
         min_edge_distance = np.inf
         # Sum the radiation values at each step in the effective range
         for step in effective_range[1:-1]:
@@ -3193,8 +3139,7 @@ def generate_hierarchical_state_spaces(
             try:
                 _, is_valid = update_available_traj([traj_i], [traj_j], seed_info, dose_image, interval_rate)
                 valid_pairs[i, j] = valid_pairs[j, i] = is_valid
-            except Exception as e:
-                
+            except Exception:
                 raise
             throttled_process_events()
       

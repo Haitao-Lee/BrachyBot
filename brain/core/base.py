@@ -6,8 +6,11 @@ Abstract base classes for the brain system components.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional
+from typing import TYPE_CHECKING, Dict, List, Any, Optional
 import json
+
+if TYPE_CHECKING:
+    from .tool_registry import ToolRegistry
 
 
 @dataclass

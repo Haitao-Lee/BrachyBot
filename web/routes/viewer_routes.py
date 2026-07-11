@@ -169,7 +169,6 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         slice_index = data.get("slice_index", 0)
         window_center = data.get("window_center", agent.memory.retrieve("ct_window_center") or 40)
         window_width = data.get("window_width", agent.memory.retrieve("ct_window_width") or 400)
-        overlay_type = data.get("overlay_type", None)
         threshold = data.get("threshold", None)
 
         ct_data = agent.memory.retrieve("ct_data")
@@ -185,8 +184,6 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 'axial': 0, 'sagittal': 2, 'coronal': 1,
             }
             axis = axis_map.get(axis_name, 0)
-            shape = ct_data.shape
-
             # Apply window/level
             lower = window_center - window_width / 2
             upper = window_center + window_width / 2
@@ -216,6 +213,9 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
             # Apply threshold overlay if requested
             if threshold is not None:
+                # Thresholds are specified in physical HU. The displayed CT is
+                # windowed to uint8 only for rendering, so computing this mask
+                # on raw HU is intentional and anatomically correct.
                 mask = ct_data > threshold
                 if axis_name == 'axial':
                     src_idx = mask.shape[0] - 1 - slice_index
@@ -396,7 +396,6 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             # Build binary payload: ctv bytes + oar bytes
             payload = bytearray()
             ctv_offset = 0
-            oar_offset = 0
 
             if ctv_array is not None:
                 ctv_u8 = ctv_array.astype(np.uint8)
@@ -408,7 +407,6 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             if oar_array is not None:
                 oar_u8 = oar_array.astype(np.uint8)
                 payload.extend(oar_u8.tobytes())
-                oar_offset = len(payload)
 
             response = Response(bytes(payload), mimetype='application/octet-stream')
             response.headers['X-Shape-Z'] = str(shape[0])
@@ -602,6 +600,10 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             oar_array = agent._get_label_array("oar_array")
             if oar_array is not None:
                 import numpy as np
+                try:
+                    from tool_factory.OAR_seg.totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
+                except ImportError:
+                    TOTALSEG_LABEL_MAPPING = {}
                 organ_counts_generated = {}
                 organ_names_generated = {}
                 unique_labels = np.unique(oar_array)
@@ -609,12 +611,9 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     if label > 0:
                         label_int = int(label)
                         organ_counts_generated[label_int] = int(np.sum(oar_array == label))
-                        # Try TotalSegmentator mapping
-                        try:
-                            from tool_factory.OAR_seg.totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
-                            organ_names_generated[label_int] = TOTALSEG_LABEL_MAPPING.get(label_int, f"organ_{label_int}")
-                        except ImportError:
-                            organ_names_generated[label_int] = f"organ_{label_int}"
+                        organ_names_generated[label_int] = TOTALSEG_LABEL_MAPPING.get(
+                            label_int, f"organ_{label_int}"
+                        )
                 organ_names = organ_names_generated
                 organ_counts = organ_counts_generated
                 # Store for future use
@@ -1050,11 +1049,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
     def api_planning_seeds_3d():
         """Get seed positions and directions for 3D visualization.
 
-        Seeds from optimal_plan() are in PLANNING GRID VOXEL coordinates.
-        We must convert them to world coordinates using resampled_ct metadata.
+        ``core.optimal_plan()`` converts every seed position and direction to
+        patient world coordinates before returning.  This route must preserve
+        those coordinates exactly; only the optional 2D voxel index is derived
+        from the displayed CT image.
         """
-        import AgenticSys as _ag
-        agent = getattr(_ag, '_global_agent', None) or get_agent()
+        agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
@@ -1066,92 +1066,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             if seed_plan is None and not seed_plan_serialized:
                 return jsonify({"success": True, "seeds": [], "needles": [], "message": "No seed plan available"})
 
-            # Get resampled CT for coordinate transform
-            resampled_ct = agent.memory.retrieve("resampled_ct")
-            if resampled_ct is None:
-                logger.warning("[seeds_3d] No resampled_ct found, returning raw coordinates")
             ct_image = agent.memory.retrieve("ct_image")
-
-            def _voxel_to_world(voxel_pos):
-                """Convert planning grid voxel coords to world coords.
-
-                Uses the canonical transform from plans/geometry.py voxel_to_world:
-                reverse coordinates (numpy z,y,x → SimpleITK x,y,z), scale by
-                spacing, apply direction matrix, add origin.
-
-                CRITICAL: Always transform — the planning algorithm ALWAYS
-                outputs in planning grid voxel space. The old heuristic
-                (checking if coords fall within CT bounding box) was wrong:
-                planning grid indices like (64, 64, 30) are small numbers
-                that DO fall within the large CT bounding box range
-                (-174 to +175), so the heuristic incorrectly skipped
-                the transform, leaving seeds in voxel space while CT/OAR
-                meshes were in world space — causing the misalignment.
-                """
-                if resampled_ct is None:
-                    return voxel_pos.tolist()
-                try:
-                    import numpy as _np
-                    pt = _np.array(voxel_pos, dtype=_np.float64).flatten()[:3]
-                    origin = _np.array(resampled_ct.GetOrigin())
-                    spacing = _np.array(resampled_ct.GetSpacing())
-                    direction = _np.array(resampled_ct.GetDirection()).reshape(3, 3)
-                    # Canonical transform: reverse (z,y,x) → (x,y,z),
-                    # scale by spacing, apply direction matrix, add origin.
-                    # Same as plans/geometry.py voxel_to_world.
-                    pt_rev = pt[::-1].copy()
-                    world = (pt_rev * spacing) @ direction.T + origin
-                    return world.tolist()
-                except Exception as e:
-                    logger.warning(f"[seeds_3d] voxel_to_world failed: {e}")
-                    return voxel_pos.tolist()
-
-            def _voxel_dir_to_world(voxel_dir):
-                """Convert planning grid voxel direction to world direction.
-
-                The planning algorithm (cal_next_seed_direc) outputs directions
-                in planning grid voxel space with numpy (z,y,x) indexing.
-                We must convert to world coordinates using the same transform
-                as plans/utilizations.py direction_transform():
-                  1. Reverse coordinates (z,y,x → x,y,z) — matching SimpleITK ordering
-                  2. Scale by spacing
-                  3. Apply direction matrix
-                  4. Normalize
-
-                Then apply RAS→LPS sign flip on X,Y (matching ref.py
-                DIRECTION_REVERSAL_SIGN = -1) since the planning algorithm
-                operates in RAS space.
-                """
-                if resampled_ct is None:
-                    d = _np.array(voxel_dir, dtype=_np.float64).flatten()[:3]
-                    d[0] = -d[0]; d[1] = -d[1]
-                    n = _np.linalg.norm(d)
-                    if n > 1e-10: d = d / n
-                    return d.tolist()
-                try:
-                    import numpy as _np
-                    d = _np.array(voxel_dir, dtype=_np.float64).flatten()[:3]
-                    # Step 1: Reverse (z,y,x) → (x,y,z) for SimpleITK ordering
-                    d = d[::-1].copy()
-                    # Step 2+3: Scale by spacing and apply direction matrix
-                    spacing = _np.array(resampled_ct.GetSpacing())
-                    direction = _np.array(resampled_ct.GetDirection()).reshape(3, 3)
-                    world_dir = (d * spacing) @ direction.T
-                    # Step 4: Normalize
-                    n = _np.linalg.norm(world_dir)
-                    if n > 1e-10:
-                        world_dir = world_dir / n
-                    # RAS→LPS flip (matching ref.py DIRECTION_REVERSAL_SIGN)
-                    world_dir[0] = -world_dir[0]
-                    world_dir[1] = -world_dir[1]
-                    # Re-normalize after sign flip
-                    n2 = _np.linalg.norm(world_dir)
-                    if n2 > 1e-10:
-                        world_dir = world_dir / n2
-                    return world_dir.tolist()
-                except Exception as e:
-                    logger.warning(f"[seeds_3d] direction transform failed: {e}")
-                    return voxel_dir.tolist()
 
             def _world_to_ct_voxel_index(world_pos):
                 """Return CT voxel index in numpy order [z, y, x]."""
@@ -1170,10 +1085,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             plan_source = seed_plan if seed_plan is not None else seed_plan_serialized
             for i, entry in enumerate(plan_source):
                 if isinstance(entry, dict):
-                    trajectory = entry.get("trajectory")
                     seed_list = entry.get("seeds") or []
                 elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
-                    trajectory = entry[0] if len(entry) > 0 else None
                     seed_list = entry[1] if len(entry) > 1 else []
                 else:
                     continue

@@ -1,12 +1,16 @@
 function switchPanel(name, el) {
-    console.log('[switchPanel] Switching to:', name);
-    document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+    uiDebugLog('[switchPanel] Switching to:', name);
+    document.querySelectorAll('.panel-tab').forEach(t => {
+        t.classList.remove('active');
+        t.setAttribute('aria-selected', 'false');
+    });
     document.querySelectorAll('.panel-content').forEach(c => c.classList.remove('active'));
     el.classList.add('active');
+    el.setAttribute('aria-selected', 'true');
     const panel = document.getElementById('panel' + capitalize(name));
     if (panel) {
         panel.classList.add('active');
-        console.log('[switchPanel] Panel activated:', 'panel' + capitalize(name));
+        uiDebugLog('[switchPanel] Panel activated:', 'panel' + capitalize(name));
     } else {
         console.error('[switchPanel] Panel not found:', 'panel' + capitalize(name));
     }
@@ -69,7 +73,7 @@ function switchPanel(name, el) {
                     const _hasDvh = !!state.dvhData;
                     const _hasDose = !!(state.doseOverlay && state.doseOverlay.peakVoxel);
                     const _allReady = _meshCount > 0 && _hasDvh && _hasDose;
-                    console.log(`[Report] Capture attempt ${_attempts}: meshes=${_meshCount} dvh=${_hasDvh} dose=${_hasDose} allReady=${_allReady}`);
+                    uiDebugLog(`[Report] Capture attempt ${_attempts}: meshes=${_meshCount} dvh=${_hasDvh} dose=${_hasDose} allReady=${_allReady}`);
                     if (_allReady || _attempts >= 5) {
                         autoCaptureReportFigures();
                     } else {
@@ -86,6 +90,13 @@ function switchPanel(name, el) {
 function _planningItems(kind) {
     const planning = dataTreeState && dataTreeState.planning ? dataTreeState.planning : {};
     return Array.isArray(planning[kind]) ? planning[kind] : [];
+}
+
+function _ctVoxelVolumeCm3() {
+    const spacing = state?.ctSpacing;
+    if (!Array.isArray(spacing) || spacing.length < 3) return null;
+    const volume = Number(spacing[0]) * Number(spacing[1]) * Number(spacing[2]) / 1000;
+    return Number.isFinite(volume) && volume > 0 ? volume : null;
 }
 
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
@@ -204,7 +215,7 @@ async function loadVolumeData() {
 
     const buffer = await res.arrayBuffer();
     volumeData = new Int16Array(buffer);
-    console.log(`Volume loaded: ${shapeZ}x${shapeY}x${shapeX}, ${volumeData.length} voxels`);
+    uiDebugLog(`Volume loaded: ${shapeZ}x${shapeY}x${shapeX}, ${volumeData.length} voxels`);
 
     // Update Image Analysis now that volume data is available
     if (!imageAnalysisData.ct) {
@@ -231,7 +242,7 @@ async function loadVolumeData() {
 async function loadLabelVolumes() {
     try {
         const res = await fetch(API + '/viewer/label_volume');
-        if (!res.ok) { console.log('No label volumes available'); return; }
+        if (!res.ok) { uiDebugLog('No label volumes available'); return; }
 
         const shapeZ = parseInt(res.headers.get('X-Shape-Z'));
         const shapeY = parseInt(res.headers.get('X-Shape-Y'));
@@ -277,7 +288,7 @@ async function loadLabelVolumes() {
             }
         }
 
-        console.log(`Label volumes loaded: CTV=${hasCTV}, OAR=${hasOAR}, ${Object.keys(labelColorLUT).length} labels`);
+        uiDebugLog(`Label volumes loaded: CTV=${hasCTV}, OAR=${hasOAR}, ${Object.keys(labelColorLUT).length} labels`);
 
         // Update data tree with organ metadata
         if (Object.keys(organMetaFromServer).length > 0) {
@@ -587,6 +598,8 @@ function renderSliceFromVolume(axis, sliceIndex) {
                          (dataTreeState.oar.visible && state.viewerSettings.showOAR));
     const labelSliceSize = Y * X;
     const organOpacities = showOverlay ? (() => { const m = {}; dataTreeState.organs.forEach(o => { m[o.labelId] = o.opacity; }); return m; })() : {};
+    const thresholdValue = Number(state.viewerSettings.threshold);
+    const thresholdEnabled = Number.isFinite(thresholdValue);
 
     for (let py = 0; py < height; py++) {
         for (let px = 0; px < width; px++) {
@@ -609,6 +622,14 @@ function renderSliceFromVolume(axis, sliceIndex) {
             let r, g, b, a = 255;
             const ctVal = pixels[py * width + px];
             r = ctVal; g = ctVal; b = ctVal;
+
+            // Match the server-rendered fallback: thresholding is evaluated in
+            // physical HU, then highlighted over the windowed CT image.
+            if (thresholdEnabled && !isLabelOnly && volumeData[flatIdx] > thresholdValue) {
+                r = Math.min(255, r + 120);
+                g = Math.max(0, g - 80);
+                b = Math.max(0, b - 80);
+            }
 
             if (showOverlay && flatIdx >= 0) {
                 let oR = 0, oG = 0, oB = 0, oA = 0;
@@ -872,6 +893,13 @@ function toggleCTVOverlay() {
 const sliceCache = { axial: {}, sagittal: {}, coronal: {} };
 const sliceCacheOrder = { axial: [], sagittal: [], coronal: [] };
 
+function clearSliceCache() {
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        sliceCache[axis] = {};
+        sliceCacheOrder[axis] = [];
+    });
+}
+
 function renderCachedSlice(axis, sliceIndex) {
     const cached = sliceCache[axis][sliceIndex];
     if (cached) {
@@ -899,7 +927,6 @@ async function loadSlice(axis, sliceIndex) {
                 slice_index: sliceIndex,
                 window_center: state.viewerSettings.level,
                 window_width: state.viewerSettings.window,
-                overlay_type: state.viewerSettings.showCTV ? 'ctv' : (state.viewerSettings.showOAR ? 'oar' : null),
                 threshold: state.viewerSettings.threshold !== null ? state.viewerSettings.threshold : undefined,
             }),
         });
@@ -936,7 +963,6 @@ async function preloadAxis(axis) {
                         slice_index: i,
                         window_center: state.viewerSettings.level,
                         window_width: state.viewerSettings.window,
-                        overlay_type: state.viewerSettings.showCTV ? 'ctv' : (state.viewerSettings.showOAR ? 'oar' : null),
                         threshold: state.viewerSettings.threshold !== null ? state.viewerSettings.threshold : undefined,
                     }),
                 })
@@ -951,12 +977,12 @@ async function preloadAxis(axis) {
         }
         await Promise.all(promises);
     }
-    console.log(`Preloaded ${axis}: ${max} slices`);
+    uiDebugLog(`Preloaded ${axis}: ${max} slices`);
 }
 
 async function preloadAllSlices() {
     await preloadAxis('axial');
-    console.log('Axial preloaded, sagittal/coronal will load on demand');
+    uiDebugLog('Axial preloaded, sagittal/coronal will load on demand');
 }
 
 function resizeCanvas(axis) {
@@ -1025,12 +1051,7 @@ function applyViewerSettings() {
     state.viewerSettings.window = parseInt(wc);
     state.viewerSettings.level = parseInt(wl);
     if (state.ctLoaded) {
-        sliceCache.axial = {};
-        sliceCache.sagittal = {};
-        sliceCache.coronal = {};
-        sliceCacheOrder.axial = [];
-        sliceCacheOrder.sagittal = [];
-        sliceCacheOrder.coronal = [];
+        clearSliceCache();
         loadAllSlices();
     }
 }
@@ -1055,7 +1076,10 @@ function applyWindowPresetByName(preset) {
         document.getElementById('viewerWindow').value = p.w;
         document.getElementById('viewerLevel').value = p.l;
         document.getElementById('windowPreset').value = preset;
-        if (state.ctLoaded) loadAllSlices();
+        if (state.ctLoaded) {
+            clearSliceCache();
+            loadAllSlices();
+        }
     }
 }
 
@@ -1093,6 +1117,7 @@ async function syncViewerState() {
         // (Server doesn't store them unless navigate_slice is called)
 
         if (Object.keys(changed).length > 0) {
+            clearSliceCache();
             loadAllSlices();
         }
     } catch (e) {
@@ -1103,7 +1128,10 @@ async function syncViewerState() {
 function applyThreshold() {
     const threshold = parseInt(document.getElementById('viewerThreshold').value);
     state.viewerSettings.threshold = threshold;
-    if (state.ctLoaded) loadAllSlices();
+    if (state.ctLoaded) {
+        clearSliceCache();
+        loadAllSlices();
+    }
 }
 
 function toggleOverlay() {
@@ -1302,16 +1330,24 @@ function renderDataTree() {
 
     // CTV — show as collapsible group with tumor label(s) as children
     if (dataTreeState.ctv.loaded) {
-        const labelNames = window._ctvLabelMap || {1: 'pancreatic tumor', 2: 'artery', 3: 'vein', 4: 'pancreas', 5: 'unknown_5', 6: 'unknown_6'};
-        const spacing = state.ctSpacing || [0.6836, 0.6836, 5.0];
-        const voxelVol = spacing[0] * spacing[1] * spacing[2];
+        const tumorTypeUsed = String(state.tumorTypeUsed || '').trim();
+        const genericTargetName = tumorTypeUsed && tumorTypeUsed !== 'auto'
+            ? `${tumorTypeUsed.replaceAll('_', ' ')} target`
+            : 'CTV';
+        const labelNames = window._ctvLabelMap || {1: genericTargetName};
+        const voxelVolumeCm3 = _ctVoxelVolumeCm3();
 
         // Tumor labels (label 1) → CTV group
         const tumorLabels = ctvLabels.filter(l => l === 1);
-        // Non-traversable labels (artery=2, vein=3) → OAR non-traversable
-        const nonTravLabels = ctvLabels.filter(l => l === 2 || l === 3);
-        // Other labels (unknown, pancreas, etc.) → OAR traversable
-        const otherLabels = ctvLabels.filter(l => l > 3);
+        // Use semantic label names instead of assuming pancreas-specific label
+        // numbers. Models for other tumor sites may assign labels 2/3 to
+        // completely different structures.
+        const nonTravLabels = ctvLabels.filter(labelId => {
+            const name = String(labelNames[labelId] || '').toLowerCase();
+            return /arter|vein|vessel/.test(name);
+        });
+        const nonTravSet = new Set(nonTravLabels);
+        const otherLabels = ctvLabels.filter(labelId => labelId !== 1 && !nonTravSet.has(labelId));
 
         // CTV group header (like OAR)
         const ctvVis = dataTreeState.ctv.visible;
@@ -1331,8 +1367,10 @@ function renderDataTree() {
         if (tumorLabels.length > 0) {
             tumorLabels.forEach(labelId => {
                 const count = ctvLabelData ? ctvLabelData.filter(v => v === labelId).length : 0;
-                const vol = count * voxelVol;
                 const name = labelNames[labelId] || 'tumor';
+                const volumeText = count > 0 && voxelVolumeCm3
+                    ? `${(count * voxelVolumeCm3).toFixed(1)} cm³`
+                    : '';
                 // Tumor color: bright pink (#ff69b4) instead of blue (too close to dose)
                 const tumorColor = labelColorLUT[labelId]
                     ? `rgb(${labelColorLUT[labelId].join(',')})`
@@ -1343,8 +1381,8 @@ function renderDataTree() {
                     oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('ctv_${labelId}', event)">
                     <button class="eye-btn" onclick="event.stopPropagation();toggleDataVisibility('ctv')" style="font-size:0.65rem;">&#128065;</button>
                     <span class="color-swatch" style="background:${tumorColor};width:10px;height:10px;border-radius:2px;cursor:pointer;" onclick="event.stopPropagation();openColorPicker('ctv_${labelId}', this)"></span>
-                    <span class="item-label">${name}</span>
-                    <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);">${(vol/1000).toFixed(1)} cm³</span>
+                    <span class="item-label">${escHtml(name)}</span>
+                    <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);">${volumeText}</span>
                     <button class="recon3d-btn" title="3D Reconstruct" onclick="event.stopPropagation();reconstructOrgan3D('ctv_${labelId}')">&#9638;</button>
                     <input type="range" class="opacity-slider" min="0" max="100" value="70"
                         onclick="event.stopPropagation()"
@@ -1366,13 +1404,11 @@ function renderDataTree() {
         html += `</div></div>`; // close CTV group
 
         // Add CTV sub-labels (artery/vein/unknown) to OAR categories
-        const tumorTypeUsed = state.tumorTypeUsed || 'tumor';
         const ctvSubLabels = [];
 
         // Non-traversable: artery (2), vein (3)
         nonTravLabels.forEach(labelId => {
             const count = ctvLabelData.filter(v => v === labelId).length;
-            const vol = count * voxelVol;
             const name = labelNames[labelId] || `Label ${labelId}`;
             const color = labelColorLUT[labelId] ? `rgb(${labelColorLUT[labelId].join(',')})` : '#f97316';
             ctvSubLabels.push({
@@ -1391,7 +1427,6 @@ function renderDataTree() {
         // Traversable: unknown labels (4, 5, 6, etc.)
         otherLabels.forEach(labelId => {
             const count = ctvLabelData.filter(v => v === labelId).length;
-            const vol = count * voxelVol;
             const name = labelNames[labelId] || `Label ${labelId}`;
             const color = labelColorLUT[labelId] ? `rgb(${labelColorLUT[labelId].join(',')})` : '#22c55e';
             ctvSubLabels.push({
@@ -1451,7 +1486,8 @@ function renderDataTree() {
             <div class="tree-group-items">`;
         for (const organ of nonTrav) {
             const organState = { visible: organ.visible, opacity: organ.opacity, color: organ.color, loaded: true, label: organ.label };
-            const info = organ.voxelCount > 0 ? `${(organ.voxelCount * 0.6836 * 0.6836 * 5 / 1000).toFixed(1)} cm³` : '';
+            const voxelVolume = _ctVoxelVolumeCm3();
+            const info = organ.voxelCount > 0 && voxelVolume ? `${(organ.voxelCount * voxelVolume).toFixed(1)} cm³` : '';
             html += renderTreeItem(organ.id, organState, info);
         }
         html += `</div></div>`;
@@ -1472,7 +1508,8 @@ function renderDataTree() {
             <div class="tree-group-items">`;
         for (const organ of trav) {
             const organState = { visible: organ.visible, opacity: organ.opacity, color: organ.color, loaded: true, label: organ.label };
-            const info = organ.voxelCount > 0 ? `${(organ.voxelCount * 0.6836 * 0.6836 * 5 / 1000).toFixed(1)} cm³` : '';
+            const voxelVolume = _ctVoxelVolumeCm3();
+            const info = organ.voxelCount > 0 && voxelVolume ? `${(organ.voxelCount * voxelVolume).toFixed(1)} cm³` : '';
             html += renderTreeItem(organ.id, organState, info);
         }
         html += `</div></div>`;
@@ -1482,10 +1519,10 @@ function renderDataTree() {
     html += `</div></div>`; // close Segmentation group
 
     // === Planning group (Seeds, Needles, Dose) ===
-    const planningTrajectories = dataTreeState.planning.trajectories || [];
-    const planningSeeds = dataTreeState.planning.seeds;
-    const planningNeedles = dataTreeState.planning.needles;
-    const doseLevels = dataTreeState.planning.doseLevels;
+    const planningTrajectories = _planningItems('trajectories');
+    const planningSeeds = _planningItems('seeds');
+    const planningNeedles = _planningItems('needles');
+    const doseLevels = _planningItems('doseLevels');
     // Has-planning check now includes trajectories and dose overlay (2D),
     // so the tree header counts everything under the Planning branch.
     const hasDoseOverlay = !!(state.doseOverlay && state.doseOverlay.data);
@@ -1662,8 +1699,8 @@ function renderTreeItem(id, itemState, info) {
         oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('${id}', event)">
         <button class="eye-btn ${eyeClass}" onclick="event.stopPropagation();toggleDataVisibility('${id}')" ${disabledAttr}>${eyeIcon}</button>
         <span class="color-swatch" style="background:${itemState.color};" onclick="event.stopPropagation();openColorPicker('${id}', this)" title="Click to change color"></span>
-        <span class="item-label">${itemState.label}</span>
-        <span class="item-info">${info}</span>
+        <span class="item-label">${escHtml(itemState.label || '')}</span>
+        <span class="item-info">${escHtml(info || '')}</span>
         ${recon3dBtn}
         <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(itemState.opacity * 100)}"
             ${disabledAttr}
@@ -2590,6 +2627,21 @@ function toggleDataVisibility(id) {
 
     renderDataTree();
     if (state.ctLoaded) reloadOverlays();
+}
+
+function setDataItemVisibility(id, visible) {
+    let current = null;
+    if (id.startsWith('organ_')) current = dataTreeState.organs.find(o => o.id === id)?.visible;
+    else if (id.startsWith('ctv_')) current = dataTreeState.ctvLabels?.[id]?.visible;
+    else if (id.startsWith('seed_')) current = _planningItems('seeds').find(s => s.id === id)?.visible;
+    else if (id.startsWith('needle_')) current = _planningItems('needles').find(n => n.id === id)?.visible;
+    else if (id.startsWith('dose_iso_')) {
+        const threshold = parseFloat(id.replace('dose_iso_', ''));
+        current = _planningItems('doseLevels').find(d => d.threshold === threshold)?.visible;
+    } else if (dataTreeState[id]) current = dataTreeState[id].visible;
+    if (current === null || current === undefined) return false;
+    if (!!current !== !!visible) toggleDataVisibility(id);
+    return true;
 }
 
 let _opacityTimer = null;

@@ -151,21 +151,21 @@
     --info:           #22d3ee;
     --info-soft:      rgba(8, 145, 178, 0.16);
 
-    /* Three-tier surface depth (dark mode — Linear-inspired slate) */
-    --bg-canvas:        #0a0e1a;   /* ground */
-    --bg-1:             #0f1525;   /* subtle */
-    --bg-2:             #161d33;   /* base elevated */
-    --bg-3:             #1d2540;   /* intermediate */
-    --bg-sunken:        #050810;   /* recessed well */
-    --bg-sunken-strong: #020409;
-    --bg-elevated:      #1d2540;
-    --bg-card:          rgba(22, 29, 51, 0.78);
+    /* Neutral graphite surfaces keep medical overlays visually dominant. */
+    --bg-canvas:        #090d0f;
+    --bg-1:             #101619;
+    --bg-2:             #172025;
+    --bg-3:             #202b31;
+    --bg-sunken:        #050809;
+    --bg-sunken-strong: #020404;
+    --bg-elevated:      #202b31;
+    --bg-card:          rgba(23, 32, 37, 0.82);
 
     /* Hairline borders — light tint on dark */
     --glass-border:        rgba(148, 163, 184, 0.10);
     --glass-border-strong: rgba(148, 163, 184, 0.16);
-    --border-soft:         #1e2742;
-    --border:              #2a3354;
+    --border-soft:         #26343a;
+    --border:              #34464e;
     --border-hairline:     rgba(148, 163, 184, 0.08);
     --border-default:      rgba(148, 163, 184, 0.12);
     --border-emphasis:     rgba(148, 163, 184, 0.20);
@@ -198,8 +198,8 @@
     --glass-highlight: inset 0 1px 0 rgba(148, 163, 184, 0.10);
 
     /* Tinted glass — dark variants */
-    --glass-tint-cool: rgba(15, 21, 37, 0.72);
-    --glass-tint-blue: rgba(15, 25, 50, 0.65);
+    --glass-tint-cool: rgba(16, 22, 25, 0.76);
+    --glass-tint-blue: rgba(14, 29, 34, 0.70);
     --glass-tint-warm: rgba(28, 22, 18, 0.72);
     --glass-blur: 16px;
     --blur-md: blur(14px) saturate(160%);
@@ -214,18 +214,21 @@
     /* Chat semantics (dark) */
     --msg-user-bg:           rgba(96, 165, 250, 0.14);
     --msg-user-border:       rgba(96, 165, 250, 0.32);
-    --msg-assistant-bg:      #161d33;
+    --msg-assistant-bg:      #172025;
     --msg-assistant-border:  rgba(148, 163, 184, 0.12);
     --msg-hover:             rgba(148, 163, 184, 0.05);
 
     /* Viewer chrome */
     --viewer-bg:        #000;
-    --viewer-chrome-bg: #0f1525;
+    --viewer-chrome-bg: #101619;
     --viewer-chrome-fg: #cbd5e1;
 }
 
 /* ---------- Base ---------- */
 * { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* Stable text metrics prevent compact controls from shifting across panels. */
+html body, html body * { letter-spacing: 0 !important; }
 
 html, body { height: 100%; }
 body, html { -webkit-tap-highlight-color: transparent; }
@@ -260,15 +263,8 @@ body {
     user-select: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    letter-spacing: 0.005em;
-
-    /* Soft warm-paper with three light tints */
-    background:
-        radial-gradient(ellipse 1400px 800px at 8% 4%, rgba(59, 130, 246, 0.09), transparent 55%),
-        radial-gradient(ellipse 1100px 700px at 95% 0%, rgba(16, 185, 129, 0.07), transparent 55%),
-        radial-gradient(ellipse 1200px 800px at 50% 100%, rgba(99, 102, 241, 0.05), transparent 60%),
-        radial-gradient(ellipse 900px 600px at 75% 55%, rgba(167, 139, 250, 0.05), transparent 60%),
-        linear-gradient(180deg, #eff4fa 0%, #e6ecf3 100%);
+    letter-spacing: 0;
+    background: var(--bg-canvas);
     background-attachment: fixed;
 }
 
@@ -284,15 +280,8 @@ body::before {
     opacity: 0.5;
 }
 
-/* Dark theme body — overrides the hard-coded light gradient above.
-   Keeps the multi-radial-tint aesthetic but in cool night hues. */
 [data-theme="dark"] body {
-    background:
-        radial-gradient(ellipse 1400px 800px at 8% 4%, rgba(59, 130, 246, 0.18), transparent 55%),
-        radial-gradient(ellipse 1100px 700px at 95% 0%, rgba(16, 185, 129, 0.10), transparent 55%),
-        radial-gradient(ellipse 1200px 800px at 50% 100%, rgba(99, 102, 241, 0.12), transparent 60%),
-        radial-gradient(ellipse 900px 600px at 75% 55%, rgba(167, 139, 250, 0.10), transparent 60%),
-        linear-gradient(180deg, #0a0e1a 0%, #060912 100%);
+    background: var(--bg-canvas);
 }
 [data-theme="dark"] body::before {
     background-image: radial-gradient(circle at 1px 1px, rgba(148, 163, 184, 0.04) 1px, transparent 0);

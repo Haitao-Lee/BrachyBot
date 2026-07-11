@@ -23,6 +23,7 @@ import SimpleITK as sitk
 
 from config.prompts import SYSTEM_PROMPT_TEMPLATE, get_prompt_modules
 from agent_runtime.core import PlanningPhase, ToolResultPipeline
+from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
 
 logger = logging.getLogger(__name__)
 
@@ -177,17 +178,6 @@ print(json.dumps(result))
             if yield_event:
                 yield_event(tool_step)
 
-            # Track this operation so server shutdown waits for completion
-            _op_ctx = None
-            try:
-                import builtins
-                if hasattr(builtins, 'track_operation'):
-                    _op_ctx = builtins.track_operation(tc['tool'])
-                    _op_ctx.__enter__()
-                    logger.debug(f"[TOOL-TRACK] Started tracking: {tc['tool']}")
-            except Exception as e:
-                logger.warning(f"Could not track operation {tc['tool']}: {e}")
-
             try:
                 result = self._validate_and_execute(tc['tool'], tc['params'])
                 tool_step["status"] = "done"
@@ -206,14 +196,6 @@ print(json.dumps(result))
                 logger.error(f"Direct tool failed: {tc['tool']}: {e}")
                 self.memory.add_message("assistant", f"[Called {tc['tool']}]")
                 self.memory.add_message("user", f"[Tool result: Error: {str(e)[:200]}]")
-            finally:
-                # End operation tracking
-                if _op_ctx is not None:
-                    try:
-                        _op_ctx.__exit__(None, None, None)
-                        logger.debug(f"[TOOL-TRACK] Finished tracking: {tc['tool']}")
-                    except Exception as e:
-                        logger.warning(f"Error in __exit__ for {tc['tool']}: {e}")
             # Yield completed step for streaming UI (enables incremental viewer updates)
             if yield_event:
                 yield_event(tool_step)
@@ -286,7 +268,6 @@ print(json.dumps(result))
                 except Exception as exc:
                     logger.debug("Could not derive CTV voxel count from ctv_array: %s", exc)
         tumor_type = self.memory.retrieve("tumor_type_used", "")
-        oar_array = self.memory.retrieve("oar_array")
         organ_names = self.memory.retrieve("organ_names", {}) or {}
 
         # Compute CTV volume in cm³ — prefer pre-computed value
@@ -295,10 +276,12 @@ print(json.dumps(result))
         if _cvm3:
             ctv_vol_cm3 = _cvm3 / 1000.0
         elif ctv_voxels:
-            spacing = self.memory.retrieve("ct_spacing") or [0.6836, 0.6836, 5]
-            sx, sy, sz = spacing[0], spacing[1], spacing[2]
-            vol_mm3 = ctv_voxels * sx * sy * sz
-            ctv_vol_cm3 = vol_mm3 / 1000.0
+            spacing = self.memory.retrieve("ct_spacing")
+            if spacing and len(spacing) >= 3:
+                sx, sy, sz = (float(spacing[0]), float(spacing[1]), float(spacing[2]))
+                if sx > 0 and sy > 0 and sz > 0:
+                    vol_mm3 = ctv_voxels * sx * sy * sz
+                    ctv_vol_cm3 = vol_mm3 / 1000.0
 
         # Extract prescription dose in Gy.
         #
@@ -309,7 +292,7 @@ print(json.dumps(result))
         #   dose_gy = dose_normalized * DOSE_SCALE
         # This factor is the same as in planning_pipeline.py and
         # The web planning routes use the same display scale for dose summaries.
-        DOSE_SCALE = 120.0
+        DOSE_SCALE = DOSE_MODEL_SCALE_GY
         rx_gy = DOSE_SCALE  # default: 1.0 * 120 = 120 Gy
         try:
             _plan_cfg = self.memory.retrieve("plan_config") or {}

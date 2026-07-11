@@ -613,7 +613,10 @@ async function reconstruct3D() {
     const loading = document.getElementById('loading3D');
     const external3dStatus = document.getElementById('meshPrewarmStatus')
         || document.getElementById('auto3DStatusBar');
-    if (loading && !external3dStatus) loading.classList.add('active');
+    if (loading && !external3dStatus) {
+        loading.classList.add('active');
+        loading.setAttribute('aria-hidden', 'false');
+    }
 
     try {
         // 1) CTV + non-traversable OARs (the structures the planning
@@ -642,11 +645,30 @@ async function reconstruct3D() {
     } catch (e) {
         addChat('error', '3D reconstruction failed: ' + e.message);
     } finally {
-        if (loading && !external3dStatus) loading.classList.remove('active');
+        if (loading && !external3dStatus) {
+            loading.classList.remove('active');
+            loading.setAttribute('aria-hidden', 'true');
+        }
     }
 }
 
 // 3D reconstruction for individual organs from data tree
+function getCtvMeshLabelIds() {
+    const ids = new Set();
+    Object.keys(window._ctvLabelMap || {}).forEach(value => {
+        const n = Number(value);
+        if (Number.isFinite(n) && n > 0) ids.add(n);
+    });
+    Object.keys((typeof dataTreeState !== 'undefined' && dataTreeState.ctvLabels) || {}).forEach(value => {
+        const n = Number(String(value).replace(/^ctv_/, ''));
+        if (Number.isFinite(n) && n > 0) ids.add(n);
+    });
+    // A missing label map means a legacy/binary CTV mask, whose foreground
+    // label is 1. Never assume pancreas-specific labels for another tumor site.
+    if (ids.size === 0) ids.add(1);
+    return [...ids].sort((a, b) => a - b);
+}
+
 async function reconstructOrgan3D(id, silent = false) {
     if (!state.ctPath || !state.ctLoaded) {
         try {
@@ -671,17 +693,15 @@ async function reconstructOrgan3D(id, silent = false) {
     const loading = document.getElementById('loading3D');
     const external3dStatus = document.getElementById('meshPrewarmStatus')
         || document.getElementById('auto3DStatusBar');
-    if (loading && !external3dStatus) loading.classList.add('active');
+    if (loading && !external3dStatus) {
+        loading.classList.add('active');
+        loading.setAttribute('aria-hidden', 'false');
+    }
 
     try {
         // CTV: reconstruct all labels (multi-label)
         if (id === 'ctv') {
-            // Read actual non-background label IDs from the label map that was
-            // populated at load time.  Fall back to [1..6] if the map is empty
-            // (pre-CTV-era sessions or server that doesn't send a label map).
-            const _lm = window._ctvLabelMap || {};
-            const ids = Object.keys(_lm).map(Number).filter(k => Number.isFinite(k) && k > 0);
-            const labelIds = ids.length > 0 ? ids : [1, 2, 3, 4, 5, 6];
+            const labelIds = getCtvMeshLabelIds();
             let successCount = 0;
             for (let i = 0; i < labelIds.length; i++) {
                 try {
@@ -762,7 +782,10 @@ async function reconstructOrgan3D(id, silent = false) {
     } catch (e) {
         addChat('error', '3D reconstruction failed: ' + e.message);
     } finally {
-        if (loading && !external3dStatus) loading.classList.remove('active');
+        if (loading && !external3dStatus) {
+            loading.classList.remove('active');
+            loading.setAttribute('aria-hidden', 'true');
+        }
     }
 }
 
@@ -772,6 +795,7 @@ const scene3D = {
     meshes: {},       // {organ_id: THREE.Group (with surfaceMesh + wireframe)}
     skinMesh: null,   // CT skin mesh
     initialized: false,
+    requestRender: null,
 };
 
 // Helper: get surface mesh from group or legacy mesh
@@ -795,6 +819,7 @@ function applyMeshVisibility(mesh, visible, opacity = 1) {
     mesh.visible = !!visible && opacity > 0.001;
     const surface = getMeshSurface(mesh);
     if (surface && surface !== mesh) surface.visible = mesh.visible;
+    if (scene3D.requestRender) scene3D.requestRender(2);
 }
 
 function applyMeshOpacity(mesh, opacity, visible = true) {
@@ -961,26 +986,32 @@ async function _fetchDoseRawAxialSlice(rawZ) {
     const maxZ = (state.doseOverlay.shape[0] || 1) - 1;
     const z = Math.max(0, Math.min(maxZ, Math.round(rawZ)));
     const cache = state.doseTexture.rawAxialSlices || (state.doseTexture.rawAxialSlices = {});
-    if (cache[z]) return cache[z];
-    const res = await fetch(API + '/planning/dose_overlay_slice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ axis: 'axial', slice_index: z }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data.success || !data.slice) return null;
-    cache[z] = data.slice;
-    return cache[z];
+    if (Object.prototype.hasOwnProperty.call(cache, z)) return cache[z];
+    const pending = state.doseTexture.rawAxialSlicePromises
+        || (state.doseTexture.rawAxialSlicePromises = {});
+    if (pending[z]) return pending[z];
+    pending[z] = (async () => {
+        const res = await fetch(API + '/planning/dose_overlay_slice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ axis: 'axial', slice_index: z }),
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data.success || !data.slice) return null;
+        cache[z] = data.slice;
+        return cache[z];
+    })().finally(() => { delete pending[z]; });
+    return pending[z];
 }
 
-async function _sampleDoseNormalizedAtIndex(idx) {
+function _sampleDoseNormalizedAtIndex(idx) {
     if (!idx || !state.doseOverlay?.shape) return 0;
     const [Z, Y, X] = state.doseOverlay.shape;
     const z = Math.max(0, Math.min(Z - 1, Math.round(idx[0])));
     const y = Math.max(0, Math.min(Y - 1, Math.round(idx[1])));
     const x = Math.max(0, Math.min(X - 1, Math.round(idx[2])));
-    const slice = await _fetchDoseRawAxialSlice(z);
+    const slice = state.doseTexture.rawAxialSlices?.[z];
     if (!slice || !slice[y]) return 0;
     return Number(slice[y][x]) || 0;
 }
@@ -1026,8 +1057,8 @@ async function _applyDoseTextureToMesh(id, mesh) {
         v.fromBufferAttribute(posAttr, i);
         surface.localToWorld(v);
         const idx = _worldToIndex(v.x, v.y, v.z);
-        const doseNorm = await _sampleDoseNormalizedAtIndex(idx);
-        const doseGy = doseNorm * DOSE_NORM_TO_GY;
+        const doseNorm = _sampleDoseNormalizedAtIndex(idx);
+        const doseGy = doseNorm * (typeof _getDoseScaleGy === 'function' ? _getDoseScaleGy() : 120);
         const t = Math.max(0, Math.min(1, (doseGy - dMinGy) / (dMaxGy - dMinGy)));
         const [r, g, b] = _petRainbow2(t);
         const doseRgb = [r / 255, g / 255, b / 255];
@@ -1103,9 +1134,10 @@ async function setDoseTextureMode(enabled, opts = {}) {
             _prepareDoseTextureSceneVisibility();
             const entries = Object.entries(scene3D.meshes || {}).filter(([id, mesh]) => _isDoseTexturableMesh(id, mesh));
             if (entries.length === 0) throw new Error('No CTV/OAR 3D meshes are available for dose surface mapping');
-            for (const [id, mesh] of entries) {
-                await _applyDoseTextureToMesh(id, mesh);
-            }
+            // Each mesh first warms its required slices. Promise.all lets all
+            // unique HTTP requests run concurrently; the shared in-flight
+            // cache prevents duplicate slice requests across organs.
+            await Promise.all(entries.map(([id, mesh]) => _applyDoseTextureToMesh(id, mesh)));
             _prepareDoseTextureSceneVisibility();
             state.doseTexture.enabled = true;
             // Show 3D colorbar when dose surface mode is active

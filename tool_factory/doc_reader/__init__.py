@@ -13,6 +13,7 @@ from typing import Dict, Any, Optional
 from pathlib import Path
 
 from tool_factory import BaseTool, ToolResult
+from tool_factory.filesystem_browser import _path_is_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,43 @@ Supported formats:
         "content": {"type": "string"},
         "metadata": {"type": "object"},
     }
+
+    @staticmethod
+    def _extractive_summary(content: str, max_chars: int = 2000) -> str:
+        """Return a bounded, explicitly extractive document preview."""
+        paragraphs = []
+        for block in str(content or "").splitlines():
+            normalized = " ".join(block.split())
+            if not normalized or normalized.startswith("--- Page "):
+                continue
+            paragraphs.append(normalized)
+            if sum(len(item) for item in paragraphs) >= max_chars:
+                break
+        summary = "\n".join(paragraphs)
+        if len(summary) > max_chars:
+            summary = summary[:max_chars].rstrip() + "..."
+        return summary
+
+    def _apply_action(self, result: ToolResult, action: str) -> ToolResult:
+        if not result.success:
+            return result
+        data = dict(result.data or {})
+        if action == "metadata":
+            data["content"] = ""
+            return ToolResult(
+                success=True,
+                data=data,
+                message="Document metadata extracted",
+            )
+        if action == "summary":
+            data["content"] = self._extractive_summary(data.get("content", ""))
+            data.setdefault("metadata", {})["summary_type"] = "extractive_preview"
+            return ToolResult(
+                success=True,
+                data=data,
+                message="Extractive document summary generated",
+            )
+        return result
 
     def _read_pdf(self, file_path: str, max_pages: int = 10) -> ToolResult:
         """Read PDF file."""
@@ -389,7 +427,12 @@ Supported formats:
     def _execute(self, **kwargs) -> ToolResult:
         file_path = kwargs.get("file_path", "")
         action = kwargs.get("action", "read")
-        max_pages = kwargs.get("max_pages", 10)
+        if action not in {"read", "summary", "metadata"}:
+            return ToolResult(success=False, error="Invalid action", message="Use read, summary, or metadata")
+        try:
+            max_pages = max(1, min(int(kwargs.get("max_pages", 10)), 100))
+        except (TypeError, ValueError):
+            return ToolResult(success=False, error="Invalid max_pages", message="max_pages must be an integer")
 
         if not file_path:
             return ToolResult(
@@ -398,11 +441,41 @@ Supported formats:
                 message="Please provide file path"
             )
 
-        if not os.path.exists(file_path):
+        try:
+            allowed, resolved_path = _path_is_allowed(file_path)
+        except (OSError, RuntimeError, ValueError) as exc:
+            return ToolResult(success=False, error=str(exc), message="Invalid document path")
+        if not allowed:
+            return ToolResult(
+                success=False,
+                error=(
+                    "Access denied: path is outside the configured project/data roots. "
+                    "Add it to BRACHYBOT_FILESYSTEM_ROOTS or explicitly enable trusted "
+                    "global browsing with BRACHYBOT_ENABLE_FILESYSTEM_BROWSER_GLOBAL=1."
+                ),
+                message="Document path access restricted for security",
+            )
+        file_path = str(resolved_path)
+
+        if not resolved_path.is_file():
             return ToolResult(
                 success=False,
                 error=f"File not found: {file_path}",
                 message=f"File does not exist: {file_path}"
+            )
+
+        try:
+            max_bytes = max(
+                1,
+                int(os.environ.get("BRACHYBOT_MAX_DOCUMENT_BYTES", str(50 * 1024 * 1024))),
+            )
+        except ValueError:
+            max_bytes = 50 * 1024 * 1024
+        if resolved_path.stat().st_size > max_bytes:
+            return ToolResult(
+                success=False,
+                error=f"Document exceeds the configured {max_bytes}-byte limit",
+                message="Document is too large to read safely",
             )
 
         # Get file extension
@@ -414,18 +487,20 @@ Supported formats:
 
         # Route to appropriate reader
         if ext == '.pdf':
-            return self._read_pdf(file_path, max_pages)
+            result = self._read_pdf(file_path, max_pages)
         elif ext == '.docx':
-            return self._read_docx(file_path)
+            result = self._read_docx(file_path)
         elif ext in ['.txt', '.md', '.log', '.py', '.json', '.xml', '.html']:
             if ext == '.json':
-                return self._read_json(file_path)
-            return self._read_text(file_path)
+                result = self._read_json(file_path)
+            else:
+                result = self._read_text(file_path)
         elif ext == '.csv':
-            return self._read_csv(file_path)
+            result = self._read_csv(file_path)
         elif ext in ['.nii', '.nii.gz', '.mhd', '.raw', '.dcm',
                       '.png', '.jpg', '.jpeg', '.bmp', '.gif']:
-            return self._read_image_info(file_path)
+            result = self._read_image_info(file_path)
         else:
             # Try as text
-            return self._read_text(file_path)
+            result = self._read_text(file_path)
+        return self._apply_action(result, action)

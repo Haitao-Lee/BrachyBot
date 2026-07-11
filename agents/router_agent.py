@@ -6,6 +6,7 @@ Inspired by OpenCode's task routing and LangChain's agent routing.
 """
 
 import re
+import copy
 import logging
 from typing import List, Dict, Any
 from .base_agent import LLMCapableAgent
@@ -71,7 +72,7 @@ class RouterAgent(LLMCapableAgent):
         },
         "knowledge_query": {
             # Bilingual: 什么是=what is, 指南=guide, 标准=standard, etc.
-            "keywords": ["什么是", "解释", "指南", "guide", "标准", "standard", "what is", "explain",
+            "keywords": ["什么是", "解释", "指南", "guide", "标准", "standard", "standards", "what is", "what are", "explain",
                          "查询", "query", "介绍", "introduce", "了解", "learn", "知识", "knowledge",
                          "约束", "constraint", "限制", "limit", "耐受", "tolerance",
                          "剂量标准", "剂量要求", "剂量约束", "剂量限制", "处方剂量", "prescription dose",
@@ -122,6 +123,22 @@ class RouterAgent(LLMCapableAgent):
 
     def __init__(self, llm_callback=None):
         super().__init__(AgentRole.ROUTER, llm_callback)
+        # Custom patterns are instance-local. Mutating the class dictionary
+        # would leak one session's extensions into every other session.
+        self.intent_patterns = copy.deepcopy(self.INTENT_PATTERNS)
+
+    @staticmethod
+    def _contains_keyword(text: str, keyword: str) -> bool:
+        """Match CJK phrases by substring and ASCII tokens by word boundary."""
+        normalized = keyword.lower().strip()
+        if not normalized:
+            return False
+        if re.fullmatch(r"[a-z0-9_]+", normalized):
+            return bool(re.search(
+                rf"(?<![a-z0-9_]){re.escape(normalized)}(?![a-z0-9_])",
+                text,
+            ))
+        return normalized in text
 
     async def process(self, message: AgentMessage) -> AgentResponse:
         """
@@ -187,7 +204,7 @@ class RouterAgent(LLMCapableAgent):
         knowledge_markers = (
             "介绍", "解释", "说明", "讲讲", "为什么", "为啥", "好处", "优势",
             "缺点", "局限", "比较", "区别", "对比", "不用其他治疗",
-            "what is", "explain", "why", "benefit", "advantage",
+            "what is", "what are", "explain", "why", "benefit", "advantage",
             "disadvantage", "compare", "comparison", "versus", " vs ",
             "introduce", "learn",
         )
@@ -199,14 +216,16 @@ class RouterAgent(LLMCapableAgent):
             "generate a treatment plan", "create a treatment plan",
             "compute plan", "replan",
         )
-        if any(k in input_lower for k in knowledge_markers) and not any(k in input_lower for k in execution_markers):
-            config = self.INTENT_PATTERNS["knowledge_query"]
+        if any(self._contains_keyword(input_lower, k) for k in knowledge_markers) and not any(
+            self._contains_keyword(input_lower, k) for k in execution_markers
+        ):
+            config = self.intent_patterns["knowledge_query"]
             return RoutingDecision(
                 intent="knowledge_query",
                 complexity=config["complexity"],
                 agents_needed=config["agents"],
                 requires_review=config["requires_review"],
-                context={"matched_keywords": [k for k in knowledge_markers if k in input_lower][:8]},
+                context={"matched_keywords": [k for k in knowledge_markers if self._contains_keyword(input_lower, k)][:8]},
                 reasoning="Knowledge-only question; no planning execution intent detected",
                 confidence=0.9,
             )
@@ -216,14 +235,14 @@ class RouterAgent(LLMCapableAgent):
             "dose map", "dvh", "dose-volume", "dose volume",
             "剂量评估", "评估剂量", "剂量分布", "剂量图", "等剂量", "dvh曲线",
         )
-        if any(k in input_lower for k in dose_eval_markers):
-            config = self.INTENT_PATTERNS["dose_evaluation"]
+        if any(self._contains_keyword(input_lower, k) for k in dose_eval_markers):
+            config = self.intent_patterns["dose_evaluation"]
             return RoutingDecision(
                 intent="dose_evaluation",
                 complexity=config["complexity"],
                 agents_needed=config["agents"],
                 requires_review=config["requires_review"],
-                context={"matched_keywords": [k for k in dose_eval_markers if k in input_lower][:8]},
+                context={"matched_keywords": [k for k in dose_eval_markers if self._contains_keyword(input_lower, k)][:8]},
                 reasoning="Dose evaluation request detected before generic planning keywords",
                 confidence=0.9,
             )
@@ -231,12 +250,12 @@ class RouterAgent(LLMCapableAgent):
         best_match = None
         best_score = 0
 
-        for intent, config in self.INTENT_PATTERNS.items():
+        for intent, config in self.intent_patterns.items():
             score = 0
             matched_keywords = []
 
             for keyword in config["keywords"]:
-                if keyword.lower() in input_lower:
+                if self._contains_keyword(input_lower, keyword):
                     score += 1
                     matched_keywords.append(keyword)
 
@@ -261,11 +280,14 @@ class RouterAgent(LLMCapableAgent):
             if intent == "clinical_planning" and cs.get("planning_completed"):
                 clarification_keywords = ["详细", "具体", "解释", "为什么", "原因",
                                           "意义", "more detail", "explain", "why"]
-                has_clarification = any(k in input_lower for k in clarification_keywords)
+                has_clarification = any(self._contains_keyword(input_lower, k) for k in clarification_keywords)
                 if has_clarification:
                     intent = "follow_up"
-                    config = self.INTENT_PATTERNS["follow_up"]
-                    best_match["matched_keywords"] = [k for k in clarification_keywords if k in input_lower]
+                    config = self.intent_patterns["follow_up"]
+                    best_match["matched_keywords"] = [
+                        k for k in clarification_keywords
+                        if self._contains_keyword(input_lower, k)
+                    ]
 
             return RoutingDecision(
                 intent=intent,
@@ -369,7 +391,7 @@ class RouterAgent(LLMCapableAgent):
             agents: Agents needed
             requires_review: Whether review is required
         """
-        self.INTENT_PATTERNS[intent] = {
+        self.intent_patterns[intent] = {
             "keywords": keywords,
             "complexity": complexity,
             "agents": agents or [AgentRole.CLINICAL_EXECUTOR],

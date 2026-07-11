@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from flask import request, jsonify, send_from_directory, Response
 from flask_cors import CORS
+from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
 
 WEB_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(WEB_DIR, "app")
@@ -49,15 +50,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # API key for authentication. Local loopback development can run without a key;
-# non-loopback server startup is refused unless BRACHYBOT_API_KEY is set or
-# BRACHYBOT_ALLOW_INSECURE_REMOTE=1 is explicitly provided.
-# BRACHYBOT_TRUST_NETWORK=1: listen on 0.0.0.0 without requiring API key from clients.
+# non-loopback startup is refused unless BRACHYBOT_API_KEY is set or the
+# explicitly unsafe BRACHYBOT_ALLOW_INSECURE_REMOTE=1 override is provided.
+# BRACHYBOT_TRUST_NETWORK only broadens LAN CORS/rate-limit policy; it never
+# disables a configured API key.
 API_KEY = os.environ.get("BRACHYBOT_API_KEY", None)
 _TRUST_NETWORK = os.environ.get("BRACHYBOT_TRUST_NETWORK", "").lower() in TRUE_VALUES
-_API_KEY_REQUIRED = (bool(API_KEY) and not _TRUST_NETWORK) or os.environ.get("BRACHYBOT_REQUIRE_API_KEY", "").lower() in TRUE_VALUES
+_API_KEY_REQUIRED = bool(API_KEY) or os.environ.get("BRACHYBOT_REQUIRE_API_KEY", "").lower() in TRUE_VALUES
+if _API_KEY_REQUIRED and not API_KEY:
+    raise RuntimeError(
+        "BRACHYBOT_REQUIRE_API_KEY is enabled but BRACHYBOT_API_KEY is not set"
+    )
 if not API_KEY and not _TRUST_NETWORK:
-    API_KEY = secrets.token_urlsafe(32)
-    logger.info("BRACHYBOT_API_KEY not set. API key auth is disabled for loopback local dev only.")
+    logger.info("API key auth is disabled for loopback local development")
 
 # Trusted network: no rate limiting. Local dev: generous limit.
 RATE_LIMIT_REQUESTS = 9999 if _TRUST_NETWORK else 120
@@ -69,7 +74,6 @@ _MESH_CACHE_LOCK = threading.Lock()
 _MESH_CACHE: Dict[tuple, Dict[str, Any]] = {}
 _MESH_CACHE_ORDER = deque()
 _MESH_CACHE_MAX_ITEMS = int(os.environ.get("BRACHYBOT_MESH_CACHE_MAX_ITEMS", "96"))
-DOSE_MODEL_SCALE_GY = 120.0
 DOSE_MODEL_UNITS = "normalized_model_output"
 
 
@@ -177,6 +181,13 @@ def _ui_bucket(session_id: Optional[str] = None) -> Dict[str, Any]:
         })
 
 
+def _drop_ui_bucket(session_id: Optional[str]) -> None:
+    """Remove UI/training state when the owning agent session is deleted."""
+    sid = _ui_session_id(session_id)
+    with _UI_BRIDGE_LOCK:
+        _UI_BRIDGE.pop(sid, None)
+
+
 def _append_ui_event(session_id: Optional[str], event: Dict[str, Any]) -> Dict[str, Any]:
     bucket = _ui_bucket(session_id)
     item = dict(event or {})
@@ -231,6 +242,38 @@ def _latest_plan_snapshot(agent) -> Dict[str, Any]:
     }
 
 
+def _source_backed_target_context(agent) -> Dict[str, Any]:
+    """Resolve case criteria without falling back to a generic disease site."""
+    if agent is None or not hasattr(agent, "memory"):
+        return {}
+    memory = agent.memory
+    tumor_type = str(
+        memory.retrieve("tumor_type_used")
+        or memory.retrieve("tumor_type")
+        or memory.retrieve("cancer_type")
+        or memory.retrieve("organ")
+        or ""
+    ).strip()
+    if not tumor_type:
+        return {}
+    try:
+        from tool_factory.dose_eval.comprehensive_dose_evaluation import (
+            ComprehensiveDoseEvaluationTool,
+        )
+        from tool_factory.plan_quality.clinical_standards import get_target_standard
+
+        site = ComprehensiveDoseEvaluationTool._site_from_tumor_type(tumor_type)
+        if site == "default":
+            return {}
+        criteria = get_target_standard(site)
+        if not criteria:
+            return {}
+        return {"tumor_type": tumor_type, "site": site, "criteria": criteria}
+    except (ImportError, OSError, ValueError, TypeError) as exc:
+        logger.warning("Could not resolve source-backed target criteria: %s", exc)
+        return {}
+
+
 def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any]:
     """Create deterministic planning advice from current metrics and UI events."""
     snapshot = _latest_plan_snapshot(agent)
@@ -240,7 +283,7 @@ def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any
     issues: list = []
     strengths: list = []
 
-    rx_gy = DOSE_MODEL_SCALE_GY
+    rx_gy = None
     prescribed = _extract_metric_value(metrics, "prescribed_dose", "prescription")
     if prescribed and prescribed < 10:
         rx_gy = prescribed * DOSE_MODEL_SCALE_GY
@@ -262,7 +305,8 @@ def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any
         advice.append("Run dose evaluation to make V100/D90 advice available.")
 
     if d90 is not None:
-        strengths.append(f"CTV D90 is {d90:.1f} Gy; current report prescription is {rx_gy:.0f} Gy.")
+        rx_text = f"; current dose reference is {rx_gy:.0f} Gy" if rx_gy is not None else ""
+        strengths.append(f"CTV D90 is {d90:.1f} Gy{rx_text}.")
         advice.append("Compare D90 with the source-backed prescription convention for this tumor site before labeling coverage adequate or inadequate.")
 
     if v200 is not None:
@@ -418,9 +462,12 @@ def _training_feedback_for_event(agent, session_id: Optional[str], event: Dict[s
     metrics = snapshot.get("metrics", {}) or {}
     v100 = _metric_as_fraction(_extract_metric_value(metrics, "v100"))
     d90 = _extract_metric_value(metrics, "d90")
+    target_context = _source_backed_target_context(agent)
+    target_criteria = target_context.get("criteria", {})
+    v100_min = _metric_as_fraction(_extract_metric_value(target_criteria, "v100_min"))
 
     if etype.startswith("manual.seed"):
-        if v100 is not None and v100 < 0.90:
+        if v100 is not None and v100_min is not None and v100 < v100_min:
             return f"Seed edit recorded. Current V100 is {v100 * 100:.1f}%; inspect cold CTV regions after recompute."
         return "Seed edit recorded. Recompute dose and verify DVH before placing the next seed."
     if etype.startswith("manual.needle"):
@@ -444,9 +491,17 @@ def _training_screenshot_for_event(agent, session_id: Optional[str], event: Dict
     metrics = snapshot.get("metrics", {}) or {}
     v100 = _metric_as_fraction(_extract_metric_value(metrics, "v100"))
     v200 = _metric_as_fraction(_extract_metric_value(metrics, "v200"))
+    target_criteria = _source_backed_target_context(agent).get("criteria", {})
+    v100_min = _metric_as_fraction(_extract_metric_value(target_criteria, "v100_min"))
+    v200_max = _metric_as_fraction(_extract_metric_value(target_criteria, "v200_max"))
 
     if etype == "manual.dose":
-        if (v100 is not None and v100 < 0.90) or (v200 is not None and v200 > 0.30):
+        source_backed_concern = (
+            v100 is not None and v100_min is not None and v100 < v100_min
+        ) or (
+            v200 is not None and v200_max is not None and v200 > v200_max
+        )
+        if source_backed_concern:
             return {
                 "target": "dose-overview",
                 "question": "Training monitor snapshot: show current CT, masks, dose heatmap, seeds/needles, and DVH after manual dose recomputation.",
@@ -694,11 +749,6 @@ def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]
                 "ctv_voxels": int(np.sum(ctv_mask > 0)),
                 "ctv_volume_cm3": float(np.sum(ctv_mask > 0) * voxel_vol_cm3),
             })
-            coverage = metrics["v100"] * 100.0
-            hotspot_penalty = max(0.0, metrics["v200"] * 100.0 - 30.0) * 0.7
-            d90_penalty = max(0.0, DOSE_MODEL_SCALE_GY - metrics["d90"]) * 0.25
-            metrics["plan_score"] = float(max(0.0, min(100.0, coverage - hotspot_penalty - d90_penalty)))
-
             dose_max_val = max(600.0, float(np.max(target_doses)) * 1.1, 360.0)
             centers = np.linspace(0.0, dose_max_val, 601, dtype=np.float32)
             dvh_data["CTV"] = {
@@ -744,6 +794,42 @@ def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]
             }
     metrics["oar_metrics"] = oar_metrics
     metrics["dvh_data"] = dvh_data
+
+    target_context = _source_backed_target_context(agent)
+    if target_context and metrics.get("ctv_voxels", 0) > 0:
+        from tool_factory.dose_eval.comprehensive_dose_evaluation import (
+            ComprehensiveDoseEvaluationTool,
+        )
+        from tool_factory.plan_quality.clinical_standards import get_oar_standard
+
+        evaluator = ComprehensiveDoseEvaluationTool()
+        site = target_context["site"]
+        constraints = get_oar_standard(site)
+        violations = []
+        for name, values in oar_metrics.items():
+            constraint = evaluator._match_oar_constraint(name, constraints)
+            if constraint:
+                violations.extend(evaluator._check_oar_violation(
+                    name,
+                    {"D2cc": values.get("d2cc"), "Dmax": values.get("dmax"), "Dmean": values.get("mean_dose")},
+                    constraint,
+                ))
+        metrics["plan_score"] = evaluator._compute_plan_score(
+            {
+                "V100": metrics.get("v100", 0.0),
+                "V150": metrics.get("v150", 0.0),
+                "V200": metrics.get("v200", 0.0),
+                "D90": metrics.get("d90", 0.0),
+            },
+            DOSE_MODEL_SCALE_GY,
+            violations,
+            target_context["tumor_type"],
+        )
+        metrics["criteria_status"] = "SOURCE_BACKED"
+        metrics["criteria_site"] = site
+    else:
+        metrics["plan_score"] = None
+        metrics["criteria_status"] = "UNVERIFIED"
 
     agent.memory.store("manual_planning_preview", True)
     agent.memory.store("manual_ai_dose", True)

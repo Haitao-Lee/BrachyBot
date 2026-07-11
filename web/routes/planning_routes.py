@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import time
-import threading
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -16,6 +15,7 @@ try:
     from web.server_support import (
         DOSE_MODEL_SCALE_GY,
         DOSE_MODEL_UNITS,
+        PROJECT_ROOT,
         SCREENSHOTS_DIR,
         TRUE_VALUES,
         rate_limit,
@@ -27,6 +27,7 @@ except ImportError:  # pragma: no cover - supports `python web/server.py`.
     from server_support import (  # type: ignore
         DOSE_MODEL_SCALE_GY,
         DOSE_MODEL_UNITS,
+        PROJECT_ROOT,
         SCREENSHOTS_DIR,
         TRUE_VALUES,
         rate_limit,
@@ -54,15 +55,24 @@ _valid_screenshot_request = _server_support._valid_screenshot_request
 _validate_path = _server_support._validate_path
 
 
-def register_planning_routes(app, get_agent, session_context=None):
+def register_planning_routes(app, get_agent):
+
+    def request_ui_session_id(data: Optional[Dict[str, Any]] = None) -> str:
+        """Resolve UI bridge state from body, query, or the global API header."""
+        payload = data if isinstance(data, dict) else {}
+        return _ui_session_id(
+            payload.get("session_id")
+            or request.args.get("session_id")
+            or request.headers.get("X-BrachyBot-Session")
+            or "web"
+        )
 
     @app.route("/api/planning/clear", methods=["POST"])
     @require_api_key
     @rate_limit
     def api_planning_clear():
-        """Clear all planning data from agent memory (called on page refresh)."""
-        import AgenticSys as _ag
-        agent = getattr(_ag, '_global_agent', None) or get_agent()
+        """Explicitly clear planning data while retaining the loaded CT."""
+        agent = get_agent()
         if agent is None:
             return jsonify({"success": True, "message": "No agent to clear"})
 
@@ -83,9 +93,11 @@ def register_planning_routes(app, get_agent, session_context=None):
                 "ctv_array", "ctv_mask", "ctv_label_stats", "ctv_label_map",
                 "ctv_full_labels", "oar_array", "organ_names", "organ_counts",
             ]
-            for key in planning_keys:
-                if key in agent.memory.planning_results:
-                    del agent.memory.planning_results[key]
+            # Planning refreshes and long-running tools can overlap in Flask's
+            # threaded server. Mutate the memory map under its canonical lock.
+            with agent.memory._lock:
+                for key in planning_keys:
+                    agent.memory.planning_results.pop(key, None)
 
             # Clear conversation history
             agent.memory.clear_conversation()
@@ -106,8 +118,7 @@ def register_planning_routes(app, get_agent, session_context=None):
             success, metrics, seeds, trajectories, dvh, has_dose,
             dose_shape, dose_range, has_trajectories, num_trajectories.
         """
-        import AgenticSys as _ag
-        agent = getattr(_ag, '_global_agent', None) or get_agent()
+        agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
@@ -443,7 +454,7 @@ def register_planning_routes(app, get_agent, session_context=None):
             config = getattr(agent, 'config', {})
             try:
                 import json as _json, os as _os
-                _cfg_path = _os.path.join(_os.path.dirname(__file__), '..', 'plans', 'config.json')
+                _cfg_path = _os.path.join(PROJECT_ROOT, 'plans', 'config.json')
                 with open(_cfg_path, encoding="utf-8") as _f:
                     _default_cfg = _json.load(_f)
             except Exception:
@@ -469,14 +480,9 @@ def register_planning_routes(app, get_agent, session_context=None):
                     "in_lowest_energy": _cfg("in_lowest_energy"),
                     "out_highest_energy": _cfg("out_highest_energy"),
                     "DVH_rate": _cfg("DVH_rate"),
-                    "iter_rate": _cfg("iter_rate"),
-                    "max_iter": _cfg("max_iter"),
-                    "direc_resolution": _cfg("direc_resolution"),
-                    "image_normalize": _cfg("image_normalize", [-1000, 3000, 255]),
                 },
-                dl_params=_cfg("dl_params"),
-                rf_params=_cfg("rf_params"),
                 ref_direc=_cfg("reference_direc"),
+                _agent=agent,
             )
 
             if result.success:
@@ -509,8 +515,7 @@ def register_planning_routes(app, get_agent, session_context=None):
     @rate_limit
     def api_planning_config():
         """Get planning configuration including iso-dose parameters."""
-        import AgenticSys as _ag
-        agent = getattr(_ag, '_global_agent', None) or get_agent()
+        agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
@@ -520,7 +525,7 @@ def register_planning_routes(app, get_agent, session_context=None):
             iso_params = config.get("iso_dose_params")
             if not iso_params:
                 import json as _json
-                config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "plans", "config.json")
+                config_path = os.path.join(PROJECT_ROOT, "plans", "config.json")
                 if os.path.exists(config_path):
                     with open(config_path, "r", encoding="utf-8") as f:
                         file_config = _json.load(f)
@@ -530,7 +535,7 @@ def register_planning_routes(app, get_agent, session_context=None):
             # This has the relative isosurface multipliers and display settings.
             display_3d = {}
             import json as _json
-            dp_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "default_params.json")
+            dp_path = os.path.join(PROJECT_ROOT, "config", "default_params.json")
             if os.path.exists(dp_path):
                 with open(dp_path, "r", encoding="utf-8") as f:
                     dp_config = _json.load(f)
@@ -545,6 +550,7 @@ def register_planning_routes(app, get_agent, session_context=None):
             # AgenticSys.py — keep them in sync if the model changes.
             _ile = config.get("in_lowest_energy", 1.0)
             display_3d["_prescriptionGy"] = float(_ile) * DOSE_MODEL_SCALE_GY
+            display_3d["_doseScaleGy"] = DOSE_MODEL_SCALE_GY
 
             return jsonify({
                 "success": True,
@@ -569,8 +575,7 @@ def register_planning_routes(app, get_agent, session_context=None):
         Threshold is received in Gy for user-facing labels. Stored dose arrays
         remain normalized model output, so levels are converted before meshing.
         """
-        import AgenticSys as _ag
-        agent = getattr(_ag, '_global_agent', None) or get_agent()
+        agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
@@ -685,8 +690,7 @@ def register_planning_routes(app, get_agent, session_context=None):
         Returns metadata about the dose overlay. The actual slice data is fetched
         via the dose_overlay_slice endpoint.
         """
-        import AgenticSys as _ag
-        agent = getattr(_ag, '_global_agent', None) or get_agent()
+        agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
@@ -769,8 +773,7 @@ def register_planning_routes(app, get_agent, session_context=None):
 
         Returns the 2D dose slice in the same space as the CT slice.
         """
-        import AgenticSys as _ag
-        agent = getattr(_ag, '_global_agent', None) or get_agent()
+        agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
@@ -842,8 +845,7 @@ def register_planning_routes(app, get_agent, session_context=None):
         Returns contour line coordinates for overlaying on 2D viewers.
         Uses iso_dose_values from config as contour levels.
         """
-        import AgenticSys as _ag
-        agent = getattr(_ag, '_global_agent', None) or get_agent()
+        agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
@@ -989,7 +991,7 @@ def register_planning_routes(app, get_agent, session_context=None):
         """Get default hyperparameters from config file."""
         try:
             import json
-            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "default_params.json")
+            config_path = os.path.join(PROJECT_ROOT, "config", "default_params.json")
             with open(config_path, 'r', encoding="utf-8") as f:
                 defaults = json.load(f)
             return jsonify({"success": True, "defaults": defaults})
@@ -1050,7 +1052,7 @@ def register_planning_routes(app, get_agent, session_context=None):
     def api_ui_state():
         """Store or read frontend UI state used by agent UI control."""
         data = request.get_json(silent=True) or {}
-        session_id = _ui_session_id(data.get("session_id") or request.args.get("session_id") or "web")
+        session_id = request_ui_session_id(data)
         agent = get_agent(session_id)
         bucket = _ui_bucket(session_id)
 
@@ -1148,7 +1150,7 @@ def register_planning_routes(app, get_agent, session_context=None):
     def api_ui_event():
         """Record a frontend UI event and optionally return live monitor feedback."""
         data = request.get_json() or {}
-        session_id = _ui_session_id(data.get("session_id") or "web")
+        session_id = request_ui_session_id(data)
         agent = get_agent(session_id)
         state_payload = data.get("ui_state") or data.get("state")
         bucket = _ui_bucket(session_id)
@@ -1189,7 +1191,7 @@ def register_planning_routes(app, get_agent, session_context=None):
     def api_training_start():
         """Start live planning monitoring/training mode."""
         data = request.get_json() or {}
-        session_id = _ui_session_id(data.get("session_id") or "web")
+        session_id = request_ui_session_id(data)
         goal = str(data.get("goal") or "Monitor my planning workflow").strip()
         bucket = _ui_bucket(session_id)
         with _UI_BRIDGE_LOCK:
@@ -1215,7 +1217,7 @@ def register_planning_routes(app, get_agent, session_context=None):
     def api_training_stop():
         """Stop live monitoring and return a final deterministic training report."""
         data = request.get_json() or {}
-        session_id = _ui_session_id(data.get("session_id") or "web")
+        session_id = request_ui_session_id(data)
         agent = get_agent(session_id)
         bucket = _ui_bucket(session_id)
         with _UI_BRIDGE_LOCK:
@@ -1258,7 +1260,7 @@ def register_planning_routes(app, get_agent, session_context=None):
     def api_training_advice():
         """Return detailed advice for the current auto/manual plan."""
         data = request.get_json(silent=True) or {}
-        session_id = _ui_session_id(data.get("session_id") or request.args.get("session_id") or "web")
+        session_id = request_ui_session_id(data)
         agent = get_agent(session_id)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
@@ -1270,7 +1272,7 @@ def register_planning_routes(app, get_agent, session_context=None):
     def api_readiness():
         """Return a product-readiness checklist for the current case."""
         data = request.get_json(silent=True) or {}
-        session_id = _ui_session_id(data.get("session_id") or request.args.get("session_id") or "web")
+        session_id = request_ui_session_id(data)
         agent = get_agent(session_id)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
@@ -1282,7 +1284,7 @@ def register_planning_routes(app, get_agent, session_context=None):
     def api_manual_planning_update():
         """Update manual world-coordinate seeds/needles and recompute myDoseNet dose."""
         data = request.get_json() or {}
-        session_id = _ui_session_id(data.get("session_id") or "web")
+        session_id = request_ui_session_id(data)
         agent = get_agent(session_id)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
@@ -1417,6 +1419,8 @@ def register_planning_routes(app, get_agent, session_context=None):
 
         if not ct_path:
             return jsonify({"error": "ct_path is required"}), 400
+        if not original_plan:
+            return jsonify({"error": "original_plan with planned physical seed positions is required"}), 400
 
         if not _validate_path(ct_path):
             return jsonify({"error": "Invalid ct_path"}), 400
@@ -1451,9 +1455,11 @@ def register_planning_routes(app, get_agent, session_context=None):
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
         try:
-            setattr(agent, "_cancel_requested", True)
+            agent._cancel_active_turn()
             # Remove the last incomplete conversation turn
-            with getattr(agent.memory, "_lock", threading.RLock()):
+            # AgentMemory owns the lock that protects conversation state.
+            # A newly-created fallback lock would not synchronize anything.
+            with agent.memory._lock:
                 conv = agent.memory.conversation
                 if len(conv) >= 2:
                     # Remove last assistant message if incomplete
@@ -1483,47 +1489,127 @@ def register_planning_routes(app, get_agent, session_context=None):
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/export/dicom_rt", methods=["POST"])
+    @app.route("/api/export/dicom", methods=["POST"])
     @require_api_key
     @rate_limit
     def api_export_dicom_rt():
-        """Export treatment plan to DICOM-RT format."""
-        agent = get_agent()
+        """Export linked RTSTRUCT, RTPLAN, and RTDOSE objects.
+
+        ``/api/export/dicom`` is retained as a backward-compatible alias. Both
+        routes intentionally use this single implementation so their geometry,
+        safety policy, and response schema cannot drift apart.
+        """
+        data = request.get_json() or {}
+        session_id = data.get("session_id")
+        agent = get_agent(session_id) if session_id else get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
-        data = request.get_json() or {}
-        ct_path = data.get("ct_path")
         output_dir = data.get("output_dir", "./output/dicom_rt")
         safe_output_dir = _resolve_output_path(output_dir)
         if safe_output_dir is None:
             return jsonify({"error": "Invalid output_dir"}), 400
 
         try:
-            import os
             os.makedirs(safe_output_dir, exist_ok=True)
-
-            # Get planning data
-            seed_plan = agent.memory.retrieve("seed_plan")
+            seed_plan = (
+                agent.memory.retrieve("seed_plan")
+                or agent.memory.retrieve("seed_plan_serialized")
+                or agent.memory.retrieve("manual_seeds")
+            )
             dose_distribution = agent.memory.retrieve("dose_distribution")
-            ct_image = agent.memory.retrieve("ct_image")
-
-            if seed_plan is None:
+            reference_image = agent.memory.retrieve("resampled_ct")
+            if reference_image is None:
+                reference_image = agent.memory.retrieve("ct_image")
+            if reference_image is None:
+                return jsonify({"error": "No planning image is available. Load CT data first."}), 400
+            if not seed_plan:
                 return jsonify({"error": "No plan available. Run planning first."}), 400
 
-            # Export using DicomRTExporterTool
+            reference_shape = tuple(reversed(reference_image.GetSize()))
+            resampled_ctv = agent.memory.retrieve("resampled_ctv")
+            resampled_oar = agent.memory.retrieve("resampled_oar")
+            if resampled_ctv is None:
+                candidate = agent._get_label_array("ctv_array")
+                if candidate is not None and tuple(np.asarray(candidate).shape) == reference_shape:
+                    resampled_ctv = candidate
+            if resampled_oar is None:
+                candidate = agent._get_label_array("oar_array")
+                if candidate is not None and tuple(np.asarray(candidate).shape) == reference_shape:
+                    resampled_oar = candidate
+
+            structures = {}
+            if resampled_ctv is not None:
+                ctv_array = np.asarray(resampled_ctv)
+                if tuple(ctv_array.shape) == reference_shape and np.any(ctv_array > 0):
+                    structures["CTV"] = ctv_array > 0
+
+            organ_names = agent.memory.retrieve("organ_names") or {}
+            used_names = set(structures)
+            if resampled_oar is not None:
+                oar_array = np.asarray(resampled_oar)
+                if tuple(oar_array.shape) != reference_shape:
+                    return jsonify({
+                        "error": (
+                            f"OAR grid {tuple(oar_array.shape)} does not match the DICOM export "
+                            f"grid {reference_shape}. Re-run dose calculation on the current case."
+                        )
+                    }), 400
+                for label in np.unique(oar_array):
+                    label_id = int(label)
+                    if label_id <= 0:
+                        continue
+                    name = organ_names.get(label_id) or organ_names.get(str(label_id))
+                    if not name:
+                        try:
+                            from tool_factory.OAR_seg.totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
+                            name = TOTALSEG_LABEL_MAPPING.get(label_id)
+                        except Exception:
+                            name = None
+                    base_name = str(name or f"Organ_{label_id}")
+                    unique_name = base_name if base_name not in used_names else f"{base_name}_{label_id}"
+                    used_names.add(unique_name)
+                    structures[unique_name] = oar_array == label
+
+            dose_metrics = agent.memory.retrieve("dose_metrics") or {}
+            dose_scale_gy = float(
+                agent.memory.retrieve("dose_scale_gy") or DOSE_MODEL_SCALE_GY
+            )
+            prescription_gy = dose_metrics.get("prescription_gy")
+            if not prescription_gy:
+                prescription_norm = dose_metrics.get("prescribed_dose")
+                if isinstance(prescription_norm, (int, float)) and prescription_norm > 0:
+                    prescription_gy = float(prescription_norm) * dose_scale_gy
+
+            plan_config = agent.memory.retrieve("plan_config") or {}
+            seed_info = plan_config.get("seed_info") or getattr(agent, "config", {}).get("seed_info", {})
             from tool_factory.output.dicom_rt_exporter import DicomRTExporterTool
+
             tool = DicomRTExporterTool()
-            result = tool._execute(
-                ct_image=ct_image,
+            result = tool.execute(
+                ct_image=reference_image,
+                structures=structures,
                 seed_plan=seed_plan,
-                dose_distribution=dose_distribution,
+                dose_array=dose_distribution,
                 output_dir=safe_output_dir,
+                dicom_tags=agent.memory.retrieve("ct_dicom_tags") or {},
+                dose_scale_gy=dose_scale_gy,
+                dose_units=agent.memory.retrieve("dose_units") or DOSE_MODEL_UNITS,
+                prescription_gy=prescription_gy,
+                isotope=data.get("isotope") or "I-125",
+                seed_length_mm=float(seed_info.get("length", 4.5) or 4.5),
             )
 
             if result.success:
-                return jsonify({"success": True, "output_dir": safe_output_dir, "message": result.message})
-            else:
-                return jsonify({"success": False, "error": result.error}), 400
+                return jsonify({
+                    "success": True,
+                    "files": result.data,
+                    "output_dir": safe_output_dir,
+                    "message": result.message,
+                    "clinical_status": result.metadata.get("clinical_status"),
+                    "manifest": result.metadata.get("manifest"),
+                })
+            return jsonify({"success": False, "error": result.error}), 400
         except Exception as e:
             logger.error(f"DICOM-RT export failed: {e}")
             return jsonify({"error": str(e)}), 500
@@ -1653,6 +1739,9 @@ def register_planning_routes(app, get_agent, session_context=None):
             agent.memory.clear_conversation()
             logger.info("Conversation context cleared")
 
+        if clear_context and not message and not image_path:
+            return jsonify({"success": True, "message": "Conversation context cleared"})
+
         if not message and not image_path:
             return jsonify({"error": "message or image is required"}), 400
 
@@ -1664,8 +1753,6 @@ def register_planning_routes(app, get_agent, session_context=None):
         full_message = message
         if image_path:
             full_message = f"{message}\n\n[Uploaded image path: {image_path}]"
-
-        setattr(agent, "_cancel_requested", False)
 
         if stream:
             def generate():
@@ -1798,62 +1885,6 @@ def register_planning_routes(app, get_agent, session_context=None):
     def api_tasks_list():
         """List all tasks."""
         return jsonify(task_manager.get_all_tasks())
-
-    @app.route("/api/export/dicom", methods=["POST"])
-    @require_api_key
-    @rate_limit
-    def api_export_dicom():
-        """Export plan to DICOM RT format."""
-        agent = get_agent()
-        if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
-
-        data = request.get_json() or {}
-        output_dir = data.get("output_dir", "./dicom_export")
-
-        safe_output_dir = _resolve_output_path(output_dir)
-        if safe_output_dir is None:
-            return jsonify({"error": "Invalid output_dir"}), 400
-
-        try:
-            ct_image = agent.memory.retrieve("ct_image")
-            if ct_image is None:
-                return jsonify({"error": "No CT image in memory. Run planning first."}), 400
-
-            seed_positions = agent.memory.retrieve("seed_positions")
-            dose_distribution = agent.memory.retrieve("dose_distribution")
-            ctv_array = agent._get_label_array("ctv_array")
-            oar_array = agent._get_label_array("oar_array")
-
-            structures = {}
-            if ctv_array is not None:
-                structures["CTV"] = ctv_array
-            if oar_array is not None:
-                structures["OAR"] = oar_array
-
-            from tool_factory.output.dicom_rt_exporter import DicomRTExporterTool
-            exporter = DicomRTExporterTool()
-
-            result = exporter.execute(
-                ct_image=ct_image,
-                structures=structures,
-                dose_array=dose_distribution,
-                seeds=seed_positions or [],
-                output_dir=safe_output_dir,
-            )
-
-            if result.success:
-                return jsonify({
-                    "success": True,
-                    "files": result.data,
-                    "message": result.message,
-                })
-            else:
-                return jsonify({"error": result.error}), 500
-
-        except Exception as e:
-            logger.error(f"DICOM export failed: {e}")
-            return jsonify({"error": str(e)}), 500
 
     @app.route("/api/export/report", methods=["POST"])
     @require_api_key

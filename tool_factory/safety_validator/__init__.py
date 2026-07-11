@@ -12,6 +12,7 @@ import importlib.util
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from tool_factory import BaseTool, ToolResult
+from agents.clinical_metrics import match_constraint_name, normalized_fraction
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,10 @@ def _oar_standard(site: str) -> Dict[str, Any]:
 # Per-site safety rules: (metric, operator, threshold, severity, message)
 # D90 values are % of prescription dose (1.0 = 100% of Rx), NOT absolute Gy.
 # V100/V150/V200 are fractions (0.90 = 90%).
-_SITE_SAFETY_RULES = {
+# Historical migration reference only. Runtime validation never reads these
+# uncited values; authoritative limits come from clinical_kb through
+# clinical_standards.py. Keeping the name explicit prevents accidental reuse.
+_LEGACY_UNUSED_SITE_SAFETY_RULES = {
     "prostate": [
         ("v100", ">=", 0.80, "CRITICAL", "CTV V100 below 80% — severe underdose (curated KB benchmark)"),
         ("v100", ">=", 0.95, "WARNING",  "CTV V100 below 95% — suboptimal coverage (curated KB benchmark)"),
@@ -123,7 +127,7 @@ _SITE_SAFETY_RULES = {
 }
 
 # Per-site OAR limits. Values are % of prescription dose unless noted.
-_SITE_OAR_LIMITS = {
+_LEGACY_UNUSED_SITE_OAR_LIMITS = {
     "prostate": {
         "urethra":     {"d0.1cc_pct": 120, "d10_pct": 120},
         "rectum":      {"d2cc_gy": 75, "d0.1cc_pct": 100},
@@ -187,7 +191,7 @@ _SITE_OAR_LIMITS = {
 def _normalize_tumor_type(tumor_type: str) -> str:
     """Normalize tumor_type string to site key."""
     if not tumor_type:
-        return "default"
+        return "unknown"
     tt = tumor_type.lower().replace(" ", "_").replace("-", "_")
     # Map common names
     _map = {
@@ -203,10 +207,16 @@ def _normalize_tumor_type(tumor_type: str) -> str:
         if pattern in tt:
             return site
     # Direct match
-    for key in _SITE_SAFETY_RULES:
+    supported_sites = {
+        "prostate", "cervical", "breast", "lung", "pancreatic", "liver",
+        "kidney", "colon", "head_neck", "esophageal",
+    }
+    for key in supported_sites:
         if key in tt or tt in key:
             return key
-    return "default"
+    # Do not silently apply the composite `default` protocol to an unknown
+    # disease site. Callers must clarify the site or provide explicit limits.
+    return "unknown"
 
 
 class SafetyValidatorTool(BaseTool):
@@ -232,7 +242,13 @@ Capabilities:
             "plan": {"type": "object", "description": "Plan data with metrics"},
             "organ": {"type": "string", "description": "Specific organ to check (for check_dose)"},
             "tumor_type": {"type": "string", "description": "Tumor site for per-site thresholds (e.g. 'prostate', 'cervical', 'pancreatic')"},
-            "strict": {"type": "boolean", "description": "Use strict mode (default: false)"},
+            "strict": {
+                "type": "boolean",
+                "description": (
+                    "Escalate source-backed violations to CRITICAL without "
+                    "changing the cited numeric limits (default: false)"
+                ),
+            },
         },
         "required": ["action"],
     }
@@ -254,7 +270,7 @@ Capabilities:
             rules.append(("v200", "<=", std["v200_max"], "WARNING", f"V200 above curated KB benchmark {std['v200_max']:.0%}"))
         if "d90_min_pct" in std:
             rules.append(("d90", ">=", std["d90_min_pct"], "WARNING", f"D90 below curated KB benchmark {std['d90_min_pct']:.0%} of prescription"))
-        return rules or _SITE_SAFETY_RULES.get(site, _SITE_SAFETY_RULES["default"])
+        return rules
 
     def _get_oar_limits_for_site(self, tumor_type: str) -> Dict:
         """Get OAR limits from the curated clinical standards mirror."""
@@ -273,20 +289,14 @@ Capabilities:
                 entry["dmax_pct"] = limits["max_dose_pct"]
             if entry:
                 converted[organ] = entry
-        return converted or _SITE_OAR_LIMITS.get(site, _SITE_OAR_LIMITS["default"])
+        return converted
 
     def _check_rule(self, metrics: Dict, rule: tuple, strict: bool) -> Optional[Dict]:
         """Check a single safety rule."""
         metric_name, op, threshold, severity, message = rule
 
-        if strict:
-            # Strict mode tightens thresholds by ~5%
-            strict_map = {
-                0.80: 0.85, 0.90: 0.95, 0.95: 0.98,
-                0.50: 0.45, 0.35: 0.30, 0.30: 0.25, 0.25: 0.20, 0.60: 0.55,
-                0.85: 0.90, 1.00: 1.05,
-            }
-            threshold = strict_map.get(threshold, threshold)
+        # Strict mode escalates a source-backed violation; it must never
+        # invent a different clinical threshold.
 
         value = metrics.get(metric_name)
         if value is None:
@@ -320,6 +330,14 @@ Capabilities:
 
         # Check dose rules (per-site)
         rules = self._get_rules_for_site(tumor_type)
+        oar_limits = self._get_oar_limits_for_site(tumor_type)
+        standards_available = bool(rules or oar_limits)
+        if not standards_available:
+            warnings.append({
+                "metric": "clinical_standard",
+                "severity": "WARNING",
+                "message": "No source-backed clinical standard is available for this site.",
+            })
         for rule in rules:
             result = self._check_rule(metrics, rule, strict)
             if result:
@@ -329,18 +347,22 @@ Capabilities:
                     warnings.append(result)
 
         # Check OAR constraints (per-site)
-        oar_limits = self._get_oar_limits_for_site(tumor_type)
         oar_metrics = metrics.get("oar_metrics", {})
         if isinstance(oar_metrics, dict):
             for organ_name, oar_data in oar_metrics.items():
-                organ_key = organ_name.lower().replace(" ", "_")
-                limits = oar_limits.get(organ_key, {})
+                matched_name = match_constraint_name(organ_name, oar_limits)
+                organ_key = matched_name or organ_name.lower().replace(" ", "_")
+                limits = oar_limits.get(matched_name, {}) if matched_name else {}
                 if not limits:
                     continue
-                dmax = oar_data.get("dmax", 0) or oar_data.get("Dmax", 0)
-                d2cc = oar_data.get("d2cc", 0) or oar_data.get("D2cc", 0)
+                dmax = oar_data.get("dmax")
+                if dmax is None:
+                    dmax = oar_data.get("Dmax")
+                d2cc = oar_data.get("d2cc")
+                if d2cc is None:
+                    d2cc = oar_data.get("D2cc")
                 # Check absolute Gy limits
-                if "dmax_gy" in limits and dmax > limits["dmax_gy"]:
+                if dmax is not None and "dmax_gy" in limits and dmax > limits["dmax_gy"]:
                     violations.append({
                         "metric": f"{organ_key}_dmax",
                         "value": dmax,
@@ -348,7 +370,7 @@ Capabilities:
                         "severity": "CRITICAL",
                         "message": f"{organ_name} Dmax = {dmax:.1f} Gy exceeds limit {limits['dmax_gy']} Gy",
                     })
-                if "d2cc_gy" in limits and d2cc > limits["d2cc_gy"]:
+                if d2cc is not None and "d2cc_gy" in limits and d2cc > limits["d2cc_gy"]:
                     violations.append({
                         "metric": f"{organ_key}_d2cc",
                         "value": d2cc,
@@ -368,29 +390,7 @@ Capabilities:
                 "message": f"OAR violation: {ov.get('organ', 'unknown')} exceeds dose limit",
             })
 
-        # Check seed count plausibility
-        seed_count = plan.get("seed_count", metrics.get("seed_count", 0))
-        ctv_volume = plan.get("ctv_volume_cc", metrics.get("ctv_volume_cc", 0))
-        if ctv_volume > 0 and seed_count > 0:
-            density = seed_count / ctv_volume
-            if density > 2.0:
-                warnings.append({
-                    "metric": "seed_density",
-                    "value": round(density, 2),
-                    "threshold": 2.0,
-                    "severity": "WARNING",
-                    "message": f"High seed density ({density:.1f} seeds/cc) — check for clustering",
-                })
-            elif density < 0.3:
-                warnings.append({
-                    "metric": "seed_density",
-                    "value": round(density, 2),
-                    "threshold": 0.3,
-                    "severity": "WARNING",
-                    "message": f"Low seed density ({density:.1f} seeds/cc) — check coverage",
-                })
-
-        safe = len(violations) == 0
+        safe = standards_available and len(violations) == 0
         site = _normalize_tumor_type(tumor_type)
 
         return ToolResult(
@@ -402,6 +402,7 @@ Capabilities:
                 "total_issues": len(violations) + len(warnings),
                 "strict_mode": strict,
                 "site": site,
+                "standards_available": standards_available,
             },
             message=f"Validation {'PASSED' if safe else 'FAILED'} ({site}): {len(violations)} critical, {len(warnings)} warnings"
         )
@@ -450,12 +451,25 @@ Capabilities:
 
         site = _normalize_tumor_type(tumor_type)
         target_std = _target_standard(site)
+        if not target_std:
+            return ToolResult(
+                success=True,
+                data={"checks": {}, "all_passed": False, "site": site,
+                      "standards_available": False},
+                message=f"Coverage check unavailable: no source-backed standard for {site}",
+            )
         min_v100 = target_std.get("v100_min")
         min_d90_pct = target_std.get("d90_min_pct")
 
+        v100 = normalized_fraction(v100)
+        d90_ratio = d90
+        prescribed = metrics.get("prescribed_dose", plan.get("prescribed_dose"))
+        if d90 is not None and d90 > 5:
+            d90_ratio = d90 / prescribed if prescribed and prescribed > 0 else None
+
         checks = {
-            "v100": {"value": v100, "min": min_v100, "passed": True if min_v100 is None else v100 >= min_v100},
-            "d90": {"value": d90, "min_pct": min_d90_pct, "passed": True if min_d90_pct is None else d90 >= min_d90_pct},
+            "v100": {"value": v100, "min": min_v100, "passed": min_v100 is None or (v100 is not None and v100 >= min_v100)},
+            "d90": {"value": d90_ratio, "min_pct": min_d90_pct, "passed": min_d90_pct is None or (d90_ratio is not None and d90_ratio >= min_d90_pct)},
         }
 
         all_passed = all(c["passed"] for c in checks.values())
@@ -476,12 +490,21 @@ Capabilities:
 
         site = _normalize_tumor_type(tumor_type)
         target_std = _target_standard(site)
+        if not target_std:
+            return ToolResult(
+                success=True,
+                data={"checks": {}, "all_passed": False, "site": site,
+                      "standards_available": False},
+                message=f"Hotspot check unavailable: no source-backed standard for {site}",
+            )
         max_v150 = target_std.get("v150_max")
         max_v200 = target_std.get("v200_max")
+        v150 = normalized_fraction(v150)
+        v200 = normalized_fraction(v200)
 
         checks = {
-            "v150": {"value": v150, "max": max_v150, "passed": True if max_v150 is None else v150 <= max_v150},
-            "v200": {"value": v200, "max": max_v200, "passed": True if max_v200 is None else v200 <= max_v200},
+            "v150": {"value": v150, "max": max_v150, "passed": max_v150 is None or (v150 is not None and v150 <= max_v150)},
+            "v200": {"value": v200, "max": max_v200, "passed": max_v200 is None or (v200 is not None and v200 <= max_v200)},
         }
         all_passed = all(c["passed"] for c in checks.values())
 

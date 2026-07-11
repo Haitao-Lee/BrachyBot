@@ -61,7 +61,9 @@ Capabilities:
             str(case_data.get("ctv_volume_cc", "")),
             str(time.time()),
         ]
-        return hashlib.md5("|".join(key_parts).encode()).hexdigest()[:12]
+        return hashlib.md5(
+            "|".join(key_parts).encode(), usedforsecurity=False
+        ).hexdigest()[:12]
 
     def _save_case(self, case_data: Dict) -> ToolResult:
         """Save a treatment plan case."""

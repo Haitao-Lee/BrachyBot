@@ -19,6 +19,7 @@ import os
 import hashlib
 import time
 import logging
+import re
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 
@@ -209,7 +210,7 @@ class LayeredMemory:
         return [r.rule for r in rules]
 
     def add_rule(self, rule: str, category: str = "general", priority: int = 2, source: str = "evolution") -> str:
-        rule_id = f"r{hashlib.md5(rule.encode()).hexdigest()[:6]}"
+        rule_id = f"r{hashlib.md5(rule.encode(), usedforsecurity=False).hexdigest()[:6]}"
         self.l0_rules[rule_id] = MetaRule(id=rule_id, rule=rule, priority=priority, category=category, source=source)
         self._save_layer("l0_rules", self.l0_rules)
         self._update_index(keywords=[category, rule[:30]], target_layer="l0_rules", target_id=rule_id, summary=rule)
@@ -259,7 +260,7 @@ class LayeredMemory:
     # === L2: Global Facts ===
 
     def add_fact(self, fact: str, category: str = "general", source: str = "experience", confidence: float = 0.8) -> str:
-        fact_id = f"f{hashlib.md5(fact.encode()).hexdigest()[:6]}"
+        fact_id = f"f{hashlib.md5(fact.encode(), usedforsecurity=False).hexdigest()[:6]}"
         self.l2_facts[fact_id] = GlobalFact(
             id=fact_id, fact=fact, category=category, source=source, confidence=confidence,
         )
@@ -302,7 +303,7 @@ class LayeredMemory:
     # === L3: SOPs (Standard Operating Procedures) ===
 
     def create_sop_from_trajectory(self, name: str, trigger_keywords: list, tool_chain: list, source_trajectory: str = "") -> str:
-        sop_id = f"sop{hashlib.md5(name.encode()).hexdigest()[:6]}"
+        sop_id = f"sop{hashlib.md5(name.encode(), usedforsecurity=False).hexdigest()[:6]}"
         steps = []
         for i, tool_name in enumerate(tool_chain):
             steps.append(SOPStep(
@@ -368,7 +369,7 @@ class LayeredMemory:
     def archive_session(self, session_id: str, user_intent: str, outcome: str,
                        success: bool, tool_chain: list, lessons: list = None,
                        metrics: dict = None, tags: list = None):
-        archive_id = f"arch{hashlib.md5(f'{session_id}{time.time()}'.encode()).hexdigest()[:6]}"
+        archive_id = f"arch{hashlib.md5(f'{session_id}{time.time()}'.encode(), usedforsecurity=False).hexdigest()[:6]}"
         self.l4_archives[archive_id] = SessionArchive(
             id=archive_id, session_id=session_id, user_intent=user_intent,
             outcome=outcome, success=success, tool_chain=tool_chain,
@@ -415,10 +416,57 @@ class LayeredMemory:
 
     # === Cross-layer operations ===
 
+    @staticmethod
+    def _relevance_terms(text: str) -> set[str]:
+        """Tokenize English identifiers and Chinese phrases for lightweight recall."""
+        normalized = str(text or "").lower()
+        terms = set(re.findall(r"[a-z0-9_]+", normalized))
+        for sequence in re.findall(r"[\u3400-\u9fff]+", normalized):
+            terms.add(sequence)
+            terms.update(sequence[i:i + 2] for i in range(max(0, len(sequence) - 1)))
+        return terms
+
+    @classmethod
+    def _text_relevance(cls, query: str, text: str) -> float:
+        query_text = str(query or "").strip().lower()
+        candidate_text = str(text or "").lower()
+        if not query_text or not candidate_text:
+            return 0.0
+        query_terms = cls._relevance_terms(query_text)
+        candidate_terms = cls._relevance_terms(candidate_text)
+        overlap = len(query_terms & candidate_terms)
+        phrase_bonus = 2.0 if query_text in candidate_text else 0.0
+        return phrase_bonus + overlap / max(1, len(query_terms))
+
     def get_context_summary(self, query: str, max_rules: int = 5, max_facts: int = 3, max_sops: int = 2) -> dict:
-        keywords = query.lower().split()
-        relevant_facts = self.get_facts(min_confidence=0.6)[:max_facts]
-        relevant_sops = self.get_sops_by_success_rate(min_rate=0.7)[:max_sops]
+        eligible_facts = self.get_facts(min_confidence=0.6)
+        fact_scores = [
+            (self._text_relevance(query, f"{fact.category} {fact.fact}"), fact)
+            for fact in eligible_facts
+        ]
+        matched_facts = [(score, fact) for score, fact in fact_scores if score > 0]
+        matched_facts.sort(key=lambda item: (item[0], item[1].confidence), reverse=True)
+        relevant_facts = (
+            [fact for _, fact in matched_facts[:max_facts]]
+            if matched_facts
+            else eligible_facts[:max_facts]
+        )
+
+        eligible_sops = self.get_sops_by_success_rate(min_rate=0.7)
+        sop_scores = [
+            (
+                self._text_relevance(query, f"{sop.name} {' '.join(sop.trigger_keywords)} {sop.notes}"),
+                sop,
+            )
+            for sop in eligible_sops
+        ]
+        matched_sops = [(score, sop) for score, sop in sop_scores if score > 0]
+        matched_sops.sort(key=lambda item: (item[0], item[1].success_rate), reverse=True)
+        relevant_sops = (
+            [sop for _, sop in matched_sops[:max_sops]]
+            if matched_sops
+            else eligible_sops[:max_sops]
+        )
         matched_sop = self.find_sop(query)
 
         return {

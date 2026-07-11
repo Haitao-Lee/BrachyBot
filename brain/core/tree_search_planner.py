@@ -155,7 +155,7 @@ class PlanningTreeSearch:
         best_score = -1
 
         for tool_name, params in candidate_tools[:self.max_branches]:
-            child_id = f"{node.node_id}_{tool_name}_{hashlib.md5(str(params).encode()).hexdigest()[:4]}"
+            child_id = f"{node.node_id}_{tool_name}_{hashlib.md5(str(params).encode(), usedforsecurity=False).hexdigest()[:4]}"
 
             if self.tool_executor:
                 try:

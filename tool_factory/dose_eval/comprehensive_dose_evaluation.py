@@ -16,6 +16,7 @@ from tool_factory import BaseTool, ToolResult
 import numpy as np
 from typing import Dict, List
 from tool_factory.plan_quality.clinical_standards import get_oar_standard, get_target_standard
+from agents.clinical_metrics import match_constraint_name
 
 
 class ComprehensiveDoseEvaluationTool(BaseTool):
@@ -84,6 +85,14 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
                     "type": "object",
                     "description": "Dict mapping structure name to 'target' or 'oar' for scoring",
                 },
+                "tumor_type": {
+                    "type": "string",
+                    "description": "Explicit tumor site/model name used to select source-backed clinical criteria",
+                },
+                "oar_constraints": {
+                    "type": "object",
+                    "description": "Explicit case constraints; these take precedence over site defaults",
+                },
             },
             "required": ["dose_array", "masks"],
         }
@@ -94,7 +103,10 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
             "type": "object",
             "properties": {
                 "metrics": {"type": "object", "description": "All computed metrics by structure"},
-                "plan_score": {"type": "number", "description": "Overall plan quality score (0-100)"},
+                "plan_score": {
+                    "type": ["number", "null"],
+                    "description": "Advisory quality score, or null when no site-specific criteria are available",
+                },
             },
         }
 
@@ -109,6 +121,7 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
         num_bins = kwargs.get("num_dvh_bins", 300)
         structure_type = kwargs.get("structure_type", {})
         tumor_type = kwargs.get("tumor_type", "")
+        explicit_oar_standards = kwargs.get("oar_constraints", {}) or {}
         site = self._site_from_tumor_type(tumor_type)
         oar_standards = get_oar_standard(site)
 
@@ -172,16 +185,30 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
             if is_target:
                 target_metrics = struct_metrics
             else:
-                constraint = self._match_oar_constraint(struct_name, oar_standards)
+                constraint = self._match_oar_constraint(struct_name, explicit_oar_standards)
+                constraint_source = "plan_config"
+                if not constraint:
+                    constraint = self._match_oar_constraint(struct_name, oar_standards)
+                    constraint_source = "clinical_kb"
                 if constraint:
-                    oar_violations.extend(self._check_oar_violation(struct_name, struct_metrics, constraint))
+                    oar_violations.extend(
+                        self._check_oar_violation(
+                            struct_name,
+                            struct_metrics,
+                            constraint,
+                            source=constraint_source,
+                        )
+                    )
 
         plan_score = self._compute_plan_score(target_metrics, prescribed_dose, oar_violations, tumor_type)
 
         message = f"Comprehensive evaluation complete for {len(masks)} structure(s). "
         if target_metrics:
             message += f"Target: V100={target_metrics.get('V100', 0):.1%}, D90={target_metrics.get('D90', 0):.2f}Gy. "
-        message += f"Plan score: {plan_score:.1f}/100."
+        if plan_score is None:
+            message += "Plan score: UNVERIFIED (no explicit site-specific criteria)."
+        else:
+            message += f"Plan score: {plan_score:.1f}/100."
 
         return ToolResult(
             success=True,
@@ -190,10 +217,12 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
             metadata={
                 "metrics": metrics,
                 "plan_score": plan_score,
+                "oar_violations": oar_violations,
                 "prescribed_dose": prescribed_dose,
                 "voxel_volume_cc": voxel_volume_cc,
                 "score_standard_site": site,
-                "score_standard_source": "tool_factory.plan_quality.clinical_standards",
+                "score_standard_source": "tool_factory/clinical_kb/data/knowledge_base.json",
+                "score_verified": plan_score is not None,
             },
         )
 
@@ -228,15 +257,17 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
 
     @staticmethod
     def _match_oar_constraint(struct_name: str, standards: Dict) -> Dict:
-        name = (struct_name or "").lower()
-        for key, constraint in standards.items():
-            key_l = str(key).lower()
-            if key_l == name or key_l in name or name in key_l:
-                return constraint if isinstance(constraint, dict) else {}
-        return {}
+        matched = match_constraint_name(struct_name, standards)
+        constraint = standards.get(matched) if matched else None
+        return constraint if isinstance(constraint, dict) else {}
 
     @staticmethod
-    def _check_oar_violation(struct_name: str, struct_metrics: Dict, constraint: Dict) -> List[Dict]:
+    def _check_oar_violation(
+        struct_name: str,
+        struct_metrics: Dict,
+        constraint: Dict,
+        source: str = "clinical_kb",
+    ) -> List[Dict]:
         metric_map = {
             "d2cc": "D2cc",
             "max_dose": "Dmax",
@@ -256,61 +287,81 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
                     "metric": metric_key,
                     "actual": actual,
                     "constraint": float(limit),
-                    "source": "clinical_standards_mirror",
+                    "source": source,
                 })
         return violations
 
     def _compute_plan_score(self, target_metrics, prescribed_dose, oar_violations, tumor_type=""):
         if target_metrics is None:
-            return 0.0
+            return None
+
+        # A generic fallback can silently apply the wrong protocol to a new
+        # disease site. Scoring therefore requires an explicit, recognized
+        # tumor site and uses only criteria actually present in clinical_kb.
+        if not str(tumor_type or "").strip():
+            return None
+        site = self._site_from_tumor_type(tumor_type)
+        if site == "default":
+            return None
+        target_std = get_target_standard(site)
+        if not target_std:
+            return None
 
         score = 0.0
+        available_points = 0.0
         v100 = target_metrics.get("V100", 0)
         v150 = target_metrics.get("V150", 0)
         v200 = target_metrics.get("V200", 0)
         d90 = target_metrics.get("D90", 0)
 
-        target_std = get_target_standard(self._site_from_tumor_type(tumor_type))
-        v100_min = target_std.get("v100_min", 0.90)
-        v150_max = target_std.get("v150_max", 0.50)
-        v200_max = target_std.get("v200_max", 0.35)
-        d90_min_pct = target_std.get("d90_min_pct", 1.0)
+        # The point weights and near-threshold bands are product ranking
+        # parameters, not clinical limits. Every limit below comes from the KB.
+        if "v100_min" in target_std:
+            available_points += 40
+            v100_min = float(target_std["v100_min"])
+            if v100 >= v100_min:
+                score += 40
+            elif v100 >= v100_min - 0.05:
+                score += 30
+            elif v100 >= v100_min - 0.15:
+                score += 20
+            else:
+                score += 10
 
-        # V100 scoring (40 pts max) from the clinical standards mirror.
-        if v100 >= v100_min:
-            score += 40
-        elif v100 >= v100_min - 0.05:
-            score += 30
-        elif v100 >= v100_min - 0.15:
-            score += 20
-        else:
-            score += 10
+        if "v150_max" in target_std:
+            available_points += 20
+            v150_max = float(target_std["v150_max"])
+            if v150 <= v150_max:
+                score += 20
+            elif v150 <= v150_max + 0.10:
+                score += 15
+            else:
+                score += 5
 
-        # V150 homogeneity (20 pts max)
-        if v150 <= v150_max:
-            score += 20
-        elif v150 <= v150_max + 0.10:
-            score += 15
-        else:
-            score += 5
+        if "v200_max" in target_std:
+            available_points += 10
+            v200_max = float(target_std["v200_max"])
+            if v200 <= v200_max:
+                score += 10
+            elif v200 <= v200_max + 0.10:
+                score += 5
 
-        # V200 hot spots (10 pts max) from the clinical standards mirror.
-        if v200 <= v200_max:
-            score += 10
-        elif v200 <= v200_max + 0.10:
-            score += 5
+        if "d90_min_pct" in target_std and prescribed_dose > 0:
+            available_points += 20
+            d90_min_pct = float(target_std["d90_min_pct"])
+            d90_pct = d90 / prescribed_dose
+            if d90_pct >= d90_min_pct:
+                score += 20
+            elif d90_pct >= d90_min_pct - 0.10:
+                score += 15
+            elif d90_pct >= d90_min_pct - 0.20:
+                score += 10
 
-        # D90 scoring (20 pts max) based on fraction of prescription.
-        d90_pct = d90 / prescribed_dose if prescribed_dose > 0 else 0
-        if d90_pct >= d90_min_pct:
-            score += 20
-        elif d90_pct >= d90_min_pct - 0.10:
-            score += 15
-        elif d90_pct >= d90_min_pct - 0.20:
-            score += 10
-
-        score -= len(oar_violations) * 10
-        return max(0.0, min(100.0, score))
+        if available_points <= 0:
+            return None
+        normalized = score / available_points * 100.0
+        normalized -= len(oar_violations) * 10
+        return max(0.0, min(100.0, normalized))
 
 
 def main():

@@ -239,9 +239,11 @@ def get_surface_points(image_array, target_val, obs_val, back_val):
     # Use a 3x3x3 kernel to examine neighboring voxels and identify adjacency
     kernel = np.ones((3, 3, 3), dtype=int)  # Kernel to evaluate all neighboring voxels
 
-    # Count the number of neighboring voxels for each voxel in the target region
-    # This helps to determine adjacency to background or obstacle areas
-    neighbor_count = convolve(target_region.astype(int), kernel, mode='constant', cval=0)
+    # Count neighboring non-target voxels. Counting target neighbors here would
+    # include every interior target voxel because the kernel contains its center.
+    neighbor_count = convolve(
+        background_or_obstacle.astype(int), kernel, mode='constant', cval=1
+    )
 
     # Surface points are identified as those in the target region adjacent to any background or obstacle
     surface_points = np.argwhere((neighbor_count > 0) & target_region)
@@ -440,30 +442,16 @@ def generate_dense_rays_from_foreground_with_normals(mask, theta_step, phi_step,
               - start_point is a tuple (x, y, z) representing the start of the ray.
               - direction is a tuple (dx, dy, dz) representing the direction of the ray.
     """
-    # Convert angle steps from degrees to radians
-    theta_step = np.radians(theta_step)
-    phi_step = np.radians(phi_step)
+    # The public signature predates the normal-driven implementation. Keep the
+    # angular parameters for compatibility; ray directions intentionally follow
+    # local surface normals instead of sampling a global spherical grid.
+    del theta_step, phi_step
     
     # Get indices of all foreground (1) voxels in the 3D mask
     foreground_indices = np.argwhere(mask == 1)
     
     rays = set()  # Use a set to store unique rays (start point, direction)
     
-    # Generate spherical coordinates: theta from 0 to pi, phi from 0 to 2pi
-    theta_vals = np.arange(0, np.pi, theta_step)  # Polar angle from 0 to pi
-    phi_vals = np.arange(0, 2 * np.pi, phi_step)  # Azimuthal angle from 0 to 2pi
-    
-    # Create a meshgrid for all combinations of theta and phi
-    theta_grid, phi_grid = np.meshgrid(theta_vals, phi_vals)
-    
-    # Convert spherical coordinates (theta, phi) to Cartesian directions (dx, dy, dz)
-    dx = np.sin(theta_grid) * np.cos(phi_grid)
-    dy = np.sin(theta_grid) * np.sin(phi_grid)
-    dz = np.cos(theta_grid)
-    
-    # Flatten the direction arrays to create a list of directions
-    directions = np.vstack((dx.flatten(), dy.flatten(), dz.flatten())).T
-
     # Function to compute the normal vector at a point (simple gradient approximation)
     def compute_normal(voxel, mask):
         x, y, z = voxel

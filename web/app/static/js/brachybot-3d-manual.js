@@ -459,10 +459,25 @@ function init3DScene() {
     axLight.position.set(2, 3, 4);
     axesScene.add(axLight);
 
-    // Animation loop
-    function animate() {
-        requestAnimationFrame(animate);
-        scene3D.controls.update();
+    // Render on demand. OrbitControls emits `change` while the user moves the
+    // camera and while damping settles; static scenes no longer consume a GPU
+    // frame at 60 Hz indefinitely.
+    let renderFrameId = 0;
+    let pendingFrames = 0;
+    let drawingFrame = false;
+
+    function requestRender(frameBudget = 2) {
+        pendingFrames = Math.max(pendingFrames, Math.max(1, frameBudget));
+        if (!renderFrameId && !drawingFrame && !document.hidden) {
+            renderFrameId = requestAnimationFrame(drawFrame);
+        }
+    }
+
+    function drawFrame() {
+        renderFrameId = 0;
+        if (document.hidden || !scene3D.renderer) return;
+        drawingFrame = true;
+        const controlsChanged = scene3D.controls.update();
 
         // Sync axes orientation with main camera
         axesGroup.rotation.copy(scene3D.camera.rotation);
@@ -494,8 +509,17 @@ function init3DScene() {
         scene3D.renderer.autoClear = true;
         scene3D.renderer.setScissorTest(false);
         scene3D.renderer.setViewport(0, 0, w, h);
+
+        drawingFrame = false;
+        pendingFrames = Math.max(0, pendingFrames - 1);
+        if (controlsChanged || pendingFrames > 0) requestRender(pendingFrames || 1);
     }
-    animate();
+    scene3D.requestRender = requestRender;
+    scene3D.controls.addEventListener('change', () => requestRender(8));
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) requestRender(2);
+    });
+    requestRender(2);
     scene3D.initialized = true;
 
     // Resize handler for 3D viewer — also re-fit camera so meshes
@@ -512,6 +536,7 @@ function init3DScene() {
         if (Object.keys(scene3D.meshes).length > 0) {
             fitCameraToScene();
         }
+        requestRender(2);
     });
     resizeObserver3D.observe(canvas);
 
@@ -555,6 +580,7 @@ function init3DScene() {
                 if (obj.material && obj.material.emissive) {
                     obj.material.emissive.setHex(0xff0000);
                 }
+                requestRender(2);
 
                 // Highlight in data tree
                 if (obj.userData.type === 'seed') highlightSeed(obj.userData.id);
@@ -589,6 +615,7 @@ function init3DScene() {
                 selectedObject.material.emissive.setHex(selectedObject.userData.originalEmissive || 0x332200);
             }
             selectedObject = null;
+            requestRender(2);
         }
     });
 
@@ -605,6 +632,7 @@ function init3DScene() {
         raycaster.ray.intersectPlane(dragPlane, intersection);
 
         selectedObject.position.copy(intersection.add(dragOffset));
+        requestRender(1);
     });
 
     // Mouse up - end drag
@@ -612,6 +640,7 @@ function init3DScene() {
         if (isDragging) {
             isDragging = false;
             scene3D.controls.enabled = true;
+            requestRender(4);
 
             if (selectedObject && selectedObject.userData.type === 'seed') {
                 // Update seed position in data tree state
@@ -719,16 +748,6 @@ function init3DScene() {
         selectedObject = null;
     }
 
-    // Handle resize
-    const observer = new ResizeObserver(() => {
-        const w = canvas.clientWidth, h = canvas.clientHeight;
-        if (w > 0 && h > 0) {
-            scene3D.camera.aspect = w / h;
-            scene3D.camera.updateProjectionMatrix();
-            scene3D.renderer.setSize(w, h);
-        }
-    });
-    observer.observe(canvas);
 }
 
 function addMeshToScene(meshData) {
@@ -797,7 +816,7 @@ function addMeshToScene(meshData) {
 
     scene3D.scene.add(mesh);
     scene3D.meshes[id] = mesh;
-    console.log('[addMeshToScene] Added mesh:', id, 'vertices:', meshData.vertex_count, 'total meshes:', Object.keys(scene3D.meshes).length);
+    uiDebugLog('[addMeshToScene] Added mesh:', id, 'vertices:', meshData.vertex_count, 'total meshes:', Object.keys(scene3D.meshes).length);
 
     // Mirror this mesh into the data tree so the user can see all 3D
     // meshes (CTV/OAR/dose/etc.) listed with their own visibility toggle.
@@ -827,6 +846,7 @@ function addMeshToScene(meshData) {
 
     // Fit camera to all meshes
     fitCameraToScene();
+    if (scene3D.requestRender) scene3D.requestRender(4);
 }
 
 function fitCameraToScene() {
@@ -849,6 +869,7 @@ function fitCameraToScene() {
         scene3D.camera.position.set(200, 150, 200);
         scene3D.controls.target.set(0, 0, 0);
         scene3D.controls.update();
+        if (scene3D.requestRender) scene3D.requestRender(4);
         return;
     }
     const center = new THREE.Vector3();
@@ -864,6 +885,7 @@ function fitCameraToScene() {
     scene3D.camera.far = dist * 20;
     scene3D.camera.updateProjectionMatrix();
     scene3D.controls.update();
+    if (scene3D.requestRender) scene3D.requestRender(8);
 }
 
 function render3DMesh(meshData) {
@@ -926,6 +948,7 @@ function update3DMeshOpacity(val) {
         if (!mesh) return;
         applyMeshOpacity(mesh, opacity, true);
     });
+    if (scene3D.requestRender) scene3D.requestRender(2);
 }
 
 function toggle3DWireframe(on) {
@@ -943,6 +966,7 @@ function toggle3DWireframe(on) {
             }
         }
     });
+    if (scene3D.requestRender) scene3D.requestRender(2);
 }
 
 async function toggle3DSkin(on) {
@@ -1183,7 +1207,7 @@ async function loadSeeds3D() {
             }
         });
 
-        console.log(`[loadSeeds3D] Added ${data.seeds.length} seeds + ${data.needles.length} needles to 3D scene (total meshes: ${Object.keys(scene3D.meshes).length})`);
+        uiDebugLog(`[loadSeeds3D] Added ${data.seeds.length} seeds + ${data.needles.length} needles to 3D scene (total meshes: ${Object.keys(scene3D.meshes).length})`);
 
         return { seeds: data.seeds.length, needles: data.needles.length };
     } catch (e) {
@@ -1202,7 +1226,7 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
         if (!res.ok) { console.warn(`[loadDoseIsosurface] ${threshold} Gy: HTTP ${res.status}`); return; }
         const data = await res.json();
         if (!data.success) { console.warn(`[loadDoseIsosurface] ${threshold} Gy: ${data.error}`); return; }
-        if (!data.vertex_count || data.vertex_count === 0) { console.log(`[loadDoseIsosurface] ${threshold} Gy: 0 vertices, skipping`); return; }
+        if (!data.vertex_count || data.vertex_count === 0) { uiDebugLog(`[loadDoseIsosurface] ${threshold} Gy: 0 vertices, skipping`); return; }
 
         init3DScene();
 
@@ -1245,7 +1269,7 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
         // (one from this push, one from the post-await push).
         const doseRange = data.dose_range || [0, 1];
         const dMax = doseRange[1] || 1;
-        const doseScaleGy = data.dose_scale_gy || 120;
+        const doseScaleGy = data.dose_scale_gy || _getDoseScaleGy();
         const dMaxGy = dMax * doseScaleGy;
         const pct = dMaxGy > 0 ? Math.round((threshold / dMaxGy) * 100) : 0;
         const existingLevel = dataTreeState.planning.doseLevels.find(d => Math.abs(d.threshold - threshold) < 1e-6);
@@ -1254,8 +1278,7 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
         // or a relative multiplier (called directly with 1.0, 1.5, etc.).
         // Multiplying an already-Gy value by rxGy again produced labels
         // like "14400 Gy" — the "extra 120" the user saw.
-        const rxGy = (window.reportForm && window.reportForm.planning
-            && window.reportForm.planning.prescriptionGy) || 120;
+        const rxGy = _getCurrentPrescriptionGy();
         const isAlreadyGy = threshold > 5;  // 1.0×/1.5×/2.0×/4.0× are all < 5; real Gy is 50+
         const absGy = isAlreadyGy ? threshold.toFixed(0) : (threshold * rxGy).toFixed(0);
         if (!existingLevel && !window._suppressSingleIsoEntry) {
@@ -1308,18 +1331,7 @@ async function loadAllIsoSurfaces() {
     // 2.0×Rx (240 Gy) = yellow, 4.0×Rx (480 Gy) = orange.
     const hexColors = display3d.iso_surface_colors || ['#00ff00', '#88ff00', '#ffff00', '#ff8800'];
     const opacities = display3d.iso_surface_opacities || [0.15, 0.25, 0.35, 0.45];
-    // Read prescription dose from multiple sources (in priority order):
-    // 1. Config endpoint in_lowest_energy (most reliable, from server config)
-    // 2. UI input field (user-editable)
-    // 3. reportForm.prescriptionGy (report module)
-    // 4. Default 120 Gy
-    const configRx = window._display3dConfig && window._display3dConfig._prescriptionGy;
-    const rxInput = document.getElementById('inLowestEnergy');
-    const rxFromInput = rxInput ? parseFloat(rxInput.value) : NaN;
-    const rxGy = (isFinite(configRx) && configRx > 0) ? configRx
-        : (isFinite(rxFromInput) && rxFromInput > 0) ? rxFromInput
-        : ((window.reportForm && window.reportForm.planning
-            && window.reportForm.planning.prescriptionGy) || 120);
+    const rxGy = _getCurrentPrescriptionGy();
 
     // Wipe any prior isosurface meshes
     Object.keys(scene3D.meshes || {}).forEach(id => {
@@ -1348,9 +1360,9 @@ async function loadAllIsoSurfaces() {
         const color = (r << 16) | (g << 8) | b;
         const opacity = (opacities[i] !== undefined) ? opacities[i] : 0.3;
         try {
-            console.log(`[IsoSurf] Loading ${v} Gy (color=${hexStr}, opacity=${opacity})...`);
+            uiDebugLog(`[IsoSurf] Loading ${v} Gy (color=${hexStr}, opacity=${opacity})...`);
             await loadDoseIsosurface(v, color);
-            console.log(`[IsoSurf] ${v} Gy: mesh=${scene3D.meshes['dose_iso_'+v] ? 'loaded' : 'FAILED'}`);
+            uiDebugLog(`[IsoSurf] ${v} Gy: mesh=${scene3D.meshes['dose_iso_'+v] ? 'loaded' : 'FAILED'}`);
             // Override the just-added mesh's opacity with the per-level
             // config value (loadDoseIsosurface uses a hard-coded 0.3).
             const mesh = scene3D.meshes[`dose_iso_${v}`];
@@ -1402,12 +1414,6 @@ function _meshTaskKey(source, labelId, smoothing = 1) {
 
 function _sceneHasMesh(id) {
     return !!(typeof scene3D !== 'undefined' && scene3D.meshes && scene3D.meshes[id]);
-}
-
-function _getCtvMeshLabelIds() {
-    const ctvLabelMap = window._ctvLabelMap || {};
-    const ids = Object.keys(ctvLabelMap).map(Number).filter(n => Number.isFinite(n) && n !== 0);
-    return ids.length > 0 ? ids : [1, 2, 3, 4, 5, 6];
 }
 
 function _parseTreeColorValue(color, fallback = 0xff4444) {
@@ -1511,7 +1517,7 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
     const includeOAR = kind === 'oar' || kind === 'all';
     const showStatus = opts.showStatus !== false;
     const force = opts.force === true;
-    const ctvLabelIds = _getCtvMeshLabelIds();
+    const ctvLabelIds = getCtvMeshLabelIds();
     const promises = [];
 
     _segmentationMeshPrewarm.activeRuns += 1;
@@ -1578,7 +1584,7 @@ function startSegmentationMeshPrewarm(kind = 'all') {
 
 async function loadCTVAndObstacleMeshes() {
     await prewarmSegmentationMeshes('all', { showStatus: false, batchSize: 3 });
-    console.log(`[loadCTVAndObstacle] Meshes ready. Total scene meshes: ${Object.keys(scene3D.meshes).length}`);
+    uiDebugLog(`[loadCTVAndObstacle] Meshes ready. Total scene meshes: ${Object.keys(scene3D.meshes).length}`);
 }
 
 // Load dose distribution as 2D overlay on CT slices
@@ -1586,11 +1592,42 @@ let _doseOverlayData = null;
 let _doseOverlayVisible = false;
 let _doseOverlayOpacity = 0.5;
 
-// Dose-to-Gy conversion factor: CNN output is normalized to DOSE_SCALE Gy at prescription.
-// Reference: planning_pipeline.py uses DOSE_SCALE = 120.0 Gy for prescription (1.0 normalized = 120 Gy).
-// The max dose in normalized units (e.g. ~3-4 for typical plans) is multiplied here so the
-// colorbar shows real physical dose in Gy, not normalized values.
-const DOSE_NORM_TO_GY = 120.0;
+// The backend returns the checkpoint calibration with each dose payload. Keep a
+// documented fallback for older servers, but never scatter literal conversion
+// factors through the viewer code.
+const DEFAULT_DOSE_SCALE_GY = 120.0;
+
+function _getDoseScaleGy() {
+    const candidates = [
+        state?.doseOverlay?.doseScaleGy,
+        state?.metrics?.dose_scale_gy,
+        window._display3dConfig?._doseScaleGy,
+    ];
+    for (const value of candidates) {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+    return DEFAULT_DOSE_SCALE_GY;
+}
+
+function _getCurrentPrescriptionGy() {
+    const explicitReport = Number(window.reportForm?.planning?.prescriptionGy);
+    if (Number.isFinite(explicitReport) && explicitReport > 0) return explicitReport;
+
+    const metricGy = Number(state?.metrics?.prescription_gy);
+    if (Number.isFinite(metricGy) && metricGy > 0) return metricGy;
+
+    const configuredGy = Number(window._display3dConfig?._prescriptionGy);
+    if (Number.isFinite(configuredGy) && configuredGy > 0) return configuredGy;
+
+    const scale = _getDoseScaleGy();
+    const normalizedMetric = Number(state?.metrics?.prescribed_dose);
+    if (Number.isFinite(normalizedMetric) && normalizedMetric > 0) return normalizedMetric * scale;
+
+    const normalizedInput = Number(document.getElementById('inLowestEnergy')?.value);
+    if (Number.isFinite(normalizedInput) && normalizedInput > 0) return normalizedInput * scale;
+    return scale;
+}
 
 // Colorbar display range, in Gy. Matches ref.py displayNode.SetWindow(600) / SetLevel(300).
 // Dose values above this are SATURATED to the top colormap color (not rescaled).
@@ -1638,7 +1675,7 @@ function _doseGyToRgb(doseGy) {
 }
 
 function _doseNormToRgb(doseNorm) {
-    return _doseGyToRgb(Number(doseNorm || 0) * DOSE_NORM_TO_GY);
+    return _doseGyToRgb(Number(doseNorm || 0) * _getDoseScaleGy());
 }
 
 function _doseColorbarLabelSpecs(pixelHeight = 512) {
@@ -1807,13 +1844,16 @@ async function loadDoseOverlay() {
         // Store metadata; slices will be fetched on demand
         // doseMin / doseMax are in NORMALIZED units (CNN output). They are
         // converted to Gy only for display labels.
-        if (state.doseTexture) state.doseTexture.rawAxialSlices = {};
+        if (state.doseTexture) {
+            state.doseTexture.rawAxialSlices = {};
+            state.doseTexture.rawAxialSlicePromises = {};
+        }
         state.doseOverlay = {
             shape: data.dose_shape,
             doseMin: data.dose_min,
             doseMax: data.dose_max,
             doseUnits: data.dose_units || 'normalized_model_output',
-            doseScaleGy: data.dose_scale_gy || DOSE_NORM_TO_GY || 120,
+            doseScaleGy: data.dose_scale_gy || _getDoseScaleGy(),
             visible: true,
             opacity: 0.5,
             slices: {},  // Cache: {axis_index: sliceData}
@@ -1834,7 +1874,7 @@ async function loadDoseOverlay() {
         renderDataTree();
 
         // Show colorbars in ALL 3 2D viewers (axial, sagittal, coronal).
-        // Values are converted to Gy using DOSE_NORM_TO_GY so labels are
+        // Values are converted with the backend-provided checkpoint scale so labels are
         // linear in real physical dose.
         updateDoseColorbars(true, data.dose_min, data.dose_max);
 
@@ -1859,7 +1899,7 @@ async function loadDoseOverlay() {
 let _doseOverlayRequestVersion = 0;
 
 async function fetchDoseOverlaySlice(axis, sliceIndex) {
-    if (!state.doseOverlay) { console.log('[dose] fetch skipped: no doseOverlay state'); return null; }
+    if (!state.doseOverlay) { uiDebugLog('[dose] fetch skipped: no doseOverlay state'); return null; }
     const cacheKey = `${axis}_${sliceIndex}`;
     if (state.doseOverlay.slices[cacheKey]) return state.doseOverlay.slices[cacheKey];
 
@@ -1874,9 +1914,9 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ axis, slice_index: requestSliceIndex }),
         });
-        if (!res.ok) { console.log(`[dose] fetch HTTP ${res.status} for ${cacheKey}`); return null; }
+        if (!res.ok) { uiDebugLog(`[dose] fetch HTTP ${res.status} for ${cacheKey}`); return null; }
         const data = await res.json();
-        if (!data.success) { console.log(`[dose] fetch failed: ${data.error} for ${cacheKey}`); return null; }
+        if (!data.success) { uiDebugLog(`[dose] fetch failed: ${data.error} for ${cacheKey}`); return null; }
         // If a newer request was issued while this one was in flight,
         // cache the data but don't render (stale slice).
         if (myVersion !== _doseOverlayRequestVersion) {
@@ -1909,88 +1949,6 @@ function preloadDoseSlices(axis, centerSlice) {
 }
 
 // Render dose overlay on a canvas for the current slice
-function renderDoseOverlayOnCanvas(canvas, sliceIndex, axis) {
-    if (!state.doseOverlay || !state.doseOverlay.visible || !state.doseOverlay.data) return;
-
-    const dose = state.doseOverlay.data;
-    const shape = state.doseOverlay.shape;
-    // Use the FIXED 0–600 Gy color range (matches ref.py / colorbar). The
-    // stored doseMin/doseMax are kept only for the "skip very low dose"
-    // check below; for the actual colormap we use the clamped range so
-    // outliers (e.g. dose values >> 600 Gy) saturate to the top color
-    // instead of washing the whole image in one hue.
-    const dMin = state.doseOverlay.doseMin;
-    const dMax = state.doseOverlay.doseMax;
-    const opacity = state.doseOverlay.opacity;
-    const dMinGy = COLORBAR_MIN_GY;
-    const dMaxGy = COLORBAR_MAX_GY;
-
-    if (dMax <= dMin) return;
-
-    const ctx = canvas.getContext('2d');
-    const w = canvas.width;
-    const h = canvas.height;
-
-    // Get slice data based on axis
-    let sliceData;
-    if (axis === 'axial' || axis === 'z') {
-        const z = Math.min(sliceIndex, shape[0] - 1);
-        sliceData = dose[z]; // shape: [y, x]
-    } else if (axis === 'coronal' || axis === 'y') {
-        const y = Math.min(sliceIndex, shape[1] - 1);
-        sliceData = dose.map(row => row[y]); // shape: [z, x]
-    } else { // sagittal
-        const x = Math.min(sliceIndex, shape[2] - 1);
-        sliceData = dose.map(row => row.map(col => col[x])); // shape: [z, y]
-    }
-
-    if (!sliceData) return;
-
-    const rows = sliceData.length;
-    const cols = sliceData[0]?.length || 0;
-    if (rows === 0 || cols === 0) return;
-
-    // Create overlay image data
-    const imageData = ctx.createImageData(w, h);
-    const scaleX = w / cols;
-    const scaleY = h / rows;
-
-    // PETrainbow2 colormap (delegates to the canonical _petRainbow2
-    // so the dose-overlay and the colorbar canvas always agree).
-    // Tuned so red only appears at 550 Gy+ (0.92+ normalized on the
-    // 0–600 Gy scale) — see _petRainbow2 above.
-    const colormap = (val) => _petRainbow2(val);
-
-    for (let py = 0; py < h; py++) {
-        for (let px = 0; px < w; px++) {
-            const sx = Math.floor(px / scaleX);
-            const sy = Math.floor(py / scaleY);
-            if (sx >= cols || sy >= rows) continue;
-
-            const val = sliceData[sy][sx];
-            // Draw ALL dose pixels. The user wants the dose map to be a
-            // self-contained black-backgrounded layer — 0 Gy renders as
-            // solid black (not transparent), so the colormap gradient is
-            // clearly bounded and "no dose" regions are unambiguous.
-            // Convert to Gy, then normalize against the FIXED [0, 600] Gy
-            // range. Values > 600 Gy are saturated to the top color.
-            const valGy = val * DOSE_NORM_TO_GY;
-            const normalized = (valGy - dMinGy) / (dMaxGy - dMinGy);
-            const [r, g, b] = colormap(Math.min(1, Math.max(0, normalized)));
-            const idx = (py * w + px) * 4;
-            imageData.data[idx] = r;
-            imageData.data[idx + 1] = g;
-            imageData.data[idx + 2] = b;
-            // Alpha: 0 Gy → full opacity (solid black background), high
-            // Gy → full opacity (colormap). Always render the dose map
-            // as a complete layer; no "skip" logic.
-            imageData.data[idx + 3] = Math.floor(opacity * 255);
-        }
-    }
-
-    ctx.putImageData(imageData, 0, 0);
-}
-
 // Render dose overlay on top of CT slice canvas
 // Render dose overlay onto a SEPARATE canvas layer (not the CT canvas).
 // This prevents the CT's putImageData from clearing the old dose.
@@ -2026,7 +1984,7 @@ function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
             const sx = Math.min(Math.floor(px / scaleX), cols - 1);
             const sy = Math.min(Math.floor(py / scaleY), rows - 1);
             const val = sliceData[sy][sx];
-            const valGy = val * DOSE_NORM_TO_GY;
+            const valGy = val * _getDoseScaleGy();
             const normalized = (valGy - dMinGy) / (dMaxGy - dMinGy);
             const [r, g, b] = colormap(Math.min(1, Math.max(0, normalized)));
             const idx = (py * w + px) * 4;
@@ -2040,90 +1998,6 @@ function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
     // Paint to a temp canvas first, then swap — avoids the brief
     // blank frame that ctx.clearRect alone would cause.
     ctx.clearRect(0, 0, w, h);
-    ctx.drawImage(tmpCanvas, 0, 0);
-}
-
-function renderDoseOverlay(axis, sliceIndex, sliceData) {
-    if (!state.doseOverlay || !state.doseOverlay.visible || !sliceData) return;
-
-    // Skip if the user's current slice is no longer this one. The async
-    // fetch chain can return out of order, and we don't want to paint
-    // a stale slice over the new one. This is the second half of the
-    // flicker fix (the first half is the request version counter in
-    // fetchDoseOverlaySlice).
-    if (state.slices[axis] !== undefined && state.slices[axis] !== sliceIndex) {
-        return;
-    }
-
-    const canvasId = 'sliceCanvas' + capitalize(axis);
-    const canvas = document.getElementById(canvasId);
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    const w = canvas.width;
-    const h = canvas.height;
-
-    // sliceData is in (z,y,x) format for the given axis
-    const rows = sliceData.length;
-    const cols = sliceData[0]?.length || 0;
-    if (rows === 0 || cols === 0) return;
-
-    const dMin = state.doseOverlay.doseMin;
-    const dMax = state.doseOverlay.doseMax;
-    const opacity = state.doseOverlay.opacity;
-    // Use the FIXED 0–600 Gy color range (matches ref.py / colorbar).
-    // The stored doseMin/doseMax are kept only for the "skip very low dose"
-    // check below; for the actual colormap we use the clamped range so
-    // outliers (e.g. dose values >> 600 Gy) saturate to the top color
-    // instead of washing the whole image in one hue.
-    const dMinGy = COLORBAR_MIN_GY;
-    const dMaxGy = COLORBAR_MAX_GY;
-
-    if (dMax <= dMin) return;
-
-    // Create temporary canvas for overlay
-    const tmpCanvas = document.createElement('canvas');
-    tmpCanvas.width = w;
-    tmpCanvas.height = h;
-    const tmpCtx = tmpCanvas.getContext('2d');
-    const imageData = tmpCtx.createImageData(w, h);
-
-    const scaleX = w / cols;
-    const scaleY = h / rows;
-
-    // PETrainbow2 colormap (delegates to the canonical _petRainbow2
-    // so the dose-overlay and the colorbar canvas always agree).
-    // Tuned so red only appears at 550 Gy+ (0.92+ normalized on the
-    // 0–600 Gy scale) — see _petRainbow2 above.
-    const colormap = (val) => _petRainbow2(val);
-
-    for (let py = 0; py < h; py++) {
-        for (let px = 0; px < w; px++) {
-            const sx = Math.min(Math.floor(px / scaleX), cols - 1);
-            const sy = Math.min(Math.floor(py / scaleY), rows - 1);
-
-            const val = sliceData[sy][sx];
-            // Draw ALL dose pixels. The user wants the dose map to be a
-            // self-contained black-backgrounded layer — 0 Gy renders as
-            // solid black (not transparent), so the colormap gradient is
-            // clearly bounded and "no dose" regions are unambiguous.
-            const valGy = val * DOSE_NORM_TO_GY;
-            const normalized = (valGy - dMinGy) / (dMaxGy - dMinGy);
-            const [r, g, b] = colormap(Math.min(1, Math.max(0, normalized)));
-            const idx = (py * w + px) * 4;
-            imageData.data[idx] = r;
-            imageData.data[idx + 1] = g;
-            imageData.data[idx + 2] = b;
-            // Always render the dose map as a complete layer; no
-            // transparency modulation. 0 Gy → (0,0,0) opaque black.
-            imageData.data[idx + 3] = Math.floor(opacity * 255);
-        }
-    }
-
-    tmpCtx.putImageData(imageData, 0, 0);
-
-    // Composite overlay onto CT canvas
-    ctx.globalAlpha = 1;
     ctx.drawImage(tmpCanvas, 0, 0);
 }
 

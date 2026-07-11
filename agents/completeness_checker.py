@@ -47,10 +47,10 @@ class CompletenessChecker(LLMCapableAgent):
 {tool_steps}
 
 ## Rules
-- A requirement is "addressed" if the response or tool steps mention it, regardless of success/failure
-- If a tool was called for a requirement, it counts as addressed even if the tool returned an error
+- A requested action is fulfilled only when its tool step completed successfully
+- A failed/cancelled action is not fulfilled; the response must clearly report the failure and next action
 - Short greetings / simple questions with no specific requirements → always pass
-- Do NOT judge quality — only whether each requirement was acted upon
+- Do NOT judge clinical quality — only whether each requirement was completed or explicitly reported as blocked
 
 ## Output Format (JSON)
 {{
@@ -178,9 +178,8 @@ class CompletenessChecker(LLMCapableAgent):
         return []
 
     def _is_addressed(self, requirement: str, response: str, steps: List[Dict]) -> bool:
-        """Deterministic keyword overlap check."""
-        req_lower = requirement.lower()
-        req_words = set(re.findall(r'\w+', req_lower)) - {
+        """Conservative exact-token fallback; semantic matching belongs to the LLM."""
+        req_words = self._tokens(requirement) - {
             'the', 'a', 'an', 'is', 'are', 'of', 'to', 'in', 'for',
             'and', 'or', 'on', 'with', 'by', 'at', 'from', 'that',
             'this', 'it', 'be', 'as', 'not', 'no', 'please', 'help',
@@ -190,16 +189,29 @@ class CompletenessChecker(LLMCapableAgent):
         if not req_words:
             return True
 
-        resp_words = set(re.findall(r'\w+', response.lower()))
-        if len(req_words & resp_words) >= max(1, len(req_words) * 0.3):
+        if req_words.issubset(self._tokens(response)):
             return True
 
         for step in steps:
+            if str(step.get("status", "")).lower() not in {"done", "success", "completed"}:
+                continue
             step_text = json.dumps(step, ensure_ascii=False).lower()
-            if len(req_words & set(re.findall(r'\w+', step_text))) >= max(1, len(req_words) * 0.3):
+            if req_words.issubset(self._tokens(step_text)):
                 return True
 
         return False
+
+    @staticmethod
+    def _tokens(text: str) -> set[str]:
+        """Tokenize English words and CJK bigrams without external NLP deps."""
+        lowered = str(text).lower()
+        tokens = set(re.findall(r"[a-z0-9_]+", lowered))
+        for sequence in re.findall(r"[\u3400-\u9fff]+", lowered):
+            if len(sequence) == 1:
+                tokens.add(sequence)
+            else:
+                tokens.update(sequence[i:i + 2] for i in range(len(sequence) - 1))
+        return tokens
 
     async def _llm_check(self, user_message: str, response: str,
                           steps: List[Dict]) -> Optional[dict]:

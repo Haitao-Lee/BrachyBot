@@ -13,6 +13,14 @@ import re
 from typing import Any, Dict, List, Optional
 
 from .base_agent import LLMCapableAgent
+from .clinical_metrics import (
+    cumulative_dvh_consistency,
+    dose_ratio,
+    first_numeric,
+    match_constraint_name,
+    metric_value,
+    normalized_fraction,
+)
 from communication.protocol import AgentMessage, AgentResponse, AgentRole, ReviewResult
 
 logger = logging.getLogger(__name__)
@@ -110,17 +118,30 @@ Return JSON only:
             value = self._metric_value(dose_metrics, metric)
             if value is None:
                 continue
+            threshold = cfg["threshold"]
+            unit = cfg.get("unit", "")
+            if unit == "fraction":
+                value = normalized_fraction(value)
+                threshold = normalized_fraction(threshold)
+            elif unit == "fraction_of_prescription":
+                value = dose_ratio(dose_metrics, plan_config, metric)
+                threshold = normalized_fraction(threshold)
+            if value is None or threshold is None:
+                unverified.append(
+                    f"{metric.upper()} could not be unit-normalized from the supplied dose context."
+                )
+                continue
             metrics_checked.append({"metric": metric, "value": value, "source": "plan_config"})
-            status = self._compare(value, cfg["operator"], cfg["threshold"])
+            status = self._compare(value, cfg["operator"], threshold)
             if status != "OK":
                 issues.append({
                     "metric": metric.upper(),
                     "value": value,
-                    "threshold": cfg["threshold"],
+                    "threshold": threshold,
                     "operator": cfg["operator"],
                     "status": status,
                     "source": "plan_config",
-                    "unit": cfg.get("unit", ""),
+                    "unit": unit,
                 })
 
         if not target_checks:
@@ -156,52 +177,24 @@ Return JSON only:
         }
 
     def _advisory_sanity_checks(self, dose_metrics: Dict[str, Any], plan_config: Dict[str, Any]) -> List[str]:
-        """Flag obvious dose-distribution anomalies without inventing clinical limits."""
-        concerns: List[str] = []
-        v100 = self._normalized_fraction(self._metric_value(dose_metrics, "v100"))
-        v150 = self._normalized_fraction(self._metric_value(dose_metrics, "v150"))
-        v200 = self._normalized_fraction(self._metric_value(dose_metrics, "v200"))
-        d90_ratio = self._dose_ratio_or_fraction(dose_metrics, plan_config, "d90")
-        max_ratio = self._dose_ratio_or_fraction(dose_metrics, plan_config, "max_dose")
-
-        if v100 is not None and v100 < 0.80:
-            concerns.append(f"Advisory dose-distribution sanity concern: V100 is {v100:.1%}, suggesting poor target coverage.")
-        if d90_ratio is not None and d90_ratio < 0.80:
-            concerns.append(f"Advisory dose-distribution sanity concern: D90 is {d90_ratio:.1%} of prescription/context.")
-        if v150 is not None and v150 > 0.60:
-            concerns.append(f"Advisory dose-distribution sanity concern: V150 is {v150:.1%}, suggesting extensive high-dose volume.")
-        if v200 is not None and v200 > 0.30:
-            concerns.append(f"Advisory dose-distribution sanity concern: V200 is {v200:.1%}, suggesting extensive hot spots.")
-        if max_ratio is not None and max_ratio > 3.0:
-            concerns.append(f"Advisory dose-distribution sanity concern: max dose is {max_ratio:.1f}x prescription/context.")
-
+        """Check mathematical consistency without inventing clinical limits."""
+        concerns = cumulative_dvh_consistency(dose_metrics)
+        missing = [
+            key for key in ("v100", "d90", "max_dose", "mean_dose")
+            if self._metric_value(dose_metrics, key) is None
+        ]
+        if missing:
+            concerns.append(
+                "Plan output is missing core review metrics: " + ", ".join(missing) + "."
+            )
         return concerns
 
     @staticmethod
     def _normalized_fraction(value: Optional[float]) -> Optional[float]:
-        if value is None:
-            return None
-        return value / 100.0 if value > 1.5 else value
+        return normalized_fraction(value)
 
     def _dose_ratio_or_fraction(self, dose_metrics: Dict[str, Any], plan_config: Dict[str, Any], key: str) -> Optional[float]:
-        value = self._metric_value(dose_metrics, key)
-        if value is None:
-            return None
-        if value <= 5.0:
-            return value
-        prescription = self._first_numeric(dose_metrics, ("prescribed_dose", "prescription"))
-        if prescription is None:
-            prescription = self._first_numeric(plan_config, ("prescribed_dose", "in_lowest_energy", "prescription_dose"))
-        if prescription is not None and prescription <= 5.0:
-            dose_scale = (
-                self._first_numeric(dose_metrics, ("dose_scale_gy",))
-                or self._first_numeric(plan_config, ("dose_scale_gy",))
-                or 120.0
-            )
-            prescription *= dose_scale
-        if prescription and prescription > 0:
-            return value / prescription
-        return None
+        return dose_ratio(dose_metrics, plan_config, key)
 
     def _configured_target_checks(self, plan_config: Dict[str, Any]) -> Dict[str, dict]:
         checks: Dict[str, dict] = {}
@@ -240,18 +233,12 @@ Return JSON only:
 
     def _check_oar_constraints(self, oar_metrics: Dict[str, Any], constraints: Dict[str, Any]) -> List[dict]:
         issues: List[dict] = []
-        normalized = {str(k).lower(): v for k, v in constraints.items() if isinstance(v, dict)}
+        normalized = {str(k): v for k, v in constraints.items() if isinstance(v, dict)}
         for organ_name, organ_vals in oar_metrics.items():
             if not isinstance(organ_vals, dict):
                 continue
-            organ_lower = str(organ_name).lower()
-            constraint = None
-            source_name = None
-            for key, value in normalized.items():
-                if key == organ_lower or key in organ_lower or organ_lower in key:
-                    constraint = value
-                    source_name = key
-                    break
+            source_name = match_constraint_name(organ_name, normalized)
+            constraint = normalized.get(source_name) if source_name else None
             if not constraint:
                 continue
             for metric_key, aliases in {
@@ -279,19 +266,11 @@ Return JSON only:
 
     @staticmethod
     def _metric_value(metrics: Dict[str, Any], key: str) -> Optional[float]:
-        return PlanReviewer._first_numeric(metrics, (key, key.upper(), key.capitalize()))
+        return metric_value(metrics, key)
 
     @staticmethod
     def _first_numeric(values: Dict[str, Any], keys) -> Optional[float]:
-        for key in keys:
-            if key not in values:
-                continue
-            value = values.get(key)
-            try:
-                return float(str(value).replace("%", "").replace("Gy", "").strip())
-            except (TypeError, ValueError):
-                continue
-        return None
+        return first_numeric(values, keys)
 
     @staticmethod
     def _compare(value: float, operator: str, threshold: float) -> str:
@@ -332,7 +311,11 @@ Return JSON only:
 
         context_text = self._format_context(full_context or {})
         prescription_context = json.dumps({
-            "prescription": plan_config.get("in_lowest_energy") or plan_config.get("prescribed_dose"),
+            "prescription": (
+                plan_config.get("in_lowest_energy")
+                if plan_config.get("in_lowest_energy") is not None
+                else plan_config.get("prescribed_dose")
+            ),
             "dose_unit": plan_config.get("dose_unit", "from tool output"),
             "configured_threshold_keys": sorted(k for k in plan_config.keys() if "v" in k.lower() or "d90" in k.lower() or "constraint" in k.lower()),
         }, ensure_ascii=False)
@@ -342,11 +325,13 @@ Return JSON only:
             prescription_context=prescription_context,
         )
         prompt = f"{context_text}\n\n{prompt}"
-        if _MEDICAL_SYSTEM_PROMPT:
-            prompt += f"\n\n## Clinical Knowledge Policy\n{_MEDICAL_SYSTEM_PROMPT[:2500]}"
 
         try:
-            response = await self.call_llm(prompt, temperature=0.2)
+            response = await self.call_llm(
+                prompt,
+                system_prompt=_MEDICAL_SYSTEM_PROMPT or self._system_prompt,
+                temperature=0.2,
+            )
             match = re.search(r"\{.*\}", response, re.DOTALL)
             if match:
                 return json.loads(match.group())

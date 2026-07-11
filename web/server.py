@@ -5,6 +5,7 @@ groups live in smaller modules so each file is easier to audit.
 """
 
 import os
+import re
 import sys
 import threading
 import time
@@ -13,6 +14,8 @@ from typing import Any, Dict, Optional
 
 WEB_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(WEB_DIR, ".."))
+
+from utils.operation_tracker import get_active_operations as _tracked_operations
 
 try:
     from web.server_support import (
@@ -49,15 +52,20 @@ _validate_path = _server_support._validate_path
 _validate_upload_name = _server_support._validate_upload_name
 
 
+def _sanitize_upload_filename(name: str) -> str:
+    """Return a storage-safe basename while retaining readable file names."""
+    basename = os.path.basename(name or "")
+    sanitized = "".join(c for c in basename if c.isalnum() or c in "._- ")
+    return sanitized.strip() or "uploaded_file"
+
+
 def create_app(config: Optional[Dict] = None):
     """Create and configure the Flask application."""
     try:
-        from flask import Flask, request, jsonify, send_from_directory, Response
+        from flask import Flask, request, jsonify, send_from_directory, Response, has_request_context
         from flask_cors import CORS
         from werkzeug.exceptions import RequestEntityTooLarge
-        HAS_FLASK = True
     except ImportError:
-        HAS_FLASK = False
         logger.warning("Flask not installed. API endpoints will not be available.")
         return None
 
@@ -107,14 +115,30 @@ def create_app(config: Optional[Dict] = None):
     _default_session_id = config.get("session_id", "web")
     _max_sessions = 50  # Maximum number of concurrent sessions
     _session_timeout = 3600  # Session timeout in seconds (1 hour)
-    websocket_clients = []
+    def _normalize_session_id(value: Any) -> str:
+        text = str(value or _default_session_id).strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", text):
+            raise ValueError("Invalid session_id")
+        return text
+
+    def _request_session_id() -> str:
+        if not has_request_context():
+            return _default_session_id
+        candidate = request.headers.get("X-BrachyBot-Session") or request.args.get("session_id")
+        if candidate is None and request.is_json:
+            payload = request.get_json(silent=True) or {}
+            candidate = payload.get("session_id") if isinstance(payload, dict) else None
+        return _normalize_session_id(candidate)
 
     def get_agent(session_id: str = None):
         """Get or create an agent for the given session."""
         nonlocal _sessions, _session_timestamps
 
-        if session_id is None:
-            session_id = _default_session_id
+        try:
+            session_id = _request_session_id() if session_id is None else _normalize_session_id(session_id)
+        except ValueError as exc:
+            logger.warning("Rejected invalid session id: %s", exc)
+            return None
 
         with _sessions_lock:
             # Clean up old sessions periodically
@@ -131,6 +155,7 @@ def create_app(config: Optional[Dict] = None):
                 oldest_session = min(_session_timestamps, key=_session_timestamps.get)
                 _sessions.pop(oldest_session, None)
                 _session_timestamps.pop(oldest_session, None)
+                _server_support._drop_ui_bucket(oldest_session)
                 logger.info(f"Removed oldest session: {oldest_session}")
 
             # Create new agent for this session
@@ -162,6 +187,7 @@ def create_app(config: Optional[Dict] = None):
             for sid in expired_sessions:
                 _sessions.pop(sid, None)
                 _session_timestamps.pop(sid, None)
+                _server_support._drop_ui_bucket(sid)
                 logger.info(f"Removed expired session: {sid}")
 
     @app.route("/")
@@ -199,16 +225,11 @@ def create_app(config: Optional[Dict] = None):
             os.makedirs(upload_dir, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            def _safe(name):
-                name = os.path.basename(name or "")
-                name = "".join(c for c in name if c.isalnum() or c in "._- ")
-                return name or "uploaded_file"
-
             if len(files) == 1:
                 f = files[0]
                 if f.filename == "":
                     return jsonify({"error": "No file selected"}), 400
-                filename = _safe(f.filename)
+                filename = _sanitize_upload_filename(f.filename)
                 if not _validate_upload_name(filename):
                     return jsonify({"error": f"Unsupported upload type: {filename}"}), 400
                 base, ext = os.path.splitext(filename)
@@ -240,7 +261,7 @@ def create_app(config: Optional[Dict] = None):
                 # For webkitdirectory uploads, filename includes the relative
                 # path (e.g. "Series1/IMG0001.dcm"). Preserve the leaf name.
                 rel = f.filename.replace("\\", "/").rstrip("/")
-                leaf = _safe(rel.split("/")[-1])
+                leaf = _sanitize_upload_filename(rel.split("/")[-1])
                 if not leaf:
                     continue
                 if not _validate_upload_name(leaf, dicom_series=True):
@@ -425,6 +446,7 @@ def create_app(config: Optional[Dict] = None):
             "0010|0030": "patient_birth_date",
             "0010|0040": "patient_sex",
             "0008|0020": "study_date",
+            "0008|0030": "study_time",
             "0008|002A": "study_date_dt",
             "0008|0050": "accession_number",
             "0008|0060": "modality",
@@ -438,6 +460,7 @@ def create_app(config: Optional[Dict] = None):
             "0008|1080": "operators_name",
             "0020|000D": "study_instance_uid",
             "0020|000E": "series_instance_uid",
+            "0020|0052": "frame_of_reference_uid",
             "0008|0008": "image_type",
         }
         for k, name in keys.items():
@@ -521,7 +544,9 @@ def create_app(config: Optional[Dict] = None):
     def _build_report_interpretation(agent, language="zh"):
         """Generate source-aware report interpretation without local clinical verdicts."""
         dose = (agent.memory.retrieve("dose_metrics") or {}) if agent else {}
-        prescribed = dose.get("prescribed_dose", DOSE_MODEL_SCALE_GY)
+        prescribed = dose.get("prescription_gy")
+        if prescribed is None:
+            prescribed = float(dose.get("prescribed_dose", 1.0)) * DOSE_MODEL_SCALE_GY
         try:
             from tool_factory.report_context import (
                 build_report_context,
@@ -731,7 +756,7 @@ def create_app(config: Optional[Dict] = None):
                 total_seeds = agent.memory.retrieve("total_seeds")
                 num_trajectories = agent.memory.retrieve("num_trajectories")
                 ctv_voxels = agent.memory.retrieve("ctv_voxels")
-                spacing = agent.memory.retrieve("ct_spacing")
+                ctv_volume_mm3 = agent.memory.retrieve("ctv_volume_mm3")
 
                 if dose.get("v100") is not None:
                     patch["metrics.v100"] = round(float(dose["v100"]) * 100, 2)
@@ -760,8 +785,11 @@ def create_app(config: Optional[Dict] = None):
                 if dose.get("plan_score") is not None:
                     patch["metrics.score"] = round(float(dose["plan_score"]), 1)
                     provenance["planning"].append("metrics.score")
-                if dose.get("prescribed_dose") is not None:
-                    patch["planning.prescriptionGy"] = round(float(dose["prescribed_dose"]), 1)
+                prescription_gy = dose.get("prescription_gy")
+                if prescription_gy is None and dose.get("prescribed_dose") is not None:
+                    prescription_gy = float(dose["prescribed_dose"]) * DOSE_MODEL_SCALE_GY
+                if prescription_gy is not None:
+                    patch["planning.prescriptionGy"] = round(float(prescription_gy), 1)
                     provenance["planning"].append("planning.prescriptionGy")
 
                 if total_seeds:
@@ -770,13 +798,32 @@ def create_app(config: Optional[Dict] = None):
                 if num_trajectories:
                     patch["planning.trajectoryCount"] = int(num_trajectories)
                     provenance["planning"].append("planning.trajectoryCount")
-                if ctv_voxels and spacing:
+                plan_config = agent.memory.retrieve("plan_config") or getattr(agent, "config", {}) or {}
+                seed_info = plan_config.get("seed_info", {}) if isinstance(plan_config, dict) else {}
+                if isinstance(seed_info, dict) and total_seeds:
                     try:
-                        vol_mm3 = float(ctv_voxels) * float(spacing[0]) * float(spacing[1]) * float(spacing[2])
-                        patch["case.ctvVolumeMm3"] = round(vol_mm3, 1)
+                        activity_mbq = seed_info.get("activity_mbq") or seed_info.get("activity_mbq_per_seed")
+                        if activity_mbq is None and seed_info.get("activity_mci") is not None:
+                            activity_mbq = float(seed_info["activity_mci"]) * 37.0
+                        if activity_mbq is not None and float(activity_mbq) > 0:
+                            activity_mbq = float(activity_mbq)
+                            patch["planning.seedActivityMBq"] = round(activity_mbq, 3)
+                            patch["planning.totalActivityMBq"] = round(activity_mbq * int(total_seeds), 3)
+                            provenance["planning"] += [
+                                "planning.seedActivityMBq",
+                                "planning.totalActivityMBq",
+                            ]
+                    except (TypeError, ValueError) as exc:
+                        logger.warning("Ignoring invalid seed activity in plan_config: %s", exc)
+                if ctv_voxels:
+                    patch["segmentation.ctvVoxels"] = int(ctv_voxels)
+                    provenance["planning"].append("segmentation.ctvVoxels")
+                if ctv_volume_mm3 is not None:
+                    try:
+                        patch["case.ctvVolumeMm3"] = round(float(ctv_volume_mm3), 1)
                         provenance["planning"].append("case.ctvVolumeMm3")
-                    except Exception:
-                        pass
+                    except (TypeError, ValueError) as exc:
+                        logger.warning("Ignoring invalid CTV volume in memory: %s", exc)
 
                 try:
                     from tool_factory.report_context import build_report_context
@@ -841,22 +888,21 @@ def create_app(config: Optional[Dict] = None):
 
 
     register_viewer_routes(app, get_agent, _load_ct_image, _extract_dicom_tags)
-    register_planning_routes(app, get_agent, session_context={
-        "sessions": _sessions,
-        "session_timestamps": _session_timestamps,
-        "sessions_lock": _sessions_lock,
-        "default_session_id": _default_session_id,
-    })
+    register_planning_routes(app, get_agent)
 
     @app.route("/api/reset", methods=["POST"])
     @require_api_key
     def api_reset():
         """Reset agent state for a session."""
         nonlocal _sessions, _session_timestamps
-        data = request.get_json() or {}
-        session_id = data.get("session_id", _default_session_id)
+        data = request.get_json(silent=True) or {}
+        try:
+            session_id = _normalize_session_id(data.get("session_id") or _request_session_id())
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
         with _sessions_lock:
+            _server_support._drop_ui_bucket(session_id)
             if session_id in _sessions:
                 _sessions.pop(session_id, None)
                 _session_timestamps.pop(session_id, None)
@@ -869,10 +915,6 @@ def create_app(config: Optional[Dict] = None):
     def not_found(e):
         return jsonify({"error": "Not found"}), 404
 
-    @app.errorhandler(500)
-    def server_error(e):
-        return jsonify({"error": "Internal server error"}), 500
-
     return app
 
 
@@ -881,20 +923,22 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
     if not _is_loopback_host(host):
         allow_insecure = os.environ.get("BRACHYBOT_ALLOW_INSECURE_REMOTE", "").lower() in TRUE_VALUES
         if not os.environ.get("BRACHYBOT_API_KEY") and not allow_insecure:
-            logger.error(
+            message = (
                 "Refusing to bind BrachyBot to non-loopback host %s without BRACHYBOT_API_KEY. "
                 "Set BRACHYBOT_API_KEY, bind to 127.0.0.1, or explicitly set "
-                "BRACHYBOT_ALLOW_INSECURE_REMOTE=1 for local trusted networks.",
-                host,
+                "BRACHYBOT_ALLOW_INSECURE_REMOTE=1 for local trusted networks."
             )
-            return
+            rendered_message = message % host
+            logger.error(rendered_message)
+            # Service managers must observe startup refusal as a failed process.
+            raise RuntimeError(rendered_message)
 
     app = create_app(config)
 
     if app is None:
-        logger.error("Cannot start server - Flask not available")
-        logger.info("Install Flask: pip install flask flask-cors")
-        return
+        message = "Cannot start server - Flask is not available; install flask and flask-cors"
+        logger.error(message)
+        raise RuntimeError(message)
 
     print(f"\n{'=' * 50}")
     print(f"  AI-BrachyAgent Web Server")
@@ -904,76 +948,10 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
     print(f"{'=' * 50}\n")
 
     # Cleanup handler: kill background threads/subprocesses on exit
-    import atexit, itertools as _itertools, signal as _sig, threading as _threading
+    import atexit, signal as _sig, threading as _threading
     _shutdown_event = _threading.Event()
-    _active_operations = {}  # op_id -> operation metadata
-    _op_counter = _itertools.count(1)
-    _ops_lock = _threading.RLock()
-    _track_local = _threading.local()
-
-    class _OperationContext:
-        """Context manager to track ongoing operations."""
-        def __init__(self, name):
-            self.name = name
-            self.op_id = None
-            self._nested = False
-        def __enter__(self):
-            stack = getattr(_track_local, "stack", [])
-            if self.name in stack:
-                self._nested = True
-                stack.append(self.name)
-                _track_local.stack = stack
-                logger.debug(f"[OP-TRACK] Nested '{self.name}' reuses active operation")
-                return self
-
-            with _ops_lock:
-                self.op_id = next(_op_counter)
-                _active_operations[self.op_id] = {
-                    "name": self.name,
-                    "started_at": time.time(),
-                    "thread": _threading.current_thread().name,
-                }
-                logger.debug(f"[OP-TRACK] Added '{self.name}' to active operations: {get_active_operations()}")
-            stack.append(self.name)
-            _track_local.stack = stack
-            return self
-        def __exit__(self, *args):
-            stack = getattr(_track_local, "stack", [])
-            if stack:
-                try:
-                    stack.remove(self.name)
-                except ValueError:
-                    pass
-                _track_local.stack = stack
-            if self._nested:
-                return False
-
-            with _ops_lock:
-                if self.op_id in _active_operations:
-                    _active_operations.pop(self.op_id, None)
-                    logger.debug(f"[OP-TRACK] Removed '{self.name}' from active operations: {get_active_operations()}")
-                else:
-                    logger.warning(f"[OP-TRACK] Tried to remove '{self.name}' but it wasn't active: {get_active_operations()}")
-            return False
-
-    def get_active_operations():
-        """Get list of currently active operations."""
-        with _ops_lock:
-            now = time.time()
-            return [
-                {
-                    "id": op_id,
-                    "name": meta["name"],
-                    "thread": meta["thread"],
-                    "elapsed_sec": round(now - meta["started_at"], 1),
-                }
-                for op_id, meta in sorted(_active_operations.items())
-            ]
-
-    # Make operation tracking available globally
-    import builtins
-    builtins.track_operation = _OperationContext
-    builtins.get_active_operations = get_active_operations
+    # Tool tracking is centralized in utils.operation_tracker. Keeping a
+    # second registry here made shutdown checks disagree with active tools.
 
     def _cleanup():
         logger.info("[shutdown] Cleaning up background tasks...")
@@ -1005,7 +983,7 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
             signal_name = str(signum)
         print(f"\nShutdown signal received ({signal_name}/{signum})...")
 
-        active = get_active_operations()
+        active = _tracked_operations()
 
         if active:
             _shutdown_requested[0] = True
@@ -1045,7 +1023,10 @@ def main():
 
     parser = argparse.ArgumentParser(description="AI-BrachyAgent Web Server")
     parser.add_argument("--port", type=int, default=8080, help="Server port")
-    default_host = "0.0.0.0" if (os.environ.get("BRACHYBOT_API_KEY") or os.environ.get("BRACHYBOT_TRUST_NETWORK")) else "127.0.0.1"
+    remote_bind_enabled = bool(os.environ.get("BRACHYBOT_API_KEY")) or (
+        os.environ.get("BRACHYBOT_ALLOW_INSECURE_REMOTE", "").lower() in TRUE_VALUES
+    )
+    default_host = "0.0.0.0" if remote_bind_enabled else "127.0.0.1"
     parser.add_argument("--host", default=default_host, help="Server host")
     parser.add_argument("--session", default="web", help="Session ID")
     args = parser.parse_args()
