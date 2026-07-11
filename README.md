@@ -9,7 +9,7 @@
 ![Status](https://img.shields.io/badge/Status-Active%20Development-orange.svg)
 ![Self-Evolving](https://img.shields.io/badge/Architecture-Self--Evolving-purple.svg)
 
-**An autonomous, self-improving AI agent for prostate and pancreatic brachytherapy treatment planning — powered by LLM function calling, layered memory, trajectory-based reflection, and crystallized skills.**
+**An autonomous, self-improving AI agent for multi-site brachytherapy treatment planning — powered by LLM function calling, layered memory, trajectory-based reflection, and crystallized skills.**
 
 </div>
 
@@ -68,6 +68,7 @@ Seed Placement → Dose Calculation → Dose Evaluation → DICOM Export
 Supporting:
 - **Prostate** brachytherapy
 - **Pancreas** brachytherapy
+- **Liver, kidney, lung, and colon** research workflows when validated optional CTV checkpoints are installed
 - **Intra-operative replanning**
 - **Plan quality optimization**
 
@@ -634,8 +635,8 @@ export BRACHY_LLM_PROVIDER="ollama"
 ### Step 3: Configure Security (Recommended for Production)
 
 ```bash
-# API key for web server authentication
-# If not set, a random key will be generated and printed to console
+# Loopback development can run without an API key. Any non-loopback bind is
+# refused unless this key is set (the unsafe override is documented below).
 export BRACHYBOT_API_KEY="your-secure-key"
 
 # API key for the brain/LLM system
@@ -645,13 +646,22 @@ export BRACHYBOT_LLM_API_KEY="your-llm-api-key"
 # Default: http://localhost, http://127.0.0.1
 export ALLOWED_ORIGINS="http://localhost,http://127.0.0.1"
 
-# Dangerous execution tools are disabled by default.
-# Enable them only on a trusted local workstation, never on a shared/public server.
+# Trusted-local Developer Mode capabilities are all disabled by default.
+# They are policy-limited host-process capabilities, not OS sandboxes. Enable
+# only the specific capabilities needed on a private workstation.
 # export BRACHYBOT_ENABLE_CODE_EXECUTOR=1
 # export BRACHYBOT_ENABLE_SHELL_EXECUTOR=1
+# export BRACHYBOT_ENABLE_TOOL_CODE_WRITER=1
+# export BRACHYBOT_ENABLE_TOOL_CREATOR=1
+# export BRACHYBOT_ENABLE_ENV_MANAGER=1
 ```
 
-### Step 3: Download Pre-trained Models (Optional)
+The server defaults to `127.0.0.1`. To bind to a LAN/public interface, set
+`BRACHYBOT_API_KEY` first. `BRACHYBOT_ALLOW_INSECURE_REMOTE=1` is an explicit
+unsafe override for isolated trusted networks; `BRACHYBOT_TRUST_NETWORK=1`
+only broadens CORS/rate-limit policy and never disables a configured API key.
+
+### Step 4: Download Pre-trained Models (Optional)
 
 VoCo segmentation model weights are not included in the repository due to size (~18GB). To use VoCo models:
 
@@ -669,9 +679,19 @@ python scripts/download_ctv_models.py --list
 curl -H "X-API-Key: $BRACHYBOT_API_KEY" http://localhost:8080/api/ctv/models
 ```
 
-The catalog currently marks the pancreatic nnU-Net path as the production CTV route when local weights are installed. DiffTumor liver/pancreas/kidney checkpoints can be downloaded for research review, but they are not activated automatically because their checkpoint format is not BrachyBot's native nnU-Net v2 predictor layout.
+The catalog marks the pancreatic nnU-Net path as the production CTV route when
+local weights are installed. Optional VoCo CT tumor routes cover PANORAMA PDAC,
+3D-IRCADb liver tumor, KiPA kidney tumor, MSD lung cancer, and MSD colon cancer;
+each requires its local checkpoint and site-specific validation. Anatomical,
+embolism, infection, and MRI-only models are deliberately excluded from
+automatic CT CTV routing. If the site cannot be inferred, chat asks for it;
+the Python API requires `tumor_type` unless `ctv_path` is supplied.
 
-The myDoseNet CNN dose prediction model weight (`dose_pre/dose_model.pth`, ~24MB) is included in the repository.
+The myDoseNet CNN dose prediction model is resolved from
+`BRACHYBOT_DOSE_MODEL_PATH`, `plans/dose_pre/dose_model.pth`, or the legacy
+`dose_pre/dose_model.pth` location. `BRACHYBOT_DOSE_MODEL_SCALE_GY` defines the
+checkpoint's calibrated Gy scale (default `120.0`); startup fails on invalid
+values and dose calculation fails closed when no usable checkpoint exists.
 
 ---
 
@@ -688,8 +708,9 @@ agent = BrachyAgent(session_id="patient_001")
 # Pre-operative planning (full pipeline)
 result = agent.run_preoperative_plan(
     ct_path="/path/to/ct.nii.gz",
-    ctv_path="/path/to/ctv_label.nii.gz",  # optional
+    ctv_path=None,  # or provide an existing/manual CTV label
     oar_path="/path/to/oar_label.nii.gz",  # optional
+    tumor_type="nnunet_pancreatic",  # required for automatic CTV segmentation
     mode="rule_based",  # or "rl" for reinforcement learning
     output_dir="./output/patient_001",
 )
@@ -719,11 +740,14 @@ print(status["enhanced"]["skill_crystallizer"])
 # Interactive chat mode
 python brachybot.py --chat
 
-# Direct planning
+# Direct planning with an existing CTV label
 python brachybot.py --ct /path/to/ct.nii.gz --ctv /path/to/ctv.nii.gz --mode rule_based
 
+# Automatic CTV segmentation requires an explicit supported site/model
+python brachybot.py --ct /path/to/ct.nii.gz --tumor-type nnunet_pancreatic --mode auto
+
 # Start web server
-python brachybot.py --server --port 8080
+python brachybot.py --server --host 127.0.0.1 --port 8080
 ```
 
 ### Method 3: Web Interface
@@ -1304,7 +1328,8 @@ class BrachyAgent:
 
     # Core planning
     def run_preoperative_plan(ct_path, ctv_path=None, oar_path=None,
-                              mode="rule_based", output_dir="./output") -> dict
+                              mode="rule_based", output_dir="./output",
+                              tumor_type=None) -> dict
     def run_intraoperative_replan(intra_op_ct_path, original_plan,
                                    deviation_threshold_mm=2.0) -> dict
 
@@ -1403,15 +1428,39 @@ BRACHYBOT_LLM_API_KEY="your-key"  # API key for the default LLM provider
 # Server Security
 BRACHYBOT_API_KEY="your-key"      # API key for web server authentication
 ALLOWED_ORIGINS="http://localhost,http://127.0.0.1"  # CORS allowed origins (comma-separated)
+# BRACHYBOT_REQUIRE_API_KEY=1      # fail startup if BRACHYBOT_API_KEY is absent
+# BRACHYBOT_TRUST_NETWORK=1        # trusted-LAN CORS/rate policy; not an auth bypass
+# BRACHYBOT_ALLOW_INSECURE_REMOTE=1 # unsafe non-loopback override; isolated networks only
 
-# Optional trusted-local execution tools; leave unset for production
+# Optional trusted-local Developer Mode; leave unset for production
 # BRACHYBOT_ENABLE_CODE_EXECUTOR=1
 # BRACHYBOT_ENABLE_SHELL_EXECUTOR=1
+# BRACHYBOT_ENABLE_TOOL_CODE_WRITER=1
+# BRACHYBOT_ENABLE_TOOL_CREATOR=1
+# BRACHYBOT_ENABLE_ENV_MANAGER=1
+
+# Filesystem and data boundaries (use the platform path separator for lists)
+# BRACHYBOT_FILESYSTEM_ROOTS="/data/cases:/mnt/research"
+# BRACHYBOT_CT_DATA_ROOTS="/data/ct"
+# BRACHYBOT_MR_DATA_ROOTS="/data/mr"
+# BRACHYBOT_US_DATA_ROOTS="/data/us"
+# BRACHYBOT_DATA_ROOTS="/data/cases"
+# BRACHYBOT_OUTPUT_ROOTS="/data/results"
+# BRACHYBOT_ENABLE_FILESYSTEM_BROWSER_GLOBAL=1  # trusted-local only
+# BRACHYBOT_MAX_DOCUMENT_BYTES=52428800
+
+# Dose checkpoint and calibration
+# BRACHYBOT_DOSE_MODEL_PATH="/models/dose_model.pth"
+# BRACHYBOT_DOSE_MODEL_SCALE_GY=120.0
 
 # Server
 BRACHY_PORT=8080                  # Web server port
-BRACHY_HOST="0.0.0.0"             # Web server host
+BRACHY_HOST="127.0.0.1"          # used by brachybot.py; web/server.py accepts --host
 ```
+
+API clients should send a stable `X-BrachyBot-Session` header. Agent memory,
+UI state, training events, cancellation generation, and screenshots are scoped
+to that session so concurrent cases do not share planning state.
 
 ---
 
@@ -1684,6 +1733,9 @@ agentic planner and a standalone planning workstation:
 - **Training monitor**: users can ask BrachyBot to monitor manual or automatic
   planning, receive step-level feedback, request advice, and stop monitoring to
   generate a final training summary.
+- **Session and turn isolation**: API clients use `X-BrachyBot-Session`; agent
+  memory, UI state, screenshots, training events, and cancellation tokens are
+  isolated per case. A cancelled callback cannot complete a newer turn.
 - **Dose-model boundary**: manual dose recomputation uses the trained myDoseNet
   path. Analytical/Gaussian dose simulation is not used for active manual dose
   feedback; legacy analytical utility entry points fail closed with explicit
@@ -1692,6 +1744,11 @@ agentic planner and a standalone planning workstation:
   production-installed CTV models, external research checkpoints, and public
   training datasets. Unsupported tumor sites must use a verified model or a
   user-provided CTV label; organ/OAR masks are not accepted as tumor CTV.
+- **Multi-site CTV routing**: automatic CT routing includes the verified local
+  pancreatic nnU-Net path plus optional PANORAMA PDAC, liver, kidney, lung, and
+  colon VoCo checkpoints. Unsupported or ambiguous sites trigger clarification
+  instead of borrowing a different model. The Python API and CLI accept an
+  explicit `tumor_type`/`--tumor-type`.
 - **Clinical KB governance**: safety-critical clinical claims, target
   thresholds, OAR constraints, and literature summaries must come from
   `clinical_kb`, clinical web search, actual tool output, or explicit
@@ -1714,6 +1771,14 @@ agentic planner and a standalone planning workstation:
   report auto-fill, and report export include deterministic CTV geometry
   summaries (volume, centimeter-scale location, bounding dimensions, and shape
   regularity) plus prescription-dose rationale.
+- **Intra-operative safety contract**: replanning verifies physical frames,
+  matches detected and planned seeds by assignment, predicts residual dose with
+  myDoseNet, and evaluates cumulative dose rather than replacing the delivered
+  contribution.
+- **Professional visualization/reporting**: 2D and 3D viewers share Data Tree
+  visibility/color/opacity state, zero opacity removes occlusion, all available
+  DVH curves remain present, dose texture/isosurfaces use one calibrated color
+  scale, and report figures are responsive and print-safe.
 - **Safe tool creation boundary**: dynamic tool names are normalized and
   constrained to the dynamic tool directory, preventing path traversal while
   preserving BrachyBot's ability to create code-based tools when that policy is
@@ -1727,6 +1792,8 @@ Audit reports:
 - [`docs/THIRD_PARTY_REAUDIT_2026-07-02.md`](docs/THIRD_PARTY_REAUDIT_2026-07-02.md)
 - [`docs/REPORT_CONTEXT_ENHANCEMENT_2026-07-05.md`](docs/REPORT_CONTEXT_ENHANCEMENT_2026-07-05.md)
 - [`docs/PRODUCT_LOGIC_AUDIT_AND_FIXES_2026-07-05.md`](docs/PRODUCT_LOGIC_AUDIT_AND_FIXES_2026-07-05.md)
+- [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) - consolidated 95-item
+  re-verification, Round 6 fixes, intentional boundaries, and validation evidence.
 
 ---
 ## 📊 Research & Citations

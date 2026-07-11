@@ -91,7 +91,7 @@ async function exportReport() {
 //   4. Run trajectory_init  → first-pass needle paths
 //   5. Run trajectory_refine → collision-checked paths
 //   6. Run seed_planning    → optimize seed positions
-//   7. Run dose_calc        → TG-43 / CNN dose distribution
+//   7. Run dose_calc        → trained myDoseNet dose distribution
 //   8. Run dose_eval        → DVH + V100/D90 + OAR constraints
 //   9. View Results (trajectories / seeds / dose / DVH / metrics)
 //  10. Export (DICOM-RT / STL / Report PDF)

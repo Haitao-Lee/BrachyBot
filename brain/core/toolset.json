@@ -49,15 +49,6 @@
             "output": "CTV segmentation mask"
         },
         {
-            "id": 6,
-            "type": "segmentation",
-            "category": "ctv",
-            "name": "head_neck_ctv",
-            "description": "Segment head and neck CTV from CT imaging",
-            "input": "ct_path: str, output_dir: str",
-            "output": "CTV segmentation mask"
-        },
-        {
             "id": 10,
             "type": "segmentation",
             "category": "oar",

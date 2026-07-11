@@ -48,7 +48,6 @@ TOOL_REGISTRY = {
     # Whole-gland prostate can be a prostate-brachytherapy target in some
     # workflows, but this is not a lesion segmentation model.
     "prostate_tumor": ProstateTumorSegmentationTool,
-    "head_neck_tumor": HeadNeckTumorSegmentationTool,
     # VoCo pre-trained tools (tumor-focused)
     "voco_pancreatic": VoCoPancreaticTumorTool,
     "nnunet_pancreatic": NNUNetPancreaticTumorTool,
@@ -56,13 +55,9 @@ TOOL_REGISTRY = {
     "voco_colon": VoCoColonTumorTool,
     "voco_kidney": VoCoKidneyTumorTool,
     "voco_lung": VoCoLungTumorTool,
-    # VoCo pre-trained tools (organ/structure segmentation)
-    "voco_btcv": VoCoBTCVTumorTool,
-    "voco_segthor": VoCoSegThorTumorTool,
-    "voco_fumpe": VoCoFUMPESegTool,
-    "voco_covid": VoCoCOVIDSegTool,
-    "voco_aorta": VoCoAortaSegTool,
-    "voco_brats21": VoCoBRATS21SegTool,
+    # Anatomical, embolism, infection, and MRI-only research models remain
+    # importable below but are intentionally excluded from automatic CTV
+    # routing. Treating their masks as a CT tumor target would be unsafe.
 }
 
 
@@ -135,6 +130,7 @@ class CTVSegmentationTool(BaseTool):
                 "ctv_volume_mm3": {"type": "number", "description": "CTV volume in mm3"},
                 "ctv_voxel_count": {"type": "integer", "description": "Number of CTV voxels"},
                 "tumor_type_used": {"type": "string", "description": "Tumor segmentation model used"},
+                "ctv_source": {"type": "string", "description": "CTV provenance: model or manual_label"},
             },
         }
 
@@ -253,6 +249,7 @@ class CTVSegmentationTool(BaseTool):
             "full_label_array": res_meta.get("full_label_array"),
             "ctv_voxel_count": voxel_count,
             "tumor_type_used": tumor_type or ("manual_label" if from_label_path else "auto"),
+            "ctv_source": "manual_label" if from_label_path else "model",
             "label_counts": res_meta.get("label_counts", {}),
             "label_map": label_map,
             "label_stats": res_meta.get("label_stats", {}),

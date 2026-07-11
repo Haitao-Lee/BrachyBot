@@ -85,11 +85,9 @@ def create_ctv_segmentation_tool(anatomy: str):
         "kidney": "kidney_tumor",
         "prostate": "prostate_tumor",
         "lung": "lung_tumor",
-        "head_neck": "head_neck_tumor",
         "voco_pancreatic": "voco_pancreatic",
         "voco_liver": "voco_liver",
         "voco_kidney": "voco_kidney",
-        "voco_prostate": "voco_prostate",
         "voco_lung": "voco_lung",
         "voco_colon": "voco_colon",
     }
@@ -160,12 +158,10 @@ def initialize_brain_integration(bridge: Optional[BrainToolBridge] = None) -> Br
     b.register_tool_factory("kidney_ctv", lambda: create_ctv_segmentation_tool("kidney"))
     b.register_tool_factory("prostate_ctv", lambda: create_ctv_segmentation_tool("prostate"))
     b.register_tool_factory("lung_ctv", lambda: create_ctv_segmentation_tool("lung"))
-    b.register_tool_factory("head_neck_ctv", lambda: create_ctv_segmentation_tool("head_neck"))
 
     b.register_tool_factory("voco_pancreatic_ctv", lambda: create_ctv_segmentation_tool("voco_pancreatic"))
     b.register_tool_factory("voco_liver_ctv", lambda: create_ctv_segmentation_tool("voco_liver"))
     b.register_tool_factory("voco_kidney_ctv", lambda: create_ctv_segmentation_tool("voco_kidney"))
-    b.register_tool_factory("voco_prostate_ctv", lambda: create_ctv_segmentation_tool("voco_prostate"))
     b.register_tool_factory("voco_lung_ctv", lambda: create_ctv_segmentation_tool("voco_lung"))
     b.register_tool_factory("voco_colon_ctv", lambda: create_ctv_segmentation_tool("voco_colon"))
 

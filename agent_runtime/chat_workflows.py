@@ -4,26 +4,18 @@ The methods are kept as regular class methods so the public AgenticSys.BrachyAge
 API remains compatible while the monolithic implementation is easier to review.
 """
 
-import asyncio
 import ast
-import base64
-import io
 import json
 import logging
 import os
 import re
 import threading
-import time
-import traceback
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import unquote, urlparse
 
 import numpy as np
 import SimpleITK as sitk
 
-from config.prompts import SYSTEM_PROMPT_TEMPLATE, get_prompt_modules
-from agent_runtime.core import PlanningPhase, ToolResultPipeline
+from agent_runtime.core import PlanningPhase
 
 logger = logging.getLogger(__name__)
 
@@ -611,9 +603,10 @@ class ChatWorkflowMixin:
                             except Exception as _e:
                                 logger.warning(f"Failed to pre-load CT image: {_e}")
 
-                    tool_obj = self.registry.get(tc['tool'])
-                    if tool_obj:
-                        result = tool_obj.execute(**tc['params'])
+                    if self.registry.get(tc['tool']):
+                        result = self._execute_tool_with_memory(
+                            tc['tool'], dict(tc['params'])
+                        )
                         step["status"] = "done"
                         # Inject FactChecker feedback for search tools
                         _fmt = self._format_tool_result(tc['tool'], result, lang=_lang)
@@ -623,7 +616,6 @@ class ChatWorkflowMixin:
                         step["metadata"] = result.metadata if result.success else {}
                         yield yield_event("step", step)
                         if result.success:
-                            self._store_tool_result(tc['tool'], result)
                             # After CTV/OAR seg, ensure ct_image is stored for downstream tools
                             if tc['tool'] == 'ctv_segmentation' and 'image_path' in tc['params']:
                                 if self.memory.retrieve("ct_image") is None:
@@ -1600,6 +1592,8 @@ class ChatWorkflowMixin:
                 self.memory.store("tumor_type_used", params["tumor_type"])
             elif result.metadata.get("tumor_type_used"):
                 self.memory.store("tumor_type_used", result.metadata["tumor_type_used"])
+            if result.metadata.get("ctv_source"):
+                self.memory.store("ctv_source", result.metadata["ctv_source"])
             return result.message
         return f"CTV segmentation failed: {result.error}"
 
@@ -1711,6 +1705,7 @@ class ChatWorkflowMixin:
         max_iter: Optional[int] = None,
         rf_params: Optional[Dict] = None,
         output_dir: str = "./output",
+        tumor_type: Optional[str] = None,
     ) -> Dict:
         self.memory.current_phase = PlanningPhase.PRE_OPERATIVE
         self.memory.add_message("system", f"Starting pre-operative planning for {ct_path}")
@@ -1723,6 +1718,21 @@ class ChatWorkflowMixin:
                 "success": False,
                 "phase": "pre_operative",
                 "error": "mode must be 'rule_based', 'rl', or 'auto'",
+            }
+
+        requested_tumor_type = tumor_type or self.config.get("tumor_type")
+        if requested_tumor_type:
+            mapper = getattr(self, "_map_tumor_type", None)
+            tumor_type = mapper(requested_tumor_type) if callable(mapper) else requested_tumor_type
+        if not ctv_path and not tumor_type:
+            return {
+                "success": False,
+                "phase": "pre_operative",
+                "clarification_required": True,
+                "error": (
+                    "tumor_type is required for automatic CTV segmentation when "
+                    "ctv_path is not provided"
+                ),
             }
 
         default_seed_info = {"radius": 0.4, "length": 3.7, "seed_avr_dose": 50}
@@ -1753,8 +1763,15 @@ class ChatWorkflowMixin:
             self.memory.store("ct_path", ct_path)
 
             logger.info("Step 2: CTV Segmentation")
-            ctv_result = self.registry.execute("ctv_segmentation", image=ct_image, label_path=ctv_path)
-            self.memory.log_tool_call("ctv_segmentation", {"image_path": ct_path, "label_path": ctv_path}, ctv_result)
+            ctv_kwargs = {"image": ct_image, "label_path": ctv_path}
+            if tumor_type:
+                ctv_kwargs["tumor_type"] = tumor_type
+            ctv_result = self.registry.execute("ctv_segmentation", **ctv_kwargs)
+            self.memory.log_tool_call(
+                "ctv_segmentation",
+                {"image_path": ct_path, "label_path": ctv_path, "tumor_type": tumor_type},
+                ctv_result,
+            )
             if not ctv_result.success:
                 raise RuntimeError(f"CTV segmentation failed: {ctv_result.error}")
 
@@ -1764,6 +1781,17 @@ class ChatWorkflowMixin:
                 raise RuntimeError("CTV segmentation succeeded without a ctv_array result")
             self.memory.store("ctv_array", ctv_array)
             self.memory.store("ctv_voxels", ctv_metadata.get("ctv_voxel_count", 0))
+            self.memory.store(
+                "tumor_type_used",
+                ctv_metadata.get("tumor_type_used")
+                or tumor_type
+                or "manual_label",
+            )
+            self.memory.store(
+                "ctv_source",
+                ctv_metadata.get("ctv_source")
+                or ("manual_label" if ctv_path else "model"),
+            )
             _cvm3 = ctv_metadata.get("ctv_volume_mm3")
             if _cvm3:
                 self.memory.store("ctv_volume_mm3", _cvm3)

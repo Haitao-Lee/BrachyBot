@@ -2,8 +2,9 @@
 Code Executor Tool
 ==================
 Allows the agent to write and execute Python code on demand.
-Restricted execution with controlled imports. Disabled by default unless
-BRACHYBOT_ENABLE_CODE_EXECUTOR=1 is explicitly set.
+Restricted execution with controlled imports. This is a trusted-local
+developer capability, not an operating-system sandbox or security boundary.
+It is disabled unless BRACHYBOT_ENABLE_CODE_EXECUTOR=1 is explicitly set.
 """
 
 import os
@@ -37,7 +38,7 @@ def _execution_enabled() -> bool:
 
 
 class CodeExecutorTool(BaseTool):
-    """Execute Python code in a restricted environment when explicitly enabled."""
+    """Execute Python in a policy-limited, trusted-local process when enabled."""
 
     name = "code_executor"
     description = "Execute Python code for ad-hoc data analysis when BRACHYBOT_ENABLE_CODE_EXECUTOR=1. Available libraries: numpy, scipy, nibabel, SimpleITK, matplotlib, pandas, skimage. Returns stdout, stderr, and result."

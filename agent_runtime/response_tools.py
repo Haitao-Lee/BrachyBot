@@ -4,25 +4,13 @@ The methods are kept as regular class methods so the public AgenticSys.BrachyAge
 API remains compatible while the monolithic implementation is easier to review.
 """
 
-import asyncio
-import base64
-import io
 import json
 import logging
-import os
 import re
-import threading
-import time
-import traceback
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import unquote, urlparse
+from typing import Dict, List, Optional
 
-import numpy as np
-import SimpleITK as sitk
 
-from config.prompts import SYSTEM_PROMPT_TEMPLATE, get_prompt_modules
-from agent_runtime.core import PlanningPhase, ToolResultPipeline
+from agent_runtime.core import ToolResultPipeline
 from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
 
 logger = logging.getLogger(__name__)
@@ -69,6 +57,22 @@ print(json.dumps(result))
         ct_path = self.memory.retrieve("ct_path") or ""
         if not ct_path:
             ct_path = (self.memory.get_ui_state() or {}).get("ct_path", "")
+        requested_tumor_type = (
+            self._detect_tumor_type_from_message(message)
+            or self.memory.retrieve("tumor_type_used")
+        )
+        tumor_type = (
+            self._map_tumor_type(requested_tumor_type)
+            if requested_tumor_type else None
+        )
+        if tumor_type not in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
+            tumor_type = None
+
+        def ctv_params():
+            params = {"image_path": ct_path}
+            if tumor_type:
+                params["tumor_type"] = tumor_type
+            return params
 
         # Find action keywords and their positions to preserve user's intended order
         # Bilingual patterns: Chinese terms match Chinese user input.
@@ -132,6 +136,15 @@ print(json.dumps(result))
         if not ordered_actions:
             return None
 
+        # CTV model selection is a clinical input, not a recoverable tool
+        # default. Leave ambiguous or unsupported target requests to the LLM,
+        # whose system prompt asks one concise clarification question before
+        # any CTV tool is called. OAR-only requests remain directly executable.
+        if not tumor_type and any(
+            action in {"segment_ctv", "segment_all"} for action in ordered_actions
+        ):
+            return None
+
         # Map actions to tool calls
         tools = []
         for action in ordered_actions:
@@ -147,11 +160,11 @@ print(json.dumps(result))
                 tools.append({"id": "tool_direct_analysis", "tool": "code_executor",
                               "params": {"code": code, "description": "Analyze CT image"}})
             elif action == 'segment_ctv' and ct_path:
-                tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": {"image_path": ct_path}})
+                tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": ctv_params()})
             elif action == 'segment_oar' and ct_path:
                 tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": {"image_path": ct_path}})
             elif action == 'segment_all' and ct_path:
-                tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": {"image_path": ct_path}})
+                tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": ctv_params()})
                 tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": {"image_path": ct_path}})
             elif action == 'dose' and ct_path:
                 tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
@@ -179,13 +192,11 @@ print(json.dumps(result))
                 yield_event(tool_step)
 
             try:
-                result = self._validate_and_execute(tc['tool'], tc['params'])
+                result = self._execute_tool_with_memory(tc['tool'], dict(tc['params']))
                 tool_step["status"] = "done"
                 tool_step["result"] = self._format_tool_result(tc['tool'], result, lang=_lang)
                 tool_step["metadata"] = result.metadata if result.success else {}
                 tool_step["data"] = result.data if result.success else {}
-                if result.success:
-                    self._store_tool_result(tc['tool'], result)
                 # Store tool call + result in conversation for context persistence
                 self.memory.add_message("assistant", f"[Called {tc['tool']}]")
                 result_summary = result.message[:500] if result.success else f"Error: {result.error}"
@@ -354,17 +365,23 @@ print(json.dumps(result))
             tumor_assessment_md = ""
             prescription_rationale_md = ""
 
-        def _ctv_source_labels(source):
+        def _ctv_source_labels(source, declared_type):
             source = str(source or "").strip()
+            declared_type = str(declared_type or "").strip()
             if source in {"manual_label", "label_path", "user_label"}:
+                location = declared_type
+                if location in {"manual_label", "label_path", "user_label", "unknown"}:
+                    location = ""
+                location = location.replace("_", " ").replace("nnunet ", "").replace("voco ", "")
                 return (
-                    L("用户提供的 CTV", "user-provided CTV"),
+                    location or L("用户提供的 CTV", "user-provided CTV"),
                     L("手动/导入 CTV 标签", "manual/imported CTV label"),
                 )
-            if not source or source == "unknown":
+            model = declared_type if source == "model" else (declared_type or source)
+            if not model or model == "unknown":
                 return (L("未记录", "not recorded"), L("未记录", "not recorded"))
-            clean = source.replace("_", " ").replace("nnunet ", "").replace("voco ", "")
-            return (clean, f"CTV model ({source})")
+            clean = model.replace("_", " ").replace("nnunet ", "").replace("voco ", "")
+            return (clean, f"CTV model ({model})")
 
         def _label_id_from_generic_name(name):
             s = str(name or "").strip().lower().replace("-", "_").replace(" ", "_")
@@ -418,7 +435,10 @@ print(json.dumps(result))
 
         # Section 2: CTV Segmentation
         ctv_vol_str = f"{ctv_vol_cm3:.2f} cm³" if ctv_vol_cm3 else "N/A"
-        ctv_location_label, ctv_algorithm_label = _ctv_source_labels(tumor_type)
+        ctv_location_label, ctv_algorithm_label = _ctv_source_labels(
+            self.memory.retrieve("ctv_source") or tumor_type,
+            tumor_type,
+        )
         lines.append(f"## {L('2. CTV 靶区分割', '2. CTV Segmentation')}")
         lines.append("")
         lines.append(f"- **{L('肿瘤体积', 'Tumor volume')}**: {ctv_vol_str} ({ctv_voxels:,} {L('体素', 'voxels')})")
@@ -870,11 +890,6 @@ Output (JSON array of strings):"""
         "colon": "voco_colon",
         "lung_tumor": "voco_lung",
         "lung": "voco_lung",
-        "brain_tumor": "voco_brats21",
-        "brain": "voco_brats21",
-        "pulmonary_embolism": "voco_fumpe",
-        "covid": "voco_covid",
-        "aorta": "voco_aorta",
         "pdac": "nnunet_pancreatic",
         "hepatocellular": "voco_liver",
         "hcc": "voco_liver",
@@ -883,8 +898,6 @@ Output (JSON array of strings):"""
         "nsclc": "voco_lung",
         "prostate": "prostate_tumor",
         "prostate_tumor": "prostate_tumor",
-        "head_neck": "head_neck_tumor",
-        "head and neck": "head_neck_tumor",
         "胰腺癌": "nnunet_pancreatic",
         "胰腺肿瘤": "nnunet_pancreatic",
         "胰腺": "nnunet_pancreatic",
@@ -902,27 +915,29 @@ Output (JSON array of strings):"""
         "肺部": "voco_lung",
         "前列腺": "prostate_tumor",
         "前列腺癌": "prostate_tumor",
-        "头颈部": "head_neck_tumor",
-        "头颈癌": "head_neck_tumor",
-        "脑肿瘤": "voco_brats21",
-        "脑癌": "voco_brats21",
-        "肺栓塞": "voco_fumpe",
-        "新冠": "voco_covid",
-        "主动脉": "voco_aorta",
         "胰腺癌患者": "nnunet_pancreatic",   # pancreatic cancer patient
         "肝癌患者": "voco_liver",            # liver cancer patient
         "肾癌患者": "voco_kidney",           # kidney cancer patient
         "肺癌患者": "voco_lung",             # lung cancer patient
         "结肠癌患者": "voco_colon",          # colon cancer patient
-        "脑肿瘤患者": "voco_brats21",        # brain tumor patient
     }
+
+    _SUPPORTED_AUTOMATIC_CTV_TYPES = frozenset({
+        "nnunet_pancreatic",
+        "voco_pancreatic",
+        "voco_liver",
+        "voco_kidney",
+        "voco_lung",
+        "voco_colon",
+        "prostate_tumor",
+    })
 
     def _map_tumor_type(self, tumor_type: Optional[str]) -> Optional[str]:
         """Map user-provided tumor type to VoCo tool name."""
         if tumor_type is None:
             return None
         # Already a valid VoCo tool name
-        if tumor_type.startswith("voco_") or tumor_type in {"nnunet_pancreatic", "prostate_tumor", "head_neck_tumor"}:
+        if tumor_type in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
             return tumor_type
         # Look up in mapping
         mapped = self._TUMOR_TYPE_MAP.get(tumor_type.lower())

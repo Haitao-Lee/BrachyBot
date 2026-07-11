@@ -1548,6 +1548,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             tumor_type_used = meta.get("tumor_type_used") or meta.get("tumor_type")
             if tumor_type_used:
                 self.memory.store("tumor_type_used", tumor_type_used)
+            if meta.get("ctv_source"):
+                self.memory.store("ctv_source", meta["ctv_source"])
             logger.info(f"[STORE] ctv_segmentation: ctv_voxels={_cv}, ctv_volume_mm3={_cvm3}, tumor_type={tumor_type_used}")
         elif tool_name == "oar_segmentation":
             if "oar_array" in meta:

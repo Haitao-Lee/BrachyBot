@@ -2127,7 +2127,7 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
     // Draw contour lines
     visibleContours.forEach(contour => {
         const color = contour.color;
-        const opacity = contour.opacity || 0.7;  // Increased from 0.5 to 0.7 for better visibility
+        const opacity = contour.opacity ?? 0.7;
         const r = Math.round(color[0] * 255);
         const g = Math.round(color[1] * 255);
         const b = Math.round(color[2] * 255);

@@ -895,6 +895,90 @@ def test_workflow_normalizer_routes_explicit_tumor_site_and_keeps_ambiguity_clos
     assert "tumor_type" not in ambiguous[0]["params"]
 
 
+def test_direct_ctv_request_uses_explicit_site_without_inventing_an_ambiguous_one():
+    from AgenticSys import BrachyAgent
+
+    class Memory:
+        def retrieve(self, key, default=None):
+            return "/tmp/case.nii.gz" if key == "ct_path" else default
+
+        def get_ui_state(self):
+            return {}
+
+    agent = object.__new__(BrachyAgent)
+    agent.memory = Memory()
+
+    routed = agent._detect_tool_request("segment CTV for pancreatic cancer")
+    assert routed[0]["tool"] == "ctv_segmentation"
+    assert routed[0]["params"]["tumor_type"] == "nnunet_pancreatic"
+
+    assert agent._detect_tool_request("segment CTV") is None
+    assert agent._detect_tool_request("segment a head and neck tumor CTV") is None
+
+
+def test_direct_ctv_request_does_not_treat_manual_provenance_as_a_model():
+    from AgenticSys import BrachyAgent
+
+    class Memory:
+        def retrieve(self, key, default=None):
+            values = {
+                "ct_path": "/tmp/case.nii.gz",
+                "tumor_type_used": "manual_label",
+            }
+            return values.get(key, default)
+
+        def get_ui_state(self):
+            return {}
+
+    agent = object.__new__(BrachyAgent)
+    agent.memory = Memory()
+
+    assert agent._detect_tool_request("segment CTV") is None
+
+
+def test_ctv_registry_excludes_non_target_and_mri_only_research_models():
+    from tool_factory.CTV_seg import TOOL_REGISTRY
+    from tool_factory.CTV_seg.pancreatic_tumor_voco import VoCoPancreaticTumorTool
+
+    assert VoCoPancreaticTumorTool.LABEL_MAP[1] == ("pancreatic_tumor", True)
+    assert VoCoPancreaticTumorTool.LABEL_MAP[2] == ("vein", False)
+    assert VoCoPancreaticTumorTool.LABEL_MAP[3] == ("artery", False)
+    assert VoCoPancreaticTumorTool.LABEL_MAP[4] == ("pancreas", False)
+    assert {"voco_liver", "voco_kidney", "voco_lung", "voco_colon"} <= set(TOOL_REGISTRY)
+    assert {
+        "voco_btcv", "voco_segthor", "voco_fumpe", "voco_covid",
+        "voco_aorta", "voco_brats21", "head_neck_tumor",
+    }.isdisjoint(TOOL_REGISTRY)
+
+
+def test_manual_ctv_label_preserves_source_when_site_is_also_declared(tmp_path):
+    import SimpleITK as sitk
+    from tool_factory.CTV_seg import CTVSegmentationTool
+
+    label = sitk.GetImageFromArray(np.ones((2, 2, 2), dtype=np.uint8))
+    label_path = tmp_path / "manual_ctv.nii.gz"
+    sitk.WriteImage(label, str(label_path))
+
+    result = CTVSegmentationTool()._execute(
+        label_path=str(label_path), tumor_type="nnunet_pancreatic"
+    )
+
+    assert result.success is True
+    assert result.metadata["tumor_type_used"] == "nnunet_pancreatic"
+    assert result.metadata["ctv_source"] == "manual_label"
+
+
+def test_ctv_model_catalog_describes_every_optional_automatic_tumor_model():
+    from tool_factory.CTV_seg import TOOL_REGISTRY
+    from tool_factory.CTV_seg.model_catalog import CTV_MODEL_CATALOG
+
+    catalog_types = {
+        entry.get("tumor_type") for entry in CTV_MODEL_CATALOG if entry.get("tool")
+    }
+    routed_types = {name for name in TOOL_REGISTRY if name.startswith("voco_")}
+    assert routed_types <= catalog_types
+
+
 def test_unified_seed_planning_dispatches_exactly_one_mode(monkeypatch):
     from plans import core
     from tool_factory.seed_plan.seed_planning import SeedPlanningTool
@@ -1062,12 +1146,15 @@ def test_preoperative_pipeline_forwards_declared_parameters(monkeypatch, tmp_pat
         DVH_rate=0.92,
         max_iter=5,
         output_dir=str(tmp_path),
+        tumor_type="nnunet_pancreatic",
     )
 
     assert result["success"] is True
     trajectory_kwargs = next(kwargs for name, kwargs in agent.registry.calls if name == "trajectory_planning")
     seed_kwargs = next(kwargs for name, kwargs in agent.registry.calls if name == "seed_planning")
     evaluation_kwargs = next(kwargs for name, kwargs in agent.registry.calls if name == "dose_evaluation")
+    ctv_kwargs = next(kwargs for name, kwargs in agent.registry.calls if name == "ctv_segmentation")
+    assert ctv_kwargs["tumor_type"] == "nnunet_pancreatic"
     assert trajectory_kwargs["ref_direc"] == [0, -1, 0]
     assert trajectory_kwargs["extract_angle"] == pytest.approx(0.8)
     assert trajectory_kwargs["maximum_candidate_trajectories"] == 88
@@ -1076,6 +1163,23 @@ def test_preoperative_pipeline_forwards_declared_parameters(monkeypatch, tmp_pat
     assert seed_kwargs["iter_rate"] == 5
     assert seed_kwargs["lower_bound"] == pytest.approx(1.2)
     assert evaluation_kwargs["prescribed_dose"] == pytest.approx(1.25)
+    assert evaluation_kwargs["tumor_type"] == "nnunet_pancreatic"
+
+
+def test_preoperative_api_requires_tumor_type_when_no_ctv_label_is_supplied():
+    from agent_runtime.chat_workflows import ChatWorkflowMixin
+    from types import SimpleNamespace
+
+    agent = SimpleNamespace(
+        memory=SimpleNamespace(current_phase=None, add_message=lambda *_args: None),
+        registry=None,
+        config={},
+    )
+    result = ChatWorkflowMixin.run_preoperative_plan(agent, ct_path="case.nii.gz")
+
+    assert result["success"] is False
+    assert result["clarification_required"] is True
+    assert "tumor_type" in result["error"]
 
 
 def test_dose_evaluation_uses_target_label_names_and_explicit_constraints():

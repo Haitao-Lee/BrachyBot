@@ -36,11 +36,22 @@ Examples:
     parser.add_argument("--ct", dest="ct_path", help="Path to CT image (.nii.gz)")
     parser.add_argument("--ctv", dest="ctv_path", help="Path to CTV mask (.nii.gz)")
     parser.add_argument("--oar", dest="oar_path", help="Path to OAR mask (.nii.gz)")
-    parser.add_argument("--mode", choices=["rule_based", "rl"], default="rule_based", help="Planning mode")
+    parser.add_argument(
+        "--tumor-type",
+        help="CTV model/site (required for automatic CTV segmentation without --ctv)",
+    )
+    parser.add_argument("--mode", choices=["rule_based", "rl", "auto"], default="rule_based", help="Planning mode")
     parser.add_argument("--output", default="./output", help="Output directory")
     parser.add_argument("--chat", action="store_true", help="Start interactive chat mode")
     parser.add_argument("--server", action="store_true", help="Start web server")
-    parser.add_argument("--port", type=int, default=8080, help="Web server port")
+    parser.add_argument(
+        "--port", type=int, default=os.environ.get("BRACHY_PORT", "8080"),
+        help="Web server port (default: BRACHY_PORT or 8080)",
+    )
+    parser.add_argument(
+        "--host", default=os.environ.get("BRACHY_HOST", "127.0.0.1"),
+        help="Web server host (default: BRACHY_HOST or 127.0.0.1)",
+    )
     parser.add_argument("--session", default="default", help="Session ID")
 
     args = parser.parse_args()
@@ -48,7 +59,7 @@ Examples:
     if args.chat:
         return _run_chat(args.session)
     elif args.server:
-        return _run_server(args.port)
+        return _run_server(args.port, args.host)
     elif args.ct_path:
         return _run_planning(args)
     else:
@@ -65,6 +76,7 @@ def _run_planning(args):
         oar_path=args.oar_path,
         mode=args.mode,
         output_dir=args.output,
+        tumor_type=args.tumor_type,
     )
 
     if result["success"]:
@@ -103,7 +115,7 @@ def _run_chat(session_id):
             break
 
 
-def _run_server(port):
+def _run_server(port, host="127.0.0.1"):
     try:
         import web.server
     except ImportError as exc:
@@ -134,10 +146,14 @@ def _run_server(port):
             )
     print("Configured LLM providers: " + (", ".join(configured) if configured else "none"))
 
-    print(f"\nStarting BrachyBot web server on port {port}...")
-    print(f"Open http://localhost:{port} in your browser")
+    print(f"\nStarting BrachyBot web server on {host}:{port}...")
+    browser_host = "localhost" if host in {"0.0.0.0", "::", "127.0.0.1", "::1"} else host
+    print(f"Open http://{browser_host}:{port} in your browser")
     try:
-        web.server.run_server(port=port)
+        web.server.run_server(port=port, host=host)
+    except RuntimeError as exc:
+        print(f"Web server startup refused: {exc}", file=sys.stderr)
+        return 2
     except OSError as exc:
         print(f"Web server failed to bind to port {port}: {exc}", file=sys.stderr)
         return 2

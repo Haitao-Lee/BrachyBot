@@ -37,7 +37,9 @@ function _formField(opts) {
             const label = labels[src] || 'AUTO';
             const title = src === 'user' ? 'Edited by you' : src === 'bot' ? 'Filled by brachybot' : 'Auto-extracted';
             srcBadge = `<span class="rp-source-badge ${src}" data-source-key="${opts.key.replace(/[^a-zA-Z0-9_]/g, '_')}" title="${title}">${label}</span>`;
-            srcReset = `<span class="rp-source-reset" title="Reset to auto" onclick="Report.sources.resetTo('${opts.key.replace(/'/g, "\\'")}')">↻</span>`;
+            const resetArg = JSON.stringify(String(opts.key || ''))
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+            srcReset = `<span class="rp-source-reset" title="Reset to auto" onclick="Report.sources.resetTo(${resetArg})">↻</span>`;
         }
     } catch (e) {}
     const reqBadge = opts.required ? `<span style="color:var(--danger);font-size:0.7rem;margin-left:2px;" title="required">*</span>` : '';
