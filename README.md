@@ -757,6 +757,19 @@ python brachybot.py --server --port 8080
 # Open http://localhost:8080 in browser
 ```
 
+### Current UI behavior
+
+- The chat body shows only the response emitted after the final completeness
+  review; intermediate tool calls and draft text remain in the execution trace.
+- An explicit replan request can reuse the existing CTV/OAR results and apply
+  the current reference-direction controls, including mixed Chinese/English
+  commands such as reversing the reference direction.
+- The Planning data-tree parent controls all trajectory, seed, needle, dose,
+  and reconstructed planning descendants. Dose Surface loads available OAR
+  meshes before applying the dose texture.
+- HU threshold highlighting is opt-in. Leave the field blank for normal CT
+  display; entering a value enables the temporary threshold visualization.
+
 ---
 
 ## 📖 Usage Guide

@@ -1524,6 +1524,9 @@ class LLMRuntimeMixin:
                 s.get("tool") in ("planning_pipeline", "seed_planning", "dose_engine")
                 for s in steps if s.get("type") == "tool" and s.get("status") == "done"
             )
+            _replan_requested = bool(
+                getattr(self, "_is_replan_request", lambda _message: False)(message)
+            )
             for tc in valid_tool_calls:
                 _tn = tc.get("tool", "")
                 if _tn == "ctv_segmentation" and self.memory.retrieve("ctv_array") is not None:
@@ -1537,7 +1540,7 @@ class LLMRuntimeMixin:
                     logger.info(f"[HARD-BLOCK] Skipping redundant planning_pipeline (already ran this turn)")
                     continue
                 # Also block if planning already completed in a PREVIOUS turn
-                if _tn == "planning_pipeline" and self._has_completed_planning():
+                if _tn == "planning_pipeline" and self._has_completed_planning() and not _replan_requested:
                     logger.info(f"[HARD-BLOCK] Skipping planning_pipeline (completed planning already in memory)")
                     continue
                 _filtered_again.append(tc)

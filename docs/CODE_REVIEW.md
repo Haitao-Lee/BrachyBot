@@ -4,6 +4,47 @@ _This file consolidates all code review reports. Sections are organized by date.
 
 ---
 
+## 2026-07-12 - Round 7: Planning re-run and viewer interaction correction
+
+**Audit base:** `a62d837` plus the user-provided planning/replanning traces.
+
+**Disposition:** All nine reported behaviors were reproduced or confirmed by
+source-level call-chain inspection. The fixes below preserve the established
+LPI coordinate chain and the trained dose-model planning path.
+
+| Issue | Verification and correction |
+|---|---|
+| Final answer appeared before/after the checker | `brachybot-chat-todo.js` now buffers `text_chunk` events and renders only the canonical `response` event emitted after review. A missing canonical event never exposes the rejected draft. |
+| Dark green/cyan visual theme | `index.html` now selects the existing light design-token theme and bumps the CSS cache key. The 3D canvas remains black intentionally for clinical contrast. |
+| Dose surface textured only CTV | Dose mode now loads label volumes explicitly and requests all available OAR meshes, not only the non-traversable planning subset. Existing mesh coordinate sampling is unchanged. |
+| Unlisted red whole-body mask | The red area was the optional HU threshold display filter, not a clinical mask. Its default is now empty; it is cleared on CT load/reset and can still be enabled explicitly by the user. |
+| Planning parent did not control descendants | Planning and Trajectories now have visibility/opacity controls, context menus, seed/needle handle synchronization, dose-overlay synchronization, and individual trajectory descendant propagation. |
+| Reference-direction replan was misunderstood/blocked | Replan intent recognizes Chinese/English mixed commands, reuses completed CTV/OAR products, reverses the current UI/config direction, and bypasses the previous-plan hard block only for an explicit replan. |
+| Manual UI direction was not reaching chat | `collectUIState()` now sends the numeric `reference_direc` vector. The backend stores it with the request-scoped UI state and uses it for the replan override. |
+| DVH tooltip dose did not match cursor | Tooltip dose is now calculated from the actual CSS plot rectangle and linear axis range instead of Plotly's private pixel conversion helper. |
+| Normal/Dose surface switching after reconstruction | Replaced meshes invalidate stale material snapshots and are remapped asynchronously while dose mode is active; newly added skin is hidden consistently in dose mode. |
+
+### Verification
+
+- `py_compile`: modified Python routes/runtime pass.
+- `node --check`: all modified browser scripts pass.
+- `pytest`: `tests/test_review_round6_regressions.py` and
+  `tests/test_round7_regressions.py` pass.
+- Browser smoke check on `http://127.0.0.1:8765`: after reload,
+  `data-theme="light"`, threshold input is empty with `HU` placeholder, and
+  no console warnings/errors were observed.
+
+### Deliberate boundaries
+
+The dose-surface enhancement only changes which already-available segmented
+meshes are sampled. It does not alter CT orientation, world/index conversion,
+dose calibration, or the trained planning dose engine. The threshold field is
+still available as an explicit visualization tool; it is not promoted to the
+data tree because it is a transient image filter rather than a segmentation
+product.
+
+---
+
 ## 2026-07-12 - Round 6: Production hardening and independent re-verification
 
 **Audit base:** `6a15470`
