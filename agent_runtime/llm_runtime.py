@@ -4,26 +4,17 @@ The methods are kept as regular class methods so the public AgenticSys.BrachyAge
 API remains compatible while the monolithic implementation is easier to review.
 """
 
-import asyncio
-import base64
-import io
 import json
 import logging
 import mimetypes
 import os
 import re
-import threading
-import time
-import traceback
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
-import numpy as np
-import SimpleITK as sitk
 
 from config.prompts import SYSTEM_PROMPT_TEMPLATE, get_prompt_modules
-from agent_runtime.core import AgentMemory, PlanningPhase, ToolResultPipeline
+from agent_runtime.core import AgentMemory, ToolResultPipeline
 
 logger = logging.getLogger(__name__)
 

@@ -370,6 +370,8 @@ def register_planning_routes(app, get_agent):
                         agent.memory.store("ctv_segmented", True)
                         if meta.get("tumor_type_used"):
                             agent.memory.store("tumor_type_used", meta["tumor_type_used"])
+                        if meta.get("ctv_source"):
+                            agent.memory.store("ctv_source", meta["ctv_source"])
                         if meta.get("label_map"):
                             agent.memory.store("ctv_label_map", meta["label_map"])
                         if meta.get("label_stats"):

@@ -4,6 +4,195 @@ _This file consolidates all code review reports. Sections are organized by date.
 
 ---
 
+## 2026-07-12 - Round 6: Production hardening and independent re-verification
+
+**Audit base:** `6a15470`
+
+**Published stage checkpoint:** `ec630cb`
+
+**Method:** source-level call-chain review, report-to-code verification, targeted
+regressions, full unit tests, static analysis, and desktop/mobile browser checks.
+
+This pass did not accept the previous report at face value. Each of its 95
+findings was compared with the current implementation. Confirmed defects were
+fixed at their shared ownership point; false positives, compatibility contracts,
+and low-value structural churn are explicitly recorded below. No confirmed
+Critical or High runtime defect from the 95-item review remains open.
+
+### Disposition of all 95 reported findings
+
+#### Critical (C1-C18)
+
+| ID | Disposition | Current evidence |
+|---|---|---|
+| C1 | Fixed | `AgentMemory` is imported in both LLM execution paths. |
+| C2 | Fixed | The web facade imports the canonical dose scale. |
+| C3 | Fixed | Streaming forced-search finalization runs after both success and failure. |
+| C4 | Fixed | Planning image/label paths use the centralized read allowlist. |
+| C5 | Fixed | Rate-limit cleanup and mutation are lock protected. |
+| C6 | Not a defect | `str.format()` does not recursively interpret braces inside argument values; a regression covers literal braces. |
+| C7 | Fixed | Direct, streaming, non-streaming, and workflow-enforcer tool calls use `_execute_tool_with_memory` exactly once. |
+| C8 | Fixed | Auto-planning output can no longer replace an unrelated answer; planning enforcement is intent gated. |
+| C9 | Fixed | Optional enhanced-memory clear methods are invoked only when callable. |
+| C10 | Fixed | The invalid duplicate report-generator registration was removed. |
+| C11 | Fixed | `loadDefaultParams` uses one hoisted setter and has no TDZ redeclaration. |
+| C12 | Fixed | `{current_date}` is replaced in streaming and non-streaming prompts. |
+| C13 | Fixed | Full-plan completion recognizes pipeline, seed, dose, and evaluation tools with explicit grouping. |
+| C14 | Fixed | Advice detection is scoped and no longer converts general knowledge questions into planning runs. |
+| C15 | Fixed | STL export writes real ASCII STL geometry. |
+| C16 | Fixed | Step number styling exists in the split CSS bundle. |
+| C17 | Fixed | The orphan CSS declaration was removed during stylesheet modularization. |
+| C18 | Fixed | Warning cards retain their amber border. |
+
+#### High (H1-H22)
+
+| ID | Disposition | Current evidence |
+|---|---|---|
+| H1 | Fixed | Experience recording uses safe optional-component access. |
+| H2 | Fixed | Invalid font-family quoting was corrected. |
+| H3 | Fixed | Cancellation is checked between streaming LLM rounds and by generation token. |
+| H4 | Fixed by contract | Both paths use the same CT-loaded predicate while trusted-local developer tools remain available without CT. |
+| H5 | Fixed | Runtime exception handling no longer catches process-control exceptions with bare `except`. |
+| H6 | Fixed | Viewer image reads use `_validate_path`, including configured modality roots. |
+| H7 | Fixed | Oversized requests and unhandled exceptions return JSON; 500s are logged. |
+| H8 | Fixed | Dose calibration is centralized in `plans.dose_pre.model_loader`. |
+| H9 | Fixed | The configured Anthropic provider dependency is declared. |
+| H10 | Operational, not source defect | External stale worktrees are deliberately not deleted or overwritten by product code. |
+| H11 | Fixed | Python-style tool payloads use `ast.literal_eval`; JSON remains the primary protocol. |
+| H12 | Fixed | Response cleaning was consolidated and unreachable/redundant branches removed. |
+| H13 | Intentional alias | DICOM export route names share one implementation for backward compatibility. |
+| H14 | Fixed | CT transfer clips before signed 16-bit conversion. |
+| H15 | Fixed | Mesh-cache order uses `deque.popleft()`. |
+| H16 | Fixed | Repeated imports were moved out of the OAR-label loop. |
+| H17 | Fixed | One dose-overlay renderer is authoritative; compatibility callers delegate to it. |
+| H18 | Fixed | Contour labels require a finite level before formatting. |
+| H19 | Fixed | Dynamic UI language reads the single `_i18nLang` state. |
+| H20 | Fixed | Mesh-cache keys contain a BLAKE2 mask-content digest. |
+| H21 | Fixed | The 500 handler logs the originating exception. |
+| H22 | Fixed | Required API-key mode fails during startup when the key is absent. |
+
+#### Important (I1-I25)
+
+| ID | Disposition | Current evidence |
+|---|---|---|
+| I1 | Fixed | Status reads the canonical `ct_image` state. |
+| I2 | Fixed | The dead route `session_context` argument was removed. |
+| I3 | Fixed | First-party `brachybot-*.js` files contain no production `console.log`. |
+| I4 | Fixed | Conversation `data_available` is populated from canonical case memory. |
+| I5 | Fixed | `dose_engine` is canonical and legacy names are explicit aliases only. |
+| I6 | Fixed | Production diagnostics use logging rather than ad-hoc prints. |
+| I7 | Fixed | Completion detection covers every supported planning completion path. |
+| I8 | Fixed | OAR counts resolve by label/name metadata instead of mismatched keys. |
+| I9 | Fixed | Browser chat history is bounded. |
+| I10 | Fixed | Planning data-tree arrays are null guarded. |
+| I11 | Verified | Script order and global UI API contract are documented and checked by browser load tests. |
+| I12 | Fixed | Tool execution/storage/recovery is centralized; only orchestration-specific control flow remains. |
+| I13 | Intentional structure | Generator and return-value loops remain separate, but share prompt, parsing, execution, review, and cancellation helpers. |
+| I14 | Fixed | The dead Anthropic conversion helper was removed. |
+| I15 | Fixed | Routes resolve a request-scoped agent through `get_agent`; no patient-global agent is used. |
+| I16 | Fixed | The `builtins` operation-tracker monkey patch was removed. |
+| I17 | Fixed | Upload paths use the canonical `UPLOAD_DIR`. |
+| I18 | Fixed | Screenshot capture is awaited. |
+| I19 | Fixed | Screenshot requests are correlated by request id instead of a timer race. |
+| I20 | Fixed | 3D reconstruction uses server-provided label IDs. |
+| I21 | Fixed | Dose texture sampling prefetches unique slices in a batch. |
+| I22 | Fixed | Agent memory owns one real lock; no orphan fallback lock protects nothing. |
+| I23 | Fixed | Overlay thresholding and display use the same intensity frame. |
+| I24 | Fixed | Regression suites now cover runtime, routes, security, planning, coordinates, reports, and UI contracts. |
+| I25 | Duplicate | Same finding as C12; covered by the current-date regressions. |
+
+#### Minor (M1-M30)
+
+| ID | Disposition | Current evidence |
+|---|---|---|
+| M1 | Fixed | Ruff removed all unused imports from `agent_runtime`. |
+| M2 | Accepted style debt | Remaining eager logger formatting is not a correctness defect; array-heavy hot paths were reviewed separately. |
+| M3 | Intentional ownership | `seeds_3d` is a viewer representation endpoint even though its data originates in planning. |
+| M4 | Intentional compatibility | Remaining inline styles define report/form geometry and PDF pagination; the rationale is documented in `index.html`. |
+| M5 | Accepted organization debt | Moving data-tree CSS alone has no product benefit and risks cascade changes; ownership is documented. |
+| M6 | Fixed | All CT/MR/US/data/output/filesystem root variables are documented in README. |
+| M7 | Fixed | Agents are request/session scoped and guarded by the session lock. |
+| M8 | Intentional protocol handling | Cleaning patterns represent different provider protocols; shared normalization is centralized where semantics match. |
+| M9 | Fixed | No unused random API key is generated; loopback/no-key and remote/key behavior is explicit. |
+| M10 | Fixed | Same parser correction as H11. |
+| M11 | Fixed | Provider calls use bounded retry behavior without replaying completed tool side effects. |
+| M12 | Fixed | Conversation clearing no longer references an unrelated experience-memory attribute. |
+| M13 | Fixed | Runtime mixins are exported and BrachyAgent validates their composition at startup. |
+| M14 | Fixed | Cross-file i18n startup uses a bounded compatibility retry. |
+| M15 | Fixed | Dead todo template constants were removed. |
+| M16 | Intentional compatibility | Classic scripts expose the window-level UI control contract; an all-at-once ES-module migration is required before strict mode. |
+| M17 | Fixed | 3D rendering is event driven and pauses when the document is hidden. |
+| M18 | Fixed | The welcome message participates in the UI language system. |
+| M19 | Fixed | Parallel language state was consolidated. |
+| M20 | Fixed | Pytest configuration and async support are declared. |
+| M21 | Fixed | The unused websocket client collection was removed. |
+| M22 | Fixed | The dead `first_url` variable was removed. |
+| M23 | Intentional model contract | `normalize_dose_image` creates myDoseNet conditioning input, not a physical dose estimate; an English comment prevents misuse. |
+| M24 | Operational, not source defect | External test worktrees are outside this tracked product tree and are not silently modified. |
+| M25 | Fixed | API keys and screenshot signatures use constant-time HMAC comparison. |
+| M26 | Fixed | Upload sanitization helpers are module scoped. |
+| M27 | Fixed | Duplicate tooltip keys were removed. |
+| M28 | Fixed | Display/volume conversion guards zero resample ratios. |
+| M29 | Fixed | Report source/reset arguments use JSON serialization plus HTML-attribute escaping in both renderers. |
+| M30 | Fixed | Duplicate object-literal keys were removed. |
+
+### Additional confirmed defects fixed in Round 6
+
+| Area | Verified problem | Resolution |
+|---|---|---|
+| Planning core | Standalone seed planners unpacked a variable-length plan as a 2-tuple; auto direction, Dxcc spacing, NumPy truth checks, metadata `None`, RL dispatch, and OAR provenance also had real edge failures. | Corrected at the shared planning/model boundary with regressions. |
+| Dose model | Manual preview and legacy utilities could imply analytical/Gaussian dose; checkpoint loading and scale interpretation were duplicated. | Active dose is myDoseNet-only and fails closed without a checkpoint. Legacy analytical entry points fail explicitly. |
+| Intra-operative replanning | Unverified coordinate frames and independent replacement-dose planning could report false success. | Physical-frame verification, assignment-based seed matching, residual myDoseNet planning, and cumulative dose evaluation were added. |
+| Session and cancellation | UI state, screenshots, history restoration, and cancellation could cross or outlive turns. | State is session scoped; cancellation uses per-turn generation tokens and stale callbacks cannot finish a newer turn. |
+| Web security | `web_fetch` allowed unsafe destinations, document reads had broad path/size boundaries, and signed image handling was inconsistent. | Added redirect-aware SSRF checks, root/size enforcement, and short-lived signed image URLs. |
+| Coordinates and geometry | Seed segmentation exposed array-order coordinates as physical XYZ and surface extraction treated full volumes as boundary shells. | Added explicit ZYX-to-index-to-physical conversion and true boundary extraction without changing the established viewer coordinate contract. |
+| Frontend/reporting | DVH had duplicate/unreachable interpolation code and a 30-curve cap; opacity zero could fall back to a nonzero default; report layout/reset fields had responsive and escaping defects. | All available DVH curves render with bounded monotone interpolation/tooltips, zero opacity hides cleanly, and report/editor/viewer layouts are responsive and escaped. |
+| CTV model routing | Non-target/MRI research models were exposed as automatic CT CTV choices; direct calls bypassed canonical memory processing; prompts/tool catalogs disagreed. | Automatic registry now contains only supported CT target routes, direct execution is canonical, and ambiguous sites trigger clarification. |
+| CTV provenance routing | A prior manual/imported CTV could leave `manual_label` in case memory, and direct segmentation treated that provenance marker as a model name. | Direct routing now admits only the explicit automatic CTV model allowlist; source markers and unsupported sites return to clarification instead of invoking a model. |
+| PANORAMA labels | Vein/artery and duct names were incomplete or reversed in the optional VoCo path. | Mapping now follows the official PANORAMA legend: PDAC=1, veins=2, arteries=3, pancreas=4, pancreatic duct=5, common bile duct=6. |
+| Python/CLI planning API | `ctv_path` was optional but there was no way to provide a tumor model, so automatic CTV planning failed by construction. | Added backward-compatible `tumor_type`, CLI `--tumor-type`, `--host`, environment-backed port/host, and clear preflight failure for ambiguity. |
+
+### Deliberate product and clinical boundaries
+
+- The established SimpleITK physical-coordinate chain and current LPS-oriented
+  planning contract were preserved. No speculative flip or axis rewrite was made.
+- `dose_distribution_gy` remains a legacy compatibility key in a few responses;
+  payloads also state `dose_units=normalized_model_output` and
+  `dose_scale_gy`, so callers can interpret the calibrated myDoseNet output.
+- Unknown tumor sites never inherit another site's prescription or OAR limit.
+  Clinical pass/fail language requires explicit `plan_config` or source-backed
+  `clinical_kb` evidence.
+- All DVH structures are retained. Rendering is not silently truncated; dense
+  legends may scroll or collapse visually without deleting clinical curves.
+- Code execution, shell execution, environment management, and LLM-authored
+  tool creation remain available only through explicit trusted-local toggles.
+  They are developer capabilities, not operating-system sandboxes.
+
+### Final verification evidence
+
+- `pytest -q`: **99 passed** (13 third-party deprecation warnings).
+- Ruff: F821/F822/F823/E9 passed repository-wide; F401 passed for
+  `agent_runtime` after import cleanup.
+- `compileall`: passed for production packages, CLI, and tests.
+- `node --check`: passed for all 11 `brachybot-*.js` application scripts and
+  the bundled `OrbitControls.js` support script.
+- Browser desktop (`1280x720`): no horizontal overflow and no console warnings/errors.
+- Browser mobile (`390x844`): no horizontal overflow, no off-viewport elements,
+  and no console warnings/errors.
+- `brain/core/toolset.json` parses and every CTV catalog source is an HTTP(S) link.
+
+### Residual validation boundary
+
+This repository pass does not replace site validation. The optional CTV
+checkpoints, myDoseNet checkpoint, TotalSegmentator runtime, GPU execution, and
+complete planning on representative clinical CT series were not available for a
+fresh local end-to-end clinical run. Those components therefore remain research
+software requiring independent dosimetric, geometric, and clinical validation
+before patient use. This is an evidence boundary, not an unimplemented code
+fallback.
+
+---
+
 ## 2026-07-10 — Round 5: Final sweep pass (no code changes)
 
 This round re-verified all CRITICAL/HIGH findings from Rounds 1–4 and confirmed they remain open. No code was modified — this is a purely documentary update. Total findings across all rounds: **18 CRITICAL, 32 HIGH, 44 MEDIUM, 51 LOW** (~145 issues).

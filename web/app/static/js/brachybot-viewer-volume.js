@@ -467,7 +467,7 @@ function renderOverlayFromVolume(axis, sliceIndex) {
                 if (ctvVal > 0) {
                     // Use per-label color from LUT (label 1=blue, 2=green, 3=pink, etc.)
                     const color = labelColorLUT[ctvVal] || [255, 0, 0];
-                    const opacity = dataTreeState.ctv.opacity || 0.7;
+                    const opacity = dataTreeState.ctv.opacity ?? 0.7;
                     r = color[0];
                     g = color[1];
                     b = color[2];
@@ -1351,7 +1351,7 @@ function renderDataTree() {
 
         // CTV group header (like OAR)
         const ctvVis = dataTreeState.ctv.visible;
-        const ctvOp = dataTreeState.ctv.opacity || 0.7;
+        const ctvOp = dataTreeState.ctv.opacity ?? 0.7;
         html += `<div class="tree-group" data-group="ctv">
             <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('ctv', event)">
                 <span class="arrow">&#9660;</span>
@@ -1457,7 +1457,7 @@ function renderDataTree() {
     // OAR master group
     const oarVis = dataTreeState.organs.some(o => o.visible);
     const oarOp = dataTreeState.organs.length > 0
-        ? dataTreeState.organs.reduce((sum, o) => sum + (o.opacity || 0.5), 0) / dataTreeState.organs.length
+        ? dataTreeState.organs.reduce((sum, o) => sum + (o.opacity ?? 0.5), 0) / dataTreeState.organs.length
         : 0.5;
     html += `<div class="tree-group" data-group="oar">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('oar', event)">

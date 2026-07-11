@@ -24,13 +24,14 @@ class VoCoPancreaticTumorTool(VoCoSegmentationBase):
     SPACING = (1.5, 1.5, 1.5)
     A_MIN = -175.0
     A_MAX = 250.0
-    # Matches Zhiyuan/BrachyPlan.py convention: 1=tumor, 2=artery, 3=vein, 4=pancreas
+    # PANORAMA's published six-class label legend. Keep this independent
+    # from custom nnU-Net datasets even when their numeric labels overlap.
     LABEL_MAP = {
         0: ("background", False),
-        1: ("tumor", True),
-        2: ("artery", False),
-        3: ("vein", False),
+        1: ("pancreatic_tumor", True),
+        2: ("vein", False),
+        3: ("artery", False),
         4: ("pancreas", False),
-        5: ("unknown_5", False),
-        6: ("unknown_6", False),
+        5: ("pancreatic_duct", False),
+        6: ("common_bile_duct", False),
     }

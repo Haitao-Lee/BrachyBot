@@ -53,6 +53,12 @@
     <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=6">
     <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=3">
 </head>
+<!--
+  The remaining inline styles belong to fixed report/form geometry whose
+  rendered dimensions are covered by screenshot regression checks. Replacing
+  them piecemeal can change PDF pagination; migrate a complete component at a
+  time into the existing CSS modules.
+-->
 <body>
 
 <!-- ============ HEADER ============ -->
@@ -1069,16 +1075,22 @@
     </div>
 </div>
 
+<!--
+  These files intentionally remain classic scripts because their window-level
+  functions form the cross-file UI control API used by BrachyBot. Do not add
+  strict mode to isolated files; migrate the bundle to ES modules as one
+  versioned change so implicit legacy bindings cannot break selectively.
+-->
 <script src="static/js/brachybot-chat-core.js?v=5"></script>
 <script src="static/js/brachybot-chat-todo.js?v=5"></script>
 <script src="static/js/brachybot-ui-api.js?v=5"></script>
-<script src="static/js/brachybot-viewer-volume.js?v=6"></script>
+<script src="static/js/brachybot-viewer-volume.js?v=7"></script>
 <script src="static/js/brachybot-viewer-layout.js?v=5"></script>
-<script src="static/js/brachybot-3d-manual.js?v=5"></script>
-<script src="static/js/brachybot-manual-annotation.js?v=5"></script>
+<script src="static/js/brachybot-3d-manual.js?v=6"></script>
+<script src="static/js/brachybot-manual-annotation.js?v=6"></script>
 <script src="static/js/brachybot-dvh-planning.js?v=5"></script>
-<script src="static/js/brachybot-report-shell.js?v=7"></script>
-<script src="static/js/brachybot-report-editor.js?v=6"></script>
+<script src="static/js/brachybot-report-shell.js?v=8"></script>
+<script src="static/js/brachybot-report-editor.js?v=7"></script>
 <script src="static/js/brachybot-report-export.js?v=7"></script>
 </body>
 </html>
