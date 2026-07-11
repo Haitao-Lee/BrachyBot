@@ -51,6 +51,13 @@ function collectUIState() {
             metrics: state?.metrics || {},
             seed_count: state?.seeds?.length || 0,
             trajectories: state?.trajectories?.length || 0,
+            // Preserve the editable vector for chat-driven replanning. The
+            // generic control snapshot is not a reliable numeric contract.
+            reference_direc: [
+                Number(document.getElementById('refDirecX')?.value || 0),
+                Number(document.getElementById('refDirecY')?.value || 0),
+                Number(document.getElementById('refDirecZ')?.value || 0),
+            ],
             manual_state: (typeof _manualState === 'function') ? _manualState() : {},
         },
         data_tree: (typeof dataTreeState !== 'undefined') ? {

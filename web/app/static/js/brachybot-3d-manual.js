@@ -756,6 +756,13 @@ function addMeshToScene(meshData) {
 
     // Remove existing mesh with same ID
     if (scene3D.meshes[id]) {
+        // A reconstruction can replace a mesh while dose mode is active.
+        // Discard the old material snapshot so disabling dose mode restores
+        // the replacement mesh, not a disposed material from the old one.
+        if (typeof state !== 'undefined' && state.doseTexture?.enabled) {
+            if (state.doseTexture.originalMaterials) delete state.doseTexture.originalMaterials[id];
+            if (state.doseTexture.originalSceneStyle) delete state.doseTexture.originalSceneStyle[id];
+        }
         scene3D.scene.remove(scene3D.meshes[id]);
         scene3D.meshes[id].geometry.dispose();
         scene3D.meshes[id].material.dispose();
@@ -842,6 +849,21 @@ function addMeshToScene(meshData) {
         if (existing >= 0) dataTreeState.planning.meshes[existing] = entry;
         else dataTreeState.planning.meshes.push(entry);
         if (typeof renderDataTree === 'function') renderDataTree();
+    }
+
+    // Keep manual reconstruction consistent with the current surface mode.
+    // New CTV/OAR meshes are immediately mapped when dose mode is active.
+    if (typeof state !== 'undefined' && state.doseTexture?.enabled &&
+        typeof _isDoseTexturableMesh === 'function' &&
+        _isDoseTexturableMesh(id, mesh) && typeof _applyDoseTextureToMesh === 'function') {
+        _applyDoseTextureToMesh(id, mesh)
+            .then(() => {
+                if (typeof _prepareDoseTextureSceneVisibility === 'function') {
+                    _prepareDoseTextureSceneVisibility();
+                }
+                if (scene3D.requestRender) scene3D.requestRender(2);
+            })
+            .catch(e => console.warn('[addMeshToScene] dose remap failed:', e));
     }
 
     // Fit camera to all meshes
@@ -995,6 +1017,10 @@ async function toggle3DSkin(on) {
             }));
             scene3D.scene.add(mesh);
             scene3D.skinMesh = mesh;
+            if (typeof state !== 'undefined' && state.doseTexture?.enabled &&
+                typeof _prepareDoseTextureSceneVisibility === 'function') {
+                _prepareDoseTextureSceneVisibility();
+            }
             fitCameraToScene();
         }
     } catch (e) {
@@ -1539,7 +1565,12 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
         }
 
         if (includeOAR && oarLabelData) {
-            const oarIds = _getNonTraversableOarMeshIds(ctvLabelIds);
+            const allOarIds = opts.allOAR
+                ? [...new Set((dataTreeState.organs || [])
+                    .filter(o => o.labelId !== undefined && o.labelId !== null && !ctvLabelIds.includes(o.labelId))
+                    .map(o => o.labelId))]
+                : [];
+            const oarIds = allOarIds.length ? allOarIds : _getNonTraversableOarMeshIds(ctvLabelIds);
             const batchSize = opts.batchSize || 3;
             for (let i = 0; i < oarIds.length; i += batchSize) {
                 const batch = oarIds.slice(i, i + batchSize).map(lid => {

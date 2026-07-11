@@ -92,6 +92,33 @@ function _planningItems(kind) {
     return Array.isArray(planning[kind]) ? planning[kind] : [];
 }
 
+function _planningVisualEntries() {
+    const entries = [
+        ..._planningItems('trajectories'),
+        ..._planningItems('seeds'),
+        ..._planningItems('needles'),
+        ..._planningItems('doseLevels'),
+        ...(_planningItems('meshes')),
+    ];
+    if (state?.doseOverlay?.data) entries.push(state.doseOverlay);
+    return entries;
+}
+
+function _trajectoryContains(item, trajectory) {
+    const itemId = item?.trajectory_id ?? item?.trajectoryId;
+    if (itemId === undefined || itemId === null) return false;
+    const normalize = value => {
+        const text = String(value);
+        return new Set([text, text.replace(/^traj_/, ''), `traj_${text.replace(/^traj_/, '')}`]);
+    };
+    const itemValues = normalize(itemId);
+    const trajectoryValues = new Set();
+    [trajectory?.id, trajectory?.index, Number(trajectory?.index) + 1]
+        .filter(v => v !== undefined && v !== null && !Number.isNaN(v))
+        .forEach(v => normalize(v).forEach(x => trajectoryValues.add(x)));
+    return [...itemValues].some(value => trajectoryValues.has(value));
+}
+
 function _ctVoxelVolumeCm3() {
     const spacing = state?.ctSpacing;
     if (!Array.isArray(spacing) || spacing.length < 3) return null;
@@ -200,6 +227,12 @@ function _volumeZToDisplayY(z, resampleRatio) {
 }
 
 async function loadVolumeData() {
+    // Threshold is an optional display filter, not a segmentation result.
+    // Reset it when a new volume is loaded so a stale session setting cannot
+    // create an unexplained red whole-body overlay.
+    state.viewerSettings.threshold = null;
+    const thresholdInput = document.getElementById('viewerThreshold');
+    if (thresholdInput) thresholdInput.value = '';
     const res = await fetch(API + '/viewer/volume');
     if (!res.ok) throw new Error('Failed to load volume');
 
@@ -1126,8 +1159,9 @@ async function syncViewerState() {
 }
 
 function applyThreshold() {
-    const threshold = parseInt(document.getElementById('viewerThreshold').value);
-    state.viewerSettings.threshold = threshold;
+    const raw = document.getElementById('viewerThreshold')?.value?.trim() || '';
+    const threshold = raw === '' ? null : Number(raw);
+    state.viewerSettings.threshold = Number.isFinite(threshold) ? threshold : null;
     if (state.ctLoaded) {
         clearSliceCache();
         loadAllSlices();
@@ -1527,11 +1561,20 @@ function renderDataTree() {
     // so the tree header counts everything under the Planning branch.
     const hasDoseOverlay = !!(state.doseOverlay && state.doseOverlay.data);
     const hasPlanning = planningTrajectories.length > 0 || planningSeeds.length > 0 || planningNeedles.length > 0 || doseLevels.length > 0 || hasDoseOverlay;
+    const planningEntries = _planningVisualEntries();
+    const planningVis = planningEntries.length === 0 || planningEntries.some(item => item.visible !== false);
+    const planningOp = planningEntries.length
+        ? planningEntries.reduce((sum, item) => sum + Number(item.opacity ?? 0.7), 0) / planningEntries.length
+        : 0.7;
 
-    html += `<div class="tree-group">
-        <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+    html += `<div class="tree-group" data-group="planning">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'planning')">
             <span class="arrow">&#9660;</span>
-            <span>Planning ${hasPlanning ? `(${planningTrajectories.length + planningSeeds.length + planningNeedles.length + doseLevels.length + (hasDoseOverlay ? 1 : 0)})` : ''}</span>
+            <button class="eye-btn ${planningVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning', ${!planningVis})" title="Toggle all planning objects">${planningVis ? '&#128065;' : '&#128064;'}</button>
+            <span>Planning ${hasPlanning ? `(${planningEntries.length})` : ''}</span>
+            <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+                <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(planningOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('planning', this.value)" title="Opacity for all planning objects">
+            </span>
         </div>
         <div class="tree-group-items">`;
 
@@ -1971,6 +2014,9 @@ function showGroupContextMenu(x, y, category) {
     } else if (category === 'dose_isosurfaces') {
         catInfo = { label: 'Dose Isosurfaces', icon: '🌈' };
         count = dataTreeState.planning.doseLevels.length;
+    } else if (category === 'planning' || category === 'planning_trajectories') {
+        catInfo = { label: category === 'planning' ? 'Planning' : 'Trajectories', icon: 'P' };
+        count = category === 'planning' ? _planningVisualEntries().length : dataTreeState.planning.trajectories.length;
     } else {
         catInfo = ORGAN_CATEGORIES[category] || { label: category, icon: '📁' };
         count = dataTreeState.organs.filter(o => o.category === category).length;
@@ -2006,7 +2052,7 @@ function showGroupContextMenu(x, y, category) {
     }
 
     // Clear planning visualization (only for planning groups)
-    if (category === 'planning_seeds' || category === 'planning_needles' || category === 'dose_isosurfaces') {
+    if (category === 'planning' || category === 'planning_trajectories' || category === 'planning_seeds' || category === 'planning_needles' || category === 'dose_isosurfaces') {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();clearPlanningVisualization()">
             <span class="ctx-icon">&#128465;</span> Clear Planning</div>`;
     }
@@ -2387,7 +2433,43 @@ function showAllOrgans() {
 }
 
 function setGroupVisibility(category, visible) {
-    if (category === 'ctv') {
+    if (category === 'planning') {
+        _planningVisualEntries().forEach(item => { item.visible = visible; });
+        _planningItems('seeds').forEach(seed => {
+            const mesh = scene3D.meshes[seed.id];
+            if (mesh) applyMeshVisibility(mesh, visible, seed.opacity ?? 1.0);
+        });
+        _planningItems('needles').forEach(needle => {
+            const mesh = scene3D.meshes[needle.id];
+            if (mesh) applyMeshVisibility(mesh, visible, needle.opacity ?? 0.8);
+            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, visible, needle.opacity ?? 0.8);
+        });
+        _planningItems('doseLevels').forEach(level => {
+            const mesh = scene3D.meshes[`dose_iso_${level.threshold}`];
+            if (mesh) applyMeshVisibility(mesh, visible, level.opacity ?? 0.3);
+        });
+        if (state.doseOverlay) state.doseOverlay.visible = visible;
+        (dataTreeState.planning.meshes || []).forEach(item => {
+            const mesh = scene3D.meshes[item.id];
+            if (mesh) applyMeshVisibility(mesh, visible, item.opacity ?? 0.7);
+        });
+    } else if (category === 'planning_trajectories') {
+        _planningItems('trajectories').forEach(trajectory => { trajectory.visible = visible; });
+        // The trajectory branch owns its seed children. Keep all seed/needle
+        // projections synchronized because a trajectory may have no mesh of
+        // its own.
+        _planningItems('seeds').forEach(seed => {
+            seed.visible = visible;
+            const mesh = scene3D.meshes[seed.id];
+            if (mesh) applyMeshVisibility(mesh, visible, seed.opacity ?? 1.0);
+        });
+        _planningItems('needles').forEach(needle => {
+            needle.visible = visible;
+            const mesh = scene3D.meshes[needle.id];
+            if (mesh) applyMeshVisibility(mesh, visible, needle.opacity ?? 0.8);
+            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, visible, needle.opacity ?? 0.8);
+        });
+    } else if (category === 'ctv') {
         dataTreeState.ctv.visible = visible;
         // Update all CTV child labels
         if (dataTreeState.ctvLabels) {
@@ -2448,7 +2530,35 @@ function setGroupVisibility(category, visible) {
 let _groupOpacityTimer = null;
 function setGroupOpacity(category, value) {
     const opacity = parseInt(value) / 100;
-    if (category === 'ctv') {
+    if (category === 'planning' || category === 'planning_trajectories') {
+        const trajectories = _planningItems('trajectories');
+        const entries = category === 'planning'
+            ? _planningVisualEntries()
+            : [
+                ...trajectories,
+                ..._planningItems('seeds').filter(seed => trajectories.some(t => _trajectoryContains(seed, t))),
+                ..._planningItems('needles').filter(needle => trajectories.some(t => _trajectoryContains(needle, t))),
+            ];
+        entries.forEach(item => { item.opacity = opacity; });
+        _planningItems('seeds').forEach(seed => {
+            if (category === 'planning_trajectories' && !_planningItems('trajectories').some(t => _trajectoryContains(seed, t))) return;
+            applyMeshOpacity(scene3D.meshes[seed.id], opacity, seed.visible !== false);
+        });
+        _planningItems('needles').forEach(needle => {
+            if (category === 'planning_trajectories' && !_planningItems('trajectories').some(t => _trajectoryContains(needle, t))) return;
+            applyMeshOpacity(scene3D.meshes[needle.id], opacity, needle.visible !== false);
+            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, needle.visible !== false, opacity);
+        });
+        if (category === 'planning') {
+            _planningItems('doseLevels').forEach(level => {
+                applyMeshOpacity(scene3D.meshes[`dose_iso_${level.threshold}`], opacity, level.visible !== false);
+            });
+            if (state.doseOverlay) state.doseOverlay.opacity = opacity;
+            (dataTreeState.planning.meshes || []).forEach(item => {
+                applyMeshOpacity(scene3D.meshes[item.id], opacity, item.visible !== false);
+            });
+        }
+    } else if (category === 'ctv') {
         dataTreeState.ctv.opacity = opacity;
         // Update all CTV child labels
         if (dataTreeState.ctvLabels) {
@@ -2551,6 +2661,26 @@ function toggleDataVisibility(id) {
         return;
     }
 
+    // Handle individual trajectory toggles and all of their descendants.
+    const trajectory = _planningItems('trajectories').find(t => String(t.id) === String(id));
+    if (trajectory) {
+        trajectory.visible = !trajectory.visible;
+        _planningItems('seeds').filter(seed => _trajectoryContains(seed, trajectory)).forEach(seed => {
+            seed.visible = trajectory.visible;
+            const mesh = scene3D.meshes[seed.id];
+            if (mesh) applyMeshVisibility(mesh, seed.visible, seed.opacity ?? 1.0);
+        });
+        _planningItems('needles').filter(needle => _trajectoryContains(needle, trajectory)).forEach(needle => {
+            needle.visible = trajectory.visible;
+            const mesh = scene3D.meshes[needle.id];
+            if (mesh) applyMeshVisibility(mesh, needle.visible, needle.opacity ?? 0.8);
+            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, needle.visible, needle.opacity ?? 0.8);
+        });
+        renderDataTree();
+        redrawSeedNeedleOverlays();
+        return;
+    }
+
     // Handle planning seed toggles
     if (id.startsWith('seed_')) {
         const seed = dataTreeState.planning.seeds.find(s => s.id === id);
@@ -2633,6 +2763,7 @@ function setDataItemVisibility(id, visible) {
     let current = null;
     if (id.startsWith('organ_')) current = dataTreeState.organs.find(o => o.id === id)?.visible;
     else if (id.startsWith('ctv_')) current = dataTreeState.ctvLabels?.[id]?.visible;
+    else if (_planningItems('trajectories').some(t => String(t.id) === String(id))) current = _planningItems('trajectories').find(t => String(t.id) === String(id))?.visible;
     else if (id.startsWith('seed_')) current = _planningItems('seeds').find(s => s.id === id)?.visible;
     else if (id.startsWith('needle_')) current = _planningItems('needles').find(n => n.id === id)?.visible;
     else if (id.startsWith('dose_iso_')) {
@@ -2674,6 +2805,23 @@ function setDataOpacity(id, value) {
         // Debounce overlay reload
         clearTimeout(_opacityTimer);
         _opacityTimer = setTimeout(() => { if (state.ctLoaded) reloadOverlays(); }, 150);
+        return;
+    }
+
+    // Handle individual trajectory opacity and descendants.
+    const trajectory = _planningItems('trajectories').find(t => String(t.id) === String(id));
+    if (trajectory) {
+        trajectory.opacity = opacity;
+        _planningItems('seeds').filter(seed => _trajectoryContains(seed, trajectory)).forEach(seed => {
+            seed.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[seed.id], opacity, seed.visible !== false);
+        });
+        _planningItems('needles').filter(needle => _trajectoryContains(needle, trajectory)).forEach(needle => {
+            needle.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[needle.id], opacity, needle.visible !== false);
+            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, needle.visible !== false, opacity);
+        });
+        renderDataTreeDebounced();
         return;
     }
 

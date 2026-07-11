@@ -577,6 +577,17 @@ function _todoSeed(todo, userMessage) {
             todo.root.querySelector('.chat-todo-list').appendChild(li);
             const item = { id: 'pred-' + t.tool, label: t.label, status: 'predicted', startedAt: null, endedAt: null, node: li, predictedTool: t.tool, predicted: true };
             todo.items.push(item);
+            // A replan reuses completed segmentation. Reflect that state in
+            // the TODO list instead of pretending that CTV/OAR will run again.
+            let uiSnapshot = {};
+            try { uiSnapshot = (typeof collectUIState === 'function') ? collectUIState() : {}; } catch (_) {}
+            const treeSnapshot = uiSnapshot.data_tree || {};
+            const ctvReady = !!treeSnapshot.ctv_loaded;
+            const oarReady = Number(treeSnapshot.oar_count || 0) > 0;
+            if ((t.tool === 'ctv_segmentation' && ctvReady) ||
+                (t.tool === 'oar_segmentation' && oarReady)) {
+                todo.markDone(item);
+            }
         }
         // Update count display
         const cnt = todo.root.querySelector('.chat-todo-count');
@@ -800,6 +811,9 @@ async function sendChat(prefill, options) {
     // folded when the final assistant response begins streaming.
     let todo = null;
     let responseText = '';
+    // Draft chunks belong to the execution trace. Render only the response
+    // event emitted after the final completeness/review phase.
+    let finalResponseReceived = false;
     let progressEl = null;
     let lastToolName = '';
     const steps = [];
@@ -1124,6 +1138,10 @@ async function sendChat(prefill, options) {
                         scrollToBottom();
                     } else if (currentEvent === 'text_chunk' && data && data.text) {
                         responseText += data.text;
+                        if (!finalResponseReceived) {
+                            // Buffer only; reviewed response is rendered below.
+                            continue;
+                        }
                         // LAZY WIPE ON REVIEW RETRY (2026-06-15):
                         // if a Quality Review reject already fired
                         // (window._pendingReviewRetry is true) and the
@@ -1183,6 +1201,9 @@ async function sendChat(prefill, options) {
                         }
                         scrollToBottom();
                     } else if (currentEvent === 'response' && data && data.response) {
+                        finalResponseReceived = true;
+                        responseText = '';
+                        window._lastResponseText = null;
                         // Final response captured — usually same as accumulated
                         // text from text_chunks. If text_chunks already
                         // populated responseText, ignore. If the server is
@@ -1295,7 +1316,9 @@ async function sendChat(prefill, options) {
         // Guard against duplicates: if responseEl exists, finalize it; only create
         // a new bubble if there's NO response element AND no prior addChat fallback
         // was used during streaming.
-        const finalText = responseText || '(no reply)';
+        const finalText = finalResponseReceived
+            ? (responseText || '(no reply)')
+            : '(No validated response was returned. Please retry.)';
         const suppressScreenshotAck = _isScreenshotAckResponse(finalText, steps);
         if (suppressScreenshotAck && responseEl) {
             try {

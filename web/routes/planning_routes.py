@@ -2025,9 +2025,14 @@ def register_planning_routes(app, get_agent):
                 return jsonify({"success": True, "message": f"Moved to {axis} slice {slice_index}/{max_slice}", "axis": axis, "slice_index": slice_index, "max_slice": max_slice})
 
             elif action == "set_threshold":
-                threshold = data.get("threshold", -200)
+                threshold = data.get("threshold")
+                if threshold is not None:
+                    try:
+                        threshold = float(threshold)
+                    except (TypeError, ValueError):
+                        return jsonify({"error": "threshold must be numeric or null"}), 400
                 agent.memory.store("viewer_threshold", threshold)
-                return jsonify({"success": True, "message": f"Threshold set to {threshold} HU", "threshold": threshold})
+                return jsonify({"success": True, "message": f"Threshold {'cleared' if threshold is None else f'set to {threshold} HU'}", "threshold": threshold})
 
             elif action == "toggle_overlay":
                 overlay = data.get("overlay", "ctv")

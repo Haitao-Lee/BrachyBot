@@ -94,6 +94,10 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             agent.memory.store("ct_shape", list(shape))
             agent.memory.store("ct_window_center", window_center)
             agent.memory.store("ct_window_width", window_width)
+            # Threshold is an optional display filter and is scoped to the
+            # loaded CT. Never carry a previous patient's threshold overlay
+            # into a newly loaded study.
+            agent.memory.store("viewer_threshold", None)
             agent.memory.store("ct_path", ct_path)  # Store path for 3D reconstruction
             agent.memory.store("ct_source_kind", kind)
 

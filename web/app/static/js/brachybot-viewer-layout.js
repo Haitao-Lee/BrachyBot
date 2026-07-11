@@ -347,7 +347,7 @@ function resetViewer() {
     state.annotationRedoStack = [];
     document.getElementById('viewerWindow').value = 400;
     document.getElementById('viewerLevel').value = 40;
-    document.getElementById('viewerThreshold').value = -200;
+    document.getElementById('viewerThreshold').value = '';
     document.getElementById('viewerZoom').value = 100;
     document.getElementById('zoomLabel').textContent = '100%';
     document.getElementById('overlayCTV').checked = false;
@@ -1127,7 +1127,14 @@ async function setDoseTextureMode(enabled, opts = {}) {
     try {
         if (enabled) {
             init3DScene();
-            await loadCTVAndObstacleMeshes();
+            // OAR label arrays are loaded lazily by the normal viewer. Dose
+            // surface mode must make that dependency explicit, otherwise a
+            // first click can texture only the already-warmed CTV mesh.
+            if (typeof loadLabelVolumes === 'function' &&
+                (typeof oarLabelData === 'undefined' || !oarLabelData)) {
+                await loadLabelVolumes();
+            }
+            await prewarmSegmentationMeshes('all', { showStatus: false, batchSize: 3, allOAR: true });
             try { await loadSeeds3D(); } catch (e) { console.warn('[DoseTexture] seeds/needles unavailable:', e); }
             if (!state.doseOverlay) await loadDoseOverlay();
             if (!state.doseOverlay?.shape) throw new Error('Dose overlay is not available');

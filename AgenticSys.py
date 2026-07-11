@@ -25,6 +25,7 @@ import os
 import sys
 import json
 import logging
+import math
 import re
 import time
 import threading
@@ -774,6 +775,12 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         text = (message or "").lower()
         planning_tools = {"planning_pipeline", "seed_planning", "dose_engine", "dose_evaluation", "dose_calc"}
         planning_tool_requested = any((tc.get("tool") in planning_tools) for tc in (tool_calls or []))
+        # A replan command can be phrased as a parameter edit (for example,
+        # "reverse reference direction") and may contain no generic Chinese
+        # execution keyword. The explicit tool call plus replan detector is
+        # sufficient evidence to enter the clinical normalizer.
+        if self._is_replan_request(message):
+            return True
 
         knowledge_markers = (
             "介绍", "解释", "说明", "讲讲", "为什么", "为啥", "好处", "优势",
@@ -811,6 +818,56 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             return True
         return planning_tool_requested and has_execution_intent
 
+    def _is_replan_request(self, message: str) -> bool:
+        """Detect an explicit request to rerun an existing plan."""
+        text = (message or "").lower()
+        return bool(
+            re.search(r"(?:重新|再次|再|重做|重跑).{0,8}(?:规划|计划)", text)
+            or re.search(r"(?:规划|计划).{0,8}(?:反向|逆向|重新|再来)", text)
+            or re.search(r"(?:反向|逆向).{0,10}(?:规划|计划)", text)
+            or re.search(r"(?:\u91cd\u65b0|\u518d\u6b21|\u518d|\u91cd\u505a|\u91cd\u8dd1).{0,8}(?:\u89c4\u5212|\u8ba1\u5212)", text)
+            or re.search(r"(?:\u53cd\u5411|\u9006\u5411).{0,10}(?:\u89c4\u5212|\u8ba1\u5212)", text)
+            or re.search(r"\b(?:replan|re-plan|rerun(?: the)? plan|rerun planning)\b", text)
+            or re.search(r"\breverse\b.{0,30}\breference\s*direction\b", text)
+            or re.search(r"\breference\s*direction\b.{0,30}\breverse\b", text)
+            or re.search(r"reference\s*direction.{0,30}(?:reverse|\u53cd\u5411|\u9006\u5411).{0,10}(?:plan|\u89c4\u5212|\u8ba1\u5212)", text)
+            or re.search(r"(?:reverse|\u53cd\u5411|\u9006\u5411).{0,30}reference\s*direction", text)
+        )
+
+    @staticmethod
+    def _coerce_reference_direction(value):
+        """Return a finite non-zero 3-vector, or None for malformed input."""
+        try:
+            values = [float(v) for v in value]
+        except (TypeError, ValueError):
+            return None
+        if len(values) != 3 or not all(math.isfinite(v) for v in values):
+            return None
+        if math.sqrt(sum(v * v for v in values)) <= 1e-9:
+            return None
+        return values
+
+    def _current_reference_direction(self):
+        """Read the latest explicit UI/config direction without mutating it."""
+        ui_state = self.memory.get_ui_state() or {}
+        planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
+        candidates = [
+            planning_state.get("reference_direc"),
+            ui_state.get("reference_direc"),
+            (self.memory.retrieve("plan_config") or {}).get("reference_direc"),
+            (getattr(self, "config", {}) or {}).get("reference_direc"),
+        ]
+        for candidate in candidates:
+            direction = self._coerce_reference_direction(candidate)
+            if direction is not None:
+                return direction
+        # Canonical default in plans/config.json; used only when the user asks
+        # to reverse the default without a more recent explicit vector.
+        return [0.0, -1.0, 0.0]
+
+    def _reversed_reference_direction(self):
+        return [-value for value in self._current_reference_direction()]
+
     def _current_ct_path(self, tool_calls: List[Dict] = None) -> str:
         for tc in tool_calls or []:
             params = tc.get("params") or {}
@@ -835,6 +892,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             or len(self.memory.retrieve("organ_names") or {}) >= 5
         )
         planning_ready = self._has_completed_planning()
+        replan_requested = self._is_replan_request(message)
         ct_path = self._current_ct_path(tool_calls)
         tumor_type = (
             self.memory.retrieve("tumor_type_used")
@@ -880,12 +938,15 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             }))
         if not oar_ready:
             ordered.append(ensure_call("oar_segmentation", {"image_path": ct_path}))
-        if not planning_ready:
-            ordered.append(ensure_call("planning_pipeline", {
+        if not planning_ready or replan_requested:
+            planning_params = {
                 "ct_image_path": ct_path,
                 "step": "full",
                 "mode": "rule_based",
-            }))
+            }
+            if replan_requested:
+                planning_params["ref_direc"] = self._reversed_reference_direction()
+            ordered.append(ensure_call("planning_pipeline", planning_params))
 
         if ordered:
             logger.info(
