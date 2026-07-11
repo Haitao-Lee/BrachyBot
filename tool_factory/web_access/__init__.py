@@ -421,7 +421,6 @@ class UnifiedWebAccess:
         """
         start_time = time.time()
         results = []
-        evidence = []
 
         # Add year context for recent information (inspired by OpenCode)
         query = self._add_year_context(query)

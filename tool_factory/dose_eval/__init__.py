@@ -74,6 +74,9 @@ class DoseEvaluationTool(BaseTool):
                 "prescribed_dose": {"type": "number", "default": 1.0, "description": "Prescribed dose in Gy"},
                 "target_value": {"type": "number", "default": 1, "description": "CTV label value"},
                 "oar_constraints": {"type": "object", "description": "OAR dose constraints dict"},
+                "organ_names": {"type": "object", "description": "Mapping of OAR label IDs to anatomical names"},
+                "spacing": {"type": "array", "description": "Dose-grid voxel spacing [x, y, z] in mm"},
+                "tumor_type": {"type": "string", "description": "Explicit tumor site/model for source-backed scoring"},
             },
             "required": ["dose_array", "ctv_mask"],
         }
@@ -106,26 +109,48 @@ class DoseEvaluationTool(BaseTool):
         prescribed_dose = kwargs.get("prescribed_dose", 1.0)
         target_value = kwargs.get("target_value", 1)
         oar_constraints = kwargs.get("oar_constraints", {})
+        organ_names = kwargs.get("organ_names", {}) or {}
+        spacing = kwargs.get("spacing", [1.0, 1.0, 1.0])
+        tumor_type = kwargs.get("tumor_type", "")
+
+        dose_array = np.asarray(dose_array)
+        if dose_array.ndim != 3:
+            return ToolResult(success=False, error="dose_array must be a 3D array")
 
         masks = {}
         if ctv_mask is not None:
-            masks["CTV"] = ctv_mask
+            ctv_mask = np.asarray(ctv_mask)
+            if ctv_mask.shape != dose_array.shape:
+                return ToolResult(success=False, error="ctv_mask shape must match dose_array")
+            masks["CTV"] = (ctv_mask == target_value).astype(np.uint8)
         if oar_mask is not None:
+            oar_mask = np.asarray(oar_mask)
+            if oar_mask.shape != dose_array.shape:
+                return ToolResult(success=False, error="oar_mask shape must match dose_array")
             unique_labels = np.unique(oar_mask)
             for label in unique_labels:
                 if label > 0:
-                    masks[f"OAR_{int(label)}"] = (oar_mask == label).astype(np.float32)
+                    label_id = int(label)
+                    structure_name = organ_names.get(label_id, organ_names.get(str(label_id), f"OAR_{label_id}"))
+                    structure_name = str(structure_name).strip() or f"OAR_{label_id}"
+                    # Keep names unique when an upstream map contains aliases or duplicates.
+                    if structure_name in masks:
+                        structure_name = f"{structure_name}_{label_id}"
+                    masks[structure_name] = (oar_mask == label).astype(np.float32)
 
         tool = ComprehensiveDoseEvaluationTool()
         structure_type = {"CTV": "target"}
         for key in masks:
-            if key.startswith("OAR"):
+            if key != "CTV":
                 structure_type[key] = "oar"
         result = tool._execute(
             dose_array=dose_array,
             masks=masks,
             prescribed_dose=prescribed_dose,
             structure_type=structure_type,
+            spacing=spacing,
+            tumor_type=tumor_type,
+            oar_constraints=oar_constraints,
         )
 
         if not result.success:
@@ -136,13 +161,15 @@ class DoseEvaluationTool(BaseTool):
         ctv_metrics = metrics.get("CTV", {})
         oar_metrics = {}
         for key, val in metrics.items():
-            if key.startswith("OAR"):
+            if key != "CTV":
                 oar_metrics[key] = val
+        plan_score = result.metadata.get("plan_score")
+        score_display = "UNVERIFIED" if plan_score is None else f"{float(plan_score):.0f}"
 
         return ToolResult(
             success=True,
             data=metrics,
-            message=f"Dose evaluation completed. V100={ctv_metrics.get('V100', 0):.1%}, D90={ctv_metrics.get('D90', 0):.2f}Gy, Score={result.metadata.get('plan_score', 0):.0f}",
+            message=f"Dose evaluation completed. V100={ctv_metrics.get('V100', 0):.1%}, D90={ctv_metrics.get('D90', 0):.2f}Gy, Score={score_display}",
             metadata={
                 "v100": ctv_metrics.get("V100", 0),
                 "v150": ctv_metrics.get("V150", 0),
@@ -151,7 +178,7 @@ class DoseEvaluationTool(BaseTool):
                 "d90": ctv_metrics.get("D90", 0),
                 "d95": ctv_metrics.get("D95", 0),
                 "d99": ctv_metrics.get("D99", 0),
-                "plan_score": result.metadata.get("plan_score", 0),
+                "plan_score": plan_score,
                 "oar_metrics": oar_metrics,
                 "oar_violations": result.metadata.get("oar_violations", []),
                 "dvh_data": ctv_metrics.get("dvh", {}),

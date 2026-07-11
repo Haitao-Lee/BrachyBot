@@ -4,11 +4,10 @@ Filesystem Browser Tool
 Allows the agent to list directories and inspect file metadata.
 """
 
+import logging
 import os
 import stat
-import logging
-from typing import Dict, Any, Optional
-from dataclasses import dataclass
+from pathlib import Path
 
 from tool_factory import BaseTool, ToolResult
 
@@ -19,6 +18,50 @@ ALLOWED_EXTENSIONS = {
     ".json", ".txt", ".csv", ".xml", ".yaml", ".yml",
     ".py", ".md", ".log",
 }
+
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _configured_roots() -> tuple[Path, ...]:
+    """Return the directories the read-only browser may inspect by default."""
+    project_root = Path(__file__).resolve().parents[2]
+    roots = [project_root, project_root / "uploads", project_root / "outputs"]
+    for variable in (
+        "BRACHYBOT_FILESYSTEM_ROOTS",
+        "BRACHYBOT_CT_DATA_ROOTS",
+        "BRACHYBOT_MR_DATA_ROOTS",
+        "BRACHYBOT_US_DATA_ROOTS",
+    ):
+        for raw in os.environ.get(variable, "").split(os.pathsep):
+            if raw.strip():
+                roots.append(Path(raw.strip()).expanduser())
+
+    resolved: list[Path] = []
+    for root in roots:
+        try:
+            candidate = root.resolve(strict=False)
+        except OSError:
+            continue
+        if candidate not in resolved:
+            resolved.append(candidate)
+    return tuple(resolved)
+
+
+def _path_is_allowed(path: str) -> tuple[bool, Path]:
+    """Resolve a path and enforce the browser's explicit root allowlist."""
+    resolved = Path(path).expanduser().resolve(strict=False)
+    global_access = os.environ.get(
+        "BRACHYBOT_ENABLE_FILESYSTEM_BROWSER_GLOBAL", ""
+    ).strip().lower() in _TRUE_VALUES
+    if global_access:
+        return True, resolved
+    for root in _configured_roots():
+        try:
+            resolved.relative_to(root)
+            return True, resolved
+        except ValueError:
+            continue
+    return False, resolved
 
 
 class FilesystemBrowserTool(BaseTool):
@@ -48,19 +91,21 @@ class FilesystemBrowserTool(BaseTool):
             )
 
         try:
-            # Security: prevent access to sensitive directories
-            normalized = os.path.normpath(os.path.abspath(path))
-            blocked_prefixes = ["/etc", "/proc", "/sys", "/dev", "/root/.ssh"]
-            for prefix in blocked_prefixes:
-                if normalized.startswith(prefix):
-                    return ToolResult(
-                        success=False,
-                        error=f"Access denied: {prefix} is restricted",
-                        message="Path access restricted for security",
-                    )
+            allowed, resolved_path = _path_is_allowed(path)
+            normalized = str(resolved_path)
+            if not allowed:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "Access denied: path is outside the configured project/data roots. "
+                        "Add it to BRACHYBOT_FILESYSTEM_ROOTS or explicitly enable trusted "
+                        "global browsing with BRACHYBOT_ENABLE_FILESYSTEM_BROWSER_GLOBAL=1."
+                    ),
+                    message="Path access restricted for security",
+                )
 
             if action == "list":
-                if not os.path.isdir(path):
+                if not resolved_path.is_dir():
                     return ToolResult(
                         success=False,
                         error=f"Not a directory: {path}",
@@ -69,7 +114,7 @@ class FilesystemBrowserTool(BaseTool):
 
                 entries = []
                 try:
-                    items = sorted(os.listdir(path))
+                    items = sorted(os.listdir(resolved_path))
                 except PermissionError:
                     return ToolResult(
                         success=False,
@@ -78,13 +123,12 @@ class FilesystemBrowserTool(BaseTool):
                     )
 
                 for item in items:
-                    item_path = os.path.join(path, item)
+                    item_path = resolved_path / item
                     try:
-                        st = os.stat(item_path)
-                        is_dir = os.path.isdir(item_path)
-                        ext = os.path.splitext(item)[-1].lower()
-                        if item.endswith(".gz"):
-                            ext = ".gz"
+                        st = item_path.stat()
+                        is_dir = item_path.is_dir()
+                        lower_name = item.lower()
+                        ext = ".nii.gz" if lower_name.endswith(".nii.gz") else item_path.suffix.lower()
                         entries.append({
                             "name": item,
                             "type": "directory" if is_dir else "file",
@@ -108,18 +152,18 @@ class FilesystemBrowserTool(BaseTool):
                 )
 
             elif action == "info":
-                if not os.path.exists(path):
+                if not resolved_path.exists():
                     return ToolResult(
                         success=False,
                         error=f"File not found: {path}",
                         message="File does not exist",
                     )
 
-                st = os.stat(path)
+                st = resolved_path.stat()
                 info = {
                     "path": normalized,
-                    "name": os.path.basename(path),
-                    "type": "directory" if os.path.isdir(path) else "file",
+                    "name": resolved_path.name,
+                    "type": "directory" if resolved_path.is_dir() else "file",
                     "size": st.st_size,
                     "size_human": self._human_size(st.st_size),
                     "created": st.st_ctime,

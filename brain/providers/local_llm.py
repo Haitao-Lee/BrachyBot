@@ -3,6 +3,7 @@ Local LLM Providers (vLLM, Ollama, etc.)
 """
 
 import os
+import re
 import time
 import json
 from typing import Dict, List, Optional
@@ -126,6 +127,30 @@ class OllamaLLM(LocalLLM):
     def default_model(self) -> str:
         return "qwen2.5:14b"
 
+    @staticmethod
+    def _convert_content_to_ollama(content) -> tuple[str, List[str]]:
+        """Translate OpenAI-style blocks to Ollama text plus base64 images."""
+        if isinstance(content, str):
+            return content, []
+        if not isinstance(content, list):
+            return str(content), []
+        text_parts = []
+        images = []
+        for block in content:
+            if not isinstance(block, dict):
+                text_parts.append(str(block))
+                continue
+            if block.get("type") == "text":
+                text = str(block.get("text", "")).strip()
+                if text:
+                    text_parts.append(text)
+            elif block.get("type") == "image_url":
+                image_url = str(block.get("image_url", {}).get("url", "") or "")
+                match = re.match(r"^data:image/[^;]+;base64,(.+)$", image_url, re.DOTALL)
+                if match:
+                    images.append(match.group(1))
+        return "\n".join(text_parts), images
+
     def _chat(self, messages: List[Dict], tools: List[Dict] = None, **kwargs) -> LLMResponse:
         try:
             import requests
@@ -137,12 +162,16 @@ class OllamaLLM(LocalLLM):
 
         ollama_messages = []
         for msg in messages:
-            if msg["role"] == "system":
-                ollama_messages.append({"role": "system", "content": msg["content"]})
-            elif msg["role"] == "user":
-                ollama_messages.append({"role": "user", "content": msg["content"]})
-            elif msg["role"] == "assistant":
-                ollama_messages.append({"role": "assistant", "content": msg["content"]})
+            role = msg.get("role", "user")
+            if role not in {"system", "user", "assistant", "tool"}:
+                role = "user"
+            content, images = self._convert_content_to_ollama(msg.get("content", ""))
+            converted = {"role": role, "content": content}
+            if images:
+                converted["images"] = images
+            if msg.get("tool_calls"):
+                converted["tool_calls"] = msg["tool_calls"]
+            ollama_messages.append(converted)
 
         request_kwargs = {
             "model": kwargs.get("model", self.model),

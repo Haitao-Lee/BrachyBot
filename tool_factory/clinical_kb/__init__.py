@@ -28,7 +28,6 @@ KB_DIR = TOOL_DIR / "data"
 SOURCE_ROOT = REPO_ROOT / "clinical_kb" / "sources"
 GUIDELINES_PATH = REPO_ROOT / "clinical_kb" / "guidelines_brachytherapy.md"
 GUIDELINES_DIR = REPO_ROOT / "clinical_kb" / "guidelines"
-KB_DIR.mkdir(parents=True, exist_ok=True)
 
 _GENERIC_QUERY_TERMS = {
     "brachytherapy", "bt", "guideline", "guidelines", "consensus", "review",
@@ -98,9 +97,6 @@ def _ensure_default_kb() -> None:
         kb_file.replace(backup)
         kb_file.write_text(json.dumps(_DEFAULT_KB, indent=2, ensure_ascii=False), encoding="utf-8")
         logger.warning("Reinitialized corrupt clinical knowledge base; backup saved to %s: %s", backup, exc)
-
-
-_ensure_default_kb()
 
 
 def _norm(text: Any) -> str:
@@ -228,6 +224,9 @@ Actions:
 
     def _load_kb(self) -> Dict[str, Any]:
         kb_file = KB_DIR / "knowledge_base.json"
+        if not kb_file.exists():
+            logger.warning("Clinical KB file is missing; using the in-memory fallback")
+            return _DEFAULT_KB
         try:
             mtime = kb_file.stat().st_mtime
             if self._kb_cache is not None and mtime == self._kb_mtime:
@@ -240,6 +239,7 @@ Actions:
             return _DEFAULT_KB
 
     def _save_kb(self, kb: Dict[str, Any]) -> None:
+        KB_DIR.mkdir(parents=True, exist_ok=True)
         kb_file = KB_DIR / "knowledge_base.json"
         kb_file.write_text(json.dumps(kb, indent=2, ensure_ascii=False), encoding="utf-8")
         self._kb_cache = kb

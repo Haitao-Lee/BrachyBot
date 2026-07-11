@@ -6,6 +6,7 @@ Generates candidate needle insertion trajectories using direction sampling.
 
 import sys
 import os
+import math
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -61,8 +62,8 @@ class TrajectoryInitTool(BaseTool):
                 },
                 "extract_angle": {
                     "type": "number",
-                    "description": "Cone half-angle for candidate extraction in degrees (default: 30)",
-                    "default": 30,
+                    "description": "Cone half-angle for candidate extraction in radians (default: pi/2)",
+                    "default": math.pi / 2,
                 },
                 "target_value": {
                     "type": "number",
@@ -125,7 +126,7 @@ class TrajectoryInitTool(BaseTool):
         radiation_volume = kwargs["radiation_volume"]
         ref_direc = kwargs.get("ref_direc")
         direc_resolution = kwargs.get("direc_resolution", [30, 3, 2])
-        extract_angle = kwargs.get("extract_angle", 30)
+        extract_angle = kwargs.get("extract_angle", math.pi / 2)
         target_value = kwargs.get("target_value", 1)
         background_value = kwargs.get("background_value", 0)
         obstacle_value = kwargs.get("obstacle_value", 3)

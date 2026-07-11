@@ -8,12 +8,16 @@ scikit-image>=0.20.0
 
 # Medical imaging
 SimpleITK>=2.3.0
-pydicom>=2.4.0
+# pydicom 3.x requires matching modern pylibjpeg plugins; several supported
+# workstation images ship the 2.x plugin API. Keep the validated 2.4 line until
+# the optional codec stack is upgraded and integration-tested together.
+pydicom>=2.4.0,<3.0
 nibabel>=5.1.0
 
 # Deep learning
 torch>=2.0.0
 monai>=1.3.0
+gymnasium>=0.29.0
 
 # LLM providers
 openai>=1.0.0
@@ -29,6 +33,7 @@ tqdm>=4.65.0
 
 # Testing
 pytest>=7.0.0
+pytest-asyncio>=0.23.0
 
 # Optional: OAR segmentation
 # TotalSegmentator>=2.2.0

@@ -48,11 +48,26 @@ class PlanRefinementTool(BaseTool):
                 "dose_distribution": {"type": "array", "description": "Current 3D dose array"},
                 "ctv_mask": {"type": "array", "description": "CTV binary mask"},
                 "oar_mask": {"type": "array", "description": "OAR multi-label mask"},
-                "prescribed_dose": {"type": "number", "default": 1.0},
-                "target_v100": {"type": "number", "default": 0.95, "description": "Target V100"},
+                "prescribed_dose": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Prescription in the same units as dose_distribution",
+                },
+                "target_v100": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Source-backed or explicitly configured target V100 fraction",
+                },
                 "max_iterations": {"type": "integer", "default": 3},
             },
-            "required": ["current_plan", "dose_distribution", "ctv_mask"],
+            "required": [
+                "current_plan",
+                "dose_distribution",
+                "ctv_mask",
+                "prescribed_dose",
+                "target_v100",
+            ],
         }
 
     @property
@@ -74,9 +89,25 @@ class PlanRefinementTool(BaseTool):
         dose_distribution = np.asarray(kwargs["dose_distribution"], dtype=np.float32)
         ctv_mask = np.asarray(kwargs["ctv_mask"])
         oar_mask = kwargs.get("oar_mask")
-        prescribed_dose = kwargs.get("prescribed_dose", 1.0)
-        target_v100 = kwargs.get("target_v100", 0.95)
+        prescribed_dose = kwargs.get("prescribed_dose")
+        target_v100 = kwargs.get("target_v100")
         max_iterations = kwargs.get("max_iterations", 3)
+
+        if prescribed_dose is None or float(prescribed_dose) <= 0:
+            return ToolResult(
+                success=False,
+                error="prescribed_dose must be explicitly provided and greater than zero",
+            )
+        if target_v100 is None or not 0.0 <= float(target_v100) <= 1.0:
+            return ToolResult(
+                success=False,
+                error=(
+                    "target_v100 must be an explicit source-backed or configured "
+                    "fraction between 0 and 1"
+                ),
+            )
+        prescribed_dose = float(prescribed_dose)
+        target_v100 = float(target_v100)
 
         if dose_distribution.shape != ctv_mask.shape:
             return ToolResult(
@@ -86,6 +117,21 @@ class PlanRefinementTool(BaseTool):
                     f"{dose_distribution.shape} vs {ctv_mask.shape}"
                 ),
             )
+        oar_clearance = None
+        if oar_mask is not None:
+            oar_mask = np.asarray(oar_mask)
+            if oar_mask.shape != dose_distribution.shape:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "dose_distribution and oar_mask shape mismatch: "
+                        f"{dose_distribution.shape} vs {oar_mask.shape}"
+                    ),
+                )
+            if np.any(oar_mask > 0):
+                from scipy.ndimage import distance_transform_edt
+
+                oar_clearance = distance_transform_edt(oar_mask == 0)
 
         ctv_voxels = ctv_mask > 0
         if not np.any(ctv_voxels):
@@ -109,6 +155,7 @@ class PlanRefinementTool(BaseTool):
                 dose_distribution,
                 refined_plan,
                 max(1, int(max_iterations)),
+                oar_clearance=oar_clearance,
             )
 
         candidate_seeds = []
@@ -163,6 +210,7 @@ class PlanRefinementTool(BaseTool):
                 "improved_metrics": improvements,
                 "requires_dose_recalculation": iterations > 0,
                 "dose_engine": "myDoseNet",
+                "oar_aware_ranking": oar_clearance is not None,
                 "iterations_used": iterations,
             },
         )
@@ -175,13 +223,33 @@ class PlanRefinementTool(BaseTool):
                 return [centroid.tolist(), direc]
         return [centroid.tolist(), [0, 0, 1]]
 
-    def _candidate_centers_from_underdosed(self, under_dosed, dose_distribution, current_plan, max_candidates):
+    def _candidate_centers_from_underdosed(
+        self,
+        under_dosed,
+        dose_distribution,
+        current_plan,
+        max_candidates,
+        oar_clearance=None,
+    ):
         coords = np.argwhere(under_dosed)
         if coords.size == 0:
             return []
 
         doses = dose_distribution[under_dosed]
-        order = np.argsort(doses)
+        if oar_clearance is not None:
+            clearances = np.asarray(oar_clearance)[under_dosed]
+            dose_span = float(np.ptp(doses))
+            clearance_span = float(np.ptp(clearances))
+            normalized_dose = (doses - np.min(doses)) / (dose_span if dose_span > 0 else 1.0)
+            normalized_clearance = (
+                (clearances - np.min(clearances)) / (clearance_span if clearance_span > 0 else 1.0)
+            )
+            # Coverage remains the primary objective. Clearance only breaks or
+            # gently reorders similarly cold candidates before myDoseNet reruns.
+            priority = normalized_dose - 0.1 * normalized_clearance
+            order = np.argsort(priority)
+        else:
+            order = np.argsort(doses)
         existing = self._extract_seed_positions(current_plan)
         selected = []
         min_dim = max(1, min(dose_distribution.shape))

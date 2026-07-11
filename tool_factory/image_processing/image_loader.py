@@ -68,7 +68,7 @@ class ImageLoaderTool(BaseTool):
             "type": "object",
             "properties": {
                 "image": {"type": "object", "description": "SimpleITK Image"},
-                "array": {"type": "array", "description": "NumPy array of image data"},
+                "array": {"type": ["array", "null"], "description": "NumPy array of image data, omitted when load_into_memory is false"},
                 "spacing": {"type": "array", "description": "Voxel spacing [x, y, z] in mm"},
                 "origin": {"type": "array", "description": "Physical origin [x, y, z] in mm"},
                 "direction": {"type": "array", "description": "Direction cosines (9 values)"},
@@ -104,7 +104,7 @@ class ImageLoaderTool(BaseTool):
                 image = sitk.ReadImage(file_path)
                 modality = "Unknown"
 
-            array = sitk.GetArrayFromImage(image)
+            array = sitk.GetArrayFromImage(image) if load_into_memory else None
             size = list(image.GetSize())
             spacing = list(image.GetSpacing())
             origin = list(image.GetOrigin())
@@ -113,7 +113,11 @@ class ImageLoaderTool(BaseTool):
             return ToolResult(
                 success=True,
                 data=image,
-                message=f"Image loaded: {os.path.basename(file_path)}, shape={array.shape}, modality={modality}",
+                message=(
+                    f"Image loaded: {os.path.basename(file_path)}, "
+                    f"shape={array.shape if array is not None else tuple(reversed(size))}, "
+                    f"modality={modality}"
+                ),
                 metadata={
                     "image": image,
                     "array": array,

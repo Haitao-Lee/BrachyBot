@@ -10,8 +10,9 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from typing import Any, Dict, Optional
 import logging
-import sys
 import time
+
+from utils.operation_tracker import track_operation
 
 logger = logging.getLogger(__name__)
 
@@ -106,35 +107,9 @@ class BaseTool(ABC):
 
     @contextmanager
     def _operation_tracker(self):
-        """Best-effort hook for web/server.py shutdown protection."""
-        ctx = None
-        entered = False
-        try:
-            import builtins
-            tracker = getattr(builtins, "track_operation", None)
-            if callable(tracker):
-                ctx = tracker(self.name)
-                ctx.__enter__()
-                entered = True
-        except Exception as e:
-            logger.debug(f"Operation tracking unavailable for {self.name}: {e}")
-            ctx = None
-
-        try:
+        """Track nested tool work for graceful server shutdown."""
+        with track_operation(self.name):
             yield
-        except Exception:
-            if entered and ctx is not None:
-                try:
-                    ctx.__exit__(*sys.exc_info())
-                except Exception as e:
-                    logger.debug(f"Operation tracking exit failed for {self.name}: {e}")
-            raise
-        else:
-            if entered and ctx is not None:
-                try:
-                    ctx.__exit__(None, None, None)
-                except Exception as e:
-                    logger.debug(f"Operation tracking exit failed for {self.name}: {e}")
     
     def execute(self, **kwargs) -> ToolResult:
         """

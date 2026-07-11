@@ -61,7 +61,9 @@ class EvidenceRecord:
         if not self.evidence_id:
             # Generate unique ID from content
             content = f"{self.claim}:{self.source_url}:{self.accessed_at}"
-            self.evidence_id = hashlib.md5(content.encode()).hexdigest()[:12]
+            self.evidence_id = hashlib.md5(
+                content.encode(), usedforsecurity=False
+            ).hexdigest()[:12]
         if not self.accessed_at:
             self.accessed_at = datetime.now().isoformat()
 

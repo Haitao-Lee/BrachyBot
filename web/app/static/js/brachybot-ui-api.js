@@ -105,6 +105,7 @@ const state = {
         enabled: false,
         applying: false,
         rawAxialSlices: {},
+        rawAxialSlicePromises: {},
         originalMaterials: {},
         originalSceneStyle: {},
         originalSkinStyle: null,
@@ -308,7 +309,7 @@ function instrumentUIControls() {
     }, true);
 }
 
-(function installApiKeyFetchWrapper() {
+(function installApiRequestFetchWrapper() {
     const nativeFetch = window.fetch.bind(window);
     // Support ?api_key=xxx in URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -328,13 +329,22 @@ function instrumentUIControls() {
     };
     window.fetch = function brachybotFetch(input, init) {
         const key = window.BRACHYBOT_API_KEY || localStorage.getItem('BRACHYBOT_API_KEY') || '';
-        if (!key) return nativeFetch(input, init);
         const url = typeof input === 'string' ? input : (input && input.url) || '';
-        const isApiRequest = url.startsWith(API + '/') || url.startsWith('/api/');
+        let isApiRequest = url.startsWith(API + '/') || url.startsWith('/api/');
+        if (!isApiRequest) {
+            try {
+                const parsed = new URL(url, window.location.href);
+                isApiRequest = parsed.origin === window.location.origin
+                    && parsed.pathname.startsWith('/api/');
+            } catch (_) { /* native fetch will report malformed URLs */ }
+        }
         if (!isApiRequest) return nativeFetch(input, init);
         const nextInit = Object.assign({}, init || {});
         const headers = new Headers(nextInit.headers || (input && input.headers) || {});
-        if (!headers.has('X-API-Key')) headers.set('X-API-Key', key);
+        if (key && !headers.has('X-API-Key')) headers.set('X-API-Key', key);
+        if (!headers.has('X-BrachyBot-Session')) {
+            headers.set('X-BrachyBot-Session', _activeApiSessionId());
+        }
         nextInit.headers = headers;
         return nativeFetch(input, nextInit);
     };
@@ -484,6 +494,56 @@ function resetAllState() {
     // Re-render data tree
     renderDataTree();
 }
+
+/**
+ * Clear the browser workspace without touching another server session.
+ * Session changes call this before restoring the selected session so CT,
+ * contours, dose, planning geometry, and report fields cannot bleed from
+ * the previously active case.
+ */
+function clearClientWorkspace(options = {}) {
+    resetAllState();
+    state.ctLoaded = false;
+    state.ctPath = null;
+    state.ctShape = null;
+    state.ctSpacing = null;
+    state.ctOrigin = null;
+    state.ctDirection = null;
+    state.ctHURange = null;
+    state.ctDicomTags = {};
+    state.ctSourceKind = null;
+    state.ctSourceMeta = {};
+    state.doseOverlay = null;
+    state.dvhData = null;
+    state.metrics = {};
+    state.seeds = [];
+    state.trajectories = [];
+    if (typeof volumeShape !== 'undefined') volumeShape = null;
+    if (typeof volumeSpacing !== 'undefined') volumeSpacing = null;
+    if (typeof updateSeeds === 'function') updateSeeds([]);
+    if (typeof updateMetrics === 'function') updateMetrics({});
+    if (typeof updateOARTable === 'function') updateOARTable({});
+    const ctPathInput = document.getElementById('ctPath');
+    if (ctPathInput) ctPathInput.value = '';
+    const dvhEl = document.getElementById('dvhChart');
+    if (dvhEl && typeof Plotly !== 'undefined' && Plotly.purge) {
+        try { Plotly.purge(dvhEl); } catch (_) {}
+    }
+    if (typeof drawDVH === 'function') drawDVH._lastSig = null;
+    const dvhPlaceholder = document.getElementById('dvhPlaceholder');
+    if (dvhPlaceholder) dvhPlaceholder.style.display = '';
+    document.querySelectorAll('.dose-colorbar').forEach(el => { el.style.display = 'none'; });
+    document.querySelectorAll('.viewer-no-data').forEach(el => { el.style.display = ''; });
+    if (options.clearReport !== false && typeof _newEmptyReportForm === 'function') {
+        window.reportForm = _newEmptyReportForm();
+        try { renderReportEditor(); } catch (_) {}
+        try { _updateReportPreview(); } catch (_) {}
+    }
+    updateImageAnalysis();
+    renderDataTree();
+    if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
+}
+window.clearClientWorkspace = clearClientWorkspace;
 
 // ----- Image Analysis (DICOM-aware) -----
 // `imageAnalysisData` is referenced widely but was never declared. We
@@ -712,8 +772,10 @@ function updateImageAnalysis() {
     if (timeEl) timeEl.textContent = new Date().toLocaleTimeString();
 }
 
-async function loadCTToViewers(ctPath) {
+async function loadCTToViewers(ctPath, options = {}) {
     if (!ctPath) return;
+
+    const announce = options.announce !== false;
 
     const overlay = document.getElementById('uploadProgressOverlay');
     const progressText = document.getElementById('uploadProgressText');
@@ -721,7 +783,7 @@ async function loadCTToViewers(ctPath) {
     // Update overlay text to show CT loading
     progressText.textContent = 'Loading CT to viewers...';
 
-    addChat('system', 'Loading CT image to viewers...');
+    if (announce) addChat('system', 'Loading CT image to viewers...');
 
     // Reset all segmentation and planning state for new CT
     resetAllState();
@@ -750,7 +812,13 @@ async function loadCTToViewers(ctPath) {
     const oarTbody = document.getElementById('oarTableBody');
     if (oarTbody) oarTbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:0.75rem;">No OAR data</td></tr>';
     try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
-    try { if (typeof _newEmptyReportForm === 'function') _newEmptyReportForm(); } catch (_) {}
+    try {
+        if (typeof _newEmptyReportForm === 'function') {
+            window.reportForm = _newEmptyReportForm();
+            if (typeof renderReportEditor === 'function') renderReportEditor();
+            if (typeof _updateReportPreview === 'function') _updateReportPreview();
+        }
+    } catch (_) {}
 
     try {
         const res = await fetch(API + '/viewer/load', {
@@ -767,6 +835,7 @@ async function loadCTToViewers(ctPath) {
 
         const data = await res.json();
         if (data.success) {
+            state.ctPath = ctPath;
             state.ctShape = data.shape;
             state.ctSpacing = data.spacing;
             state.ctOrigin = data.origin;
@@ -810,7 +879,11 @@ async function loadCTToViewers(ctPath) {
                 });
             }, 100);
 
-            addChat('system', `CT loaded: ${data.shape.join(' × ')} voxels, ${data.hu_range[0].toFixed(0)} to ${data.hu_range[1].toFixed(0)} HU`);
+            const ctPathInput = document.getElementById('ctPath');
+            if (ctPathInput) ctPathInput.value = ctPath;
+            if (announce) {
+                addChat('system', `CT loaded: ${data.shape.join(' × ')} voxels, ${data.hu_range[0].toFixed(0)} to ${data.hu_range[1].toFixed(0)} HU`);
+            }
 
             // Image Analysis is updated in loadVolumeData() after volume data loads
             // If volume data failed to load, set basic CT info from server response
@@ -835,33 +908,128 @@ async function loadCTToViewers(ctPath) {
         }
     } catch (e) {
         overlay.classList.remove('active');
-        addChat('error', 'Failed to load CT: ' + e.message);
+        if (announce) addChat('error', 'Failed to load CT: ' + e.message);
+        else console.warn('[session restore] Failed to restore CT:', e);
+        throw e;
     }
 }
 
-// ----- Stubs for legacy UI handler functions -----
-// The original index.html had onclick="runPlanning()" / "resetSession()" /
-// etc. in the Input panel but the matching function bodies were never
-// present. We provide minimal, safe stubs so the page no longer throws
-// ReferenceError. The full implementations live in the BrachyBot
-// backend (`/api/planning/*`); the frontend is supposed to call those
-// endpoints, not implement planning logic locally. These stubs are a
-// safety net — if a real implementation exists elsewhere in the
-// codebase, replace this section with that implementation.
-const _legacyMissingStubs = {
-    applyHyperparams()   { if (typeof addChat === 'function') addChat('system', 'Hyperparameters updated (frontend stub — server applies on next plan run).'); },
-    applyReportTemplate(t) { if (typeof addChat === 'function') addChat('system', `Template "${t || '?'}" applied (stub).`); },
+async function restoreActiveSessionWorkspace(options = {}) {
+    const sessionAtStart = _activeApiSessionId();
+    clearClientWorkspace({ clearReport: options.clearReport !== false });
+    if (options.clearReport !== false && typeof _loadReportFromStorage === 'function') {
+        _loadReportFromStorage();
+        try { renderReportEditor(); } catch (_) {}
+        try { _updateReportPreview(); } catch (_) {}
+    }
+
+    let status = options.status || null;
+    if (!status || status.session_id !== sessionAtStart) {
+        const response = await fetch(API + '/status');
+        if (!response.ok) throw new Error(`Session status failed: HTTP ${response.status}`);
+        status = await response.json();
+    }
+    if (_activeApiSessionId() !== sessionAtStart) return null;
+
+    state.sessionId = status.session_id || sessionAtStart;
+    state.brainAvailable = !!status.brain_available;
+    const sessionDisplay = document.getElementById('sessionDisplay');
+    if (sessionDisplay) sessionDisplay.textContent = state.sessionId;
+
+    // Training state belongs to the selected planning session as well.
+    try {
+        const uiResponse = await fetch(API + '/ui/state');
+        if (uiResponse.ok && _activeApiSessionId() === sessionAtStart) {
+            const uiData = await uiResponse.json();
+            const training = uiData.training || {};
+            trainingMonitorState.active = !!training.active;
+            trainingMonitorState.goal = training.goal || '';
+            trainingMonitorState.sessionId = sessionAtStart;
+        }
+    } catch (error) {
+        console.debug('[session restore] UI state unavailable:', error);
+    }
+
+    const ctPath = String(status.ct_path || '').trim();
+    if (_activeApiSessionId() !== sessionAtStart) return null;
+    if (!ctPath) {
+        if (typeof _saveManualState === 'function') {
+            _saveManualState({
+                ct_loaded: false,
+                ctv_segmentation: false,
+                oar_segmentation: false,
+                trajectory_init: false,
+                trajectory_refine: false,
+                seed_planning: false,
+                dose_calc: false,
+                dose_eval: false,
+                last_step: null,
+            });
+            if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
+        }
+        return status;
+    }
+
+    await loadCTToViewers(ctPath, { announce: false });
+    if (_activeApiSessionId() !== sessionAtStart) return null;
+
+    const storedKeys = new Set(Array.isArray(status.stored_keys) ? status.stored_keys : []);
+    if (typeof _saveManualState === 'function') {
+        const ctvDone = ['ctv_array', 'ctv_mask'].some(key => storedKeys.has(key));
+        const oarDone = storedKeys.has('oar_array');
+        const trajectoryInitDone = storedKeys.has('trajectories');
+        const trajectoryRefineDone = storedKeys.has('refined_trajectories');
+        const seedDone = ['seed_plan', 'seed_plan_serialized', 'seed_positions'].some(key => storedKeys.has(key));
+        const doseDone = storedKeys.has('dose_distribution_gy');
+        const evaluationDone = storedKeys.has('dose_metrics');
+        const completed = [
+            ['dose_eval', evaluationDone],
+            ['dose_calc', doseDone],
+            ['seed_planning', seedDone],
+            ['trajectory_refine', trajectoryRefineDone],
+            ['trajectory_init', trajectoryInitDone],
+            ['oar_segmentation', oarDone],
+            ['ctv_segmentation', ctvDone],
+        ].find(([, done]) => done);
+        _saveManualState({
+            ct_loaded: true,
+            ctv_segmentation: ctvDone,
+            oar_segmentation: oarDone,
+            trajectory_init: trajectoryInitDone,
+            trajectory_refine: trajectoryRefineDone,
+            seed_planning: seedDone,
+            dose_calc: doseDone,
+            dose_eval: evaluationDone,
+            last_step: completed ? completed[0] : null,
+        });
+        if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
+    }
+    const hasPlanning = [
+        'dose_metrics', 'dose_distribution', 'dose_distribution_gy',
+        'seed_plan', 'seed_plan_serialized', 'manual_planning_preview',
+    ].some(key => storedKeys.has(key));
+    if (hasPlanning && typeof refreshPlanningUI === 'function') {
+        await refreshPlanningUI({ switchToViewers: false });
+    } else if (typeof loadLabelVolumes === 'function') {
+        await loadLabelVolumes();
+        ['axial', 'sagittal', 'coronal'].forEach(axis => {
+            try { renderSliceFromVolume(axis, state.slices[axis]); } catch (_) {}
+        });
+    }
+    return status;
+}
+window.restoreActiveSessionWorkspace = restoreActiveSessionWorkspace;
+
+// Small global helpers used directly by static HTML attributes. Planning,
+// export, and reset handlers are implemented in their dedicated modules and
+// deliberately have no fallback: a missing module must surface as an error
+// instead of displaying a false-success message.
+const _staticUiHelpers = {
     insertSlashCommand(cmd) { const i = document.getElementById('chatInput'); if (i) { i.value = cmd; i.focus(); } },
-    resetSession()       { if (typeof addChat === 'function') addChat('system', 'Session reset requested (stub).'); },
-    runIntra()           { if (typeof addChat === 'function') addChat('system', 'Intraoperative plan requested (stub).'); },
-    runPlanning()        { if (typeof addChat === 'function') addChat('system', 'Planning started (stub).'); },
-    runPlanningStep(step) { if (typeof addChat === 'function') addChat('system', `Planning step "${step}" requested (stub).`); },
-    showStepResults(s)   { if (typeof addChat === 'function') addChat('system', `Step results "${s}" shown (stub).`); },
     toggleContextPanel() { const el = document.querySelector('.context-panel'); if (el) el.style.display = (el.style.display === 'none' ? '' : 'none'); },
     toggleHyperparams()  { const el = document.getElementById('hyperparamsSection'); if (el) el.style.display = (el.style.display === 'none' ? '' : 'none'); const t = document.getElementById('hyperparamToggle'); if (t) t.textContent = (el && el.style.display === 'none') ? '▶' : '▼'; },
-    toggleStepButtons()  { const el = document.getElementById('stepButtonsSection'); if (el) el.style.display = (el.style.display === 'none' ? '' : 'none'); },
 };
-for (const [name, fn] of Object.entries(_legacyMissingStubs)) {
+for (const [name, fn] of Object.entries(_staticUiHelpers)) {
     if (typeof window[name] !== 'function') window[name] = fn;
 }
 
@@ -887,9 +1055,11 @@ async function init() {
     // in parallel instead of sequentially.  The /status response is needed
     // by downstream UI, so we await it; /planning/clear and /config are
     // fire-and-forget.
+    let _statusData = null;
     const _statusPromise = fetch(API + '/status').then(async resp => {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
+        _statusData = data;
         state.brainAvailable = data.brain_available;
         state.sessionId = data.session_id || 'web';
         document.getElementById('brainDot').className = 'dot ' + (data.brain_available ? 'green' : 'yellow');
@@ -900,20 +1070,11 @@ async function init() {
         document.getElementById('serverStatus').textContent = _t('已断开', 'Offline');
     });
 
-    // Fire-and-forget: clear planning data on first page load only
-    if (!window._initDone) {
-        window._initDone = true;
-        fetch(API + '/planning/clear', { method: 'POST' })
-            .then(() => console.log('Cleared planning data on page load'))
-            .catch(e => console.warn('Clear planning failed:', e));
-    }
-
     // Fire-and-forget: load config defaults
     loadDefaultParams().catch(e => console.warn('loadDefaultParams failed:', e));
 
     // Wait for /status (needed by UI below); clear/config run in background.
     await _statusPromise;
-    syncUIBridgeState('init').catch(e => console.warn('Initial UI state sync failed:', e));
 
     // Clear frontend state (runs once per page load)
     if (!window._stateCleared) {
@@ -1012,6 +1173,14 @@ async function init() {
     // Load default hyperparameters from config
     await loadDefaultParams();
 
+    try {
+        await restoreActiveSessionWorkspace({ status: _statusData, clearReport: true });
+    } catch (error) {
+        console.warn('Active session workspace restore failed:', error);
+        clearClientWorkspace({ clearReport: true });
+    }
+    syncUIBridgeState('init').catch(e => console.warn('Initial UI state sync failed:', e));
+
     // Apply default viewer layout (vertical = 4 rows in 1 column)
     setViewerLayout(state.viewerSettings.layout || 'vertical');
 
@@ -1070,8 +1239,8 @@ async function init() {
         }
     } catch (_) { /* best-effort diagnostic */ }
 
-    // NOTE: Do NOT call refreshPlanningUI() on init
-    // Planning data was just cleared — user should run planning manually
+    // The selected session workspace has already been restored above. New
+    // sessions remain empty; existing sessions recover their case state.
 }
 
 // Load default hyperparameters from server config and populate UI
@@ -1158,7 +1327,7 @@ async function loadDefaultParams() {
             setVal('rfBandwidth', rf.bandwidth);
         }
 
-        console.log('Default parameters loaded from config');
+        uiDebugLog('Default parameters loaded from config');
     } catch (e) {
         console.error('Failed to load default params:', e);
     }
@@ -1611,7 +1780,7 @@ function _confirmAction(msg) {
         overlay.innerHTML = `
             <div style="background:var(--bg-2);border:1px solid var(--border-hairline);border-radius:12px;padding:24px;max-width:400px;text-align:center;">
                 <div style="font-size:1.1rem;font-weight:600;margin-bottom:12px;">⚠️ 确认操作</div>
-                <div style="font-size:0.85rem;color:var(--text-dim);margin-bottom:20px;">${msg}</div>
+                <div style="font-size:0.85rem;color:var(--text-dim);margin-bottom:20px;">${escHtml(msg)}</div>
                 <div style="display:flex;gap:12px;justify-content:center;">
                     <button id="_confirmYes" class="btn btn-danger" style="min-width:80px;">确认</button>
                     <button id="_confirmNo" class="btn btn-outline" style="min-width:80px;">取消</button>
@@ -1684,35 +1853,29 @@ function _executeUIActionRaw(a) {
         }
         if (target === 'viewer.zoom') {
             if (command === 'fit') {
-                state.viewerSettings.zoom = 1; state.viewerSettings.panX = 0; state.viewerSettings.panY = 0;
+                fitView();
             } else {
                 let v = Math.round((state.viewerSettings.zoom || 1) * 100);
                 if (command === 'set') v = parseInt(value) || v;
                 else if (command === 'increase') v += parseInt(value) || 20;
                 else if (command === 'decrease') v -= parseInt(value) || 20;
-                state.viewerSettings.zoom = Math.max(50, Math.min(300, v)) / 100;
+                applyZoom(Math.max(50, Math.min(300, v)));
             }
-            applyViewerTransform(); return;
+            return;
         }
         if (target === 'viewer.threshold') {
             const el = document.getElementById('viewerThreshold');
-            if (el) { el.value = value; state.viewerSettings.threshold = parseInt(value); }
+            if (el) { el.value = value; applyThreshold(); }
             return;
         }
         if (target === 'viewer.fullscreen') {
             toggleViewerFullscreen(value); return;
         }
         if (target === 'viewer.reset') {
-            state.viewerSettings.window = 400; state.viewerSettings.level = 40;
-            state.viewerSettings.zoom = 1; state.viewerSettings.panX = 0; state.viewerSettings.panY = 0;
-            state.viewerSettings.rotation = 0; state.viewerSettings.flipH = false; state.viewerSettings.flipV = false;
-            document.getElementById('viewerWindow').value = 400;
-            document.getElementById('viewerLevel').value = 40;
-            applyViewerTransform(); loadAllSlices(); return;
+            resetViewer(); return;
         }
         if (target === 'viewer.fit_all') {
-            state.viewerSettings.zoom = 1; state.viewerSettings.panX = 0; state.viewerSettings.panY = 0;
-            applyViewerTransform(); if (state.ctLoaded) loadAllSlices(); return;
+            fitView(); return;
         }
         if (target === 'viewer.preset') {
             const pp = document.getElementById('windowPreset');
@@ -1731,28 +1894,23 @@ function _executeUIActionRaw(a) {
             return;
         }
         if (target === 'overlay.dose.opacity') {
-            state.doseOpacity = parseInt(value) / 100;
-            const sl = document.getElementById('doseOpacity');
-            if (sl) sl.value = value;
-            if (state.doseOverlay) state.doseOverlay.opacity = parseInt(value) / 100;
-            if (state.ctLoaded) loadAllSlices();
+            setDoseOverlayOpacity(value);
             return;
         }
         if (target === 'overlay.ctv.opacity' || target === 'overlay.oar.opacity') {
             const axis = target.includes('ctv') ? 'ctv' : 'oar';
-            const opEl = document.getElementById(`labelOp${capitalize(axis)}`);
-            if (opEl) { opEl.value = value; updateLabelImage('axial'); }
+            setGroupOpacity(axis, value);
             return;
         }
         if (target === 'overlay.display_mode') {
             const dm = document.getElementById('displayMode');
-            if (dm) { dm.value = value; applyViewerSettings(); }
+            if (dm) { dm.value = value; setDisplayMode(); }
             return;
         }
         // ── Slice navigation ──
         if (target.startsWith('slice.')) {
             const axis = target.split('.')[1];
-            const slider = document.getElementById('slice' + capitalize(axis));
+            const slider = document.getElementById('slider' + capitalize(axis));
             if (!slider) return;
             let v = parseInt(slider.value) || 0;
             const max = parseInt(slider.max) || 0;
@@ -1766,30 +1924,28 @@ function _executeUIActionRaw(a) {
         }
         // ── Layout ──
         if (target === 'layout') {
-            const lm = document.getElementById('layoutMode');
-            if (lm) { lm.value = value; lm.dispatchEvent(new Event('change')); }
+            setViewerLayout(value);
             return;
         }
         // ── Data tree ──
         if (target === 'data_tree') {
             if (command === 'expand_all') {
                 document.querySelectorAll('.tree-group').forEach(g => {
-                    g.classList.remove('collapsed');
-                    const c = g.querySelector('.tree-caret');
-                    if (c) c.textContent = '▼';
+                    g.querySelector(':scope > .tree-group-header > .arrow')?.classList.remove('collapsed');
+                    g.querySelector(':scope > .tree-group-items')?.classList.remove('collapsed');
                 });
             } else if (command === 'collapse_all') {
                 document.querySelectorAll('.tree-group').forEach(g => {
-                    g.classList.add('collapsed');
-                    const c = g.querySelector('.tree-caret');
-                    if (c) c.textContent = '▶';
+                    g.querySelector(':scope > .tree-group-header > .arrow')?.classList.add('collapsed');
+                    g.querySelector(':scope > .tree-group-items')?.classList.add('collapsed');
                 });
             } else {
                 const group = document.querySelector(`.tree-group[data-group="${value}"]`);
                 if (group) {
-                    const caret = group.querySelector('.tree-caret');
-                    if (command === 'expand' && caret) { group.classList.remove('collapsed'); caret.textContent = '▼'; }
-                    else if (command === 'collapse' && caret) { group.classList.add('collapsed'); caret.textContent = '▶'; }
+                    const arrow = group.querySelector(':scope > .tree-group-header > .arrow');
+                    const items = group.querySelector(':scope > .tree-group-items');
+                    if (command === 'expand') { arrow?.classList.remove('collapsed'); items?.classList.remove('collapsed'); }
+                    else if (command === 'collapse') { arrow?.classList.add('collapsed'); items?.classList.add('collapsed'); }
                 }
             }
             return;
@@ -1797,13 +1953,13 @@ function _executeUIActionRaw(a) {
         if (target === 'tree.visibility') {
             const parts = (value || '').split(',');
             const id = parts[0], vis = parts[1] === 'on';
-            if (id) setGroupVisibility(id, vis);
+            if (id) setDataItemVisibility(id, vis);
             return;
         }
         if (target === 'tree.opacity') {
             const parts = (value || '').split(',');
             const id = parts[0], op = parseInt(parts[1]) || 50;
-            if (id) setGroupOpacity(id, op);
+            if (id) setDataOpacity(id, op);
             return;
         }
         if (target === 'tree.reconstruct3d') {
@@ -1846,31 +2002,19 @@ function _executeUIActionRaw(a) {
             return;
         }
         if (target === 'tree.trajectories.visibility') {
-            if (dataTreeState && dataTreeState.planning) {
-                dataTreeState.planning.trajectoriesVisible = value === 'on';
-                renderDataTree();
-            }
+            setGroupVisibility('planning_needles', value === 'on');
             return;
         }
         if (target === 'tree.seeds.visibility') {
-            if (dataTreeState && dataTreeState.planning) {
-                dataTreeState.planning.seedsVisible = value === 'on';
-                renderDataTree();
-            }
+            setGroupVisibility('planning_seeds', value === 'on');
             return;
         }
         if (target === 'tree.needles.visibility') {
-            if (dataTreeState && dataTreeState.planning) {
-                dataTreeState.planning.needlesVisible = value === 'on';
-                renderDataTree();
-            }
+            setGroupVisibility('planning_needles', value === 'on');
             return;
         }
         if (target === 'tree.isosurfaces.visibility') {
-            if (dataTreeState && dataTreeState.planning) {
-                (dataTreeState.planning.doseLevels || []).forEach(d => d.visible = value === 'on');
-                renderDataTree();
-            }
+            setGroupVisibility('dose_isosurfaces', value === 'on');
             return;
         }
         // ── Session management ──
@@ -1883,8 +2027,8 @@ function _executeUIActionRaw(a) {
             }
             return;
         }
-        if (target === 'session.delete') { deleteSession(value); return; }
-        if (target === 'session.clear_all') { clearLocalChatData(); return; }
+        if (target === 'session.delete') { deleteSession(value, { skipConfirm: true }); return; }
+        if (target === 'session.clear_all') { clearLocalChatData({ skipConfirm: true }); return; }
         // ── Planning ──
         if (target === 'plan.run') {
             runPlanning();
@@ -2025,17 +2169,21 @@ function _executeUIActionRaw(a) {
             return;
         }
         if (target === '3d.show_all') {
-            Object.values(scene3D.meshes).forEach(m => { if (m) m.visible = true; });
+            showAllOrgans();
             return;
         }
         if (target === '3d.hide_all') {
-            Object.values(scene3D.meshes).forEach(m => { if (m) m.visible = false; });
+            setGroupVisibility('ctv', false);
+            setGroupVisibility('oar', false);
+            setGroupVisibility('planning_seeds', false);
+            setGroupVisibility('planning_needles', false);
+            setGroupVisibility('dose_isosurfaces', false);
             return;
         }
         // ── Chat ──
         if (target === 'chat.language') { setUiLanguage(value); return; }
         if (target === 'chat.clear_history') {
-            clearLocalChatData();
+            clearCurrentChatHistory({ skipConfirm: true });
             return;
         }
         if (target === 'chat.sidebar.toggle') { toggleSessionSidebar(); return; }
@@ -2044,7 +2192,7 @@ function _executeUIActionRaw(a) {
             _captureScreenshot(value); return;
         }
         // ── Tools ──
-        if (target === 'tool') { state.activeTool = value; return; }
+        if (target === 'tool') { setViewerTool(value); return; }
     } catch (e) {
         console.warn('[UIAction] Error executing:', target, command, value, e);
     }
@@ -2057,8 +2205,9 @@ async function _captureScreenshot(view) {
                     'coronal': 'viewer-coronal', '3d': 'viewer-3d', 'dvh': 'dvh',
                     'dose': 'dose-overview', 'dose-overview': 'dose-overview' };
     const target = ALIAS[view] || view;
+    const preparedEl = await _prepareScreenshotTarget(target);
     if (target === 'dose-overview' || target === 'dvh') {
-        const dataUrl = await _captureScreenshotDataUrl(target);
+        const dataUrl = await _captureScreenshotDataUrl(target, preparedEl);
         if (dataUrl) {
             const link = document.createElement('a');
             link.download = `brachybot_${view}_${Date.now()}.png`;
@@ -2067,7 +2216,7 @@ async function _captureScreenshot(view) {
         }
         return;
     }
-    const el = _resolveScreenshotTarget(target);
+    const el = preparedEl;
     if (!el) { console.warn('[screenshot] Target not found:', view); return; }
     if (typeof html2canvas !== 'undefined') {
         const canvas = await html2canvas(el);
@@ -2147,6 +2296,28 @@ function _waitScreenshotFrames(n = 2) {
         };
         requestAnimationFrame(tick);
     });
+}
+
+async function _prepareScreenshotTarget(target) {
+    const panelName = _SCREENSHOT_PANEL_MAP[target];
+    const tab = panelName ? document.querySelector(`.panel-tab[data-panel="${panelName}"]`) : null;
+    const switchedPanel = !!(tab && !tab.classList.contains('active'));
+    const el = _resolveScreenshotTarget(target);
+    if (!el) return null;
+
+    // Panel switches, canvas resizes, Plotly relayouts, and Three.js renders
+    // complete on different animation frames. Waiting on frames rather than a
+    // fixed timer makes capture deterministic on both fast and slow clients.
+    await _waitScreenshotFrames(switchedPanel ? 4 : 2);
+    if (target === 'dvh' && typeof _resizeDVHChartSoon === 'function') {
+        _resizeDVHChartSoon();
+        await _waitScreenshotFrames(3);
+    }
+    if (target === 'viewer-3d' && typeof scene3D !== 'undefined' && scene3D.requestRender) {
+        scene3D.requestRender(2);
+        await _waitScreenshotFrames(2);
+    }
+    return el;
 }
 
 function _drawScreenshotColorbar(ctx, x, y, w, h) {
@@ -2307,82 +2478,67 @@ async function _captureScreenshotDataUrl(target, el) {
 // Intercept ui_screenshot: capture the target element, upload to server,
 // and display the image in the chat. This bridges the gap between the
 // LLM's ui_screenshot tool call and the frontend's actual capture.
-function _interceptScreenshot(target, question) {
+async function _interceptScreenshot(target, question) {
     // Unified screenshot target map — single source of truth for both
     // _interceptScreenshot (SSE-driven) and _captureScreenshot (direct).
-    console.log('[screenshot] Capturing target:', target);
+    uiDebugLog('[screenshot] Capturing target:', target);
     const normalizedTarget = ({ 'dose': 'dose-overview', 'dose_distribution': 'dose-overview', 'dvh-chart': 'dvh' })[target] || target;
-    const el = normalizedTarget === 'dose-overview' ? document.body : _resolveScreenshotTarget(normalizedTarget);
+    const el = normalizedTarget === 'dose-overview'
+        ? document.body
+        : await _prepareScreenshotTarget(normalizedTarget);
     if (!el) {
         console.warn('[screenshot] Target element not found:', target);
         if (typeof addChat === 'function') addChat('error', `截图失败：未找到目标元素 "${target}"`);
-        return;
+        return { success: false, error: 'target_not_found' };
     }
     if (typeof html2canvas === 'undefined' && normalizedTarget !== 'dose-overview' && normalizedTarget !== 'dvh') {
         console.warn('[screenshot] html2canvas not loaded');
         if (typeof addChat === 'function') addChat('error', '截图失败：html2canvas 库未加载');
-        return;
+        return { success: false, error: 'html2canvas_unavailable' };
     }
-    // Panel switch is handled by _resolveScreenshotTarget above.
-    // Small delay to let panel render
-    setTimeout(() => {
-        console.log('[screenshot] Capturing element:', el.tagName, el.id || el.className);
-        _captureScreenshotDataUrl(normalizedTarget, el).then(dataUrl => {
-            if (!dataUrl) throw new Error('No screenshot data was produced');
-            console.log('[screenshot] Data URL size:', Math.round(dataUrl.length / 1024), 'KB');
-            // Upload to server. If persistence fails, still show the freshly
-            // captured data URL so the user gets the requested visual result.
-            fetch(API + '/screenshot', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    image: dataUrl,
-                    target: normalizedTarget,
-                    description: question || `Screenshot of ${normalizedTarget}`,
-                }),
-            }).then(async res => {
-                const text = await res.text();
-                let data = {};
-                try {
-                    data = text ? JSON.parse(text) : {};
-                } catch (e) {
-                    data = { error: text || `HTTP ${res.status}` };
-                }
-                if (!res.ok) {
-                    const msg = data.error || data.message || `HTTP ${res.status}`;
-                    throw new Error(msg);
-                }
-                return data;
-            }).then(data => {
-                console.log('[screenshot] Server response:', data);
-                const screenshotUrl = data.url || data.screenshot_url || data.image_url || data.path || (data.data && (data.data.url || data.data.path));
-                if (screenshotUrl) {
-                    // Show the captured image immediately, then let the backend
-                    // analyze the persisted screenshot in a hidden follow-up turn.
-                    if (typeof addChat === 'function') {
-                        addChat('bot', `<img src="${screenshotUrl}" style="max-width:100%;border-radius:8px;" alt="${escHtml(target)}">\n\n${question || ''}`);
-                    }
-                    _enqueueHiddenChat(_buildScreenshotFollowUpMessage(question, screenshotUrl));
-                    console.log('[screenshot] Captured and uploaded:', screenshotUrl);
-                } else {
-                    console.warn('[screenshot] No URL in response:', data);
-                    if (typeof addChat === 'function') {
-                        const detail = data.error || data.message || 'server did not return a screenshot URL';
-                        addChat('bot', `<img src="${dataUrl}" style="max-width:100%;border-radius:8px;" alt="${escHtml(target)}">\n\n${question || ''}\n\n截图已捕获，但服务器未保存：${escHtml(detail)}`);
-                    }
-                }
-            }).catch(e => {
-                console.warn('[screenshot] Upload failed:', e);
-                // Fallback: display locally as data URL
-                if (typeof addChat === 'function') {
-                    addChat('bot', `<img src="${dataUrl}" style="max-width:100%;border-radius:8px;" alt="${escHtml(target)}">\n\n${question || ''}\n\n截图已捕获，但上传保存失败：${escHtml(e.message || String(e))}`);
-                }
-            });
-        }).catch(e => {
-            console.warn('[screenshot] html2canvas failed:', e);
-            if (typeof addChat === 'function') addChat('error', `截图捕获失败: ${e.message}`);
+    let dataUrl = null;
+    try {
+        uiDebugLog('[screenshot] Capturing element:', el.tagName, el.id || el.className);
+        dataUrl = await _captureScreenshotDataUrl(normalizedTarget, el);
+        if (!dataUrl) throw new Error('No screenshot data was produced');
+        uiDebugLog('[screenshot] Data URL size:', Math.round(dataUrl.length / 1024), 'KB');
+
+        const res = await fetch(API + '/screenshot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                image: dataUrl,
+                target: normalizedTarget,
+                description: question || `Screenshot of ${normalizedTarget}`,
+            }),
         });
-    }, 500);
+        const text = await res.text();
+        let data = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch (_) {
+            data = { error: text || `HTTP ${res.status}` };
+        }
+        if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
+
+        const screenshotUrl = data.url || data.screenshot_url || data.image_url || data.path
+            || (data.data && (data.data.url || data.data.path));
+        if (!screenshotUrl) throw new Error(data.error || data.message || 'server did not return a screenshot URL');
+        if (typeof addChat === 'function') {
+            addChat('bot', `<img src="${screenshotUrl}" class="chat-screenshot" alt="${escHtml(target)}">\n\n${question || ''}`);
+        }
+        _enqueueHiddenChat(_buildScreenshotFollowUpMessage(question, screenshotUrl));
+        uiDebugLog('[screenshot] Captured and uploaded:', screenshotUrl);
+        return { success: true, url: screenshotUrl, target: normalizedTarget };
+    } catch (e) {
+        console.warn('[screenshot] Capture or upload failed:', e);
+        if (typeof addChat === 'function' && dataUrl) {
+            addChat('bot', `<img src="${dataUrl}" class="chat-screenshot" alt="${escHtml(target)}">\n\n${question || ''}\n\nScreenshot captured locally, but server persistence failed: ${escHtml(e.message || String(e))}`);
+        } else if (typeof addChat === 'function') {
+            addChat('error', `Screenshot failed: ${e.message || String(e)}`);
+        }
+        return { success: false, error: e.message || String(e), target: normalizedTarget };
+    }
 }
 
 /******** PANEL SWITCHING ********/

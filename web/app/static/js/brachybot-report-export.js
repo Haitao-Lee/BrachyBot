@@ -108,7 +108,8 @@ async function reportAutoFill() {
         }
     }
     if (state.ctShape && state.ctSpacing) {
-        f.imaging.sliceCount = state.ctShape[2] || f.imaging.sliceCount;
+        // CT arrays are stored as Z,Y,X; axial slice count is axis 0.
+        f.imaging.sliceCount = state.ctShape[0] || f.imaging.sliceCount;
         f.imaging.pixelSpacingMm = state.ctSpacing[0] || f.imaging.pixelSpacingMm;
         f.imaging.sliceThicknessMm = state.ctSpacing[2] || f.imaging.sliceThicknessMm;
     }
@@ -116,19 +117,13 @@ async function reportAutoFill() {
         const m = state.metrics;
         if (m.total_seeds !== undefined) {
             f.planning.totalSeeds = m.total_seeds;
-            // Auto-compute total activity from standard I-125 seed
-            // (0.5 mCi = 18.5 MBq per seed) if not already set.
-            if (f.planning.totalActivityMBq == null && m.total_seeds > 0) {
-                const seedActivityMBq = 18.5;
-                f.planning.totalActivityMBq = parseFloat((m.total_seeds * seedActivityMBq).toFixed(1));
-                f.planning.seedActivityMBq = seedActivityMBq;
-                if (!f.planning.seedModel) f.planning.seedModel = 'I-125 (0.5 mCi/seed)';
-            }
         }
         if (m.num_trajectories !== undefined) f.planning.trajectoryCount = m.num_trajectories;
-        if (m.ctv_voxels !== undefined && state.ctSpacing) {
-            f.segmentation.ctvVoxels = m.ctv_voxels;
-            f.case.ctvVolumeMm3 = m.ctv_voxels * state.ctSpacing[0] * state.ctSpacing[1] * state.ctSpacing[2];
+        if (m.ctv_voxels !== undefined) f.segmentation.ctvVoxels = m.ctv_voxels;
+        // Dose-grid voxel counts are not guaranteed to use the original CT
+        // spacing. Use the source volume persisted by the segmentation chain.
+        if (Number.isFinite(Number(m.ctv_volume_mm3))) {
+            f.case.ctvVolumeMm3 = Number(m.ctv_volume_mm3);
         }
         if (m.v100 !== undefined) f.metrics.v100 = m.v100 * 100;
         if (m.d90 !== undefined) f.metrics.d90 = m.d90;
@@ -189,7 +184,9 @@ function _autoFillInterpretation() {
         lines.push(`- CTV V100: ${v100.toFixed(1)}%. This is an observed coverage metric, not a local-template pass/fail verdict.`);
     }
     if (d90 !== null) {
-        const rxGy = (window.reportForm && window.reportForm.planning && window.reportForm.planning.prescriptionGy) || 120;
+        const rxGy = typeof _getCurrentPrescriptionGy === 'function'
+            ? _getCurrentPrescriptionGy()
+            : 120;
         lines.push(`- CTV D90: ${d90.toFixed(2)} Gy; current report prescription is ${rxGy.toFixed(0)} Gy. Interpret the threshold from the cited source.`);
     }
     if (score !== undefined) {
@@ -241,12 +238,27 @@ function _reportAutoSave() {
     try {
         const f = window.reportForm;
         f.editedFields = Array.from(f.editedFields);
-        localStorage.setItem('brachyplan_reportForm', JSON.stringify(f));
+        const key = typeof caseStorageKey === 'function'
+            ? caseStorageKey('brachyplan_reportForm')
+            : 'brachyplan_reportForm:web';
+        localStorage.setItem(key, JSON.stringify(f));
         f.editedFields = new Set(f.editedFields);
         const t = document.getElementById('reportAutoSaveText');
         if (t) t.textContent = 'Auto-save: ' + new Date().toLocaleTimeString();
     } catch (e) {}
 }
+
+function flushActiveReportState() {
+    if (_reportAutoSaveTimer) {
+        clearTimeout(_reportAutoSaveTimer);
+        _reportAutoSaveTimer = null;
+    }
+    if (window.reportForm) _reportAutoSave();
+    if (window.Report && Report.persist && typeof Report.persist.flush === 'function') {
+        Report.persist.flush();
+    }
+}
+window.flushActiveReportState = flushActiveReportState;
 function _newEmptyReportForm() {
     // BUG FIX 2026-06-16: default language is now 'en' to match the
     // global UI language default. The previous 'zh' default caused
@@ -271,7 +283,8 @@ function _localizedEmptyReportForm(language) {
         hospital: { name: '', dept: '', address: '', contact: '', logoDataUrl: '' },
         patient: {
             name: '',
-            gender: _S_or('defaultGender', pick('男', 'Male')),
+            // Demographic fields must come from DICOM or explicit user input.
+            gender: '',
             age: '',
             id: '',
             department: _S_or('defaultDepartment', pick('放射治疗科', 'Radiation Oncology')),
@@ -284,7 +297,7 @@ function _localizedEmptyReportForm(language) {
         segmentation: { ctvModelName: '', ctvVoxels: null, oarModelName: '', contouringNotes: '' },
         planning: {
             technique: _S_or('defaultTechniqueI125', pick('放射性粒子植入 (¹²⁵I Radioactive Seed Implantation)', 'Radioactive Seed Implantation (¹²⁵I)')),
-            prescriptionGy: 120, prescriptionUnit: 'Gy',
+            prescriptionGy: null, prescriptionUnit: 'Gy',
             totalSeeds: null, totalActivityMBq: null, trajectoryCount: null, dwellPositionCount: null,
         },
         metrics: { v100: null, d90: null, d95: null, v150: null, v200: null, ci: null, hi: null, gi: null, score: null },
@@ -295,9 +308,9 @@ function _localizedEmptyReportForm(language) {
         references: [],
         figures: [],
         signature: {
-            name: 'BrachyBot',
-            title: 'AI-Assisted Brachytherapy Planning System',
-            date: new Date().toISOString().slice(0, 10),
+            name: '',
+            title: '',
+            date: '',
             notes: '',
             drawnDataUrl: '',
         },
@@ -307,7 +320,10 @@ function _localizedEmptyReportForm(language) {
 
 function _loadReportFromStorage() {
     try {
-        const stored = localStorage.getItem('brachyplan_reportForm');
+        const key = typeof caseStorageKey === 'function'
+            ? caseStorageKey('brachyplan_reportForm')
+            : 'brachyplan_reportForm:web';
+        const stored = localStorage.getItem(key);
         if (!stored) return;
         const parsed = JSON.parse(stored);
         if (parsed && typeof parsed === 'object' && parsed.version) {
@@ -388,6 +404,83 @@ function _renderMarkdown(md) {
 }
 
 // ----- 17. Render the multi-page A4 preview -----
+function _sourceBackedMetricAssessment(form, metricKey, value) {
+    const rationale = form?.planning?.prescriptionRationale || {};
+    const criteria = rationale.target_criteria || {};
+    const sources = Array.isArray(rationale.sources) ? rationale.sources : [];
+    const notAssessed = form?.language === 'zh' ? '未评估' : 'Not assessed';
+    if (!sources.length || !criteria || typeof criteria !== 'object') {
+        return { reference: form?.language === 'zh' ? '见病例引用标准' : 'See cited case criteria', statusClass: null, statusText: notAssessed };
+    }
+    let threshold = null;
+    let reference = '';
+    let passed = null;
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return { reference: '—', statusClass: null, statusText: notAssessed };
+    if (metricKey === 'v100' && Number.isFinite(Number(criteria.v100_min))) {
+        threshold = Number(criteria.v100_min) * 100;
+        reference = `≥ ${threshold.toFixed(1)} %`;
+        passed = numericValue >= threshold;
+    } else if (metricKey === 'v150' && Number.isFinite(Number(criteria.v150_max))) {
+        threshold = Number(criteria.v150_max) * 100;
+        reference = `≤ ${threshold.toFixed(1)} %`;
+        passed = numericValue <= threshold;
+    } else if (metricKey === 'v200' && Number.isFinite(Number(criteria.v200_max))) {
+        threshold = Number(criteria.v200_max) * 100;
+        reference = `≤ ${threshold.toFixed(1)} %`;
+        passed = numericValue <= threshold;
+    } else if (metricKey === 'd90' && Number.isFinite(Number(criteria.d90_min_pct))) {
+        const rxGy = Number(form?.planning?.prescriptionGy);
+        if (Number.isFinite(rxGy) && rxGy > 0) {
+            threshold = Number(criteria.d90_min_pct) * rxGy;
+            reference = `≥ ${(Number(criteria.d90_min_pct) * 100).toFixed(0)}% Rx (${threshold.toFixed(1)} Gy)`;
+            passed = numericValue >= threshold;
+        }
+    }
+    if (passed === null) {
+        return { reference: form?.language === 'zh' ? '当前来源未定义' : 'Not defined by current source', statusClass: null, statusText: notAssessed };
+    }
+    return {
+        reference,
+        statusClass: passed ? 'pass' : 'warn',
+        statusText: passed ? (form?.language === 'zh' ? '符合' : 'Meets criterion') : (form?.language === 'zh' ? '需复核' : 'Needs review'),
+    };
+}
+
+function _sourceBackedOarAssessment(form, row) {
+    const rationale = form?.planning?.prescriptionRationale || {};
+    const allCriteria = rationale.oar_criteria || {};
+    const sources = Array.isArray(rationale.sources) ? rationale.sources : [];
+    const notAssessed = form?.language === 'zh' ? '未评估' : 'Not assessed';
+    if (!sources.length || !allCriteria || typeof allCriteria !== 'object') {
+        return { statusClass: null, statusText: notAssessed };
+    }
+    const normalized = String(row?.organ || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    let criterion = null;
+    for (const [name, candidate] of Object.entries(allCriteria)) {
+        const key = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '_');
+        if (normalized === key || normalized.includes(key) || (key === 'bowel' && normalized.includes('bowel'))) {
+            criterion = candidate;
+            break;
+        }
+    }
+    if (!criterion || typeof criterion !== 'object') return { statusClass: null, statusText: notAssessed };
+    if (row?.d2cc === null || row?.d2cc === undefined) return { statusClass: null, statusText: notAssessed };
+    const d2cc = Number(row.d2cc);
+    let limit = Number(criterion.d2cc_gy);
+    if (!Number.isFinite(limit) && Number.isFinite(Number(criterion.d2cc_pct_max))) {
+        const rxGy = Number(form?.planning?.prescriptionGy);
+        if (Number.isFinite(rxGy) && rxGy > 0) limit = Number(criterion.d2cc_pct_max) * rxGy;
+    }
+    // EQD2 constraints are not compared with unconverted physical dose.
+    if (!Number.isFinite(d2cc) || !Number.isFinite(limit)) return { statusClass: null, statusText: notAssessed };
+    const passed = d2cc <= limit;
+    return {
+        statusClass: passed ? 'pass' : 'warn',
+        statusText: passed ? (form?.language === 'zh' ? '符合' : 'Meets criterion') : (form?.language === 'zh' ? '需复核' : 'Needs review'),
+    };
+}
+
 function _updateReportPreview() {
     const pagesEl = document.getElementById('reportPages');
     if (!pagesEl) return;
@@ -410,6 +503,9 @@ function _updateReportPreview() {
     const reportTotalPages = 4;
     const pageFooter = (pageNo) =>
         `<div class="hp-page-footer"><span class="pageno">— ${escHtml(s.page)} ${pageNo} ${escHtml(s.pageOf)} ${reportTotalPages} —</span></div>`;
+    const secondaryTitle = (label) => f.language === 'zh'
+        ? `<span class="hp-section-title-en">${escHtml(label)}</span>`
+        : '';
 
     // ============== PAGE 1: Letterhead + Patient ID + Imaging + Case ==============
     // BUG FIX 2026-06-17 (header redesign): the user requested a
@@ -447,7 +543,7 @@ function _updateReportPreview() {
             </div>
             <h1 class="hp-title">${escHtml(s.reportTitle)}</h1>
             <div class="hp-subtitle">${escHtml(s.reportSubtitle)}</div>
-            <h2 class="hp-section-title">${escHtml(s.section1)}<span class="hp-section-title-en">Patient Summary</span></h2>
+            <h2 class="hp-section-title">${escHtml(s.section1)}${secondaryTitle('Patient Summary')}</h2>
             <div class="hp-section-body">
                 <table class="hp-id-table">
                     <tr><th>${escHtml(s.name)}</th><td>${escHtml(f.patient.name) || ND}</td>
@@ -461,7 +557,7 @@ function _updateReportPreview() {
                     <tr><th>${escHtml(s.clinicalHistory)}</th><td colspan="3">${_renderInlineMd(f.study.clinicalHistory) || ND}</td></tr>
                 </table>
             </div>
-            <h2 class="hp-section-title">${escHtml(s.sectionN1)}<span class="hp-section-title-en">Imaging Data</span></h2>
+            <h2 class="hp-section-title">${escHtml(s.sectionN1)}${secondaryTitle('Imaging Data')}</h2>
             <div class="hp-section-body">
                 <table class="hp-id-table">
                     <tr><th>${escHtml(s.modality)}</th><td>${escHtml(f.study.modality) || ND}</td>
@@ -470,7 +566,7 @@ function _updateReportPreview() {
                         <th>${escHtml(s.radiologist)}</th><td>${escHtml(f.study.radiologist) || ND}</td></tr>
                 </table>
             </div>
-            <h2 class="hp-section-title">${escHtml(s.sectionN2)}<span class="hp-section-title-en">Target Delineation</span></h2>
+            <h2 class="hp-section-title">${escHtml(s.sectionN2)}${secondaryTitle('Target Delineation')}</h2>
             <div class="hp-section-body">
                 <p class="no-indent"><span class="hp-key">${escHtml(s.ctvVolume)}：</span>${f.case.ctvVolumeMm3 !== null ? f.case.ctvVolumeMm3.toFixed(1) + ' ' + U.mm3 : ND}；<span class="hp-key">${escHtml(s.oarCount)}：</span>${f.case.oarCount !== null ? f.case.oarCount : ND}；<span class="hp-key">${escHtml(s.segmentationModel)}：</span>${escHtml(f.segmentation.ctvModelName) || ND}</p>
             </div>
@@ -478,7 +574,8 @@ function _updateReportPreview() {
     // Figures on page 1 if any
     if (f.figures && f.figures.length > 0) {
         const fig1 = f.figures[0];
-        p1 += `<div class="hp-figure"><img src="${fig1.dataUrl}" alt="${escHtml(fig1.title || '')}"/><div class="hp-figure-cap">${escHtml(s.figCaption)} 1 · ${escHtml(fig1.title || '')}${fig1.caption ? ' — ' + escHtml(fig1.caption) : ''}</div></div>`;
+        const fig1Url = _safeReportImageUrl(fig1.dataUrl);
+        if (fig1Url) p1 += `<div class="hp-figure"><img src="${escHtml(fig1Url)}" alt="${escHtml(fig1.title || '')}"/><div class="hp-figure-cap">${escHtml(s.figCaption)} 1 · ${escHtml(fig1.title || '')}${fig1.caption ? ' — ' + escHtml(fig1.caption) : ''}</div></div>`;
     }
     p1 += `${pageFooter(1)}</div>`;
 
@@ -489,9 +586,14 @@ function _updateReportPreview() {
     const unitMBq = (v) => v !== null ? `${v} ${U.MBq}` : ND;
     const seedsUnit = s.seedsUnitWord ? ' ' + s.seedsUnitWord : '';
     const trajUnit = s.trajUnitWord ? ' ' + s.trajUnitWord : '';
+    const aV100 = _sourceBackedMetricAssessment(f, 'v100', f.metrics.v100);
+    const aD90 = _sourceBackedMetricAssessment(f, 'd90', f.metrics.d90);
+    const aV150 = _sourceBackedMetricAssessment(f, 'v150', f.metrics.v150);
+    const aV200 = _sourceBackedMetricAssessment(f, 'v200', f.metrics.v200);
+    const notAssessed = f.language === 'zh' ? '未评估' : 'Not assessed';
     let p2 = `<div class="report-page">
         <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(s.section2)}</span></div>
-        <h2 class="hp-section-title">${escHtml(s.section4)}<span class="hp-section-title-en">Target & Prescription</span></h2>
+        <h2 class="hp-section-title">${escHtml(s.section4)}${secondaryTitle('Target & Prescription')}</h2>
         <div class="hp-section-body">
             <p class="no-indent"><span class="hp-key">${t('technique')}：</span>${_renderInlineMd(f.planning.technique) || ND}</p>
             <p class="no-indent"><span class="hp-key">${t('prescriptionDose')}：</span>${f.planning.prescriptionGy !== null ? f.planning.prescriptionGy + ' ' + U.Gy : ND}；
@@ -499,27 +601,28 @@ function _updateReportPreview() {
                 <span class="hp-key">${t('totalActivity')}：</span>${unitMBq(f.planning.totalActivityMBq)}；
                 <span class="hp-key">${t('trajectories')}：</span>${f.planning.trajectoryCount !== null ? f.planning.trajectoryCount + trajUnit : ND}</p>
         </div>
-        <h2 class="hp-section-title">${escHtml(s.section2)}<span class="hp-section-title-en">Plan Quality Assessment</span></h2>
+        <h2 class="hp-section-title">${escHtml(s.section2)}${secondaryTitle('Plan Quality Assessment')}</h2>
         <div class="hp-section-body">
             <table class="hp-table">
                 <thead><tr><th style="width:25%">${t('metric')}</th><th style="width:18%">${t('value')}</th><th>${t('reference')}</th><th>${t('status')}</th></tr></thead>
                 <tbody>
-                    ${_hpMetricRow('V100 (CTV)', f.metrics.v100, U.percent, '≥ 90 ' + U.percent, f.metrics.v100 >= 90 ? 'pass' : 'fail', s)}
-                    ${_hpMetricRow('D90', f.metrics.d90, U.Gy, '≥ 100 ' + U.Gy, f.metrics.d90 >= 100 ? 'pass' : 'fail', s)}
-                    ${_hpMetricRow('D95', f.metrics.d95, U.Gy, '—', null, s)}
-                    ${_hpMetricRow('V150', f.metrics.v150, U.percent, '≤ 50 ' + U.percent, f.metrics.v150 !== null && f.metrics.v150 <= 50 ? 'pass' : 'warn', s)}
-                    ${_hpMetricRow('V200', f.metrics.v200, U.percent, '≤ 20 ' + U.percent, f.metrics.v200 !== null && f.metrics.v200 <= 20 ? 'pass' : 'warn', s)}
-                    ${_hpMetricRow('CI', f.metrics.ci, '', '—', f.metrics.ci > 0.6 ? 'pass' : null, s)}
-                    ${_hpMetricRow('HI', f.metrics.hi, '', '—', f.metrics.hi !== null && f.metrics.hi < 0.5 ? 'pass' : null, s)}
-                    ${_hpMetricRow('GI', f.metrics.gi, '', '—', null, s)}
-                    ${_hpMetricRow(s.planScoreLabel || 'Plan score', f.metrics.score, '/100', '≥ 80', f.metrics.score >= 80 ? 'pass' : (f.metrics.score >= 60 ? 'warn' : 'fail'), s)}
+                    ${_hpMetricRow('V100 (CTV)', f.metrics.v100, U.percent, aV100.reference, aV100.statusClass, s, aV100.statusText)}
+                    ${_hpMetricRow('D90', f.metrics.d90, U.Gy, aD90.reference, aD90.statusClass, s, aD90.statusText)}
+                    ${_hpMetricRow('D95', f.metrics.d95, U.Gy, '—', null, s, notAssessed)}
+                    ${_hpMetricRow('V150', f.metrics.v150, U.percent, aV150.reference, aV150.statusClass, s, aV150.statusText)}
+                    ${_hpMetricRow('V200', f.metrics.v200, U.percent, aV200.reference, aV200.statusClass, s, aV200.statusText)}
+                    ${_hpMetricRow('CI', f.metrics.ci, '', '—', null, s, notAssessed)}
+                    ${_hpMetricRow('HI', f.metrics.hi, '', '—', null, s, notAssessed)}
+                    ${_hpMetricRow('GI', f.metrics.gi, '', '—', null, s, notAssessed)}
+                    ${_hpMetricRow(s.planScoreLabel || 'Plan score', f.metrics.score, '/100', f.language === 'zh' ? '内部质量排序' : 'Internal QA ranking', null, s, f.language === 'zh' ? '非临床批准' : 'Not clinical approval')}
                 </tbody>
             </table>
         </div>
     `;
     if (f.figures && f.figures.length > 1) {
         const fig2 = f.figures[1];
-        p2 += `<div class="hp-figure"><img src="${fig2.dataUrl}" alt="${escHtml(fig2.title || '')}"/><div class="hp-figure-cap">${escHtml(s.figCaption)} 2 · ${escHtml(fig2.title || '')}${fig2.caption ? ' — ' + escHtml(fig2.caption) : ''}</div></div>`;
+        const fig2Url = _safeReportImageUrl(fig2.dataUrl);
+        if (fig2Url) p2 += `<div class="hp-figure"><img src="${escHtml(fig2Url)}" alt="${escHtml(fig2.title || '')}"/><div class="hp-figure-cap">${escHtml(s.figCaption)} 2 · ${escHtml(fig2.title || '')}${fig2.caption ? ' — ' + escHtml(fig2.caption) : ''}</div></div>`;
     }
     p2 += `${pageFooter(2)}</div>`;
 
@@ -527,93 +630,107 @@ function _updateReportPreview() {
     let p3 = `<div class="report-page">
         <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(s.section3)}</span></div>`;
     if (f.oarDose && f.oarDose.length > 0) {
-        p3 += `<h2 class="hp-section-title">${escHtml(s.section3)}<span class="hp-section-title-en">OAR Dose</span></h2>
+        p3 += `<h2 class="hp-section-title">${escHtml(s.section3)}${secondaryTitle('OAR Dose')}</h2>
         <div class="hp-section-body">
             <table class="hp-grid-table">
                 <thead><tr><th>${escHtml(s.organ)}</th><th>${d2ccLabel} (${U.Gy})</th><th>${d1ccLabel} (${U.Gy})</th><th>${d01ccLabel} (${U.Gy})</th><th>${v100Label} (${U.percent})</th><th>${t('status')}</th></tr></thead>
                 <tbody>
                 ${f.oarDose.map(o => {
                     const organName = _resolveOARDisplayName(o.organ, o);
-                    const cls = o.d2cc > 100 ? 'warn' : 'pass';
-                    const statusText = cls === 'warn' ? s.statusFail : s.statusPass;
+                    const assessment = _sourceBackedOarAssessment(f, o);
+                    const cls = assessment.statusClass || '';
+                    const statusText = assessment.statusText;
                     return `<tr>
                         <td>${escHtml(organName)}</td>
                         <td>${o.d2cc !== null ? o.d2cc.toFixed(1) : ND}</td>
                         <td>${o.d1cc !== null ? o.d1cc.toFixed(1) : ND}</td>
                         <td>${o.d0_1cc !== null ? o.d0_1cc.toFixed(1) : ND}</td>
                         <td>${o.v100 !== null ? o.v100.toFixed(1) : ND}</td>
-                        <td class="${cls}">${statusText}</td>
+                        <td class="${cls}">${escHtml(statusText)}</td>
                     </tr>`;
                 }).join('')}
                 </tbody>
             </table>
         </div>`;
+    } else {
+        const noOarDose = f.language === 'zh'
+            ? '当前病例尚无可用的危及器官剂量结果。完成剂量计算后，此处将自动显示器官剂量指标与来源支持的限值评估。'
+            : 'No organ-at-risk dose results are available for this case. After dose calculation, this section will show organ dose metrics and source-backed limit assessments.';
+        p3 += `<h2 class="hp-section-title">${escHtml(s.section3)}${secondaryTitle('OAR Dose')}</h2>
+        <div class="hp-section-body"><p class="no-indent">${escHtml(noOarDose)}</p></div>`;
     }
     if (f.interpretation) {
-        p3 += `<h2 class="hp-section-title">${escHtml(s.section5)}<span class="hp-section-title-en">Clinical Interpretation</span></h2>
+        p3 += `<h2 class="hp-section-title">${escHtml(s.section5)}${secondaryTitle('Clinical Interpretation')}</h2>
         <div class="hp-section-body">${_renderMarkdown(f.interpretation)}</div>`;
     }
-    p3 += `</div>`;
     p3 += `${pageFooter(3)}</div>`;
 
     // ============== PAGE 4: Safety + QA + Methodology + References + Disclaimer + Signatures ==============
     let p4 = `<div class="report-page">
         <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(s.section6)} · ${s.section7}</span></div>`;
     if (f.safety) {
-        p4 += `<h2 class="hp-section-title">${escHtml(s.section6)}<span class="hp-section-title-en">Safety & QC</span></h2>
+        p4 += `<h2 class="hp-section-title">${escHtml(s.section6)}${secondaryTitle('Safety & QC')}</h2>
         <div class="hp-section-body">${_renderMarkdown(f.safety)}</div>`;
     }
     if (f.qaNotes) {
-        p4 += `<h2 class="hp-section-title">${escHtml(s.qaNotes)}<span class="hp-section-title-en">QA Notes</span></h2>
+        p4 += `<h2 class="hp-section-title">${escHtml(s.qaNotes)}${secondaryTitle('QA Notes')}</h2>
         <div class="hp-section-body">${_renderMarkdown(f.qaNotes)}</div>`;
     }
     // Method (small reference block)
-    p4 += `<h2 class="hp-section-title">${escHtml(s.method)}<span class="hp-section-title-en">Methodology</span></h2>
+    p4 += `<h2 class="hp-section-title">${escHtml(s.method)}${secondaryTitle('Methodology')}</h2>
         <div class="hp-section-body"><ol style="margin:2px 0 2px 18px;padding:0;font-size:9pt;">${s.methodSteps.map(st => `<li style="margin:1.5px 0;">${st}</li>`).join('')}</ol></div>`;
     // References
     if (f.references && f.references.length > 0) {
-        p4 += `<h2 class="hp-section-title">${escHtml(s.section7)}<span class="hp-section-title-en">References</span></h2>
+        p4 += `<h2 class="hp-section-title">${escHtml(s.section7)}${secondaryTitle('References')}</h2>
         <div class="hp-section-body"><ol class="hp-references">${f.references.map((r, i) => {
             const key = r.citeKey || `ref${i+1}`;
-            return `<li><span class="ref-num">[${i+1}]</span> ${escHtml(r.title || '')}${r.publisher ? ' <i>(' + escHtml(r.publisher) + ')</i>' : ''}${r.year ? ', ' + r.year : ''}.${r.url ? ' <a href="' + escHtml(r.url) + '" target="_blank" rel="noopener">↗</a>' : ''}</li>`;
+            const safeUrl = _safeReportUrl(r.url);
+            return `<li><span class="ref-num">[${i+1}]</span> ${escHtml(r.title || '')}${r.publisher ? ' <i>(' + escHtml(r.publisher) + ')</i>' : ''}${r.year ? ', ' + r.year : ''}.${safeUrl ? ' <a href="' + escHtml(safeUrl) + '" target="_blank" rel="noopener noreferrer">↗</a>' : ''}</li>`;
         }).join('')}</ol></div>`;
     }
     // Disclaimer
     p4 += `<div class="hp-disclaimer"><b>⚠️ ${escHtml(s.disclaimer)}:</b><br/>${escHtml(s.disclaimerText)}</div>`;
-    // Signature
-    p4 += `<h2 class="hp-section-title">${escHtml(s.section9)}<span class="hp-section-title-en">Physician Signatures</span></h2>
+    // BrachyBot generates the document but never signs as a clinician. The
+    // planning and review fields stay independent and require human identity.
+    const safeSignatureUrl = _safeReportImageUrl(f.signature.drawnDataUrl);
+    const reviewerSignature = safeSignatureUrl
+        ? `<img class="hp-signature-image" src="${escHtml(safeSignatureUrl)}" alt="Reviewer signature"/>`
+        : '';
+    p4 += `<h2 class="hp-section-title">${escHtml(s.section9)}${secondaryTitle('Physician Signatures')}</h2>
         <div class="hp-section-body">
             <div class="hp-signature">
-                <div class="hp-signature-block" style="position:relative;">
+                <div class="hp-signature-block">
                     <div class="hp-signature-label">${escHtml(s.physicianPlanner)}</div>
-                    <div class="hp-signature-name">${escHtml(f.signature.name) || ND}</div>
-                    <div class="hp-signature-title">${escHtml(f.signature.title) || ''}</div>
-                    <div class="hp-signature-date">${escHtml(f.signature.date) || ''}</div>
-                    <div class="hp-signature-stamp" style="border-color:#0ea5e9;color:#0ea5e9;">BrachyBot<br/>SEAL</div>
+                    <div class="hp-signature-name">${escHtml(f.case.plannerName) || ND}</div>
+                    <div class="hp-signature-title">${escHtml(f.patient.department) || ''}</div>
+                    <div class="hp-signature-date">${escHtml(f.case.planDate) || ''}</div>
                 </div>
                 <div class="hp-signature-block">
                     <div class="hp-signature-label">${escHtml(s.physicianReviewer)}</div>
-                    <div class="hp-signature-name">${escHtml(f.case.plannerName) || ND}</div>
-                    <div class="hp-signature-title">${escHtml(f.patient.department) || ''}</div>
+                    <div class="hp-signature-name">${escHtml(f.signature.name) || ND}</div>
+                    <div class="hp-signature-title">${escHtml(f.signature.title) || ''}</div>
                     <div class="hp-signature-date">${escHtml(f.signature.date) || ''}</div>
+                    ${reviewerSignature}
                 </div>
             </div>
             ${f.signature.notes ? `<p style="margin-top:6px;font-size:9pt;color:#64748b;">${escHtml(f.signature.notes)}</p>` : ''}
         </div>`;
-    p4 += `</div>`;
     p4 += `${pageFooter(4)}</div>`;
 
     pagesEl.innerHTML = p1 + p2 + p3 + p4;
 }
 
-function _hpMetricRow(name, value, unit, refText, statusClass, sOverride) {
+function _hpMetricRow(name, value, unit, refText, statusClass, sOverride, statusTextOverride) {
     const s = sOverride || ((typeof REPORT_STRINGS !== 'undefined') ? REPORT_STRINGS[window.reportForm.language] : null);
     const ND = s.noData || '—';
     if (value === null || value === undefined) {
         return `<tr><td>${name}</td><td colspan="3" style="color:#94a3b8;text-align:center;">${ND}</td></tr>`;
     }
     const labels = { pass: s.statusPass || s.pass, warn: s.statusWarn || '', fail: s.statusFail || s.fail };
-    const status = statusClass ? `<span class="hp-badge ${statusClass}">${labels[statusClass] || statusClass}</span>` : ND;
+    const statusText = statusTextOverride || labels[statusClass] || statusClass || ND;
+    const status = statusClass
+        ? `<span class="hp-badge ${statusClass}">${escHtml(statusText)}</span>`
+        : `<span style="color:#64748b;">${escHtml(statusText)}</span>`;
     return `<tr><td>${name}</td><td>${value.toFixed(2)} ${unit}</td><td>${refText}</td><td>${status}</td></tr>`;
 }
 
@@ -731,9 +848,15 @@ function exportReportMarkdown() {
     lines.push(`- **${s.diagnosis}**: ${f.study.diagnosis || '—'}`);
     lines.push('');
     lines.push(`## ${s.section2}`);
-    if (f.metrics.v100 !== null) lines.push(`| V100 | ${f.metrics.v100.toFixed(1)} % | ≥ 90 % |`);
-    if (f.metrics.d90 !== null) lines.push(`| D90 | ${f.metrics.d90.toFixed(2)} Gy | ≥ 100 Gy |`);
-    if (f.metrics.score !== null) lines.push(`| Plan score | ${f.metrics.score.toFixed(0)}/100 | ≥ 80 |`);
+    if (f.metrics.v100 !== null) {
+        const assessment = _sourceBackedMetricAssessment(f, 'v100', f.metrics.v100);
+        lines.push(`| V100 | ${f.metrics.v100.toFixed(1)} % | ${assessment.reference} | ${assessment.statusText} |`);
+    }
+    if (f.metrics.d90 !== null) {
+        const assessment = _sourceBackedMetricAssessment(f, 'd90', f.metrics.d90);
+        lines.push(`| D90 | ${f.metrics.d90.toFixed(2)} Gy | ${assessment.reference} | ${assessment.statusText} |`);
+    }
+    if (f.metrics.score !== null) lines.push(`| Plan score | ${f.metrics.score.toFixed(0)}/100 | Internal QA ranking | Not clinical approval |`);
     if (f.interpretation) { lines.push(''); lines.push(`## ${s.section5}`); lines.push(f.interpretation); }
     if (f.references && f.references.length > 0) {
         lines.push(''); lines.push(`## ${s.section7}`);
@@ -744,7 +867,8 @@ function exportReportMarkdown() {
         f.figures.forEach(fig => { lines.push(`![${fig.title}](${fig.dataUrl})`); if (fig.caption) lines.push(`*${fig.caption}*`); });
     }
     lines.push(''); lines.push('---');
-    lines.push(`**${f.signature.name}** | ${f.signature.title} | ${f.signature.date}`);
+    lines.push(`**${s.physicianPlanner}**: ${f.case.plannerName || '—'} | ${f.case.planDate || '—'}`);
+    lines.push(`**${s.physicianReviewer}**: ${f.signature.name || '—'} | ${f.signature.title || '—'} | ${f.signature.date || '—'}`);
     const md = lines.join('\n');
     const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
@@ -841,6 +965,7 @@ function _printableCss() {
         .hp-signature-name { font-size: 11pt; font-weight: 700; color: #0c4a6e; }
         .hp-signature-title { font-size: 8.5pt; color: #475569; margin-top: 0.5mm; }
         .hp-signature-date { font-size: 8.5pt; color: #475569; margin-top: 1mm; border-top: 1px solid #cbd5e1; padding-top: 1mm; }
+        .hp-signature-image { display: block; max-width: 36mm; max-height: 12mm; margin-top: 2mm; object-fit: contain; object-position: left center; }
         .hp-signature-stamp { position: absolute; right: 4mm; bottom: 4mm; width: 18mm; height: 18mm; border: 2px solid #0ea5e9; border-radius: 50%; color: #0ea5e9; font-size: 7pt; font-weight: 700; display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.1; transform: rotate(-8deg); opacity: 0.65; pointer-events: none; }
         .hp-running-header { display: flex; justify-content: space-between; align-items: center; font-size: 7.5pt; color: #94a3b8; border-bottom: 1px solid #e2e8f0; padding-bottom: 1.5mm; margin-bottom: 4mm; }
         .hp-page-footer { position: absolute; bottom: 8mm; left: 16mm; right: 16mm; display: flex; justify-content: space-between; align-items: center; font-size: 7.5pt; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 2mm; }
@@ -882,17 +1007,9 @@ if (_origSendChat && !window._reportLangHooked) {
 
 // ----- 22. Boot -----
 function initReportPanel() {
-    // EPHEMERAL START: do NOT auto-load previously-saved report
-    // form from localStorage on page load. The user complained:
-    // "我刷新浏览器后, 都没有上传任何数据, 为什么报告里会已经有
-    // 数据" — fresh page = empty report. Previously-saved report
-    // data is still in localStorage (under key 'brachyplan_reportForm')
-    // and the user can restore it via the "Load" button — but it does
-    // not auto-fill the panel on every page open, which would
-    // confuse the user into thinking the data is for the current
-    // case when it might be from a previous patient.
-    // The previously-saved form is still accessible via
-    // _loadReportFromStorage() (callable from the "Load" button).
+    // Start empty until the active chat session is known. Workspace restore
+    // then loads that session's scoped report, preventing cross-patient data
+    // from appearing while preserving report edits across refreshes.
     if (!window.reportForm) window.reportForm = _newEmptyReportForm();
     if (!window.reportForm.editedFields) window.reportForm.editedFields = new Set();
     // BUG FIX 2026-06-17: sync report language with global UI language
@@ -927,7 +1044,7 @@ if (document.readyState === 'loading') {
 // dead for multiple fix rounds. Real-browser Playwright trace confirmed
 // the handler closure never ran — init() was never invoked.
 // =============================================================================
-console.log('[BOOT] BrachyBot starting…');
+uiDebugLog('[BOOT] BrachyBot starting…');
 try {
     if (typeof init === 'function') {
         if (document.readyState === 'loading') {

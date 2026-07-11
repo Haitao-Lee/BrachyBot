@@ -9,6 +9,7 @@ import os
 
 
 from tool_factory import BaseTool, ToolResult
+from .model_support import resolve_dose_model
 import numpy as np
 from typing import Dict, Optional
 
@@ -55,6 +56,10 @@ class RLSeedPlanningTool(BaseTool):
                 "dl_params": {
                     "type": "object",
                     "description": "Deep learning parameters for dose CNN model",
+                },
+                "dose_cal_model": {
+                    "type": "object",
+                    "description": "Optional injected myDoseNet model; otherwise the configured checkpoint is loaded",
                 },
                 "rf_params": {
                     "type": "object",
@@ -137,6 +142,9 @@ class RLSeedPlanningTool(BaseTool):
         radiation_volume = kwargs["radiation_volume"]
         dose_image = kwargs["dose_image"]
         dl_params = kwargs.get("dl_params", {})
+        dose_cal_model, model_error = resolve_dose_model(kwargs, dl_params)
+        if dose_cal_model is None:
+            return ToolResult(success=False, error=model_error or "Dose model is unavailable")
         rf_params = kwargs.get("rf_params", {"max_episodes": 100, "bandwidth": 0.1})
         target_value = kwargs.get("target_value", 1)
         in_lowest_dose = kwargs.get("in_lowest_dose", 1)
@@ -153,6 +161,7 @@ class RLSeedPlanningTool(BaseTool):
             init_trajectories=trajectories,
             radiation_volume=radiation_volume,
             dose_image=dose_image,
+            dose_cal_model=dose_cal_model,
             dl_params=dl_params,
             rf_params=rf_params,
             interval_rate=interval_rate,

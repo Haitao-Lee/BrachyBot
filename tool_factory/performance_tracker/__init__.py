@@ -7,6 +7,7 @@ Enables the self-evolving agent to measure and improve over time.
 
 import os
 import json
+import math
 import time
 import logging
 from typing import Dict, Any, Optional, List
@@ -194,13 +195,22 @@ Capabilities:
         if len(sessions) < 3:
             return ToolResult(success=True, data={"message": "Not enough data for trends (need 3+ sessions)"}, message="Insufficient data")
 
-        scores = [s.get("plan_score", 0) for s in sessions]
-        v100s = [s.get("v100", 0) for s in sessions]
+        def numeric(value):
+            try:
+                parsed = float(value)
+                return parsed if math.isfinite(parsed) else 0.0
+            except (TypeError, ValueError):
+                return 0.0
+
+        scores = [numeric(s.get("plan_score", 0)) for s in sessions]
+        v100s = [numeric(s.get("v100", 0)) for s in sessions]
 
         # Simple moving average
         window = min(5, len(scores))
         recent_avg = sum(scores[-window:]) / window
         overall_avg = sum(scores) / len(scores)
+        recent_v100 = sum(v100s[-window:]) / window
+        overall_v100 = sum(v100s) / len(v100s)
 
         # Organ-specific trends
         organ_scores = {}
@@ -219,6 +229,9 @@ Capabilities:
             "overall_avg": round(overall_avg, 1),
             "recent_avg": round(recent_avg, 1),
             "improvement": round(recent_avg - overall_avg, 1),
+            "overall_v100": round(overall_v100, 4),
+            "recent_v100": round(recent_v100, 4),
+            "v100_change": round(recent_v100 - overall_v100, 4),
             "organ_trends": organ_trends,
             "total_sessions": len(sessions),
         }

@@ -95,7 +95,7 @@ class FactChecker(LLMCapableAgent):
 
 ## Rules
 - Only flag claims that are CLEARLY unsupported or contradicted by the sources
-- Do NOT flag claims that are plausible medical knowledge even if not directly cited
+- Flag clinically actionable claims that lack support from the supplied sources as uncited
 - Do NOT flag standard clinical terms (V100, D90, D2cc) as suspicious
 - Be CONSERVATIVE: when in doubt, mark as "supported"
 - Focus on: fabricated statistics, made-up study references, impossible claims
@@ -238,19 +238,16 @@ class FactChecker(LLMCapableAgent):
         # ── Build the full prompt with medical domain expertise ───────
         base_prompt = self._CLAIM_PROMPT.format(claims=claims_text, sources=sources_text)
 
-        # Add medical safety rules as domain expertise
-        medical_block = ""
-        if _MEDICAL_SYSTEM_PROMPT:
-            medical_block = f"\n\n## Medical Domain Rules (for reference)\n{_MEDICAL_SYSTEM_PROMPT[:2000]}"
-
         prompt = base_prompt
         if context_block:
             prompt += f"\n\n{context_block}"
-        if medical_block:
-            prompt += medical_block
 
         try:
-            response = await self.call_llm(prompt, temperature=0.1)
+            response = await self.call_llm(
+                prompt,
+                system_prompt=_MEDICAL_SYSTEM_PROMPT or self._system_prompt,
+                temperature=0.1,
+            )
             json_match = re.search(r'\{[^{}]+\}', response, re.DOTALL)
             if json_match:
                 return json.loads(json_match.group())

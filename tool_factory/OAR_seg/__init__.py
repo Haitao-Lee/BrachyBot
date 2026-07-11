@@ -13,16 +13,19 @@ from tool_factory import BaseTool, ToolResult
 
 from .totalsegmentator_oar import TotalSegmentatorOARTool
 from .pancreatic_oar import PancreaticOARTool
-from .voco_total_segmentation import VoCoTotalSegmentatorTool
-from .aorta_vessel_voco import VoCoAortaVesselTool
 
 
 TOOL_REGISTRY = {
     "totalsegmentator_oar": TotalSegmentatorOARTool,
     "pancreatic_oar": PancreaticOARTool,
-    "voco_total_segmentation": VoCoTotalSegmentatorTool,
-    "voco_aorta_vessel": VoCoAortaVesselTool,
 }
+
+# The legacy VoCo OAR wrappers are intentionally not public tools. Their MONAI
+# preprocessing crops and reorients the volume without an inverse transform,
+# so attaching the original CT geometry can produce a plausible but misplaced
+# mask. TotalSegmentator covers the same structures with a validated spatial
+# round trip; keep the legacy modules only as research references until their
+# checkpoints and inverse transforms are independently validated.
 
 
 def get_tool(tool_name: str):
@@ -55,7 +58,7 @@ class OARSegmentationTool(BaseTool):
         return (
             "Segment Organs At Risk (OAR) from CT images. "
             "Automatically selects appropriate model based on anatomical site. "
-            "Supports 40+ organs via TotalSegmentator, pancreas via nnU-Net, aorta/vessels via VoCo. "
+            "Supports 40+ organs and vessels via TotalSegmentator, plus pancreas via nnU-Net. "
             "Input: CT image (SimpleITK) or path. "
             "Output: Multi-label OAR mask with per-organ metrics."
         )
@@ -109,8 +112,6 @@ class OARSegmentationTool(BaseTool):
 
             if organ_type == "pancreatic":
                 tool = PancreaticOARTool()
-            elif organ_type == "aorta":
-                tool = VoCoAortaVesselTool()
             else:
                 tool = TotalSegmentatorOARTool()
 

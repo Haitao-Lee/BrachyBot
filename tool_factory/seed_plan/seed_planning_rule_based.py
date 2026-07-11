@@ -9,6 +9,7 @@ import os
 
 
 from tool_factory import BaseTool, ToolResult
+from .model_support import resolve_dose_model
 import numpy as np
 from typing import Dict, Optional
 
@@ -56,6 +57,10 @@ class RuleBasedSeedPlanningTool(BaseTool):
                 "dl_params": {
                     "type": "object",
                     "description": "Deep learning parameters for dose calculation",
+                },
+                "dose_cal_model": {
+                    "type": "object",
+                    "description": "Optional injected myDoseNet model; otherwise the configured checkpoint is loaded",
                 },
                 "target_value": {
                     "type": "number",
@@ -155,6 +160,9 @@ class RuleBasedSeedPlanningTool(BaseTool):
         radiation_volume = kwargs["radiation_volume"]
         dose_image = kwargs["dose_image"]
         dl_params = kwargs.get("dl_params", {})
+        dose_cal_model, model_error = resolve_dose_model(kwargs, dl_params)
+        if dose_cal_model is None:
+            return ToolResult(success=False, error=model_error or "Dose model is unavailable")
         target_value = kwargs.get("target_value", 1)
         background_value = kwargs.get("background_value", 0)
         obstacle_value = kwargs.get("obstacle_value", 3)
@@ -171,10 +179,11 @@ class RuleBasedSeedPlanningTool(BaseTool):
 
         norm_min, norm_max, norm_scale = image_normalize[0], image_normalize[1], image_normalize[2]
 
-        optimal_plan, _ = core.optimal_plan(
+        optimal_plan = core.optimal_plan(
             init_trajectories=trajectories,
             radiation_volume=radiation_volume,
             dose_image=dose_image,
+            dose_cal_model=dose_cal_model,
             dl_params=dl_params,
             lower_bound=lower_bound,
             upper_bound=upper_bound,

@@ -106,18 +106,15 @@ class QualityGate:
         agents_to_use = self._select_agents(output_type)
 
         if not agents_to_use:
-            # INTENTIONAL: When no review agents are available, pass through with a
-            # warning rather than blocking all clinical output. This is consistent
-            # with the APPEND-ONLY design (see _aggregate_reviews) where review
-            # results are advisory, not blocking. Blocking here would cause all
-            # planning to fail if agent imports break (e.g. ImportError).
+            # Review is append-only and must not hide the clinical output, but
+            # unavailable reviewers are not equivalent to a successful review.
             logger.warning(f"No review agents available for {output_type}")
             return GateResult(
                 passed=True,
-                decision="pass",
+                decision="conditional",
                 reviews=[],
                 final_message="No review agents available",
-                requires_human_review=False,
+                requires_human_review=True,
             )
 
         # Run reviews in parallel
@@ -314,15 +311,14 @@ class QualityGate:
         if not reviews:
             return GateResult(
                 passed=True,
-                decision="pass",
+                decision="conditional",
                 reviews=[],
                 final_message="No reviews available",
-                requires_human_review=False,
+                requires_human_review=True,
             )
 
         # Count decisions
         decisions = [r.decision for r in reviews]
-        pass_count = decisions.count("pass")
         conditional_count = decisions.count("conditional")
         reject_count = decisions.count("reject")
         escalate_count = decisions.count("escalate")
@@ -343,22 +339,25 @@ class QualityGate:
         # Blocking clinical output here would be dangerous: a false reject from
         # any sub-agent would prevent all planning. Instead, concerns are appended
         # to the response for the LLM to weigh independently.
+        # These bands are software review-confidence bands, not clinical dose
+        # constraints. They only control the advisory label and never alter a
+        # treatment plan or suppress its output.
         if reject_count > 0:
             final_decision = "conditional"
             passed = True  # don't block — append review to response
-            requires_human = False
+            requires_human = True
         elif escalate_count > 0:
             final_decision = "conditional"
             passed = True
-            requires_human = False
+            requires_human = True
         elif weighted_score < 5.0:
             final_decision = "conditional"
             passed = True
-            requires_human = False
+            requires_human = True
         elif conditional_count > len(reviews) / 2:
             final_decision = "conditional"
             passed = True
-            requires_human = False
+            requires_human = True
         elif weighted_score < 7.0:
             final_decision = "conditional"
             passed = True

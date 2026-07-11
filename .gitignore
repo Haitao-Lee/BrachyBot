@@ -78,8 +78,9 @@ mykey.py
 # Local debug scripts (never committed)
 debug_*.py
 
-# Local test scripts (contain hardcoded local paths)
-test_*.py
+# Local root-level test scripts may contain hardcoded machine paths. The
+# maintained pytest suite under tests/ must remain trackable.
+/test_*.py
 
 # Benchmark archive scripts (contain hardcoded local paths)
 benchmarks/archive/v1_scripts/

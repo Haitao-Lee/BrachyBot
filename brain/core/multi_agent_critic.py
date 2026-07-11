@@ -201,41 +201,17 @@ CONFIDENCE: (0.0-1.0, how confident you are in this assessment)"""
 
     def _fallback_critique(self, persona, plan_desc, dose_metrics) -> CritiqueResult:
         concerns = []
-        recommendations = []
+        recommendations = [
+            "Apply source-backed target and OAR criteria before clinical approval."
+        ]
 
         if dose_metrics:
-            # REVIEW: thresholds below (D90<100%, D90>150%, V100<90%) are
-            # hardcoded fallback values used only when the LLM critique
-            # fails. KV-based clinical thresholds belong in `clinical_kb`
-            # or `plan_config`; for now these sanity bounds are wide enough
-            # that they only fire on actually-broken plans, but they should
-            # eventually be sourced from runtime config to satisfy the
-            # project rule that dose constraints come from
-            # `clinical_kb`/`plan_config` and not from code literals.
-            d90 = dose_metrics.get("D90", dose_metrics.get("d90", None))
-            if d90 is not None:
-                try:
-                    d90_val = float(str(d90).replace("%", "").replace("Gy", ""))
-                    if d90_val < 100:
-                        concerns.append(f"D90 ({d90_val}%) is below the recommended 100% threshold")
-                        recommendations.append("Consider adding more seeds to improve D90 coverage")
-                    elif d90_val > 150:
-                        concerns.append(f"D90 ({d90_val}%) is unusually high, may indicate overdosing")
-                        recommendations.append("Verify dose calculation and consider reducing seed activity")
-                except (ValueError, TypeError) as exc:
-                    logger.debug("Ignoring unparsable D90 metric %r: %s", d90, exc)
+            from agents.clinical_metrics import cumulative_dvh_consistency
+            concerns.extend(cumulative_dvh_consistency(dose_metrics))
 
-            v100 = dose_metrics.get("V100", dose_metrics.get("v100", None))
-            if v100 is not None:
-                try:
-                    v100_val = float(str(v100).replace("%", ""))
-                    if v100_val < 90:
-                        concerns.append(f"V100 ({v100_val}%) is below the recommended 90% threshold")
-                        recommendations.append("CTV coverage is insufficient; adjust seed placement")
-                except (ValueError, TypeError) as exc:
-                    logger.debug("Ignoring unparsable V100 metric %r: %s", v100, exc)
-
-        verdict = "REJECT" if concerns else "APPROVE"
+        # A fallback without source-backed criteria can validate data shape,
+        # but it cannot approve or reject a clinical plan.
+        verdict = "REJECT" if concerns else "CONDITIONAL"
         score = max(1, 10 - len(concerns) * 2)
 
         return CritiqueResult(

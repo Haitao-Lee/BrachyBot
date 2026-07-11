@@ -48,54 +48,79 @@ class GeminiLLM(BaseLLM):
     def default_model(self) -> str:
         return "gemini-2.0-flash"
 
+    @staticmethod
+    def _convert_messages(messages: List[Dict]) -> tuple[str, List[Dict]]:
+        """Translate role-aware OpenAI blocks into Gemini content dictionaries."""
+        system_parts = []
+        contents = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if role == "system":
+                if isinstance(content, str):
+                    system_parts.append(content)
+                elif isinstance(content, list):
+                    system_parts.extend(
+                        str(block.get("text", "")) for block in content
+                        if isinstance(block, dict) and block.get("type") == "text"
+                    )
+                continue
+
+            parts = []
+            if isinstance(content, str):
+                parts.append({"text": content})
+            elif isinstance(content, list):
+                for block in content:
+                    if not isinstance(block, dict):
+                        parts.append({"text": str(block)})
+                    elif block.get("type") == "text":
+                        parts.append({"text": str(block.get("text", ""))})
+                    elif block.get("type") == "image_url":
+                        image_url = str(block.get("image_url", {}).get("url", "") or "")
+                        match = re.match(r"^data:([^;]+);base64,(.+)$", image_url, re.DOTALL)
+                        if match:
+                            mime_type, data_b64 = match.groups()
+                            parts.append({"inline_data": {"mime_type": mime_type, "data": data_b64}})
+            if parts:
+                contents.append({"role": "model" if role == "assistant" else "user", "parts": parts})
+        return "\n".join(part for part in system_parts if part), contents
+
     def _chat(self, messages: List[Dict], tools: List[Dict] = None, **kwargs) -> LLMResponse:
         start_time = time.time()
         try:
             import google.generativeai as genai
 
             genai.configure(api_key=self.api_key)
-            model = genai.GenerativeModel(model_name=self.model)
-
-            system_text = ""
-            contents = []
-            for msg in messages:
-                role = msg.get("role", "user")
-                if role == "system":
-                    system_text = msg.get("content", "")
-                    continue
-                parts = []
-                if isinstance(msg.get("content"), str):
-                    parts.append({"text": msg["content"]})
-                elif isinstance(msg.get("content"), list):
-                    for block in msg["content"]:
-                        if block.get("type") == "text":
-                            parts.append({"text": block.get("text", "")})
-                        elif block.get("type") == "image_url":
-                            image_url = block.get("image_url", {}).get("url", "")
-                            if image_url.startswith("data:"):
-                                match = re.match(r"^data:([^;]+);base64,(.+)$", image_url, re.DOTALL)
-                                if match:
-                                    mime_type, data_b64 = match.groups()
-                                    parts.append({"inline_data": {"mime_type": mime_type, "data": data_b64}})
-                contents.append({"role": "model" if role == "assistant" else "user", "parts": parts})
-
-            generation_config = {}
-            if system_text:
-                generation_config["system_instruction"] = system_text
+            system_text, contents = self._convert_messages(messages)
             if tools:
                 tools_dict = [{"function_declarations": [
                     {"name": t["function"]["name"], "description": t["function"].get("description", ""),
                      "parameters": t["function"].get("parameters", {"type": "object", "properties": {}})}
                     for t in tools
                 ]}]
-                generation_config["tools"] = tools_dict
+            else:
+                tools_dict = None
 
-            generation_config.update(self.extra_kwargs)
-            generation_config.update(kwargs)
+            # system_instruction and tools are model/request parameters, not
+            # generation sampling options in the google-generativeai SDK.
+            model = genai.GenerativeModel(
+                model_name=self.model,
+                system_instruction=system_text or None,
+                tools=tools_dict,
+            )
+            config_source = {**self.extra_kwargs, **kwargs}
+            config_keys = {
+                "candidate_count", "max_output_tokens", "response_mime_type",
+                "stop_sequences", "temperature", "top_k", "top_p",
+            }
+            generation_config = {
+                key: value for key, value in config_source.items()
+                if key in config_keys and value is not None
+            }
 
             response = model.generate_content(
                 contents=contents,
-                generation_config=genai.types.GenerationConfig(**generation_config) if generation_config else None
+                generation_config=genai.types.GenerationConfig(**generation_config) if generation_config else None,
             )
 
             latency_ms = (time.time() - start_time) * 1000

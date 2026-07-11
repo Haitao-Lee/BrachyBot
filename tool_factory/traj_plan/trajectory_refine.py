@@ -125,7 +125,10 @@ class TrajectoryRefineTool(BaseTool):
             if spacing_arr.size != 3 or not np.all(np.isfinite(spacing_arr)) or np.any(spacing_arr <= 0):
                 return ToolResult(success=False, error="spacing must contain three positive finite values")
 
-        ref_direc = ref_direc / np.linalg.norm(ref_direc)
+        ref_norm = np.linalg.norm(ref_direc)
+        if not np.isfinite(ref_norm) or ref_norm <= 1e-8:
+            return ToolResult(success=False, error="ref_direc must be finite and non-zero")
+        ref_direc = ref_direc / ref_norm
         max_angle_rad = np.radians(max_angular_deviation)
 
         scored_trajectories = []
@@ -136,6 +139,10 @@ class TrajectoryRefineTool(BaseTool):
 
             origin = np.array(traj[0]).flatten()
             direction = np.array(traj[1]).flatten()
+            direction_norm = np.linalg.norm(direction)
+            if direction.size != 3 or not np.isfinite(direction_norm) or direction_norm <= 1e-8:
+                continue
+            direction = direction / direction_norm
             # t[4] = scalar total depth, t[2] = list of target segment lengths
             depth = traj[4] if len(traj) > 4 else (sum(traj[2]) if len(traj) > 2 else 0)
 
@@ -161,6 +168,8 @@ class TrajectoryRefineTool(BaseTool):
             if len(valid_points) > 0:
                 # Index into target_mask using valid points
                 indices = valid_points.astype(int)
+                if np.any(obstacle_mask[indices[:, 0], indices[:, 1], indices[:, 2]]):
+                    continue
                 target_coverage = np.sum(target_mask[indices[:, 0], indices[:, 1], indices[:, 2]]) / len(valid_points)
             else:
                 target_coverage = 0

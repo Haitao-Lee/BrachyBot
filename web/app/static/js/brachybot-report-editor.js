@@ -2,6 +2,28 @@ function escHtml(str) {
     if (!str) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+function _safeReportUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    try {
+        const url = new URL(raw, window.location.origin);
+        return (url.protocol === 'http:' || url.protocol === 'https:') ? url.href : '';
+    } catch (_) {
+        return '';
+    }
+}
+function _safeReportImageUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^data:image\/(png|jpe?g|webp);base64,[a-z0-9+/=\r\n]+$/i.test(raw)) return raw;
+    try {
+        const url = new URL(raw, window.location.origin);
+        if ((url.protocol === 'http:' || url.protocol === 'https:') && url.origin === window.location.origin) {
+            return url.href;
+        }
+    } catch (_) {}
+    return '';
+}
 function _formField(opts) {
     const id = 'rf-' + opts.key.replace(/[^a-zA-Z0-9_]/g, '_');
     const edited = window.reportForm.editedFields && window.reportForm.editedFields.has(opts.key);
@@ -138,8 +160,8 @@ function renderReportEditor() {
     // Metrics
     html += _formSection('📊 ' + s.section2, 'metrics', `
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            ${_formField({key:'metrics.v100', label:'V100', value:f.metrics.v100, type:'number', step:'0.01', suffix:'%', hint:'CTV coverage ≥ 90 %'})}
-            ${_formField({key:'metrics.d90', label:'D90', value:f.metrics.d90, type:'number', step:'0.01', suffix:'Gy', hint:'≥ 100 Gy prescription'})}
+            ${_formField({key:'metrics.v100', label:'V100', value:f.metrics.v100, type:'number', step:'0.01', suffix:'%', hint:'Observed CTV coverage; assess against cited case criteria'})}
+            ${_formField({key:'metrics.d90', label:'D90', value:f.metrics.d90, type:'number', step:'0.01', suffix:'Gy', hint:'Observed dose; compare with the sourced prescription'})}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             ${_formField({key:'metrics.d95', label:'D95', value:f.metrics.d95, type:'number', step:'0.01', suffix:'Gy'})}
@@ -194,9 +216,9 @@ function renderReportEditor() {
     const refList = (f.references || []).map((r, i) => `
         <div class="rp-ref-card">
             <div class="rp-ref-body">
-                <div><b>[${r.citeKey || `ref${i+1}`}]</b> ${escHtml(r.title || '')}</div>
+                <div><b>[${escHtml(r.citeKey || `ref${i+1}`)}]</b> ${escHtml(r.title || '')}</div>
                 <div class="rp-ref-meta">${escHtml(r.publisher || '')}${r.year ? ', ' + r.year : ''}</div>
-                ${r.url ? `<a href="${escHtml(r.url)}" target="_blank" rel="noopener">↗ Open</a>` : ''}
+                ${_safeReportUrl(r.url) ? `<a href="${escHtml(_safeReportUrl(r.url))}" target="_blank" rel="noopener noreferrer">↗ Open</a>` : ''}
             </div>
             <button onclick="removeReportReference(${i})" class="btn btn-outline" style="height:22px;padding:0 6px;font-size:0.65rem;color:var(--danger);">✕</button>
         </div>`).join('');
@@ -207,7 +229,7 @@ function renderReportEditor() {
             <div style="margin-top:6px;padding:8px;background:var(--primary-soft);border:1px solid var(--primary);border-radius:var(--radius-xs);">
                 <select onchange="if(this.value){addReportReferenceFromCatalog(this.value);this.value='';}" class="form-select" style="font-size:0.7rem;margin-bottom:5px;">
                     <option value="">— Select catalog reference —</option>
-                    ${Object.values(REPORT_REFERENCES_CATALOG).map(r => `<option value="${r.citeKey}">[${r.citeKey}] ${r.title.substring(0, 70)}…</option>`).join('')}
+                    ${Object.values(REPORT_REFERENCES_CATALOG).map(r => `<option value="${escHtml(r.citeKey)}">[${escHtml(r.citeKey)}] ${escHtml(r.title.substring(0, 70))}…</option>`).join('')}
                 </select>
                 <div style="font-size:0.65rem;color:var(--text-dim);margin:4px 0;">— or add custom —</div>
                 <div style="display:grid;grid-template-columns:1fr 2fr;gap:6px;margin-bottom:5px;">
@@ -227,9 +249,12 @@ function renderReportEditor() {
         </details>
     `);
     // Figures
-    const figList = (f.figures || []).map((fig, i) => `
+    const figList = (f.figures || []).map((fig, i) => {
+        const safeImageUrl = _safeReportImageUrl(fig.dataUrl);
+        if (!safeImageUrl) return '';
+        return `
         <div class="rp-figure-card">
-            <img src="${fig.dataUrl}" alt="${escHtml(fig.title || '')}"/>
+            <img src="${escHtml(safeImageUrl)}" alt="${escHtml(fig.title || '')}"/>
             <div class="rp-figure-meta">
                 <div style="font-weight:500;">${escHtml(fig.title || '(untitled)')}</div>
                 <div class="rp-figure-sub">${fig.axis ? `${fig.axis} slice ${fig.sliceIdx ?? '?'}` : ''} · ${fig.capturedAt ? new Date(fig.capturedAt).toLocaleString() : ''}</div>
@@ -237,7 +262,8 @@ function renderReportEditor() {
             </div>
             <button onclick="removeReportFigure(${i})" class="btn btn-outline" style="height:22px;padding:0 6px;font-size:0.65rem;color:var(--danger);">✕</button>
         </div>
-    `).join('');
+    `;
+    }).join('');
     html += _formSection((s.figuresSectionTitle || '🖼️ Figures') + ' (' + (f.figures || []).length + ')', 'figures', `
         <div>${figList || '<div class="rp-empty">—</div>'}</div>
         <div class="rp-btn-row">
@@ -245,15 +271,15 @@ function renderReportEditor() {
             <button class="btn btn-outline" onclick="captureReportFigure3D()">📷 Capture 3D</button>
             <label class="btn btn-outline" style="cursor:pointer;">
                 📁 Upload
-                <input type="file" accept="image/*" onchange="uploadReportFigure(event)" style="display:none;"/>
+                <input type="file" accept="image/png,image/jpeg,image/webp" onchange="uploadReportFigure(event)" style="display:none;"/>
             </label>
         </div>
     `);
     // Signature
     html += _formSection('✍️ ' + s.section9, 'signature', `
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            ${_formField({key:'signature.name', label:s.name, value:f.signature.name, section:'signature'})}
-            ${_formField({key:'signature.title', label:s.title, value:f.signature.title, section:'signature'})}
+            ${_formField({key:'signature.name', label:s.reviewerName, value:f.signature.name, section:'signature'})}
+            ${_formField({key:'signature.title', label:s.reviewerTitle, value:f.signature.title, section:'signature'})}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             ${_formField({key:'signature.date', label:s.planDate, value:f.signature.date, type:'date', section:'signature'})}
@@ -315,13 +341,16 @@ function addReportReferenceCustom() {
     const citeKey = document.getElementById('refCiteKey').value.trim() || `custom${Date.now()}`;
     const title = document.getElementById('refTitle').value.trim();
     if (!title) { _setReportStatus('Title required', 'warn'); return; }
+    const rawUrl = document.getElementById('refUrl').value.trim();
+    const safeUrl = _safeReportUrl(rawUrl);
+    if (rawUrl && !safeUrl) { _setReportStatus('Reference URL must use http or https', 'warn'); return; }
     if (!window.reportForm.references) window.reportForm.references = [];
     window.reportForm.references.push({
         citeKey, title,
         publisher: document.getElementById('refPublisher').value.trim(),
         year: parseInt(document.getElementById('refYear').value) || null,
         jurisdiction: document.getElementById('refJurisdiction').value.trim(),
-        url: document.getElementById('refUrl').value.trim(),
+        url: safeUrl,
         custom: true,
     });
     ['refCiteKey','refTitle','refPublisher','refYear','refJurisdiction','refUrl'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
@@ -364,9 +393,17 @@ function captureReportFigure3D() {
 function uploadReportFigure(event) {
     const file = event.target.files && event.target.files[0];
     if (!file) return;
+    const allowedTypes = new Set(['image/png', 'image/jpeg', 'image/webp']);
+    if (!allowedTypes.has(file.type) || file.size > 15 * 1024 * 1024) {
+        _setReportStatus('Use a PNG, JPEG, or WebP image up to 15 MB', 'warn');
+        event.target.value = '';
+        return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
-        const fig = { type: 'upload', title: file.name, dataUrl: e.target.result, caption: '', capturedAt: new Date().toISOString() };
+        const dataUrl = _safeReportImageUrl(e.target.result);
+        if (!dataUrl) { _setReportStatus('Invalid report image', 'warn'); return; }
+        const fig = { type: 'upload', title: file.name, dataUrl, caption: '', capturedAt: new Date().toISOString() };
         if (!window.reportForm.figures) window.reportForm.figures = [];
         window.reportForm.figures.push(fig);
         renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();
@@ -395,7 +432,7 @@ function removeReportFigure(idx) {
 //          peak dose voxel, arranged in a row
 //   Bottom: DVH curve (CTV + OARs)
 async function autoCaptureReportFigures() {
-    console.log('[Report] autoCaptureReportFigures called');
+    uiDebugLog('[Report] autoCaptureReportFigures called');
     if (!window.reportForm) { console.warn('[Report] No reportForm, skipping'); return; }
     if (!window.reportForm.figures) window.reportForm.figures = [];
 
@@ -420,10 +457,10 @@ async function autoCaptureReportFigures() {
     window.reportForm.figures = (window.reportForm.figures || []).filter(f => f && f.type === 'upload');
 
     if (window.reportForm.figures.length > 0) {
-        console.log('[Report] Figures already exist:', window.reportForm.figures.length, '- skipping');
+        uiDebugLog('[Report] Figures already exist:', window.reportForm.figures.length, '- skipping');
         return;
     }
-    console.log('[Report] Starting capture, 3D meshes:', Object.keys(scene3D.meshes).length,
+    uiDebugLog('[Report] Starting capture, 3D meshes:', Object.keys(scene3D.meshes).length,
         'doseOverlay:', !!state.doseOverlay, 'dvhData:', !!state.dvhData);
 
     // Language-aware labels
@@ -458,7 +495,7 @@ async function autoCaptureReportFigures() {
             type: 'screenshot', title, dataUrl, axis: axis || '3d',
             sliceIdx: null, caption, capturedAt: _ts(), ...extra,
         });
-        console.log('[Report] Figure captured:', title, Math.round(dataUrl.length / 1024), 'KB');
+        uiDebugLog('[Report] Figure captured:', title, Math.round(dataUrl.length / 1024), 'KB');
     };
 
     // Helper: wait for render
@@ -635,7 +672,7 @@ async function autoCaptureReportFigures() {
     try {
         const _meshCount = Object.keys(scene3D.meshes).length;
         if (scene3D.camera && scene3D.controls && scene3D.renderer && _meshCount > 0) {
-            console.log('[Report] Figure 1: starting 3D capture, meshes:', _meshCount);
+            uiDebugLog('[Report] Figure 1: starting 3D capture, meshes:', _meshCount);
 
             // Save all visibility and opacity states
             const _saved = {};
@@ -706,7 +743,7 @@ async function autoCaptureReportFigures() {
                 if (!c) { console.warn('[Report] 3D canvas not found for', label); return null; }
                 try {
                     const url = c.toDataURL('image/png');
-                    console.log('[Report] 3D capture', label, ':', Math.round(url.length / 1024), 'KB');
+                    uiDebugLog('[Report] 3D capture', label, ':', Math.round(url.length / 1024), 'KB');
                     return url;
                 } catch (e) {
                     console.warn('[Report] 3D toDataURL failed:', e);
@@ -829,7 +866,7 @@ async function autoCaptureReportFigures() {
             && state.doseOverlay.shape;
         if (hasDose) {
             const pv = state.doseOverlay.peakVoxel;
-            console.log('[Report] Figure 2: starting dose+DVH capture, peak voxel:', pv);
+            uiDebugLog('[Report] Figure 2: starting dose+DVH capture, peak voxel:', pv);
 
             // Save original slices and opacity
             const origSlices = {
@@ -866,7 +903,7 @@ async function autoCaptureReportFigures() {
                 const composite = _composite2DViewerCanvas(cfg.ax);
                 if (composite) {
                     doseImages.push({ dataUrl: composite, label: cfg.cap });
-                    console.log('[Report] Captured', cfg.cap, 'dose view:', Math.round(composite.length / 1024), 'KB');
+                    uiDebugLog('[Report] Captured', cfg.cap, 'dose view:', Math.round(composite.length / 1024), 'KB');
                 }
             }
 
@@ -942,7 +979,7 @@ async function autoCaptureReportFigures() {
                     try {
                         await new Promise(r => setTimeout(r, 500)); // let Plotly finish rendering
                         dvhDataUrl = await Plotly.toImage(dvhEl, { format: 'png', width: 1200, height: 400 });
-                        console.log('[Report] DVH captured via Plotly:', Math.round(dvhDataUrl.length / 1024), 'KB');
+                        uiDebugLog('[Report] DVH captured via Plotly:', Math.round(dvhDataUrl.length / 1024), 'KB');
                     } catch (e) {
                         console.warn('[Report] Plotly.toImage failed:', e);
                     }
@@ -952,7 +989,7 @@ async function autoCaptureReportFigures() {
                     try {
                         const canvas = await html2canvas(dvhEl, { useCORS: true, scale: 2 });
                         dvhDataUrl = canvas.toDataURL('image/png');
-                        console.log('[Report] DVH captured via html2canvas:', Math.round(dvhDataUrl.length / 1024), 'KB');
+                        uiDebugLog('[Report] DVH captured via html2canvas:', Math.round(dvhDataUrl.length / 1024), 'KB');
                     } catch (e) {
                         console.warn('[Report] html2canvas DVH failed:', e);
                     }
@@ -1046,7 +1083,7 @@ async function autoCaptureReportFigures() {
 
     // Re-render editor + preview
     if (window.reportForm.figures.length > 0) {
-        console.log('[Report] Total figures captured:', window.reportForm.figures.length);
+        uiDebugLog('[Report] Total figures captured:', window.reportForm.figures.length);
         renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();
     } else {
         console.warn('[Report] No figures were captured');

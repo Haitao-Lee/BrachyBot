@@ -109,7 +109,7 @@ class ReflexionEngine:
             success: Whether the task succeeded
             mode: "auto", "self", "mar", or "heuristic"
         """
-        trajectory_id = f"traj{hashlib.md5(f'{task_description}{tool_chain}'.encode()).hexdigest()[:8]}"
+        trajectory_id = f"traj{hashlib.md5(f'{task_description}{tool_chain}'.encode(), usedforsecurity=False).hexdigest()[:8]}"
 
         if mode == "auto":
             if not success:
@@ -131,7 +131,7 @@ class ReflexionEngine:
             )
 
         entry = ReflexionEntry(
-            id=f"ref{hashlib.md5(f'{trajectory_id}{datetime.now().isoformat()}'.encode()).hexdigest()[:6]}",
+            id=f"ref{hashlib.md5(f'{trajectory_id}{datetime.now().isoformat()}'.encode(), usedforsecurity=False).hexdigest()[:6]}",
             trajectory_id=trajectory_id,
             task_description=task_description,
             tool_chain=tool_chain,

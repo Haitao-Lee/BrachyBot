@@ -20,6 +20,7 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from tool_factory import BaseTool, ToolResult
+from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
 from typing import Dict
 
 
@@ -119,7 +120,7 @@ class ReportAutoFillTool(BaseTool):
             return None
         # Some planning metrics store the normalized dose level (1.0),
         # while the report form expects Gy.
-        return rx * 120.0 if rx <= 5.0 else rx
+        return rx * DOSE_MODEL_SCALE_GY if rx <= 5.0 else rx
 
     def _append_patch(self, patch, provenance, source, key, value, ndigits=None):
         if value is None:

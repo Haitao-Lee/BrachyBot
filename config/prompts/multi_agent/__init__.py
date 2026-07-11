@@ -15,7 +15,7 @@ Usage:
 """
 
 import os
-from typing import Dict, Optional
+from typing import Dict
 
 # Directory containing prompt files
 PROMPTS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -35,13 +35,13 @@ _prompt_cache: Dict[str, str] = {}
 
 
 def _load_prompt(filename: str) -> str:
-    """Load a prompt from a markdown file."""
+    """Load a required agent prompt."""
     filepath = os.path.join(PROMPTS_DIR, filename)
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            return f.read()
-    except FileNotFoundError:
-        return ""
+    with open(filepath, 'r', encoding='utf-8') as f:
+        content = f.read().strip()
+    if not content:
+        raise ValueError(f"Required agent prompt is empty: {filepath}")
+    return content
 
 
 def get_prompt(agent_name: str) -> str:
@@ -56,10 +56,9 @@ def get_prompt(agent_name: str) -> str:
     """
     if agent_name not in _prompt_cache:
         filename = AGENT_PROMPT_FILES.get(agent_name)
-        if filename:
-            _prompt_cache[agent_name] = _load_prompt(filename)
-        else:
-            _prompt_cache[agent_name] = ""
+        if not filename:
+            raise KeyError(f"Unknown agent prompt: {agent_name}")
+        _prompt_cache[agent_name] = _load_prompt(filename)
 
     return _prompt_cache[agent_name]
 

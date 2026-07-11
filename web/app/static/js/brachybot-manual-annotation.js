@@ -101,10 +101,16 @@ async function exportReport() {
 // in localStorage so the user can resume after a refresh.
 // =============================================================================
 
-// Manual planning state — persists across page reloads.
+// Manual planning state persists across reloads but is isolated per case.
+function _manualStateStorageKey() {
+    return typeof caseStorageKey === 'function'
+        ? caseStorageKey('brachybot_manual_state')
+        : 'brachybot_manual_state:web';
+}
+
 function _manualState() {
     try {
-        const s = localStorage.getItem('brachybot_manual_state');
+        const s = localStorage.getItem(_manualStateStorageKey());
         if (s) return JSON.parse(s);
     } catch (_) {}
     return {
@@ -123,7 +129,7 @@ function _saveManualState(patch) {
     try {
         const s = _manualState();
         Object.assign(s, patch);
-        localStorage.setItem('brachybot_manual_state', JSON.stringify(s));
+        localStorage.setItem(_manualStateStorageKey(), JSON.stringify(s));
     } catch (_) {}
 }
 
@@ -437,7 +443,8 @@ async function showStepResults(step) {
         if (step === 'all' || step === 'dose' || step === 'dose_distribution') {
             if (data.has_dose) {
                 const [lo, hi] = data.dose_range || [0, 0];
-                const scaleGy = data.dose_scale_gy || DOSE_NORM_TO_GY || 120;
+                const scaleGy = data.dose_scale_gy
+                    || (typeof _getDoseScaleGy === 'function' ? _getDoseScaleGy() : 120);
                 lines.push(`**Dose**: normalized range [${lo.toFixed(2)}, ${hi.toFixed(2)}] (${(lo * scaleGy).toFixed(1)}-${(hi * scaleGy).toFixed(1)} Gy)`);
             } else {
                 lines.push(`**Dose**: not computed yet`);
@@ -809,7 +816,7 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
                     _doseLastRendered[axis] = sliceIndex;
                 } catch (e) { console.warn(`[dose] render error after fetch:`, e); }
             } else {
-                console.log(`[dose] fetch callback skipped: sliceData=${!!sliceData}, axis=${axis}, requested=${sliceIndex}, current=${state.slices[axis]}`);
+                uiDebugLog(`[dose] fetch callback skipped: sliceData=${!!sliceData}, axis=${axis}, requested=${sliceIndex}, current=${state.slices[axis]}`);
             }
         });
         preloadDoseSlices(axis, sliceIndex);

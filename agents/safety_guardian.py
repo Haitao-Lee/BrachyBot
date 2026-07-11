@@ -13,6 +13,14 @@ import math
 from typing import Any, Dict, List, Optional
 
 from .base_agent import BaseAgent
+from .clinical_metrics import (
+    cumulative_dvh_consistency,
+    dose_ratio,
+    first_numeric,
+    match_constraint_name,
+    metric_value,
+    normalized_fraction,
+)
 from communication.protocol import AgentMessage, AgentResponse, AgentRole, ReviewResult
 
 logger = logging.getLogger(__name__)
@@ -22,6 +30,9 @@ class SafetyGuardian(BaseAgent):
     """Advisory safety guardian for plan output integrity and configured limits."""
 
     def __init__(self, llm_callback=None):
+        # Uniform dependency injection keeps construction consistent with the
+        # other reviewers. Safety decisions themselves remain deterministic;
+        # the callback is deliberately not invoked here.
         super().__init__(AgentRole.SAFETY_GUARDIAN, llm_callback)
 
     async def process(self, message: AgentMessage) -> AgentResponse:
@@ -32,11 +43,10 @@ class SafetyGuardian(BaseAgent):
 
         checks = [
             self._check_data_integrity(dose_metrics, plan_info),
-            self._check_completeness(plan_info),
+            self._check_completeness(dose_metrics, plan_info),
             self._check_configured_target_limits(dose_metrics, plan_config),
             self._check_configured_oar_limits(dose_metrics, plan_config),
             self._check_advisory_dose_distribution(dose_metrics, plan_config),
-            self._check_sanity_outliers(dose_metrics, plan_config),
         ]
         final_result = self._aggregate_checks(checks)
 
@@ -89,22 +99,35 @@ class SafetyGuardian(BaseAgent):
             confidence=0.95,
         )
 
-    def _check_completeness(self, plan_info: Dict[str, Any]) -> ReviewResult:
+    def _check_completeness(self, dose_metrics: Dict[str, Any],
+                            plan_info: Dict[str, Any]) -> ReviewResult:
         concerns: List[str] = []
         suggestions: List[str] = []
+        missing_count = 0
 
         for field in ("total_seeds", "num_trajectories"):
             if field not in plan_info:
                 concerns.append(f"Missing required plan field: {field}")
+                missing_count += 1
 
         if plan_info.get("total_seeds", 0) == 0:
             concerns.append("No seeds are reported in the plan.")
             suggestions.append("Verify seed planning completed before reviewing dose quality.")
 
+        missing_metrics = [
+            key for key in ("v100", "d90", "mean_dose")
+            if self._metric_value(dose_metrics, key) is None
+        ]
+        if missing_metrics:
+            missing_count += len(missing_metrics)
+            concerns.append(
+                "Missing core dose-review metrics: " + ", ".join(missing_metrics)
+            )
+
         return ReviewResult(
             reviewer="Completeness Check",
             decision="conditional" if concerns else "pass",
-            score=max(4.0, 10.0 - len(concerns) * 2),
+            score=max(4.0, 10.0 - missing_count * 2),
             concerns=concerns,
             suggestions=suggestions,
             confidence=0.85,
@@ -127,11 +150,24 @@ class SafetyGuardian(BaseAgent):
             value = self._metric_value(dose_metrics, metric)
             if value is None:
                 continue
-            ok = value >= rule["threshold"] if rule["operator"] == ">=" else value <= rule["threshold"]
+            threshold = rule["threshold"]
+            unit = rule.get("unit", "")
+            if unit == "fraction":
+                value = normalized_fraction(value)
+                threshold = normalized_fraction(threshold)
+            elif unit == "fraction_of_prescription":
+                value = dose_ratio(dose_metrics, plan_config, metric)
+                threshold = normalized_fraction(threshold)
+            if value is None or threshold is None:
+                concerns.append(
+                    f"{metric.upper()} could not be unit-normalized from the supplied dose context."
+                )
+                continue
+            ok = value >= threshold if rule["operator"] == ">=" else value <= threshold
             if not ok:
                 concerns.append(
                     f"{metric.upper()}={value:.3g} violates configured limit "
-                    f"{rule['operator']} {rule['threshold']:.3g} {rule.get('unit', '')}".strip()
+                    f"{rule['operator']} {threshold:.3g} {unit}".strip()
                 )
 
         return ReviewResult(
@@ -166,11 +202,12 @@ class SafetyGuardian(BaseAgent):
             )
 
         concerns: List[str] = []
-        normalized = {str(k).lower(): v for k, v in constraints.items() if isinstance(v, dict)}
+        normalized = {str(k): v for k, v in constraints.items() if isinstance(v, dict)}
         for organ_name, metrics in oar_metrics.items():
             if not isinstance(metrics, dict):
                 continue
-            constraint = self._match_constraint(str(organ_name).lower(), normalized)
+            matched_name = match_constraint_name(organ_name, normalized)
+            constraint = normalized.get(matched_name) if matched_name else None
             if not constraint:
                 continue
             for metric_key, aliases in {
@@ -192,51 +229,16 @@ class SafetyGuardian(BaseAgent):
             confidence=0.9,
         )
 
-    def _check_sanity_outliers(self, dose_metrics: Dict[str, Any], plan_config: Dict[str, Any]) -> ReviewResult:
-        """Flag implausible numeric outliers without treating them as guideline limits."""
-        concerns: List[str] = []
-        prescription = self._first_numeric(plan_config, ("prescribed_dose", "in_lowest_energy"))
-        max_dose = self._first_numeric(dose_metrics, ("max_dose", "dmax", "Dmax"))
-        if prescription and max_dose and max_dose > 10 * prescription:
-            concerns.append(
-                f"Max dose {max_dose:.2f} is >10x configured prescription/context value {prescription:.2f}; verify unit scaling."
-            )
-
-        return ReviewResult(
-            reviewer="Dose Sanity Check",
-            decision="conditional" if concerns else "pass",
-            score=7.0 if concerns else 10.0,
-            concerns=concerns,
-            suggestions=["Verify dose units and scaling before interpreting plan quality."] if concerns else [],
-            confidence=0.75,
-        )
-
     def _check_advisory_dose_distribution(self, dose_metrics: Dict[str, Any], plan_config: Dict[str, Any]) -> ReviewResult:
-        """Flag obvious distribution problems as advisory safety concerns."""
-        concerns: List[str] = []
-        v100 = self._normalized_fraction(self._metric_value(dose_metrics, "v100"))
-        v150 = self._normalized_fraction(self._metric_value(dose_metrics, "v150"))
-        v200 = self._normalized_fraction(self._metric_value(dose_metrics, "v200"))
-        d90_ratio = self._dose_ratio_or_fraction(dose_metrics, plan_config, "d90")
-        max_ratio = self._dose_ratio_or_fraction(dose_metrics, plan_config, "max_dose")
-
-        if v100 is not None and v100 < 0.80:
-            concerns.append(f"Advisory dose-distribution concern: V100 is {v100:.1%}; verify coverage before approval.")
-        if d90_ratio is not None and d90_ratio < 0.80:
-            concerns.append(f"Advisory dose-distribution concern: D90 is {d90_ratio:.1%} of prescription/context.")
-        if v150 is not None and v150 > 0.60:
-            concerns.append(f"Advisory dose-distribution concern: V150 is {v150:.1%}; verify high-dose spread.")
-        if v200 is not None and v200 > 0.30:
-            concerns.append(f"Advisory dose-distribution concern: V200 is {v200:.1%}; verify hot spots.")
-        if max_ratio is not None and max_ratio > 3.0:
-            concerns.append(f"Advisory dose-distribution concern: max dose is {max_ratio:.1f}x prescription/context.")
+        """Check mathematical DVH consistency, not clinical acceptability."""
+        concerns = cumulative_dvh_consistency(dose_metrics)
 
         return ReviewResult(
             reviewer="Advisory Dose Distribution",
             decision="conditional" if concerns else "pass",
             score=max(3.0, 10.0 - len(concerns) * 1.4),
             concerns=concerns,
-            suggestions=["Recompute dose, inspect DVH, and revise seed placement if concerns persist."] if concerns else [],
+            suggestions=["Recompute dose and inspect the DVH data pipeline."] if concerns else [],
             confidence=0.75,
         )
 
@@ -264,53 +266,23 @@ class SafetyGuardian(BaseAgent):
 
     @staticmethod
     def _match_constraint(organ_lower: str, constraints: Dict[str, dict]) -> Optional[dict]:
-        for key, value in constraints.items():
-            if key == organ_lower or key in organ_lower or organ_lower in key:
-                return value
-        return None
+        matched = match_constraint_name(organ_lower, constraints)
+        return constraints.get(matched) if matched else None
 
     @staticmethod
     def _metric_value(metrics: Dict[str, Any], key: str) -> Optional[float]:
-        return SafetyGuardian._first_numeric(metrics, (key, key.upper(), key.capitalize()))
+        return metric_value(metrics, key)
 
     @staticmethod
     def _first_numeric(values: Dict[str, Any], keys) -> Optional[float]:
-        if not isinstance(values, dict):
-            return None
-        for key in keys:
-            if key not in values:
-                continue
-            try:
-                return float(str(values[key]).replace("%", "").replace("Gy", "").strip())
-            except (TypeError, ValueError):
-                continue
-        return None
+        return first_numeric(values, keys)
 
     @staticmethod
     def _normalized_fraction(value: Optional[float]) -> Optional[float]:
-        if value is None:
-            return None
-        return value / 100.0 if value > 1.5 else value
+        return normalized_fraction(value)
 
     def _dose_ratio_or_fraction(self, dose_metrics: Dict[str, Any], plan_config: Dict[str, Any], key: str) -> Optional[float]:
-        value = self._metric_value(dose_metrics, key)
-        if value is None:
-            return None
-        if value <= 5.0:
-            return value
-        prescription = self._first_numeric(dose_metrics, ("prescribed_dose", "prescription"))
-        if prescription is None:
-            prescription = self._first_numeric(plan_config, ("prescribed_dose", "in_lowest_energy", "prescription_dose"))
-        if prescription is not None and prescription <= 5.0:
-            dose_scale = (
-                self._first_numeric(dose_metrics, ("dose_scale_gy",))
-                or self._first_numeric(plan_config, ("dose_scale_gy",))
-                or 120.0
-            )
-            prescription *= dose_scale
-        if prescription and prescription > 0:
-            return value / prescription
-        return None
+        return dose_ratio(dose_metrics, plan_config, key)
 
     def _aggregate_checks(self, checks: List[ReviewResult]) -> ReviewResult:
         concerns: List[str] = []

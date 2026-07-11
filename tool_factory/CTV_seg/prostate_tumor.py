@@ -174,7 +174,16 @@ class ProstateTumorSegmentationTool(BaseTool):
             _dev = str(_get_device(caller=__name__))
 
 
-            device_str = "gpu" if _dev.startswith("cuda") else _dev
+            env = self._get_clean_subprocess_env()
+            if _dev.startswith("cuda:"):
+                # DeviceManager returns a physical GPU index. Once the child
+                # process is pinned to that GPU it is renumbered to gpu:0.
+                env["CUDA_VISIBLE_DEVICES"] = _dev.split(":", 1)[1]
+                device_str = "gpu"
+            elif _dev == "cuda":
+                device_str = "gpu"
+            else:
+                device_str = "cpu"
 
             cmd = [
                 ts_exe,
@@ -188,7 +197,6 @@ class ProstateTumorSegmentationTool(BaseTool):
 
             logger.info(f"Running TotalSegmentator prostate: {' '.join(cmd)}")
 
-            env = self._get_clean_subprocess_env()
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,

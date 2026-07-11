@@ -168,8 +168,13 @@ function _setupDvhCustomTooltip(dvhEl) {
         const plotTop = size.t || 0;
         const plotW = size.w || 1;
         const plotH = size.h || 1;
-        const mx = ev.clientX - box.left;
-        const my = ev.clientY - box.top;
+        // Convert viewport coordinates back to Plotly's unscaled CSS-pixel
+        // coordinate system. This keeps the tooltip aligned after panel zoom,
+        // browser scaling, or responsive transforms.
+        const scaleX = box.width > 0 && dvhEl.clientWidth > 0 ? box.width / dvhEl.clientWidth : 1;
+        const scaleY = box.height > 0 && dvhEl.clientHeight > 0 ? box.height / dvhEl.clientHeight : 1;
+        const mx = (ev.clientX - box.left) / scaleX;
+        const my = (ev.clientY - box.top) / scaleY;
         if (mx < plotLeft || mx > plotLeft + plotW || my < plotTop || my > plotTop + plotH) {
             tip.style.display = 'none';
             return;
@@ -243,16 +248,9 @@ function _clampDvhVolume(v) {
 }
 
 function _getCurrentPrescriptionGyForDvh() {
-    let rxGy = 120;
-    try {
-        if (window.reportForm && window.reportForm.planning
-                && Number.isFinite(window.reportForm.planning.prescriptionGy)) {
-            rxGy = Number(window.reportForm.planning.prescriptionGy);
-        } else if (state.metrics && Number.isFinite(state.metrics.prescribed_dose)) {
-            rxGy = Number(state.metrics.prescribed_dose) * 120;
-        }
-    } catch (_) {}
-    return rxGy;
+    return typeof _getCurrentPrescriptionGy === 'function'
+        ? _getCurrentPrescriptionGy()
+        : 120;
 }
 
 function _buildDvhSignature(dvhData, rxGy) {
@@ -305,6 +303,13 @@ function _smoothDvhCurveForDisplay(doseBins, volPcts, maxSmoothDose = 600) {
 
     const outX = [pairs[0][0]];
     const outY = [pairs[0][1]];
+    const appendPoint = (x, y) => {
+        const bounded = _clampDvhVolume(y);
+        outX.push(x);
+        // A cumulative DVH cannot increase with dose. Cubic interpolation can
+        // otherwise create small upward overshoots even when values stay <=100.
+        outY.push(Math.min(outY[outY.length - 1], bounded));
+    };
     const hermite = (p0, p1, p2, p3, t) => {
         const t2 = t * t, t3 = t2 * t;
         return 0.5 * ((2 * p1) +
@@ -322,25 +327,23 @@ function _smoothDvhCurveForDisplay(doseBins, volPcts, maxSmoothDose = 600) {
             : 1;
         for (let s = 1; s < samples; s++) {
             const t = s / samples;
-            outX.push(x1 + t * (x2 - x1));
-            outY.push(_clampDvhVolume(hermite(
+            appendPoint(x1 + t * (x2 - x1), hermite(
                 pairs[Math.max(0, i - 1)][1],
                 y1,
                 y2,
                 pairs[Math.min(pairs.length - 1, i + 2)][1],
                 t,
-            )));
+            ));
         }
-        outX.push(x2);
-        outY.push(_clampDvhVolume(y2));
+        appendPoint(x2, y2);
     }
     return { x: outX, y: outY };
 }
 
 function drawDVH() {
-    console.log('[drawDVH] called, dvhData:', !!state.dvhData, 'keys:', state.dvhData ? Object.keys(state.dvhData).length : 0);
+    uiDebugLog('[drawDVH] called, dvhData:', !!state.dvhData, 'keys:', state.dvhData ? Object.keys(state.dvhData).length : 0);
     const placeholder = document.getElementById('dvhPlaceholder');
-    if (!state.dvhData || Object.keys(state.dvhData).length === 0) { console.log('[drawDVH] NO DATA, returning'); return; }
+    if (!state.dvhData || Object.keys(state.dvhData).length === 0) { uiDebugLog('[drawDVH] NO DATA, returning'); return; }
     placeholder.style.display = 'none';
 
     // Skip re-render if the data hasn't actually changed. This prevents
@@ -350,26 +353,15 @@ function drawDVH() {
     const rxGy = _getCurrentPrescriptionGyForDvh();
     const _newSig = _buildDvhSignature(state.dvhData, rxGy);
     if (drawDVH._lastSig === _newSig) {
-        console.log('[drawDVH] Same signature, skipping');
+        uiDebugLog('[drawDVH] Same signature, skipping');
         _setupDvhResponsiveResize(document.getElementById('dvhChart'));
         _setupDvhCustomTooltip(document.getElementById('dvhChart'));
         _resizeDVHChartSoon();
         return;
     }
-    console.log('[drawDVH] Rendering DVH with keys:', Object.keys(state.dvhData).slice(0, 5));
-    drawDVH._lastSig = _newSig;
-
-    // Cap the number of DVH curves rendered. Previously 8 — the user
-    // complained (2026-06-16) that with 50+ OAR labels in the data
-    // tree, only ~10 curves showed up, hiding most organs. The
-    // server-side dvh_data now includes ALL OAR labels (see
-    // planning_pipeline.py:1420-1443 "OAR cumulative DVH (ALL
-    // organs, not just top 3)"), so we just need to let them
-    // through. The legend uses Plotly's right-side column layout to
-    // avoid wrapping across the plot area. The user can also click
-    // any organ in the Data Tree to hide/show it (handled by the
-    // `legendgroup` + `visible` toggling below).
-    const MAX_DVH_TRACES = 30;
+    uiDebugLog('[drawDVH] Rendering DVH with keys:', Object.keys(state.dvhData).slice(0, 5));
+    // Render every available structure. Plotly's scrollable legend and the
+    // data-tree visibility controls keep large TotalSegmentator cases usable.
     const allEntries = Object.entries(state.dvhData);
     const sorted = allEntries.sort((a, b) => {
         const va = (a[1].volume_pcts && a[1].volume_pcts[0]) || 0;
@@ -381,7 +373,7 @@ function drawDVH() {
     const ctvFirst = sorted.find(([n]) => /^(CTV|PTV|GTV)$/i.test(n));
     const ctvName = ctvFirst ? ctvFirst[0] : null;
     const ctvEntry = ctvFirst;
-    const topOthers = sorted.filter(([n]) => !/^(CTV|PTV|GTV)$/i.test(n)).slice(0, MAX_DVH_TRACES - (ctvFirst ? 1 : 0));
+    const topOthers = sorted.filter(([n]) => !/^(CTV|PTV|GTV)$/i.test(n));
     const picked = ctvFirst ? [ctvFirst, ...topOthers] : topOthers;
 
     const traces = [];
@@ -406,47 +398,11 @@ function drawDVH() {
         // Use legendgroup = name so Plotly's legend click toggles
         // the trace visibility (the data tree can also call
         // setGroupVisibility for the same effect).
-        // Smooth the curve using cubic spline interpolation.
-        // DVH data can be sparse (few dose bins), causing jagged
-        //折线感. Spline smoothing makes the curves clinically
-        // readable while preserving the original data shape.
-        const smoothX = [], smoothY = [];
-        if (doseBins.length >= 4) {
-            // Interpolate to ~200 points using cubic Hermite spline
-            const n = Math.min(200, doseBins.length * 5);
-            for (let k = 0; k < n; k++) {
-                const t = k / (n - 1);
-                const idx = t * (doseBins.length - 1);
-                const i0 = Math.floor(idx);
-                const i1 = Math.min(i0 + 1, doseBins.length - 1);
-                const frac = idx - i0;
-                // Cubic Hermite interpolation (Catmull-Rom)
-                const p0 = volPcts[Math.max(0, i0 - 1)] || volPcts[i0];
-                const p1 = volPcts[i0];
-                const p2 = volPcts[i1];
-                const p3 = volPcts[Math.min(doseBins.length - 1, i1 + 1)] || volPcts[i1];
-                const t2 = frac * frac, t3 = t2 * frac;
-                const v = 0.5 * ((2 * p1) +
-                    (-p0 + p2) * frac +
-                    (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
-                    (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
-                smoothX.push(doseBins[i0] + frac * (doseBins[i1] - doseBins[i0]));
-                smoothY.push(Math.max(0, Math.min(100, v)));
-            }
-        } else {
-            // Too few points for smoothing — use raw data
-            smoothX.push(...doseBins);
-            smoothY.push(...volPcts.map(v => Math.max(0, Math.min(100, v))));
-        }
-        // Override the legacy dense interpolation with bounded display data.
-        // The legacy code above clamps its points, but Plotly's own spline
-        // can still overshoot past 100%. Keep only our 0-600 Gy display
-        // interpolation and render it linearly.
+        // Interpolate only within 0-600 Gy and clamp every generated value to
+        // the physically valid 0-100% interval.
         const displaySmooth = _smoothDvhCurveForDisplay(doseBins, volPcts, 600);
-        smoothX.length = 0;
-        smoothY.length = 0;
-        smoothX.push(...displaySmooth.x);
-        smoothY.push(...displaySmooth.y);
+        const smoothX = displaySmooth.x;
+        const smoothY = displaySmooth.y;
         if (name === ctvName) {
             ctvDisplayTrace = { x: smoothX.slice(), y: smoothY.slice() };
         }
@@ -604,130 +560,15 @@ function drawDVH() {
         modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d', 'toggleSpikelines'],
         displaylogo: false,
     }).then(() => {
+        drawDVH._lastSig = _newSig;
         // Force Plotly to re-measure container after render completes
         _setupDvhResponsiveResize(dvhEl);
         _setupDvhCustomTooltip(dvhEl);
         _resizeDVHChartSoon();
-    }).catch(() => {});
-
-    // Click-to-pick (2026-06-16 user request): single-click on a
-    // curve drops a pinned marker at that point with a label showing
-    // (dose, volume) AND the organ name. Multiple clicks add more
-    // markers (one per click). The annotation list is appended to
-    // the existing shapes (Rx reference line + dot), not replaced —
-// so the user's picks + the auto Rx marker coexist.
-// Double-click clears ALL user-picked markers but keeps the Rx ref.
-const _dvhUserPicks = [];
-// BUG FIX 2026-06-16 (DVH pick disabled): user reported that
-// the click-to-pick + multi-curve unified hover tooltip were both
-// inadequate. Replaced both with hovermode='closest' (single
-// nearest curve tooltip, see layout config above) and DISABLED
-// click-to-pick entirely. The hover tooltip is the new coordinate
-// readout — users can move the mouse continuously to read off
-// any curve's (dose, volume).
-dvhEl.on('plotly_click', function(eventData) {
-    // No-op: click-to-pick disabled in favor of nearest-curve hover.
-    return;
-});
-
-// Double-click clears the user-picked marker (keeps Rx ref). The
-// previous version called Plotly.relayout with the original shapes
-// + annotations — but Plotly interpreted the missing xaxis.range /
-// yaxis.range as "autorange" and reset the chart, which the user
-// found disruptive. Now we explicitly preserve the current axis
-// ranges + tick settings.
-dvhEl.on('plotly_doubleclick', function() {
-    _dvhUserPicks.length = 0;
-    // Snapshot the current x/y ranges and dticks BEFORE we clear.
-    const curLayout = dvhEl.layout || {};
-    const preserve = {};
-    if (curLayout.xaxis) {
-        if (curLayout.xaxis.range) preserve['xaxis.range'] = curLayout.xaxis.range;
-        if (curLayout.xaxis.dtick != null) preserve['xaxis.dtick'] = curLayout.xaxis.dtick;
-        if (curLayout.xaxis.tick0 != null) preserve['xaxis.tick0'] = curLayout.xaxis.tick0;
-    }
-    if (curLayout.yaxis) {
-        if (curLayout.yaxis.range) preserve['yaxis.range'] = curLayout.yaxis.range;
-        if (curLayout.yaxis.dtick != null) preserve['yaxis.dtick'] = curLayout.yaxis.dtick;
-        if (curLayout.yaxis.tick0 != null) preserve['yaxis.tick0'] = curLayout.yaxis.tick0;
-    }
-    // Explicitly disable autorange so Plotly doesn't snap to data.
-    preserve['xaxis.autorange'] = false;
-    preserve['yaxis.autorange'] = false;
-    // Clear shapes/annotations but keep axis settings.
-    preserve['shapes'] = shapes;
-    preserve['annotations'] = annotations;
-    Plotly.relayout(dvhEl, preserve);
-});
-
-    // Adaptive axis ticks: when the user zooms/pans, recompute dtick so
-    // we always get ~6-12 major ticks (avoids the 50 Gy / 20% ticks from
-    // becoming unreadable when zoomed in, or too sparse when zoomed out).
-    // Debounce to avoid flooding plotly on every drag tick.
-    let _dvhRelayoutTimer = null;
-    dvhEl.on('plotly_relayout', function(eventData) {
-        if (_dvhRelayoutTimer) clearTimeout(_dvhRelayoutTimer);
-        _dvhRelayoutTimer = setTimeout(() => {
-            try {
-                const layout = dvhEl.layout || {};
-                const xR = (eventData && (eventData['xaxis.range[0]'] !== undefined)) ? [eventData['xaxis.range[0]'], eventData['xaxis.range[1]']] : (layout.xaxis && layout.xaxis.range);
-                const yR = (eventData && (eventData['yaxis.range[0]'] !== undefined)) ? [eventData['yaxis.range[0]'], eventData['yaxis.range[1]']] : (layout.yaxis && layout.yaxis.range);
-
-                // Skip the first auto-fired relayout (plotly fires it with
-                // the layout we just set, so there's no user input yet).
-                // We detect "no user input" by checking that the eventData
-                // actually contains xaxis/yaxis range keys — plotly only
-                // includes those when something changed. The first fire
-                // after newPlot() doesn't include them.
-                const hasUserInput = eventData && (
-                    eventData['xaxis.range[0]'] !== undefined ||
-                    eventData['yaxis.range[0]'] !== undefined ||
-                    eventData['xaxis.autorange'] !== undefined ||
-                    eventData['yaxis.autorange'] !== undefined
-                );
-                if (!hasUserInput) return;
-
-                const update = {};
-                // BUG FIX 2026-06-16: always compute the correct
-                // dtick for both axes on every relayout, so the
-                // user NEVER sees a stray dtick=1 (the Plotly
-                // default that the user complained about). The old
-                // 20%-change threshold let the chart stay at bad
-                // values indefinitely.
-                const def = _dvhDefaultDticks(xR, yR);
-                if (Array.isArray(xR) && xR.length === 2 && xR[1] > xR[0]) {
-                    const newTick = def.xTick;
-                    const oldTick = (layout.xaxis && layout.xaxis.dtick) || def.xTick;
-                    if (Math.abs(newTick - oldTick) / Math.max(1, oldTick) > 0.15 || oldTick === 1) {
-                        update['xaxis.dtick'] = newTick;
-                        update['xaxis.tick0'] = Math.ceil(xR[0] / newTick) * newTick;
-                    }
-                }
-                if (Array.isArray(yR) && yR.length === 2 && yR[1] > yR[0]) {
-                    const newTick = def.yTick;
-                    const oldTick = (layout.yaxis && layout.yaxis.dtick) || def.yTick;
-                    // Force-fix the bug where dtick becomes 1: any
-                    // time the current y-tick is < 5% on a span
-                    // >= 50, we override regardless of the threshold.
-                    const force = (oldTick < 5 && (yR[1] - yR[0]) >= 50);
-                    if (force || Math.abs(newTick - oldTick) / Math.max(1, oldTick) > 0.15 || oldTick === 1) {
-                        update['yaxis.dtick'] = newTick;
-                        update['yaxis.tick0'] = Math.ceil(yR[0] / newTick) * newTick;
-                    }
-                }
-                if (Object.keys(update).length > 0) {
-                    Plotly.relayout(dvhEl, update);
-                }
-            } catch (e) { /* ignore — plotly state may be in flux */ }
-        }, 150);
+    }).catch(error => {
+        drawDVH._lastSig = '';
+        console.warn('[drawDVH] Plotly render failed:', error);
     });
-
-    // Auto-resize when container size changes
-    if (window._dvhResizeObserver) window._dvhResizeObserver.disconnect();
-    window._dvhResizeObserver = new ResizeObserver(() => {
-        Plotly.Plots.resize(dvhEl);
-    });
-    window._dvhResizeObserver.observe(dvhEl);
 }
 
 // ----- refreshPlanningUI -----
@@ -752,27 +593,27 @@ window._debugBrachy = function() {
     const dvhEl = document.getElementById('dvhChart');
     const panels = document.querySelectorAll('.panel-content');
     const activePanel = document.querySelector('.panel-content.active');
-    console.log('=== BrachyBot Debug ===');
-    console.log('3D canvas:', canvas ? `${canvas.clientWidth}x${canvas.clientHeight}` : 'NOT FOUND');
-    console.log('3D canvas display:', canvas ? getComputedStyle(canvas).display : 'N/A');
-    console.log('3D canvas parent display:', canvas ? getComputedStyle(canvas.parentElement).display : 'N/A');
-    console.log('scene3D initialized:', scene3D.initialized);
-    console.log('scene3D meshes:', Object.keys(scene3D.meshes));
-    console.log('scene3D renderer:', scene3D.renderer ? `${scene3D.renderer.domElement.width}x${scene3D.renderer.domElement.height}` : 'NONE');
-    console.log('Active panel:', activePanel ? activePanel.id : 'NONE');
-    console.log('Panel tabs:', [...document.querySelectorAll('.panel-tab')].map((t,i) => `[${i}]${t.classList.contains('active')?'*':''} ${t.textContent.trim()}`));
-    console.log('DVH container:', dvhEl ? `${dvhEl.clientWidth}x${dvhEl.clientHeight}` : 'NOT FOUND');
-    console.log('DVH overflow:', dvhEl ? getComputedStyle(dvhEl).overflow : 'N/A');
+    uiDebugLog('=== BrachyBot Debug ===');
+    uiDebugLog('3D canvas:', canvas ? `${canvas.clientWidth}x${canvas.clientHeight}` : 'NOT FOUND');
+    uiDebugLog('3D canvas display:', canvas ? getComputedStyle(canvas).display : 'N/A');
+    uiDebugLog('3D canvas parent display:', canvas ? getComputedStyle(canvas.parentElement).display : 'N/A');
+    uiDebugLog('scene3D initialized:', scene3D.initialized);
+    uiDebugLog('scene3D meshes:', Object.keys(scene3D.meshes));
+    uiDebugLog('scene3D renderer:', scene3D.renderer ? `${scene3D.renderer.domElement.width}x${scene3D.renderer.domElement.height}` : 'NONE');
+    uiDebugLog('Active panel:', activePanel ? activePanel.id : 'NONE');
+    uiDebugLog('Panel tabs:', [...document.querySelectorAll('.panel-tab')].map((t,i) => `[${i}]${t.classList.contains('active')?'*':''} ${t.textContent.trim()}`));
+    uiDebugLog('DVH container:', dvhEl ? `${dvhEl.clientWidth}x${dvhEl.clientHeight}` : 'NOT FOUND');
+    uiDebugLog('DVH overflow:', dvhEl ? getComputedStyle(dvhEl).overflow : 'N/A');
     const hl = dvhEl?.querySelector('.hoverlayer');
-    console.log('DVH hoverlayer:', hl ? `overflow=${getComputedStyle(hl).overflow}` : 'NOT FOUND');
-    console.log('state.ctPath:', state.ctPath);
-    console.log('state.ctLoaded:', state.ctLoaded);
-    console.log('state.metrics keys:', state.metrics ? Object.keys(state.metrics) : 'null');
+    uiDebugLog('DVH hoverlayer:', hl ? `overflow=${getComputedStyle(hl).overflow}` : 'NOT FOUND');
+    uiDebugLog('state.ctPath:', state.ctPath);
+    uiDebugLog('state.ctLoaded:', state.ctLoaded);
+    uiDebugLog('state.metrics keys:', state.metrics ? Object.keys(state.metrics) : 'null');
     return { canvas, scene3D, activePanel, dvhEl };
 };
 
-async function refreshPlanningUI() {
-    console.log('[refreshPlanningUI] CALLED, ctLoaded:', state.ctLoaded, 'stack:', new Error().stack?.split('\n').slice(1,3).join(' | '));
+async function refreshPlanningUI(options = {}) {
+    uiDebugLog('[refreshPlanningUI] CALLED, ctLoaded:', state.ctLoaded, 'stack:', new Error().stack?.split('\n').slice(1,3).join(' | '));
     // Cancel any in-flight fetch — we'll issue a fresh one.
     if (_refreshInflight) { try { _refreshInflight.abort(); } catch (_) {} }
     if (_refreshDebounce) clearTimeout(_refreshDebounce);
@@ -787,7 +628,7 @@ async function refreshPlanningUI() {
                 const data = await res.json();
                 _refreshInflight = null;
                 if (!data || !data.success) { console.warn('[refreshPlanningUI] data not success:', data); return resolve(); }
-                console.log('[refreshPlanningUI] data received, has_dose:', data.has_dose, 'seeds:', data.seeds?.length, 'has_dvh:', !!data.dvh, 'dvh_keys:', data.dvh ? Object.keys(data.dvh).length : 0, 'metrics_keys:', data.metrics ? Object.keys(data.metrics).length : 0);
+                uiDebugLog('[refreshPlanningUI] data received, has_dose:', data.has_dose, 'seeds:', data.seeds?.length, 'has_dvh:', !!data.dvh, 'dvh_keys:', data.dvh ? Object.keys(data.dvh).length : 0, 'metrics_keys:', data.metrics ? Object.keys(data.metrics).length : 0);
 
                 // 1. Metrics cards (V100, D90, etc.) + summary
                 if (data.metrics && Object.keys(data.metrics).length > 0) {
@@ -801,10 +642,10 @@ async function refreshPlanningUI() {
                 if (data.num_trajectories !== undefined) state.metrics.num_trajectories = data.num_trajectories;
 
                 // 2. DVH — store data and re-draw chart
-                console.log('[refreshPlanningUI] DVH check:', !!data.dvh, 'keys:', data.dvh ? Object.keys(data.dvh).length : 0);
+                uiDebugLog('[refreshPlanningUI] DVH check:', !!data.dvh, 'keys:', data.dvh ? Object.keys(data.dvh).length : 0);
                 if (data.dvh && Object.keys(data.dvh).length > 0) {
                     state.dvhData = data.dvh;
-                    console.log('[refreshPlanningUI] Calling drawDVH()');
+                    uiDebugLog('[refreshPlanningUI] Calling drawDVH()');
                     try {
                         const _dvhPromise = drawDVH();
                         if (_dvhPromise && typeof _dvhPromise.then === 'function') {
@@ -883,7 +724,7 @@ async function refreshPlanningUI() {
         // ═══════════════════════════════════════════════════════════
         try {
             const viewersTab = document.querySelectorAll('.panel-tab')[2];
-            if (viewersTab && !viewersTab.classList.contains('active')) {
+            if (options.switchToViewers !== false && viewersTab && !viewersTab.classList.contains('active')) {
                 switchPanel('viewers', viewersTab);
                 await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
             }
@@ -945,7 +786,7 @@ async function refreshPlanningUI() {
         // CTV + OAR meshes
         _meshPromises.push(
             _withTimeout(loadCTVAndObstacleMeshes(), 'CTV/OAR meshes', 300000)
-                .then(() => console.log('[3D auto-load] CTV/obstacle done. Meshes:', Object.keys(scene3D.meshes).length))
+                .then(() => uiDebugLog('[3D auto-load] CTV/obstacle done. Meshes:', Object.keys(scene3D.meshes).length))
         );
         // Seeds + needles. The authoritative 3D geometry lives behind
         // /planning/seeds_3d, while /planning/results may omit the flat
@@ -958,7 +799,7 @@ async function refreshPlanningUI() {
         if (shouldLoadSeedGeometry) {
             _meshPromises.push(
                 _withTimeout(loadSeeds3D(), 'Seeds')
-                    .then(() => console.log('[3D auto-load] Seeds done. Meshes:', Object.keys(scene3D.meshes).length))
+                    .then(() => uiDebugLog('[3D auto-load] Seeds done. Meshes:', Object.keys(scene3D.meshes).length))
             );
         }
 
@@ -966,7 +807,7 @@ async function refreshPlanningUI() {
         try { if (typeof reportAutoFill === 'function') reportAutoFill(); } catch (_) {}
 
         await Promise.all(_meshPromises);
-        console.log('[refreshPlanningUI] Mesh promises done. scene3D.meshes:', Object.keys(scene3D.meshes));
+        uiDebugLog('[refreshPlanningUI] Mesh promises done. scene3D.meshes:', Object.keys(scene3D.meshes));
         // Remove 3D loading indicator
         try { _3dStatusBar.remove(); } catch (_) {}
 
@@ -1038,7 +879,7 @@ async function refreshPlanningUI() {
 
             // Restore overview camera
             fitCameraToScene();
-            console.log('[3D re-capture] Re-captured CTV + seeds figures');
+            uiDebugLog('[3D re-capture] Re-captured CTV + seeds figures');
         } catch (e) { console.warn('[3D re-capture] failed:', e); }
 
         // 5. Data tree badges ("V100: 91.0%" / "13 seeds") — updateSeeds
@@ -1156,7 +997,7 @@ async function refreshPlanningUI() {
         // re-loads the CT client-side. Same pattern as the dose
         // overlay fix above.
         try {
-            console.log('[3D auto-load] forceRender3DViewer... initialized:', scene3D.initialized, 'meshes:', Object.keys(scene3D.meshes).length);
+            uiDebugLog('[3D auto-load] forceRender3DViewer... initialized:', scene3D.initialized, 'meshes:', Object.keys(scene3D.meshes).length);
             forceRender3DViewer();
         } catch (e) { console.warn('[3D auto-load] forceRender3DViewer FAILED:', e); }
 
@@ -1215,7 +1056,7 @@ async function refreshPlanningUI() {
 function updateMetrics(metrics) {
     state.metrics = metrics || {};
 
-    const setMetric = (id, val, thresholds, suffix = '') => {
+    const setMetric = (id, val, displayMax, suffix = '') => {
         const el = document.getElementById('val' + id);
         const card = document.getElementById('card' + id);
         const bar = document.getElementById('bar' + id);
@@ -1230,11 +1071,11 @@ function updateMetrics(metrics) {
             return;
         }
         el.textContent = (typeof val === 'number' ? (Number.isInteger(val) ? val : val.toFixed(1)) : val) + suffix;
-        if (thresholds && bar) {
-            const pct = Math.min(100, Math.max(0, (val / thresholds.max) * 100));
+        if (Number.isFinite(displayMax) && displayMax > 0 && bar) {
+            const pct = Math.min(100, Math.max(0, (val / displayMax) * 100));
             bar.style.width = pct + '%';
-            bar.className = 'metric-bar-fill ' + (val >= thresholds.good ? 'good' : val >= thresholds.warn ? 'warn' : 'bad');
-            card.className = 'metric-card ' + (val >= thresholds.good ? 'good' : val >= thresholds.warn ? 'warn' : 'bad');
+            bar.className = 'metric-bar-fill';
+            if (card) card.className = 'metric-card';
         }
     };
 
@@ -1242,17 +1083,22 @@ function updateMetrics(metrics) {
     // Reference: Zhiyuan BrachyPlan metrics.
     // Pass the raw value (don't `|| 0` first) so setMetric can detect
     // "no data" via undefined/NaN and render "--" instead of "0%".
-    setMetric('V100', m.v100 !== undefined ? m.v100 * 100 : undefined, { max: 100, good: 90, warn: 80 }, '%');
-    setMetric('V150', m.v150 !== undefined ? m.v150 * 100 : undefined, { max: 60, good: 50, warn: 35 }, '%');
-    setMetric('V200', m.v200 !== undefined ? m.v200 * 100 : undefined, { max: 40, good: 20, warn: 35 }, '%');
-    setMetric('D90', m.d90, { max: 200, good: 120, warn: 100 }, ' Gy');
-    setMetric('D95', m.d95, { max: 200, good: 110, warn: 90 }, ' Gy');
-    setMetric('Score', m.plan_score, { max: 100, good: 80, warn: 60 }, '');
+    setMetric('V100', m.v100 !== undefined ? m.v100 * 100 : undefined, 100, '%');
+    setMetric('V150', m.v150 !== undefined ? m.v150 * 100 : undefined, 100, '%');
+    setMetric('V200', m.v200 !== undefined ? m.v200 * 100 : undefined, 100, '%');
+    const fallbackDoseScale = typeof DEFAULT_DOSE_SCALE_GY === 'number' ? DEFAULT_DOSE_SCALE_GY : 1;
+    const doseDisplayMax = Math.max(1, (typeof _getDoseScaleGy === 'function' ? _getDoseScaleGy() : fallbackDoseScale) * 2);
+    setMetric('D90', m.d90, doseDisplayMax, ' Gy');
+    setMetric('D95', m.d95, doseDisplayMax, ' Gy');
+    setMetric('Score', m.plan_score, 100, '');
 
-    document.getElementById('sumSeeds').textContent = m.total_seeds || '--';
-    document.getElementById('sumCTV').textContent = m.ctv_voxels ? (m.ctv_voxels * 0.001).toFixed(1) : '--';
-    document.getElementById('sumD90').textContent = m.d90 ? m.d90.toFixed(1) + ' Gy' : '--';
-    document.getElementById('sumV100').textContent = m.v100 ? (m.v100 * 100).toFixed(1) + '%' : '--';
+    document.getElementById('sumSeeds').textContent = m.total_seeds != null ? m.total_seeds : '--';
+    // Planning voxel counts can belong to a resampled dose grid. Never combine
+    // them with the original CT spacing; use segmentation volume metadata only.
+    const ctvVolumeCm3 = m.ctv_volume_mm3 != null ? Number(m.ctv_volume_mm3) / 1000 : NaN;
+    document.getElementById('sumCTV').textContent = Number.isFinite(ctvVolumeCm3) ? ctvVolumeCm3.toFixed(1) + ' cm³' : '--';
+    document.getElementById('sumD90').textContent = m.d90 != null ? Number(m.d90).toFixed(1) + ' Gy' : '--';
+    document.getElementById('sumV100').textContent = m.v100 != null ? (Number(m.v100) * 100).toFixed(1) + '%' : '--';
 }
 
 // Look up the data-tree color for an organ by name. Falls back to a
@@ -1327,7 +1173,7 @@ function updateOARTable(oarMetrics) {
         const d90 = m.d90 || 0;
         const d95 = m.d95 || 0;
         const v100 = m.v100 || 0;
-        const vol = m.volume_cm3 || (m.volume_voxels ? (m.volume_voxels * 0.001).toFixed(1) : 0);
+        const vol = m.volume_cm3 ?? null;
         // Color code: highlight high dose values
         const d2ccClass = d2 > 100 ? 'style="color:var(--danger);font-weight:600;"' : '';
         // Color the organ name with the SAME color used in the data tree
@@ -1384,8 +1230,7 @@ function updateClinicalEvaluation() {
     if (!host) return;
     const metrics = state.metrics || {};
     const oarMetrics = metrics.oar_metrics || {};
-    const rxGy = (window.reportForm && window.reportForm.planning
-        && window.reportForm.planning.prescriptionGy) || 120;
+    const rxGy = _getCurrentPrescriptionGyForDvh();
     const h = (typeof escHtml === 'function')
         ? escHtml
         : (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -1755,6 +1600,16 @@ const REPORT_STRINGS = {
         scanDate: '扫描日期',
         accession: '影像号',
         radiologist: '扫描医师',
+        scanner: '扫描设备',
+        title: '职称 / 角色',
+        planDate: '计划日期',
+        notes: '备注',
+        tumorType: '肿瘤类型',
+        planner: '计划医师',
+        prescription: '处方剂量',
+        dwellPositions: '驻留位数',
+        reviewerName: '审核医师',
+        reviewerTitle: '审核医师职称 / 角色',
         diagnosis: '临床诊断',
         clinicalHistory: '简要病史',
         priorTreatment: '既往治疗',
@@ -1806,7 +1661,6 @@ const REPORT_STRINGS = {
             '<b>DVH 评估</b>：按 ICRU 89 / GEC-ESTRO 标准',
         ],
         units: { Gy: 'Gy', mm3: 'mm³', percent: '%', cc: 'cc', mm: 'mm', MBq: 'MBq' },
-        thresholds: { ci: 0.6, hi: 0.5, v150: 50, v200: 20 },
         planScoreLabel: '计划评分',
         seedsUnitWord: '颗',
         trajUnitWord: '条',
@@ -1851,6 +1705,16 @@ const REPORT_STRINGS = {
         scanDate: 'Scan date',
         accession: 'Accession #',
         radiologist: 'Radiologist',
+        scanner: 'Scanner',
+        title: 'Role / title',
+        planDate: 'Planning date',
+        notes: 'Notes',
+        tumorType: 'Tumor type',
+        planner: 'Planning physician',
+        prescription: 'Prescribed dose',
+        dwellPositions: 'Dwell positions',
+        reviewerName: 'Review physician',
+        reviewerTitle: 'Reviewer role / title',
         diagnosis: 'Clinical diagnosis',
         clinicalHistory: 'Brief history',
         priorTreatment: 'Prior treatment',
@@ -1898,11 +1762,10 @@ const REPORT_STRINGS = {
             '<b>CTV/OAR segmentation</b>: nnUNet deep-learning auto-segmentation',
             '<b>Trajectory planning</b>: Zhiyuan v2 candidate-trajectory + adaptive filter',
             '<b>Seed planning</b>: greedy iterative placement with per-seed myDoseNet CNN dose contributions',
-            '<b>Dose calculation</b>: myDoseNet CNN surrogate (calibrated to 120 Gy prescription)',
+            '<b>Dose calculation</b>: myDoseNet CNN surrogate (checkpoint calibration recorded with the plan)',
             '<b>DVH evaluation</b>: per ICRU 89 / GEC-ESTRO standards',
         ],
         units: { Gy: 'Gy', mm3: 'mm³', percent: '%', cc: 'cc', mm: 'mm', MBq: 'MBq' },
-        thresholds: { ci: 0.6, hi: 0.5, v150: 50, v200: 20 },
         planScoreLabel: 'Plan score',
         seedsUnitWord: 'seeds',
         trajUnitWord: 'trajectories',

@@ -350,4 +350,9 @@ class OpenRouterLLM(BaseLLM):
     def get_model_info(self, model: str = None) -> Dict:
         """Get information about a specific model."""
         model = model or self.model
-        return self.SUPPORTED_MODELS.get(model, {"name": model, "provider": "unknown"})
+        return self.model_info(model)
+
+    @classmethod
+    def model_info(cls, model: str) -> Dict:
+        """Inspect static model metadata without constructing a provider."""
+        return cls.SUPPORTED_MODELS.get(model, {"name": model, "provider": "unknown"})

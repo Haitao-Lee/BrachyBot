@@ -9,6 +9,7 @@ import os
 
 
 from tool_factory import BaseTool, ToolResult
+from .model_support import resolve_dose_model
 import numpy as np
 from typing import Dict, Optional
 
@@ -64,6 +65,10 @@ class SeedPlanningTool(BaseTool):
                 "dl_params": {
                     "type": "object",
                     "description": "Deep learning parameters for dose calculation",
+                },
+                "dose_cal_model": {
+                    "type": "object",
+                    "description": "Optional injected myDoseNet model; otherwise the configured checkpoint is loaded",
                 },
                 "rf_params": {
                     "type": "object",
@@ -145,9 +150,13 @@ class SeedPlanningTool(BaseTool):
         trajectories = kwargs["trajectories"]
         radiation_volume = kwargs["radiation_volume"]
         dose_image = kwargs["dose_image"]
-        dose_cal_model = kwargs.get("dose_cal_model")
         mode = kwargs.get("mode", "rule_based")
         dl_params = kwargs.get("dl_params", {})
+        if mode not in {"rule_based", "rl"}:
+            return ToolResult(success=False, error="mode must be 'rule_based' or 'rl'")
+        dose_cal_model, model_error = resolve_dose_model(kwargs, dl_params)
+        if dose_cal_model is None:
+            return ToolResult(success=False, error=model_error or "Dose model is unavailable")
         seed_info = kwargs.get("seed_info", {"radius": 0.4, "length": 4.5, "seed_avr_dose": 50})
         target_value = kwargs.get("target_value", 1)
         background_value = kwargs.get("background_value", 0)
@@ -167,6 +176,7 @@ class SeedPlanningTool(BaseTool):
                 init_trajectories=trajectories,
                 radiation_volume=radiation_volume,
                 dose_image=dose_image,
+                dose_cal_model=dose_cal_model,
                 dl_params=dl_params,
                 rf_params=rf_params,
                 interval_rate=interval_rate,
@@ -186,7 +196,7 @@ class SeedPlanningTool(BaseTool):
             distance_rate = kwargs.get("distance_rate", 0.8)
             iter_rate = kwargs.get("iter_rate", 2)
 
-            optimal_plan, _ = core.optimal_plan(
+            optimal_plan = core.optimal_plan(
                 init_trajectories=trajectories,
                 radiation_volume=radiation_volume,
                 dose_image=dose_image,

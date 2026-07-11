@@ -162,12 +162,16 @@ class SeedSegmentationTool(BaseTool):
             },
         )
     
-    def _voxel_to_physical(self, image, voxel_coords):
-        spacing = image.GetSpacing()
-        origin = image.GetOrigin()
-        direction = np.array(image.GetDirection()).reshape(image.GetDimension(), image.GetDimension())
-        physical = origin + direction @ (voxel_coords * spacing)
-        return physical
+    def _voxel_to_physical(self, image, voxel_coords_zyx):
+        """Convert NumPy-order ``(z, y, x)`` coordinates to physical LPS."""
+        coords = np.asarray(voxel_coords_zyx, dtype=np.float64).reshape(-1)
+        if coords.size != image.GetDimension() or not np.all(np.isfinite(coords)):
+            raise ValueError("voxel coordinates must contain one finite value per image dimension")
+        index_xyz = tuple(float(v) for v in coords[::-1])
+        return np.asarray(
+            image.TransformContinuousIndexToPhysicalPoint(index_xyz),
+            dtype=np.float64,
+        )
     
     def _compute_deviations(self, detected_seeds, planned_seeds, image):
         detected_physical = np.array([s["physical_position"] for s in detected_seeds])

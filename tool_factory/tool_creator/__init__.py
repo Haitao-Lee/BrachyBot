@@ -6,7 +6,7 @@ and use them immediately in the system.
 """
 
 import os
-import sys
+import ast
 import json
 import logging
 import importlib.util
@@ -21,8 +21,78 @@ logger = logging.getLogger(__name__)
 
 # Directory for dynamically created tools
 TOOLS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dynamic_tools")
-os.makedirs(TOOLS_DIR, exist_ok=True)
 TOOLS_DIR_PATH = Path(TOOLS_DIR).resolve()
+TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _tool_creation_enabled() -> bool:
+    """Dynamic imports are available only in trusted local Developer Mode."""
+    return os.environ.get("BRACHYBOT_ENABLE_TOOL_CREATOR", "").lower() in TRUE_VALUES
+
+
+def _validate_tool_code(code: str) -> list[str]:
+    """Reject side-effectful module code and unsafe imports/calls."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as exc:
+        return [f"Syntax error: {exc}"]
+
+    allowed_imports = {
+        "collections", "datetime", "itertools", "json", "math", "re",
+        "statistics", "typing", "numpy", "pandas", "scipy", "SimpleITK",
+        "skimage", "tool_factory",
+    }
+    configured = os.environ.get("BRACHYBOT_DYNAMIC_TOOL_IMPORT_ALLOWLIST", "")
+    allowed_imports.update(item.strip() for item in configured.split(",") if item.strip())
+    blocked_names = {"__import__", "compile", "eval", "exec", "globals", "locals", "open"}
+    blocked_attributes = {
+        "os.system", "os.popen", "shutil.rmtree", "socket.socket",
+        "subprocess.call", "subprocess.check_output", "subprocess.Popen", "subprocess.run",
+    }
+    errors = []
+
+    def attribute_path(node: ast.AST) -> str:
+        parts = []
+        while isinstance(node, ast.Attribute):
+            parts.append(node.attr)
+            node = node.value
+        if isinstance(node, ast.Name):
+            parts.append(node.id)
+        return ".".join(reversed(parts))
+
+    for top_level in tree.body:
+        allowed = isinstance(top_level, (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        if isinstance(top_level, ast.Expr) and isinstance(top_level.value, ast.Constant) and isinstance(top_level.value.value, str):
+            allowed = True
+        if isinstance(top_level, (ast.Assign, ast.AnnAssign)):
+            try:
+                ast.literal_eval(top_level.value)
+                allowed = True
+            except (ValueError, TypeError):
+                allowed = False
+        if not allowed:
+            errors.append(f"Top-level executable statement is not allowed: {type(top_level).__name__}")
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".", 1)[0] not in allowed_imports:
+                    errors.append(f"Import is not allowlisted: {alias.name}")
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".", 1)[0]
+            if node.level or root not in allowed_imports:
+                errors.append(f"Import is not allowlisted: {node.module or '<relative>'}")
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in blocked_names:
+                errors.append(f"Call is not allowed: {node.func.id}()")
+            elif isinstance(node.func, ast.Attribute):
+                call_name = attribute_path(node.func)
+                if call_name in blocked_attributes:
+                    errors.append(f"Call is not allowed: {call_name}()")
+        elif isinstance(node, ast.Attribute) and node.attr.startswith("__"):
+            errors.append(f"Dunder attribute access is not allowed: {node.attr}")
+
+    return sorted(set(errors))
 
 # Registry of dynamically created tools
 _dynamic_tools: Dict[str, BaseTool] = {}
@@ -77,7 +147,7 @@ class ToolCreatorTool(BaseTool):
     """Create and manage dynamic tools."""
 
     name = "tool_creator"
-    description = """Create new tools dynamically, register them in the system, and use them immediately.
+    description = """Create and register tools when BRACHYBOT_ENABLE_TOOL_CREATOR=1 in trusted local Developer Mode.
 Capabilities:
 - create: Create a new tool from Python code
 - register: Register an existing tool with the agent
@@ -144,7 +214,8 @@ Capabilities:
         return tool_file
 
     def _create_tool(self, tool_name: str, tool_code: str, description: str,
-                     input_schema: Dict = None, output_schema: Dict = None) -> ToolResult:
+                     input_schema: Dict = None, output_schema: Dict = None,
+                     agent=None) -> ToolResult:
         """Create a new tool from Python code."""
         try:
             tool_name = self._normalize_tool_name(tool_name)
@@ -154,16 +225,18 @@ Capabilities:
         if not tool_code:
             return ToolResult(success=False, error="tool_code required", message="tool_code is required")
 
+        validation_errors = _validate_tool_code(tool_code)
+        if validation_errors:
+            message = "; ".join(validation_errors)
+            return ToolResult(success=False, error=message, message=f"Tool code blocked: {message}")
+
         # Create tool file
         tool_file = self._tool_file(tool_name)
 
         try:
+            TOOLS_DIR_PATH.mkdir(parents=True, exist_ok=True)
             # Wrap the code in a tool class
             wrapped_code = f'''
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-
 from tool_factory import BaseTool, ToolResult
 
 {tool_code}
@@ -216,7 +289,7 @@ from tool_factory import BaseTool, ToolResult
             _dynamic_tools[tool_name] = tool
 
             # Also register with the agent's registry if available
-            self._register_with_agent(tool)
+            registered_with_agent = self._register_with_agent(tool, agent)
 
             return ToolResult(
                 success=True,
@@ -224,9 +297,13 @@ from tool_factory import BaseTool, ToolResult
                     "tool_name": tool_name,
                     "tool_file": str(tool_file),
                     "description": description,
-                    "registered": True,
+                    "registered": registered_with_agent,
                 },
-                message=f"Tool '{tool_name}' created and registered successfully",
+                message=(
+                    f"Tool '{tool_name}' created and registered successfully"
+                    if registered_with_agent
+                    else f"Tool '{tool_name}' created in the dynamic registry"
+                ),
             )
 
         except Exception as e:
@@ -240,22 +317,21 @@ from tool_factory import BaseTool, ToolResult
                 message=f"Failed to create tool '{tool_name}'"
             )
 
-    def _register_with_agent(self, tool: BaseTool):
+    def _register_with_agent(self, tool: BaseTool, agent=None) -> bool:
         """Register a tool with the BrachyAgent."""
-        try:
-            # Try to import and get the agent's registry
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-            from AgenticSys import BrachyAgent
-            # Note: This would require access to the agent instance
-            # For now, we just keep it in our local registry
-            logger.info(f"Tool '{tool.name}' registered in dynamic registry")
-        except ImportError:
-            pass
+        registry = getattr(agent, "registry", None)
+        if registry is None or not hasattr(registry, "register"):
+            logger.info("Tool '%s' retained in dynamic registry only", tool.name)
+            return False
+        registry.register(tool)
+        logger.info("Tool '%s' registered with the active BrachyAgent", tool.name)
+        return True
 
     def _register_tool(self, tool_name: str, tool_code: str, description: str,
-                       input_schema: Dict = None, output_schema: Dict = None) -> ToolResult:
+                       input_schema: Dict = None, output_schema: Dict = None,
+                       agent=None) -> ToolResult:
         """Register an existing tool with the agent."""
-        return self._create_tool(tool_name, tool_code, description, input_schema, output_schema)
+        return self._create_tool(tool_name, tool_code, description, input_schema, output_schema, agent)
 
     def _list_tools(self) -> ToolResult:
         """List all dynamically created tools."""
@@ -273,7 +349,7 @@ from tool_factory import BaseTool, ToolResult
             message=f"Found {len(tools)} dynamic tool(s)",
         )
 
-    def _delete_tool(self, tool_name: str) -> ToolResult:
+    def _delete_tool(self, tool_name: str, agent=None) -> ToolResult:
         """Delete a dynamic tool."""
         try:
             tool_name = self._normalize_tool_name(tool_name)
@@ -282,6 +358,9 @@ from tool_factory import BaseTool, ToolResult
 
         if tool_name in _dynamic_tools:
             del _dynamic_tools[tool_name]
+            registry = getattr(agent, "registry", None)
+            if registry is not None and hasattr(registry, "unregister"):
+                registry.unregister(tool_name)
 
             # Also delete the file
             tool_file = self._tool_file(tool_name)
@@ -360,6 +439,17 @@ from tool_factory import BaseTool, ToolResult
 
     def _execute(self, **kwargs) -> ToolResult:
         action = kwargs.get("action", "")
+        agent = kwargs.get("_agent")
+
+        if not _tool_creation_enabled():
+            return ToolResult(
+                success=False,
+                error="tool_creator is disabled",
+                message=(
+                    "Dynamic tool creation is disabled by default. Set "
+                    "BRACHYBOT_ENABLE_TOOL_CREATOR=1 only in trusted local Developer Mode."
+                ),
+            )
 
         if not action:
             return ToolResult(
@@ -374,7 +464,7 @@ from tool_factory import BaseTool, ToolResult
             description = kwargs.get("description", "")
             input_schema = kwargs.get("input_schema")
             output_schema = kwargs.get("output_schema")
-            return self._create_tool(tool_name, tool_code, description, input_schema, output_schema)
+            return self._create_tool(tool_name, tool_code, description, input_schema, output_schema, agent)
 
         elif action == "register":
             tool_name = kwargs.get("tool_name", "")
@@ -382,7 +472,7 @@ from tool_factory import BaseTool, ToolResult
             description = kwargs.get("description", "")
             input_schema = kwargs.get("input_schema")
             output_schema = kwargs.get("output_schema")
-            return self._register_tool(tool_name, tool_code, description, input_schema, output_schema)
+            return self._register_tool(tool_name, tool_code, description, input_schema, output_schema, agent)
 
         elif action == "list":
             return self._list_tools()
@@ -391,7 +481,7 @@ from tool_factory import BaseTool, ToolResult
             tool_name = kwargs.get("tool_name", "")
             if not tool_name:
                 return ToolResult(success=False, error="tool_name required", message="tool_name is required for delete")
-            return self._delete_tool(tool_name)
+            return self._delete_tool(tool_name, agent)
 
         elif action == "test":
             tool_name = kwargs.get("tool_name", "")

@@ -65,7 +65,6 @@ class GenericOpenAICompatLLM(BaseLLM):
 
         client_kwargs = {"api_key": self.api_key, "base_url": self.base_url, "timeout": self.timeout}
 
-        last_error = None
         for attempt in range(self.max_retries + 1):
             start_time = time.time()
             try:
@@ -118,7 +117,6 @@ class GenericOpenAICompatLLM(BaseLLM):
                 )
 
             except Exception as e:
-                last_error = e
                 error_str = str(e).lower()
                 is_retryable = any(x in error_str for x in [
                     "rate_limit", "429", "too many requests", "rpm",
@@ -132,7 +130,7 @@ class GenericOpenAICompatLLM(BaseLLM):
                     logger.error(f"Generic OpenAI-compat call failed: {e}")
                     return LLMResponse(content=f"Error: {str(e)}", finish_reason="error")
 
-        return LLMResponse(content=f"Error: {last_error}", finish_reason="error")
+        return LLMResponse(content="Error: retry loop exhausted", finish_reason="error")
 
     def chat_messages_stream(
         self,
@@ -153,7 +151,6 @@ class GenericOpenAICompatLLM(BaseLLM):
 
         client_kwargs = {"api_key": self.api_key, "base_url": self.base_url, "timeout": self.timeout}
 
-        last_error = None
         for attempt in range(self.max_retries + 1):
             start_time = time.time()
             try:
@@ -243,7 +240,6 @@ class GenericOpenAICompatLLM(BaseLLM):
                 return
 
             except Exception as e:
-                last_error = e
                 error_str = str(e).lower()
                 is_retryable = any(x in error_str for x in [
                     "rate_limit", "429", "too many requests", "rpm",

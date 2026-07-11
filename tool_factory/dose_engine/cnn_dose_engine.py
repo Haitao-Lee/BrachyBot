@@ -114,7 +114,7 @@ class CNNDoseEngineTool(BaseTool):
         }
 
     def _execute(self, **kwargs) -> ToolResult:
-        import utilizations_promax as utilizations
+        from plans import utilizations
 
         dose_image = kwargs["dose_image"]
         seeds = kwargs["seeds"]
@@ -126,14 +126,6 @@ class CNNDoseEngineTool(BaseTool):
         seed_info = kwargs.get("seed_info", {"length": 4.5})
 
         if "dose_model" not in dl_params or dl_params["dose_model"] is None:
-            import dose_pre.myDoseNet as myDoseNet
-
-            model = myDoseNet.myDoseNet(
-                spatial_dims=dl_params.get("dose_spatial_dims", 3),
-                in_channels=dl_params.get("dose_in_channel", 3),
-                out_channels=dl_params.get("dose_out_channel", 1),
-                features=dl_params.get("dose_cal_features", (16, 32, 64, 128, 256, 32)),
-            )
             # Smart device selection: prefer the most-free GPU; fall
             # back to CPU if no CUDA. The centralized manager caches
             # the per-tool choice so the same GPU is reused across
@@ -143,18 +135,22 @@ class CNNDoseEngineTool(BaseTool):
             # we spread load across multiple GPUs).
             from plans.device_manager import get_device as _get_device
             device = _get_device(caller="cnn_dose_engine")
+            from plans.dose_pre.model_loader import load_dose_model
+            model, model_error, model_path = load_dose_model(
+                explicit_path=dl_params.get("dose_model_path"),
+                device=device,
+                spatial_dims=dl_params.get("dose_spatial_dims", 3),
+                in_channels=dl_params.get("dose_in_channel", 3),
+                out_channels=dl_params.get("dose_out_channel", 1),
+                features=dl_params.get("dose_cal_features", (16, 32, 64, 128, 256, 32)),
+            )
+            if model is None:
+                return ToolResult(success=False, error=model_error, message=model_error)
             if dl_params.get("multi_GPU", False):
                 model = torch.nn.DataParallel(model)
-            model_path = dl_params.get("dose_model_path", "./dose_pre/dose_model.pth")
-            # Resolve relative path against project root
-            if not os.path.isabs(model_path):
-                _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-                model_path = os.path.join(_project_root, model_path)
-            model.load_state_dict(torch.load(model_path, map_location=device))
-            model.to(device)
-            model.eval()
             dl_params["dose_model"] = model
             dl_params["device"] = device
+            dl_params["dose_model_path"] = model_path
 
         dose_model = dl_params["dose_model"]
 

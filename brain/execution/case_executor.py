@@ -31,6 +31,7 @@ class StepResult:
     error: Optional[str] = None
     execution_time: float = 0.0
     output_path: str = ""
+    output_type: str = "intermediate result"
 
 
 @dataclass
@@ -64,6 +65,7 @@ class CaseExecutionResult:
                     "error": s.error,
                     "execution_time": s.execution_time,
                     "output_path": s.output_path,
+                    "output_type": s.output_type,
                 }
                 for s in self.steps
             ],
@@ -101,6 +103,28 @@ class CaseExecutor:
         Resolve step execution order based on dependencies.
         Returns phases - each phase is a list of steps that can run in parallel.
         """
+        ids = []
+        for step in steps:
+            try:
+                step_id = int(step["id"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("Every plan step must have an integer id") from exc
+            if step_id <= 0:
+                raise ValueError(f"Step id {step_id} is invalid; id 0 is reserved for case input")
+            ids.append(step_id)
+        if len(ids) != len(set(ids)):
+            raise ValueError("Plan contains duplicate step ids")
+
+        known_ids = set(ids)
+        for step in steps:
+            step_id = int(step["id"])
+            dependencies = self._step_input_refs(step, include_zero=False)
+            missing = sorted(set(dependencies) - known_ids)
+            if missing:
+                raise ValueError(f"Step {step_id} references missing dependencies: {missing}")
+            if step_id in dependencies:
+                raise ValueError(f"Step {step_id} depends on itself")
+
         executed = set()
         phases = []
 
@@ -115,7 +139,8 @@ class CaseExecutor:
                     current_phase.append(step)
 
             if not current_phase:
-                break
+                unresolved = sorted(known_ids - executed)
+                raise ValueError(f"Plan dependency cycle detected among steps: {unresolved}")
 
             phases.append(current_phase)
             for step in current_phase:
@@ -170,11 +195,13 @@ class CaseExecutor:
 
         start_time = time.time()
         step_outputs: Dict[int, Any] = {0: case_input}
-        plan_by_id: Dict[int, Dict] = {int(s["id"]): s for s in plan}
-
-        phases = self.resolve_execution_order(plan)
-        if not phases:
-            phases = [[s] for s in plan]
+        try:
+            phases = self.resolve_execution_order(plan)
+        except ValueError as exc:
+            result.status = ExecutionStatus.FAILED
+            result.summary = f"Invalid plan: {exc}"
+            result.total_time = time.time() - start_time
+            return result
 
         for phase in phases:
             for step_dict in phase:
@@ -197,7 +224,8 @@ class CaseExecutor:
                     action=action,
                     action_type=action_type,
                     status=ExecutionStatus.PENDING,
-                    output_path=output_path
+                    output_path=output_path,
+                    output_type=output_type,
                 )
 
                 for hook in self._hooks["before_step"]:
@@ -241,26 +269,28 @@ class CaseExecutor:
                         "path": os.path.join(step_dir, output_path),
                         "data": step_result.result
                     }
+                else:
+                    result.status = ExecutionStatus.FAILED
+                    result.summary = (
+                        f"Failed at step {step_id}: {action} - "
+                        f"{step_result.error or step_result.status.value}"
+                    )
+                    result.total_time = time.time() - start_time
+                    for hook in self._hooks["on_error"]:
+                        hook(step_id, tool_id, action, RuntimeError(result.summary))
+                    return result
 
                 for hook in self._hooks["after_step"]:
                     hook(step_id, tool_id, step_result)
 
         result.status = ExecutionStatus.SUCCESS
-        # REVIEW: `len(plan)` is the requested plan length, not the number
-        # of steps that were actually executed. `resolve_execution_order`
-        # silently drops cyclic/unreachable steps (it breaks at
-        # `if not current_phase: break` without surfacing which steps were
-        # never scheduled). So this summary can over-report the count, and
-        # the user is told "all N steps completed" even if some never ran.
-        # Suggested fix: detect `len(result.steps) < len(plan)` and surface
-        # dropped steps as FAILED with a reason.
-        result.summary = f"Completed {len(plan)} steps successfully"
+        result.summary = f"Completed {len(result.steps)} steps successfully"
         result.total_time = time.time() - start_time
 
         final_indicators = [
             s for s in result.steps
             if s.status == ExecutionStatus.SUCCESS and
-            getattr(s, "output_type", None) == "final indicator"
+            s.output_type == "final indicator"
         ]
         if final_indicators:
             result.final_result = {
@@ -299,23 +329,30 @@ class CaseExecutor:
                 if dep_output:
                     resolved_inputs.append(dep_output.get("path") or dep_output.get("data"))
 
-        full_output_path = os.path.join(step_dir, output_path)
+        full_output_path = self._safe_output_path(step_dir, output_path)
+        safe_output_name = os.path.relpath(full_output_path, step_dir)
 
         exec_start = time.time()
         if resolved_inputs:
             result = tool_spec.execute_fn(
                 inputs=resolved_inputs,
                 save_dir=step_dir,
-                save_name=output_path,
+                save_name=safe_output_name,
                 action=action
             )
         else:
             result = tool_spec.execute_fn(
                 save_dir=step_dir,
-                save_name=output_path,
+                save_name=safe_output_name,
                 action=action
             )
         step_result.execution_time = time.time() - exec_start
+
+        if hasattr(result, "success") and not result.success:
+            step_result.status = ExecutionStatus.FAILED
+            step_result.error = getattr(result, "error", None) or getattr(result, "message", "Tool failed")
+            step_result.result = result
+            return step_result
 
         if os.path.exists(full_output_path):
             try:
@@ -328,6 +365,15 @@ class CaseExecutor:
         step_result.status = ExecutionStatus.SUCCESS
 
         return step_result
+
+    @staticmethod
+    def _safe_output_path(step_dir: str, output_path: str) -> str:
+        """Resolve a plan-provided output path without allowing traversal."""
+        base = os.path.realpath(step_dir)
+        candidate = os.path.realpath(os.path.join(base, output_path or "result.json"))
+        if os.path.commonpath((base, candidate)) != base:
+            raise ValueError(f"Output path escapes step directory: {output_path}")
+        return candidate
 
     def _execute_qualitative(self, step_id: int, tool_id: int, action: str,
                              input_type: List[int], step_outputs: Dict,

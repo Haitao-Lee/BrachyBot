@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Optional
-import os
-import sys
-sys.path.append(os.getcwd())
 
 import torch
 import torch.nn as nn
@@ -12,7 +9,7 @@ from monai.networks.blocks import Convolution, UpSample
 from monai.networks.layers.factories import Conv, Pool
 from monai.utils import ensure_tuple_rep
 
-__all__ = ["BasicUnet", "Basicunet", "basicunet", "BasicUNet"]
+__all__ = ["TwoConv", "Down", "UpCat", "myDoseNet"]
 
 class TwoConv(nn.Sequential):
     """two convolutions."""
@@ -129,7 +126,12 @@ class myDoseNet(nn.Module):
         in_channels: int = 1,
         out_channels: int = 2,
         features: Sequence[int] = (32, 32, 64, 128, 256, 32),
-        act: str | tuple = ("LeakyReLU", {"negative_slope": 0.1, "inplace": True}),
+        # In-place activation is safe here: this inference network does not
+        # reuse the pre-activation tensor in residual branches or checkpointed
+        # autograd graphs, and disabling it would only increase peak memory.
+        # Out-of-place activation preserves tensors for checkpointing and
+        # future fine-tuning while remaining numerically identical at inference.
+        act: str | tuple = ("LeakyReLU", {"negative_slope": 0.1, "inplace": False}),
         norm: str | tuple = ("instance", {"affine": True}),
         bias: bool = True,
         dropout: float | tuple = 0.0,
