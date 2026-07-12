@@ -1026,7 +1026,7 @@ async function _applyDoseTextureToMesh(id, mesh) {
     const colors = new Float32Array(posAttr.count * 3);
     const v = new THREE.Vector3();
     const dMinGy = COLORBAR_MIN_GY;
-    const dMaxGy = COLORBAR_MAX_GY;
+    const dMaxGy = 200; // dose surface colorbar range 0-200 Gy
     const sampleEvery = posAttr.count > 25000 ? 2 : 1;
 
     // Warm the dose-slice cache before the color loop so that the per-vertex
