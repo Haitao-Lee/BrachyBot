@@ -434,6 +434,16 @@ class AgentMemory:
         if dev_threshold:
             parts.append(f"Deviation Threshold: {dev_threshold} mm")
 
+        # Expose the planning panel's reference-direction input so the
+        # LLM can answer "what reference direction did the user set?"
+        # without a screenshot. Mirrors build_planning_payload logic.
+        planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
+        ref_direc = planning_state.get("reference_direc")
+        if ref_direc == "auto" or planning_state.get("ref_direc_auto"):
+            parts.append("Reference Direction: auto-detect (geometric)")
+        elif isinstance(ref_direc, list) and len(ref_direc) == 3:
+            parts.append(f"Reference Direction: {ref_direc} (RAS)")
+
         # Add CTV segmentation stats if available
         ctv_label_stats = self.retrieve("ctv_label_stats")
         if ctv_label_stats:
