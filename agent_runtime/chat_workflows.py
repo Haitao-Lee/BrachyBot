@@ -1748,7 +1748,7 @@ class ChatWorkflowMixin:
         default_seed_info = {"radius": 0.4, "length": 3.7, "seed_avr_dose": 50}
         seed_info = seed_info or self.config.get("seed_info") or default_seed_info
         radiation_array_params = radiation_array_params or self.config.get("radiation_array_params", {})
-        reference_direc = reference_direc or self.config.get("reference_direc", [0, 1, 0])
+        reference_direc = reference_direc or self.config.get("reference_direc", [0, -1, 0])
         in_lowest_energy = in_lowest_energy if in_lowest_energy is not None else self.config.get("in_lowest_energy", 1)
         out_highest_energy = out_highest_energy if out_highest_energy is not None else self.config.get("out_highest_energy", 1)
         DVH_rate = DVH_rate if DVH_rate is not None else self.config.get("DVH_rate", 0.9)
