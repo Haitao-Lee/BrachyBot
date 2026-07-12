@@ -162,17 +162,27 @@ function _setupDvhCustomTooltip(dvhEl) {
             tip.style.display = 'none'; return;
         }
         const box = dvhEl.getBoundingClientRect();
-        // Use viewport-pixel coordinates directly (no scaleX division).
-        // Plotly's _offset and _length are in the same viewport-pixel
-        // space as getBoundingClientRect() when there's no CSS transform.
+        const size = layout._size || {};
+        // Scale: convert between viewport pixels (getBoundingClientRect)
+        // and Plotly's internal CSS pixels (layout._size / _offset).
+        // Without this, the tooltip reads are offset when the browser
+        // zoom or any CSS transform changes the pixel ratio.
+        const sx = box.width > 0 && dvhEl.clientWidth > 0 ? box.width / dvhEl.clientWidth : 1;
+        const sy = box.height > 0 && dvhEl.clientHeight > 0 ? box.height / dvhEl.clientHeight : 1;
         const mx = ev.clientX - box.left;
-        const xOff = layout.xaxis._offset != null ? layout.xaxis._offset : 0;
-        const xLen = layout.xaxis._length != null ? layout.xaxis._length : 1;
-        const relX = mx - xOff;
-        if (relX < 0 || relX > xLen) { tip.style.display = 'none'; return; }
+        const my = ev.clientY - box.top;
+        // Convert axis bounds from Plotly CSS pixels to viewport pixels.
+        const plotLeft = (size.l || 0) * sx;
+        const plotTop  = (size.t || 0) * sy;
+        const plotW    = (size.w || 1) * sx;
+        const plotH    = (size.h || 1) * sy;
+        if (mx < plotLeft || mx > plotLeft + plotW || my < plotTop || my > plotTop + plotH) {
+            tip.style.display = 'none'; return;
+        }
         const xr = layout.xaxis.range || [0, 1];
         const yr = layout.yaxis.range || [0, 1];
-        const plotFraction = Math.max(0, Math.min(1, relX / Math.max(xLen, 1)));
+        const relX = mx - plotLeft;
+        const plotFraction = Math.max(0, Math.min(1, relX / Math.max(plotW, 1)));
         const doseAtCursor = xr[0] + plotFraction * (xr[1] - xr[0]);
         if (!Number.isFinite(doseAtCursor)) { tip.style.display = 'none'; return; }
 
@@ -183,10 +193,10 @@ function _setupDvhCustomTooltip(dvhEl) {
             if (!trace || trace.visible === false || trace.visible === 'legendonly' || !trace.x || !trace.y) continue;
             const y = _interpolateDvhAtDose(trace.x, trace.y, doseAtCursor);
             if (!Number.isFinite(y)) continue;
-            const py = (typeof layout.yaxis.l2p === 'function'
+            const pyViewport = (typeof layout.yaxis.l2p === 'function'
                 ? layout.yaxis.l2p(y)
-                : (1 - (y - yr[0]) / Math.max(yr[1] - yr[0], 1e-9)) * layout.yaxis._length);
-            const dy = Math.abs(py - my);
+                : (1 - (y - yr[0]) / Math.max(yr[1] - yr[0], 1e-9)) * plotH) + plotTop;
+            const dy = Math.abs(pyViewport - my);
             if (dy < bestDy) { bestDy = dy; best = { name: trace.name || '', x: doseAtCursor, y, color: trace.line?.color || '#e2e8f0' }; }
         }
         if (!best || bestDy > 40) { tip.style.display = 'none'; return; }
