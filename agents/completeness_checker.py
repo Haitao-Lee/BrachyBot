@@ -75,6 +75,7 @@ class CompletenessChecker(LLMCapableAgent):
         steps = content.get("steps", [])
         # Store conversation_state for LLM context
         self._conversation_state = content.get("conversation_state", {})
+        self._lang = content.get("lang", "en")
 
         # ── Priority: LLM semantic matching (most accurate) ─────────
         llm_results = None
@@ -243,6 +244,9 @@ class CompletenessChecker(LLMCapableAgent):
             response_summary=response_summary,
             tool_steps=tool_steps,
         )
+
+        if getattr(self, "_lang", "en") == "zh":
+            prompt += "\n\n**Language**: 请用中文回答。"
 
         try:
             resp = await self.call_llm(prompt, temperature=0.1)

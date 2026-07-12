@@ -2740,6 +2740,37 @@ function toggleDataVisibility(id) {
     if (id === 'ctv') {
         const mesh = scene3D.meshes['ctv'];
         if (mesh) applyMeshVisibility(mesh, dataTreeState[id].visible, dataTreeState[id].opacity ?? 0.7);
+        // Propagate to all CTV child labels
+        if (dataTreeState.ctvLabels) {
+            Object.values(dataTreeState.ctvLabels).forEach(label => {
+                label.visible = dataTreeState.ctv.visible;
+                const m = scene3D.meshes[label.id || label.labelId];
+                if (m) applyMeshVisibility(m, label.visible, label.opacity ?? dataTreeState.ctv.opacity ?? 0.7);
+            });
+        }
+    } else if (id === 'planning') {
+        // Propagate to all planning sub-items
+        _planningItems('trajectories').forEach(t => t.visible = dataTreeState.planning.visible);
+        _planningItems('seeds').forEach(s => {
+            s.visible = dataTreeState.planning.visible;
+            const m = scene3D.meshes[s.id];
+            if (m) applyMeshVisibility(m, s.visible, s.opacity ?? 1.0);
+        });
+        _planningItems('needles').forEach(n => {
+            n.visible = dataTreeState.planning.visible;
+            const m = scene3D.meshes[n.id];
+            if (m) applyMeshVisibility(m, n.visible, n.opacity ?? 0.8);
+        });
+        _planningItems('doseLevels').forEach(d => {
+            d.visible = dataTreeState.planning.visible;
+            const m = scene3D.meshes[`dose_iso_${d.threshold}`];
+            if (m) applyMeshVisibility(m, d.visible, d.opacity ?? 0.3);
+        });
+        (dataTreeState.planning.meshes || []).forEach(item => {
+            item.visible = dataTreeState.planning.visible;
+            const m = scene3D.meshes[item.id];
+            if (m) applyMeshVisibility(m, item.visible, item.opacity ?? 0.7);
+        });
     }
 
     // Sync with existing overlay system

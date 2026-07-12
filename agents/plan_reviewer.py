@@ -93,6 +93,7 @@ Return JSON only:
         self._patient_info = content.get("patient_info", {})
         self._segmentation = content.get("segmentation", {})
         self._distilled_context = content.get("distilled_context", "")
+        self._lang = content.get("lang", "en")
 
         det_results = self._deterministic_checks(dose_metrics, plan_config)
         llm_results = await self._llm_interpretation(det_results, plan_config, content)
@@ -325,6 +326,12 @@ Return JSON only:
             prescription_context=prescription_context,
         )
         prompt = f"{context_text}\n\n{prompt}"
+
+        # LANGUAGE INSTRUCTION: if the user's language is Chinese, instruct
+        # the LLM to output in Chinese so the review sections are consistent
+        # with the rest of the chat response.
+        if getattr(self, "_lang", "en") == "zh":
+            prompt += "\n\n**Language**: 请用中文回答。所有评价、建议和总结都必须使用中文。"
 
         try:
             response = await self.call_llm(

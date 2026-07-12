@@ -380,6 +380,7 @@ Bullet-point summary of requirements and what was addressed:""",
                 "dose_metrics": dose_metrics,
                 "plan_info": plan_info,
                 "plan_config": plan_config or {},
+                "lang": lang,
             }
             content = await self._distill_context(
                 "plan_reviewer", role_data, context_snapshot
@@ -410,7 +411,7 @@ Bullet-point summary of requirements and what was addressed:""",
         """
         try:
             context_snapshot = self._context_snapshot()
-            role_data = {"claims": claims, "sources": sources}
+            role_data = {"claims": claims, "sources": sources, "lang": lang}
             if skip_distill:
                 content = self._build_agent_context(role_data, context_snapshot)
             else:
@@ -442,6 +443,7 @@ Bullet-point summary of requirements and what was addressed:""",
                 "user_message": user_message,
                 "response": response,
                 "steps": steps or [],
+                "lang": lang,
             }
             content = await self._distill_context(
                 "completeness_checker", role_data, context_snapshot
