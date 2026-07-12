@@ -1381,6 +1381,7 @@ def register_planning_routes(app, get_agent):
             ui_state = agent.memory.get_ui_state() if hasattr(agent, 'memory') and hasattr(agent.memory, 'get_ui_state') else {}
             planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
             reference_direc = planning_state.get("reference_direc") if planning_state.get("reference_direc") is not None else config.get('reference_direc')
+            plan_mode = ui_state.get("plan_mode") or mode or "rule_based"
             in_lowest_energy = config.get('in_lowest_energy')
             out_highest_energy = config.get('out_highest_energy')
             DVH_rate = config.get('DVH_rate')
@@ -1391,7 +1392,7 @@ def register_planning_routes(app, get_agent):
                 ct_path=ct_path,
                 ctv_path=ctv_path,
                 oar_path=oar_path,
-                mode=mode,
+                mode=plan_mode,
                 seed_info=seed_info,
                 radiation_array_params=radiation_array_params,
                 reference_direc=reference_direc,
