@@ -1764,10 +1764,10 @@ function updateDoseColorbars(visible, doseMinNorm, doseMaxNorm) {
     const dMinGy = COLORBAR_MIN_GY;
     const dMaxGy = COLORBAR_MAX_GY;
 
-    // Tick positions: 0, 15, 100, 300, max Gy (clinically meaningful)
-    const tickGy = [0, 15, 100, 300, dMaxGy];
+    // Labels every 200 Gy: 0, 200, 400, 600, 800, 1000
+    const tickGy = [0, 200, 400, 600, 800, dMaxGy];
     const tickLabels = tickGy.map(v => v.toFixed(0) + ' Gy');
-    const tickPos = ['doseColorbarMin', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarMax'];
+    const tickPos = ['doseColorbarMin', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarMax'];
 
     // Set each label by matching data-value attribute to ensure correct position
     tickGy.forEach((gy, i) => {
