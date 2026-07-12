@@ -384,12 +384,7 @@ class ChatWorkflowMixin:
                     # Auto-execute missing steps
                     if not has_ctv:
                         if not detected_tumor_type:
-                            logger.info("[WORKFLOW-ENFORCER] Tumor type unknown, asking user")
-                            _ask = "请告知肿瘤部位，例如胰腺、肝脏、前列腺等，以便选择正确的CTV分割模型。"
-                            if response:
-                                response += "\n\n" + _ask
-                            else:
-                                response = _ask
+                            logger.info("[WORKFLOW-ENFORCER] Tumor type unknown — skip auto-execution, LLM will ask naturally")
                         else:
                             logger.info("[WORKFLOW-ENFORCER] Auto-running CTV segmentation")
                             try:
@@ -1061,13 +1056,7 @@ class ChatWorkflowMixin:
                     # Auto-execute missing steps with proper SSE events
                     if not has_ctv:
                         if not detected_tumor_type:
-                            logger.info("[WORKFLOW-ENFORCER-STREAM] Tumor type unknown, asking user")
-                            _ask = "请告知肿瘤部位，例如胰腺、肝脏、前列腺等，以便选择正确的CTV分割模型。"
-                            _workflow_enforced = True
-                            if response:
-                                response += "\n\n" + _ask
-                            else:
-                                response = _ask
+                            logger.info("[WORKFLOW-ENFORCER-STREAM] Tumor type unknown — skip auto-execution, LLM will ask naturally")
                         else:
                             logger.info("[WORKFLOW-ENFORCER-STREAM] Auto-running CTV segmentation")
                             _workflow_enforced = True
