@@ -1311,10 +1311,12 @@ function updateOrganList(organData) {
             labelId: parseInt(labelId),
             label: name,
             color: existing?.color || info.color || ORGAN_COLORS[i % ORGAN_COLORS.length],
-            // Only non-traversable OARs visible by default (bones, vessels,
-            // nerves — important for needle planning). Traversable soft-tissue
-            // OARs are hidden to avoid the full-body overlay effect.
-            visible: existing?.visible ?? (cat === 'non_traversable'),
+            // Start all OARs visible — users can toggle individual organs
+            // via the data tree. The 'red mask' perception was caused by
+            // _label_color() assigning near-red hues (h≈0) to labels with
+            // Fibonacci-ish IDs (5, 13, 21, 34, 55, 89) such as liver (5).
+            // Those organs are still individually toggleable.
+            visible: existing?.visible ?? true,
             opacity: existing?.opacity ?? 0.5,
             voxelCount: info.voxel_count || 0,
             category: cat,
