@@ -1837,18 +1837,28 @@ function update3DColorbar(visible) {
     }
 
     // Set 3D colorbar labels to 0-200 Gy range (independent from 2D colorbars).
+    // Match by data-value to avoid overwriting all ticks with the last value.
     const d3DTicks = [
         { pos: 'doseColorbarMax', val: 200 },
-        { pos: 'doseColorbarTick', val: 160 },
-        { pos: 'doseColorbarTick', val: 120 },
-        { pos: 'doseColorbarTick', val: 80 },
-        { pos: 'doseColorbarTick', val: 40 },
+        { pos: 'doseColorbarTick', val: 160, dataVal: 160 },
+        { pos: 'doseColorbarTick', val: 120, dataVal: 120 },
+        { pos: 'doseColorbarTick', val: 80, dataVal: 80 },
+        { pos: 'doseColorbarTick', val: 40, dataVal: 40 },
         { pos: 'doseColorbarMin', val: 0 },
     ];
-    d3DTicks.forEach(({ pos, val }) => {
-        colorbar3D.querySelectorAll('.' + pos).forEach(el => {
-            el.textContent = val.toFixed(0) + ' Gy';
-        });
+    d3DTicks.forEach(({ pos, val, dataVal }) => {
+        const label = val.toFixed(0) + ' Gy';
+        if (dataVal !== undefined) {
+            colorbar3D.querySelectorAll('.' + pos).forEach(el => {
+                if (parseFloat(el.getAttribute('data-value') || '') === dataVal) {
+                    el.textContent = label;
+                }
+            });
+        } else {
+            colorbar3D.querySelectorAll('.' + pos).forEach(el => {
+                el.textContent = label;
+            });
+        }
     });
 }
 
