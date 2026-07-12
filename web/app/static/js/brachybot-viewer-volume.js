@@ -351,7 +351,7 @@ async function loadLabelVolumes() {
         if (typeof dataTreeState !== 'undefined' && dataTreeState.oar) {
             if (hasOAR) {
                 dataTreeState.oar.loaded = true;
-                dataTreeState.oar.visible = true;
+                dataTreeState.oar.visible = false;  // Hide OAR overlay by default
             }
         }
         // Force a re-render of the data tree regardless of metadata.
