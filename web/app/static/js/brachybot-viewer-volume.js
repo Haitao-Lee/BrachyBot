@@ -362,13 +362,13 @@ async function loadLabelVolumes() {
             // OAR slice overlay is OFF by default — showing 57 TotalSegmentator
             // labels simultaneously creates a confusing full-body mask appearance.
             // Users can enable via the OAR checkbox in the viewer toolbar.
-            state.viewerSettings.showOAR = false;
+            state.viewerSettings.showOAR = true;
             const dm = document.getElementById('displayMode');
             if (dm) dm.value = 'overlay';
             const ctvCb = document.getElementById('overlayCTV');
             if (ctvCb) ctvCb.checked = true;
             const oarCb = document.getElementById('overlayOAR');
-            if (oarCb) oarCb.checked = false;
+            if (oarCb) oarCb.checked = true;
             if (volumeData && volumeShape) {
                 ['axial', 'sagittal', 'coronal'].forEach(axis => {
                     try { renderSliceFromVolume(axis, state.slices[axis]); } catch (_) {}
