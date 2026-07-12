@@ -1521,7 +1521,7 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
             if (!res.ok) return { status: 'http', code: res.status, id: organId };
             const data = await res.json();
             if (!data || !data.success || !data.vertex_count) return { status: 'empty', id: organId };
-            if (data.face_count > 100000) {
+            if (data.face_count > 500000) {
                 console.warn(`[3D mesh] ${organId}: skipping (${data.face_count} faces > 100K limit)`);
                 return { status: 'too_large', id: organId };
             }
@@ -1573,12 +1573,9 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
         }
 
         if (includeOAR && oarLabelData) {
-            const allOarIds = opts.allOAR
-                ? [...new Set((dataTreeState.organs || [])
-                    .filter(o => o.labelId !== undefined && o.labelId !== null && !ctvLabelIds.includes(o.labelId))
-                    .map(o => o.labelId))]
-                : [];
-            const oarIds = allOarIds.length ? allOarIds : _getNonTraversableOarMeshIds(ctvLabelIds);
+            const oarIds = [...new Set((dataTreeState.organs || [])
+                .filter(o => o.labelId !== undefined && o.labelId !== null && !ctvLabelIds.includes(o.labelId))
+                .map(o => o.labelId))];
             const batchSize = opts.batchSize || 3;
             for (let i = 0; i < oarIds.length; i += batchSize) {
                 const batch = oarIds.slice(i, i + batchSize).map(lid => {
