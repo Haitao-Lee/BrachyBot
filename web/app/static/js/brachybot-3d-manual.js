@@ -1769,10 +1769,20 @@ function updateDoseColorbars(visible, doseMinNorm, doseMaxNorm) {
     const tickLabels = tickGy.map(v => v.toFixed(0) + ' Gy');
     const tickPos = ['doseColorbarMin', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarMax'];
 
-    tickPos.forEach((cls, i) => {
-        document.querySelectorAll('.' + cls).forEach(el => {
-            el.textContent = tickLabels[i];
-        });
+    // Set each label by matching data-value attribute to ensure correct position
+    tickGy.forEach((gy, i) => {
+        const cls = tickPos[i];
+        if (cls === 'doseColorbarTick') {
+            document.querySelectorAll('.doseColorbarTick').forEach(el => {
+                if (parseFloat(el.getAttribute('data-value') || '') === gy) {
+                    el.textContent = tickLabels[i];
+                }
+            });
+        } else {
+            document.querySelectorAll('.' + cls).forEach(el => {
+                el.textContent = tickLabels[i];
+            });
+        }
     });
 
     // Render PETrainbow2 gradient on every colorbar canvas (same image, all 3)
