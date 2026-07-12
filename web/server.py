@@ -1015,6 +1015,16 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
         _sig.signal(_sig.SIGHUP, _signal_handler)
 
     try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(('10.254.254.254', 1))
+            local_ip = s.getsockname()[0]
+        except Exception:
+            local_ip = '127.0.0.1'
+        finally:
+            s.close()
+        print(f"  Network: http://{local_ip}:{port}")
         app.run(host=host, port=port, debug=False, threaded=True)
     except KeyboardInterrupt:
         print("\nServer stopped.")
