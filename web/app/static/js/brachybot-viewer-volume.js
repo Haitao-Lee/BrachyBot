@@ -369,10 +369,11 @@ async function loadLabelVolumes() {
         if ((hasCTV || hasOAR) && state && state.viewerSettings) {
             state.viewerSettings.displayMode = 'overlay';
             state.viewerSettings.showCTV = true;
-            // OAR slice overlay is OFF by default — showing 57 TotalSegmentator
-            // labels simultaneously creates a confusing full-body mask appearance.
-            // Users can enable via the OAR checkbox in the viewer toolbar.
-            state.viewerSettings.showOAR = false;
+            // OAR slice overlay is ON by default but all individual organs
+            // start invisible — showing 57+ TotalSegmentator labels
+            // simultaneously creates a confusing full-body mask appearance.
+            // Users enable specific organs via the data tree toggles.
+            state.viewerSettings.showOAR = true;
             const dm = document.getElementById('displayMode');
             if (dm) dm.value = 'overlay';
             const ctvCb = document.getElementById('overlayCTV');
@@ -1321,12 +1322,10 @@ function updateOrganList(organData) {
             labelId: parseInt(labelId),
             label: name,
             color: existing?.color || info.color || ORGAN_COLORS[i % ORGAN_COLORS.length],
-            // Start all OARs visible — users can toggle individual organs
-            // via the data tree. The 'red mask' perception was caused by
-            // _label_color() assigning near-red hues (h≈0) to labels with
-            // Fibonacci-ish IDs (5, 13, 21, 34, 55, 89) such as liver (5).
-            // Those organs are still individually toggleable.
-            visible: existing?.visible ?? true,
+            // Start all OARs invisible — showing 57+ TotalSegmentator labels
+            // simultaneously creates a confusing full-body mask appearance.
+            // Users toggle individual organs on via the data tree.
+            visible: existing?.visible ?? false,
             opacity: existing?.opacity ?? 0.5,
             voxelCount: info.voxel_count || 0,
             category: cat,
