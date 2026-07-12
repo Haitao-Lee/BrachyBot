@@ -318,7 +318,7 @@ class ChatWorkflowMixin:
                 add_step("memory", "Matched SOP", f"{sop['name']} ({sop['success_rate']:.0%} success): {' -> '.join(sop['steps'])}")
             if self._planning_requested(message) and pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None and self.memory.retrieve("dose_metrics") is None:
                 sk = pre_ctx["crystallized_skill"]
-                add_step("memory", "Crystallized Skill", f"{sk['name']} ({sk['success_rate']:.0%}): {' -> '.join(sk['tool_chain'])}")
+                add_step("memory", "Crystallized Skill", f"{sk['name']} ({sk['success_rate']:.0%} confidence)")
             if pre_ctx.get("reflexion_warnings"):
                 add_step("memory", "Experience Recall", pre_ctx["reflexion_warnings"][:300])
 
@@ -750,7 +750,7 @@ class ChatWorkflowMixin:
                 yield yield_event("step", step)
             if self._planning_requested(message) and pre_ctx.get("crystallized_skill") and self.memory.retrieve("ct_image") is not None:
                 sk = pre_ctx["crystallized_skill"]
-                step = add_step("memory", "Crystallized Skill", f"{sk['name']} ({sk['success_rate']:.0%}): {' -> '.join(sk['tool_chain'])}")
+                step = add_step("memory", "Crystallized Skill", f"{sk['name']} ({sk['success_rate']:.0%} confidence)")
                 yield yield_event("step", step)
             if pre_ctx.get("reflexion_warnings"):
                 step = add_step("memory", "Experience Recall", pre_ctx["reflexion_warnings"][:300])
