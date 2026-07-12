@@ -1679,16 +1679,16 @@ const COLORBAR_MAX_GY = 1000.0;
 function _petRainbow2(val) {
     const v = Math.min(1, Math.max(0, val));
     const stops = [
-        [0.00, [38, 0, 82]],       // very dark purple (was black)
-        [0.08, [38, 0, 82]],
-        [0.18, [0, 0, 180]],
-        [0.30, [0, 180, 255]],
-        [0.43, [0, 210, 95]],
-        [0.58, [255, 235, 0]],
-        [0.72, [255, 145, 0]],
-        [0.86, [220, 0, 0]],
-        [0.96, [120, 0, 0]],
-        [1.00, [80, 0, 0]],        // very dark red (top)
+        [0.000, [0, 0, 0]],         // pure black (near-zero dose)
+        [0.015, [38, 0, 82]],       // very dark purple
+        [0.030, [0, 0, 180]],       // blue
+        [0.060, [0, 180, 255]],     // cyan
+        [0.100, [0, 210, 95]],      // green
+        [0.180, [255, 235, 0]],     // yellow
+        [0.300, [255, 145, 0]],     // orange
+        [0.500, [220, 0, 0]],       // red
+        [0.750, [120, 0, 0]],       // dark red
+        [1.000, [80, 0, 0]],        // very dark red (top)
     ];
     for (let i = 1; i < stops.length; i++) {
         const [p1, c1] = stops[i];

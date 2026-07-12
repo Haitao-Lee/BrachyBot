@@ -820,30 +820,32 @@ async function refreshPlanningUI(options = {}) {
 
             // 4f-2a. CTV zoomed capture (hide non-CTV meshes)
             const ctvMesh = scene3D.meshes['ctv'] || Object.values(scene3D.meshes).find(m => m?.userData?.type === 'ctv');
-            if (ctvMesh && scene3D.camera && scene3D.controls) {
-                const _savedVis = {};
-                for (const [id, mesh] of Object.entries(scene3D.meshes)) {
-                    if (!mesh || id === 'ctv') continue;
-                    _savedVis[id] = mesh.visible;
-                    mesh.visible = false;
+            const _savedVis = {};
+            try {
+                if (ctvMesh && scene3D.camera && scene3D.controls) {
+                    for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                        if (!mesh || id === 'ctv') continue;
+                        _savedVis[id] = mesh.visible;
+                        mesh.visible = false;
+                    }
+                    if (scene3D.skinMesh) { _savedVis['__skin__'] = scene3D.skinMesh.visible; scene3D.skinMesh.visible = false; }
+
+                    const box = new THREE.Box3().setFromObject(ctvMesh);
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    const dist = maxDim * 2.5;
+                    scene3D.controls.target.copy(center);
+                    scene3D.camera.position.set(center.x + dist * 0.6, center.y + dist * 0.4, center.z + dist * 0.7);
+                    scene3D.camera.updateProjectionMatrix();
+                    scene3D.controls.update();
+                    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+                    scene3D.renderer.render(scene3D.scene, scene3D.camera);
+                    await new Promise(r => requestAnimationFrame(r));
+                    const c = document.querySelector('#canvas3D canvas');
+                    if (c) _replaceOrCreate('3d_ctv', _ctvTitle, _ctvCap, c.toDataURL('image/png'));
                 }
-                if (scene3D.skinMesh) { _savedVis['__skin__'] = scene3D.skinMesh.visible; scene3D.skinMesh.visible = false; }
-
-                const box = new THREE.Box3().setFromObject(ctvMesh);
-                const center = box.getCenter(new THREE.Vector3());
-                const size = box.getSize(new THREE.Vector3());
-                const maxDim = Math.max(size.x, size.y, size.z);
-                const dist = maxDim * 2.5;
-                scene3D.controls.target.copy(center);
-                scene3D.camera.position.set(center.x + dist * 0.6, center.y + dist * 0.4, center.z + dist * 0.7);
-                scene3D.camera.updateProjectionMatrix();
-                scene3D.controls.update();
-                await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-                scene3D.renderer.render(scene3D.scene, scene3D.camera);
-                await new Promise(r => requestAnimationFrame(r));
-                const c = document.querySelector('#canvas3D canvas');
-                if (c) _replaceOrCreate('3d_ctv', _ctvTitle, _ctvCap, c.toDataURL('image/png'));
-
+            } finally {
                 for (const [id, vis] of Object.entries(_savedVis)) {
                     if (id === '__skin__') { if (scene3D.skinMesh) scene3D.skinMesh.visible = vis; continue; }
                     const mesh = scene3D.meshes[id];
