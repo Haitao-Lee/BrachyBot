@@ -340,6 +340,7 @@ class LLMRuntimeMixin:
         iteration = 0
         final_response = ""
         tools_executed = False
+        _input_missing = False
         accumulated_text = ""  # Preserve text across LLM iterations
         _failed_tools = set()  # Track tools that returned 0/empty results
         _lang = self.memory.user_lang
@@ -575,6 +576,10 @@ class LLMRuntimeMixin:
             # often produced mid-sentence truncation. Constrain the response
             # format to a compact table + one-line conclusion so the LLM
             # can't ramble and run out of output tokens mid-thought.
+
+            if _input_missing:
+                break
+
             #
             # IMPORTANT: this prompt must NOT give the LLM an excuse to
             # summarize early. We list the COMPLETE brachytherapy workflow
@@ -1301,6 +1306,7 @@ class LLMRuntimeMixin:
         iteration = 0
         final_response = ""
         tools_executed = False
+        _input_missing = False
         accumulated_text = ""  # Preserve text across LLM iterations
         _failed_tools = set()  # Track tools that returned 0/empty results for longer responses
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
@@ -1993,6 +1999,10 @@ class LLMRuntimeMixin:
             # often produced mid-sentence truncation. Constrain the response
             # format to a compact table + one-line conclusion so the LLM
             # can't ramble and run out of output tokens mid-thought.
+
+            if _input_missing:
+                break
+
             #
             # IMPORTANT: this prompt must NOT give the LLM an excuse to
             # summarize early. We list the COMPLETE brachytherapy workflow
