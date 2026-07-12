@@ -1679,7 +1679,7 @@ const COLORBAR_MAX_GY = 1000.0;
 function _petRainbow2(val) {
     const v = Math.min(1, Math.max(0, val));
     const stops = [
-        [0.00, [0, 0, 0]],
+        [0.00, [38, 0, 82]],       // very dark purple (was black)
         [0.08, [38, 0, 82]],
         [0.18, [0, 0, 180]],
         [0.30, [0, 180, 255]],
