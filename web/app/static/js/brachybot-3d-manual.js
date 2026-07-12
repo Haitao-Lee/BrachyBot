@@ -1778,17 +1778,18 @@ function updateDoseColorbars(visible, doseMinNorm, doseMaxNorm) {
     const tickLabels = tickGy.map(v => v.toFixed(0) + ' Gy');
     const tickPos = ['doseColorbarMin', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarMax'];
 
-    // Set each label by matching data-value attribute to ensure correct position
+    // Set each label by matching data-value attribute to ensure correct position.
+    // Skip the 3D colorbar — it has its own 0-200 Gy labels set by update3DColorbar().
     tickGy.forEach((gy, i) => {
         const cls = tickPos[i];
         if (cls === 'doseColorbarTick') {
-            document.querySelectorAll('.doseColorbarTick').forEach(el => {
+            document.querySelectorAll('.dose-colorbar:not(#doseColorbar3D) .doseColorbarTick').forEach(el => {
                 if (parseFloat(el.getAttribute('data-value') || '') === gy) {
                     el.textContent = tickLabels[i];
                 }
             });
         } else {
-            document.querySelectorAll('.' + cls).forEach(el => {
+            document.querySelectorAll('.dose-colorbar:not(#doseColorbar3D) .' + cls).forEach(el => {
                 el.textContent = tickLabels[i];
             });
         }
@@ -1835,9 +1836,20 @@ function update3DColorbar(visible) {
         }
     }
 
-    // Update labels — handled by updateDoseColorbars() which sets all
-    // 4 colorbars (axial/sagittal/coronal/3D) via querySelectorAll.
-
+    // Set 3D colorbar labels to 0-200 Gy range (independent from 2D colorbars).
+    const d3DTicks = [
+        { pos: 'doseColorbarMax', val: 200 },
+        { pos: 'doseColorbarTick', val: 160 },
+        { pos: 'doseColorbarTick', val: 120 },
+        { pos: 'doseColorbarTick', val: 80 },
+        { pos: 'doseColorbarTick', val: 40 },
+        { pos: 'doseColorbarMin', val: 0 },
+    ];
+    d3DTicks.forEach(({ pos, val }) => {
+        colorbar3D.querySelectorAll('.' + pos).forEach(el => {
+            el.textContent = val.toFixed(0) + ' Gy';
+        });
+    });
 }
 
 async function loadDoseOverlay() {
