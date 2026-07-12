@@ -970,10 +970,40 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 "ct_image_path": ct_path,
                 "step": "full",
             }
-            # UI input takes priority for planning mode.
+            # Read ALL planning inputs from the live UI snapshot.
             ui_state = self.memory.get_ui_state() or {}
+            planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
             ui_mode = ui_state.get("plan_mode")
             planning_params["mode"] = ui_mode or "rule_based"
+
+            seed_info = planning_state.get("seed_info")
+            if seed_info:
+                planning_params["seed_info"] = seed_info
+            radiation_params = planning_state.get("radiation_params")
+            if radiation_params:
+                planning_params["radiation_array_params"] = radiation_params
+            in_lo = planning_state.get("in_lowest_energy")
+            if in_lo is not None:
+                planning_params["in_lowest_energy"] = in_lo
+            out_hi = planning_state.get("out_highest_energy")
+            if out_hi is not None:
+                planning_params["out_highest_energy"] = out_hi
+            dvh_rate = planning_state.get("dvh_rate")
+            if dvh_rate is not None:
+                planning_params["DVH_rate"] = dvh_rate
+            max_iter = planning_state.get("max_iter")
+            if max_iter is not None:
+                planning_params["max_iter"] = max_iter
+            iter_rate = planning_state.get("iter_rate")
+            if iter_rate is not None:
+                planning_params["iter_rate"] = iter_rate
+            replan_rate = planning_state.get("replan_rate")
+            if replan_rate is not None:
+                planning_params["replan_rate"] = replan_rate
+            dist_filter = planning_state.get("distance_filter")
+            if dist_filter:
+                planning_params["distance_filter"] = dist_filter
+
             if replan_requested:
                 planning_params["ref_direc"] = self._reversed_reference_direction()
             ordered.append(ensure_call("planning_pipeline", planning_params))
