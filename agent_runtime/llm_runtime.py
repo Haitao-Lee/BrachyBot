@@ -519,6 +519,13 @@ class LLMRuntimeMixin:
                 steps[-1]["status"] = step_status
                 steps[-1]["result"] = result_text[:200]
 
+                # If a critical prerequisite tool fails, stop executing
+                # remaining tool calls in this batch so the LLM can ask
+                # the user for missing info instead of cascading failures.
+                if not tool_succeeded and tool_name in ("ctv_segmentation", "seed_planning"):
+                    logger.info(f"Critical tool {tool_name} failed — stopping tool batch")
+                    break
+
                 # Track tools that returned 0 results to prevent retry loops
                 if result_text and ("Found 0" in result_text or "0 match" in result_text or "No results" in result_text):
                     _failed_tools.add(_tool_key)
@@ -1910,6 +1917,13 @@ class LLMRuntimeMixin:
                     yield yield_event("step", tool_step)
                 else:
                     yield yield_event("step", tool_step)
+
+                # If a critical prerequisite tool fails, stop executing
+                # remaining tool calls in this batch so the LLM can ask
+                # the user for missing info instead of cascading failures.
+                if tool_step.get("status") == "error" and tool_name in ("ctv_segmentation", "seed_planning"):
+                    logger.info(f"Critical tool {tool_name} failed — stopping tool batch (stream)")
+                    break
 
                 # Also store ct_path for planning pipeline
                 if tool_name in ('ctv_segmentation', 'oar_segmentation') and 'image_path' in params:
