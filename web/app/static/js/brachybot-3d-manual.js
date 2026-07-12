@@ -1814,25 +1814,9 @@ function update3DColorbar(visible) {
         }
     }
 
-    // Update labels (use the same 0-1000 Gy range as 2D colorbars)
-    const dMinGy = COLORBAR_MIN_GY;
-    const dMaxGy = COLORBAR_MAX_GY;
-    const ticks = [0, 0.25, 0.5, 0.75, 1.0].map(f => dMaxGy * f);
-    const tickLabels = ticks.map(v => v.toFixed(0));
+    // Update labels — handled by updateDoseColorbars() which sets all
+    // 4 colorbars (axial/sagittal/coronal/3D) via querySelectorAll.
 
-    // Update 3D colorbar labels specifically
-    const positions = ['bottom', '75%', '50%', '25%', 'top'];
-    positions.forEach((pos, i) => {
-        const labelClass = pos === 'top' ? 'doseColorbarMax'
-                          : pos === 'bottom' ? 'doseColorbarMin'
-                          : pos === '50%' ? 'doseColorbarMid'
-                          : pos === '25%' ? 'doseColorbarQ1'
-                          : 'doseColorbarQ3';
-        // Only update labels with data-axis="3d"
-        colorbar3D.querySelectorAll('.' + labelClass).forEach(el => {
-            el.textContent = tickLabels[i] + ' Gy';
-        });
-    });
 }
 
 async function loadDoseOverlay() {
