@@ -944,7 +944,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 by_tool.setdefault("planning_pipeline", {
                     "id": "auto_planning_pipeline",
                     "tool": "planning_pipeline",
-                    "params": {"step": "full", "mode": "rule_based"},
+                    "params": {"step": "full"},
                 })
             else:
                 rest.append(tc)
@@ -969,8 +969,11 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             planning_params = {
                 "ct_image_path": ct_path,
                 "step": "full",
-                "mode": "rule_based",
             }
+            # UI input takes priority for planning mode.
+            ui_state = self.memory.get_ui_state() or {}
+            ui_mode = ui_state.get("plan_mode")
+            planning_params["mode"] = ui_mode or "rule_based"
             if replan_requested:
                 planning_params["ref_direc"] = self._reversed_reference_direction()
             ordered.append(ensure_call("planning_pipeline", planning_params))
