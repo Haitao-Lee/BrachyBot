@@ -64,6 +64,8 @@ def create_app(config: Optional[Dict] = None):
     try:
         from flask import Flask, request, jsonify, send_from_directory, Response, has_request_context
         from flask_cors import CORS
+        import logging
+        logging.getLogger('werkzeug').setLevel(logging.WARNING)
         from werkzeug.exceptions import RequestEntityTooLarge
     except ImportError:
         logger.warning("Flask not installed. API endpoints will not be available.")
