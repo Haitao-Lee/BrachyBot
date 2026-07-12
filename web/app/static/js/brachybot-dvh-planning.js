@@ -188,7 +188,6 @@ function _setupDvhCustomTooltip(dvhEl) {
 
         let best = null;
         let bestDy = Infinity;
-        const my = ev.clientY - box.top;
         for (const trace of traces) {
             if (!trace || trace.visible === false || trace.visible === 'legendonly' || !trace.x || !trace.y) continue;
             const y = _interpolateDvhAtDose(trace.x, trace.y, doseAtCursor);
