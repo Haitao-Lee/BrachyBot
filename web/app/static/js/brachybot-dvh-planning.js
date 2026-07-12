@@ -155,90 +155,43 @@ function _setupDvhCustomTooltip(dvhEl) {
         'padding:6px 9px;font-size:11px;line-height:1.35;color:#e2e8f0;font-family:Inter,system-ui,sans-serif;' +
         'white-space:nowrap;box-shadow:0 8px 18px rgba(0,0,0,0.35);max-width:240px;';
 
-    const onMove = (ev) => {
-        const layout = dvhEl._fullLayout;
-        const traces = dvhEl.data || [];
-        if (!layout || !layout.xaxis || !layout.yaxis || !traces.length) {
-            tip.style.display = 'none';
-            return;
-        }
-        const box = dvhEl.getBoundingClientRect();
-        const size = layout._size || {};
-        const plotLeft = size.l || 0;
-        const plotTop = size.t || 0;
-        const plotW = size.w || 1;
-        const plotH = size.h || 1;
-        // Convert viewport coordinates back to Plotly's unscaled CSS-pixel
-        // coordinate system. This keeps the tooltip aligned after panel zoom,
-        // browser scaling, or responsive transforms.
-        const scaleX = box.width > 0 && dvhEl.clientWidth > 0 ? box.width / dvhEl.clientWidth : 1;
-        const scaleY = box.height > 0 && dvhEl.clientHeight > 0 ? box.height / dvhEl.clientHeight : 1;
-        const mx = (ev.clientX - box.left) / scaleX;
-        const my = (ev.clientY - box.top) / scaleY;
-        if (mx < plotLeft || mx > plotLeft + plotW || my < plotTop || my > plotTop + plotH) {
-            tip.style.display = 'none';
-            return;
-        }
-        const xr = layout.xaxis.range || [0, 1];
-        const yr = layout.yaxis.range || [0, 1];
-        // Use Plotly's internal _offset/_length for the x-axis, which are
-        // always kept in sync after responsive relayouts. This is more
-        // reliable than layout._size which can lag behind, and avoids the
-        // coordinate-space confusion of p2d().
-        const xOff = layout.xaxis._offset != null ? layout.xaxis._offset : plotLeft;
-        const xLen = layout.xaxis._length != null ? layout.xaxis._length : plotW;
-        const relX = mx - xOff;
-        const plotFraction = Math.max(0, Math.min(1, relX / Math.max(xLen, 1)));
-        const doseAtCursor = xr[0] + plotFraction * (xr[1] - xr[0]);
-        if (!Number.isFinite(doseAtCursor)) {
-            tip.style.display = 'none';
-            return;
-        }
-
-        let best = null;
-        let bestDy = Infinity;
-        for (const trace of traces) {
-            if (!trace || trace.visible === false || trace.visible === 'legendonly' || !trace.x || !trace.y) continue;
-            const color = trace.line?.color || '#e2e8f0';
-            const y = _interpolateDvhAtDose(trace.x, trace.y, doseAtCursor);
-            if (!Number.isFinite(y)) continue;
-            const py = plotTop + (typeof layout.yaxis.l2p === 'function'
-                ? layout.yaxis.l2p(y)
-                : (1 - (y - yr[0]) / Math.max(yr[1] - yr[0], 1e-9)) * plotH);
-            const dy = Math.abs(py - my);
-            if (dy < bestDy) {
-                bestDy = dy;
-                best = { name: trace.name || '', x: doseAtCursor, y, color };
-            }
-        }
-        if (!best || bestDy > 32) {
-            tip.style.display = 'none';
-            return;
-        }
-        const color = String(best.color || '#e2e8f0');
+    // Use Plotly's built-in hover event for accurate data coordinates.
+    // Manual mouse→dose mapping had systematic offsets because Plotly's
+    // internal pixel coordinate space can diverge from CSS pixels.
+    const onHover = (ev) => {
+        const pts = ev?.points;
+        if (!pts || !pts.length) { tip.style.display = 'none'; return; }
+        const p = pts[0];
+        const dose = p.x;      // Plotly provides the exact data x (Gy)
+        const vol  = p.y;      // Plotly provides the exact data y (%)
+        if (!Number.isFinite(dose) || !Number.isFinite(vol)) { tip.style.display = 'none'; return; }
+        const color = p.data?.line?.color || p.fullData?.line?.color || '#e2e8f0';
+        const name = p.data?.name || p.fullData?.name || '';
         const safeColor = /^#[0-9a-f]{3,8}$/i.test(color) || /^rgba?\([0-9.,\s%]+\)$/i.test(color) ? color : '#e2e8f0';
-        tip.innerHTML = `<div style="color:${safeColor};font-weight:700;margin-bottom:2px">${escHtml(best.name)}</div>` +
-            `<div>Dose: ${best.x.toFixed(2)} Gy</div><div>Volume: ${best.y.toFixed(1)}%</div>`;
+        tip.innerHTML = `<div style="color:${safeColor};font-weight:700;margin-bottom:2px">${escHtml(name)}</div>` +
+            `<div>Dose: ${dose.toFixed(2)} Gy</div><div>Volume: ${vol.toFixed(1)}%</div>`;
         tip.style.display = 'block';
-        const pad = 8;
-        const offset = 14;
-        const tw = tip.offsetWidth || 140;
-        const th = tip.offsetHeight || 54;
-        let left = mx + offset;
-        let top = my + offset;
-        if (left + tw + pad > dvhEl.clientWidth) left = mx - tw - offset;
-        if (top + th + pad > dvhEl.clientHeight) top = my - th - offset;
-        left = Math.max(pad, Math.min(left, dvhEl.clientWidth - tw - pad));
-        top = Math.max(pad, Math.min(top, dvhEl.clientHeight - th - pad));
-        tip.style.left = `${left}px`;
-        tip.style.top = `${top}px`;
+        const pad = 8, off = 14;
+        const tw = tip.offsetWidth || 140, th = tip.offsetHeight || 54;
+        const bbox = dvhEl.getBoundingClientRect();
+        // Position the tooltip near the hovered point on the page.
+        // We offset from the event's clientX/clientY so the tip follows
+        // the cursor whether or not Plotly has updated its SVG layout.
+        let left = ev.clientX - bbox.left + off;
+        let top  = ev.clientY - bbox.top  - th / 2;
+        if (left + tw + pad > bbox.width)  left = ev.clientX - bbox.left - tw - off;
+        if (top  + th + pad > bbox.height) top  = ev.clientY - bbox.top  - th - off;
+        left = Math.max(pad, Math.min(left, bbox.width  - tw - pad));
+        top  = Math.max(pad, Math.min(top,  bbox.height - th - pad));
+        tip.style.left = left + 'px';
+        tip.style.top  = top  + 'px';
     };
-    const onLeave = () => { tip.style.display = 'none'; };
-    dvhEl.addEventListener('mousemove', onMove);
-    dvhEl.addEventListener('mouseleave', onLeave);
+    const onUnhover = () => { tip.style.display = 'none'; };
+    dvhEl.on('plotly_hover', onHover);
+    dvhEl.on('plotly_unhover', onUnhover);
     dvhEl._dvhTooltipCleanup = () => {
-        dvhEl.removeEventListener('mousemove', onMove);
-        dvhEl.removeEventListener('mouseleave', onLeave);
+        dvhEl.removeListener('plotly_hover', onHover);
+        dvhEl.removeListener('plotly_unhover', onUnhover);
         tip.style.display = 'none';
     };
 }
