@@ -1377,7 +1377,10 @@ def register_planning_routes(app, get_agent):
             config = getattr(agent, 'config', {})
             seed_info = config.get('seed_info')
             radiation_array_params = config.get('radiation_array_params')
-            reference_direc = config.get('reference_direc')
+            # UI input takes priority over agent.config.
+            ui_state = agent.memory.get_ui_state() if hasattr(agent, 'memory') and hasattr(agent.memory, 'get_ui_state') else {}
+            planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
+            reference_direc = planning_state.get("reference_direc") if planning_state.get("reference_direc") is not None else config.get('reference_direc')
             in_lowest_energy = config.get('in_lowest_energy')
             out_highest_energy = config.get('out_highest_energy')
             DVH_rate = config.get('DVH_rate')

@@ -874,8 +874,7 @@ function addMeshToScene(meshData) {
             .catch(e => console.warn('[addMeshToScene] dose remap failed:', e));
     }
 
-    // Fit camera to all meshes
-    fitCameraToScene();
+    // Fit camera to all meshes (removed — only reset via explicit button click)
     if (scene3D.requestRender) scene3D.requestRender(4);
 }
 
@@ -1029,7 +1028,7 @@ async function toggle3DSkin(on) {
                 typeof _prepareDoseTextureSceneVisibility === 'function') {
                 _prepareDoseTextureSceneVisibility();
             }
-            fitCameraToScene();
+            // Fit removed — camera only resets on explicit button click
         }
     } catch (e) {
         console.error('CT skin failed:', e);
@@ -1233,7 +1232,6 @@ async function loadSeeds3D() {
             updateTrajectories(state.trajectories);
         }
         renderDataTree();
-        fitCameraToScene();
         forceRender3DViewer();
         ['axial', 'sagittal', 'coronal'].forEach(axis => {
             if (state.slices && state.slices[axis] !== undefined) {
@@ -1326,7 +1324,6 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
             });
         }
         renderDataTree();
-        fitCameraToScene();
 
         return { vertices: data.vertex_count, faces: data.face_count, threshold };
     } catch (e) {
@@ -1617,7 +1614,7 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
         }
 
         await Promise.all(promises);
-        if (scene3D.renderer && scene3D.scene && scene3D.camera) fitCameraToScene();
+        // Fit removed — camera only resets on explicit button click
     } finally {
         _segmentationMeshPrewarm.activeRuns = Math.max(0, _segmentationMeshPrewarm.activeRuns - 1);
         if (_segmentationMeshPrewarm.activeRuns === 0) {
@@ -1730,6 +1727,36 @@ function _petRainbow2(val) {
 function _petRainbowDoseSurface(val) {
     const CLIP_T = 0.070; // vibrant purple at 70 Gy — skip black/dark range for dose surface
     return _petRainbow2(CLIP_T + Math.min(1, Math.max(0, val)) * (1 - CLIP_T));
+}
+
+// Dedicated colormap for the 3D dose surface (0–200 Gy display range).
+// Provides wider blue-cyan span and narrower red span so that red
+// starts at ~120 Gy (val ≈ 0.60). Kept separate from _petRainbow2
+// so changes do not affect the 2D dose overlay or its colorbars.
+function _petRainbow3D(val) {
+    const v = Math.min(1, Math.max(0, val));
+    const stops = [
+        [0.00, [10, 0, 40]],       // dark purple at 0 Gy
+        [0.20, [0, 60, 180]],      // blue at 40 Gy
+        [0.40, [0, 170, 210]],     // cyan at 80 Gy
+        [0.55, [30, 200, 80]],     // green at 110 Gy
+        [0.60, [200, 120, 0]],     // orange-red at 120 Gy (enters red)
+        [0.70, [200, 0, 0]],       // red at 140 Gy
+        [1.00, [60, 0, 0]],        // dark red at 200 Gy
+    ];
+    for (let i = 1; i < stops.length; i++) {
+        const [p1, c1] = stops[i];
+        const [p0, c0] = stops[i - 1];
+        if (v <= p1) {
+            const s = (v - p0) / Math.max(0.0001, p1 - p0);
+            return [
+                Math.round(c0[0] + (c1[0] - c0[0]) * s),
+                Math.round(c0[1] + (c1[1] - c0[1]) * s),
+                Math.round(c0[2] + (c1[2] - c0[2]) * s),
+            ];
+        }
+    }
+    return [255, 255, 255];
 }
 
 function _doseDisplayT(doseGy) {
@@ -1848,7 +1875,7 @@ function update3DColorbar(visible) {
         for (let y = 0; y < h; y++) {
             // y=0 (top) → max (val=1); y=h-1 (bottom) → min (val=0)
             const val = 1 - y / (h - 1);
-            const [r, g, b] = _petRainbowDoseSurface(val);
+            const [r, g, b] = _petRainbow3D(val);
             ctx.fillStyle = `rgb(${r},${g},${b})`;
             ctx.fillRect(0, y, w, 1);
         }
