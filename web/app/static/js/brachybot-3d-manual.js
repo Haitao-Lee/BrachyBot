@@ -1679,12 +1679,12 @@ function _petRainbow2(val) {
     const v = Math.min(1, Math.max(0, val));
     const stops = [
         [0.000, [0, 0, 0]],         // pure black (near-zero dose)
-        [0.010, [10, 0, 25]],       // very dark purple
-        [0.020, [50, 10, 100]],     // dark purple
-        [0.030, [150, 30, 200]],    // vibrant purple at 30 Gy
-        [0.050, [30, 50, 220]],     // blue at 50 Gy
-        [0.080, [0, 170, 230]],     // cyan at 80 Gy
-        [0.100, [30, 200, 80]],     // green at 100 Gy
+        [0.030, [10, 0, 25]],       // very dark purple at 30 Gy
+        [0.050, [50, 10, 100]],     // dark purple at 50 Gy
+        [0.070, [150, 30, 200]],    // vibrant purple at 70 Gy
+        [0.080, [30, 50, 220]],     // blue at 80 Gy
+        [0.100, [0, 170, 230]],     // cyan at 100 Gy
+        [0.150, [30, 200, 80]],     // green at 150 Gy
         [0.200, [240, 220, 0]],     // yellow at 200 Gy
         [0.350, [255, 120, 0]],     // orange at 350 Gy
         [0.550, [220, 0, 0]],       // red at 550 Gy
@@ -1710,7 +1710,7 @@ function _petRainbow2(val) {
 // starts at vibrant purple. Used for 3D mesh vertex colors and the
 // 3D colorbar, where black would look like missing data.
 function _petRainbowDoseSurface(val) {
-    const CLIP_T = 0.030; // purple at 30 Gy — skip black range for dose surface
+    const CLIP_T = 0.070; // vibrant purple at 70 Gy — skip black/dark range for dose surface
     return _petRainbow2(CLIP_T + Math.min(1, Math.max(0, val)) * (1 - CLIP_T));
 }
 
