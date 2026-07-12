@@ -181,13 +181,15 @@ function _setupDvhCustomTooltip(dvhEl) {
         }
         const xr = layout.xaxis.range || [0, 1];
         const yr = layout.yaxis.range || [0, 1];
-        const relX = mx - plotLeft;
-        // Use Plotly's p2d() for precise x-axis mapping. This is Plotly's own
-        // pixel→data transform, consistent after responsive relayouts, whereas
-        // layout._size.w can lag behind the actual visible plot area.
-        const doseAtCursor = typeof layout.xaxis.p2d === 'function'
-            ? layout.xaxis.p2d(mx)
-            : xr[0] + Math.max(0, Math.min(1, relX / Math.max(plotW, 1))) * (xr[1] - xr[0]);
+        // Use Plotly's internal _offset/_length for the x-axis, which are
+        // always kept in sync after responsive relayouts. This is more
+        // reliable than layout._size which can lag behind, and avoids the
+        // coordinate-space confusion of p2d().
+        const xOff = layout.xaxis._offset != null ? layout.xaxis._offset : plotLeft;
+        const xLen = layout.xaxis._length != null ? layout.xaxis._length : plotW;
+        const relX = mx - xOff;
+        const plotFraction = Math.max(0, Math.min(1, relX / Math.max(xLen, 1)));
+        const doseAtCursor = xr[0] + plotFraction * (xr[1] - xr[0]);
         if (!Number.isFinite(doseAtCursor)) {
             tip.style.display = 'none';
             return;

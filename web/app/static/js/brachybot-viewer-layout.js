@@ -1062,7 +1062,10 @@ async function _applyDoseTextureToMesh(id, mesh) {
         const t = Math.max(0, Math.min(1, (doseGy - dMinGy) / (dMaxGy - dMinGy)));
         const [r, g, b] = _petRainbow2(t);
         const doseRgb = [r / 255, g / 255, b / 255];
-        const mix = Math.max(0.18, Math.min(0.96, t));
+        const mix = Math.max(0.35, Math.min(0.96, t));
+        // NOTE: min mix at 0.35 ensures OAR meshes outside the CTV also show
+        // a visible dose texture overlay (previously 0.18 made them look like
+        // their original color with barely any dose tint).
         lastRgb = [
             baseRgb[0] * (1 - mix) + doseRgb[0] * mix,
             baseRgb[1] * (1 - mix) + doseRgb[1] * mix,

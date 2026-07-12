@@ -1253,8 +1253,11 @@ const CATEGORY_RULES = [
 ];
 
 function classifyOrgan(organName) {
+    // Normalize underscores to spaces so TotalSegmentator names like
+    // "spinal_cord" and "small_bowel" match the pattern rules below.
+    const name = (organName || '').replace(/_/g, ' ');
     for (const rule of CATEGORY_RULES) {
-        if (rule.pattern.test(organName)) return rule.category;
+        if (rule.pattern.test(name)) return rule.category;
     }
     return 'traversable'; // Default: traversable
 }
