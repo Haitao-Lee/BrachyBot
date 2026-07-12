@@ -1688,7 +1688,7 @@ function _petRainbow2(val) {
         [0.72, [255, 145, 0]],
         [0.86, [220, 0, 0]],
         [0.96, [120, 0, 0]],
-        [1.00, [255, 255, 255]],
+        [1.00, [160, 0, 0]],        // deep red (no white band at top)
     ];
     for (let i = 1; i < stops.length; i++) {
         const [p1, c1] = stops[i];
