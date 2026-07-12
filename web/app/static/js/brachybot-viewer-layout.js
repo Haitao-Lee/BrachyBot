@@ -837,7 +837,7 @@ function applyMeshOpacity(mesh, opacity, visible = true) {
 function _isDoseTexturableMesh(id, mesh) {
     const surface = getMeshSurface(mesh);
     if (!surface || !surface.geometry || !surface.geometry.attributes || !surface.geometry.attributes.position) return false;
-    if (id === 'ctv' || id.startsWith('ctv_') || id.startsWith('organ_')) return true;
+    if (id === 'ctv' || id.startsWith('ctv_') || id.startsWith('organ_') || id.startsWith('oar_')) return true;
     const t = surface.userData?.type || surface.userData?.source || mesh?.userData?.type || mesh?.userData?.source || '';
     return t === 'ctv' || t === 'oar' || t === 'organ';
 }

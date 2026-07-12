@@ -1138,39 +1138,12 @@ async function sendChat(prefill, options) {
                         scrollToBottom();
                     } else if (currentEvent === 'text_chunk' && data && data.text) {
                         responseText += data.text;
-                        if (!finalResponseReceived) {
-                            // Buffer only; reviewed response is rendered below.
-                            continue;
-                        }
-                        // LAZY WIPE ON REVIEW RETRY (2026-06-15):
-                        // if a Quality Review reject already fired
-                        // (window._pendingReviewRetry is true) and the
-                        // LLM is now sending text_chunks for the
-                        // retry, the user will see the retry's text
-                        // APPENDED to the original response unless
-                        // we wipe first. Wipe the previous response
-                        // (text + bubble + entire chat-row including
-                        // the wrapper/avatar) on the FIRST text_chunk
-                        // of the retry, then start fresh.
-                        //
-                        // We do this LAZILY (not eagerly on the
-                        // review-warning event) so that if the retry
-                        // produces NO text at all, the user still
-                        // sees the original response.
-                        if (window._pendingReviewRetry && responseEl) {
-                            window._pendingReviewRetry = false;
-                            window._lastResponseText = responseText;
-                            responseText = '';
-                            try {
-                                const _row = responseEl.closest('.chat-row');
-                                if (_row) _row.remove();
-                                else responseEl.remove();
-                            } catch (_) {
-                                try { responseEl.remove(); } catch (__) {}
-                            }
-                            responseEl = null;
-                        }
-                        if (!responseEl) {
+                        // Show streaming text as it arrives, not just after
+                        // completeness check. The initial text is displayed
+                        // with a "preliminary" style until the check passes.
+                        if (!finalResponseReceived && !responseEl) {
+                            // First text_chunk: create the streaming response
+                            // bubble immediately (not after completeness).
                             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
                             if (!chainEl && typeof createLiveThinkingChain === 'function') {
                                 const r = createLiveThinkingChain();
@@ -1178,46 +1151,50 @@ async function sendChat(prefill, options) {
                             }
                             if (typeof createStreamingResponse === 'function') {
                                 responseEl = createStreamingResponse();
+                                // Mark as preliminary: add a class so CSS can
+                                // dim the text until the check is done.
+                                responseEl.classList.add('preliminary-response');
+                                // Append a small check indicator placeholder
+                                const checkBadge = document.createElement('span');
+                                checkBadge.className = 'check-badge pending';
+                                checkBadge.innerHTML = '&#8987;';  // hourglass
+                                checkBadge.title = 'Completeness check pending...';
+                                responseEl.parentElement?.insertBefore(checkBadge, responseEl.nextSibling);
                             } else {
                                 responseEl = { innerHTML: '' };
                             }
-                            // Reparent the todo from the thinking-chain
-                            // wrapper into the streaming response's wrapper
-                            // so the todo ends up as the LAST child of the
-                            // final LLM reply (instead of the last child of
-                            // the thinking chain). This makes the todo look
-                            // like a footer of the LLM's response.
                             if (todo && responseEl && responseEl.parentElement) {
                                 responseEl.parentElement.appendChild(todo.root);
                                 scrollToBottom();
                             }
                         }
-                        if (typeof updateStreamingResponse === 'function') {
+                        if (responseEl && typeof updateStreamingResponse === 'function') {
                             updateStreamingResponse(responseEl, responseText);
-                        } else if (responseEl) {
-                            responseEl.innerHTML = responseText
-                                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                                .replace(/\n/g, '<br>');
                         }
                         scrollToBottom();
                     } else if (currentEvent === 'response' && data && data.response) {
+                        // Completeness check done. Remove preliminary style,
+                        // update the check badge, and show final text.
                         finalResponseReceived = true;
-                        responseText = '';
-                        window._lastResponseText = null;
-                        // Final response captured — usually same as accumulated
-                        // text from text_chunks. If text_chunks already
-                        // populated responseText, ignore. If the server is
-                        // retrying (Quality Review reject) and the new
-                        // response matches the previous one verbatim,
-                        // also ignore — otherwise the user sees two copies.
-                        if (data.response === window._lastResponseText) {
-                            // Exact duplicate of the prior response — skip.
-                            // (This happens when the LLM retries and emits
-                            // the same text after Review Feedback.)
-                        } else if (!responseText) {
-                            responseText = data.response;
+                        // Update the check badge from hourglass to checkmark
+                        const badge = responseEl?.parentElement?.querySelector('.check-badge');
+                        if (badge) {
+                            badge.className = 'check-badge done';
+                            badge.innerHTML = '&#10003;';  // checkmark
+                            badge.title = 'Completeness check passed';
+                            setTimeout(() => { badge.style.opacity = '0'; }, 3000);
                         }
-                        // Capture the LLM metadata so we can render the
+                        // Remove preliminary dimming class
+                        if (responseEl) responseEl.classList.remove('preliminary-response');
+                        // If the final response differs from streamed text,
+                        // update the panel content.
+                        if (data.response !== responseText) {
+                            responseText = data.response;
+                            if (responseEl && typeof updateStreamingResponse === 'function') {
+                                updateStreamingResponse(responseEl, responseText);
+                            }
+                        }
+                        window._lastResponseText = null;
                         // usage-bar footer (token counts, latency, tool
                         // call count) once the response is finalized.
                         // The server already emits this in the response

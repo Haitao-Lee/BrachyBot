@@ -143,6 +143,9 @@ async function recomputeManualDose(reason = 'manual_update') {
         addChat('error', 'No manual seeds available. Add at least one seed before recomputing dose.');
         return null;
     }
+    // Save dose texture state before recompute so it can be restored after
+    // refreshPlanningUI reloads all meshes.
+    const wasDoseTextureEnabled = !!(state && state.doseTexture && state.doseTexture.enabled);
     addChat('system', 'Manual AI dose recomputing...');
     try {
         const res = await fetch(API + '/manual_planning/update', {
@@ -154,7 +157,12 @@ async function recomputeManualDose(reason = 'manual_update') {
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
         state.doseOverlay = null;
         state.dvhData = null;
+        state.doseTexture.enabled = false;  // Reset so refreshPlanningUI loads meshes without dose
         if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
+        // Restore dose texture mode if it was active before recompute
+        if (wasDoseTextureEnabled && typeof setDoseTextureMode === 'function') {
+            try { await setDoseTextureMode(true, { silent: true }); } catch (_) {}
+        }
         const m = data.metrics || {};
         const v100 = Number.isFinite(m.v100) ? `${(m.v100 * 100).toFixed(1)}%` : '--';
         const d90 = Number.isFinite(m.d90) ? `${m.d90.toFixed(1)} Gy` : '--';

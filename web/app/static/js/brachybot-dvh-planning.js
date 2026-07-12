@@ -182,13 +182,12 @@ function _setupDvhCustomTooltip(dvhEl) {
         const xr = layout.xaxis.range || [0, 1];
         const yr = layout.yaxis.range || [0, 1];
         const relX = mx - plotLeft;
-        // Use the actual plot rectangle for the inverse transform. Plotly's
-        // private p2l helper uses an internal pixel scale that can differ from
-        // the CSS box after a panel resize/zoom, which caused a 10-20 Gy
-        // tooltip offset. DVH x is linear, so this public geometry mapping is
-        // deterministic and matches the cursor position exactly.
-        const plotFraction = Math.max(0, Math.min(1, relX / Math.max(plotW, 1)));
-        const doseAtCursor = xr[0] + plotFraction * (xr[1] - xr[0]);
+        // Use Plotly's p2d() for precise x-axis mapping. This is Plotly's own
+        // pixel→data transform, consistent after responsive relayouts, whereas
+        // layout._size.w can lag behind the actual visible plot area.
+        const doseAtCursor = typeof layout.xaxis.p2d === 'function'
+            ? layout.xaxis.p2d(mx)
+            : xr[0] + Math.max(0, Math.min(1, relX / Math.max(plotW, 1))) * (xr[1] - xr[0]);
         if (!Number.isFinite(doseAtCursor)) {
             tip.style.display = 'none';
             return;
