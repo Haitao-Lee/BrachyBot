@@ -355,7 +355,7 @@ function init3DScene() {
     scene3D.renderer.setSize(w, h);
     scene3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     scene3D.renderer.shadowMap.enabled = false;
-    scene3D.renderer.setClearColor(0x000000, 0);
+    scene3D.renderer.setClearColor(0xf8fafc, 1);
     canvas.appendChild(scene3D.renderer.domElement);
 
     // OrbitControls: 3D Slicer style — left=rotate, right=pan, scroll=zoom
@@ -1679,7 +1679,7 @@ function _petRainbow2(val) {
     const v = Math.min(1, Math.max(0, val));
     const stops = [
         [0.000, [0, 0, 0]],         // pure black (near-zero dose)
-        [0.003, [30, 0, 60]],       // dark purple at 3 Gy
+        [0.006, [20, 0, 40]],       // very dark purple at 6 Gy (2x wider black range)
         [0.015, [150, 30, 200]],    // vibrant purple at 15 Gy
         [0.030, [30, 50, 220]],     // blue at 30 Gy
         [0.060, [0, 170, 230]],     // cyan at 60 Gy
