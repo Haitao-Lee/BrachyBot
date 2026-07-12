@@ -1748,34 +1748,6 @@ function _labelClassForDoseColorbarPosition(pos) {
         : 'doseColorbarQ3';
 }
 
-function _updateDoseColorbarLabels(container) {
-    if (!container) return;
-    container.querySelectorAll('.doseColorbarDynamicTick').forEach(el => el.remove());
-    container.querySelectorAll('.doseColorbarMax,.doseColorbarQ1,.doseColorbarMid,.doseColorbarQ3,.doseColorbarMin')
-        .forEach(el => { el.style.display = 'none'; });
-    const canvas = container.querySelector('.colorbarCanvas');
-    const specs = _doseColorbarLabelSpecs(canvas?.clientHeight || canvas?.height || 512);
-    specs.forEach(spec => {
-        const tick = document.createElement('div');
-        tick.className = 'doseColorbarDynamicTick';
-        tick.style.cssText = [
-            'position:absolute',
-            `top:${spec.pct}%`,
-            'right:18px',
-            'transform:translateY(-50%)',
-            `font-size:${spec.major ? '0.46rem' : '0.42rem'}`,
-            `font-weight:${spec.major ? '700' : '500'}`,
-            'color:rgba(255,255,255,0.92)',
-            'text-shadow:0 1px 2px #000',
-            'white-space:nowrap',
-            'line-height:1',
-            'pointer-events:none',
-        ].join(';');
-        tick.textContent = spec.label;
-        container.appendChild(tick);
-    });
-}
-
 // Update all 3 colorbars (axial/sagittal/coronal) in lock-step.
 // doseMinNorm, doseMaxNorm: dose range in NORMALIZED units (raw CNN output).
 // They are converted to Gy here so the labels show real physical dose.
@@ -1785,7 +1757,6 @@ function updateDoseColorbars(visible, doseMinNorm, doseMaxNorm) {
     document.querySelectorAll('.dose-colorbar').forEach(cb => {
         const shouldShow = cb.id === 'doseColorbar3D' ? (visible && !!state.doseTexture?.enabled) : visible;
         cb.style.display = shouldShow ? 'block' : 'none';
-        if (shouldShow) _updateDoseColorbarLabels(cb);
     });
     if (!visible) return;
 
@@ -1833,7 +1804,6 @@ function update3DColorbar(visible) {
 
     colorbar3D.style.display = visible ? 'block' : 'none';
     if (!visible) return;
-    _updateDoseColorbarLabels(colorbar3D);
 
     // Render the gradient on the 3D colorbar canvas
     const canvas = colorbar3D.querySelector('.colorbarCanvas');
