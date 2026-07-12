@@ -1781,16 +1781,16 @@ function setupMetricsResize() {
 // Confirmation dialog for destructive operations
 function _confirmAction(msg) {
     return new Promise(resolve => {
-        // Create modal overlay
         const overlay = document.createElement('div');
-        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;display:flex;align-items:center;justify-content:center;';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10000;display:flex;align-items:center;justify-content:center;animation:fadeInOverlay 0.2s ease;';
         overlay.innerHTML = `
-            <div style="background:var(--bg-2);border:1px solid var(--border-hairline);border-radius:12px;padding:24px;max-width:400px;text-align:center;">
-                <div style="font-size:1.1rem;font-weight:600;margin-bottom:12px;">⚠️ 确认操作</div>
-                <div style="font-size:0.85rem;color:var(--text-dim);margin-bottom:20px;">${escHtml(msg)}</div>
-                <div style="display:flex;gap:12px;justify-content:center;">
-                    <button id="_confirmYes" class="btn btn-danger" style="min-width:80px;">确认</button>
-                    <button id="_confirmNo" class="btn btn-outline" style="min-width:80px;">取消</button>
+            <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:16px;padding:28px 32px;max-width:420px;width:90%;text-align:center;box-shadow:var(--shadow-xl);animation:slideUpDialog 0.25s ease;">
+                <div style="font-size:1.6rem;margin-bottom:8px;font-weight:400;line-height:1;">⚠️</div>
+                <div style="font-size:0.95rem;font-weight:600;color:var(--text);margin-bottom:6px;letter-spacing:0.01em;">确认操作</div>
+                <div style="font-size:0.82rem;color:var(--text-secondary);line-height:1.5;margin-bottom:22px;padding:0 4px;">${escHtml(msg)}</div>
+                <div style="display:flex;gap:10px;justify-content:center;">
+                    <button id="_confirmYes" class="btn btn-danger" style="min-width:88px;padding:8px 20px;border-radius:8px;font-size:0.82rem;font-weight:500;cursor:pointer;">确认</button>
+                    <button id="_confirmNo" class="btn btn-outline" style="min-width:88px;padding:8px 20px;border-radius:8px;font-size:0.82rem;font-weight:500;cursor:pointer;">取消</button>
                 </div>
             </div>`;
         document.body.appendChild(overlay);
