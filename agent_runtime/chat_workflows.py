@@ -383,34 +383,43 @@ class ChatWorkflowMixin:
                     )
                     # Auto-execute missing steps
                     if not has_ctv:
-                        logger.info("[WORKFLOW-ENFORCER] Auto-running CTV segmentation")
-                        try:
-                            if self.registry.get("ctv_segmentation"):
-                                ctv_result = self._execute_tool_with_memory(
-                                    "ctv_segmentation",
-                                    {
-                                        "image_path": ct_path,
-                                        "tumor_type": detected_tumor_type,
-                                    },
-                                )
-                                if ctv_result and ctv_result.success:
-                                    logger.info("[WORKFLOW-ENFORCER] ✓ CTV completed")
-                                    add_step("tool", "Auto CTV Segmentation", "Auto-executed by workflow enforcer", tool="ctv_segmentation", status="done")
-                                else:
-                                    err = (
-                                        ctv_result.error or ctv_result.message
-                                        if ctv_result is not None else "CTV segmentation failed"
+                        if not detected_tumor_type:
+                            logger.info("[WORKFLOW-ENFORCER] Tumor type unknown, asking user")
+                            _ask = "请明确需要分割的肿瘤部位，例如：胰腺癌、肝癌、肾癌、肺癌、结直肠癌、前列腺。请告知肿瘤类型后重试。"
+                            if response:
+                                response += "\n\n" + _ask
+                            else:
+                                response = _ask
+                            add_step("tool", "Auto CTV Segmentation", _ask, tool="ctv_segmentation", status="error")
+                        else:
+                            logger.info("[WORKFLOW-ENFORCER] Auto-running CTV segmentation")
+                            try:
+                                if self.registry.get("ctv_segmentation"):
+                                    ctv_result = self._execute_tool_with_memory(
+                                        "ctv_segmentation",
+                                        {
+                                            "image_path": ct_path,
+                                            "tumor_type": detected_tumor_type,
+                                        },
                                     )
-                                    logger.warning(f"[WORKFLOW-ENFORCER] CTV auto-execution did not run: {err}")
-                                    add_step(
-                                        "tool",
-                                        "Auto CTV Segmentation",
-                                        err,
-                                        tool="ctv_segmentation",
-                                        status="error",
-                                    )
-                        except Exception as e:
-                            logger.error(f"[WORKFLOW-ENFORCER] CTV auto-execution failed: {e}")
+                                    if ctv_result and ctv_result.success:
+                                        logger.info("[WORKFLOW-ENFORCER] ✓ CTV completed")
+                                        add_step("tool", "Auto CTV Segmentation", "Auto-executed by workflow enforcer", tool="ctv_segmentation", status="done")
+                                    else:
+                                        err = (
+                                            ctv_result.error or ctv_result.message
+                                            if ctv_result is not None else "CTV segmentation failed"
+                                        )
+                                        logger.warning(f"[WORKFLOW-ENFORCER] CTV auto-execution did not run: {err}")
+                                        add_step(
+                                            "tool",
+                                            "Auto CTV Segmentation",
+                                            err,
+                                            tool="ctv_segmentation",
+                                            status="error",
+                                        )
+                            except Exception as e:
+                                logger.error(f"[WORKFLOW-ENFORCER] CTV auto-execution failed: {e}")
 
                     # Re-check after CTV
                     has_ctv = (
@@ -1052,38 +1061,49 @@ class ChatWorkflowMixin:
                     )
                     # Auto-execute missing steps with proper SSE events
                     if not has_ctv:
-                        logger.info("[WORKFLOW-ENFORCER-STREAM] Auto-running CTV segmentation")
-                        _workflow_enforced = True
-                        ctv_step = add_step("tool", "Auto CTV Segmentation", "Auto-executed by workflow enforcer", status="pending", tool="ctv_segmentation")
-                        yield yield_event("step", ctv_step)
-                        try:
-                            if self.registry.get("ctv_segmentation"):
-                                import threading as _thr_ctv
-                                _ctv_rbox = [None]
-                                _ctv_ebox = [None]
-                                def _run_ctv():
-                                    try:
-                                        _ctv_rbox[0] = self._execute_tool_with_memory(
-                                            "ctv_segmentation",
-                                            {
-                                                "image_path": ct_path,
-                                                "tumor_type": detected_tumor_type,
-                                            },
-                                        )
-                                    except Exception as _e:
-                                        _ctv_ebox[0] = _e
-                                _ctv_th = _thr_ctv.Thread(target=_run_ctv, daemon=True)
-                                _ctv_th.start()
-                                _ctv_hb = 0
-                                while _ctv_th.is_alive():
-                                    _ctv_th.join(timeout=10)
-                                    if _ctv_th.is_alive():
-                                        _ctv_hb += 1
-                                        ctv_step["content"] = f"CTV segmentation running... ({_ctv_hb * 10}s)"
-                                        yield yield_event("step", ctv_step)
-                                if _ctv_ebox[0] is not None:
-                                    raise _ctv_ebox[0]
-                                ctv_result = _ctv_rbox[0]
+                        if not detected_tumor_type:
+                            logger.info("[WORKFLOW-ENFORCER-STREAM] Tumor type unknown, asking user")
+                            _ask = "请明确需要分割的肿瘤部位，例如：胰腺癌、肝癌、肾癌、肺癌、结直肠癌、前列腺。请告知肿瘤类型后重试。"
+                            _workflow_enforced = True
+                            ctv_step = add_step("tool", "Auto CTV Segmentation", _ask, status="error", tool="ctv_segmentation")
+                            yield yield_event("step", ctv_step)
+                            if response:
+                                response += "\n\n" + _ask
+                            else:
+                                response = _ask
+                        else:
+                            logger.info("[WORKFLOW-ENFORCER-STREAM] Auto-running CTV segmentation")
+                            _workflow_enforced = True
+                            ctv_step = add_step("tool", "Auto CTV Segmentation", "Auto-executed by workflow enforcer", status="pending", tool="ctv_segmentation")
+                            yield yield_event("step", ctv_step)
+                            try:
+                                if self.registry.get("ctv_segmentation"):
+                                    import threading as _thr_ctv
+                                    _ctv_rbox = [None]
+                                    _ctv_ebox = [None]
+                                    def _run_ctv():
+                                        try:
+                                            _ctv_rbox[0] = self._execute_tool_with_memory(
+                                                "ctv_segmentation",
+                                                {
+                                                    "image_path": ct_path,
+                                                    "tumor_type": detected_tumor_type,
+                                                },
+                                            )
+                                        except Exception as _e:
+                                            _ctv_ebox[0] = _e
+                                    _ctv_th = _thr_ctv.Thread(target=_run_ctv, daemon=True)
+                                    _ctv_th.start()
+                                    _ctv_hb = 0
+                                    while _ctv_th.is_alive():
+                                        _ctv_th.join(timeout=10)
+                                        if _ctv_th.is_alive():
+                                            _ctv_hb += 1
+                                            ctv_step["content"] = f"CTV segmentation running... ({_ctv_hb * 10}s)"
+                                            yield yield_event("step", ctv_step)
+                                    if _ctv_ebox[0] is not None:
+                                        raise _ctv_ebox[0]
+                                    ctv_result = _ctv_rbox[0]
                                 if ctv_result and ctv_result.success:
                                     logger.info("[WORKFLOW-ENFORCER-STREAM] ✓ CTV completed")
                                     ctv_step["status"] = "done"
@@ -1102,11 +1122,11 @@ class ChatWorkflowMixin:
                                     ctv_step["status"] = "error"
                                     ctv_step["result"] = str(err)[:200]
                                     yield yield_event("step", ctv_step)
-                        except Exception as e:
-                            logger.error(f"[WORKFLOW-ENFORCER-STREAM] CTV auto-execution failed: {e}")
-                            ctv_step["status"] = "error"
-                            ctv_step["result"] = str(e)[:200]
-                            yield yield_event("step", ctv_step)
+                            except Exception as e:
+                                logger.error(f"[WORKFLOW-ENFORCER-STREAM] CTV auto-execution failed: {e}")
+                                ctv_step["status"] = "error"
+                                ctv_step["result"] = str(e)[:200]
+                                yield yield_event("step", ctv_step)
 
                     # Re-check after CTV
                     has_ctv = (
