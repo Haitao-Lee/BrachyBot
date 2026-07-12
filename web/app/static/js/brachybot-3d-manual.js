@@ -1853,6 +1853,10 @@ async function loadDoseOverlay() {
             state.doseTexture.rawAxialSlices = {};
             state.doseTexture.rawAxialSlicePromises = {};
         }
+        // Preserve user-set opacity when reloading (e.g. after manual
+        // recompute or when Dose Surface triggers a reload). Default to
+        // 0.5 only on the very first load.
+        const prevOpacity = state.doseOverlay?.opacity;
         state.doseOverlay = {
             shape: data.dose_shape,
             doseMin: data.dose_min,
@@ -1860,7 +1864,7 @@ async function loadDoseOverlay() {
             doseUnits: data.dose_units || 'normalized_model_output',
             doseScaleGy: data.dose_scale_gy || _getDoseScaleGy(),
             visible: true,
-            opacity: 0.5,
+            opacity: Number.isFinite(prevOpacity) ? prevOpacity : 0.5,
             slices: {},  // Cache: {axis_index: sliceData}
             maxSlice: {
                 axial: (data.dose_shape?.[0] || 200) - 1,
