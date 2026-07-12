@@ -1059,7 +1059,7 @@ async function _applyDoseTextureToMesh(id, mesh) {
         const doseNorm = _sampleDoseNormalizedAtIndex(idx);
         const doseGy = doseNorm * (typeof _getDoseScaleGy === 'function' ? _getDoseScaleGy() : 120);
         const t = Math.max(0, Math.min(1, (doseGy - dMinGy) / (dMaxGy - dMinGy)));
-        const [r, g, b] = _petRainbow2(t);
+        const [r, g, b] = typeof _petRainbowDoseSurface === 'function' ? _petRainbowDoseSurface(t) : _petRainbow2(t);
         const doseRgb = [r / 255, g / 255, b / 255];
         lastRgb = doseRgb;
         colors[i * 3] = lastRgb[0];

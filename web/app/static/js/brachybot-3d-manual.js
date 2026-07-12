@@ -355,7 +355,7 @@ function init3DScene() {
     scene3D.renderer.setSize(w, h);
     scene3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     scene3D.renderer.shadowMap.enabled = false;
-    scene3D.renderer.setClearColor(0xf8fafc, 1);
+    scene3D.renderer.setClearColor(0x000000, 0);
     canvas.appendChild(scene3D.renderer.domElement);
 
     // OrbitControls: 3D Slicer style — left=rotate, right=pan, scroll=zoom
@@ -1705,6 +1705,14 @@ function _petRainbow2(val) {
     return [255, 255, 255];
 }
 
+// Dose-surface variant: clips the black low-dose range so the bottom
+// starts at vibrant purple. Used for 3D mesh vertex colors and the
+// 3D colorbar, where black would look like missing data.
+function _petRainbowDoseSurface(val) {
+    const CLIP_T = 0.015; // purple at 15 Gy — skip everything darker
+    return _petRainbow2(CLIP_T + Math.min(1, Math.max(0, val)) * (1 - CLIP_T));
+}
+
 function _doseDisplayT(doseGy) {
     return Math.max(0, Math.min(1, (Number(doseGy || 0) - COLORBAR_MIN_GY) / (COLORBAR_MAX_GY - COLORBAR_MIN_GY)));
 }
@@ -1818,7 +1826,7 @@ function update3DColorbar(visible) {
         for (let y = 0; y < h; y++) {
             // y=0 (top) → max (val=1); y=h-1 (bottom) → min (val=0)
             const val = 1 - y / (h - 1);
-            const [r, g, b] = _petRainbow2(val);
+            const [r, g, b] = _petRainbowDoseSurface(val);
             ctx.fillStyle = `rgb(${r},${g},${b})`;
             ctx.fillRect(0, y, w, 1);
         }
