@@ -53,11 +53,17 @@ function collectUIState() {
             trajectories: state?.trajectories?.length || 0,
             // Preserve the editable vector for chat-driven replanning. The
             // generic control snapshot is not a reliable numeric contract.
-            reference_direc: [
-                Number(document.getElementById('refDirecX')?.value || 0),
-                Number(document.getElementById('refDirecY')?.value || 0),
-                Number(document.getElementById('refDirecZ')?.value || 0),
-            ],
+            // When refDirecAuto is checked, planning uses geometric
+            // auto-detection — expose that intent so the LLM knows the
+            // actual planning input (not just the stale manual vector).
+            ref_direc_auto: !!(document.getElementById('refDirecAuto')?.checked),
+            reference_direc: (document.getElementById('refDirecAuto')?.checked)
+                ? 'auto'
+                : [
+                    Number(document.getElementById('refDirecX')?.value || 0),
+                    Number(document.getElementById('refDirecY')?.value || 0),
+                    Number(document.getElementById('refDirecZ')?.value || 0),
+                ],
             manual_state: (typeof _manualState === 'function') ? _manualState() : {},
         },
         data_tree: (typeof dataTreeState !== 'undefined') ? {
