@@ -1680,7 +1680,7 @@ function _petRainbow2(val) {
     const v = Math.min(1, Math.max(0, val));
     const stops = [
         [0.000, [0, 0, 0]],         // pure black (near-zero dose)
-        [0.015, [38, 0, 82]],       // very dark purple
+        [0.002, [38, 0, 82]],       // dark purple at 2 Gy
         [0.030, [0, 0, 180]],       // blue
         [0.060, [0, 180, 255]],     // cyan
         [0.100, [0, 210, 95]],      // green
