@@ -495,7 +495,13 @@ class LLMRuntimeMixin:
                     "params": params,
                 })
 
-                if tool_name in ("self_evolve", "evolve"):
+                # Pre-execution check: if ctv_segmentation is called without
+                # tumor_type, intercept and ask instead of running and failing.
+                if tool_name == "ctv_segmentation" and not params.get("tumor_type"):
+                    logger.info("[TOOL-LOOP] ctv_segmentation missing tumor_type — intercepting")
+                    result_text = "请告知肿瘤部位，例如胰腺、肝脏、前列腺等，以便选择正确的CTV分割模型。"
+                    tool_succeeded = False
+                elif tool_name in ("self_evolve", "evolve"):
                     result_text = self._handle_self_evolution()
                     tool_succeeded = not str(result_text).lower().startswith(("error", "exception", "failed"))
                 elif tool_name in ("code_writer", "write_tool", "create_tool"):
@@ -1708,6 +1714,16 @@ class LLMRuntimeMixin:
                             self._pending_callback_events.append(("step", substep_step))
 
                 tool_result = None  # Track result for metadata
+                # Pre-execution check: if ctv_segmentation is called without
+                # tumor_type, intercept and ask instead of running and failing.
+                if tool_name == "ctv_segmentation" and not params.get("tumor_type"):
+                    logger.info("[TOOL-LOOP] ctv_segmentation missing tumor_type — intercepting")
+                    result_text = "请告知肿瘤部位，例如胰腺、肝脏、前列腺等，以便选择正确的CTV分割模型。"
+                    tool_step["status"] = "error"
+                    tool_step["content"] = "需要肿瘤部位信息"
+                    tool_step["result"] = result_text[:200]
+                    yield yield_event("step", tool_step)
+                    break
                 if tool_name in ("self_evolve", "evolve"):
                     result_text = self._handle_self_evolution()
                 elif tool_name in ("code_writer", "write_tool", "create_tool"):
