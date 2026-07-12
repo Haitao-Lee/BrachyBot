@@ -1027,7 +1027,6 @@ async function _applyDoseTextureToMesh(id, mesh) {
     const v = new THREE.Vector3();
     const dMinGy = COLORBAR_MIN_GY;
     const dMaxGy = COLORBAR_MAX_GY;
-    const baseRgb = _meshBaseColor(mesh);
     const sampleEvery = posAttr.count > 25000 ? 2 : 1;
 
     // Warm the dose-slice cache before the color loop so that the per-vertex
@@ -1062,31 +1061,22 @@ async function _applyDoseTextureToMesh(id, mesh) {
         const t = Math.max(0, Math.min(1, (doseGy - dMinGy) / (dMaxGy - dMinGy)));
         const [r, g, b] = _petRainbow2(t);
         const doseRgb = [r / 255, g / 255, b / 255];
-        const mix = Math.max(0.35, Math.min(0.96, t));
-        // NOTE: min mix at 0.35 ensures OAR meshes outside the CTV also show
-        // a visible dose texture overlay (previously 0.18 made them look like
-        // their original color with barely any dose tint).
-        lastRgb = [
-            baseRgb[0] * (1 - mix) + doseRgb[0] * mix,
-            baseRgb[1] * (1 - mix) + doseRgb[1] * mix,
-            baseRgb[2] * (1 - mix) + doseRgb[2] * mix,
-        ];
+        lastRgb = doseRgb;
         colors[i * 3] = lastRgb[0];
         colors[i * 3 + 1] = lastRgb[1];
         colors[i * 3 + 2] = lastRgb[2];
     }
 
     surface.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    const opacity = _doseTextureOpacityForMesh(id, mesh);
     surface.material = new THREE.MeshPhongMaterial({
         vertexColors: true,
-        transparent: true,
-        opacity,
+        transparent: false,
         side: THREE.DoubleSide,
         shininess: 35,
-        depthWrite: false,
+        depthWrite: true,
     });
-    applyMeshVisibility(mesh, true, opacity);
+    mesh.visible = true;
+    surface.visible = true;
 }
 
 function fitCameraToDoseSurfaceScene() {
