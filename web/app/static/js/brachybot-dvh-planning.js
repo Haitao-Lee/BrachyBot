@@ -726,7 +726,9 @@ async function refreshPlanningUI(options = {}) {
                     }
                     if (dataTreeState) {
                         dataTreeState.ctv.visible = true;
-                        dataTreeState.oar.visible = true;
+                        // OAR group stays visible but all individual organs
+                        // are invisible by default (set in updateOrganList).
+                        // Users enable specific organs via data tree toggles.
                     }
                     const dm = document.getElementById('displayMode');
                     if (dm) dm.value = 'overlay';
