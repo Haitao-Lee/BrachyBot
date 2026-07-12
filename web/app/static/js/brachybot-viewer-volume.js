@@ -100,7 +100,7 @@ function _planningVisualEntries() {
         ..._planningItems('doseLevels'),
         ...(_planningItems('meshes')),
     ];
-    if (state?.doseOverlay?.data) entries.push(state.doseOverlay);
+    if (state?.doseOverlay?.shape) entries.push(state.doseOverlay);
     return entries;
 }
 
@@ -1580,10 +1580,9 @@ function renderDataTree() {
     const planningSeeds = _planningItems('seeds');
     const planningNeedles = _planningItems('needles');
     const doseLevels = _planningItems('doseLevels');
-    // Has-planning check now includes trajectories and dose overlay (2D),
-    // so the tree header counts everything under the Planning branch.
-    const hasDoseOverlay = !!(state.doseOverlay && state.doseOverlay.data);
-    const hasPlanning = planningTrajectories.length > 0 || planningSeeds.length > 0 || planningNeedles.length > 0 || doseLevels.length > 0 || hasDoseOverlay;
+    const planningMeshes = _planningItems('meshes');
+    const hasDoseOverlay = !!(state.doseOverlay && state.doseOverlay.shape);
+    const hasPlanning = planningTrajectories.length > 0 || planningSeeds.length > 0 || planningNeedles.length > 0 || doseLevels.length > 0 || planningMeshes.length > 0 || hasDoseOverlay;
     const planningEntries = _planningVisualEntries();
     const planningVis = planningEntries.length === 0 || planningEntries.some(item => item.visible !== false);
     const planningOp = planningEntries.length

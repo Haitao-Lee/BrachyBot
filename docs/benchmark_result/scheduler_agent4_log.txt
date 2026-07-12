@@ -1,0 +1,14 @@
+============================================================
+ROBUST BENCHMARK SCHEDULER - Agent 4
+============================================================
+Started: 2026-06-02 17:48:35
+Categories: [23, 22, 19, 7, 2, 9, 21]
+
+============================================================
+Category 23: 23_medium_complexity
+Total: 199 | Completed: 6 | Remaining: 193
+============================================================
+  [1/193] Q0950...     Error on attempt 1/3: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+    Server offline, waiting...
+Waiting for server to come online (timeout: 60s)...
+....
