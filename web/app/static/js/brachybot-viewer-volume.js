@@ -351,7 +351,7 @@ async function loadLabelVolumes() {
         if (typeof dataTreeState !== 'undefined' && dataTreeState.oar) {
             if (hasOAR) {
                 dataTreeState.oar.loaded = true;
-                dataTreeState.oar.visible = false;  // Hide OAR overlay by default
+                dataTreeState.oar.visible = true;
             }
         }
         // Force a re-render of the data tree regardless of metadata.
@@ -359,7 +359,10 @@ async function loadLabelVolumes() {
         if ((hasCTV || hasOAR) && state && state.viewerSettings) {
             state.viewerSettings.displayMode = 'overlay';
             state.viewerSettings.showCTV = true;
-            state.viewerSettings.showOAR = false;  // Off by default — OAR labels cover most of the body
+            // OAR slice overlay is OFF by default — showing 57 TotalSegmentator
+            // labels simultaneously creates a confusing full-body mask appearance.
+            // Users can enable via the OAR checkbox in the viewer toolbar.
+            state.viewerSettings.showOAR = false;
             const dm = document.getElementById('displayMode');
             if (dm) dm.value = 'overlay';
             const ctvCb = document.getElementById('overlayCTV');
