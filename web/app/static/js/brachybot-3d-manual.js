@@ -1501,9 +1501,27 @@ function _setMeshPrewarmStatus(text, show = true) {
     if (span) span.textContent = text || '3D reconstruction running...';
 }
 
+// Check whether a label ID exists in the currently loaded segmentation mask.
+// Uses a cached Set attached to the typed array for O(1) repeat lookups.
+function _labelIdInMask(labelData, labelId) {
+    if (!labelData || labelData.length === 0) return false;
+    if (!labelData._uniqueLabelSet) {
+        labelData._uniqueLabelSet = new Set(labelData);
+    }
+    return labelData._uniqueLabelSet.has(labelId);
+}
+
 async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, opacity, force = false, smoothing = 1 }) {
     if (labelId === undefined || labelId === null || !source || !organId) return { status: 'invalid' };
     if (!force && _sceneHasMesh(organId)) return { status: 'exists', id: organId };
+
+    // Validate the requested label exists in the currently loaded segmentation mask.
+    // This prevents 400 errors from the backend when the data tree contains organs
+    // whose label IDs are not present in the actual volume.
+    const labelData = source === 'ctv' ? ctvLabelData : oarLabelData;
+    if (!_labelIdInMask(labelData, labelId)) {
+        return { status: 'missing_label', id: organId };
+    }
 
     const key = _meshTaskKey(source, labelId, smoothing);
     if (_segmentationMeshPrewarm.tasks.has(key)) {
@@ -1929,6 +1947,11 @@ async function loadDoseOverlay() {
 // version, and `renderDoseOverlay` only paints if the response's version
 // still matches the latest one requested.
 let _doseOverlayRequestVersion = 0;
+// AbortControllers keyed by cacheKey. Cancelling duplicate requests for the
+// same slice prevents browser socket-buffer exhaustion (ERR_NO_BUFFER_SPACE)
+// when the user scrolls rapidly, while still allowing concurrent preloads
+// for different slices.
+const _doseOverlayAbortControllers = new Map();
 
 async function fetchDoseOverlaySlice(axis, sliceIndex) {
     if (!state.doseOverlay) { uiDebugLog('[dose] fetch skipped: no doseOverlay state'); return null; }
@@ -1936,6 +1959,12 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
     if (state.doseOverlay.slices[cacheKey]) return state.doseOverlay.slices[cacheKey];
 
     const myVersion = ++_doseOverlayRequestVersion;
+    const existingCtrl = _doseOverlayAbortControllers.get(cacheKey);
+    if (existingCtrl) {
+        try { existingCtrl.abort(); } catch (_) {}
+    }
+    const controller = new AbortController();
+    _doseOverlayAbortControllers.set(cacheKey, controller);
     try {
         const axialMax = state.doseOverlay.maxSlice?.axial;
         const requestSliceIndex = axis === 'axial' && Number.isFinite(axialMax)
@@ -1945,7 +1974,9 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ axis, slice_index: requestSliceIndex }),
+            signal: controller.signal,
         });
+        if (controller.signal.aborted) return null;
         if (!res.ok) { uiDebugLog(`[dose] fetch HTTP ${res.status} for ${cacheKey}`); return null; }
         const data = await res.json();
         if (!data.success) { uiDebugLog(`[dose] fetch failed: ${data.error} for ${cacheKey}`); return null; }
@@ -1958,7 +1989,12 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
         state.doseOverlay.slices[cacheKey] = data.slice;
         return data.slice;
     } catch (e) {
+        if (e && e.name === 'AbortError') return null;
         return null;
+    } finally {
+        if (_doseOverlayAbortControllers.get(cacheKey) === controller) {
+            _doseOverlayAbortControllers.delete(cacheKey);
+        }
     }
 }
 
@@ -2066,6 +2102,9 @@ function setDoseOverlayOpacity(val) {
     // Update label
     const label = document.getElementById('doseOpacityVal');
     if (label) label.textContent = val + '%';
+    // Keep the data tree slider in sync so it doesn't jump on the next render.
+    const treeSlider = document.querySelector('[data-item="dose_overlay"] .opacity-slider');
+    if (treeSlider) treeSlider.value = val;
     // Force re-render by clearing the "last rendered" tracker
     // (otherwise the cache check skips re-render when slice hasn't changed)
     _doseLastRendered.axial = -1;
