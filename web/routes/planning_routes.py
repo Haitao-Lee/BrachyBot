@@ -1375,17 +1375,17 @@ def register_planning_routes(app, get_agent):
         try:
             # Get hyperparameters from agent config
             config = getattr(agent, 'config', {})
-            seed_info = config.get('seed_info')
-            radiation_array_params = config.get('radiation_array_params')
-            # UI input takes priority over agent.config.
+            # UI input takes priority over agent.config for ALL params.
             ui_state = agent.memory.get_ui_state() if hasattr(agent, 'memory') and hasattr(agent.memory, 'get_ui_state') else {}
             planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
             reference_direc = planning_state.get("reference_direc") if planning_state.get("reference_direc") is not None else config.get('reference_direc')
             plan_mode = ui_state.get("plan_mode") or mode or "rule_based"
-            in_lowest_energy = config.get('in_lowest_energy')
-            out_highest_energy = config.get('out_highest_energy')
-            DVH_rate = config.get('DVH_rate')
-            max_iter = config.get('max_iter')
+            seed_info = planning_state.get("seed_info") or config.get('seed_info')
+            radiation_array_params = planning_state.get("radiation_params") or config.get('radiation_array_params')
+            in_lowest_energy = planning_state.get("in_lowest_energy") if planning_state.get("in_lowest_energy") is not None else config.get('in_lowest_energy')
+            out_highest_energy = planning_state.get("out_highest_energy") if planning_state.get("out_highest_energy") is not None else config.get('out_highest_energy')
+            DVH_rate = planning_state.get("dvh_rate") if planning_state.get("dvh_rate") is not None else config.get('DVH_rate')
+            max_iter = planning_state.get("max_iter") if planning_state.get("max_iter") is not None else config.get('max_iter')
             rf_params = config.get('rf_params')
 
             result = agent.run_preoperative_plan(

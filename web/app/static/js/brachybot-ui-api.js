@@ -64,6 +64,28 @@ function collectUIState() {
                     Number(document.getElementById('refDirecY')?.value || 0),
                     Number(document.getElementById('refDirecZ')?.value || 0),
                 ],
+            plan_mode: gc('useRLToggle') ? 'rl' : 'rule_based',
+            seed_info: {
+                radius: Number(document.getElementById('seedRadius')?.value || 0.4),
+                length: Number(document.getElementById('seedLength')?.value || 4.5),
+                seed_avr_dose: Number(document.getElementById('seedAvgDose')?.value || 50),
+            },
+            radiation_params: {
+                target_value: Math.round(Number(document.getElementById('targetValue')?.value || 1)),
+                obstacle_value: Math.round(Number(document.getElementById('obstacleValue')?.value || 2)),
+                backlit_angle: Number(document.getElementById('backlitAngle')?.value || 0.5),
+                maximum_candidate_trajectories: Math.round(Number(document.getElementById('maxCandiTraj')?.value || 500)),
+            },
+            in_lowest_energy: Number(document.getElementById('inLowestEnergy')?.value || 1),
+            out_highest_energy: Number(document.getElementById('outHighestEnergy')?.value || 1),
+            dvh_rate: Number(document.getElementById('dvhRate')?.value || 0.9),
+            max_iter: Math.round(Number(document.getElementById('maxIter')?.value || 4)),
+            iter_rate: Number(document.getElementById('iterRate')?.value || 2),
+            replan_rate: Number(document.getElementById('replanRate')?.value || 0.6),
+            distance_filter: {
+                lower_bound: Number(document.getElementById('distLowerBound')?.value || 0.8),
+                upper_bound: Number(document.getElementById('distUpperBound')?.value || 10),
+            },
             manual_state: (typeof _manualState === 'function') ? _manualState() : {},
         },
         data_tree: (typeof dataTreeState !== 'undefined') ? {
