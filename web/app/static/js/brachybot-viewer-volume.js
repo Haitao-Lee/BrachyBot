@@ -289,6 +289,16 @@ async function loadLabelVolumes() {
         // Override CTV label 1 (tumor) color: bright pink instead of
         // the server's blue which is too close to the dose overlay color.
         if (labelColorLUT[1]) labelColorLUT[1] = [255, 105, 180]; // hot pink
+        // Override OAR labels whose golden-ratio HSV hue lands near red
+        // (labels 5, 8, 13, 21, 34, 55, 89 have h≈0 from _label_color).
+        // These large organs rendered in orange-red created the 'red mask' effect.
+        if (labelColorLUT[5])  labelColorLUT[5]  = [46, 180, 140];  // liver → teal
+        if (labelColorLUT[8])  labelColorLUT[8]  = [200, 130, 180];  // adrenal → mauve
+        if (labelColorLUT[13]) labelColorLUT[13] = [60, 160, 210];  // lung → sky blue
+        if (labelColorLUT[21]) labelColorLUT[21] = [140, 90, 200];  // bladder → purple
+        if (labelColorLUT[34]) labelColorLUT[34] = [100, 150, 200]; // vertebra → steel blue
+        if (labelColorLUT[55]) labelColorLUT[55] = [200, 120, 80];  // vessel → brown
+        if (labelColorLUT[89]) labelColorLUT[89] = [120, 180, 110]; // iliopsoas → sage
         // Load CTV label names from backend (not hardcoded)
         const ctvLabelMapRaw = res.headers.get('X-CTV-Label-Map');
         if (ctvLabelMapRaw) {
