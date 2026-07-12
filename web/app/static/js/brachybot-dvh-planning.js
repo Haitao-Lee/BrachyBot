@@ -179,14 +179,12 @@ function _setupDvhCustomTooltip(dvhEl) {
         if (mx < plotLeft || mx > plotLeft + plotW || my < plotTop || my > plotTop + plotH) {
             tip.style.display = 'none'; return;
         }
+        const xr = layout.xaxis.range || [0, 1];
         const yr = layout.yaxis.range || [0, 1];
         const relX = mx - plotLeft;
-        const doseAtCursor = typeof layout.xaxis.p2l === 'function'
-            ? layout.xaxis.p2l(relX / sx)
-            : (function() {
-                const xr = layout.xaxis.range || [0, 1];
-                return xr[0] + Math.max(0, Math.min(1, relX / Math.max(plotW, 1))) * (xr[1] - xr[0]);
-              })();
+        const relY = my - plotTop;
+        const fractionX = Math.max(0, Math.min(1, relX / Math.max(plotW, 1)));
+        const doseAtCursor = xr[0] + fractionX * (xr[1] - xr[0]);
         if (!Number.isFinite(doseAtCursor)) { tip.style.display = 'none'; return; }
 
         let best = null;

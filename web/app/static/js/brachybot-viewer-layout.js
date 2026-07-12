@@ -1133,8 +1133,12 @@ async function setDoseTextureMode(enabled, opts = {}) {
             // add or remove models, nor reset camera. Whatever CTV/OAR
             // meshes are already visible get the dose texture; anything
             // hidden stays hidden.
+            const opacityBefore = state.doseOverlay?.opacity;
             if (!state.doseOverlay) await loadDoseOverlay();
             if (!state.doseOverlay?.shape) throw new Error('Dose overlay is not available');
+            if (state.doseOverlay && state.doseOverlay.opacity !== opacityBefore) {
+                console.warn('[DoseTexture] 2D dose overlay opacity changed during setDoseTextureMode:', opacityBefore, '->', state.doseOverlay.opacity);
+            }
             _prepareDoseTextureSceneVisibility();
             const entries = Object.entries(scene3D.meshes || {}).filter(([id, mesh]) => _isDoseTexturableMesh(id, mesh));
             if (entries.length === 0) throw new Error('No CTV/OAR 3D meshes are available for dose surface mapping');
