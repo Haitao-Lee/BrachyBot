@@ -359,13 +359,13 @@ async function loadLabelVolumes() {
         if ((hasCTV || hasOAR) && state && state.viewerSettings) {
             state.viewerSettings.displayMode = 'overlay';
             state.viewerSettings.showCTV = true;
-            state.viewerSettings.showOAR = true;
+            state.viewerSettings.showOAR = false;  // Off by default — OAR labels cover most of the body
             const dm = document.getElementById('displayMode');
             if (dm) dm.value = 'overlay';
             const ctvCb = document.getElementById('overlayCTV');
             if (ctvCb) ctvCb.checked = true;
             const oarCb = document.getElementById('overlayOAR');
-            if (oarCb) oarCb.checked = true;
+            if (oarCb) oarCb.checked = false;
             if (volumeData && volumeShape) {
                 ['axial', 'sagittal', 'coronal'].forEach(axis => {
                     try { renderSliceFromVolume(axis, state.slices[axis]); } catch (_) {}
