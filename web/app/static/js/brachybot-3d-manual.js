@@ -1905,7 +1905,7 @@ async function loadDoseOverlay() {
             doseUnits: data.dose_units || 'normalized_model_output',
             doseScaleGy: data.dose_scale_gy || _getDoseScaleGy(),
             visible: true,
-            opacity: Number.isFinite(prevOpacity) ? prevOpacity : 0.5,
+            opacity: Number.isFinite(prevOpacity) ? prevOpacity : 0.4,
             slices: {},  // Cache: {axis_index: sliceData}
             maxSlice: {
                 axial: (data.dose_shape?.[0] || 200) - 1,
