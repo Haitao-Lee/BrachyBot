@@ -1668,11 +1668,11 @@ function _getCurrentPrescriptionGy() {
     return scale;
 }
 
-// Colorbar display range, in Gy. Matches ref.py displayNode.SetWindow(600) / SetLevel(300).
-// Dose values above this are SATURATED to the top colormap color (not rescaled).
-// Reference: BrachyBot/docs/ref.py lines 4719-4723.
-const COLORBAR_MIN_GY = 10.0;
-const COLORBAR_MAX_GY = 200.0;
+// Colorbar display range, in Gy. Restored to 0–1000 Gy to match clinical
+// dose display (D2 can reach 2500+ Gy in LDR; saturating at 200 Gy made
+// most of the colorbar show the same top color).
+const COLORBAR_MIN_GY = 0.0;
+const COLORBAR_MAX_GY = 1000.0;
 
 // Dose-surface color window used by all colorbars and overlays. This later
 // declaration is the canonical colormap for all dose overlays.
@@ -1779,9 +1779,8 @@ function _updateDoseColorbarLabels(container) {
 // Update all 3 colorbars (axial/sagittal/coronal) in lock-step.
 // doseMinNorm, doseMaxNorm: dose range in NORMALIZED units (raw CNN output).
 // They are converted to Gy here so the labels show real physical dose.
-// The colorbar always spans [COLORBAR_MIN_GY, COLORBAR_MAX_GY] (= 0–600 Gy,
-// matching ref.py displayNode.SetWindow(600) / SetLevel(300)). Dose values
-// above 600 Gy are saturated to the top colormap color.
+// The colorbar always spans [COLORBAR_MIN_GY, COLORBAR_MAX_GY] (= 0–1000 Gy).
+// Dose values above 1000 Gy are saturated to the top colormap color.
 function updateDoseColorbars(visible, doseMinNorm, doseMaxNorm) {
     document.querySelectorAll('.dose-colorbar').forEach(cb => {
         const shouldShow = cb.id === 'doseColorbar3D' ? (visible && !!state.doseTexture?.enabled) : visible;
@@ -1790,12 +1789,11 @@ function updateDoseColorbars(visible, doseMinNorm, doseMaxNorm) {
     });
     if (!visible) return;
 
-    // Always use the fixed 0-600 Gy display range. doseMinNorm/doseMaxNorm
-    // are kept for the slice-rendering colormap (saturate at 600 Gy).
+    // Always use the fixed 0-1000 Gy display range.
     const dMinGy = COLORBAR_MIN_GY;
     const dMaxGy = COLORBAR_MAX_GY;
 
-    // Fixed 5-tick scale: 0, 25%, 50%, 75%, 100% of 600 Gy
+    // Fixed 5-tick scale: 0, 25%, 50%, 75%, 100% of 1000 Gy
     const ticks = [0, 0.25, 0.5, 0.75, 1.0].map(f => dMaxGy * f);
     const tickLabels = ticks.map(v => v.toFixed(0));
     const positions = ['bottom', '75%', '50%', '25%', 'top']; // CSS position: bottom → top corresponds to min → max
