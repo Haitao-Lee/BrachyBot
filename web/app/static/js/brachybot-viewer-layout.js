@@ -1139,10 +1139,10 @@ async function setDoseTextureMode(enabled, opts = {}) {
     }, 60000);
     try {
         if (enabled) {
-            init3DScene();
             // Dose surface mode only changes mesh texture — it does NOT
-            // add or remove models. Whatever CTV/OAR meshes are already
-            // visible get the dose texture; anything hidden stays hidden.
+            // add or remove models, nor reset camera. Whatever CTV/OAR
+            // meshes are already visible get the dose texture; anything
+            // hidden stays hidden.
             if (!state.doseOverlay) await loadDoseOverlay();
             if (!state.doseOverlay?.shape) throw new Error('Dose overlay is not available');
             _prepareDoseTextureSceneVisibility();
@@ -1153,7 +1153,6 @@ async function setDoseTextureMode(enabled, opts = {}) {
             state.doseTexture.enabled = true;
             // Show 3D colorbar when dose surface mode is active
             update3DColorbar(true);
-            fitCameraToDoseSurfaceScene();
         } else {
             _restoreDoseTextureMaterials();
             state.doseTexture.enabled = false;
