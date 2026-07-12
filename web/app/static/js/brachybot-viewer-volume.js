@@ -645,8 +645,9 @@ function renderSliceFromVolume(axis, sliceIndex) {
                          (dataTreeState.oar.visible && state.viewerSettings.showOAR));
     const labelSliceSize = Y * X;
     const organOpacities = showOverlay ? (() => { const m = {}; dataTreeState.organs.forEach(o => { m[o.labelId] = o.opacity; }); return m; })() : {};
-    const thresholdValue = Number(state.viewerSettings.threshold);
-    const thresholdEnabled = Number.isFinite(thresholdValue);
+    const thresholdRaw = state.viewerSettings.threshold;
+    const thresholdEnabled = thresholdRaw !== null && Number.isFinite(Number(thresholdRaw));
+    const thresholdValue = thresholdEnabled ? Number(thresholdRaw) : 0;
 
     for (let py = 0; py < height; py++) {
         for (let px = 0; px < width; px++) {

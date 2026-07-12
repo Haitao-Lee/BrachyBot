@@ -1891,7 +1891,7 @@ async function loadDoseOverlay() {
             doseMax: data.dose_max,
             doseUnits: data.dose_units || 'normalized_model_output',
             doseScaleGy: data.dose_scale_gy || _getDoseScaleGy(),
-            visible: false,  // Hidden by default; user enables via data tree
+            visible: true,
             opacity: 0.5,
             slices: {},  // Cache: {axis_index: sliceData}
             maxSlice: {
