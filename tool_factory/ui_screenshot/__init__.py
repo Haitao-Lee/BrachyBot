@@ -53,14 +53,11 @@ class UIScreenshotTool(BaseTool):
     def description(self) -> str:
         targets = ", ".join(SCREENSHOT_TARGETS.keys())
         return (
-            "Capture a screenshot of any BrachyBot UI component. "
-            "Use this when you need to SEE the current state of the UI — viewer slices, "
-            "3D reconstructions, data tree, overlays, segmentation results, etc. "
-            "The screenshot will be displayed in chat and sent to you for visual analysis. "
-            "For current dose distribution, prefer target='dose-overview'. "
-            "For the dose-volume histogram, use target='dvh'. "
-            f"Available targets: {targets}. "
-            "You can also specify a slice index to navigate to before capturing."
+            "Take a screenshot of the UI. ONLY use this when the user EXPLICITLY asks "
+            "for a screenshot, image, or picture ('截图', '拍个照', 'show me the image'). "
+            "Do NOT call this automatically after planning or other tasks. "
+            "Available targets: " + targets + ". "
+            "The screenshot will be displayed in chat for the user to view."
         )
 
     @property
