@@ -1292,16 +1292,23 @@ function updateSeeds(seeds) {
         ...seed,
         trajectory_id: _normalizeTrajectoryId(seed.trajectory_id),
     }));
-    // Update data tree so the "seeds" entry shows a fresh count badge
-    // and so renderDataTree() can mark the row as "loaded" / "visible".
     if (typeof dataTreeState !== 'undefined' && dataTreeState.seeds) {
         dataTreeState.seeds.loaded = !!(state.seeds && state.seeds.length > 0);
         dataTreeState.seeds.visible = dataTreeState.seeds.loaded;
     }
-    // The 3D seed mesh and the dose overlay are refreshed by
-    // refreshPlanningUI() right after this returns, so we don't
-    // re-render them here (that would double-fetch /planning/seeds_3d
-    // and /planning/dose_overlay on every metrics update).
+    // Populate planning-level seeds so renderDataTree() shows them in
+    // the Planning group (either under Trajectories or as a flat list).
+    if (typeof dataTreeState !== 'undefined' && dataTreeState.planning) {
+        dataTreeState.planning.seeds = (state.seeds || []).map(s => ({
+            id: s.id || s._id || `seed_${Math.random().toString(36).slice(2, 8)}`,
+            position: s.pos || s.position,
+            trajectory_id: s.trajectory_id,
+            direction: s.direction,
+            visible: true,
+            opacity: 1.0,
+            color: '#ffcc00',
+        }));
+    }
 }
 
 // Update planning trajectories (parent nodes for seeds in the data tree).

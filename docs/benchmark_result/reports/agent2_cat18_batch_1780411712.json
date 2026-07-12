@@ -1,0 +1,882 @@
+[
+  {
+    "case_id": "Q0849",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "Explain the process of CT-MRI image fusion for brachytherapy planning. What are the different registration methods (rigid, deformable), how do you evaluate registration accuracy, what are the common sources of registration error, and how does registration accuracy affect the clinical brachytherapy plan?",
+    "response": "# CT-MRI Image Fusion for Brachytherapy Planning ## 1. Process Overview CT-MRI fusion combines the strengths of both modalities: - **CT**: Accurate spatial information, bone visualization, artifact-free for most applicators, electron density for dosimetry - **MRI**: Superior soft tissue contrast for tumor and organ delineation (GTV/CTV), excellent for visualizing applicator channels on T2-weighted sequences **Typical workflow:** Acquire CT with applicators in place (with MRI-compatible markers if available) Acquire MRI in treatment position with same applicators Import both datasets into treatment planning system (TPS) Perform image registration Fuse datasets and contour structures on MRI Transfer contours to CT for dose calculation Optimize and evaluate plan on combined dataset --- ## 2. Registration Methods ### Rigid Registration **Characteristics:** - Assumes a fixed, linear transformation (translation + rotation) - Preserves spatial relationships between structures - Faster computation, more robust - Limited to gross misalignment correction **Common algorithms:** - Mutual information maximization - Normalized cross-correlation - Landmark-based (fiducial points) - Surface-based (external contour matching) **Clinical use cases:** - Initial alignment for gynecological, prostate, and head & neck brachytherapy - Most prostate and gynecological cases primarily use rigid registration --- ### Deformable Registration (Demons, B-spline, Deep Learning-based) **Characteristics:** - A",
+    "response_length": 6529,
+    "total_score": 0.7033333333333334,
+    "dimension_scores": {
+      "keyword": 0.8333333333333334,
+      "completeness": 0.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 0.7
+    },
+    "passed": true,
+    "response_time": 63.32010531425476,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q0849.png",
+    "timestamp": "2026-06-02T22:23:15.955491"
+  },
+  {
+    "case_id": "Q0850",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "Describe the use of PET-CT imaging in brachytherapy planning for head and neck cancers. How can FDG-PET improve GTV delineation compared to CT and MRI alone? What are the specific PET artifacts caused by brachytherapy applicators, and how do you account for these artifacts in treatment planning?",
+    "response": "## PET-CT in Head & Neck Brachytherapy Planning ### Role of PET-CT in H&N Brachytherapy PET-CT, particularly with **FDG (18F-fluorodeoxyglucose)**, is increasingly integrated into head and neck brachytherapy planning, primarily for: - **Boost treatment** after external beam radiotherapy (EBRT) for locally advanced disease - **Recurrent disease** where anatomy is distorted from prior treatment - **Base of tongue, tonsil, and nasopharyngeal** sites where applicator placement benefits from functional guidance ### FDG-PET vs. CT/MRI for GTV Delineation | Modality | Strengths | Limitations for GTV | |----------|-----------|---------------------| | **CT** | Excellent bone/air/tissue contrast, applicator visibility | Poor soft tissue discrimination; cannot distinguish post-treatment changes from viable tumor | | **MRI** | Superior soft tissue resolution, T2/contrast-enhanced sequences | Artifact-prone with applicators; difficult to distinguish edema from tumor | | **FDG-PET** | Functional metabolic activity; identifies biologically active tumor | Limited spatial resolution (~4-5 mm); false positives from inflammation | **How PET improves GTV:** **Metabolic coregistration** \u2014 FDG uptake identifies metabolically active disease not visible on anatomical imaging **Differentiates tumor from post-RT changes** \u2014 Reduced FDG uptake helps distinguish fibrosis from recurrence (specificity ~80-90% in post-treatment setting) **Detects involved nodes** \u2014 PET identifies FDG-avid lymph nodes, part",
+    "response_length": 4649,
+    "total_score": 0.9333333333333333,
+    "dimension_scores": {
+      "keyword": 0.8333333333333334,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 24.83973717689514,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q0850.png",
+    "timestamp": "2026-06-02T22:23:41.795619"
+  },
+  {
+    "case_id": "Q0854",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "Describe the use of cone-beam CT (CBCT) imaging for brachytherapy setup verification. How does CBCT compare to kV imaging for applicator position verification? What are the specific image quality limitations of CBCT in the pelvis, and how can these be mitigated to improve verification accuracy?",
+    "response": "# Cone-Beam CT (CBCT) for Brachytherapy Setup Verification ## Role of CBCT in Brachytherapy CBCT is integrated into most modern brachytherapy systems (Elekta, Varian, Accuray) for **intrafraction verification** of applicator positions. Key applications include: - **Pre-treatment verification**: Confirming applicator geometry matches treatment plan before source activation - **Soft tissue visualization**: Visualizing tumor and OAR positions relative to applicators - **Shift calculations**: Quantifying corrections needed for patient positioning errors - **3D dose verification**: Enabling reconstruction of delivered dose with actual anatomy --- ## CBCT vs. kV Imaging Comparison | Aspect | CBCT | kV Imaging (2D) | |--------|------|-----------------| | **Dimensionality** | 3D volumetric data | 2D planar images | | **Soft tissue contrast** | Moderate (limited by cone-beam artifacts) | Poor; relies on bony anatomy and radiopaque markers | | **Applicator visualization** | Excellent for source channels and/t dwell positions | Good for source guides and/tandems | | **Dose contribution** | Small (sub-mSv per scan) | Negligible | | **Acquisition time** | Longer (~10-30 sec) | Shorter (~1-5 sec) | | **Spatial resolution** | Lower (~0. 5-1 mm) | Higher (~0. 2-0. 4 mm) | | **Metal artifact sensitivity** | **High** \u2014 artifacts from applicators degrade image quality | Lower; artifacts more localized | **Clinical implication**: kV imaging is superior for **high-resolution verification of sourc",
+    "response_length": 4262,
+    "total_score": 1.0,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 63.13358664512634,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q0854.png",
+    "timestamp": "2026-06-02T22:24:45.929523"
+  },
+  {
+    "case_id": "Q0855",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "Explain the concept of on-line adaptive brachytherapy using real-time MRI imaging. How does the MRI-linac platform enable adaptive brachytherapy? What are the current technical limitations, the evidence for online adaptive approaches, and how do they differ from offline adaptive strategies?",
+    "response": "# Online Adaptive Brachytherapy with Real-Time MRI Imaging ## Concept of Online Adaptive Brachytherapy Online adaptive brachytherapy refers to the process of modifying the treatment plan in **real-time during the treatment session** based on current imaging of the patient's anatomy. Unlike conventional brachytherapy where planning is done pre-treatment, online adaptation allows the treatment to be tailored to the patient's exact geometry at the time of delivery. Real-time MRI enables: - Direct visualization of tumor and organs at risk (OARs) - Tracking of interfraction and intrafraction motion - Immediate assessment of applicator placement accuracy - Dynamic dose recalculation as anatomy changes ## MRI-Linac Platform for Adaptive Brachytherapy Two primary systems exist: | System | Manufacturer | Field Strength | Design Consideration | |--------|--------------|----------------|---------------------| | **MRIdian** | ViewRay | 0. 35T | Split-magnet design; MR-compatible brachytherapy applicators can be accommodated | | **Unity** | Elekta | 1. 5T | Limited bore space; requires MR-compatible applicators; ferromagnetic materials prohibited | The MRI-linac allows: - Continuous soft-tissue tracking during treatment - Automated beam gating when tumor displacement exceeds thresholds - Real-time MR imaging for plan adaptation before or during delivery - Integration with HDR afterloader systems ## Technical Limitations **MR Compatibility**: All applicators, catheters, and afterloaders mu",
+    "response_length": 5035,
+    "total_score": 0.77,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 0.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 0.7
+    },
+    "passed": true,
+    "response_time": 55.224945306777954,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q0855.png",
+    "timestamp": "2026-06-02T22:25:42.154893"
+  },
+  {
+    "case_id": "Q0856",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "Describe the quality assurance procedures for MRI-based brachytherapy imaging. What phantom tests are needed to verify MRI geometric accuracy, signal uniformity, and image distortion? How do you validate that the MRI imaging chain does not introduce clinically significant errors in applicator reconstruction and target delineation?",
+    "response": "# Quality Assurance for MRI-Based Brachytherapy Imaging ## Overview MRI-based brachytherapy planning requires rigorous QA to ensure sub-millimeter geometric accuracy, as errors directly propagate to dose calculations and applicator reconstruction. --- ## 1. Geometric Accuracy Tests ### Spatial Accuracy Phantom | Test | Frequency | Acceptance Criteria | Method | |------|-----------|---------------------|--------| | 3D landmark accuracy | Monthly | \u22641 mm (1\u03c3) | Image 3D grid phantom; measure distances between known markers | | Geometric distortion (B\u2080-related) | Monthly | \u22642 mm at field center, \u22645 mm at periphery | ACR MRI phantom or dedicated distortion phantom | | Gradient nonlinearity | Annual | Per manufacturer specs (typically <1%) | Automated geometric phantom analysis | **Recommended Phantoms:** - **MRI Physics Level 1 Phantom** (Leeds Test Objects, QUASAR) - **Nordion MRI Distortion Phantom** - **Custom 3D grid phantom** with known marker positions ### Distortion Mapping - Image a grid phantom spanning the entire imaging volume - Compare known marker positions to measured positions - Generate distortion maps for each sequence used clinically - Correct distortion using vendor-provided sequences or third-party software --- ## 2. Signal Uniformity Tests ### Quantitative Uniformity Metrics | Parameter | Acceptance | Reference | |-----------|------------|-----------| | Signal-to-Noise Ratio (SNR) | \u2265Baseline - 10% | NEMA MS 1 | | Percent Signal Uniformity (PSU) | \u226587. 5% | N",
+    "response_length": 5529,
+    "total_score": 0.7033333333333334,
+    "dimension_scores": {
+      "keyword": 0.8333333333333334,
+      "completeness": 0.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 0.7
+    },
+    "passed": true,
+    "response_time": 66.30894756317139,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q0856.png",
+    "timestamp": "2026-06-02T22:26:49.464232"
+  },
+  {
+    "case_id": "Q0857",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "Explain how dynamic contrast-enhanced MRI (DCE-MRI) can improve assessment of treatment response during a course of brachytherapy. What pharmacokinetic parameters are measured, how do they correlate with tumor biology, and how can this information guide adaptive treatment planning decisions?",
+    "response": "# DCE-MRI in Brachytherapy: Enhancing Treatment Response Assessment ## How DCE-MRI Improves Response Assessment DCE-MRI tracks the temporal dynamics of contrast agent (gadolinium) uptake and washout within tissue, providing functional information beyond anatomical imaging. In brachytherapy, this enables: - **Early detection** of tumor response (often within days to weeks, before volumetric changes occur) - **Spatial mapping** of heterogeneous response within the target volume - **Differentiation** between residual tumor and treatment-related changes (fibrosis, necrosis) - **Non-invasive tumor characterization** at multiple timepoints during treatment ## Pharmacokinetic Parameters Measured | Parameter | Definition | Biological Meaning | |-----------|------------|-------------------| | **K^trans** (volume transfer constant) | Rate of contrast agent transfer from plasma to extravascular extracellular space (EES) | Reflects **vascular permeability** and **blood flow**; elevated in aggressive, hypervascular tumors | | **K_ep** (rate constant) | Rate of contrast agent return from EES to plasma | Related to **washout kinetics**; depends on vascular permeability and interstitial pressure | | **V_e** (extravascular extracellular volume fraction) | Proportion of tissue volume occupied by EES | Indicates **tissue composition** (edema, necrosis, cellular density) | | **V_p** (plasma volume fraction) | Proportion of tissue volume occupied by plasma | Reflects **vascular density** | **Deri",
+    "response_length": 5261,
+    "total_score": 0.77,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 0.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 0.7
+    },
+    "passed": true,
+    "response_time": 25.203938245773315,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q0857.png",
+    "timestamp": "2026-06-02T22:27:15.668564"
+  },
+  {
+    "case_id": "Q0858",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "Describe the imaging considerations for brachytherapy of head and neck tumors. How does the complex anatomy of the head and neck affect imaging protocols? What are the specific MRI sequences needed for different tumor subsites (oral cavity, oropharynx, larynx), and how does the presence of dental hardware affect imaging quality?",
+    "response": "# Imaging Considerations for Head and Neck Brachytherapy ## Impact of Complex Anatomy on Imaging Protocols The head and neck region presents unique imaging challenges due to: - **Small, adjacent critical structures**: Parotid glands, mandible, major vessels, cranial nerves, and brainstem in close proximity require high spatial resolution - **Variable tissue interfaces**: Air-bone-soft tissue boundaries create artifacts and susceptibility effects - **Motion susceptibility**: Swallowing, respiration, and tongue movement necessitate specific motion mitigation strategies - **Delineation complexity**: Tumor extent often difficult to distinguish from post-inflammatory changes ## Essential Imaging Modalities | Modality | Role | Advantages | Limitations | |----------|------|------------|-------------| | **MRI** | Primary for soft tissue delineation | Superior soft tissue contrast, functional sequences | Metal artifacts, longer acquisition | | **CT** | Dose calculation, applicator localization | Precise Hounsfield units, fast, metal artifact reduction | Poor soft tissue distinction | | **PET-CT** | Metabolic tumor extent, nodal disease | Functional data, workflow integration | Spatial resolution limits | | **Ultrasound** | Intraoperative guidance | Real-time, no radiation | Operator-dependent | ## MRI Sequences by Subsite ### Oral Cavity (Tongue, Floor of Mouth, Buccal Mucosa) | Sequence | Purpose | Key Parameters | |----------|---------|-----------------| | **T2-weighted** (with fat ",
+    "response_length": 5200,
+    "total_score": 0.7033333333333334,
+    "dimension_scores": {
+      "keyword": 0.8333333333333334,
+      "completeness": 0.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 0.7
+    },
+    "passed": true,
+    "response_time": 24.595348834991455,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q0858.png",
+    "timestamp": "2026-06-02T22:27:41.264200"
+  },
+  {
+    "case_id": "Q0859",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "Explain the use of CT perfusion imaging for assessing tumor perfusion changes during brachytherapy. How can perfusion parameters (blood flow, blood volume, mean transit time) be used to evaluate early treatment response? What are the technical challenges of performing CT perfusion in the pelvis during a course of brachytherapy?",
+    "response": "# CT Perfusion Imaging in Brachytherapy Response Assessment ## Overview CT perfusion imaging uses dynamic contrast-enhanced CT (DCE-CT) to quantitatively measure tissue vascular characteristics by tracking iodinated contrast agent kinetics. During brachytherapy, it can provide functional imaging data to complement anatomical imaging. --- ## Key Perfusion Parameters | Parameter | Definition | Clinical Relevance | |-----------|------------|-------------------| | **Blood Flow (BF)** | Volume of blood per unit mass per unit time (mL/100g/min) | Reflects tissue vascularity; decreases with tumor devascularization | | **Blood Volume (BV)** | Total blood volume per unit mass (mL/100g) | Indicates vessel density; reduced by antiangiogenic effects | | **Mean Transit Time (MTT)** | Average time for contrast to traverse tissue (seconds) | Prolongation suggests vessel damage or reduced perfusion pressure | --- ## Application to Early Treatment Response ### 1. **Early Response Biomarker** - Perfusion changes often precede morphological changes by days to weeks - BF reduction of 20-40% within 24-72 hours post-brachytherapy has been correlated with favorable response - Particularly useful for rapidly responding tumors (cervical, prostate) ### 2. **Mechanistic Insights** - **Hypoxia modification**: Brachytherapy's high dose rate causes microvascular damage \u2192 reduced BF/BV - **Reoxygenation detection**: MTT prolongation followed by BF recovery may indicate improved oxygenation (relevant for fr",
+    "response_length": 3925,
+    "total_score": 0.8666666666666667,
+    "dimension_scores": {
+      "keyword": 0.6666666666666666,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 55.717708587646484,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q0859.png",
+    "timestamp": "2026-06-02T22:28:37.982245"
+  },
+  {
+    "case_id": "Q0860",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "Describe the image-guided adaptive brachytherapy (IGABT) workflow for cervical cancer. How is the adaptive plan created from MRI images, what decisions must be made at each fraction regarding plan adaptation versus replanning, and how do you document and verify the adaptive process? Include discussion of the GEC-ESTRO recommendations for IGABT.",
+    "response": "# Image-Guided Adaptive Brachytherapy (IGABT) for Cervical Cancer ## Overview IGABT using MRI is the standard of care for locally advanced cervical cancer treated with definitive chemoradiation. The technique accounts for significant anatomical changes that occur during treatment (tumor regression, soft tissue shrinkage, applicator movement), which is critical given the steep dose gradients in brachytherapy. --- ## GEC-ESTRO Recommendations Framework The **GEC-ESTRO Working Group** published landmark recommendations (2000\u20132019) establishing: | Report | Year | Key Content | |--------|------|-------------| | I | 2000 | Definition of target volumes (HR-CTV, IR-CTV, LR-CTV) | | II | 2005 | Dose-volume parameters and prescription | | III | 2006 | MRI protocols and imaging requirements | | IV | 2012 | Radiobiology and fractionation | | V | 2019 | Clinical implementation and quality assurance | ### GEC-ESTRO Target Definitions - **HR-CTV** (High-Risk CTV): Gross tumor volume at time of brachytherapy + entire cervix + any residual tumor - **IR-CTV** (Intermediate-Risk CTV): HR-CTV + 5\u201310 mm margin + initial tumor extent - **LR-CTV** (Low-Risk CTV): Entire uterus, parametria, and upper vagina at diagnosis --- ## IGABT Workflow ### Phase 1: Pre-Treatment Planning **1. External Beam Radiotherapy (EBRT) Phase** - 45\u201350. 4 Gy in 25\u201328 fractions to pelvis - Concurrent cisplatin chemotherapy - 3\u20135 fractions/week EBRT; brachytherapy typically starts Week 4\u20135 **2. Applicator Insertion** - **T",
+    "response_length": 9880,
+    "total_score": 0.7128571428571429,
+    "dimension_scores": {
+      "keyword": 0.8571428571428571,
+      "completeness": 0.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 0.7
+    },
+    "passed": true,
+    "response_time": 54.47157645225525,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q0860.png",
+    "timestamp": "2026-06-02T22:29:33.454545"
+  },
+  {
+    "case_id": "Q0861",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "Explain how artificial intelligence and deep learning are being applied to brachytherapy imaging tasks. What are the current applications of AI in auto-contouring, applicator reconstruction, and image registration for brachytherapy? What are the validation requirements and limitations of AI-assisted imaging in the clinical brachytherapy setting?",
+    "response": "No response generated.",
+    "response_length": 22,
+    "total_score": 0.5,
+    "dimension_scores": {
+      "keyword": 0.0,
+      "completeness": 0.5,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": false,
+    "response_time": 2.2446303367614746,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q0861.png",
+    "timestamp": "2026-06-02T22:29:36.699367"
+  },
+  {
+    "case_id": "Q0862",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "Describe the use of 4D-CT imaging for brachytherapy planning in tumors affected by respiratory motion. How does 4D-CT improve target volume definition compared to conventional CT? What are the specific challenges of 4D-CT in the pelvis, and how do you manage respiratory motion in upper abdominal brachytherapy?",
+    "response": "# 4D-CT Imaging for Brachytherapy Planning in Moving Tumors ## How 4D-CT Works in Brachytherapy 4D-CT captures the patient's respiratory cycle by synchronizing CT slices with external or internal surrogate signals (e. , abdominal pressure sensors, spirometry, or diaphragm tracking). This produces a series of CT datasets representing discrete respiratory phases (typically 10 phases from 0\u201390% of the cycle). **Key applications:** - **Lung cancer**: Brachytherapy for endobronchial tumors or lung metastases - **Upper abdominal**: Pancreas, liver, adrenal metastases - **Upper GI/GYN**: Cervical cancer with parametrial extension, or perineal recurrences near the diaphragm --- ## Improved Target Volume Definition vs. Conventional CT | Aspect | Conventional CT | 4D-CT | |--------|----------------|-------| | **Motion accounting** | Static snapshot; motion averaged or missed | Captures tumor position at each respiratory phase | | **ITV creation** | Operator-dependent estimate; prone to under- or over-contouring | Direct visualization of tumor extent through all phases | | **GTV variability** | Single position only | Demonstrates *intrafraction* GTV variation | | **Delineation accuracy** | Based on assumptions | Based on actual anatomy in motion | **Specific advantages:** - **Internal Target Volume (ITV)**: The GTV is contoured on each phase, and the union creates a motion-inclusive ITV\u2014more accurate than adding isotropic margins - **Delineation of \"hot spots\"**: Particularly relevant f",
+    "response_length": 5380,
+    "total_score": 0.77,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 0.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 0.7
+    },
+    "passed": true,
+    "response_time": 29.385759353637695,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q0862.png",
+    "timestamp": "2026-06-02T22:30:07.085533"
+  },
+  {
+    "case_id": "Q0863",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "Explain the concept of MRI thermometry for brachytherapy applications. How can real-time temperature mapping during brachytherapy improve treatment delivery? What are the technical requirements for MRI thermometry, and what is the current evidence for its clinical utility in brachytherapy?",
+    "response": "# MRI Thermometry in Brachytherapy ## Concept MRI thermometry leverages the temperature-dependent properties of MRI signals to create real-time spatial temperature maps. The primary method is the **proton resonance frequency (PRF) shift technique**, which exploits the linear relationship between temperature and the water proton resonance frequency shift (~0. 01 ppm/\u00b0C in aqueous tissues). This approach offers: - Excellent soft tissue contrast - Non-invasive, continuous monitoring - No ionizing radiation - Sub-degree temperature sensitivity Alternative methods include T1-weighted imaging and diffusion-weighted imaging, though these are less commonly used clinically. ## Clinical Benefits for Brachytherapy Delivery Real-time temperature mapping can enhance treatment in several ways: | Application | Benefit | |-------------|---------| | **Hyperthermia + BT** | Verifies adequate thermal dose (\u226543\u00b0C) to target while protecting OARs | | **Thermal ablation** | Monitors ablation zone in real-time during interstitial laser/RF treatments | | **Dose verification** | Correlates thermal dose with radiation dose for combined thermal-radiation effects | | **Adaptive planning** | Allows treatment modification based on actual thermal distribution | The **thermal isoeffect** (synergy between hyperthermia and radiation) can improve tumor control by 1. 5\u20132\u00d7 when temperatures of 40\u201344\u00b0C are maintained. ## Technical Requirements **Hardware:** - MRI scanner (1. 5T or 3T preferred) - MRI-compatible a",
+    "response_length": 3309,
+    "total_score": 0.9199999999999999,
+    "dimension_scores": {
+      "keyword": 0.8,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 24.936318159103394,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q0863.png",
+    "timestamp": "2026-06-02T22:30:33.022160"
+  },
+  {
+    "case_id": "Q0864",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "Describe the imaging requirements for quality assurance of MRI-guided brachytherapy programs. What test objects and phantoms are needed, how do you verify imaging accuracy across the MRI room and treatment room, and what are the specific QA recommendations from professional organizations?",
+    "response": "# MRI-Guided Brachytherapy: Imaging QA Requirements ## Overview MRI-guided brachytherapy (MRI-GB) requires comprehensive QA programs addressing MRI safety, geometric accuracy, image quality, and spatial fidelity across the MRI and treatment delivery environments. ## Essential Phantoms and Test Objects | **Phantom Category** | **Purpose** | **Key Characteristics** | |---------------------|-------------|------------------------| | **Geometric accuracy phantom** | Verify spatial accuracy and distortion | Grid of markers or spheres, known geometry (e. , 20\u00d720\u00d720 cm FOV), visible on all sequences | | **Image uniformity phantom** | Assess signal homogeneity | Uniform gel or water-filled container | | **High-resolution phantom** | Evaluate small structure visibility | Fine detail inserts (\u22641 mm features) | | **T1/T2 relaxation phantom** | Verify tissue contrast properties | Multiple chambers with known T1/T2 values | | **Endorectal/Multi-channel coil phantom** | Coil-specific QA | Small FOV compatible with endocavitary applicators | | **Treatment planning QA phantom** | End-to-end verification | Contains TLD/b\u522b\u4eba\u7684 detector slots, compatible with applicators | **Commonly Used Commercial Phantoms:** - AGEM MRI Brain Phantom - CIRS 603M Multi-Purpose MRI Phantom - Gammex RMI 467 Flattened Disk Phantom - Kurtz et al. custom CGY-NJCU phantom (cervical cancer) ## Imaging Accuracy Verification ### 1. MRI System QA (Per AAPM TG-284) | **Test** | **Frequency** | **Tolerance** | |----------|--",
+    "response_length": 4342,
+    "total_score": 0.8,
+    "dimension_scores": {
+      "keyword": 0.5,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 55.111515283584595,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q0864.png",
+    "timestamp": "2026-06-02T22:31:29.134069"
+  },
+  {
+    "case_id": "Q0865",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "Explain how radiomics and texture analysis of pre-treatment MRI can predict brachytherapy outcomes in cervical cancer. What specific radiomic features correlate with local control and toxicity? How should radiomic studies be designed to ensure reproducibility and clinical applicability?",
+    "response": "# Radiomics and Texture Analysis in Cervical Cancer Brachytherapy ## Overview Radiomics extracts quantitative features from medical images to build predictive models. In cervical cancer, pre-treatment MRI radiomics has shown promise for predicting: - **Local control** (tumor response to treatment) - **Toxicity** (especially rectal, bladder, and small bowel) - **Patient outcomes** following image-guided brachytherapy (IGBT) --- ## Key Radiomic Features and Their Clinical Correlations ### Tumor-Related Features (Local Control) | Feature Category | Specific Features | Clinical Correlation | |------------------|-------------------|---------------------| | **Shape-based** | Sphericity, irregularity, convexity | More irregular shapes associate with worse local control | | **Intensity histogram** | Skewness, kurtosis, entropy | High entropy = heterogeneous tumor = poorer response | | **Texture (1st order)** | Mean, variance, uniformity | Lower uniformity predicts local failure | | **Texture (2nd order - GLCM)** | Contrast, correlation, energy, homogeneity | High contrast/heterogeneity correlates with treatment resistance | | **Higher-order (GLRLM, GLSZM)** | Long Run Emphasis, Zone Entropy | Finer texture patterns associated with aggressive phenotypes | | **Deep learning features** | CNN-derived embeddings | Emerging but show improved discrimination | ### Normal Tissue Features (Toxicity Prediction) | Organ | Predictive Features | Outcome | |-------|---------------------|---------| ",
+    "response_length": 5369,
+    "total_score": 0.77,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 0.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 0.7
+    },
+    "passed": true,
+    "response_time": 58.84434795379639,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q0865.png",
+    "timestamp": "2026-06-02T22:32:28.978857"
+  },
+  {
+    "case_id": "Q1712",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I am performing CT-MRI fusion for prostate brachytherapy planning. The patient has a pelvic MRI with T2-weighted sequences. I need to understand: (1) What are the recommended MRI sequences for prostate delineation, (2) How do I perform CT-MRI registration and what are the sources of registration error, (3) How does MRI improve prostate and OAR delineation compared to CT, and (4) What quality assurance steps should I perform for the fused images?",
+    "response": "No response generated.",
+    "response_length": 22,
+    "total_score": 0.5,
+    "dimension_scores": {
+      "keyword": 0.0,
+      "completeness": 0.5,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": false,
+    "response_time": 2.9701530933380127,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1712.png",
+    "timestamp": "2026-06-02T22:32:32.949191"
+  },
+  {
+    "case_id": "Q1713",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand the concept of deformable image registration (DIR) for adaptive brachytherapy. In cervical cancer IGABT, the applicator position and tumor shape change between fractions. How does DIR help accumulate dose across fractions? What are the available DIR algorithms (B-spline, demons, etc.)? What are the limitations and accuracy of DIR in the pelvis? How should I validate DIR results for brachytherapy applications?",
+    "response": "# Deformable Image Registration (DIR) for Adaptive Brachytherapy ## How DIR Enables Dose Accumulation Across Fractions In cervical cancer IGABT, anatomical changes between fractions (applicator repositioning, tumor regression, bladder/rectum filling variations) mean that a single reference geometry cannot represent cumulative dose. DIR addresses this by: **Spatial Mapping**: DIR creates a voxel-by-voxel displacement field (DF) that maps anatomy from one image (moving) to another (reference). This allows: - **Dose warping**: Accumulate fraction doses from different geometries onto a single reference CT/MRI - **Dose summation accounting for deformation**: Instead of rigid registration alone, DIR captures soft tissue deformations, enabling more accurate CTV/Evaluation CT accumulation **Typical Workflow**: Register each fraction's CT/MRI to a chosen reference (often fraction 1 or a summed image) Apply the resulting deformation vector field (DVF) to warp doses Sum warped doses to generate cumulative dose-volume histograms (cDVH) --- ## Available DIR Algorithms | Algorithm | Description | Pros | Cons | |-----------|-------------|------|------| | **B-spline (Free-Form Deformation)** | Non-rigid transformation using cubic B-spline control point grid | Smooth, biologically plausible; widely validated | Computationally intensive; requires parameter tuning | | **Demons (Optical Flow)** | Intensity-based algorithm using diffusion equations | Fast; good for large deformations | Can be ina",
+    "response_length": 5394,
+    "total_score": 0.7033333333333334,
+    "dimension_scores": {
+      "keyword": 0.8333333333333334,
+      "completeness": 0.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 0.7
+    },
+    "passed": true,
+    "response_time": 57.26571774482727,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1713.png",
+    "timestamp": "2026-06-02T22:33:31.215257"
+  },
+  {
+    "case_id": "Q1714",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I am evaluating PET-CT for brachytherapy planning in cervical cancer. FDG-PET can visualize the primary tumor and lymph nodes. How should I integrate PET findings into brachytherapy target volume delineation? What are the limitations of PET for brachytherapy planning? How does PET-CT compare with MRI for target delineation? Should I use PET-CT routinely for brachytherapy planning?",
+    "response": "The knowledge base query returned no results, but this is well-established in guidelines. Here's a comprehensive answer: --- ## PET-CT in Cervical Cancer Brachytherapy Planning ### 1. Integration into Target Volume Delineation **GTV (Gross Tumor Volume):** - PET-derived GTV can be used as a complement to clinical examination and T2-weighted MRI - GEC-ESTRO recommends using the **FDG-PET GTV** to define metabolically active disease within the cervix - For lymph nodes: PET-positive nodes should be **included in the high-risk CTV (HR-CTV)** or considered for simultaneous integrated boost (SIB) **Practical approach:** - Fuse PET-CT with planning CT (or MRI) at time of brachytherapy - Use a **SUV threshold** (commonly 40% of max SUV) or absolute SUV cutoff (e. , SUV \u22652. 5) for GTV definition - Contour PET-positive disease on each brachytherapy fraction if significant regression has occurred **Adaptive planning:** - If significant tumor regression is observed on interim PET, consider adapting the HR-CTV accordingly --- ### 2. Limitations of PET for Brachytherapy Planning | Limitation | Clinical Impact | |------------|-----------------| | **Poor soft-tissue resolution** | Cannot reliably delineate tumor boundaries in cervix/parametria | | **Motion artifact** | Bladder filling, bowel peristalsis cause misregistration | | **Variable SUV thresholds** | No standardized cutoff; 40% vs. absolute thresholds give different volumes | | **Limited spatial accuracy** | PET resolution ~5-7mm; ma",
+    "response_length": 4375,
+    "total_score": 0.9428571428571428,
+    "dimension_scores": {
+      "keyword": 0.8571428571428571,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 24.614330768585205,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1714.png",
+    "timestamp": "2026-06-02T22:33:56.829911"
+  },
+  {
+    "case_id": "Q1715",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand how to perform MRI-based brachytherapy planning for cervical cancer using the T2-weighted sequences. The GEC-ESTRO recommends delineating: HR-CTV, IR-CTV, and the OARs. How do I delineate the HR-CTV on axial T2-weighted images? What are the specific boundaries? How do I account for the applicator in MRI-based planning? What is the recommended MRI protocol for brachytherapy?",
+    "response": "# MRI-Based Brachytherapy Planning for Cervical Cancer ## HR-CTV Delineation on T2-Weighted Images ### Anatomical Boundaries The **High-Risk Clinical Target Volume (HR-CTV)** represents the entire cervix and any involved tissue. According to GEC-ESTRO recommendations (originally published in *Radiotherapy and Oncology*, 2005; updated in *Brachytherapy*, 2018): **Superior/Inferior:** - **Superior**: Junction of uterine corpus and cervix (internal os) - **Inferior**: Lowest tumor extension (may extend into vagina) **Lateral:** - Extends to the **parametrial tissues** laterally - Includes any tumor extension into parametria or beyond the cervix **Anterior/Posterior:** - **Anterior**: Junction with bladder wall (may indent but not displace) - **Posterior**: Junction with rectal wall/seminal vesicles ### T2 Signal Characteristics | Tissue | T2 Signal | Clinical Relevance | |--------|-----------|---------------------| | Cervical stroma (normal) | Low (dark) | Outer boundary marker | | Tumor | High (bright) | Guides HR-CTV | | Parametrial involvement | High/intermediate | Included in HR-CTV | ### Key Delineation Rule > **\"If in doubt, include it\"** \u2014 HR-CTV should encompass all macroscopically visible tumor and the entire cervix. --- ## IR-CTV (Intermediate-Risk CTV) Extends beyond HR-CTV to include: - 5-10 mm margin around HR-CTV - Areas of microscopic disease risk - Entire uterus (often recommended for\u5168\u7a0b\u6cbb\u7597planning) --- ## Applicator Considerations in MRI | Issue | Solution | |----",
+    "response_length": 3597,
+    "total_score": 1.0,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 19.338005304336548,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1715.png",
+    "timestamp": "2026-06-02T22:34:17.168231"
+  },
+  {
+    "case_id": "Q1716",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I am performing a quality assurance check on the CT simulation for brachytherapy planning. I need to verify: (1) CT number accuracy using a phantom, (2) geometric accuracy of the CT images, (3) the effect of contrast material on CT-based dose calculation, and (4) the appropriate CT-to-electron-density conversion table for brachytherapy applicators. How do I perform each of these QA checks?",
+    "response": "# CT QA for Brachytherapy Planning ## 1. CT Number Accuracy (HU Calibration) **Equipment:** CatPhan\u00ae phantom or dedicated CT QA phantom with known density inserts **Procedure:** Image the phantom using the same protocol as patient scans Place ROI measurements on each density insert (typically air, water-equivalent, bone, etc. Compare measured HU values against expected values | Material | Expected HU | |----------|-------------| | Air | \u22121000 | | Water | 0 | | Acrylic | +120 to +150 | | Bone | +800 to +1200+ | **Acceptance Criteria:** \u00b120 HU for soft tissue inserts; \u00b140 HU for high-density materials (AAPM TG-66 guidelines) **Frequency:** Monthly (or per institutional protocol) --- ## 2. Geometric Accuracy **Equipment:** Wire phantom, ball-bearing phantom, or rulers embedded in CT phantom **Procedure:** Image the geometric phantom Measure distances between known reference points in all three planes (axial, sagittal, coronal) Check for image distortion, especially at field edges **Acceptance Criteria:** - **Slice thickness accuracy:** \u00b11 mm of nominal - **Spatial accuracy (in-plane):** \u00b11 mm - **Table positioning accuracy:** \u00b11 mm - **No significant geometric distortion** (>1 mm in the imaging volume of interest) **Note for Brachytherapy:** Geometric accuracy is especially critical near the applicator. Some clinics use a dedicated brachytherapy phantom with applicator holes to verify geometry. --- ## 3. Effect of Contrast Material on Dose Calculation **Clinical Consideration:**",
+    "response_length": 4211,
+    "total_score": 0.9333333333333333,
+    "dimension_scores": {
+      "keyword": 0.8333333333333334,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 21.806013822555542,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1716.png",
+    "timestamp": "2026-06-02T22:34:39.974606"
+  },
+  {
+    "case_id": "Q1717",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand the concept of 4D brachytherapy planning. In cervical cancer IGABT, the tumor and applicator positions change between fractions. How does 4D brachytherapy account for these changes? What imaging should be performed at each fraction? How should I accumulate dose across fractions using deformable registration? What are the clinical benefits of 4D planning compared to single-fraction planning?",
+    "response": "# 4D Brachytherapy Planning for Cervical Cancer IGABT ## 1. How 4D Brachytherapy Accounts for Inter-Fraction Changes 4D brachytherapy (or adaptive brachytherapy) acknowledges that both **anatomy** and **applicator geometry** change between fractions due to: - Tumor regression (often 30-70% volume reduction during EBRT) - Soft tissue deformation and bladder/rectal filling - Applicator displacement or tilt - Weight loss and patient positioning differences **The adaptive approach:** - Treats each fraction as a separate planning event - Uses repeat imaging to capture the anatomy at the time of each implant - Plans on the \"of the day\" anatomy rather than a single reference plan - Recalculates dose based on actual positions, not assumed positions This is distinct from 3D planning (single plan applied to all fractions) and is the standard of care per **GEC-ESTRO recommendations** and **ABS consensus documents**. --- ## 2. Imaging Requirements at Each Fraction ### At Insertion (First Fraction) | Modality | Purpose | |----------|---------| | **MRI** (gold standard) | Define GTV, HR-CTV, IR-CTV, OARs with superior soft tissue contrast | | **CT** (if MRI unavailable) | Applicator visualization, OAR delineation | | **Ultrasound** (intracavitary) | Real-time applicator guidance | ### At Each Subsequent Fraction (Boost Fractions) | Modality | Purpose | |----------|---------| | **MRI** | Recommended for HR-CTV and OAR definition each time | | **CT** | Acceptable if MRI not feasible; good fo",
+    "response_length": 6454,
+    "total_score": 0.7033333333333334,
+    "dimension_scores": {
+      "keyword": 0.8333333333333334,
+      "completeness": 0.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 0.7
+    },
+    "passed": true,
+    "response_time": 63.04501032829285,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1717.png",
+    "timestamp": "2026-06-02T22:35:44.020079"
+  },
+  {
+    "case_id": "Q1718",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I am evaluating the use of ultrasound for real-time guidance during prostate brachytherapy seed implantation. How does transrectal ultrasound (TRUS) guidance work for prostate seed implantation? What are the advantages of real-time TRUS-guided implantation compared to pre-planned approaches? How do I perform prostate volume reconstruction from TRUS images? What are the limitations of TRUS for prostate delineation?",
+    "response": "# Transrectal Ultrasound (TRUS) Guidance for Prostate Brachytherapy ## How TRUS Guidance Works TRUS-guided prostate brachytherapy uses a **biplanar ultrasound probe** (typically 6-7. 5 MHz, axial and sagittal views) inserted rectally to visualize the prostate in real-time during seed implantation. **Standard workflow:** **Pre-operative**: Prostate volume study performed under general/spinal anesthesia; volume calculated using the ellipsoid formula (\u03c0/6 \u00d7 width \u00d7 height \u00d7 length) from transverse images at 5mm intervals **Intra-operative**: Patient placed in lithotomy position; TRUS probe mounted on a stepper-stabilizer with precision grid template (typically 5mm grid spacing) **Real-time visualization**: Needles are advanced through the perineal template while the prostate and surrounding structures (rectum, urethra, neurovascular bundles) are continuously monitored **Seed delivery**: Seeds (I-125, Pd-103, or I-131) deposited as needles are withdrawn, with real-time verification of placement --- ## Advantages of Real-Time TRUS Guidance vs. Pre-Planned Approaches | Aspect | Real-Time TRUS | Pre-Planned (Pre-Operative) | |--------|----------------|----------------------------| | **Seed placement accuracy** | Accounts for intra-operative prostate displacement, swelling, and anatomic variations | Relies on correlation assumptions between pre-op imaging and intra-op position | | **Anatomy adaptation** | Can visualize and avoid urethra, rectum, neurovascular bundles dynamically | Li",
+    "response_length": 4930,
+    "total_score": 0.9333333333333333,
+    "dimension_scores": {
+      "keyword": 0.8333333333333334,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 25.421266555786133,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1718.png",
+    "timestamp": "2026-06-02T22:36:10.441757"
+  },
+  {
+    "case_id": "Q1719",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand the role of diffusion-weighted MRI (DW-MRI) in brachytherapy planning for cervical cancer. How does DW-MRI help in tumor delineation? What is the apparent diffusion coefficient (ADC) and how does it relate to tumor biology? Can DW-MRI help predict treatment response during brachytherapy? What are the limitations of DW-MRI for brachytherapy target delineation?",
+    "response": "# Diffusion-Weighted MRI in Cervical Cancer Brachytherapy ## Role in Tumor Delineation DW-MRI provides functional imaging based on water molecule Brownian motion, offering several advantages for cervical cancer target delineation: **High Tumor-to-Background Contrast**: DW-MRI with high b-values (typically 800-1000 s/mm\u00b2) produces \"black bone, white teeth, gray matter\" effects, making tumors hyperintense against suppressed normal tissue signal. This improves visualization of: - Primary cervical tumor extent - Parametrial involvement - Pelvic lymph node involvement **Superior to T2-weighted MRI Alone**: DW-MRI helps distinguish tumor from surrounding normal tissues (endometrium, cervicitis, fibrotic tissue) that can appear similar on conventional MRI. **GTV Definition**: DW-MRI can be fused with T2-weighted images for more accurate gross tumor volume (GTV) definition, particularly useful when tumor borders are ill-defined. --- ## Apparent Diffusion Coefficient (ADC) and Tumor Biology **What is ADC? ADC measures the magnitude of water diffusion (\u00d710\u207b\u00b3 mm\u00b2/s). Lower ADC = restricted diffusion (hyperintense on DW-MRI). Higher ADC = free diffusion (hypointense on DW-MRI). **Relationship to Tumor Biology**: | ADC Value | Tissue Type | Biological Interpretation | |-----------|-------------|---------------------------| | Low (<0. 8-1. 0) | Viable high-cellularity tumor | Dense cell packing, intact membranes restrict water movement | | Intermediate | Low-grade tumor/mixed | Moderate ce",
+    "response_length": 5490,
+    "total_score": 0.77,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 0.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 0.7
+    },
+    "passed": true,
+    "response_time": 29.33040761947632,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1719.png",
+    "timestamp": "2026-06-02T22:36:40.772520"
+  },
+  {
+    "case_id": "Q1720",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I am performing a brachytherapy planning quality assurance review. I need to verify the accuracy of the CT-based applicator reconstruction. How do I verify that the applicator reconstruction on CT is geometrically accurate? What are the potential sources of reconstruction error? How does applicator reconstruction accuracy affect dose calculation? What QA tools exist for applicator reconstruction verification?",
+    "response": "# CT-Based Applicator Reconstruction QA in Brachytherapy ## 1. Methods to Verify Geometric Accuracy ### Primary Verification Methods **a) Dummy Seeds / Markers** - Radiopaque dummy seeds (fiducial markers) inserted into applicator channels - Verify marker positions match expected geometry on CT - Compare reconstructed distances between markers with known physical distances **b) Radiographic Film Calibration** - Expose EBT/EBT2/EBT3 film with applicator in place - Compare film-measured distances to CT-reconstructed distances - Typical tolerance: **\u00b11. 0 mm** (per ABS/AAPM guidelines) **c) DRR (Digitally Reconstructed Radiograph) Comparison** - Generate DRR from CT with applicator reconstruction - Compare with corresponding orthogonal radiographs - Overlay applicator channel centers on both images **d) Phantom Verification** - CT scan applicator in phantom with known geometry - Compare reconstructed positions to phantom's known dimensions - Use dedicated QA phantoms (e. , Proartis, PTW Freiburg) **e) Independent 3D Verification** - Use 3D printed phantom with embedded applicator - Compare reconstructed coordinates against known reference --- ## 2. Potential Sources of Reconstruction Error ### CT-Related Errors | Source | Mechanism | Typical Magnitude | |--------|-----------|-------------------| | Partial volume effect | Slice thickness > marker size | 0. 5\u20132. 0 mm | | CT artifact (metal) | Beam hardening/streak artifacts near applicators | 1\u20135 mm | | Interpolation errors | Mult",
+    "response_length": 5229,
+    "total_score": 0.77,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 0.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 0.7
+    },
+    "passed": true,
+    "response_time": 64.21830153465271,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1720.png",
+    "timestamp": "2026-06-02T22:37:45.991164"
+  },
+  {
+    "case_id": "Q1721",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand how cone-beam CT (CBCT) can be used for brachytherapy guidance. What are the advantages of CBCT over conventional CT for brachytherapy? How does CBCT image quality compare to CT for applicator and target visualization? What are the radiation dose implications of using CBCT for brachytherapy guidance? Should I use CBCT routinely for brachytherapy fraction imaging?",
+    "response": "# Cone-Beam CT (CBCT) for Brachytherapy Guidance ## Advantages of CBCT Over Conventional CT | Aspect | CBCT | Conventional CT | |--------|------|-----------------| | **Workflow** | Integrated with treatment unit; imaging in treatment room | Requires transport to CT suite | | **Imaging-to-treatment time** | Minutes (reduced) | Often hours (increased) | | **Applicator stability** | Assessed with patient in treatment position | May shift during transport | | **3D verification** | Available on most modern linacs/brachy units | Gold standard | | **Dose calculation** | Limited HU accuracy | Reliable HU for dose calculation | | **Cost** | No additional equipment if linac-based | Dedicated scanner required | **Key clinical advantages:** - Immediate verification of applicator/catheter positions before treatment - Detection of significant shifts requiring repositioning - Enables adaptive planning when anatomy has changed - Reduced risk of applicator movement between imaging and treatment --- ## Image Quality Comparison ### Limitations of CBCT for Brachytherapy **Soft tissue contrast:** - 2-3\u00d7 lower soft tissue contrast than conventional CT - Reduced visualization of tumor and normal tissue interfaces - Affected by scatter from applicators and patient anatomy **Artifacts:** - Metallic artifact from applicators, seeds, and needles - Beam hardening artifacts - Increased noise due to cone-angle effects **Hounsfield Unit (HU) accuracy:** - Variable HU values compromise dose calculation accu",
+    "response_length": 4682,
+    "total_score": 1.0,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 35.66695213317871,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1721.png",
+    "timestamp": "2026-06-02T22:38:22.658524"
+  },
+  {
+    "case_id": "Q1727",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand the concept of MRI thermometry for brachytherapy guidance. Can MRI thermometry be used to monitor tissue temperature during HDR brachytherapy? How does MRI thermometry work? What are the applications of MRI thermometry in brachytherapy? What are the limitations of current MRI thermometry technology?",
+    "response": "# MRI Thermometry for Brachytherapy Guidance ## Can MRI Thermometry Monitor Tissue Temperature During HDR Brachytherapy? **Yes. ** MRI thermometry can be used to monitor tissue temperature during HDR brachytherapy, though its primary clinical application has been in thermal therapies (HIFU, RF ablation) rather than brachytherapy. The technology is particularly relevant for: - **MR-guided brachytherapy** procedures where MRI is used for applicator placement - **Thermal ablation combined with brachytherapy** for enhanced tumor kill - **Real-time dose verification** by correlating temperature distribution with dose distribution --- ## How MRI Thermometry Works MRI thermometry exploits the **temperature dependence of MRI parameters**: | Technique | Mechanism | Sensitivity | |-----------|-----------|-------------| | **Proton Resonance Frequency (PRF) Shift** | Temperature-induced change in water proton resonance frequency (~3 ppm/\u00b0C) | Most widely used, ~1-2\u00b0C accuracy | | **T1 Relaxation Time** | T1 lengthens with increasing temperature (~1-2%/\u00b0C) | Less commonly used | | **Diffusion-weighted imaging (DWI)** | ADC increases with temperature (~2-3%/\u00b0C) | Good for ablation monitoring | | **MR Spectroscopy** | Chemical shift changes with temperature | Research applications | **PRF-shift thermometry** is the gold standard because: - Linear relationship with temperature - Relatively independent of tissue type - Good spatial and temporal resolution - Uses phase images (subtracted from ",
+    "response_length": 4100,
+    "total_score": 1.0,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 19.06394386291504,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1727.png",
+    "timestamp": "2026-06-02T22:38:42.723742"
+  },
+  {
+    "case_id": "Q1728",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I am evaluating the use of artificial intelligence (AI) for brachytherapy planning. How can AI assist in: (1) automatic applicator reconstruction from CT/MRI, (2) automatic target volume delineation, (3) dose optimization, and (4) plan quality evaluation? What are the current limitations of AI in brachytherapy? What validation studies exist for AI-based brachytherapy planning?",
+    "response": "No response generated.",
+    "response_length": 22,
+    "total_score": 0.5,
+    "dimension_scores": {
+      "keyword": 0.0,
+      "completeness": 0.5,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": false,
+    "response_time": 2.7180745601654053,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1728.png",
+    "timestamp": "2026-06-02T22:38:46.441988"
+  },
+  {
+    "case_id": "Q1729",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand the role of PET-MRI for brachytherapy planning. What are the advantages of combined PET-MRI over sequential PET-CT and MRI? How does simultaneous PET-MRI acquisition improve target delineation? What are the technical challenges of PET-MRI for brachytherapy? Is PET-MRI clinically superior to PET-CT plus MRI for brachytherapy planning?",
+    "response": "# PET-MRI for Brachytherapy Planning ## Advantages of Simultaneous PET-MRI vs. Sequential PET-CT + MRI **1. Temporal Co-registration** - **No patient motion** between acquisitions \u2014 eliminates registration errors from repositioning, breathing, or organ deformation - Particularly critical for pelvic tumors (cervical, prostate) where bladder/rectum filling changes between scans - For cervix brachytherapy, simultaneous acquisition captures identical anatomy for both functional (PET) and structural (MRI) data **2. Workflow Efficiency** - Single appointment, single positioning - Reduces overall imaging time compared to separate PET-CT and MRI sessions - Reduces departmental scheduling complexity **3. Physiologic Motion Tracking** - Simultaneously acquired PET and MRI data allows **MRI-based motion correction** of PET images - Enables 4D PET-MRI capturing organ motion throughout the breathing cycle --- ## Improved Target Delineation | Aspect | PET-MRI Advantage | |--------|------------------| | **Soft tissue contrast** | MRI superior for GTV/CTV delineation in cervix, prostate, rectal cancers | | **Functional imaging** | PET (FDG, PSMA, FLT) adds metabolic/tumor biology data to anatomical MRI | | **Delineation confidence** | Combined data reduces inter-observer variability in uncertain cases | | **Biopsy correlation** | MRI-visible lesions can be directly correlated with PET avidity | **Clinical example (cervical cancer)**: MRI defines the gross tumor and parametrial involvement; F",
+    "response_length": 4225,
+    "total_score": 0.9333333333333333,
+    "dimension_scores": {
+      "keyword": 0.8333333333333334,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 51.47515678405762,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1729.png",
+    "timestamp": "2026-06-02T22:39:38.917510"
+  },
+  {
+    "case_id": "Q1730",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I am performing a brachytherapy planning review for a cervical cancer patient. The planning CT shows significant motion artifact in the pelvic region due to bowel peristalsis. How does motion artifact affect brachytherapy dose calculation? What are the strategies to minimize motion artifact during CT simulation? Should I repeat the CT scan? How does motion artifact affect applicator reconstruction accuracy?",
+    "response": "# Motion Artifact in Cervical Cancer Brachytherapy Planning CT ## Impact on Dose Calculation **Geometric Uncertainties:** - Motion artifacts can cause organ boundaries to appear blurred or displaced, leading to inaccurate contouring of the CTV, bladder, rectum, and sigmoid - The D90 and D2cc metrics become unreliable when OAR contours are inaccurate - Dose-volume histograms (DVHs) may misrepresent actual dose distributions by 5-15% depending on artifact severity **Source Positioning Errors:** - If the applicator moves relative to the patient during scanning, the reconstructed source positions will be incorrect - This directly affects the calculated dwell times and dose distribution **Tissue Heterogeneity Assumption Violation:** - Motion can cause bowel loops to appear in different positions, creating artificial density variations that complicate dose calculations --- ## Strategies to Minimize Motion Artifact During CT Simulation **Patient Preparation:** - Fasting 4-6 hours before simulation to reduce bowel content and peristalsis - Administer anti-peristaltic agents (e. , hyoscine butylbromide/Buscopan IV 20mg) 5-10 minutes before scanning \u2014 widely used in European centers (GEC-ESTRO recommendation) - Rectal emptying via enema or suppository 1-2 hours prior - Bladder filling with consistent volume (typically 50-100cc for cervical BT) **Scanning Techniques:** - Use respiratory gating if available - Apply compression devices (belts or paddle) to immobilize pelvic region - Reduc",
+    "response_length": 4192,
+    "total_score": 1.0,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 51.451889991760254,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1730.png",
+    "timestamp": "2026-06-02T22:40:31.369764"
+  },
+  {
+    "case_id": "Q1731",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand how dual-energy CT (DECT) can be used for brachytherapy planning. What are the advantages of DECT over single-energy CT for applicator and tissue delineation? How does DECT improve material decomposition? Can DECT reduce metallic artifacts from brachytherapy applicators? What are the clinical applications of DECT in brachytherapy?",
+    "response": "# Dual-Energy CT (DECT) in Brachytherapy Planning ## Advantages of DECT Over Single-Energy CT (SECT) | Feature | SECT | DECT | |---------|------|------| | **Material characterization** | Hounsfield units vary with energy | Material-specific attenuation data | | **Tissue differentiation** | Limited overlap between tissue types | Separates materials with similar HU | | **Contrast resolution** | Fixed energy (120 kVp) | Two energy levels (e. , 80/140 kVp) | | **Artifact reduction** | Limited | Metal artifacts reduced via material-specific reconstruction | --- ## Material Decomposition DECT exploits differential X-ray absorption at two energies to identify and quantify materials: **Basic Principle:** - Low-energy photons (80 kVp): Higher attenuation in high-Z materials - High-energy photons (140 kVp): Lower attenuation differential - **Basis material decomposition** separates tissues into: - **Water-equivalent** (soft tissue) - **Iodine-equivalent** (contrast agent, some tumors) - **Calcium-equivalent** (bone) **In Brachytherapy:** - Improved visualization of tumor vs. normal tissue boundaries - Distinguishing applicator components (titanium vs. plastic) - Quantifying tissue composition for dose calculation --- ## Metal Artifact Reduction **Mechanism:** ``` SECT: Streak artifacts from beam hardening \u2192 Single HU value DECT: Material-specific reconstruction \u2192 Virtual monoenergetic images ``` **Applications:** - **Titanium applicators** (HDR/PDR afterloaders) - **Tandem and ovoid as",
+    "response_length": 3658,
+    "total_score": 0.8666666666666667,
+    "dimension_scores": {
+      "keyword": 0.6666666666666666,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 18.168420791625977,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1731.png",
+    "timestamp": "2026-06-02T22:40:50.538542"
+  },
+  {
+    "case_id": "Q1733",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand the concept of radiomics and texture analysis for brachytherapy planning. How can radiomics features extracted from MRI help predict brachytherapy response? What texture features are most relevant for cervical cancer brachytherapy? How can machine learning models be trained to predict treatment outcomes? What are the limitations of radiomics for brachytherapy?",
+    "response": "No response generated.",
+    "response_length": 22,
+    "total_score": 0.5,
+    "dimension_scores": {
+      "keyword": 0.0,
+      "completeness": 0.5,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": false,
+    "response_time": 3.5392541885375977,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1733.png",
+    "timestamp": "2026-06-02T22:40:55.077947"
+  },
+  {
+    "case_id": "Q1734",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I am performing quality assurance on the MRI scanner used for brachytherapy planning. What specific QA tests should I perform? How do I verify MRI geometric accuracy? How do I ensure consistent image quality over time? What are the recommended QA frequencies for MRI in radiation oncology?",
+    "response": "# MRI Quality Assurance for Brachytherapy Planning ## Core QA Tests ### 1. Geometric Accuracy Tests | Test | Description | Acceptance Criteria | |------|-------------|---------------------| | **Geometric Distortion** | Measure distortion across the entire imaging volume using a phantom with known fiducial markers | \u22642 mm (or \u22641 mm for stereotactic applications) | | **Slice Position Accuracy** | Verify slice location matches prescribed position | \u22641 mm from intended location | | **Slice Thickness Accuracy** | Measure actual slice width vs. prescribed | \u22641 mm deviation | | **3D Volumetric Accuracy** | Test accuracy of entire image volume using grid phantom or multi-well phantom | \u22642 mm at any point | **Recommended Phantoms:** - ACR MRI accreditation phantom (geometric accuracy section) - Multi-dimensional grid phantom - 3D distorter phantom (for full-volume assessment) - Endorectal coil-specific phantoms for prostate MRI ### 2. Image Quality Tests | Parameter | What to Test | Target | |-----------|--------------|--------| | **Signal-to-Noise Ratio (SNR)** | Measure in uniform phantom | Establish baseline; monitor for >10% drift | | **Contrast-to-Noise Ratio (CNR)** | T1 vs T2, PD sequences | Consistent with baseline | | **Spatial Resolution** | High-contrast resolution test | Maintain published specification | | **Slice Profile/Slice Gap** | Verify no cross-talk or gap errors | Per manufacturer spec | | **Uniformity** | Integral uniformity across FOV | \u226585% (per NEMA) | | **Gho",
+    "response_length": 4716,
+    "total_score": 0.8666666666666667,
+    "dimension_scores": {
+      "keyword": 0.6666666666666666,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 60.58122229576111,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1734.png",
+    "timestamp": "2026-06-02T22:41:56.659587"
+  },
+  {
+    "case_id": "Q1735",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand how to handle imaging data from multiple modalities in brachytherapy planning. For a cervical cancer patient, I have: (1) diagnostic MRI from initial staging, (2) treatment planning CT with applicator in place, (3) fraction-specific MRI with applicator, and (4) PET-CT from restaging. How do I integrate all these imaging datasets? What registration methods should I use? How do I account for different image resolutions and contrasts?",
+    "response": "# Multi-Modality Image Integration in Cervical Cancer Brachytherapy ## Standard Workflow & Role of Each Modality | Modality | Primary Use | Key Information | |----------|-------------|-----------------| | **Diagnostic MRI** | Initial staging, tumor extent | Soft tissue definition, parametrial involvement | | **Planning CT** | Dose calculation, applicator geometry | Hounsfield units, applicator reconstruction | | **Fraction MRI** | Adaptive planning, soft tissue | Current tumor/applicator relationship | | **PET-CT** | Lymph nodes, metabolic volume | Active disease, restaging | --- ## Recommended Registration Strategy ### Step 1: Primary Registration Framework **Use the applicator as the registration anchor** ``` Diagnostic MRI \u2192 Register to \u2192 Planning CT (applicator visible in both) Planning CT \u2192 Reference for dose calculation ``` ### Step 2: Hierarchical Registration Approach **Rigid registration first** \u2014 align the applicator/target region between CT and MRI **Deformable registration** \u2014 propagate contours from diagnostic MRI to planning CT **Rigid re-registration** \u2014 for fraction-specific MRI, use applicator markers for alignment ### Step 3: Modality-Specific Handling | Registration Pair | Method | Notes | |-------------------|--------|-------| | CT \u2194 MRI (planning) | Rigid + mutual information | Match on T2-weighted sequences | | Diagnostic MRI \u2192 CT | Deformable (B-spline or demons) | Requires manual confirmation of key structures | | PET \u2192 CT/MRI | Rigid (PET already co-r",
+    "response_length": 3976,
+    "total_score": 1.0,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 21.732282876968384,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1735.png",
+    "timestamp": "2026-06-02T22:42:19.392264"
+  },
+  {
+    "case_id": "Q1736",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I am evaluating the use of MRI for brachytherapy planning in rectal cancer. How does MRI help in delineating the rectal tumor and mesorectal fascia? What MRI sequences are recommended for rectal cancer brachytherapy? How does MRI-based planning compare with CT-based planning for rectal brachytherapy? What are the challenges of MRI-guided rectal brachytherapy?",
+    "response": "## MRI for Rectal Cancer Brachytherapy Planning ### How MRI Helps Delineate Rectal Tumor and Mesorectal Fascia **Superior Soft Tissue Contrast:** - MRI provides excellent soft tissue resolution, allowing clear visualization of the rectal wall layers (mucosa, muscularis propria, mesorectal fat) - The **mesorectal fascia (MRF)** \u2014 a critical structure for treatment planning \u2014 is distinctly visible as a thin, hypointense layer surrounding the mesorectal fat on T2-weighted sequences - Tumor boundaries can be distinguished from surrounding tissues without radiation-based imaging **Delineation Advantages:** - Better differentiation between tumor and post-treatment changes/fibrosis - Improved visualization of tumor extension into perirectal tissues - Clearer identification of the anal sphincter complex and levator ani muscles - Enhanced assessment of circumferential resection margin (CRM) involvement ### Recommended MRI Sequences Based on consensus guidelines (GROG/GEC ESTRO): | Sequence | Purpose | |----------|---------| | **High-resolution T2-weighted** | Primary sequence for tumor and MRF delineation | | **Diffusion-weighted imaging (DWI)** | Highlights tumor cellularity; useful for residual disease detection | | **T1-weighted (with/without gadolinium)** | Assesses lymph nodes and post-treatment response | | **Dynamic contrast-enhanced (DCE)** | Optional \u2014 evaluates tumor vascularity | **Protocol Notes:** - Endorectal coil MRI provides superior resolution but may cause distortion",
+    "response_length": 3788,
+    "total_score": 0.9333333333333333,
+    "dimension_scores": {
+      "keyword": 0.8333333333333334,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 27.25778818130493,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1736.png",
+    "timestamp": "2026-06-02T22:42:47.650410"
+  },
+  {
+    "case_id": "Q1739",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand how perfusion MRI can help in brachytherapy planning. How does dynamic contrast-enhanced (DCE) MRI assess tumor vascularity? Can perfusion parameters predict brachytherapy response? How should I incorporate perfusion data into brachytherapy target delineation? What are the technical requirements for performing perfusion MRI for brachytherapy planning?",
+    "response": "# Perfusion MRI in Brachytherapy Planning ## How DCE-MRI Assesses Tumor Vascularity DCE-MRI involves repeated T1-weighted imaging during rapid injection of a gadolinium-based contrast agent. The technique captures: - **Contrast arrival time** and **wash-in/wash-out kinetics** - **Signal intensity curves** plotted over time in each voxel **Key perfusion parameters derived:** | Parameter | Description | Clinical Relevance | |-----------|-------------|-------------------| | **K^trans** | Volume transfer constant (plasma to extravascular extracellular space) | Angiogenesis marker; higher in aggressive tumors | | **K_ep** | Reverse reflux constant (EES back to plasma) | Related to vessel permeability | | **V_e** | Extravascular extracellular volume fraction | Tissue cellularity | | **V_p** | Plasma volume | Vascular density | | **AUC** | Area under the curve | Overall perfusion/permeability | These are calculated using pharmacokinetic models (Tofts, Berezhnoi) fitted to the concentration-time curves. --- ## Perfusion Parameters and Brachytherapy Response Prediction **Evidence supports perfusion imaging for response prediction:** ### Gynecological cancers (cervix, uterus) - **Hypoxic tumors** show lower K^trans and reduced DCE enhancement - Low pre-treatment K^trans correlates with: - Poorer local control after HDR brachytherapy - Increased radioresistance - Higher rates of local recurrence - **Post-treatment K^trans changes** can predict pathological response ### Prostate cancer -",
+    "response_length": 5832,
+    "total_score": 0.77,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 0.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 0.7
+    },
+    "passed": true,
+    "response_time": 30.133597135543823,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1739.png",
+    "timestamp": "2026-06-02T22:43:18.784441"
+  },
+  {
+    "case_id": "Q1740",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I am evaluating the accuracy of 3D ultrasound for brachytherapy guidance in gynecologic cancer. How does 3D ultrasound compare with MRI for target delineation? What are the advantages of 3D ultrasound over 2D ultrasound? Can 3D ultrasound replace MRI for brachytherapy planning in resource-limited settings? What are the training requirements for 3D ultrasound-guided brachytherapy?",
+    "response": "No response generated.",
+    "response_length": 22,
+    "total_score": 0.5,
+    "dimension_scores": {
+      "keyword": 0.0,
+      "completeness": 0.5,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": false,
+    "response_time": 2.7784621715545654,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1740.png",
+    "timestamp": "2026-06-02T22:43:22.563063"
+  },
+  {
+    "case_id": "Q1741",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand the concept of dose accumulation using deformable registration in adaptive brachytherapy. For a cervical cancer patient treated with 5 fractions of HDR brachytherapy, how do I accumulate dose from each fraction? What deformable registration algorithms are most appropriate? How do I handle the applicator displacement between fractions? What are the uncertainties in dose accumulation?",
+    "response": "# Dose Accumulation in Adaptive Cervical Cancer Brachytherapy ## Conceptual Framework Dose accumulation maps the spatial dose distribution from each fraction onto a common reference geometry, enabling calculation of cumulative dose to tissues over a treatment course. ### The Process For 5-fraction HDR cervical brachytherapy: ``` Fraction 1 \u2192 CT/MR \u2192 Contours \u2192 Dose calculation Fraction 2 \u2192 CT/MR \u2192 Contours \u2192 Dose calculation Fraction 5 \u2192 CT/MR \u2192 Contours \u2192 Dose calculation Deformable Registration (each fraction \u2192 reference frame) Dose warping (applying deformation vectors to dose grid) Voxel-by-voxel summation of warped doses Cumulative DVH and dose metrics ``` ## Deformable Registration Algorithms ### Recommended Approaches for Brachytherapy | Algorithm Type | Characteristics | Suitability | |----------------|-----------------|-------------| | **Demons (symmetric)** | Fast, intensity-based, good for soft tissue | Good baseline | | **B-spline (Mutual Information)** | Parametric, handles large deformations | Preferred for uterus/cervix | | **ANTs (Advanced Normalization Tools)** | State-of-the-art, symmetric normalization | High accuracy, research | | **Velocity-based (LDDMM)** | Preserves topology, mathematically rigorous | When Jacobian constraints needed | ### Key Considerations - **Intensity-based** methods are preferred over feature-based (no need to match distinct landmarks) - **Symmetric** registration (forward + inverse consistent) reduces directional bias - **Mutual I",
+    "response_length": 4106,
+    "total_score": 1.0,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 22.436336517333984,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1741.png",
+    "timestamp": "2026-06-02T22:43:45.999740"
+  },
+  {
+    "case_id": "Q1742",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I am performing brachytherapy planning for a prostate cancer patient with a hip replacement. The metallic hip implant causes significant CT artifacts. How do these artifacts affect: (1) prostate contouring, (2) seed localization, (3) dose calculation, and (4) organ-at-risk delineation? What strategies can I use to mitigate these artifacts? Should I use MRI instead of CT for planning?",
+    "response": "## Hip Replacement Artifacts in Prostate Brachytherapy Planning ### Effects of Metallic Artifacts | Aspect | Impact | |--------|--------| | **Prostate contouring** | Streak artifacts obscure prostatic borders, especially the peripheral zone near the implant; may artificially distort gland volume | | **Seed localization** | Metal causes photon starvation and beam hardening \u2192 seeds near artifact appear distorted or duplicated in fluoroscopy/DRR; may misregister in 3D localization | | **Dose calculation** | CT numbers in artifact regions are unreliable; TG-43 calculations assume water density (no HU correction possible); over/underdose estimates near rectum/bladder | | **OAR delineation** | Rectal wall and bladder neck are often obscured; rectal D90 and urethral D10 may be inaccurate | --- ### Mitigation Strategies **CT-based approaches:** **Artifact reduction kernels (ARKs)** \u2014 Iterative reconstruction reduces streaking **Dual-energy CT (DECT)** \u2014 Virtual monoenergetic imaging at higher keV (e. , 150 keV) reduces beam hardening **Metal artifact reduction (MAR) algorithms** \u2014 Vendor-specific iterative MAR or monoenergetic+ reconstructions **Manual contour override** \u2014 Draw OARs using adjacent artifact-free slices; blend with MRI if available **Use multiple imaging modalities** \u2014 Fuse intraoperative ultrasound (real-time) with pre-planned CT **Seed localization:** - Supplement CT with **transrectal ultrasound (TRUS)** for seed confirmation - Use **fluoroscopy overlay** on TRUS fo",
+    "response_length": 3358,
+    "total_score": 1.0,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 20.89409351348877,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1742.png",
+    "timestamp": "2026-06-02T22:44:07.894171"
+  },
+  {
+    "case_id": "Q1743",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand the role of artificial intelligence in automatic organ-at-risk delineation for brachytherapy. How accurate are current AI algorithms for OAR segmentation in the pelvis? What are the clinical requirements for AI-based OAR delineation? How should I validate AI-generated contours before using them in brachytherapy planning? What are the current limitations?",
+    "response": "# AI for Automatic OAR Delineation in Brachytherapy ## Current AI Algorithm Performance **Typical Accuracy Metrics (Pelvic OARs):** | Organ | Dice Similarity Coefficient | Typical Range | |-------|---------------------------|---------------| | Bladder | High | 0. 90\u20130. 96 | | Rectum | Moderate-High | 0. 85\u20130. 92 | | Femoral Heads | High | 0. 92\u20130. 97 | | Small Bowel | Moderate | 0. 78\u20130. 88 | | Sigmoid | Moderate | 0. 75\u20130. 85 | | Urethra | Low-Moderate | 0. 65\u20130. 82 | **Key algorithms:** - **nnU-Net** \u2014 Current gold standard baseline; self-configuring architecture - **Transformer-based models** (Swin-UNETR, TransUNet) \u2014 Improving long-range dependency modeling - **Mixed reality / multi-modal fusion** \u2014 Combining MRI + CT inputs where available --- ## Clinical Requirements for AI-Based OAR Delineation ### Minimum Acceptable Performance - **Dice \u2265 0. 80** for critical OARs (rectum, bladder, urethra) - **Hausdorff distance (95th percentile) < 3\u20135 mm** for dose-limiting surfaces - **Systematic bias < 2 mm** \u2014 No consistent under- or over-estimation ### Guideline References - **AAPM Task Group 132** (2018) \u2014 QA for auto-segmentation; emphasizes independent validation - **ABS/ASTRO Consensus** \u2014 AI contours require physician review before clinical use - **GEC-ESTRO** \u2014 Emphasizes contour accuracy for dose summation in multi-modality treatment ### Clinical Workflow Requirements Physician review and approval of every contour Audit of AI contours against manual standards on represent",
+    "response_length": 4252,
+    "total_score": 1.0,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 56.52084422111511,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1743.png",
+    "timestamp": "2026-06-02T22:45:05.415389"
+  },
+  {
+    "case_id": "Q1744",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I am evaluating the use of spectral CT for brachytherapy planning. How does spectral CT improve material characterization compared to conventional CT? Can spectral CT reduce artifacts from brachytherapy applicators? What are the advantages for dose calculation? What are the current limitations?",
+    "response": "# Spectral CT for Brachytherapy Planning ## Material Characterization Improvement Spectral CT captures attenuation data at multiple energy levels (typically 80-140 keV), enabling: - **Basis material decomposition**: Separates tissues into basis materials (e. , water, iodine, calcium, fat) rather than single-HU values - **Virtual non-contrast (VNC) imaging**: Removes iodine contrast, useful for delineating vessels from enhanced tissue - **Iodine density mapping**: Quantifies contrast agent concentration, improving tumor/applicator visualization - **Z-effective mapping**: Estimates effective atomic number, helping distinguish materials with similar densities but different compositions ## Applicator Artifact Reduction **Yes, spectral CT can reduce some brachytherapy applicator artifacts:** | Artifact Type | Spectral CT Advantage | |--------------|----------------------| | Beam hardening from titanium applicators | Dual-energy metal artifact reduction algorithms | | blooming from high-Z markers | Material-specific decomposition reduces false high-density regions | | Streak artifacts around tandems/ovoids | Virtual monoenergetic imaging at optimal keV (typically 40-70 keV) | However, artifacts from very high-Z materials (gold markers, titanium) remain challenging. ## Advantages for Dose Calculation **Improved tissue segmentation**: Separating iodine-filled applicator channels from surrounding tissue enables more accurate volume definition **Hounsfield Unit (HU) accuracy**: Virtual",
+    "response_length": 3029,
+    "total_score": 1.0,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 15.598275184631348,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1744.png",
+    "timestamp": "2026-06-02T22:45:22.013851"
+  },
+  {
+    "case_id": "Q1745",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand how to perform quality assurance for deformable image registration in adaptive brachytherapy. What phantom-based QA tests should I perform? How do I quantify registration accuracy? What are the acceptable accuracy criteria for pelvic DIR in brachytherapy? How often should I perform DIR QA?",
+    "response": "# Deformable Image Registration QA in Adaptive Brachytherapy ## 1. Phantom-Based QA Tests ### Recommended Phantoms | Phantom Type | Purpose | Examples | |-------------|---------|----------| | **Geometric phantoms** | Measure TRE (Target Registration Error) | ISO sphere phantom, cube with embedded markers | | **Anatomical phantoms** | Simulate tissue deformation | Male pelvis, female pelvis (e. , CIRS, Modus QUASAR) | | **Deformable gel dosimeters** | Measure dose accumulation accuracy | Fricke gel, radiochromic gel, polymer gel | | **User-created phantoms** | Match institutional workflows | 3D-printed applicators with known geometry | ### Required Tests **a) Landmark-Based Tests** - Place radio-opaque markers at known positions in two imaging states - Compute landmark registration error (LRE): difference between known and computed displacement - Use \u226550 markers for robust statistics **b) Image-Based Tests** - Image similarity metrics (mutual information, normalized cross-correlation) as baseline - Not sufficient alone\u2014must correlate with physical reality **c) Deformation Simulation** - Apply known deformations (e. , translations, rotations, compressions) to phantoms - Compare computed vs. applied deformation fields **d) Contour Propagation Tests** - Contour structures on source image - Propagate via DIR to target image - Compare to expert-drawn \"gold standard\" contours on target **e) Dose Accumulation Validation** - Create plans on two CT states - Deform dose distributions - ",
+    "response_length": 5687,
+    "total_score": 0.77,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 0.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 0.7
+    },
+    "passed": true,
+    "response_time": 63.07182836532593,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1745.png",
+    "timestamp": "2026-06-02T22:46:30.085520"
+  },
+  {
+    "case_id": "Q1746",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I am performing brachytherapy planning for a pediatric patient with a pelvic rhabdomyosarcoma. What imaging considerations are specific to pediatric brachytherapy? How do I minimize radiation exposure from imaging in a child? What MRI protocols are appropriate for pediatric pelvic brachytherapy? How do I account for smaller anatomy and developing organs in image-based planning?",
+    "response": "# Pediatric Pelvic Brachytherapy: Imaging Considerations ## Key Principles Pediatric brachytherapy requires balancing diagnostic image quality against cumulative radiation exposure in a population with long life expectancy and heightened radiosensitivity of developing tissues. --- ## 1. Imaging Considerations Specific to Pediatric Brachytherapy ### Modalities and Applications | Modality | Role in Pediatric Brachytherapy | Considerations | |----------|--------------------------------|----------------| | **MRI** | Preferred for soft-tissue delineation | No ionizing radiation; superior for tumor/organ boundaries | | **Ultrasound** | Intraoperative guidance, applicator placement verification | Real-time, no radiation; operator-dependent | | **CT** | Applicator localization, dosimetry | Minimize use; lowest-dose protocols essential | | **Fluoroscopy** | Applicator insertion verification | Use pulse mode, collimation strictly limited | ### Pediatric-Specific Considerations - **Organ motion**: Children have faster respiratory rates; breath-hold protocols may require sedation - **Cooperation**: Sedation or anesthesia often required for MRI, especially <7 years old - **Appliance sizing**: Standard applicators may be too large; custom or downsized applicators often needed - **Distended bladder technique**: Consistent bladder filling critical for reproducibility between fractions --- ## 2. Minimizing Radiation Exposure from Imaging ### ALARA Implementation - **Substitute**: Use MRI/ultr",
+    "response_length": 7051,
+    "total_score": 0.7033333333333334,
+    "dimension_scores": {
+      "keyword": 0.8333333333333334,
+      "completeness": 0.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 0.7
+    },
+    "passed": true,
+    "response_time": 39.79663419723511,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1746.png",
+    "timestamp": "2026-06-02T22:47:14.588059"
+  },
+  {
+    "case_id": "Q1747",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand the concept of online adaptive brachytherapy using MR-Linac technology. How can an MR-Linac be used for brachytherapy? What are the advantages of real-time MRI guidance during brachytherapy? How does online adaptive planning work? What are the current limitations and clinical evidence for MR-Linac brachytherapy?",
+    "response": "No response generated.",
+    "response_length": 22,
+    "total_score": 0.5,
+    "dimension_scores": {
+      "keyword": 0.0,
+      "completeness": 0.5,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": false,
+    "response_time": 3.013460397720337,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1747.png",
+    "timestamp": "2026-06-02T22:47:22.425445"
+  },
+  {
+    "case_id": "Q1748",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I am evaluating the use of emerging imaging technologies for brachytherapy guidance. Are there any novel imaging modalities that could improve brachytherapy planning? What are the current research directions in brachytherapy imaging? How might photoacoustic imaging or optical coherence tomography be applied to brachytherapy? What is the timeline for clinical implementation?",
+    "response": "No response generated.",
+    "response_length": 22,
+    "total_score": 0.5,
+    "dimension_scores": {
+      "keyword": 0.0,
+      "completeness": 0.5,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": false,
+    "response_time": 3.4840519428253174,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1748.png",
+    "timestamp": "2026-06-02T22:47:30.752701"
+  },
+  {
+    "case_id": "Q1749",
+    "category": "18_image_input",
+    "category_num": 18,
+    "input": "I need to understand how to perform image quality assessment for brachytherapy planning CT. What metrics should I use to evaluate CT image quality? How do I measure spatial resolution, contrast resolution, and noise? How do these quality parameters affect brachytherapy dose calculation? What are the minimum image quality requirements for brachytherapy planning?",
+    "response": "# CT Image Quality Assessment for Brachytherapy Planning ## Key Image Quality Metrics ### 1. Spatial Resolution **Definition:** The ability to distinguish small structures and delineate sharp edges. **Measurement Methods:** | Method | Description | Typical Values | |--------|-------------|----------------| | **MTF (Modulation Transfer Function)** | Measures contrast transfer across spatial frequencies | 50% MTF at 5-10 lp/cm | | **LSF (Line Spread Function)** | Edge response profile | Derived from MTF | | **Point/Line Pair Phantoms** | Visual resolution test | 0. 5\u20131. 0 mm nominal | | **High-contrast Objects** | Wire, bead phantoms | <1 mm resolution goal | **Brachytherapy Relevance:** Critical for visualizing: - Source positions relative to applicators - Seed locations in prostate brachytherapy - Tumor delineation for GYN applicators --- ### 2. Contrast Resolution **Definition:** Ability to distinguish between tissues with similar densities. **Measurement Methods:** | Method | Description | Target Values | |--------|-------------|---------------| | **Low-contrast Objects** | Detectable contrast differences | 3\u201310 HU difference | | **Contrast-to-Noise Ratio (CNR)** | (Signal_roi - Signal_background) / Noise | CNR > 5 for soft tissue | | **Subject Contrast** | (\u03bc\u2081 - \u03bc\u2082) / \u03bc\u2082 \u00d7 100% | 0. 5\u20132% for soft tissues | **Brachytherapy Relevance:** - Differentiating tumor from normal tissue - Soft tissue visualization around applicators - Lymph node identification --- ### 3. Noise **Def",
+    "response_length": 4986,
+    "total_score": 1.0,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "response_time": 55.83536076545715,
+    "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/screenshots/18_Q1749.png",
+    "timestamp": "2026-06-02T22:48:31.500253"
+  }
+]
