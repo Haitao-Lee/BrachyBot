@@ -2532,7 +2532,6 @@ async function _interceptScreenshot(target, question) {
         if (typeof addChat === 'function') {
             addChat('bot', `<img src="${screenshotUrl}" class="chat-screenshot" alt="${escHtml(target)}">\n\n${question || ''}`);
         }
-        _enqueueHiddenChat(_buildScreenshotFollowUpMessage(question, screenshotUrl));
         uiDebugLog('[screenshot] Captured and uploaded:', screenshotUrl);
         return { success: true, url: screenshotUrl, target: normalizedTarget };
     } catch (e) {
