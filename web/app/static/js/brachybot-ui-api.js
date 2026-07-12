@@ -1778,19 +1778,20 @@ function setupMetricsResize() {
 // ============================================================
 // UI Controller action executor
 // ============================================================
-// Confirmation dialog for destructive operations
-function _confirmAction(msg) {
+// Confirmation dialog for destructive operations (i18n-aware)
+function _confirmAction(msgZh, msgEn) {
     return new Promise(resolve => {
+        const t = window._t || ((zh) => zh);
         const overlay = document.createElement('div');
-        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10000;display:flex;align-items:center;justify-content:center;animation:fadeInOverlay 0.2s ease;';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
         overlay.innerHTML = `
-            <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:16px;padding:28px 32px;max-width:420px;width:90%;text-align:center;box-shadow:var(--shadow-xl);animation:slideUpDialog 0.25s ease;">
-                <div style="font-size:1.6rem;margin-bottom:8px;font-weight:400;line-height:1;">⚠️</div>
-                <div style="font-size:0.95rem;font-weight:600;color:var(--text);margin-bottom:6px;letter-spacing:0.01em;">确认操作</div>
-                <div style="font-size:0.82rem;color:var(--text-secondary);line-height:1.5;margin-bottom:22px;padding:0 4px;">${escHtml(msg)}</div>
+            <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:14px;padding:24px 28px;max-width:380px;width:88%;text-align:center;box-shadow:var(--shadow-xl);">
+                <div style="width:44px;height:44px;border-radius:50%;background:var(--danger-soft);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:1.3rem;line-height:1;">⚠️</div>
+                <div style="font-size:0.88rem;font-weight:550;color:var(--text);margin-bottom:4px;">${t('确认操作', 'Confirm')}</div>
+                <div style="font-size:0.78rem;color:var(--text-secondary);line-height:1.5;margin-bottom:20px;padding:0 2px;">${escHtml(t(msgZh, msgEn || msgZh))}</div>
                 <div style="display:flex;gap:10px;justify-content:center;">
-                    <button id="_confirmYes" class="btn btn-danger" style="min-width:88px;padding:8px 20px;border-radius:8px;font-size:0.82rem;font-weight:500;cursor:pointer;">确认</button>
-                    <button id="_confirmNo" class="btn btn-outline" style="min-width:88px;padding:8px 20px;border-radius:8px;font-size:0.82rem;font-weight:500;cursor:pointer;">取消</button>
+                    <button id="_confirmYes" style="min-width:80px;padding:7px 18px;border-radius:8px;border:none;font-size:0.8rem;font-weight:500;cursor:pointer;background:var(--danger);color:#fff;">${t('确认', 'Yes')}</button>
+                    <button id="_confirmNo" style="min-width:80px;padding:7px 18px;border-radius:8px;border:1px solid var(--border);background:transparent;font-size:0.8rem;font-weight:500;cursor:pointer;color:var(--text);">${t('取消', 'Cancel')}</button>
                 </div>
             </div>`;
         document.body.appendChild(overlay);
@@ -1802,19 +1803,16 @@ function _confirmAction(msg) {
 
 function _executeUIAction(a) {
     const { target, command, value, requires_confirm } = a;
-    // Destructive operations require confirmation
     if (requires_confirm) {
-        const msgs = {
-            'session.delete': `确定要删除会话 ${value} 吗？此操作不可撤销。`,
-            'session.clear_all': '确定要清空所有会话和本地数据吗？此操作不可撤销。',
-            'plan.reset': '确定要重置当前规划会话吗？所有规划数据将被清除。',
-            'report.clear': '确定要清空报告数据吗？',
-            'chat.clear_history': '确定要清空当前聊天记录吗？',
+        const pairs = {
+            'session.delete': [`确定要删除会话 ${value} 吗？此操作不可撤销。`, `Delete session ${value}? This cannot be undone.`],
+            'session.clear_all': ['确定要清空所有会话和本地数据吗？此操作不可撤销。', 'Clear all sessions and local data? This cannot be undone.'],
+            'plan.reset': ['确定要重置当前规划会话吗？所有规划数据将被清除。', 'Reset the current planning session? All data will be cleared.'],
+            'report.clear': ['确定要清空报告数据吗？', 'Clear the report data?'],
+            'chat.clear_history': ['确定要清空当前聊天记录吗？', 'Clear the current chat history?'],
         };
-        _confirmAction(msgs[target] || `确定要执行 ${target} 吗？`).then(ok => {
-            if (!ok) return;
-            _executeUIActionRaw(a);
-        });
+        const p = pairs[target] || [`确定要执行 ${target} 吗？`, `Execute ${target}?`];
+        _confirmAction(p[0], p[1]).then(ok => { if (ok) _executeUIActionRaw(a); });
         return;
     }
     _executeUIActionRaw(a);
