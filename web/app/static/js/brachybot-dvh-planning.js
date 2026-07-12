@@ -179,11 +179,14 @@ function _setupDvhCustomTooltip(dvhEl) {
         if (mx < plotLeft || mx > plotLeft + plotW || my < plotTop || my > plotTop + plotH) {
             tip.style.display = 'none'; return;
         }
-        const xr = layout.xaxis.range || [0, 1];
         const yr = layout.yaxis.range || [0, 1];
         const relX = mx - plotLeft;
-        const plotFraction = Math.max(0, Math.min(1, relX / Math.max(plotW, 1)));
-        const doseAtCursor = xr[0] + plotFraction * (xr[1] - xr[0]);
+        const doseAtCursor = typeof layout.xaxis.p2l === 'function'
+            ? layout.xaxis.p2l(relX / sx)
+            : (function() {
+                const xr = layout.xaxis.range || [0, 1];
+                return xr[0] + Math.max(0, Math.min(1, relX / Math.max(plotW, 1))) * (xr[1] - xr[0]);
+              })();
         if (!Number.isFinite(doseAtCursor)) { tip.style.display = 'none'; return; }
 
         let best = null;
@@ -193,7 +196,7 @@ function _setupDvhCustomTooltip(dvhEl) {
             const y = _interpolateDvhAtDose(trace.x, trace.y, doseAtCursor);
             if (!Number.isFinite(y)) continue;
             const pyViewport = (typeof layout.yaxis.l2p === 'function'
-                ? layout.yaxis.l2p(y)
+                ? layout.yaxis.l2p(y) * sy + plotTop
                 : (1 - (y - yr[0]) / Math.max(yr[1] - yr[0], 1e-9)) * plotH) + plotTop;
             const dy = Math.abs(pyViewport - my);
             if (dy < bestDy) { bestDy = dy; best = { name: trace.name || '', x: doseAtCursor, y, color: trace.line?.color || '#e2e8f0' }; }
@@ -883,6 +886,7 @@ async function refreshPlanningUI(options = {}) {
         //     before dose data was available).
         if (state.doseOverlay && state.doseOverlay.visible && window.reportForm && window.reportForm.figures) {
             try {
+                const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
                 const pv = state.doseOverlay.peakVoxel;
                 if (pv) {
                     const axesCfg = [
@@ -890,7 +894,6 @@ async function refreshPlanningUI(options = {}) {
                         { ax: 'sagittal', slice: pv.x, axis: 'dose_sagittal', titleKey: 'doseSagittal', capKey: 'doseSagittalCap' },
                         { ax: 'coronal', slice: pv.y, axis: 'dose_coronal', titleKey: 'doseCoronal', capKey: 'doseCoronalCap' },
                     ];
-                    const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
                     const labels = (lang === 'zh') ? {
                         doseAxial: '轴位剂量分布', doseAxialCap: '最大剂量层面的轴位 CT 叠加剂量热图',
                         doseSagittal: '矢状位剂量分布', doseSagittalCap: '最大剂量层面的矢状位 CT 叠加剂量热图',
