@@ -502,7 +502,7 @@ function renderOverlayFromVolume(axis, sliceIndex) {
                 const ctvVal = ctvLabelData[flatIdx];
                 if (ctvVal > 0) {
                     // Use per-label color from LUT (label 1=blue, 2=green, 3=pink, etc.)
-                    const color = labelColorLUT[ctvVal] || [255, 0, 0];
+                    const color = labelColorLUT[ctvVal] || [220, 160, 210];
                     const opacity = dataTreeState.ctv.opacity ?? 0.7;
                     r = color[0];
                     g = color[1];
@@ -689,7 +689,7 @@ function renderSliceFromVolume(axis, sliceIndex) {
                     const ctvVal = ctvLabelData[flatIdx];
                     if (ctvVal > 0) {
                         // Use per-label color from LUT
-                        const color = labelColorLUT[ctvVal] || [255, 0, 0];
+                        const color = labelColorLUT[ctvVal] || [220, 160, 210];
                             const labelState = dataTreeState.ctvLabels?.[`ctv_${ctvVal}`];
                             const labelVisible = labelState ? labelState.visible !== false : true;
                             if (labelVisible) {

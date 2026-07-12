@@ -500,7 +500,11 @@ class ChatWorkflowMixin:
                         )
                     )
                     if _cc_result:
-                        response += "\n\n" + _cc_result
+                        # REVIEW: previously appended checker result inline, which
+                        # duplicated content when the main response was also shown.
+                        # Checker status is visible in the progress panel; no need
+                        # to embed it in the response text.
+                        pass
                 finally:
                     _loop.close()
                     try:
@@ -721,7 +725,7 @@ class ChatWorkflowMixin:
                         except Exception:
                             pass
                     if isinstance(_cc_result, str) and _cc_result:
-                        response += "\n\n---\n" + _cc_result
+                        pass  # Checker status shown in progress panel only
                     _direct_cc_step["status"] = "done"
                     _direct_cc_step["content"] = "Checked" if not _cc_result else "Issues found"
                     yield yield_event("step", _direct_cc_step)
