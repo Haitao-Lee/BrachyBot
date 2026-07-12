@@ -1679,7 +1679,7 @@ function _petRainbow2(val) {
     const v = Math.min(1, Math.max(0, val));
     const stops = [
         [0.000, [0, 0, 0]],         // pure black (near-zero dose)
-        [0.006, [20, 0, 40]],       // very dark purple at 6 Gy (2x wider black range)
+        [0.010, [20, 0, 40]],       // dark purple at 10 Gy
         [0.015, [150, 30, 200]],    // vibrant purple at 15 Gy
         [0.030, [30, 50, 220]],     // blue at 30 Gy
         [0.060, [0, 170, 230]],     // cyan at 60 Gy
@@ -1709,7 +1709,7 @@ function _petRainbow2(val) {
 // starts at vibrant purple. Used for 3D mesh vertex colors and the
 // 3D colorbar, where black would look like missing data.
 function _petRainbowDoseSurface(val) {
-    const CLIP_T = 0.015; // purple at 15 Gy — skip everything darker
+    const CLIP_T = 0.015; // purple at 15 Gy — skip black range for dose surface
     return _petRainbow2(CLIP_T + Math.min(1, Math.max(0, val)) * (1 - CLIP_T));
 }
 
@@ -1793,8 +1793,10 @@ function updateDoseColorbars(visible, doseMinNorm, doseMaxNorm) {
         }
     });
 
-    // Render PETrainbow2 gradient on every colorbar canvas (same image, all 3)
-    document.querySelectorAll('.colorbarCanvas').forEach(canvas => {
+    // Render PETrainbow2 gradient on 2D viewer colorbar canvases only.
+    // The 3D colorbar is handled separately by update3DColorbar() which
+    // uses _petRainbowDoseSurface (no black range).
+    document.querySelectorAll('.dose-colorbar:not(#doseColorbar3D) .colorbarCanvas').forEach(canvas => {
         const ctx = canvas.getContext('2d');
         const h = canvas.height;
         const w = canvas.width;
