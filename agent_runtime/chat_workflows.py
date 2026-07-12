@@ -385,12 +385,11 @@ class ChatWorkflowMixin:
                     if not has_ctv:
                         if not detected_tumor_type:
                             logger.info("[WORKFLOW-ENFORCER] Tumor type unknown, asking user")
-                            _ask = "请明确需要分割的肿瘤部位，例如：胰腺癌、肝癌、肾癌、肺癌、结直肠癌、前列腺。请告知肿瘤类型后重试。"
+                            _ask = "请告知肿瘤部位，例如胰腺、肝脏、前列腺等，以便选择正确的CTV分割模型。"
                             if response:
                                 response += "\n\n" + _ask
                             else:
                                 response = _ask
-                            add_step("tool", "Auto CTV Segmentation", _ask, tool="ctv_segmentation", status="error")
                         else:
                             logger.info("[WORKFLOW-ENFORCER] Auto-running CTV segmentation")
                             try:
@@ -1063,10 +1062,8 @@ class ChatWorkflowMixin:
                     if not has_ctv:
                         if not detected_tumor_type:
                             logger.info("[WORKFLOW-ENFORCER-STREAM] Tumor type unknown, asking user")
-                            _ask = "请明确需要分割的肿瘤部位，例如：胰腺癌、肝癌、肾癌、肺癌、结直肠癌、前列腺。请告知肿瘤类型后重试。"
+                            _ask = "请告知肿瘤部位，例如胰腺、肝脏、前列腺等，以便选择正确的CTV分割模型。"
                             _workflow_enforced = True
-                            ctv_step = add_step("tool", "Auto CTV Segmentation", _ask, status="error", tool="ctv_segmentation")
-                            yield yield_event("step", ctv_step)
                             if response:
                                 response += "\n\n" + _ask
                             else:
