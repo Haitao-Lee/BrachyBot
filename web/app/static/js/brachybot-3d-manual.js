@@ -1573,9 +1573,12 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
         }
 
         if (includeOAR && oarLabelData) {
-            const oarIds = [...new Set((dataTreeState.organs || [])
-                .filter(o => o.labelId !== undefined && o.labelId !== null && !ctvLabelIds.includes(o.labelId))
-                .map(o => o.labelId))];
+            const allOarIds = opts.allOAR
+                ? [...new Set((dataTreeState.organs || [])
+                    .filter(o => o.labelId !== undefined && o.labelId !== null && !ctvLabelIds.includes(o.labelId))
+                    .map(o => o.labelId))]
+                : [];
+            const oarIds = allOarIds.length ? allOarIds : _getNonTraversableOarMeshIds(ctvLabelIds);
             const batchSize = opts.batchSize || 3;
             for (let i = 0; i < oarIds.length; i += batchSize) {
                 const batch = oarIds.slice(i, i + batchSize).map(lid => {
