@@ -1475,8 +1475,7 @@ function _getNonTraversableOarMeshIds(ctvLabelIds) {
             .forEach(o => ids.add(o.labelId));
     }
     if (ids.size === 0) {
-        ids.add(201);
-        ids.add(202);
+        console.warn('[3D meshes] No non-traversable OARs found in dataTreeState.organs — skipping OAR mesh loading');
     }
     return [...ids];
 }
