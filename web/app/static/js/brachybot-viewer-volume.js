@@ -678,14 +678,8 @@ function renderSliceFromVolume(axis, sliceIndex) {
                                         dataTreeState.organs.some(o => o.labelId === oarVal && o.visible);
                         if (visible) {
                             const color = labelColorLUT[oarVal] || [200, 200, 200];
-                            // Reject colors that are overwhelmingly red (a common
-                            // artefact from misattributed label data). Pure/near-pure
-                            // red creates the "threshold segmentation mask" effect.
-                            // eslint-disable-next-line no-constant-condition
-                            if (!(color[0] > 180 && color[1] < 80 && color[2] < 80)) {
-                                const opacity = organOpacities[oarVal] !== undefined ? organOpacities[oarVal] : 0.5;
-                                oR = color[0]; oG = color[1]; oB = color[2]; oA = Math.round(opacity * 255);
-                            }
+                            const opacity = organOpacities[oarVal] !== undefined ? organOpacities[oarVal] : 0.5;
+                            oR = color[0]; oG = color[1]; oB = color[2]; oA = Math.round(opacity * 255);
                             oR = color[0]; oG = color[1]; oB = color[2]; oA = Math.round(opacity * 255);
                         }
                     }
@@ -1311,15 +1305,19 @@ function updateOrganList(organData) {
         const name = info.name || `Organ ${labelId}`;
         const id = `organ_${labelId}`;
         const existing = existingState[id];
+        const cat = existing?.category || classifyOrgan(name);
         dataTreeState.organs.push({
             id: id,
             labelId: parseInt(labelId),
             label: name,
             color: existing?.color || info.color || ORGAN_COLORS[i % ORGAN_COLORS.length],
-            visible: existing?.visible ?? true,
+            // Only non-traversable OARs visible by default (bones, vessels,
+            // nerves — important for needle planning). Traversable soft-tissue
+            // OARs are hidden to avoid the full-body overlay effect.
+            visible: existing?.visible ?? (cat === 'non_traversable'),
             opacity: existing?.opacity ?? 0.5,
             voxelCount: info.voxel_count || 0,
-            category: existing?.category || classifyOrgan(name),
+            category: cat,
         });
         i++;
     }
