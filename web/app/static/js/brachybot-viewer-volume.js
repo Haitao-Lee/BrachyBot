@@ -1322,10 +1322,9 @@ function updateOrganList(organData) {
             labelId: parseInt(labelId),
             label: name,
             color: existing?.color || info.color || ORGAN_COLORS[i % ORGAN_COLORS.length],
-            // Start all OARs invisible — showing 57+ TotalSegmentator labels
-            // simultaneously creates a confusing full-body mask appearance.
-            // Users toggle individual organs on via the data tree.
-            visible: existing?.visible ?? false,
+            // Start all OARs visible — users can toggle individual organs
+            // via the data tree.
+            visible: existing?.visible ?? true,
             opacity: existing?.opacity ?? 0.5,
             voxelCount: info.voxel_count || 0,
             category: cat,
