@@ -848,11 +848,23 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         return values
 
     def _current_reference_direction(self):
-        """Read the latest explicit UI/config direction without mutating it."""
+        """Read the latest explicit UI/config direction without mutating it.
+        Returns a 3-vector, or 'auto' for automatic detection."""
         ui_state = self.memory.get_ui_state() or {}
         planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
+        # UI input has highest priority.
+        ref_direc = planning_state.get("reference_direc")
+        if ref_direc == "auto" or planning_state.get("ref_direc_auto"):
+            return "auto"
+        if isinstance(ref_direc, (list, tuple)) and len(ref_direc) == 3:
+            try:
+                values = [float(v) for v in ref_direc]
+                if all(math.isfinite(v) for v in values) and math.sqrt(sum(v * v for v in values)) > 1e-9:
+                    return values
+            except (TypeError, ValueError):
+                pass
+        # Fall back to config/memory (these may need negation).
         candidates = [
-            planning_state.get("reference_direc"),
             ui_state.get("reference_direc"),
             (self.memory.retrieve("plan_config") or {}).get("reference_direc"),
             (getattr(self, "config", {}) or {}).get("reference_direc"),
@@ -861,11 +873,26 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             direction = self._coerce_reference_direction(candidate)
             if direction is not None:
                 return direction
-        # Canonical default in plans/config.json; used only when the user asks
-        # to reverse the default without a more recent explicit vector.
         return [0.0, -1.0, 0.0]
 
     def _reversed_reference_direction(self):
+        """Get the reference direction for planning.
+        UI-originated values are already in RAS (use as-is).
+        Config/memory fallbacks are negated for coordinate convention."""
+        # UI input: already in RAS, no negation needed.
+        ui_state = self.memory.get_ui_state() or {}
+        planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
+        if planning_state.get("ref_direc_auto") or planning_state.get("reference_direc") == "auto":
+            return "auto"
+        ref_direc = planning_state.get("reference_direc")
+        if isinstance(ref_direc, (list, tuple)) and len(ref_direc) == 3:
+            try:
+                values = [float(v) for v in ref_direc]
+                if all(math.isfinite(v) for v in values) and math.sqrt(sum(v * v for v in values)) > 1e-9:
+                    return values  # UI value in RAS, use directly
+            except (TypeError, ValueError):
+                pass
+        # Fall back: negate config direction (historical convention).
         return [-value for value in self._current_reference_direction()]
 
     def _current_ct_path(self, tool_calls: List[Dict] = None) -> str:
