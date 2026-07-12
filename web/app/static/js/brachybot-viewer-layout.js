@@ -1130,23 +1130,14 @@ async function setDoseTextureMode(enabled, opts = {}) {
     try {
         if (enabled) {
             init3DScene();
-            // OAR label arrays are loaded lazily by the normal viewer. Dose
-            // surface mode must make that dependency explicit, otherwise a
-            // first click can texture only the already-warmed CTV mesh.
-            if (typeof loadLabelVolumes === 'function' &&
-                (typeof oarLabelData === 'undefined' || !oarLabelData)) {
-                await loadLabelVolumes();
-            }
-            await prewarmSegmentationMeshes('all', { showStatus: false, batchSize: 3, allOAR: true });
-            try { await loadSeeds3D(); } catch (e) { console.warn('[DoseTexture] seeds/needles unavailable:', e); }
+            // Dose surface mode only changes mesh texture — it does NOT
+            // add or remove models. Whatever CTV/OAR meshes are already
+            // visible get the dose texture; anything hidden stays hidden.
             if (!state.doseOverlay) await loadDoseOverlay();
             if (!state.doseOverlay?.shape) throw new Error('Dose overlay is not available');
             _prepareDoseTextureSceneVisibility();
             const entries = Object.entries(scene3D.meshes || {}).filter(([id, mesh]) => _isDoseTexturableMesh(id, mesh));
             if (entries.length === 0) throw new Error('No CTV/OAR 3D meshes are available for dose surface mapping');
-            // Each mesh first warms its required slices. Promise.all lets all
-            // unique HTTP requests run concurrently; the shared in-flight
-            // cache prevents duplicate slice requests across organs.
             await Promise.all(entries.map(([id, mesh]) => _applyDoseTextureToMesh(id, mesh)));
             _prepareDoseTextureSceneVisibility();
             state.doseTexture.enabled = true;
