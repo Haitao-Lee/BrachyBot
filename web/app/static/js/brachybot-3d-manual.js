@@ -1578,7 +1578,10 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
                     .filter(o => o.labelId !== undefined && o.labelId !== null && !ctvLabelIds.includes(o.labelId))
                     .map(o => o.labelId))]
                 : [];
-            const oarIds = allOarIds.length ? allOarIds : _getNonTraversableOarMeshIds(ctvLabelIds);
+            const oarIds = allOarIds.length ? allOarIds
+                : [...new Set((dataTreeState.organs || [])
+                    .filter(o => o.labelId !== undefined && o.labelId !== null && !ctvLabelIds.includes(o.labelId))
+                    .map(o => o.labelId))];
             const batchSize = opts.batchSize || 3;
             for (let i = 0; i < oarIds.length; i += batchSize) {
                 const batch = oarIds.slice(i, i + batchSize).map(lid => {
@@ -1680,15 +1683,16 @@ function _petRainbow2(val) {
     const v = Math.min(1, Math.max(0, val));
     const stops = [
         [0.000, [0, 0, 0]],         // pure black (near-zero dose)
-        [0.002, [38, 0, 82]],       // dark purple at 2 Gy
-        [0.030, [0, 0, 180]],       // blue
-        [0.060, [0, 180, 255]],     // cyan
-        [0.100, [0, 210, 95]],      // green
-        [0.180, [255, 235, 0]],     // yellow
-        [0.300, [255, 145, 0]],     // orange
-        [0.500, [220, 0, 0]],       // red
-        [0.750, [120, 0, 0]],       // dark red
-        [1.000, [80, 0, 0]],        // very dark red (top)
+        [0.003, [30, 0, 60]],       // dark purple at 3 Gy
+        [0.015, [150, 30, 200]],    // vibrant purple at 15 Gy
+        [0.030, [30, 50, 220]],     // blue at 30 Gy
+        [0.060, [0, 170, 230]],     // cyan at 60 Gy
+        [0.100, [30, 200, 80]],     // green at 100 Gy
+        [0.200, [240, 220, 0]],     // yellow at 200 Gy
+        [0.350, [255, 120, 0]],     // orange at 350 Gy
+        [0.550, [220, 0, 0]],       // red at 550 Gy
+        [0.750, [130, 0, 0]],       // dark red at 750 Gy
+        [1.000, [60, 0, 0]],        // very dark red (top)
     ];
     for (let i = 1; i < stops.length; i++) {
         const [p1, c1] = stops[i];
@@ -1764,20 +1768,14 @@ function updateDoseColorbars(visible, doseMinNorm, doseMaxNorm) {
     const dMinGy = COLORBAR_MIN_GY;
     const dMaxGy = COLORBAR_MAX_GY;
 
-    // Fixed 5-tick scale: 0, 25%, 50%, 75%, 100% of 1000 Gy
-    const ticks = [0, 0.25, 0.5, 0.75, 1.0].map(f => dMaxGy * f);
-    const tickLabels = ticks.map(v => v.toFixed(0));
-    const positions = ['bottom', '75%', '50%', '25%', 'top']; // CSS position: bottom → top corresponds to min → max
+    // Tick positions: 0, 15, 100, 300, max Gy (clinically meaningful)
+    const tickGy = [0, 15, 100, 300, dMaxGy];
+    const tickLabels = tickGy.map(v => v.toFixed(0) + ' Gy');
+    const tickPos = ['doseColorbarMin', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarMax'];
 
-    // Update text labels
-    positions.forEach((pos, i) => {
-        const labelClass = pos === 'top' ? 'doseColorbarMax'
-                          : pos === 'bottom' ? 'doseColorbarMin'
-                          : pos === '50%' ? 'doseColorbarMid'
-                          : pos === '25%' ? 'doseColorbarQ1'  // 25% from top
-                          : 'doseColorbarQ3';                  // 75% from top
-        document.querySelectorAll('.' + labelClass).forEach(el => {
-            el.textContent = tickLabels[i] + ' Gy';
+    tickPos.forEach((cls, i) => {
+        document.querySelectorAll('.' + cls).forEach(el => {
+            el.textContent = tickLabels[i];
         });
     });
 
