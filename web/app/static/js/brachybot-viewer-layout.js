@@ -1127,6 +1127,16 @@ async function setDoseTextureMode(enabled, opts = {}) {
         btn.disabled = true;
         btn.textContent = enabled ? 'Mapping...' : 'Dose Surface';
     }
+    // Safety timer: if the operation hangs (network timeout, server stall),
+    // reset the button after 60 seconds so the user can retry.
+    const safetyTimer = setTimeout(() => {
+        state.doseTexture.applying = false;
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Dose Surface';
+            btn.classList.remove('active');
+        }
+    }, 60000);
     try {
         if (enabled) {
             init3DScene();
@@ -1160,6 +1170,7 @@ async function setDoseTextureMode(enabled, opts = {}) {
         state.doseTexture.enabled = false;
         update3DColorbar(false);
     } finally {
+        clearTimeout(safetyTimer);
         state.doseTexture.applying = false;
         if (btn) {
             btn.disabled = false;
