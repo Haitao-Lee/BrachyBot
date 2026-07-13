@@ -100,7 +100,7 @@ function _planningVisualEntries() {
         ..._planningItems('doseLevels'),
         ...(_planningItems('meshes')),
     ];
-    if (state?.doseOverlay?.data) entries.push(state.doseOverlay);
+    if (state?.doseOverlay?.shape) entries.push(state.doseOverlay);
     return entries;
 }
 
@@ -289,6 +289,16 @@ async function loadLabelVolumes() {
         // Override CTV label 1 (tumor) color: bright pink instead of
         // the server's blue which is too close to the dose overlay color.
         if (labelColorLUT[1]) labelColorLUT[1] = [255, 105, 180]; // hot pink
+        // Override OAR labels whose golden-ratio HSV hue lands near red
+        // (labels 5, 8, 13, 21, 34, 55, 89 have h≈0 from _label_color).
+        // These large organs rendered in orange-red created the 'red mask' effect.
+        if (labelColorLUT[5])  labelColorLUT[5]  = [46, 180, 140];  // liver → teal
+        if (labelColorLUT[8])  labelColorLUT[8]  = [200, 130, 180];  // adrenal → mauve
+        if (labelColorLUT[13]) labelColorLUT[13] = [60, 160, 210];  // lung → sky blue
+        if (labelColorLUT[21]) labelColorLUT[21] = [140, 90, 200];  // bladder → purple
+        if (labelColorLUT[34]) labelColorLUT[34] = [100, 150, 200]; // vertebra → steel blue
+        if (labelColorLUT[55]) labelColorLUT[55] = [200, 120, 80];  // vessel → brown
+        if (labelColorLUT[89]) labelColorLUT[89] = [120, 180, 110]; // iliopsoas → sage
         // Load CTV label names from backend (not hardcoded)
         const ctvLabelMapRaw = res.headers.get('X-CTV-Label-Map');
         if (ctvLabelMapRaw) {
@@ -359,13 +369,17 @@ async function loadLabelVolumes() {
         if ((hasCTV || hasOAR) && state && state.viewerSettings) {
             state.viewerSettings.displayMode = 'overlay';
             state.viewerSettings.showCTV = true;
+            // OAR slice overlay is ON by default but all individual organs
+            // start invisible — showing 57+ TotalSegmentator labels
+            // simultaneously creates a confusing full-body mask appearance.
+            // Users enable specific organs via the data tree toggles.
             state.viewerSettings.showOAR = true;
             const dm = document.getElementById('displayMode');
             if (dm) dm.value = 'overlay';
             const ctvCb = document.getElementById('overlayCTV');
             if (ctvCb) ctvCb.checked = true;
             const oarCb = document.getElementById('overlayOAR');
-            if (oarCb) oarCb.checked = true;
+            if (oarCb) oarCb.checked = false;
             if (volumeData && volumeShape) {
                 ['axial', 'sagittal', 'coronal'].forEach(axis => {
                     try { renderSliceFromVolume(axis, state.slices[axis]); } catch (_) {}
@@ -499,7 +513,7 @@ function renderOverlayFromVolume(axis, sliceIndex) {
                 const ctvVal = ctvLabelData[flatIdx];
                 if (ctvVal > 0) {
                     // Use per-label color from LUT (label 1=blue, 2=green, 3=pink, etc.)
-                    const color = labelColorLUT[ctvVal] || [255, 0, 0];
+                    const color = labelColorLUT[ctvVal] || [220, 160, 210];
                     const opacity = dataTreeState.ctv.opacity ?? 0.7;
                     r = color[0];
                     g = color[1];
@@ -631,8 +645,9 @@ function renderSliceFromVolume(axis, sliceIndex) {
                          (dataTreeState.oar.visible && state.viewerSettings.showOAR));
     const labelSliceSize = Y * X;
     const organOpacities = showOverlay ? (() => { const m = {}; dataTreeState.organs.forEach(o => { m[o.labelId] = o.opacity; }); return m; })() : {};
-    const thresholdValue = Number(state.viewerSettings.threshold);
-    const thresholdEnabled = Number.isFinite(thresholdValue);
+    const thresholdRaw = state.viewerSettings.threshold;
+    const thresholdEnabled = thresholdRaw !== null && Number.isFinite(Number(thresholdRaw));
+    const thresholdValue = thresholdEnabled ? Number(thresholdRaw) : 0;
 
     for (let py = 0; py < height; py++) {
         for (let px = 0; px < width; px++) {
@@ -677,6 +692,7 @@ function renderSliceFromVolume(axis, sliceIndex) {
                             const color = labelColorLUT[oarVal] || [200, 200, 200];
                             const opacity = organOpacities[oarVal] !== undefined ? organOpacities[oarVal] : 0.5;
                             oR = color[0]; oG = color[1]; oB = color[2]; oA = Math.round(opacity * 255);
+                            oR = color[0]; oG = color[1]; oB = color[2]; oA = Math.round(opacity * 255);
                         }
                     }
                 }
@@ -686,7 +702,7 @@ function renderSliceFromVolume(axis, sliceIndex) {
                     const ctvVal = ctvLabelData[flatIdx];
                     if (ctvVal > 0) {
                         // Use per-label color from LUT
-                        const color = labelColorLUT[ctvVal] || [255, 0, 0];
+                        const color = labelColorLUT[ctvVal] || [220, 160, 210];
                             const labelState = dataTreeState.ctvLabels?.[`ctv_${ctvVal}`];
                             const labelVisible = labelState ? labelState.visible !== false : true;
                             if (labelVisible) {
@@ -1253,8 +1269,11 @@ const CATEGORY_RULES = [
 ];
 
 function classifyOrgan(organName) {
+    // Normalize underscores to spaces so TotalSegmentator names like
+    // "spinal_cord" and "small_bowel" match the pattern rules below.
+    const name = (organName || '').replace(/_/g, ' ');
     for (const rule of CATEGORY_RULES) {
-        if (rule.pattern.test(organName)) return rule.category;
+        if (rule.pattern.test(name)) return rule.category;
     }
     return 'traversable'; // Default: traversable
 }
@@ -1298,15 +1317,18 @@ function updateOrganList(organData) {
         const name = info.name || `Organ ${labelId}`;
         const id = `organ_${labelId}`;
         const existing = existingState[id];
+        const cat = existing?.category || classifyOrgan(name);
         dataTreeState.organs.push({
             id: id,
             labelId: parseInt(labelId),
             label: name,
             color: existing?.color || info.color || ORGAN_COLORS[i % ORGAN_COLORS.length],
+            // Start all OARs visible — users can toggle individual organs
+            // via the data tree.
             visible: existing?.visible ?? true,
             opacity: existing?.opacity ?? 0.5,
             voxelCount: info.voxel_count || 0,
-            category: existing?.category || classifyOrgan(name),
+            category: cat,
         });
         i++;
     }
@@ -1557,10 +1579,9 @@ function renderDataTree() {
     const planningSeeds = _planningItems('seeds');
     const planningNeedles = _planningItems('needles');
     const doseLevels = _planningItems('doseLevels');
-    // Has-planning check now includes trajectories and dose overlay (2D),
-    // so the tree header counts everything under the Planning branch.
-    const hasDoseOverlay = !!(state.doseOverlay && state.doseOverlay.data);
-    const hasPlanning = planningTrajectories.length > 0 || planningSeeds.length > 0 || planningNeedles.length > 0 || doseLevels.length > 0 || hasDoseOverlay;
+    const planningMeshes = _planningItems('meshes');
+    const hasDoseOverlay = !!(state.doseOverlay && state.doseOverlay.shape);
+    const hasPlanning = planningTrajectories.length > 0 || planningSeeds.length > 0 || planningNeedles.length > 0 || doseLevels.length > 0 || planningMeshes.length > 0 || hasDoseOverlay;
     const planningEntries = _planningVisualEntries();
     const planningVis = planningEntries.length === 0 || planningEntries.some(item => item.visible !== false);
     const planningOp = planningEntries.length
@@ -2740,6 +2761,37 @@ function toggleDataVisibility(id) {
     if (id === 'ctv') {
         const mesh = scene3D.meshes['ctv'];
         if (mesh) applyMeshVisibility(mesh, dataTreeState[id].visible, dataTreeState[id].opacity ?? 0.7);
+        // Propagate to all CTV child labels
+        if (dataTreeState.ctvLabels) {
+            Object.values(dataTreeState.ctvLabels).forEach(label => {
+                label.visible = dataTreeState.ctv.visible;
+                const m = scene3D.meshes[label.id || label.labelId];
+                if (m) applyMeshVisibility(m, label.visible, label.opacity ?? dataTreeState.ctv.opacity ?? 0.7);
+            });
+        }
+    } else if (id === 'planning') {
+        // Propagate to all planning sub-items
+        _planningItems('trajectories').forEach(t => t.visible = dataTreeState.planning.visible);
+        _planningItems('seeds').forEach(s => {
+            s.visible = dataTreeState.planning.visible;
+            const m = scene3D.meshes[s.id];
+            if (m) applyMeshVisibility(m, s.visible, s.opacity ?? 1.0);
+        });
+        _planningItems('needles').forEach(n => {
+            n.visible = dataTreeState.planning.visible;
+            const m = scene3D.meshes[n.id];
+            if (m) applyMeshVisibility(m, n.visible, n.opacity ?? 0.8);
+        });
+        _planningItems('doseLevels').forEach(d => {
+            d.visible = dataTreeState.planning.visible;
+            const m = scene3D.meshes[`dose_iso_${d.threshold}`];
+            if (m) applyMeshVisibility(m, d.visible, d.opacity ?? 0.3);
+        });
+        (dataTreeState.planning.meshes || []).forEach(item => {
+            item.visible = dataTreeState.planning.visible;
+            const m = scene3D.meshes[item.id];
+            if (m) applyMeshVisibility(m, item.visible, item.opacity ?? 0.7);
+        });
     }
 
     // Sync with existing overlay system

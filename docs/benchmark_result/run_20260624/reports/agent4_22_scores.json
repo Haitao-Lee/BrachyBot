@@ -1,0 +1,635 @@
+{
+  "category": 22,
+  "agent_id": 4,
+  "results": [
+    {
+      "id": "IV101",
+      "input": "Show 3D reconstruction",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "no_response"
+    },
+    {
+      "id": "IV102",
+      "input": "Do a 3D reconstruction",
+      "response": "\u2705 I'll help you complete the full treatment planning workflow. Let me start by loading the CT file and segmenting the CTV and OAR simultaneously.CT\u5df2\u6210\u529f\u52a0\u8f7d\u3002\u73b0\u5728\u8fdb\u884cCTV\u548cOAR\u5206\u5272\uff1a",
+      "score": 0.0,
+      "passed": false,
+      "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/run_20260624/screenshots/22_IV102.png"
+    },
+    {
+      "id": "IV103",
+      "input": "Reconstruct 3D",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "no_response"
+    },
+    {
+      "id": "IV104",
+      "input": "Export DICOM",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "no_response"
+    },
+    {
+      "id": "IV105",
+      "input": "Export as DICOM RT",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "no_response"
+    },
+    {
+      "id": "IV106",
+      "input": "Export the plan to DICOM",
+      "response": "Let me first check the current state of your session to understand what data is available.",
+      "score": 0.0,
+      "passed": false,
+      "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/run_20260624/screenshots/22_IV106.png"
+    },
+    {
+      "id": "IV107",
+      "input": "What is DeepRare?",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "no_response"
+    },
+    {
+      "id": "IV108",
+      "input": "Search for DeepRare",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "no_response"
+    },
+    {
+      "id": "IV109",
+      "input": "Look up DeepRare",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "no_response"
+    },
+    {
+      "id": "IV110",
+      "input": "Please calculate dose",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "no_response"
+    },
+    {
+      "id": "IV111",
+      "input": "Calculate the dose",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "no_response"
+    },
+    {
+      "id": "IV112",
+      "input": "Run dose calculation",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "no_response"
+    },
+    {
+      "id": "IV113",
+      "input": "What are the dose constraints for prostate?",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "no_response"
+    },
+    {
+      "id": "IV114",
+      "input": "Tell me the prostate dose limits",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "no_response"
+    },
+    {
+      "id": "IV115",
+      "input": "What is the prescription dose for I-125?",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "no_response"
+    },
+    {
+      "id": "IV116",
+      "input": "Set the bladder limit to 100 Gy",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "no_response"
+    },
+    {
+      "id": "IV117",
+      "input": "Change the bladder dose limit to 100 Gy",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "no_response"
+    },
+    {
+      "id": "IV118",
+      "input": "I want to set bladder D2cc to 100 Gy",
+      "response": "\u6211\u5c06\u540c\u65f6\u8fdb\u884c CTV\u5206\u5272 \u548c OAR\u5206\u5272\uff0c\u5e76\u8bb0\u5f55\u60a8\u8bbe\u7f6e\u7684\u8180\u80f1 D2cc \u2264 100 Gy \u7ea6\u675f\u3002",
+      "score": 0.0,
+      "passed": false,
+      "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/run_20260624/screenshots/22_IV118.png"
+    },
+    {
+      "id": "IV119",
+      "input": "Save this case",
+      "response": "I'll segment the CTV and OAR from the loaded CT, then save the case. Let me start by loading the CT image and running both segmentations.",
+      "score": 0.5,
+      "passed": true,
+      "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/run_20260624/screenshots/22_IV119.png"
+    },
+    {
+      "id": "IV120",
+      "input": "Save to case memory",
+      "response": "I'll run the CTV segmentation and OAR segmentation in parallel, then save the case to memory.",
+      "score": 0.5,
+      "passed": true,
+      "screenshot": "/home/lht/snap/brachyplan/BrachyBot/docs/benchmark_result/run_20260624/screenshots/22_IV120.png"
+    },
+    {
+      "id": "IV121",
+      "input": "Remember this case",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Page.fill: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV122",
+      "input": "Is this plan safe?",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV123",
+      "input": "Check if this plan is safe",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV124",
+      "input": "Run safety validation",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV125",
+      "input": "Compare the two plans",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV126",
+      "input": "Compare these plans",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV127",
+      "input": "Which plan is better?",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV128",
+      "input": "How is the dose distribution?",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV129",
+      "input": "Evaluate the dose distribution",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV130",
+      "input": "Run dose evaluation",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV131",
+      "input": "Calculate dose without a plan",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV132",
+      "input": "Run dose calculation without seed plan",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV133",
+      "input": "I need dose but have no plan",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV134",
+      "input": "Please plan the seed placement",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV135",
+      "input": "Generate a treatment plan",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV136",
+      "input": "Plan the seeds",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV137",
+      "input": "Generate a report",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV138",
+      "input": "Create a clinical report",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV139",
+      "input": "Make a treatment report",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV140",
+      "input": "\u505a3D\u91cd\u5efa",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV141",
+      "input": "\u663e\u793a3D\u91cd\u5efa",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV142",
+      "input": "\u770b\u770b3D\u6548\u679c",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV143",
+      "input": "\u5bfc\u51faDICOM",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV144",
+      "input": "\u5bfc\u51fa\u4e3aDICOM\u683c\u5f0f",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV145",
+      "input": "\u628a\u8ba1\u5212\u5bfc\u51fa\u6210DICOM",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV146",
+      "input": "\u5e2e\u6211\u67e5\u4e00\u4e0bDeepRare",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV147",
+      "input": "\u641c\u7d22DeepRare",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV148",
+      "input": "DeepRare\u662f\u4ec0\u4e48\uff1f",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV149",
+      "input": "\u8bf7\u8ba1\u7b97\u5242\u91cf\u5206\u5e03",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV150",
+      "input": "\u8ba1\u7b97\u5242\u91cf",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV151",
+      "input": "\u5e2e\u6211\u7b97\u4e00\u4e0b\u5242\u91cf",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV152",
+      "input": "\u524d\u5217\u817a\u7684\u5242\u91cf\u7ea6\u675f\u662f\u4ec0\u4e48\uff1f",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV153",
+      "input": "\u524d\u5217\u817a\u764c\u7684\u5904\u65b9\u5242\u91cf\u662f\u591a\u5c11\uff1f",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV154",
+      "input": "\u544a\u8bc9\u6211I-125\u7684\u5904\u65b9\u5242\u91cf",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV155",
+      "input": "\u628a\u8180\u80f1\u5242\u91cf\u9650\u5236\u8c03\u5230100Gy",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV156",
+      "input": "\u8180\u80f1D2cc\u6539\u6210100Gy",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV157",
+      "input": "\u6211\u60f3\u628a\u8180\u80f1\u9650\u5236\u8bbe\u4e3a100Gy",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV158",
+      "input": "\u4fdd\u5b58\u8fd9\u4e2a\u75c5\u4f8b",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV159",
+      "input": "\u5b58\u5230\u75c5\u4f8b\u5e93",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV160",
+      "input": "\u8bb0\u4f4f\u8fd9\u4e2a\u75c5\u4f8b",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV161",
+      "input": "\u68c0\u67e5\u8ba1\u5212\u662f\u5426\u5b89\u5168",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV162",
+      "input": "\u8fd0\u884c\u5b89\u5168\u9a8c\u8bc1",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV163",
+      "input": "\u8fd9\u4e2a\u8ba1\u5212\u5b89\u5168\u5417\uff1f",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV164",
+      "input": "\u5bf9\u6bd4\u4e24\u4e2a\u8ba1\u5212",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV165",
+      "input": "\u54ea\u4e2a\u8ba1\u5212\u66f4\u597d\uff1f",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV166",
+      "input": "\u6bd4\u8f83\u4e00\u4e0b\u8fd9\u4e24\u4e2a\u65b9\u6848",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV167",
+      "input": "\u8bc4\u4f30\u5242\u91cf\u5206\u5e03",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV168",
+      "input": "\u770b\u4e00\u4e0bDVH",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV169",
+      "input": "\u8bc4\u4f30\u4e00\u4e0b\u8ba1\u5212\u8d28\u91cf",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV170",
+      "input": "\u6ca1\u6709\u8ba1\u5212\u5c31\u8ba1\u7b97\u5242\u91cf",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV171",
+      "input": "\u6ca1\u6709\u79cd\u5b50\u8ba1\u5212\uff0c\u7b97\u4e00\u4e0b\u5242\u91cf",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV172",
+      "input": "\u6211\u60f3\u7b97\u5242\u91cf\u4f46\u662f\u6ca1\u6709\u8ba1\u5212",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV173",
+      "input": "\u8bf7\u89c4\u5212\u4e00\u4e0b",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV174",
+      "input": "\u751f\u6210\u6cbb\u7597\u8ba1\u5212",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV175",
+      "input": "\u5e2e\u6211\u505a\u4e2a\u8ba1\u5212",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV176",
+      "input": "\u751f\u6210\u62a5\u544a",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV177",
+      "input": "\u5e2e\u6211\u505a\u4e2a\u62a5\u544a",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    },
+    {
+      "id": "IV178",
+      "input": "\u51fa\u4e00\u4efd\u62a5\u544a",
+      "response": "",
+      "score": 0,
+      "passed": false,
+      "error": "Browser.new_page: Target page, context or browser has been closed"
+    }
+  ],
+  "summary": {
+    "total": 78,
+    "passed": 2,
+    "avg_score": 0.01282051282051282
+  }
+}

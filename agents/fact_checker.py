@@ -126,6 +126,7 @@ class FactChecker(LLMCapableAgent):
         self._segmentation = content.get("segmentation", {})
         self._planning = content.get("planning", {})
         self._distilled_context = content.get("distilled_context", "")
+        self._lang = content.get("lang", "en")
 
         # Filter out technical metrics
         claims = [c for c in claims if not self._is_technical_metric(c)]
@@ -241,6 +242,9 @@ class FactChecker(LLMCapableAgent):
         prompt = base_prompt
         if context_block:
             prompt += f"\n\n{context_block}"
+
+        if getattr(self, "_lang", "en") == "zh":
+            prompt += "\n\n**Language**: 请用中文回答。"
 
         try:
             response = await self.call_llm(

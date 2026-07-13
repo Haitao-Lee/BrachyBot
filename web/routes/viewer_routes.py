@@ -329,7 +329,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             ctv_array = None
             if ctv_full is not None:
                 # CTV = only tumor
-                ctv_array = (ctv_full == 1).astype(np.uint8) if np.any(ctv_full == 1) else ctv_full
+                ctv_array = (ctv_full == 1).astype(np.uint8) if np.any(ctv_full == 1) else None
 
                 # Merge nnUNet vessel/organ labels into OAR array
                 nnunet_oar_labels = {

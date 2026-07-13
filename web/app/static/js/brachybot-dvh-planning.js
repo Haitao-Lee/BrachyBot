@@ -155,89 +155,65 @@ function _setupDvhCustomTooltip(dvhEl) {
         'padding:6px 9px;font-size:11px;line-height:1.35;color:#e2e8f0;font-family:Inter,system-ui,sans-serif;' +
         'white-space:nowrap;box-shadow:0 8px 18px rgba(0,0,0,0.35);max-width:240px;';
 
-    const onMove = (ev) => {
+    const onHover = (eventdata) => {
+        const points = eventdata.points;
+        if (!points || !points.length) { tip.style.display = 'none'; return; }
+        const ev = eventdata.event;
+        if (!ev) { tip.style.display = 'none'; return; }
         const layout = dvhEl._fullLayout;
-        const traces = dvhEl.data || [];
-        if (!layout || !layout.xaxis || !layout.yaxis || !traces.length) {
-            tip.style.display = 'none';
-            return;
-        }
+        if (!layout || !layout.xaxis || !layout.yaxis) { tip.style.display = 'none'; return; }
         const box = dvhEl.getBoundingClientRect();
         const size = layout._size || {};
-        const plotLeft = size.l || 0;
-        const plotTop = size.t || 0;
-        const plotW = size.w || 1;
-        const plotH = size.h || 1;
-        // Convert viewport coordinates back to Plotly's unscaled CSS-pixel
-        // coordinate system. This keeps the tooltip aligned after panel zoom,
-        // browser scaling, or responsive transforms.
-        const scaleX = box.width > 0 && dvhEl.clientWidth > 0 ? box.width / dvhEl.clientWidth : 1;
-        const scaleY = box.height > 0 && dvhEl.clientHeight > 0 ? box.height / dvhEl.clientHeight : 1;
-        const mx = (ev.clientX - box.left) / scaleX;
-        const my = (ev.clientY - box.top) / scaleY;
-        if (mx < plotLeft || mx > plotLeft + plotW || my < plotTop || my > plotTop + plotH) {
-            tip.style.display = 'none';
-            return;
-        }
-        const xr = layout.xaxis.range || [0, 1];
-        const yr = layout.yaxis.range || [0, 1];
-        const relX = mx - plotLeft;
-        // Use the actual plot rectangle for the inverse transform. Plotly's
-        // private p2l helper uses an internal pixel scale that can differ from
-        // the CSS box after a panel resize/zoom, which caused a 10-20 Gy
-        // tooltip offset. DVH x is linear, so this public geometry mapping is
-        // deterministic and matches the cursor position exactly.
-        const plotFraction = Math.max(0, Math.min(1, relX / Math.max(plotW, 1)));
-        const doseAtCursor = xr[0] + plotFraction * (xr[1] - xr[0]);
-        if (!Number.isFinite(doseAtCursor)) {
-            tip.style.display = 'none';
-            return;
-        }
+        const sy = box.height > 0 && dvhEl.clientHeight > 0 ? box.height / dvhEl.clientHeight : 1;
+        const mx = ev.clientX - box.left;
+        const my = ev.clientY - box.top;
+        const plotTop  = (size.t || 0) * sy;
+        const plotH    = (size.h || 1) * sy;
+        if (my < plotTop || my > plotTop + plotH) { tip.style.display = 'none'; return; }
 
         let best = null;
         let bestDy = Infinity;
-        for (const trace of traces) {
-            if (!trace || trace.visible === false || trace.visible === 'legendonly' || !trace.x || !trace.y) continue;
-            const color = trace.line?.color || '#e2e8f0';
-            const y = _interpolateDvhAtDose(trace.x, trace.y, doseAtCursor);
-            if (!Number.isFinite(y)) continue;
-            const py = plotTop + (typeof layout.yaxis.l2p === 'function'
-                ? layout.yaxis.l2p(y)
-                : (1 - (y - yr[0]) / Math.max(yr[1] - yr[0], 1e-9)) * plotH);
-            const dy = Math.abs(py - my);
+        for (const p of points) {
+            if (!p || !Number.isFinite(p.y) || !p.fullData) continue;
+            if (p.fullData.visible === false || p.fullData.visible === 'legendonly') continue;
+            const pyViewport = typeof layout.yaxis.l2p === 'function'
+                ? layout.yaxis.l2p(p.y) * sy + plotTop
+                : (1 - (p.y - (layout.yaxis.range || [0, 1])[0]) / Math.max((layout.yaxis.range || [0, 1])[1] - (layout.yaxis.range || [0, 1])[0], 1e-9)) * plotH + plotTop;
+            const dy = Math.abs(pyViewport - my);
             if (dy < bestDy) {
                 bestDy = dy;
-                best = { name: trace.name || '', x: doseAtCursor, y, color };
+                best = {
+                    name: p.fullData.name || '',
+                    x: p.x,
+                    y: p.y,
+                    color: p.fullData.line?.color || '#e2e8f0'
+                };
             }
         }
-        if (!best || bestDy > 32) {
-            tip.style.display = 'none';
-            return;
-        }
-        const color = String(best.color || '#e2e8f0');
-        const safeColor = /^#[0-9a-f]{3,8}$/i.test(color) || /^rgba?\([0-9.,\s%]+\)$/i.test(color) ? color : '#e2e8f0';
+        if (!best || bestDy > 40) { tip.style.display = 'none'; return; }
+        const safeColor = /^#[0-9a-f]{3,8}$/i.test(best.color) || /^rgba?\([0-9.,\s%]+\)$/i.test(best.color) ? best.color : '#e2e8f0';
         tip.innerHTML = `<div style="color:${safeColor};font-weight:700;margin-bottom:2px">${escHtml(best.name)}</div>` +
             `<div>Dose: ${best.x.toFixed(2)} Gy</div><div>Volume: ${best.y.toFixed(1)}%</div>`;
         tip.style.display = 'block';
-        const pad = 8;
-        const offset = 14;
-        const tw = tip.offsetWidth || 140;
-        const th = tip.offsetHeight || 54;
-        let left = mx + offset;
-        let top = my + offset;
-        if (left + tw + pad > dvhEl.clientWidth) left = mx - tw - offset;
-        if (top + th + pad > dvhEl.clientHeight) top = my - th - offset;
-        left = Math.max(pad, Math.min(left, dvhEl.clientWidth - tw - pad));
-        top = Math.max(pad, Math.min(top, dvhEl.clientHeight - th - pad));
-        tip.style.left = `${left}px`;
-        tip.style.top = `${top}px`;
+        const pad = 8, off = 14;
+        const tw = tip.offsetWidth || 140, th = tip.offsetHeight || 54;
+        let left = mx + off, top2 = my - th / 2;
+        if (left + tw + pad > box.width)  left = mx - tw - off;
+        if (top2 + th + pad > box.height) top2 = my - th - off;
+        tip.style.left = Math.max(pad, Math.min(left, box.width - tw - pad)) + 'px';
+        tip.style.top  = Math.max(pad, Math.min(top2, box.height - th - pad)) + 'px';
     };
     const onLeave = () => { tip.style.display = 'none'; };
-    dvhEl.addEventListener('mousemove', onMove);
     dvhEl.addEventListener('mouseleave', onLeave);
+    // Use Plotly's native hover to get exact data coordinates (no manual conversion).
+    if (typeof dvhEl.on === 'function') {
+        dvhEl.on('plotly_hover', onHover);
+    }
     dvhEl._dvhTooltipCleanup = () => {
-        dvhEl.removeEventListener('mousemove', onMove);
         dvhEl.removeEventListener('mouseleave', onLeave);
+        if (typeof dvhEl.removeListener === 'function') {
+            try { dvhEl.removeListener('plotly_hover', onHover); } catch (_) {}
+        }
         tip.style.display = 'none';
     };
 }
@@ -414,7 +390,7 @@ function drawDVH() {
             line: { color, width: name === ctvName ? 2.6 : 1.4, shape: 'linear' },
             fill: name === ctvName ? 'tozeroy' : 'none',
             fillcolor: name === ctvName ? 'rgba(14,165,233,0.10)' : undefined,
-            hoverinfo: 'skip',
+            hoverinfo: 'none',
             legendgroup: name,
             showlegend: true,
         });
@@ -553,7 +529,8 @@ function drawDVH() {
         // the user wants — hover continuously to read off
         // (dose, volume) values for any curve, with no need for
         // the click-to-pick flow.
-        hovermode: false,
+        hovermode: 'closest',
+        hoverdistance: 100,
         dragmode: 'zoom',
     }, {
         responsive: true,
@@ -746,7 +723,9 @@ async function refreshPlanningUI(options = {}) {
                     }
                     if (dataTreeState) {
                         dataTreeState.ctv.visible = true;
-                        dataTreeState.oar.visible = true;
+                        // OAR group stays visible but all individual organs
+                        // are invisible by default (set in updateOrganList).
+                        // Users enable specific organs via data tree toggles.
                     }
                     const dm = document.getElementById('displayMode');
                     if (dm) dm.value = 'overlay';
@@ -839,30 +818,32 @@ async function refreshPlanningUI(options = {}) {
 
             // 4f-2a. CTV zoomed capture (hide non-CTV meshes)
             const ctvMesh = scene3D.meshes['ctv'] || Object.values(scene3D.meshes).find(m => m?.userData?.type === 'ctv');
-            if (ctvMesh && scene3D.camera && scene3D.controls) {
-                const _savedVis = {};
-                for (const [id, mesh] of Object.entries(scene3D.meshes)) {
-                    if (!mesh || id === 'ctv') continue;
-                    _savedVis[id] = mesh.visible;
-                    mesh.visible = false;
+            const _savedVis = {};
+            try {
+                if (ctvMesh && scene3D.camera && scene3D.controls) {
+                    for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                        if (!mesh || id === 'ctv') continue;
+                        _savedVis[id] = mesh.visible;
+                        mesh.visible = false;
+                    }
+                    if (scene3D.skinMesh) { _savedVis['__skin__'] = scene3D.skinMesh.visible; scene3D.skinMesh.visible = false; }
+
+                    const box = new THREE.Box3().setFromObject(ctvMesh);
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    const dist = maxDim * 2.5;
+                    scene3D.controls.target.copy(center);
+                    scene3D.camera.position.set(center.x + dist * 0.6, center.y + dist * 0.4, center.z + dist * 0.7);
+                    scene3D.camera.updateProjectionMatrix();
+                    scene3D.controls.update();
+                    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+                    scene3D.renderer.render(scene3D.scene, scene3D.camera);
+                    await new Promise(r => requestAnimationFrame(r));
+                    const c = document.querySelector('#canvas3D canvas');
+                    if (c) _replaceOrCreate('3d_ctv', _ctvTitle, _ctvCap, c.toDataURL('image/png'));
                 }
-                if (scene3D.skinMesh) { _savedVis['__skin__'] = scene3D.skinMesh.visible; scene3D.skinMesh.visible = false; }
-
-                const box = new THREE.Box3().setFromObject(ctvMesh);
-                const center = box.getCenter(new THREE.Vector3());
-                const size = box.getSize(new THREE.Vector3());
-                const maxDim = Math.max(size.x, size.y, size.z);
-                const dist = maxDim * 2.5;
-                scene3D.controls.target.copy(center);
-                scene3D.camera.position.set(center.x + dist * 0.6, center.y + dist * 0.4, center.z + dist * 0.7);
-                scene3D.camera.updateProjectionMatrix();
-                scene3D.controls.update();
-                await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-                scene3D.renderer.render(scene3D.scene, scene3D.camera);
-                await new Promise(r => requestAnimationFrame(r));
-                const c = document.querySelector('#canvas3D canvas');
-                if (c) _replaceOrCreate('3d_ctv', _ctvTitle, _ctvCap, c.toDataURL('image/png'));
-
+            } finally {
                 for (const [id, vis] of Object.entries(_savedVis)) {
                     if (id === '__skin__') { if (scene3D.skinMesh) scene3D.skinMesh.visible = vis; continue; }
                     const mesh = scene3D.meshes[id];
@@ -900,6 +881,7 @@ async function refreshPlanningUI(options = {}) {
         //     before dose data was available).
         if (state.doseOverlay && state.doseOverlay.visible && window.reportForm && window.reportForm.figures) {
             try {
+                const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
                 const pv = state.doseOverlay.peakVoxel;
                 if (pv) {
                     const axesCfg = [
@@ -907,7 +889,6 @@ async function refreshPlanningUI(options = {}) {
                         { ax: 'sagittal', slice: pv.x, axis: 'dose_sagittal', titleKey: 'doseSagittal', capKey: 'doseSagittalCap' },
                         { ax: 'coronal', slice: pv.y, axis: 'dose_coronal', titleKey: 'doseCoronal', capKey: 'doseCoronalCap' },
                     ];
-                    const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
                     const labels = (lang === 'zh') ? {
                         doseAxial: '轴位剂量分布', doseAxialCap: '最大剂量层面的轴位 CT 叠加剂量热图',
                         doseSagittal: '矢状位剂量分布', doseSagittalCap: '最大剂量层面的矢状位 CT 叠加剂量热图',
@@ -1312,16 +1293,23 @@ function updateSeeds(seeds) {
         ...seed,
         trajectory_id: _normalizeTrajectoryId(seed.trajectory_id),
     }));
-    // Update data tree so the "seeds" entry shows a fresh count badge
-    // and so renderDataTree() can mark the row as "loaded" / "visible".
     if (typeof dataTreeState !== 'undefined' && dataTreeState.seeds) {
         dataTreeState.seeds.loaded = !!(state.seeds && state.seeds.length > 0);
         dataTreeState.seeds.visible = dataTreeState.seeds.loaded;
     }
-    // The 3D seed mesh and the dose overlay are refreshed by
-    // refreshPlanningUI() right after this returns, so we don't
-    // re-render them here (that would double-fetch /planning/seeds_3d
-    // and /planning/dose_overlay on every metrics update).
+    // Populate planning-level seeds so renderDataTree() shows them in
+    // the Planning group (either under Trajectories or as a flat list).
+    if (typeof dataTreeState !== 'undefined' && dataTreeState.planning) {
+        dataTreeState.planning.seeds = (state.seeds || []).map(s => ({
+            id: s.id || s._id || `seed_${Math.random().toString(36).slice(2, 8)}`,
+            position: s.pos || s.position,
+            trajectory_id: s.trajectory_id,
+            direction: s.direction,
+            visible: true,
+            opacity: 1.0,
+            color: '#ffcc00',
+        }));
+    }
 }
 
 // Update planning trajectories (parent nodes for seeds in the data tree).

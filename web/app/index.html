@@ -336,9 +336,13 @@
                     <div class="form-group"><label class="form-label">Ref Direction (RAS)</label>
                         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;">
                             <input type="number" class="form-input" id="refDirecX" value="0" step="1" placeholder="X">
-                            <input type="number" class="form-input" id="refDirecY" value="1" step="1" placeholder="Y">
+                            <input type="number" class="form-input" id="refDirecY" value="-1" step="1" placeholder="Y">
                             <input type="number" class="form-input" id="refDirecZ" value="0" step="1" placeholder="Z">
                         </div>
+                        <label style="display:flex;align-items:center;gap:4px;margin-top:2px;font-size:0.6rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="refDirecAuto">
+                            Auto-detect (ignore manual values)
+                        </label>
                     </div>
                     <div class="form-group"><label class="form-label">Direction Res (Cone / Step / Rings)</label>
                         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;">
@@ -877,22 +881,20 @@
                             <canvas id="annotationCanvasAxial" style="position:absolute;inset:0;pointer-events:none;display:none;z-index:9;"></canvas>
                             <canvas id="labelOverlay_Axial" style="position:absolute;pointer-events:none;display:none;opacity:0.6;"></canvas>
                             <!-- Dose overlay colorbar (PETrainbow2, smooth gradient) -->
-                            <div class="dose-colorbar" id="doseColorbarAxial" style="display:none;position:absolute;right:6px;top:6px;bottom:6px;width:42px;z-index:7;pointer-events:none;">
-                                <div style="position:relative;width:16px;height:100%;margin-left:auto;border-radius:3px;border:1px solid rgba(255,255,255,0.2);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.3);">
-                                    <canvas class="colorbarCanvas" data-axis="axial" width="16" height="512" style="width:100%;height:100%;image-rendering:auto;"></canvas>
+                            <div class="dose-colorbar" id="doseColorbarAxial" style="display:none;position:absolute;right:8px;top:6px;bottom:6px;width:48px;z-index:7;pointer-events:none;">
+                                <div style="position:absolute;inset:0;display:flex;flex-direction:row-reverse;align-items:stretch;">
+                                    <div style="position:relative;width:16px;height:100%;border-radius:3px;border:1px solid rgba(255,255,255,0.25);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.3);flex-shrink:0;">
+                                        <canvas class="colorbarCanvas" data-axis="axial" width="16" height="512" style="width:100%;height:100%;image-rendering:auto;"></canvas>
+                                    </div>
+                                    <div style="flex:1;position:relative;margin-right:4px;">
+                                        <div style="position:absolute;top:0;right:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:700;white-space:nowrap;line-height:1;font-variant-numeric:tabular-nums;" class="doseColorbarMax"></div>
+                                        <div style="position:absolute;top:20%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="800"></div>
+                                        <div style="position:absolute;top:40%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="600"></div>
+                                        <div style="position:absolute;top:60%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="400"></div>
+                                        <div style="position:absolute;top:80%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="200"></div>
+                                        <div style="position:absolute;bottom:0;right:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:700;white-space:nowrap;line-height:1;font-variant-numeric:tabular-nums;" class="doseColorbarMin"></div>
+                                    </div>
                                 </div>
-                                <!-- Tick marks -->
-                                <div style="position:absolute;top:0;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.5);"></div>
-                                <div style="position:absolute;top:25%;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.3);"></div>
-                                <div style="position:absolute;top:50%;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.5);"></div>
-                                <div style="position:absolute;top:75%;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.3);"></div>
-                                <div style="position:absolute;bottom:0;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.5);"></div>
-                                <!-- Labels -->
-                                <div style="position:absolute;top:-2px;left:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:600;" class="doseColorbarMax" data-axis="axial">max</div>
-                                <div style="position:absolute;top:25%;left:0;transform:translateY(-50%);font-size:0.48rem;color:rgba(255,255,255,0.7);text-shadow:0 1px 2px #000;" class="doseColorbarQ1" data-axis="axial"></div>
-                                <div style="position:absolute;top:50%;left:0;transform:translateY(-50%);font-size:0.5rem;color:#fff;text-shadow:0 1px 2px #000;" class="doseColorbarMid" data-axis="axial"></div>
-                                <div style="position:absolute;top:75%;left:0;transform:translateY(-50%);font-size:0.48rem;color:rgba(255,255,255,0.7);text-shadow:0 1px 2px #000;" class="doseColorbarQ3" data-axis="axial"></div>
-                                <div style="position:absolute;bottom:-2px;left:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:600;" class="doseColorbarMin" data-axis="axial">0</div>
                             </div>
                         </div>
                     </div>
@@ -921,20 +923,20 @@
                             <canvas id="annotationCanvasSagittal" style="position:absolute;inset:0;pointer-events:none;display:none;z-index:9;"></canvas>
                             <canvas id="labelOverlay_Sagittal" style="position:absolute;pointer-events:none;display:none;opacity:0.6;"></canvas>
                             <!-- Dose overlay colorbar (cloned from axial, linear scale Gy) -->
-                            <div class="dose-colorbar" id="doseColorbarSagittal" style="display:none;position:absolute;right:6px;top:6px;bottom:6px;width:42px;z-index:7;pointer-events:none;">
-                                <div style="position:relative;width:16px;height:100%;margin-left:auto;border-radius:3px;border:1px solid rgba(255,255,255,0.2);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.3);">
-                                    <canvas class="colorbarCanvas" data-axis="sagittal" width="16" height="512" style="width:100%;height:100%;image-rendering:auto;"></canvas>
+                            <div class="dose-colorbar" id="doseColorbarSagittal" style="display:none;position:absolute;right:8px;top:6px;bottom:6px;width:48px;z-index:7;pointer-events:none;">
+                                <div style="position:absolute;inset:0;display:flex;flex-direction:row-reverse;align-items:stretch;">
+                                    <div style="position:relative;width:16px;height:100%;border-radius:3px;border:1px solid rgba(255,255,255,0.25);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.3);flex-shrink:0;">
+                                        <canvas class="colorbarCanvas" data-axis="sagittal" width="16" height="512" style="width:100%;height:100%;image-rendering:auto;"></canvas>
+                                    </div>
+                                    <div style="flex:1;position:relative;margin-right:4px;">
+                                        <div style="position:absolute;top:0;right:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:700;white-space:nowrap;line-height:1;font-variant-numeric:tabular-nums;" class="doseColorbarMax"></div>
+                                        <div style="position:absolute;top:20%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="800"></div>
+                                        <div style="position:absolute;top:40%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="600"></div>
+                                        <div style="position:absolute;top:60%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="400"></div>
+                                        <div style="position:absolute;top:80%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="200"></div>
+                                        <div style="position:absolute;bottom:0;right:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:700;white-space:nowrap;line-height:1;font-variant-numeric:tabular-nums;" class="doseColorbarMin"></div>
+                                    </div>
                                 </div>
-                                <div style="position:absolute;top:0;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.5);"></div>
-                                <div style="position:absolute;top:25%;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.3);"></div>
-                                <div style="position:absolute;top:50%;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.5);"></div>
-                                <div style="position:absolute;top:75%;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.3);"></div>
-                                <div style="position:absolute;bottom:0;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.5);"></div>
-                                <div style="position:absolute;top:-2px;left:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:600;" class="doseColorbarMax" data-axis="sagittal">max</div>
-                                <div style="position:absolute;top:25%;left:0;transform:translateY(-50%);font-size:0.48rem;color:rgba(255,255,255,0.7);text-shadow:0 1px 2px #000;" class="doseColorbarQ1" data-axis="sagittal"></div>
-                                <div style="position:absolute;top:50%;left:0;transform:translateY(-50%);font-size:0.5rem;color:#fff;text-shadow:0 1px 2px #000;" class="doseColorbarMid" data-axis="sagittal"></div>
-                                <div style="position:absolute;top:75%;left:0;transform:translateY(-50%);font-size:0.48rem;color:rgba(255,255,255,0.7);text-shadow:0 1px 2px #000;" class="doseColorbarQ3" data-axis="sagittal"></div>
-                                <div style="position:absolute;bottom:-2px;left:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:600;" class="doseColorbarMin" data-axis="sagittal">0</div>
                             </div>
                         </div>
                     </div>
@@ -963,20 +965,20 @@
                             <canvas id="annotationCanvasCoronal" style="position:absolute;inset:0;pointer-events:none;display:none;z-index:9;"></canvas>
                             <canvas id="labelOverlay_Coronal" style="position:absolute;pointer-events:none;display:none;opacity:0.6;"></canvas>
                             <!-- Dose overlay colorbar (cloned from axial, linear scale Gy) -->
-                            <div class="dose-colorbar" id="doseColorbarCoronal" style="display:none;position:absolute;right:6px;top:6px;bottom:6px;width:42px;z-index:7;pointer-events:none;">
-                                <div style="position:relative;width:16px;height:100%;margin-left:auto;border-radius:3px;border:1px solid rgba(255,255,255,0.2);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.3);">
-                                    <canvas class="colorbarCanvas" data-axis="coronal" width="16" height="512" style="width:100%;height:100%;image-rendering:auto;"></canvas>
+                            <div class="dose-colorbar" id="doseColorbarCoronal" style="display:none;position:absolute;right:8px;top:6px;bottom:6px;width:48px;z-index:7;pointer-events:none;">
+                                <div style="position:absolute;inset:0;display:flex;flex-direction:row-reverse;align-items:stretch;">
+                                    <div style="position:relative;width:16px;height:100%;border-radius:3px;border:1px solid rgba(255,255,255,0.25);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.3);flex-shrink:0;">
+                                        <canvas class="colorbarCanvas" data-axis="coronal" width="16" height="512" style="width:100%;height:100%;image-rendering:auto;"></canvas>
+                                    </div>
+                                    <div style="flex:1;position:relative;margin-right:4px;">
+                                        <div style="position:absolute;top:0;right:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:700;white-space:nowrap;line-height:1;font-variant-numeric:tabular-nums;" class="doseColorbarMax"></div>
+                                        <div style="position:absolute;top:20%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="800"></div>
+                                        <div style="position:absolute;top:40%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="600"></div>
+                                        <div style="position:absolute;top:60%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="400"></div>
+                                        <div style="position:absolute;top:80%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="200"></div>
+                                        <div style="position:absolute;bottom:0;right:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:700;white-space:nowrap;line-height:1;font-variant-numeric:tabular-nums;" class="doseColorbarMin"></div>
+                                    </div>
                                 </div>
-                                <div style="position:absolute;top:0;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.5);"></div>
-                                <div style="position:absolute;top:25%;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.3);"></div>
-                                <div style="position:absolute;top:50%;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.5);"></div>
-                                <div style="position:absolute;top:75%;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.3);"></div>
-                                <div style="position:absolute;bottom:0;right:18px;width:4px;height:1px;background:rgba(255,255,255,0.5);"></div>
-                                <div style="position:absolute;top:-2px;left:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:600;" class="doseColorbarMax" data-axis="coronal">max</div>
-                                <div style="position:absolute;top:25%;left:0;transform:translateY(-50%);font-size:0.48rem;color:rgba(255,255,255,0.7);text-shadow:0 1px 2px #000;" class="doseColorbarQ1" data-axis="coronal"></div>
-                                <div style="position:absolute;top:50%;left:0;transform:translateY(-50%);font-size:0.5rem;color:#fff;text-shadow:0 1px 2px #000;" class="doseColorbarMid" data-axis="coronal"></div>
-                                <div style="position:absolute;top:75%;left:0;transform:translateY(-50%);font-size:0.48rem;color:rgba(255,255,255,0.7);text-shadow:0 1px 2px #000;" class="doseColorbarQ3" data-axis="coronal"></div>
-                                <div style="position:absolute;bottom:-2px;left:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:600;" class="doseColorbarMin" data-axis="coronal">0</div>
                             </div>
                         </div>
                     </div>
@@ -1002,18 +1004,20 @@
                             </div>
                             <div id="labelOverlay_3d" style="position:absolute;inset:0;display:block;opacity:0.6;pointer-events:none;background:transparent;"></div>
                             <!-- 3D dose colorbar (shown only when dose surface mode is active) -->
-                            <div class="dose-colorbar" id="doseColorbar3D" style="display:none;position:absolute;right:6px;top:6px;bottom:6px;width:24px;z-index:7;pointer-events:none;">
-                                <canvas class="colorbarCanvas" data-axis="3d" width="16" height="512" style="width:100%;height:100%;image-rendering:auto;"></canvas>
-                                <div style="position:absolute;top:0;right:12px;width:3px;height:1px;background:rgba(255,255,255,0.5);"></div>
-                                <div style="position:absolute;top:25%;right:12px;width:3px;height:1px;background:rgba(255,255,255,0.3);"></div>
-                                <div style="position:absolute;top:50%;right:12px;width:3px;height:1px;background:rgba(255,255,255,0.5);"></div>
-                                <div style="position:absolute;top:75%;right:12px;width:3px;height:1px;background:rgba(255,255,255,0.3);"></div>
-                                <div style="position:absolute;bottom:0;right:12px;width:3px;height:1px;background:rgba(255,255,255,0.5);"></div>
-                                <div style="position:absolute;top:-2px;left:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:600;" class="doseColorbarMax" data-axis="3d">max</div>
-                                <div style="position:absolute;top:25%;left:0;transform:translateY(-50%);font-size:0.48rem;color:rgba(255,255,255,0.7);text-shadow:0 1px 2px #000;" class="doseColorbarQ1" data-axis="3d"></div>
-                                <div style="position:absolute;top:50%;left:0;transform:translateY(-50%);font-size:0.5rem;color:#fff;text-shadow:0 1px 2px #000;" class="doseColorbarMid" data-axis="3d"></div>
-                                <div style="position:absolute;top:75%;left:0;transform:translateY(-50%);font-size:0.48rem;color:rgba(255,255,255,0.7);text-shadow:0 1px 2px #000;" class="doseColorbarQ3" data-axis="3d"></div>
-                                <div style="position:absolute;bottom:-2px;left:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:600;" class="doseColorbarMin" data-axis="3d">0</div>
+                            <div class="dose-colorbar" id="doseColorbar3D" style="display:none;position:absolute;right:8px;top:6px;bottom:6px;width:48px;z-index:7;pointer-events:none;">
+                                <div style="position:absolute;inset:0;display:flex;flex-direction:row-reverse;align-items:stretch;">
+                                    <div style="position:relative;width:16px;height:100%;border-radius:3px;border:1px solid rgba(255,255,255,0.25);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.3);flex-shrink:0;">
+                                        <canvas class="colorbarCanvas" data-axis="3d" width="16" height="512" style="width:100%;height:100%;image-rendering:auto;"></canvas>
+                                    </div>
+                                    <div style="flex:1;position:relative;margin-right:4px;">
+                                        <div style="position:absolute;top:0;right:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:700;white-space:nowrap;line-height:1;font-variant-numeric:tabular-nums;" class="doseColorbarMax"></div>
+                                        <div style="position:absolute;top:20%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="160"></div>
+                                        <div style="position:absolute;top:40%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="120"></div>
+                                        <div style="position:absolute;top:60%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="80"></div>
+                                        <div style="position:absolute;top:80%;right:0;font-size:0.5rem;color:rgba(255,255,255,0.9);text-shadow:0 1px 2px #000;white-space:nowrap;line-height:1;transform:translateY(-50%);font-variant-numeric:tabular-nums;" class="doseColorbarTick" data-value="40"></div>
+                                        <div style="position:absolute;bottom:0;right:0;font-size:0.55rem;color:#fff;text-shadow:0 1px 2px #000;font-weight:700;white-space:nowrap;line-height:1;font-variant-numeric:tabular-nums;" class="doseColorbarMin"></div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
