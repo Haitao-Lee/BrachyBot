@@ -801,15 +801,18 @@
     /* Pulsing glow — the primary "breathing" visual. box-shadow
        is NOT affected by overflow:hidden or transition conflicts. */
     animation: todo-active-breathe 1.4s ease-in-out infinite;
+    animation-play-state: running !important;
 }
 /* Font-size pulse on label — secondary effect */
 .chat-todo-item.active .chat-todo-label {
     animation: todo-label-breathe 1.4s ease-in-out infinite;
+    animation-play-state: running !important;
 }
 .chat-todo-item.active::before {
     background: var(--primary);
     box-shadow: 0 0 8px 2px rgba(14,165,233,0.8);
     animation: todo-bar-breathe 1.6s ease-in-out infinite;
+    animation-play-state: running !important;
 }
 
 /* Center dot — sized for the new font */
@@ -830,6 +833,7 @@
     line-height: 1;
     transform: scale(1.15);
     animation: todo-dot-breathe 1.4s ease-in-out infinite;
+    animation-play-state: running !important;
 }
 .chat-todo-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-todo-time {
@@ -1007,6 +1011,7 @@
     background: var(--msg-user-bg);
     box-shadow: inset 2px 0 0 var(--primary);
     animation: pipeline-active-glow 1.6s ease-in-out infinite;
+    animation-play-state: running !important;
 }
 .pipeline-step.pending { opacity: 0.55; }
 .pipeline-step.error { color: var(--danger); }
@@ -1021,6 +1026,7 @@
 .pipeline-step.active .pipeline-step-dot {
     background: var(--primary);
     animation: pipeline-dot-breathe 1.4s ease-in-out infinite;
+    animation-play-state: running !important;
 }
 .pipeline-step.error .pipeline-step-dot { background: var(--danger); }
 @keyframes pipeline-active-glow {
@@ -1173,14 +1179,17 @@
     color: var(--warning);
     border: 1px solid var(--warning-border);
     animation: pill-breathe 1.6s ease-in-out infinite;
+    animation-play-state: running !important;
 }
 .step-status.pending::before {
     animation: dot-pulse 1.6s ease-in-out infinite;
     box-shadow: 0 0 0 0 currentColor;
+    animation-play-state: running !important;
 }
 .step-block:has(.step-status.pending) {
     border-left-color: rgba(245, 158, 11, 0.45);
     animation: step-glow 1.6s ease-in-out infinite;
+    animation-play-state: running !important;
 }
 .step-block:has(.step-status.pending) .step-title {
     color: var(--text);

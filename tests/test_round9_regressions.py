@@ -32,6 +32,15 @@ class Round9RegressionTests(unittest.TestCase):
         source = self.read("web/app/static/js/brachybot-chat-todo.js")
         self.assertIn("Keep every unfinished step active", source)
         self.assertNotIn("it.status = 'pending';  // will be moved to done", source)
+        self.assertIn("step.requires_input ? 'User input required'", source)
+        css = self.read("web/app/static/css/brachybot-chat-status.css")
+        self.assertIn("animation-play-state: running !important", css)
+
+    def test_missing_tumor_site_short_circuits_llm_tool_loop(self):
+        source = self.read("agent_runtime/llm_runtime.py")
+        self.assertIn("_input_missing = True", source)
+        self.assertIn("clarification_required", source)
+        self.assertIn('"requires_input"] = True', source)
 
     def test_colorbar_panel_has_explicit_dismissal(self):
         html = self.read("web/app/index.html")

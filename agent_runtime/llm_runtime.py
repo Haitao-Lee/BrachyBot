@@ -514,6 +514,12 @@ class LLMRuntimeMixin:
                         result = self._execute_tool_with_memory(tool_name, params)
                         tool_succeeded = bool(result.success)
                         result_text = ToolResultPipeline.format(tool_name, result, lang=_lang)
+                        _metadata = getattr(result, "metadata", {}) or {}
+                        if not tool_succeeded and _metadata.get("clarification_required"):
+                            result_text = _metadata.get("clarification_question") or result_text
+                            _input_missing = True
+                            final_response = result_text
+                            steps[-1]["requires_input"] = True
                     except Exception as e:
                         tool_succeeded = False
                         result_text = f"Exception: {str(e)}"
@@ -529,6 +535,10 @@ class LLMRuntimeMixin:
                 # If a critical prerequisite tool fails, stop executing
                 # remaining tool calls in this batch so the LLM can ask
                 # the user for missing info instead of cascading failures.
+                if not tool_succeeded and tool_name == "ctv_segmentation" and not params.get("tumor_type"):
+                    _input_missing = True
+                    final_response = result_text
+                    steps[-1]["requires_input"] = True
                 if not tool_succeeded and tool_name in ("ctv_segmentation", "seed_planning"):
                     logger.info(f"Critical tool {tool_name} failed — stopping tool batch")
                     break
@@ -1725,6 +1735,9 @@ class LLMRuntimeMixin:
                 if tool_name == "ctv_segmentation" and not params.get("tumor_type"):
                     logger.info("[TOOL-LOOP] ctv_segmentation missing tumor_type — intercepting")
                     result_text = "请告知肿瘤部位，例如胰腺、肝脏、前列腺等，以便选择正确的CTV分割模型。"
+                    _input_missing = True
+                    final_response = result_text
+                    tool_step["requires_input"] = True
                     tool_step["status"] = "error"
                     tool_step["content"] = "需要肿瘤部位信息"
                     tool_step["result"] = result_text[:200]
@@ -1909,6 +1922,12 @@ class LLMRuntimeMixin:
                 else:
                     # Unknown tools and raised exceptions have no ToolResult.
                     step_status = "error"
+                _metadata = getattr(tool_result, "metadata", {}) or {}
+                if tool_result is not None and not tool_result.success and _metadata.get("clarification_required"):
+                    result_text = _metadata.get("clarification_question") or result_text
+                    final_response = result_text
+                    _input_missing = True
+                    tool_step["requires_input"] = True
                 tool_step["status"] = step_status
                 # Use language-aware formatting for the step result
                 # instead of the raw English result.message

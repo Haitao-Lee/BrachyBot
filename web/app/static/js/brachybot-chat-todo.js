@@ -159,6 +159,20 @@ function _todoCreate() {
             _todoUpdateCount();
             _todoStartTimer(item);
             _todoStartGpuBadge(item);
+            if (item._animationGuard) clearInterval(item._animationGuard);
+            // Keep the active class and animation running while the backend
+            // is still working. This protects against late SSE redraws that
+            // replace a row's classes without changing its logical status.
+            item._animationGuard = setInterval(() => {
+                if (item.status !== 'active') {
+                    clearInterval(item._animationGuard);
+                    item._animationGuard = null;
+                    item.node.style.animationPlayState = '';
+                    return;
+                }
+                item.node.classList.add('active');
+                item.node.style.animationPlayState = 'running';
+            }, 500);
         },
         markDone(item, errMsg) {
             // Always ensure at least one browser paint frame shows the
@@ -180,6 +194,8 @@ function _todoCreate() {
                 }
             }
             if (item._timer) { clearInterval(item._timer); item._timer = null; }
+            if (item._animationGuard) { clearInterval(item._animationGuard); item._animationGuard = null; }
+            item.node.style.animationPlayState = '';
             _todoStopGpuBadge(item);
             item.status = errMsg ? 'error' : 'done';
             item.endedAt = Date.now();
@@ -232,6 +248,8 @@ function _todoCreate() {
             for (const it of api.items) {
                 if (it.status === 'pending' || it.status === 'active' || it.status === 'predicted') {
                     if (it._timer) { clearInterval(it._timer); it._timer = null; }
+                    if (it._animationGuard) { clearInterval(it._animationGuard); it._animationGuard = null; }
+                    it.node.style.animationPlayState = '';
                     _todoStopGpuBadge(it);
                     it.status = 'done';
                     it.endedAt = Date.now();
@@ -472,6 +490,12 @@ function _todoUpdateFromStep(todo, step) {
                 todo.markDone(existing);
             } else if (step.status === 'pending') {
                 todo.markActive(existing);
+            } else if (step.status === 'error') {
+                // Predicted items are commonly matched here. An error or
+                // clarification event must terminate their active timer;
+                // otherwise the row keeps breathing forever after the
+                // backend has already stopped the workflow.
+                todo.markDone(existing, step.requires_input ? 'User input required' : (step.error || 'failed'));
             }
             return existing;
         }
@@ -506,7 +530,7 @@ function _todoUpdateFromStep(todo, step) {
             todo.markDone(item);
         }
     } else if (step.status === 'error') {
-        todo.markDone(item, step.error || 'failed');
+        todo.markDone(item, step.requires_input ? 'User input required' : (step.error || 'failed'));
     }
     return item;
 }
