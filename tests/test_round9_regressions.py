@@ -98,6 +98,40 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("_build_3d_status_response", workflow)
         self.assertIn("scene has no mounted 3D meshes", workflow)
 
+    def test_viewer_refreshes_do_not_implicitly_fit_camera(self):
+        manual = self.read("web/app/static/js/brachybot-3d-manual.js")
+        viewer = self.read("web/app/static/js/brachybot-viewer-layout.js")
+        force_start = manual.index("function forceRender3DViewer")
+        force_end = manual.index("function update3DMeshOpacity", force_start)
+        force_block = manual[force_start:force_end]
+        self.assertNotIn("fitCameraToScene();", force_block)
+        self.assertIn("Camera pose", manual)
+        self.assertIn("Dose-surface toggles must not reset the user's camera", viewer)
+
+    def test_explicit_fit_reset_controls_remain_available(self):
+        ui_api = self.read("web/app/static/js/brachybot-ui-api.js")
+        self.assertIn("target === '3d.fit'", ui_api)
+        self.assertIn("target === '3d.reset'", ui_api)
+
+    def test_needle_drag_uses_renderer_capture_and_live_shaft_preview(self):
+        manual = self.read("web/app/static/js/brachybot-3d-manual.js")
+        self.assertIn("const interactionCanvas = scene3D.renderer?.domElement || canvas", manual)
+        self.assertIn("interactionCanvas.addEventListener('pointerdown', beginNeedleHandleDrag, true)", manual)
+        self.assertIn("interactionCanvas.setPointerCapture", manual)
+        self.assertIn("interactionCanvas.addEventListener('pointermove', updateManualDrag)", manual)
+        self.assertIn("interactionCanvas.addEventListener('pointercancel', finishManualDrag)", manual)
+        self.assertIn("window.addEventListener('blur', finishManualDrag)", manual)
+        self.assertIn("const preview = _makeNeedleMesh(needle)", manual)
+        self.assertIn("onManualNeedleHandleEdited(selectedObject)", manual)
+
+    def test_report_recaptures_restore_the_user_camera(self):
+        report = self.read("web/app/static/js/brachybot-report-editor.js")
+        planning = self.read("web/app/static/js/brachybot-dvh-planning.js")
+        self.assertIn("const savedCamera = scene3D.camera && scene3D.controls", report)
+        self.assertIn("scene3D.camera.quaternion.copy(savedCamera.quaternion)", report)
+        self.assertIn("const _restoreCamera = () =>", planning)
+        self.assertIn("_restoreCamera();\n            forceRender3DViewer();", planning)
+
 
 if __name__ == "__main__":
     unittest.main()

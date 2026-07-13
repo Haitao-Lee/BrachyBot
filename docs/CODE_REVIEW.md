@@ -3939,6 +3939,32 @@ The following seven reported behaviors were rechecked against the current code a
 - `tests/test_round9_regressions.py`: 6 tests passed with the standard-library `unittest` runner.
 - `git diff --check` passes.
 
+## Round 13 Fixes (2026-07-13)
+
+### Viewer refreshes unexpectedly reset the 3D camera
+
+**Verified cause:** The defect was reproducible in several non-user camera paths. `addManualNeedle()`, the 3D `ResizeObserver`, and `forceRender3DViewer()` all called `fitCameraToScene()`. Data-tree reconstruction and seed/needle refreshes call these paths, so an otherwise harmless redraw replaced the operator's current orbit, zoom, and target. Report-only captures also changed the camera temporarily and did not restore the exact pose in every path.
+
+**Fix:**
+
+- Manual needle insertion, resize, late-layout retry, data-tree reconstruction, WebGL restoration, and ordinary 3D refresh now resize or redraw only; they never fit the camera.
+- The only normal camera-fitting entry points are the explicit `3d.fit` and `3d.reset` actions. The existing Fit/Reset controls remain available.
+- Report Figure 1, Figure 2, and post-planning 3D recapture save position, quaternion, clipping range, aspect, and OrbitControls target, then restore them after the temporary capture view.
+- The current 2D slice indices remain state-driven; no automatic slice reset was found in this audit.
+
+### Needle endpoint dragging conflicted with OrbitControls
+
+**Verified cause:** Endpoint hit testing used the surrounding viewer card rectangle instead of the actual WebGL canvas, and the endpoint event could still reach OrbitControls. This made the camera rotate when the operator attempted to drag a needle endpoint.
+
+**Fix:** Endpoint handles are now raycast against the actual renderer canvas using corrected NDC coordinates. A capture-phase `pointerdown`/`mousedown` guard wins before OrbitControls, disables camera controls during the edit, uses pointer capture so movement outside the canvas is retained, previews the updated shaft without recreating the handles, and commits through the existing `onManualNeedleHandleEdited()` replan path on release. Non-handle clicks retain normal rotate/pan/zoom behavior.
+
+### Verification
+
+- `node --check` passes for all modified viewer, planning, report, and UI API JavaScript files.
+- `tests/test_round9_regressions.py`: 16 tests pass with the standard-library `unittest` runner.
+- `git diff --check` passes.
+- Browser/GPU interaction was not available in this local Windows workspace; after deployment, verify endpoint dragging and camera persistence on the RTX server with an actual WebGL session.
+
 ## Round 12 Fixes (2026-07-13)
 
 ### Screenshot requests and visual answers

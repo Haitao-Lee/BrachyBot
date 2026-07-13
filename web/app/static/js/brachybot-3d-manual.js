@@ -94,7 +94,9 @@ function addManualNeedle() {
     _syncNeedleHandles(needle);
     _syncSeedsOverlayFromDataTree();
     renderDataTree();
-    fitCameraToScene();
+    // Adding a needle must not change the user's current 3D view. The user
+    // can explicitly press Fit/Reset when the new object needs framing.
+    if (scene3D.requestRender) scene3D.requestRender(4);
     addChat('system', `Manual needle added: ${id}. Drag the two endpoint spheres in 3D, then add seeds or recompute dose.`);
     reportUIEvent('manual.needle.add', id, { points: needle.points });
 }
@@ -544,8 +546,8 @@ function init3DScene() {
     requestRender(2);
     scene3D.initialized = true;
 
-    // Resize handler for 3D viewer — also re-fit camera so meshes
-    // become visible when the panel transitions from hidden to shown.
+    // Resize changes only the projection and renderer viewport. Camera pose
+    // is user state and must remain untouched unless Fit/Reset is explicit.
     const resizeObserver3D = new ResizeObserver(() => {
         if (!scene3D.renderer || !scene3D.camera) return;
         const newW = canvas.clientWidth || 400;
@@ -554,10 +556,6 @@ function init3DScene() {
         scene3D.camera.aspect = newW / newH;
         scene3D.camera.updateProjectionMatrix();
         scene3D.renderer.setSize(newW, newH);
-        // Re-fit camera to scene when panel becomes visible
-        if (Object.keys(scene3D.meshes).length > 0) {
-            fitCameraToScene();
-        }
         requestRender(2);
     });
     resizeObserver3D.observe(canvas);
@@ -569,16 +567,30 @@ function init3DScene() {
     let isDragging = false;
     let dragPlane = new THREE.Plane();
     let dragOffset = new THREE.Vector3();
+    const interactionCanvas = scene3D.renderer?.domElement || canvas;
+
+    function updatePointerNdc(event) {
+        // Use the actual WebGL canvas rectangle. The surrounding viewer card
+        // can include padding, headers, or an overlay, which otherwise shifts
+        // ray hits away from the visible endpoint sphere.
+        const rect = interactionCanvas.getBoundingClientRect();
+        if (rect.width < 1 || rect.height < 1) return false;
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        return true;
+    }
 
     // Endpoint handles must win the hit test before OrbitControls receives
     // the same left-button event.  A normal scene-wide raycast can hit the
     // CTV/OAR surface first, making the editable sphere appear unselectable.
     const beginNeedleHandleDrag = (event) => {
         if (event.button !== 0 || !scene3D.camera) return false;
-        const rect = canvas.getBoundingClientRect();
-        if (rect.width < 1 || rect.height < 1) return false;
-        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        if (isDragging) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return true;
+        }
+        if (!updatePointerNdc(event)) return false;
         raycaster.setFromCamera(mouse, scene3D.camera);
         const handles = Object.values(scene3D.meshes || {})
             .filter(obj => obj && obj.userData?.type === 'needle_handle');
@@ -593,6 +605,10 @@ function init3DScene() {
         // hit. This capture-phase guard keeps endpoint editing deterministic.
         event.stopImmediatePropagation();
         event.__brachyNeedleHandle = true;
+        interactionCanvas.style.cursor = 'grabbing';
+        if (typeof interactionCanvas.setPointerCapture === 'function' && event.pointerId !== undefined) {
+            try { interactionCanvas.setPointerCapture(event.pointerId); } catch (_) {}
+        }
         if (selectedObject?.material?.emissive) {
             selectedObject.material.emissive.setHex(selectedObject.userData.originalEmissive || 0x332200);
         }
@@ -613,16 +629,18 @@ function init3DScene() {
     };
 
     // Capture phase runs before OrbitControls' bubble-phase listener.
-    canvas.addEventListener('mousedown', beginNeedleHandleDrag, true);
+    // Install the capture-phase guard on the actual renderer canvas, where
+    // OrbitControls also receives the event. This prevents camera rotation
+    // from winning the same click as endpoint editing.
+    interactionCanvas.addEventListener('mousedown', beginNeedleHandleDrag, true);
+    interactionCanvas.addEventListener('pointerdown', beginNeedleHandleDrag, true);
 
     // Mouse down - start drag or select
     canvas.addEventListener('mousedown', (event) => {
         if (event.button !== 0) return; // Only left click
         if (event.__brachyNeedleHandle) return;
 
-        const rect = canvas.getBoundingClientRect();
-        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        if (!updatePointerNdc(event)) return;
 
         raycaster.setFromCamera(mouse, scene3D.camera);
         const intersects = raycaster.intersectObjects(Object.values(scene3D.meshes), true);
@@ -688,26 +706,46 @@ function init3DScene() {
     });
 
     // Mouse move - drag seed
-    canvas.addEventListener('mousemove', (event) => {
+    const updateManualDrag = (event) => {
         if (!isDragging || !selectedObject) return;
 
-        const rect = canvas.getBoundingClientRect();
-        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        if (!updatePointerNdc(event)) return;
 
         raycaster.setFromCamera(mouse, scene3D.camera);
         const intersection = new THREE.Vector3();
-        raycaster.ray.intersectPlane(dragPlane, intersection);
+        if (!raycaster.ray.intersectPlane(dragPlane, intersection)) return;
 
         selectedObject.position.copy(intersection.add(dragOffset));
+        if (selectedObject.userData.type === 'needle_handle') {
+            const needle = dataTreeState.planning.needles.find(n => n.id === selectedObject.userData.needleId);
+            if (needle) {
+                needle.points[selectedObject.userData.pointIndex] = [
+                    selectedObject.position.x,
+                    selectedObject.position.y,
+                    selectedObject.position.z,
+                ];
+                // Rebuild only the shaft preview. Handles remain untouched so
+                // the selected endpoint stays draggable throughout the move.
+                const preview = _makeNeedleMesh(needle);
+                if (preview) _upsertSceneMesh(needle.id, preview);
+            }
+        }
         requestRender(1);
-    });
+    };
+    interactionCanvas.addEventListener('mousemove', updateManualDrag);
+    interactionCanvas.addEventListener('pointermove', updateManualDrag);
+    window.addEventListener('mousemove', updateManualDrag);
+    window.addEventListener('pointermove', updateManualDrag);
 
     // Mouse up - end drag
-    const finishManualDrag = () => {
+    const finishManualDrag = (event) => {
         if (isDragging) {
+            if (typeof interactionCanvas.releasePointerCapture === 'function' && event?.pointerId !== undefined) {
+                try { interactionCanvas.releasePointerCapture(event.pointerId); } catch (_) {}
+            }
             isDragging = false;
             scene3D.controls.enabled = true;
+            interactionCanvas.style.cursor = 'grab';
             requestRender(4);
 
             if (selectedObject && selectedObject.userData.type === 'seed') {
@@ -730,8 +768,13 @@ function init3DScene() {
         }
     };
     canvas.addEventListener('mouseup', finishManualDrag);
+    interactionCanvas.addEventListener('pointerup', finishManualDrag);
+    interactionCanvas.addEventListener('pointercancel', finishManualDrag);
     // Releasing outside the canvas must still commit the endpoint update.
     window.addEventListener('mouseup', finishManualDrag);
+    window.addEventListener('pointerup', finishManualDrag);
+    window.addEventListener('pointercancel', finishManualDrag);
+    window.addEventListener('blur', finishManualDrag);
 
     // Right-click context menu for 3D objects
     canvas.addEventListener('contextmenu', (event) => {
@@ -1039,10 +1082,11 @@ function reset3DView() {
 // after planning. Without this, the canvas may have been initialized with
 // a 0×0 size (because the 3D card was off-screen / not yet laid out when
 // init3DScene first ran), and the meshes are loaded into the scene but
-// the renderer has nothing to draw into. We force a re-size and a fresh
-// fit-camera-to-scene so the user immediately sees the CTV mesh, seeds,
-// needles, and dose isosurfaces in the 3D viewer.
+// the renderer has nothing to draw into. This helper re-sizes and redraws
+// the existing scene without changing the user's camera pose.
 function forceRender3DViewer() {
+    // Refreshing data or layout must not change camera pose; Fit/Reset are
+    // explicit user actions handled separately.
     const canvas = document.getElementById('canvas3D');
     if (!canvas) return;
     init3DScene();
@@ -1058,7 +1102,6 @@ function forceRender3DViewer() {
             scene3D.camera.aspect = w / h;
             scene3D.camera.updateProjectionMatrix();
             scene3D.renderer.setSize(w, h);
-            fitCameraToScene();
             // Re-hide the "No data" placeholder if meshes are present
             const placeholder = canvas.querySelector('.viewer-no-data');
             if (placeholder && Object.keys(scene3D.meshes).length > 0) {
@@ -1074,7 +1117,7 @@ function forceRender3DViewer() {
                         scene3D.camera.aspect = w2 / h2;
                         scene3D.camera.updateProjectionMatrix();
                         scene3D.renderer.setSize(w2, h2);
-                        fitCameraToScene();
+                        if (scene3D.requestRender) scene3D.requestRender(4);
                     }
                 }, 300);
             }
