@@ -347,6 +347,10 @@ class LLMRuntimeMixin:
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         total_latency_ms = 0.0
         llm_calls = 0
+        # Keep screenshot de-duplication for the entire user turn. Recreating
+        # this set inside the LLM loop allowed a second round to request the
+        # same browser capture again before the frontend could upload it.
+        _screenshot_called_this_turn = set()
 
         _turn_token = self._current_turn_token()
 
@@ -580,6 +584,14 @@ class LLMRuntimeMixin:
                 # Store in conversation memory for context persistence
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
                 self.memory.add_message("user", f"[Tool result: {_fc_text[:500]}]")
+
+            # Browser screenshots are captured and uploaded after the SSE
+            # turn. A server-side follow-up round cannot see that image yet,
+            # so it can only repeat the request. Stop after a screenshot-only
+            # batch; the frontend will either show it or send one multimodal
+            # analysis follow-up containing the uploaded image.
+            if tool_calls and all(tc.get("tool") == "ui_screenshot" for tc in tool_calls):
+                break
 
             # After all tools executed, instruct LLM to continue or summarize.
             # The previous instruction let the LLM run open-ended, which
@@ -1322,6 +1334,9 @@ class LLMRuntimeMixin:
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         total_latency_ms = 0.0
         llm_calls = 0
+        # Screenshot de-duplication must live for the complete streaming
+        # turn, not inside an individual LLM/tool iteration.
+        _screenshot_called_this_turn = set()
 
         while iteration < max_iterations:
             iteration += 1
@@ -1583,9 +1598,6 @@ class LLMRuntimeMixin:
             if not tool_calls:
                 tools_executed = True
                 break
-
-            # Prevent ui_screenshot from being called multiple times per conversation
-            _screenshot_called_this_turn = set()
 
             for tc in tool_calls:
                 if _cancelled():
@@ -2012,6 +2024,12 @@ class LLMRuntimeMixin:
                 # Store in conversation memory for context persistence
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
                 self.memory.add_message("user", f"[Tool result: {_fc_text[:500]}]")
+
+            # The browser captures/uploads screenshots after the SSE turn.
+            # Continuing server-side can only repeat the same capture because
+            # the image is not available to this loop yet.
+            if tool_calls and all(tc.get("tool") == "ui_screenshot" for tc in tool_calls):
+                break
 
             # After all tools executed, instruct LLM to continue or summarize.
             # The previous instruction let the LLM run open-ended, which

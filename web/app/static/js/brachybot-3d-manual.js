@@ -357,6 +357,20 @@ function init3DScene() {
     scene3D.renderer.shadowMap.enabled = false;
     scene3D.renderer.setClearColor(0x000000, 0);
     canvas.appendChild(scene3D.renderer.domElement);
+    // WebGL contexts can be lost after a long idle period or GPU pressure.
+    // Keep the scene data intact and redraw after the browser restores the
+    // context instead of leaving a permanently black canvas.
+    scene3D.renderer.domElement.addEventListener('webglcontextlost', (event) => {
+        event.preventDefault();
+        scene3D.contextLost = true;
+        uiDebugLog('[3D health] WebGL context lost; waiting for restoration');
+    }, false);
+    scene3D.renderer.domElement.addEventListener('webglcontextrestored', () => {
+        scene3D.contextLost = false;
+        uiDebugLog('[3D health] WebGL context restored; scheduling redraw');
+        if (scene3D.requestRender) scene3D.requestRender(8);
+        setTimeout(() => forceRender3DViewer(), 0);
+    }, false);
 
     // OrbitControls: 3D Slicer style — left=rotate, right=pan, scroll=zoom
     scene3D.controls = new THREE.OrbitControls(scene3D.camera, scene3D.renderer.domElement);
@@ -483,7 +497,7 @@ function init3DScene() {
 
     function drawFrame() {
         renderFrameId = 0;
-        if (document.hidden || !scene3D.renderer) return;
+        if (document.hidden || !scene3D.renderer || scene3D.contextLost) return;
         drawingFrame = true;
         const controlsChanged = scene3D.controls.update();
 
@@ -932,8 +946,10 @@ function fitCameraToScene() {
     const box = new THREE.Box3();
     // Skip meshes with NaN in position to prevent camera NaN
     Object.values(scene3D.meshes).forEach(m => {
-        if (!m) return;
-        const pos = m.geometry?.attributes?.position;
+        if (!m || m.visible === false) return;
+        const surface = (typeof getMeshSurface === 'function') ? getMeshSurface(m) : m;
+        if (surface && surface.visible === false) return;
+        const pos = surface?.geometry?.attributes?.position;
         if (pos) {
             for (let i = 0; i < Math.min(pos.array.length, 100); i++) {
                 if (isNaN(pos.array[i])) return; // skip this mesh
@@ -941,7 +957,7 @@ function fitCameraToScene() {
         }
         box.expandByObject(m);
     });
-    if (scene3D.skinMesh) box.expandByObject(scene3D.skinMesh);
+    if (scene3D.skinMesh && scene3D.skinMesh.visible !== false) box.expandByObject(scene3D.skinMesh);
     if (box.isEmpty()) {
         // Default view for empty scene
         scene3D.camera.position.set(200, 150, 200);
@@ -971,6 +987,50 @@ function render3DMesh(meshData) {
     window.dose3D = true;
 }
 
+function _3dMeshOpacity(mesh) {
+    const surface = (typeof getMeshSurface === 'function') ? getMeshSurface(mesh) : mesh;
+    const material = surface?.material;
+    if (Array.isArray(material)) return Math.max(...material.map(m => Number(m?.opacity ?? 1)));
+    return Number(material?.opacity ?? 1);
+}
+
+function _3dMeshIsVisible(mesh) {
+    if (!mesh || mesh.visible === false) return false;
+    const surface = (typeof getMeshSurface === 'function') ? getMeshSurface(mesh) : mesh;
+    return !surface || surface.visible !== false;
+}
+
+function _3dDataTreeNodeForMesh(id) {
+    if (typeof dataTreeState === 'undefined' || !dataTreeState) return null;
+    if (id === 'ctv' || id.startsWith('ctv_')) return dataTreeState.ctv || null;
+    if (id.startsWith('organ_')) return (dataTreeState.organs || []).find(o => o.id === id) || dataTreeState.oar || null;
+    if (id.startsWith('seed_')) return (dataTreeState.planning?.seeds || []).find(s => s.id === id) || dataTreeState.seeds || dataTreeState.planning || null;
+    if (id.startsWith('needle_')) return (dataTreeState.planning?.needles || []).find(n => n.id === id) || dataTreeState.needles || dataTreeState.planning || null;
+    if (id.startsWith('dose_iso_')) return dataTreeState.planning?.doseLevels?.find(d => `dose_iso_${d.threshold}` === id) || dataTreeState.planning || null;
+    return null;
+}
+
+function _repair3DSceneVisibility() {
+    const entries = Object.entries(scene3D.meshes || {});
+    if (!entries.length || typeof dataTreeState === 'undefined') return false;
+    const expected = entries.filter(([id]) => {
+        const node = _3dDataTreeNodeForMesh(id);
+        return !!node && node.visible !== false && Number(node.opacity ?? 1) > 0.001;
+    });
+    const visible = entries.filter(([, mesh]) => _3dMeshIsVisible(mesh) && _3dMeshOpacity(mesh) > 0.001);
+    // Only repair the all-hidden failure mode. A partially hidden scene is a
+    // valid user choice and must never be overwritten by a health check.
+    if (!expected.length || visible.length) return false;
+    expected.forEach(([id, mesh]) => {
+        const node = _3dDataTreeNodeForMesh(id);
+        const opacity = Math.max(0.001, Math.min(1, Number(node?.opacity ?? 1)));
+        if (_3dMeshOpacity(mesh) <= 0.001) applyMeshOpacity(mesh, opacity, true);
+        else applyMeshVisibility(mesh, true, opacity);
+    });
+    uiDebugLog('[3D health] repaired all-hidden scene from data-tree state:', expected.map(([id]) => id));
+    return true;
+}
+
 function reset3DView() {
     fitCameraToScene();
 }
@@ -991,6 +1051,8 @@ function forceRender3DViewer() {
     requestAnimationFrame(() => {
         requestAnimationFrame(() => {
             if (!scene3D.renderer || !scene3D.camera) return;
+            if (scene3D.contextLost) return;
+            _repair3DSceneVisibility();
             const w = canvas.clientWidth || 400;
             const h = canvas.clientHeight || 300;
             scene3D.camera.aspect = w / h;

@@ -42,6 +42,12 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("clarification_required", source)
         self.assertIn('"requires_input"] = True', source)
 
+    def test_execution_trace_counter_deduplicates_sse_events(self):
+        source = self.read("web/app/static/js/brachybot-chat-core.js")
+        self.assertIn("const unique = new Map();", source)
+        self.assertIn("logicalSteps.filter(s => s.status === 'done')", source)
+        self.assertNotIn("steps.filter(s => s.status === 'done').length;", source)
+
     def test_colorbar_panel_has_explicit_dismissal(self):
         html = self.read("web/app/index.html")
         js = self.read("web/app/static/js/brachybot-3d-manual.js")
@@ -55,6 +61,42 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("self._merge_results(det_results, llm_results, plan_info, self._lang)", source)
         self.assertIn("\\u8d28\\u91cf\\u5ba1\\u67e5", source)
         self.assertIn('"title": "\\u8d28\\u91cf\\u5ba1\\u67e5"', orchestrator)
+
+    def test_screenshot_dose_requests_use_report_overview(self):
+        tool = self.read("tool_factory/ui_screenshot/__init__.py")
+        chat = self.read("web/app/static/js/brachybot-chat-todo.js")
+        self.assertIn("use target `dose-overview`", tool)
+        self.assertIn("three 2D planes and the DVH", tool)
+        self.assertIn("_normalizeScreenshotRequestTarget", chat)
+        self.assertIn("return genericDose ? 'dose-overview' : rawTarget", chat)
+
+    def test_visual_screenshot_followup_is_multimodal_and_reviewed(self):
+        chat = self.read("web/app/static/js/brachybot-chat-todo.js")
+        workflow = self.read("agent_runtime/chat_workflows.py")
+        runtime = self.read("agent_runtime/llm_runtime.py")
+        self.assertIn("[Screenshot captured: ${url}]", chat)
+        self.assertIn("_isVisualAnalysisRequest", chat)
+        self.assertIn("visual_screenshot_analysis", workflow)
+        self.assertIn("_screenshot_called_this_turn = set()", runtime)
+        self.assertIn("all(tc.get(\"tool\") == \"ui_screenshot\"", runtime)
+
+    def test_3d_telemetry_and_recovery_are_present(self):
+        ui_api = self.read("web/app/static/js/brachybot-ui-api.js")
+        core = self.read("agent_runtime/core.py")
+        viewer = self.read("web/app/static/js/brachybot-viewer-layout.js")
+        manual = self.read("web/app/static/js/brachybot-3d-manual.js")
+        self.assertIn("visible_mesh_count", ui_api)
+        self.assertIn("context_lost", ui_api)
+        self.assertIn("3D Viewer:", core)
+        self.assertIn("webglcontextlost", manual)
+        self.assertIn("_repair3DSceneVisibility", manual)
+        self.assertIn("contextLost: false", viewer)
+
+    def test_3d_status_has_deterministic_fallback(self):
+        workflow = self.read("agent_runtime/chat_workflows.py")
+        self.assertIn("_is_3d_status_request", workflow)
+        self.assertIn("_build_3d_status_response", workflow)
+        self.assertIn("scene has no mounted 3D meshes", workflow)
 
 
 if __name__ == "__main__":

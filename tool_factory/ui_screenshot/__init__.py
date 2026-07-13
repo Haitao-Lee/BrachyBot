@@ -27,7 +27,7 @@ SCREENSHOT_TARGETS = {
     "viewer-axial": "Axial viewer panel (2D slice view)",
     "viewer-sagittal": "Sagittal viewer panel",
     "viewer-coronal": "Coronal viewer panel",
-    "dose-overview": "Three-plane dose distribution overview (axial, sagittal, coronal CT with dose overlay and colorbar)",
+    "dose-overview": "Dose report overview (axial, sagittal, coronal CT with dose overlay, colorbar, and DVH chart)",
     "viewer-3d": "3D reconstruction view",
     "data-tree": "Data tree panel (organ list, visibility controls)",
     "chat": "Chat panel (conversation history)",
@@ -56,6 +56,11 @@ class UIScreenshotTool(BaseTool):
             "Take a screenshot of the UI. ONLY use this when the user EXPLICITLY asks "
             "for a screenshot, image, or picture ('截图', '拍个照', 'show me the image'). "
             "Do NOT call this automatically after planning or other tasks. "
+            "For a request to see the current dose distribution without a specified plane, "
+            "use target `dose-overview`; it captures the three 2D planes and the DVH together, "
+            "like the report figure. For a request to explain, analyze, or describe a chart, "
+            "request the relevant screenshot once and then answer from the returned image; "
+            "never issue a second screenshot call for the same request. "
             "Available targets: " + targets + ". "
             "The screenshot will be displayed in chat for the user to view."
         )
@@ -105,6 +110,23 @@ class UIScreenshotTool(BaseTool):
         slice_index = kwargs.get("slice_index")
         axis = kwargs.get("axis")
         description = kwargs.get("description", "")
+
+        # A common model error is to collapse an unspecified dose overview
+        # into the axial viewer. Preserve an explicit axial-only request,
+        # but promote generic dose-distribution questions to the report-like
+        # overview so the user receives all three planes and the DVH.
+        question_text = str(question or "")
+        generic_dose = (
+            target == "viewer-axial"
+            and any(token in question_text.lower() for token in (
+                "dose distribution", "dose map", "dose cloud", "剂量分布", "剂量云图",
+            ))
+            and not any(token in question_text.lower() for token in (
+                "axial only", "only axial", "仅轴向", "只看轴向", "轴向视图",
+            ))
+        )
+        if generic_dose:
+            target = "dose-overview"
 
         if target not in SCREENSHOT_TARGETS:
             return ToolResult(

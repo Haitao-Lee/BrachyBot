@@ -735,6 +735,28 @@ function _isScreenshotAckResponse(text, steps) {
     return /^(Requested screenshot:|The requested screenshot is the )/i.test(safeText);
 }
 
+function _isVisualAnalysisRequest(text) {
+    const value = String(text || '').trim();
+    // Keep the detector ASCII-safe because some legacy bundles were saved
+    // with a mismatched console encoding. Unicode escapes still match the
+    // actual Chinese user input in the browser.
+    if (/(?:\u4ecb\u7ecd|\u5206\u6790|\u89e3\u8bfb|\u8bf4\u660e|\u63cf\u8ff0|\u770b\u5230\u4e86\u4ec0\u4e48|\u770b\u5230\u4ec0\u4e48|\u8bc4\u4ef7|\u8bc4\u4f30|\u5224\u65ad|\u7ed3\u679c\u5982\u4f55|\u6709\u4ec0\u4e48\u95ee\u9898)/.test(value)) return true;
+    return /\b(?:analy[sz]e|describe|interpret|assess|evaluate|what do you see|explain|findings?)\b/i.test(value)
+        || /(?:介绍|分析|解读|说明|描述|看到了什么|看到什么|评价|评估|判断|结果如何|有什么问题)/.test(value);
+}
+
+function _normalizeScreenshotRequestTarget(target, question) {
+    const rawTarget = String(target || 'full');
+    const text = String(question || '').toLowerCase();
+    const genericDoseZh = /(?:\u5242\u91cf\u5206\u5e03|\u5242\u91cf\u4e91\u56fe)/i.test(text)
+        && !/(?:\u4ec5\u8f74\u5411|\u53ea\u770b\u8f74\u5411|\u8f74\u5411\u89c6\u56fe)/i.test(text);
+    if (rawTarget === 'viewer-axial' && genericDoseZh) return 'dose-overview';
+    const genericDose = rawTarget === 'viewer-axial'
+        && /(?:dose distribution|dose map|dose cloud|剂量分布|剂量云图)/i.test(text)
+        && !/(?:axial only|only axial|仅轴向|只看轴向|轴向视图)/i.test(text);
+    return genericDose ? 'dose-overview' : rawTarget;
+}
+
 function _enqueueHiddenChat(message, options) {
     const safeMessage = String(message || '').trim();
     if (!safeMessage) return;
@@ -839,6 +861,8 @@ async function sendChat(prefill, options) {
     let lastToolName = '';
     const steps = [];
     const screenshotTasks = [];
+    const screenshotResults = [];
+    const screenshotTaskKeys = new Set();
     // Group screenshots emitted during one assistant turn into one gallery.
     const screenshotGallery = {};
     const uiState = (typeof collectUIState === 'function') ? collectUIState() : {};
@@ -1081,15 +1105,24 @@ async function sendChat(prefill, options) {
                             // upload to server, and display in chat.
                             if (data.status === 'done' && data.tool === 'ui_screenshot' && data.metadata) {
                                 const _ssCmd = data.metadata.screenshot_command || data.metadata;
-                                const _ssTarget = _ssCmd.target || 'full';
+                                const _ssTarget = _normalizeScreenshotRequestTarget(_ssCmd.target || 'full', _ssCmd.question || '');
                                 const _ssQuestion = _ssCmd.question || '';
+                                const _ssKey = String(data.id || `${_ssTarget}|${_ssQuestion}`);
+                                if (screenshotTaskKeys.has(_ssKey)) {
+                                    uiDebugLog('[SSE-STEP] Ignoring duplicate screenshot completion:', _ssKey);
+                                } else {
+                                    screenshotTaskKeys.add(_ssKey);
                                 uiDebugLog('[SSE-STEP] Intercepting ui_screenshot, target:', _ssTarget);
                                 try {
                                     screenshotTasks.push(Promise.resolve(
                                         _interceptScreenshot(_ssTarget, _ssQuestion, screenshotGallery)
-                                    ));
+                                    ).then(result => {
+                                        if (result && result.success && result.url) screenshotResults.push(result);
+                                        return result;
+                                    }));
                                 } catch (e) {
                                     console.warn('[SSE-STEP] Screenshot interception failed:', e);
+                                }
                                 }
                             }
                             // Count completed tool calls for the usage-bar
@@ -1267,6 +1300,22 @@ async function sendChat(prefill, options) {
             await Promise.allSettled(screenshotTasks);
         }
 
+        // A screenshot requested for explanation is visual context, not the
+        // final answer. Send exactly one hidden multimodal follow-up after all
+        // captures have uploaded. The hidden request is intentionally not a
+        // new screenshot command, so the model must analyze the image and the
+        // completeness checker can validate the actual user request.
+        if (screenshotResults.length && _isVisualAnalysisRequest(text)) {
+            const uniqueUrls = [...new Set(screenshotResults.map(item => item.url).filter(Boolean))].slice(0, 4);
+            if (uniqueUrls.length) {
+                const visualContext = uniqueUrls.map(url => `[Screenshot captured: ${url}]`).join('\n');
+                _enqueueHiddenChat(
+                    `${visualContext}\n\nUser request: ${text}\nAnalyze the supplied screenshot(s) and answer the user's request directly. Do not request another screenshot. Mention uncertainty instead of inventing details.`,
+                    { visualFollowUp: true }
+                );
+            }
+        }
+
         // No steps arrived — clean up the thinking indicator
         if (!chainEl) {
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
@@ -1320,6 +1369,10 @@ async function sendChat(prefill, options) {
         const finalText = finalResponseReceived
             ? (responseText || '(no reply)')
             : '(No validated response was returned. Please retry.)';
+        // For an analysis request the acknowledgement is only an internal
+        // capture phase; keep the chat clean and show the later multimodal
+        // answer instead. For a pure screenshot request the gallery itself is
+        // the answer, matching the existing UI behavior.
         const suppressScreenshotAck = _isScreenshotAckResponse(finalText, steps);
         if (suppressScreenshotAck && responseEl) {
             try {
