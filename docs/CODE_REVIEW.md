@@ -3938,6 +3938,54 @@ The following seven reported behaviors were rechecked against the current code a
 - `py_compile` passes for the three modified review Python modules.
 - `tests/test_round9_regressions.py`: 6 tests passed with the standard-library `unittest` runner.
 - `git diff --check` passes.
+
+## Round 12 Fixes (2026-07-13)
+
+### Screenshot requests and visual answers
+
+**Verified causes:** A generic dose-distribution request could be narrowed by the model to `viewer-axial`, even though the product's report convention is three planes plus DVH. A screenshot tool acknowledgement was also treated as the answer: the uploaded browser image was not sent back as multimodal context for the requested explanation. Finally, duplicate screenshot tool rounds could produce repeated axial tiles.
+
+**Fixes:**
+
+- `ui_screenshot` and the browser interceptor normalize an unspecified dose-distribution request to `dose-overview`, which captures axial, sagittal, coronal, colorbar, and DVH in one report-style image. Explicit axial-only requests remain axial-only.
+- Screenshot completions are deduplicated per logical target/question and grouped in one gallery panel.
+- Explanation/analysis requests queue one hidden multimodal follow-up containing the uploaded screenshot URL. The follow-up explicitly forbids another screenshot and is included in the completeness-review decision.
+- The LLM runtime deduplicates `ui_screenshot` for the whole turn and ends a screenshot-only tool round after the capture request, preventing a redundant second screenshot loop.
+
+### 3D viewer becoming black or empty
+
+**Verified causes:** The agent received no compact telemetry for mesh count, visibility, canvas layout, or WebGL context state, so an empty viewer could not be diagnosed. Camera fitting also included hidden stale meshes, and a lost WebGL context had no restore path.
+
+**Fixes:**
+
+- `collectUIState()` now reports renderer initialization, mesh/visible-mesh counts, canvas and renderer dimensions, and `context_lost`; `AgentMemory.get_ui_state_summary()` exposes the same facts to the agent.
+- 3D status questions have a deterministic evidence-based fallback that distinguishes no meshes, all objects hidden, zero-sized layout, and unresolved WebGL state without inventing a cause.
+- `forceRender3DViewer()` performs a conservative all-hidden recovery only when data-tree state says objects should be visible; partially hidden user configurations are preserved.
+- Camera fitting ignores hidden meshes and hidden skin, avoiding a stale hidden object changing the framing.
+- WebGL context loss/restoration is observed and restoration schedules a fresh resize/render.
+- Figure 1 report capture now saves/restores surface-child material state as well as group visibility, preventing OAR meshes from remaining hidden after report capture.
+
+### Verification
+
+- `py_compile`: all modified Python files pass.
+- `node --check`: modified chat, UI API, 3D, viewer-layout, and report-editor JavaScript files pass.
+- `tests/test_round9_regressions.py`: 12 tests pass with the standard-library `unittest` runner.
+- `git diff --check` passes.
+- Full browser/GPU execution was not available in this local Windows workspace; WebGL behavior should still be smoke-tested on the RTX server after deployment.
+
+## Round 11 Fixes (2026-07-13)
+
+### Execution Trace showed inflated totals such as 18/115
+
+**Verified cause:** The browser appended every SSE `step` event to the raw `steps` array. A single logical step is emitted multiple times during its lifecycle (pending, heartbeat/progress update, and done). The trace body deduplicated these events, but `updateChainHeader()` counted the raw array, so its denominator represented transport events rather than real workflow steps.
+
+**Fix:** The header now builds a latest-state map keyed by backend step ID, with a type/tool/parent/title fallback when an ID is absent. It counts the same deduplicated logical steps shown in the trace. The example is expected to become approximately `18/19` while the final LLM step is still pending, rather than `18/115`.
+
+### Verification
+
+- `brachybot-chat-core.js`: `node --check` passes.
+- Round 9/10/11 regression suite: 8 tests pass with `unittest`.
+- `git diff --check` passes.
 - The repository's `pytest` executable was unavailable in the local Windows runtime; this is an environment limitation, not a test failure.
 
 ## Round 10 Fixes (2026-07-13)

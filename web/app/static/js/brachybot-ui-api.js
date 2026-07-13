@@ -29,6 +29,23 @@ function collectUIState() {
             };
         })
         .filter(c => c.id || c.text || c.value);
+    // 3D telemetry is intentionally compact: it gives the agent enough
+    // evidence to distinguish an empty scene, hidden objects, and a layout
+    // canvas that has not received a usable size, without serializing meshes.
+    const _scene3d = (typeof scene3D !== 'undefined' && scene3D) ? scene3D : null;
+    const _meshEntries = _scene3d && _scene3d.meshes ? Object.entries(_scene3d.meshes) : [];
+    const _visibleMeshCount = _meshEntries.filter(([, mesh]) => {
+        if (!mesh || mesh.visible === false) return false;
+        const surface = (typeof getMeshSurface === 'function') ? getMeshSurface(mesh) : mesh;
+        if (surface && surface.visible === false) return false;
+        const material = surface && surface.material;
+        const opacity = Array.isArray(material)
+            ? Math.max(...material.map(m => Number(m?.opacity ?? 1)))
+            : Number(material?.opacity ?? 1);
+        return opacity > 0.001;
+    }).length;
+    const _canvas3d = document.getElementById('canvas3D');
+    const _rendererCanvas3d = _scene3d?.renderer?.domElement;
     return {
         ct_path: gv('ctPath'),
         ctv_path: gv('ctvPath'),
@@ -119,6 +136,16 @@ function collectUIState() {
             threshold: (state && state.viewerSettings && state.viewerSettings.threshold) || null,
             show_ctv: !!(state && state.viewerSettings && state.viewerSettings.showCTV),
             show_oar: !!(state && state.viewerSettings && state.viewerSettings.showOAR),
+            three_d: {
+                initialized: !!_scene3d?.initialized,
+                mesh_count: _meshEntries.length,
+                visible_mesh_count: _visibleMeshCount,
+                canvas_width: _canvas3d?.clientWidth || 0,
+                canvas_height: _canvas3d?.clientHeight || 0,
+                renderer_width: _rendererCanvas3d?.width || 0,
+                renderer_height: _rendererCanvas3d?.height || 0,
+                context_lost: !!_scene3d?.contextLost,
+            },
         },
     };
 }
@@ -2412,80 +2439,107 @@ async function _captureDoseOverviewDataUrl() {
         updateDoseColorbars(true, state.doseOverlay.doseMin, state.doseOverlay.doseMax);
     }
     const pv = state.doseOverlay && state.doseOverlay.peakVoxel;
-    if (pv) {
-        [
-            { ax: 'axial', slice: pv.z },
-            { ax: 'sagittal', slice: pv.x },
-            { ax: 'coronal', slice: pv.y },
-        ].forEach(cfg => {
-            const name = cfg.ax.charAt(0).toUpperCase() + cfg.ax.slice(1);
-            const slider = document.getElementById('slider' + name);
-            const maxVal = slider ? parseInt(slider.max, 10) : Math.round(cfg.slice);
-            const clamped = Math.max(0, Math.min(maxVal, Math.round(cfg.slice)));
-            if (slider) slider.value = clamped;
-            updateSlice(cfg.ax, clamped);
-        });
-        await _waitScreenshotFrames(6);
-    } else {
-        await _waitScreenshotFrames(3);
-    }
-    const imgs = [
-        { ax: 'axial', label: 'Axial' },
-        { ax: 'sagittal', label: 'Sagittal' },
-        { ax: 'coronal', label: 'Coronal' },
-    ].map(a => ({ ...a, dataUrl: _composite2DViewerCanvas(a.ax) })).filter(x => x.dataUrl);
-    if (!imgs.length) return null;
+    const restore = () => {
+        if (pv) {
+            Object.entries(origSlices).forEach(([ax, sl]) => {
+                const name = ax.charAt(0).toUpperCase() + ax.slice(1);
+                const slider = document.getElementById('slider' + name);
+                if (slider) slider.value = sl;
+                updateSlice(ax, sl);
+            });
+        }
+        if (state.doseOverlay && origVisible !== null) {
+            state.doseOverlay.visible = origVisible;
+            state.doseOverlay.opacity = origOpacity;
+            updateDoseColorbars(state.doseOverlay.visible, state.doseOverlay.doseMin, state.doseOverlay.doseMax);
+        }
+    };
 
-    const W = 1320, H = 420, pad = 22, gap = 14, colorbarW = 82;
-    const panelW = Math.floor((W - pad * 2 - colorbarW - gap * 3) / 3);
-    const panelH = 320;
-    const out = document.createElement('canvas');
-    out.width = W; out.height = H;
-    const ctx = out.getContext('2d');
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#e2e8f0';
-    ctx.font = 'bold 17px Inter, system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Dose Distribution Overview', W / 2, 28);
+    try {
+        if (pv) {
+            [
+                { ax: 'axial', slice: pv.z },
+                { ax: 'sagittal', slice: pv.x },
+                { ax: 'coronal', slice: pv.y },
+            ].forEach(cfg => {
+                const name = cfg.ax.charAt(0).toUpperCase() + cfg.ax.slice(1);
+                const slider = document.getElementById('slider' + name);
+                const maxVal = slider ? parseInt(slider.max, 10) : Math.round(cfg.slice);
+                const clamped = Math.max(0, Math.min(maxVal, Math.round(cfg.slice)));
+                if (slider) slider.value = clamped;
+                updateSlice(cfg.ax, clamped);
+            });
+            await _waitScreenshotFrames(6);
+        } else {
+            await _waitScreenshotFrames(3);
+        }
 
-    const drawImage = (entry, i) => new Promise(resolve => {
-        const img = new Image();
-        img.onload = () => {
-            const x = pad + i * (panelW + gap);
-            const y = 50;
-            ctx.fillStyle = '#020617';
-            ctx.strokeStyle = 'rgba(148,163,184,0.25)';
-            ctx.fillRect(x, y, panelW, panelH);
-            ctx.strokeRect(x + 0.5, y + 0.5, panelW - 1, panelH - 1);
-            const scale = Math.min(panelW / img.width, (panelH - 32) / img.height);
-            const iw = img.width * scale, ih = img.height * scale;
-            ctx.drawImage(img, x + (panelW - iw) / 2, y + 12 + ((panelH - 44) - ih) / 2, iw, ih);
-            ctx.fillStyle = '#cbd5e1';
-            ctx.font = '12px Inter, system-ui, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(`(${String.fromCharCode(97 + i)}) ${entry.label}`, x + panelW / 2, y + panelH - 12);
-            resolve();
-        };
-        img.onerror = () => resolve();
-        img.src = entry.dataUrl;
-    });
-    for (let i = 0; i < imgs.length; i++) await drawImage(imgs[i], i);
-    _drawScreenshotColorbar(ctx, W - pad - colorbarW, 50, colorbarW, panelH);
-    if (pv) {
-        Object.entries(origSlices).forEach(([ax, sl]) => {
-            const name = ax.charAt(0).toUpperCase() + ax.slice(1);
-            const slider = document.getElementById('slider' + name);
-            if (slider) slider.value = sl;
-            updateSlice(ax, sl);
+        const imgs = [
+            { ax: 'axial', label: 'Axial' },
+            { ax: 'sagittal', label: 'Sagittal' },
+            { ax: 'coronal', label: 'Coronal' },
+        ].map(a => ({ ...a, dataUrl: _composite2DViewerCanvas(a.ax) })).filter(x => x.dataUrl);
+        if (!imgs.length) return null;
+
+        // The report uses one composed evidence figure. Reuse that visual
+        // contract here: three aligned dose views above one DVH chart. This
+        // keeps an unspecified "show me the dose" request from silently
+        // degrading to one arbitrary plane.
+        let dvhUrl = null;
+        const dvhEl = document.getElementById('dvhChart');
+        if (dvhEl && typeof Plotly !== 'undefined' && typeof Plotly.toImage === 'function') {
+            try {
+                dvhUrl = await Plotly.toImage(dvhEl, { format: 'png', width: 1180, height: 340 });
+            } catch (e) { console.warn('[screenshot] DVH export for dose overview failed:', e); }
+        }
+
+        const W = 1320, topH = 420, bottomH = dvhUrl ? 390 : 0;
+        const H = topH + (dvhUrl ? 18 + bottomH : 0);
+        const pad = 22, gap = 14, colorbarW = 82;
+        const panelW = Math.floor((W - pad * 2 - colorbarW - gap * 3) / 3);
+        const panelH = 320;
+        const out = document.createElement('canvas');
+        out.width = W; out.height = H;
+        const ctx = out.getContext('2d');
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = 'bold 17px Inter, system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Dose Distribution Overview', W / 2, 28);
+
+        const drawImage = (entry, i, y = 50, width = panelW, height = panelH) => new Promise(resolve => {
+            const img = new Image();
+            img.onload = () => {
+                const x = i < 3 ? pad + i * (panelW + gap) : pad;
+                ctx.fillStyle = '#020617';
+                ctx.strokeStyle = 'rgba(148,163,184,0.25)';
+                ctx.fillRect(x, y, width, height);
+                ctx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+                const scale = Math.min(width / img.width, (height - 32) / img.height);
+                const iw = img.width * scale, ih = img.height * scale;
+                ctx.drawImage(img, x + (width - iw) / 2, y + 12 + ((height - 44) - ih) / 2, iw, ih);
+                ctx.fillStyle = '#cbd5e1';
+                ctx.font = '12px Inter, system-ui, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`(${String.fromCharCode(97 + i)}) ${entry.label}`, x + width / 2, y + height - 12);
+                resolve();
+            };
+            img.onerror = () => resolve();
+            img.src = entry.dataUrl;
         });
+        for (let i = 0; i < imgs.length; i++) await drawImage(imgs[i], i);
+        _drawScreenshotColorbar(ctx, W - pad - colorbarW, 50, colorbarW, panelH);
+        if (dvhUrl) {
+            await drawImage({ dataUrl: dvhUrl, label: 'DVH' }, 3, topH + 18, W - pad * 2, bottomH);
+        }
+        return out.toDataURL('image/png');
+    } finally {
+        // Always restore the user's slices and dose visibility, including
+        // capture failures or an empty viewer. Screenshot capture must not
+        // mutate the live treatment view.
+        restore();
     }
-    if (state.doseOverlay) {
-        state.doseOverlay.visible = origVisible;
-        state.doseOverlay.opacity = origOpacity;
-        updateDoseColorbars(state.doseOverlay.visible, state.doseOverlay.doseMin, state.doseOverlay.doseMax);
-    }
-    return out.toDataURL('image/png');
 }
 
 async function _captureScreenshotDataUrl(target, el) {
@@ -2550,6 +2604,14 @@ function _appendScreenshotToGallery(url, target, question, galleryContext) {
     const context = galleryContext || {};
     const messages = document.getElementById('chatMessages');
     if (!messages || !url) return;
+    const label = target || 'Screenshot';
+    const requestKey = `${label}|${String(question || '').trim()}`;
+    // The same SSE completion can arrive through both the step and final
+    // event paths. Keep one tile per logical target/question, while still
+    // allowing a single turn to contain different screenshot targets.
+    if (!context.keys) context.keys = new Set();
+    if (context.keys.has(requestKey)) return;
+    context.keys.add(requestKey);
     if (!context.element) {
         const row = document.createElement('div');
         row.className = 'chat-row bot';
@@ -2589,10 +2651,10 @@ function _appendScreenshotToGallery(url, target, question, galleryContext) {
     caption.textContent = target || 'Screenshot';
     item.append(image, zoom, caption);
     context.element.appendChild(item);
-    context.items.push({ url, label: target || 'Screenshot', question: question || '' });
+    context.items.push({ url, label, question: question || '' });
     context.title.textContent = `Screenshots (${context.items.length})`;
     item.addEventListener('click', () => {
-        const index = context.items.findIndex(entry => entry.url === url && entry.label === (target || 'Screenshot'));
+        const index = context.items.findIndex(entry => entry.url === url && entry.label === label);
         _openScreenshotModal(url, question || target || 'Screenshot', Math.max(0, index), context.items.length);
     });
     scrollToBottom();

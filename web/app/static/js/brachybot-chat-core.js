@@ -1712,8 +1712,22 @@ function appendStepToChain(stepsDiv, step, idx) {
 function updateChainHeader(headerEl, steps) {
     if (!headerEl) return;
     const countEl = headerEl.querySelector('.thinking-count');
-    const doneSteps = steps.filter(s => s.status === 'done').length;
-    if (countEl) countEl.textContent = doneSteps + '/' + steps.length + _chainI18n('steps_suffix');
+    // The backend emits several SSE events for one logical step (pending,
+    // heartbeat/progress, then done). The trace renderer already deduplicates
+    // those events, but the old counter used the raw event array and showed
+    // inflated values such as 18/115. Count the same logical latest states
+    // that the trace displays.
+    const unique = new Map();
+    (Array.isArray(steps) ? steps : []).forEach((step, index) => {
+        if (!step) return;
+        const key = step.id != null
+            ? `id:${step.id}`
+            : `fallback:${step.type || ''}:${step.tool || ''}:${step.parent_tool || ''}:${step.title || index}`;
+        unique.set(key, step);
+    });
+    const logicalSteps = Array.from(unique.values());
+    const doneSteps = logicalSteps.filter(s => s.status === 'done').length;
+    if (countEl) countEl.textContent = doneSteps + '/' + logicalSteps.length + _chainI18n('steps_suffix');
 }
 
 function finalizeThinkingChain(chainEl, headerEl, steps) {

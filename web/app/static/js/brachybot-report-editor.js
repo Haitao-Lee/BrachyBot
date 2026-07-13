@@ -697,13 +697,20 @@ async function _autoCaptureReportFiguresImpl() {
             // Save all visibility and opacity states
             const _saved = {};
             const _savedMaterials = {};
+            const _savedSkin = scene3D.skinMesh ? {
+                visible: scene3D.skinMesh.visible,
+                material: scene3D.skinMesh.material,
+            } : null;
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                 if (!mesh) continue;
                 _saved[id] = mesh.visible;
-                if (mesh.material) _savedMaterials[id] = {
-                    opacity: mesh.material.opacity,
-                    transparent: mesh.material.transparent,
-                    depthWrite: mesh.material.depthWrite,
+                const surface = (typeof getMeshSurface === 'function') ? getMeshSurface(mesh) : mesh;
+                if (surface?.material) _savedMaterials[id] = {
+                    surface,
+                    visible: surface.visible,
+                    opacity: surface.material.opacity,
+                    transparent: surface.material.transparent,
+                    depthWrite: surface.material.depthWrite,
                 };
             }
             const _savedCamera = scene3D.camera ? {
@@ -718,12 +725,17 @@ async function _autoCaptureReportFiguresImpl() {
                     if (!mesh) continue;
                     if (_saved[id] !== undefined) mesh.visible = _saved[id];
                     const material = _savedMaterials[id];
-                    if (mesh.material && material) {
-                        mesh.material.opacity = material.opacity;
-                        mesh.material.transparent = material.transparent;
-                        mesh.material.depthWrite = material.depthWrite;
-                        mesh.material.needsUpdate = true;
+                    if (material?.surface?.material) {
+                        material.surface.visible = material.visible;
+                        material.surface.material.opacity = material.opacity;
+                        material.surface.material.transparent = material.transparent;
+                        material.surface.material.depthWrite = material.depthWrite;
+                        material.surface.material.needsUpdate = true;
                     }
+                }
+                if (_savedSkin && scene3D.skinMesh) {
+                    scene3D.skinMesh.visible = _savedSkin.visible;
+                    scene3D.skinMesh.material = _savedSkin.material;
                 }
                 if (_savedCamera && scene3D.camera && scene3D.controls) {
                     scene3D.camera.position.copy(_savedCamera.position);

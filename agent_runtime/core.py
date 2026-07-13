@@ -434,6 +434,20 @@ class AgentMemory:
         if dev_threshold:
             parts.append(f"Deviation Threshold: {dev_threshold} mm")
 
+        # Include compact 3D renderer telemetry so status questions can be
+        # answered from observed UI state instead of guessing from the plan.
+        viewer_state = ui_state.get("viewer") if isinstance(ui_state.get("viewer"), dict) else {}
+        three_d = viewer_state.get("three_d") if isinstance(viewer_state.get("three_d"), dict) else {}
+        if three_d:
+            parts.append(
+                "3D Viewer: "
+                f"initialized={bool(three_d.get('initialized'))}, "
+                f"meshes={int(three_d.get('mesh_count') or 0)}, "
+                f"visible_meshes={int(three_d.get('visible_mesh_count') or 0)}, "
+                f"canvas={int(three_d.get('canvas_width') or 0)}x{int(three_d.get('canvas_height') or 0)}, "
+                f"context_lost={bool(three_d.get('context_lost'))}"
+            )
+
         # Expose the planning panel's reference-direction input so the
         # LLM can answer "what reference direction did the user set?"
         # without a screenshot. Mirrors build_planning_payload logic.

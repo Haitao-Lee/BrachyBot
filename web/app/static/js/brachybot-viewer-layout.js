@@ -795,6 +795,7 @@ const scene3D = {
     meshes: {},       // {organ_id: THREE.Group (with surfaceMesh + wireframe)}
     skinMesh: null,   // CT skin mesh
     initialized: false,
+    contextLost: false,
     requestRender: null,
 };
 

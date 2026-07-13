@@ -21,6 +21,67 @@ logger = logging.getLogger(__name__)
 
 
 class ChatWorkflowMixin:
+    @staticmethod
+    def _is_3d_status_request(message: str) -> bool:
+        """Recognize questions that require a concrete 3D viewer diagnosis."""
+        text = str(message or "")
+        return bool(re.search(
+            r"(?:3d|3-d|three[- ]?dimensional|三维|3d viewer|三维窗口).*(?:空白|黑|不显示|消失|没有|看不到|blank|black|empty|missing|not\s+show|disappear)"
+            r"|(?:空白|黑屏|什么都不显示|不显示任何内容).*(?:3d|三维|viewer|窗口)",
+            text,
+            re.IGNORECASE,
+        ))
+
+    def _build_3d_status_response(self, lang: str = "en") -> str:
+        """Explain the current 3D state without inventing a rendering cause."""
+        ui_state = self.memory.get_ui_state() or {}
+        viewer = ui_state.get("viewer") if isinstance(ui_state.get("viewer"), dict) else {}
+        three_d = viewer.get("three_d") if isinstance(viewer.get("three_d"), dict) else {}
+        mesh_count = three_d.get("mesh_count")
+        visible_count = three_d.get("visible_mesh_count")
+        initialized = three_d.get("initialized")
+        canvas_w = three_d.get("canvas_width")
+        canvas_h = three_d.get("canvas_height")
+
+        if lang == "zh":
+            lines = ["我检查了当前 Web UI 上报的 3D 状态："]
+            if initialized is None:
+                lines.append("- 当前会话尚未提供 3D 渲染器状态，暂时不能确认是模型、可见性还是 WebGL 原因。")
+            else:
+                lines.append(f"- 渲染器：{'已初始化' if initialized else '未初始化'}；场景模型：{mesh_count or 0} 个；当前可见：{visible_count or 0} 个。")
+                if canvas_w is not None and canvas_h is not None:
+                    lines.append(f"- 画布尺寸：{canvas_w} × {canvas_h}。")
+            if isinstance(mesh_count, int) and mesh_count > 0 and isinstance(visible_count, int) and visible_count == 0:
+                lines.append("这更像是模型被数据树可见性/透明度状态全部隐藏，或报告截图恢复过程未同步完成；不是 CT/规划数据必然丢失。")
+                lines.append("请先点击 3D Viewer 的 Normal Surface 或数据树的父级可见性开关；系统会在下一次渲染时尝试恢复有意显示的对象。")
+            elif isinstance(mesh_count, int) and mesh_count == 0:
+                lines.append("当前场景没有已加载的 3D 模型，通常表示 3D 重建尚未完成或重建结果没有重新挂载到当前会话。")
+                lines.append("可重新执行 3D Reconstruction/刷新 Viewer；这不会重新计算剂量。")
+            elif isinstance(canvas_w, int) and isinstance(canvas_h, int) and (canvas_w < 10 or canvas_h < 10):
+                lines.append("渲染画布尺寸接近 0，常见于 Viewer 面板刚切换或布局尚未完成；重新打开 Viewers 面板会触发 resize 和重绘。")
+            else:
+                lines.append("如果画布仍是黑屏，下一步应查看浏览器 WebGL context lost/restore 日志，而不是重新运行规划。")
+            return "\n".join(lines)
+
+        lines = ["I checked the 3D state reported by the Web UI:"]
+        if initialized is None:
+            lines.append("- This session has not reported renderer telemetry yet, so the cause cannot be assigned to model visibility or WebGL with confidence.")
+        else:
+            lines.append(f"- Renderer: {'initialized' if initialized else 'not initialized'}; scene meshes: {mesh_count or 0}; visible meshes: {visible_count or 0}.")
+            if canvas_w is not None and canvas_h is not None:
+                lines.append(f"- Canvas size: {canvas_w} x {canvas_h}.")
+        if isinstance(mesh_count, int) and mesh_count > 0 and isinstance(visible_count, int) and visible_count == 0:
+            lines.append("This points to all scene objects being hidden by data-tree visibility/opacity state, or to an incomplete report-capture restore; it does not by itself mean the CT or plan was lost.")
+            lines.append("Toggle Normal Surface or the relevant parent visibility control; the viewer will attempt a render-time recovery for objects that should be visible.")
+        elif isinstance(mesh_count, int) and mesh_count == 0:
+            lines.append("The scene has no mounted 3D meshes, which usually means reconstruction has not completed or its results were not reattached to this session.")
+            lines.append("Run 3D Reconstruction/refresh the Viewer; this does not recompute dose.")
+        elif isinstance(canvas_w, int) and isinstance(canvas_h, int) and (canvas_w < 10 or canvas_h < 10):
+            lines.append("The render canvas is effectively zero-sized, commonly while the Viewer panel is changing layout; reopening Viewers will trigger resize and redraw.")
+        else:
+            lines.append("If the canvas remains black, the next diagnostic is the browser WebGL context-lost/restore log, not another planning run.")
+        return "\n".join(lines)
+
     def _begin_turn(self) -> int:
         """Start an isolated chat turn and return its cancellation token."""
         lock = getattr(self, "_turn_state_lock", None)
@@ -773,6 +834,19 @@ class ChatWorkflowMixin:
             response = self._rule_based_chat_with_steps_stream(message, steps, step_id, yield_event)
             llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
 
+        # A low-level status question must still receive a concrete answer if
+        # the model only emitted a tool acknowledgement or the completeness
+        # checker consumed an empty response. The UI telemetry is the source
+        # of truth; this fallback deliberately states uncertainty instead of
+        # claiming a specific WebGL failure without evidence.
+        _response_text = str(response or "").strip()
+        if self._is_3d_status_request(message) and (
+            not _response_text
+            or _response_text.lower() in {"no response generated.", "tools executed. check the execution trace above for results."}
+            or _response_text.startswith("需求覆盖检查")
+        ):
+            response = self._build_3d_status_response(self.memory.user_lang)
+
         self._record_experience(message, response, steps)
 
         # Quality review DISABLED (2026-06-22): the review triggered a
@@ -830,6 +904,12 @@ class ChatWorkflowMixin:
             _ma_routing and getattr(_ma_routing, "requires_review", False)
         )
         _response_len = len(response)
+        _visual_analysis_request = bool(re.search(
+            r"\b(?:analy[sz]e|describe|interpret|assess|evaluate|what\s+do\s+you\s+see|explain|findings?)\b"
+            r"|(?:介绍|分析|解读|说明|描述|看到了什么|看到什么|评价|评估|判断|结果如何|有什么问题)",
+            str(message or ""),
+            re.IGNORECASE,
+        ))
 
         if _router_requires_review:
             _needs_review = True
@@ -846,6 +926,11 @@ class ChatWorkflowMixin:
         elif _response_len > 500:
             _needs_review = True
             _review_reason = f"long_response: {_response_len} chars"
+        elif ("ui_screenshot" in _tools_called and _visual_analysis_request) or "[Screenshot captured:" in message:
+            # A screenshot used as evidence needs a final completeness pass,
+            # even when the router labels the request as low complexity.
+            _needs_review = True
+            _review_reason = "visual_screenshot_analysis"
         else:
             _needs_review = False
             _review_reason = f"skip: tools={len(_tools_called)}, response={_response_len} chars"
