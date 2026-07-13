@@ -1859,41 +1859,16 @@ function removeThinkingIndicator(el) {
 }
 
 function showToolProgress(toolName, params) {
-    const container = document.getElementById('chatMessages');
-    if (!container) return null;
-
-    // Track progress elements so we can hide them when the turn ends.
-    if (!window._toolProgressEls) window._toolProgressEls = [];
-
-
-    const row = document.createElement('div');
-    row.className = 'chat-row bot';
-
-    const avatar = document.createElement('div');
-    avatar.className = 'chat-avatar bot-avatar';
-    avatar.innerHTML = CHAT_AVATAR_SVGS.bot;
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'chat-msg-wrapper bot';
-
-    const div = document.createElement('div');
-    div.className = 'chat-msg system';
-    div.style.background = 'rgba(14,165,233,0.1)';
-    div.style.borderColor = 'rgba(14,165,233,0.3)';
-    div.style.color = 'var(--primary)';
-    div.style.fontSize = '0.72rem';
-    div.style.display = 'flex';
-    div.style.alignItems = 'center';
-    div.style.gap = '0.5rem';
-
-    const spinner = document.createElement('div');
-    spinner.className = 'spinner-ring';
-    spinner.style.width = '14px';
-    spinner.style.height = '14px';
-    spinner.style.borderWidth = '2px';
-
-    const text = document.createElement('span');
-    text.className = 'tool-progress-text';
+    // Tool lifecycle is rendered by the execution trace and todo list. A
+    // second floating row duplicates every long-running tool and can leave
+    // stale spinners behind, so this compatibility hook intentionally has no
+    // visual side effect.
+    return null;
+}
+/* Legacy floating tool-progress row removed; the execution trace and todo
+   list are the single progress surface for a turn. */
+/*
+     text.className = 'tool-progress-text';
     const _zh = (effectiveUiLanguage() === 'zh');
     // Use i18n tool name if available
     const _toolLabel = (function() {
@@ -1915,6 +1890,7 @@ function showToolProgress(toolName, params) {
     window._toolProgressEls.push(row);
     return div;
 }
+*/
 
 function updateToolProgress(el, toolName, status, result) {
     if (!el) return;

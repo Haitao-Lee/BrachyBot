@@ -262,6 +262,10 @@ CONTROL_REGISTRY = {
         "value_type": "string",
         "description": "Recompute manual dose/DVH with the trained myDoseNet AI dose model"
     },
+    "manual.plan.replan": {
+        "commands": ["run"],
+        "description": "Replan the current manually edited needle/seed geometry with myDoseNet"
+    },
     "manual.plan.finish": {
         "commands": ["run"],
         "description": "Finish/review a manual plan and provide current planning advice"
@@ -639,6 +643,7 @@ class UIControllerTool(BaseTool):
         if target == "manual.needle.create": return "Manual editable needle created"
         if target == "manual.seed.add": return "Manual seed added and dose preview requested"
         if target == "manual.dose.recompute": return "Manual dose and DVH preview recomputed"
+        if target == "manual.plan.replan": return "Manual geometry replanned with myDoseNet"
         if target == "manual.plan.finish": return "Manual plan review requested"
         if target == "system.readiness": return "System readiness checklist requested"
         if target == "plan.reset": return "⚠️ Planning session reset"

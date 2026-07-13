@@ -164,12 +164,24 @@ function _setupDvhCustomTooltip(dvhEl) {
         if (!layout || !layout.xaxis || !layout.yaxis) { tip.style.display = 'none'; return; }
         const box = dvhEl.getBoundingClientRect();
         const size = layout._size || {};
+        const sx = box.width > 0 && dvhEl.clientWidth > 0 ? box.width / dvhEl.clientWidth : 1;
         const sy = box.height > 0 && dvhEl.clientHeight > 0 ? box.height / dvhEl.clientHeight : 1;
         const mx = ev.clientX - box.left;
         const my = ev.clientY - box.top;
+        const plotLeft = (size.l || 0) * sx;
+        const plotWidth = Math.max(1, (size.w || 1) * sx);
         const plotTop  = (size.t || 0) * sy;
         const plotH    = (size.h || 1) * sy;
-        if (my < plotTop || my > plotTop + plotH) { tip.style.display = 'none'; return; }
+        if (mx < plotLeft || mx > plotLeft + plotWidth || my < plotTop || my > plotTop + plotH) {
+            tip.style.display = 'none';
+            return;
+        }
+        const xRange = Array.isArray(layout.xaxis.range) && layout.xaxis.range.length >= 2
+            ? layout.xaxis.range : [0, 600];
+        const xSpan = Number(xRange[1]) - Number(xRange[0]);
+        const cursorDose = Number.isFinite(xSpan) && Math.abs(xSpan) > 1e-9
+            ? Number(xRange[0]) + ((mx - plotLeft) / plotWidth) * xSpan
+            : null;
 
         let best = null;
         let bestDy = Infinity;
@@ -186,14 +198,22 @@ function _setupDvhCustomTooltip(dvhEl) {
                     name: p.fullData.name || '',
                     x: p.x,
                     y: p.y,
-                    color: p.fullData.line?.color || '#e2e8f0'
+                    color: p.fullData.line?.color || '#e2e8f0',
+                    traceX: p.fullData.x,
+                    traceY: p.fullData.y,
                 };
             }
         }
         if (!best || bestDy > 40) { tip.style.display = 'none'; return; }
+        // Plotly's hover point is the nearest sampled vertex, not the
+        // physical x-coordinate under the cursor. Interpolate the displayed
+        // trace at the cursor's axis value so the tooltip and mouse agree.
+        const displayDose = Number.isFinite(cursorDose) ? cursorDose : Number(best.x);
+        const interpolatedVolume = _interpolateDvhAtDose(best.traceX, best.traceY, displayDose);
+        const displayVolume = Number.isFinite(interpolatedVolume) ? interpolatedVolume : Number(best.y);
         const safeColor = /^#[0-9a-f]{3,8}$/i.test(best.color) || /^rgba?\([0-9.,\s%]+\)$/i.test(best.color) ? best.color : '#e2e8f0';
         tip.innerHTML = `<div style="color:${safeColor};font-weight:700;margin-bottom:2px">${escHtml(best.name)}</div>` +
-            `<div>Dose: ${best.x.toFixed(2)} Gy</div><div>Volume: ${best.y.toFixed(1)}%</div>`;
+            `<div>Dose: ${displayDose.toFixed(2)} Gy</div><div>Volume: ${displayVolume.toFixed(1)}%</div>`;
         tip.style.display = 'block';
         const pad = 8, off = 14;
         const tw = tip.offsetWidth || 140, th = tip.offsetHeight || 54;
@@ -565,6 +585,7 @@ function drawDVH() {
 // and 3D viewer "sinking" effects.
 let _refreshDebounce = null;
 let _refreshInflight = null;
+let _refreshGeneration = 0;
 // DEBUG: global diagnostic function — call from browser console
 window._debugBrachy = function() {
     const canvas = document.getElementById('canvas3D');
@@ -592,12 +613,14 @@ window._debugBrachy = function() {
 
 async function refreshPlanningUI(options = {}) {
     uiDebugLog('[refreshPlanningUI] CALLED, ctLoaded:', state.ctLoaded, 'stack:', new Error().stack?.split('\n').slice(1,3).join(' | '));
+    const generation = ++_refreshGeneration;
     // Cancel any in-flight fetch — we'll issue a fresh one.
     if (_refreshInflight) { try { _refreshInflight.abort(); } catch (_) {} }
     if (_refreshDebounce) clearTimeout(_refreshDebounce);
     return new Promise((resolve) => {
         _refreshDebounce = setTimeout(async () => {
             _refreshDebounce = null;
+            if (generation !== _refreshGeneration) return resolve();
             try {
                 const ctrl = new AbortController();
                 _refreshInflight = ctrl;
@@ -605,6 +628,7 @@ async function refreshPlanningUI(options = {}) {
                 if (!res.ok) { console.warn('[refreshPlanningUI] /planning/results failed:', res.status); _refreshInflight = null; return resolve(); }
                 const data = await res.json();
                 _refreshInflight = null;
+                if (generation !== _refreshGeneration) return resolve();
                 if (!data || !data.success) { console.warn('[refreshPlanningUI] data not success:', data); return resolve(); }
                 uiDebugLog('[refreshPlanningUI] data received, has_dose:', data.has_dose, 'seeds:', data.seeds?.length, 'has_dvh:', !!data.dvh, 'dvh_keys:', data.dvh ? Object.keys(data.dvh).length : 0, 'metrics_keys:', data.metrics ? Object.keys(data.metrics).length : 0);
 
@@ -738,18 +762,12 @@ async function refreshPlanningUI(options = {}) {
         }
 
         // ═══════════════════════════════════════════════════════════
-        // 3D MESHES: run ALL in parallel with a loading indicator.
-        // Show a temporary status bar so the user knows 3D is building.
+        // 3D MESHES: run ALL in parallel. Progress is represented by the
+        // execution trace/todo list; do not add a second floating spinner.
         // ═══════════════════════════════════════════════════════════
-        let _3dStatusBar = document.getElementById('meshPrewarmStatus')
+        const _3dStatusBar = document.getElementById('meshPrewarmStatus')
             || document.getElementById('auto3DStatusBar');
-        if (!_3dStatusBar) {
-            _3dStatusBar = document.createElement('div');
-            _3dStatusBar.id = 'auto3DStatusBar';
-            _3dStatusBar.style.cssText = 'position:fixed;bottom:60px;right:20px;background:rgba(15,23,42,0.9);color:#94a3b8;padding:8px 16px;border-radius:8px;font-size:0.75rem;z-index:9999;display:flex;align-items:center;gap:8px;';
-            _3dStatusBar.innerHTML = '<div class="spinner-ring" style="width:12px;height:12px;border-width:2px;"></div><span>3D reconstruction running...</span>';
-            document.body.appendChild(_3dStatusBar);
-        }
+        if (_3dStatusBar) _3dStatusBar.remove();
 
         function _withTimeout(promise, name, ms = 60000) {
             return Promise.race([
@@ -787,15 +805,17 @@ async function refreshPlanningUI(options = {}) {
         try { if (typeof reportAutoFill === 'function') reportAutoFill(); } catch (_) {}
 
         await Promise.all(_meshPromises);
+        if (generation !== _refreshGeneration) return resolve();
         uiDebugLog('[refreshPlanningUI] Mesh promises done. scene3D.meshes:', Object.keys(scene3D.meshes));
-        // Remove 3D loading indicator
-        try { _3dStatusBar.remove(); } catch (_) {}
+        // No floating indicator to remove; the trace/todo lifecycle remains
+        // the single progress surface for this asynchronous work.
 
         // 4f-2. Re-capture 3D figures AFTER meshes are loaded.
         // autoCaptureReportFigures ran before mesh promises resolved,
         // so the 3D canvas was empty. Now that meshes are in the
         // scene, re-capture both CTV-zoomed and seeds-overview.
         try {
+            if (generation !== _refreshGeneration) return resolve();
             const _hasFigures = window.reportForm && window.reportForm.figures;
             const _replaceOrCreate = (axis, title, caption, dataUrl) => {
                 if (!_hasFigures || !dataUrl || dataUrl.length < 5000) return;
@@ -1011,6 +1031,7 @@ async function refreshPlanningUI(options = {}) {
             }
         } catch (_) {}
         try {
+            if (generation !== _refreshGeneration) return resolve();
             if (typeof autoCaptureReportFigures === 'function') {
                 await autoCaptureReportFigures();
             }

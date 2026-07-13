@@ -556,9 +556,52 @@ function init3DScene() {
     let dragPlane = new THREE.Plane();
     let dragOffset = new THREE.Vector3();
 
+    // Endpoint handles must win the hit test before OrbitControls receives
+    // the same left-button event.  A normal scene-wide raycast can hit the
+    // CTV/OAR surface first, making the editable sphere appear unselectable.
+    const beginNeedleHandleDrag = (event) => {
+        if (event.button !== 0 || !scene3D.camera) return false;
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width < 1 || rect.height < 1) return false;
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, scene3D.camera);
+        const handles = Object.values(scene3D.meshes || {})
+            .filter(obj => obj && obj.userData?.type === 'needle_handle');
+        const hit = raycaster.intersectObjects(handles, true)[0];
+        if (!hit) return false;
+        let obj = hit.object;
+        while (obj.parent && !obj.userData?.type) obj = obj.parent;
+        if (obj.userData?.type !== 'needle_handle') return false;
+
+        event.preventDefault();
+        event.__brachyNeedleHandle = true;
+        if (selectedObject?.material?.emissive) {
+            selectedObject.material.emissive.setHex(selectedObject.userData.originalEmissive || 0x332200);
+        }
+        selectedObject = obj;
+        selectedObject.userData.originalEmissive = selectedObject.userData.originalEmissive
+            || selectedObject.material?.emissive?.getHex() || 0x332200;
+        if (selectedObject.material?.emissive) selectedObject.material.emissive.setHex(0xff0000);
+        isDragging = true;
+        scene3D.controls.enabled = false;
+        const cameraDir = new THREE.Vector3();
+        scene3D.camera.getWorldDirection(cameraDir);
+        dragPlane.setFromNormalAndCoplanarPoint(cameraDir, selectedObject.position);
+        const intersection = new THREE.Vector3();
+        if (raycaster.ray.intersectPlane(dragPlane, intersection)) dragOffset.copy(selectedObject.position).sub(intersection);
+        addChat('system', `Selected needle endpoint ${selectedObject.userData.pointIndex + 1} | ${selectedObject.userData.needleId}`);
+        requestRender(2);
+        return true;
+    };
+
+    // Capture phase runs before OrbitControls' bubble-phase listener.
+    canvas.addEventListener('mousedown', beginNeedleHandleDrag, true);
+
     // Mouse down - start drag or select
     canvas.addEventListener('mousedown', (event) => {
         if (event.button !== 0) return; // Only left click
+        if (event.__brachyNeedleHandle) return;
 
         const rect = canvas.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -644,7 +687,7 @@ function init3DScene() {
     });
 
     // Mouse up - end drag
-    canvas.addEventListener('mouseup', () => {
+    const finishManualDrag = () => {
         if (isDragging) {
             isDragging = false;
             scene3D.controls.enabled = true;
@@ -668,7 +711,10 @@ function init3DScene() {
                 }
             }
         }
-    });
+    };
+    canvas.addEventListener('mouseup', finishManualDrag);
+    // Releasing outside the canvas must still commit the endpoint update.
+    window.addEventListener('mouseup', finishManualDrag);
 
     // Right-click context menu for 3D objects
     canvas.addEventListener('contextmenu', (event) => {
@@ -1478,24 +1524,21 @@ function _getNonTraversableOarMeshIds(ctvLabelIds) {
 }
 
 function _setMeshPrewarmStatus(text, show = true) {
+    // Mesh progress is already represented by the execution trace and the
+    // planning todo list.  Do not create a second floating spinner that can
+    // overlap the chat or survive a completed reconstruction.
     let el = _segmentationMeshPrewarm.statusEl;
-    if (!show) {
-        if (el) {
-            try { el.remove(); } catch (_) {}
-            _segmentationMeshPrewarm.statusEl = null;
-        }
-        return;
+    if (el) {
+        try { el.remove(); } catch (_) {}
+        _segmentationMeshPrewarm.statusEl = null;
     }
-    if (!el) {
-        el = document.createElement('div');
-        el.id = 'meshPrewarmStatus';
-        el.style.cssText = 'position:fixed;bottom:60px;right:20px;background:rgba(15,23,42,0.9);color:#94a3b8;padding:8px 16px;border-radius:8px;font-size:0.75rem;z-index:9999;display:flex;align-items:center;gap:8px;';
-        el.innerHTML = '<div class="spinner-ring" style="width:12px;height:12px;border-width:2px;"></div><span></span>';
-        document.body.appendChild(el);
-        _segmentationMeshPrewarm.statusEl = el;
-    }
-    const span = el.querySelector('span');
-    if (span) span.textContent = text || '3D reconstruction running...';
+}
+
+// Explicit replan command for the edited manual geometry. This uses the same
+// trained myDoseNet path as seed/needle edits, but gives chat and the UI a
+// stable action name instead of silently treating a replan as a generic edit.
+async function replanManualPlan() {
+    return recomputeManualDose('manual_replan');
 }
 
 // Check whether a label ID exists in the currently loaded segmentation mask.
@@ -1688,6 +1731,80 @@ function _getCurrentPrescriptionGy() {
 const COLORBAR_MIN_GY = 0.0;
 const COLORBAR_MAX_GY = 1000.0;
 
+const DOSE_COLORBAR_STORAGE_KEY = 'brachybot.doseColorbar.v1';
+const _doseColorbarDefaults = Object.freeze({
+    twoD: Object.freeze({ minGy: COLORBAR_MIN_GY, maxGy: COLORBAR_MAX_GY, palette: 'petRainbow2' }),
+    threeD: Object.freeze({ minGy: 0, maxGy: 200, palette: 'petRainbow3D' }),
+});
+let _doseColorbarConfig = null;
+
+function _cloneDoseColorbarDefaults() {
+    return {
+        twoD: { ..._doseColorbarDefaults.twoD },
+        threeD: { ..._doseColorbarDefaults.threeD },
+    };
+}
+
+function _validDoseColorbarScope(scope) {
+    return scope === 'threeD' ? 'threeD' : 'twoD';
+}
+
+function _normalizeDoseColorbarConfig(raw) {
+    const next = _cloneDoseColorbarDefaults();
+    ['twoD', 'threeD'].forEach(scope => {
+        const src = raw && typeof raw[scope] === 'object' ? raw[scope] : {};
+        const fallback = next[scope];
+        const minGy = Number(src.minGy);
+        const maxGy = Number(src.maxGy);
+        if (Number.isFinite(minGy) && Number.isFinite(maxGy) && maxGy > minGy && maxGy - minGy <= 100000) {
+            fallback.minGy = Math.max(-10000, minGy);
+            fallback.maxGy = Math.min(100000, maxGy);
+        }
+        if (['petRainbow2', 'petRainbow3D', 'viridis', 'hot', 'grayscale'].includes(src.palette)) {
+            fallback.palette = src.palette;
+        }
+    });
+    return next;
+}
+
+function _loadDoseColorbarConfig() {
+    if (_doseColorbarConfig) return _doseColorbarConfig;
+    try {
+        _doseColorbarConfig = _normalizeDoseColorbarConfig(JSON.parse(localStorage.getItem(DOSE_COLORBAR_STORAGE_KEY) || 'null'));
+    } catch (_) {
+        _doseColorbarConfig = _cloneDoseColorbarDefaults();
+    }
+    return _doseColorbarConfig;
+}
+
+function getDoseColorbarConfig(scope) {
+    const cfg = _loadDoseColorbarConfig()[_validDoseColorbarScope(scope)];
+    return { ...cfg };
+}
+
+function _saveDoseColorbarConfig() {
+    try { localStorage.setItem(DOSE_COLORBAR_STORAGE_KEY, JSON.stringify(_doseColorbarConfig)); } catch (_) {}
+}
+
+function _doseColorStopsRgb(palette, value) {
+    const stops = {
+        viridis: [[0, [68, 1, 84]], [0.25, [59, 82, 139]], [0.5, [33, 145, 140]], [0.75, [94, 201, 98]], [1, [253, 231, 37]]],
+        hot: [[0, [0, 0, 0]], [0.35, [180, 0, 0]], [0.7, [255, 150, 0]], [1, [255, 255, 255]]],
+        grayscale: [[0, [12, 12, 12]], [1, [245, 245, 245]]],
+    }[palette];
+    if (!stops) return null;
+    const v = Math.max(0, Math.min(1, Number(value) || 0));
+    for (let i = 1; i < stops.length; i++) {
+        if (v <= stops[i][0]) {
+            const [p0, c0] = stops[i - 1];
+            const [p1, c1] = stops[i];
+            const t = (v - p0) / Math.max(1e-9, p1 - p0);
+            return c0.map((c, j) => Math.round(c + (c1[j] - c) * t));
+        }
+    }
+    return stops[stops.length - 1][1].slice();
+}
+
 // Dose-surface color window used by all colorbars and overlays. This later
 // declaration is the canonical colormap for all dose overlays.
 function _petRainbow2(val) {
@@ -1759,12 +1876,20 @@ function _petRainbow3D(val) {
     return [255, 255, 255];
 }
 
-function _doseDisplayT(doseGy) {
-    return Math.max(0, Math.min(1, (Number(doseGy || 0) - COLORBAR_MIN_GY) / (COLORBAR_MAX_GY - COLORBAR_MIN_GY)));
+function _doseDisplayT(doseGy, scope = 'twoD') {
+    const cfg = getDoseColorbarConfig(scope);
+    return Math.max(0, Math.min(1, (Number(doseGy || 0) - cfg.minGy) / Math.max(1e-9, cfg.maxGy - cfg.minGy)));
 }
 
-function _doseGyToRgb(doseGy) {
-    return _petRainbow2(_doseDisplayT(doseGy));
+function _doseColorFromScope(scope, t) {
+    const palette = getDoseColorbarConfig(scope).palette;
+    const custom = _doseColorStopsRgb(palette, t);
+    if (custom) return custom;
+    return palette === 'petRainbow3D' ? _petRainbow3D(t) : _petRainbow2(t);
+}
+
+function _doseGyToRgb(doseGy, scope = 'twoD') {
+    return _doseColorFromScope(scope, _doseDisplayT(doseGy, scope));
 }
 
 function _doseNormToRgb(doseNorm) {
@@ -1772,23 +1897,25 @@ function _doseNormToRgb(doseNorm) {
 }
 
 function _doseColorbarLabelSpecs(pixelHeight = 512) {
+    const cfg = getDoseColorbarConfig('twoD');
     const dense = pixelHeight >= 300;
-    const values = dense ? [180, 160, 140, 120, 100, 80, 60, 40, 20] : [150, 100, 50];
+    const values = (dense ? [0.8, 0.6, 0.4, 0.2] : [0.66, 0.33])
+        .map(f => cfg.minGy + (cfg.maxGy - cfg.minGy) * f);
     return [
-        { pct: 0, label: `>${COLORBAR_MAX_GY.toFixed(1)} Gy`, major: true },
+        { pct: 0, label: `>${cfg.maxGy.toFixed(1)} Gy`, major: true },
         ...values.map(v => ({
-            pct: (1 - _doseDisplayT(v)) * 100,
+            pct: (1 - _doseDisplayT(v, 'twoD')) * 100,
             label: `${v.toFixed(1)} Gy`,
-            major: v % 40 === 0,
+            major: true,
         })),
-        { pct: 100, label: `<${COLORBAR_MIN_GY.toFixed(1)} Gy`, major: true },
+        { pct: 100, label: `<${cfg.minGy.toFixed(1)} Gy`, major: true },
     ];
 }
 
 function _drawDoseColorbarGradient(ctx, w, h) {
     for (let y = 0; y < h; y++) {
         const val = 1 - y / Math.max(1, h - 1);
-        const [r, g, b] = _petRainbow2(val);
+        const [r, g, b] = _doseColorFromScope('twoD', val);
         ctx.fillStyle = `rgb(${r},${g},${b})`;
         ctx.fillRect(0, y, w, 1);
     }
@@ -1814,30 +1941,20 @@ function updateDoseColorbars(visible, doseMinNorm, doseMaxNorm) {
     });
     if (!visible) return;
 
-    // Always use the fixed 0-1000 Gy display range.
-    const dMinGy = COLORBAR_MIN_GY;
-    const dMaxGy = COLORBAR_MAX_GY;
-
-    // Labels every 200 Gy: 0, 200, 400, 600, 800, 1000
-    const tickGy = [0, 200, 400, 600, 800, dMaxGy];
-    const tickLabels = tickGy.map(v => v.toFixed(0) + ' Gy');
-    const tickPos = ['doseColorbarMin', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarMax'];
-
-    // Set each label by matching data-value attribute to ensure correct position.
-    // Skip the 3D colorbar — it has its own 0-200 Gy labels set by update3DColorbar().
-    tickGy.forEach((gy, i) => {
-        const cls = tickPos[i];
-        if (cls === 'doseColorbarTick') {
-            document.querySelectorAll('.dose-colorbar:not(#doseColorbar3D) .doseColorbarTick').forEach(el => {
-                if (parseFloat(el.getAttribute('data-value') || '') === gy) {
-                    el.textContent = tickLabels[i];
-                }
-            });
-        } else {
-            document.querySelectorAll('.dose-colorbar:not(#doseColorbar3D) .' + cls).forEach(el => {
-                el.textContent = tickLabels[i];
-            });
-        }
+    const cfg = getDoseColorbarConfig('twoD');
+    const tickGy = [cfg.maxGy, cfg.minGy + (cfg.maxGy - cfg.minGy) * 0.8,
+        cfg.minGy + (cfg.maxGy - cfg.minGy) * 0.6,
+        cfg.minGy + (cfg.maxGy - cfg.minGy) * 0.4,
+        cfg.minGy + (cfg.maxGy - cfg.minGy) * 0.2, cfg.minGy];
+    document.querySelectorAll('.dose-colorbar:not(#doseColorbar3D)').forEach(bar => {
+        const maxEl = bar.querySelector('.doseColorbarMax');
+        const minEl = bar.querySelector('.doseColorbarMin');
+        if (maxEl) maxEl.textContent = `${tickGy[0].toFixed(0)} Gy`;
+        if (minEl) minEl.textContent = `${tickGy[tickGy.length - 1].toFixed(0)} Gy`;
+        [...bar.querySelectorAll('.doseColorbarTick')].slice(0, 4).forEach((el, i) => {
+            el.textContent = `${tickGy[i + 1].toFixed(0)} Gy`;
+            el.dataset.value = String(tickGy[i + 1]);
+        });
     });
 
     // Render PETrainbow2 gradient on 2D viewer colorbar canvases only.
@@ -1850,7 +1967,7 @@ function updateDoseColorbars(visible, doseMinNorm, doseMaxNorm) {
         for (let y = 0; y < h; y++) {
             // y=0 (top) → max (val=1); y=h-1 (bottom) → min (val=0)
             const val = 1 - y / (h - 1);
-            const [r, g, b] = _petRainbow2(val);
+            const [r, g, b] = _doseColorFromScope('twoD', val);
             ctx.fillStyle = `rgb(${r},${g},${b})`;
             ctx.fillRect(0, y, w, 1);
         }
@@ -1875,36 +1992,76 @@ function update3DColorbar(visible) {
         for (let y = 0; y < h; y++) {
             // y=0 (top) → max (val=1); y=h-1 (bottom) → min (val=0)
             const val = 1 - y / (h - 1);
-            const [r, g, b] = _petRainbow3D(val);
+            const [r, g, b] = _doseColorFromScope('threeD', val);
             ctx.fillStyle = `rgb(${r},${g},${b})`;
             ctx.fillRect(0, y, w, 1);
         }
     }
 
-    // Set 3D colorbar labels to 0-200 Gy range (independent from 2D colorbars).
-    // Match by data-value to avoid overwriting all ticks with the last value.
-    const d3DTicks = [
-        { pos: 'doseColorbarMax', val: 200 },
-        { pos: 'doseColorbarTick', val: 160, dataVal: 160 },
-        { pos: 'doseColorbarTick', val: 120, dataVal: 120 },
-        { pos: 'doseColorbarTick', val: 80, dataVal: 80 },
-        { pos: 'doseColorbarTick', val: 40, dataVal: 40 },
-        { pos: 'doseColorbarMin', val: 0 },
-    ];
-    d3DTicks.forEach(({ pos, val, dataVal }) => {
-        const label = val.toFixed(0) + ' Gy';
-        if (dataVal !== undefined) {
-            colorbar3D.querySelectorAll('.' + pos).forEach(el => {
-                if (parseFloat(el.getAttribute('data-value') || '') === dataVal) {
-                    el.textContent = label;
-                }
-            });
-        } else {
-            colorbar3D.querySelectorAll('.' + pos).forEach(el => {
-                el.textContent = label;
-            });
-        }
+    const cfg = getDoseColorbarConfig('threeD');
+    const tickGy = [cfg.maxGy, cfg.minGy + (cfg.maxGy - cfg.minGy) * 0.8,
+        cfg.minGy + (cfg.maxGy - cfg.minGy) * 0.6,
+        cfg.minGy + (cfg.maxGy - cfg.minGy) * 0.4,
+        cfg.minGy + (cfg.maxGy - cfg.minGy) * 0.2, cfg.minGy];
+    const maxEl = colorbar3D.querySelector('.doseColorbarMax');
+    const minEl = colorbar3D.querySelector('.doseColorbarMin');
+    if (maxEl) maxEl.textContent = `${tickGy[0].toFixed(0)} Gy`;
+    if (minEl) minEl.textContent = `${tickGy[tickGy.length - 1].toFixed(0)} Gy`;
+    [...colorbar3D.querySelectorAll('.doseColorbarTick')].slice(0, 4).forEach((el, i) => {
+        el.textContent = `${tickGy[i + 1].toFixed(0)} Gy`;
+        el.dataset.value = String(tickGy[i + 1]);
     });
+}
+
+function toggleDoseColorbarPanel(force) {
+    const panel = document.getElementById('doseColorbarPanel');
+    if (!panel) return;
+    const open = typeof force === 'boolean' ? force : panel.hidden;
+    panel.hidden = !open;
+    if (open) syncDoseColorbarControls();
+}
+
+function syncDoseColorbarControls() {
+    const scope = document.getElementById('doseColorbarScope')?.value || 'twoD';
+    const cfg = getDoseColorbarConfig(scope);
+    const min = document.getElementById('doseColorbarMinInput');
+    const max = document.getElementById('doseColorbarMaxInput');
+    const palette = document.getElementById('doseColorbarPalette');
+    if (min) min.value = cfg.minGy;
+    if (max) max.value = cfg.maxGy;
+    if (palette) palette.value = cfg.palette;
+}
+
+async function applyDoseColorbarSettings() {
+    const scope = _validDoseColorbarScope(document.getElementById('doseColorbarScope')?.value);
+    const minGy = Number(document.getElementById('doseColorbarMinInput')?.value);
+    const maxGy = Number(document.getElementById('doseColorbarMaxInput')?.value);
+    const palette = document.getElementById('doseColorbarPalette')?.value || 'petRainbow2';
+    if (!Number.isFinite(minGy) || !Number.isFinite(maxGy) || maxGy <= minGy) {
+        alert('Colorbar maximum must be greater than minimum.');
+        return;
+    }
+    _loadDoseColorbarConfig()[scope] = { minGy, maxGy, palette };
+    _saveDoseColorbarConfig();
+    if (scope === 'twoD') {
+        updateDoseColorbars(!!state.doseOverlay?.visible);
+        try { await loadAllSlices(); } catch (_) {}
+    } else {
+        update3DColorbar(!!state.doseTexture?.enabled);
+        if (state.doseTexture?.enabled) {
+            const entries = Object.entries(scene3D.meshes || {}).filter(([id, mesh]) => _isDoseTexturableMesh(id, mesh));
+            await Promise.all(entries.map(([id, mesh]) => _applyDoseTextureToMesh(id, mesh)));
+            forceRender3DViewer();
+        }
+    }
+    syncDoseColorbarControls();
+}
+
+function resetDoseColorbarSettings() {
+    _doseColorbarConfig = _cloneDoseColorbarDefaults();
+    _saveDoseColorbarConfig();
+    syncDoseColorbarControls();
+    applyDoseColorbarSettings();
 }
 
 async function loadDoseOverlay() {
@@ -2062,9 +2219,6 @@ function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
     if (rows === 0 || cols === 0) return;
 
     const opacity = state.doseOverlay.opacity;
-    const dMinGy = COLORBAR_MIN_GY;
-    const dMaxGy = COLORBAR_MAX_GY;
-
     const tmpCanvas = document.createElement('canvas');
     tmpCanvas.width = w;
     tmpCanvas.height = h;
@@ -2072,7 +2226,7 @@ function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
     const imageData = tmpCtx.createImageData(w, h);
     const scaleX = w / cols;
     const scaleY = h / rows;
-    const colormap = (val) => _petRainbow2(val);
+    const colormap = (valGy) => _doseGyToRgb(valGy, 'twoD');
 
     for (let py = 0; py < h; py++) {
         for (let px = 0; px < w; px++) {
@@ -2080,8 +2234,7 @@ function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
             const sy = Math.min(Math.floor(py / scaleY), rows - 1);
             const val = sliceData[sy][sx];
             const valGy = val * _getDoseScaleGy();
-            const normalized = (valGy - dMinGy) / (dMaxGy - dMinGy);
-            const [r, g, b] = colormap(Math.min(1, Math.max(0, normalized)));
+            const [r, g, b] = colormap(valGy);
             const idx = (py * w + px) * 4;
             imageData.data[idx] = r;
             imageData.data[idx + 1] = g;

@@ -4,6 +4,40 @@ _This file consolidates all code review reports. Sections are organized by date.
 
 ---
 
+## 2026-07-13 - Round 8: Manual needle editing, DVH precision, report capture, and viewer controls
+
+**Audit base:** merged GitHub `main` at `a93d48c` (including remote `8693816`), plus the user-provided reproduction traces.
+
+**Scope:** The eight reported behaviors were checked against their complete browser/backend call chains. Confirmed defects were fixed at the owning layer. CT world/index/orientation conversion and the trained myDoseNet dose path were not changed.
+
+| Issue | Verification and correction |
+|---|---|
+| Needle endpoint could not be selected or dragged | Confirmed: OrbitControls handled the left-button event before the generic scene raycast and OAR/CTV surfaces could win the hit. Endpoint-only capture-phase picking now takes priority, handles are larger/on top, and release outside the canvas still commits the edit. `Replan Geometry` is exposed in the manual panel and `ui_controller`; it recomputes the edited geometry through myDoseNet. |
+| DVH tooltip was offset from the cursor | Confirmed: the old tooltip displayed Plotly's nearest sampled `p.x`. It now maps the cursor to the actual x-axis plot rectangle and interpolates the displayed curve at that dose, so both dose and volume correspond to the cursor. |
+| Figure 1 could be black | Confirmed: report capture could run while the renderer was hidden or before matrix/viewport state was committed. Captures are serialized, validate canvas dimensions and lit WebGL pixels, render after state synchronization, and retry once before accepting a figure. Mesh material visibility/opacity/depth state is restored completely. |
+| Replanning could show an unchanged quality score | Confirmed in the score formula: the old advisory score used only V100. It now combines coverage, hotspot control (V150/V200), D90 homogeneity, and OAR peak-dose behavior, and stores a breakdown for auditability. It remains advisory and is not a clinical approval criterion. |
+| OAR meshes disappeared after reconstruction/report capture | Confirmed as a race-prone lifecycle: aborted fetches did not cancel later mesh/report work. Refresh generations now invalidate stale render passes, report captures are serialized, and the existing mesh states are restored after temporary report views. |
+| Manual colorbar controls were missing | Added a hidden `Dose Scale` entry with independent 2D-shared and 3D-surface range/palette controls. Defaults preserve the established 2D `0–1000 Gy / PET Rainbow` and 3D `0–200 Gy / Surface Rainbow`. Heatmaps, colorbars, report labels, and 3D vertex textures use the selected scope configuration; settings are persisted locally. |
+| Multiple screenshots created separate galleries | Confirmed in `_interceptScreenshot`: every screenshot was passed directly to `addChat`. One assistant turn now shares a gallery panel with responsive thumbnails and click-to-enlarge modal viewing; local fallback captures use the same gallery. |
+| Floating per-tool/reconstruction spinners duplicated the todo/trace | Confirmed: `showToolProgress`, mesh prewarm, and refresh code created extra fixed-position cards. These compatibility hooks now have no visual side effect; execution trace and todo list remain the single progress surface. |
+
+### Additional compatibility correction
+
+`AgenticSys._normalize_clinical_tool_calls` now treats the optional UI-state memory API as optional. This preserves explicit-message planning for lightweight memory adapters and test doubles without changing production UI-state behavior.
+
+### Verification
+
+- `node --check`: all seven modified browser scripts pass.
+- `git diff --check`: pass.
+- `pytest -q tests/test_review_round6_regressions.py`: **69 passed** (3 existing dependency warnings).
+- Browser-level clinical rendering still requires a live server with CT/segmentation/dose data; the final smoke check must use a loaded case to validate WebGL picking and Figure 1 pixels.
+
+### Deliberate boundaries
+
+The manual replan action is explicitly the interactive myDoseNet recomputation for the current user-edited seed/needle geometry. It does not silently invoke the full automatic trajectory optimizer or alter the established coordinate chain. The quality score is an advisory visualization metric; clinical dose calculation and approval remain in the existing trained-model and clinician-review workflow.
+
+---
+
 ## 2026-07-12 - Round 7: Planning re-run and viewer interaction correction
 
 **Audit base:** `a62d837` plus the user-provided planning/replanning traces.

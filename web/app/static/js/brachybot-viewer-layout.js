@@ -1025,8 +1025,6 @@ async function _applyDoseTextureToMesh(id, mesh) {
 
     const colors = new Float32Array(posAttr.count * 3);
     const v = new THREE.Vector3();
-    const dMinGy = COLORBAR_MIN_GY;
-    const dMaxGy = 200; // dose surface colorbar range 0-200 Gy
     const sampleEvery = posAttr.count > 25000 ? 2 : 1;
 
     // Warm the dose-slice cache before the color loop so that the per-vertex
@@ -1058,8 +1056,8 @@ async function _applyDoseTextureToMesh(id, mesh) {
         const idx = _worldToIndex(v.x, v.y, v.z);
         const doseNorm = _sampleDoseNormalizedAtIndex(idx);
         const doseGy = doseNorm * (typeof _getDoseScaleGy === 'function' ? _getDoseScaleGy() : 120);
-        const t = Math.max(0, Math.min(1, (doseGy - dMinGy) / (dMaxGy - dMinGy)));
-        const [r, g, b] = typeof _petRainbow3D === 'function' ? _petRainbow3D(t) : _petRainbowDoseSurface(t);
+        const t = _doseDisplayT(doseGy, 'threeD');
+        const [r, g, b] = _doseColorFromScope('threeD', t);
         const doseRgb = [r / 255, g / 255, b / 255];
         lastRgb = doseRgb;
         colors[i * 3] = lastRgb[0];
@@ -1292,7 +1290,9 @@ function _makeNeedleHandle(needle, pointIndex) {
     const point = needle.points?.[pointIndex];
     if (!point) return null;
     const color = pointIndex === 0 ? 0xff77aa : 0x66d9ff;
-    const geo = new THREE.SphereGeometry(2.2, 16, 16);
+    // Endpoint handles are deliberately larger than the needle radius and
+    // rendered on top so they remain easy to select beside a dense surface.
+    const geo = new THREE.SphereGeometry(3.5, 20, 20);
     const mat = new THREE.MeshPhysicalMaterial({
         color,
         transparent: true,
@@ -1303,6 +1303,9 @@ function _makeNeedleHandle(needle, pointIndex) {
         roughness: 0.3,
     });
     const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 1000;
+    mat.depthTest = false;
+    mat.depthWrite = false;
     mesh.position.set(..._vec3Array(point));
     mesh.userData = {
         type: 'needle_handle',

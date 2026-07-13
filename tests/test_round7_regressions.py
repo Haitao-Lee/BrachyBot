@@ -59,14 +59,14 @@ def test_viewer_and_data_tree_regressions_are_explicitly_covered():
     manual_3d = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
     dvh = (ROOT / "web/app/static/js/brachybot-dvh-planning.js").read_text(encoding="utf-8")
 
-    assert '<html lang="en" data-theme="light">' in index
+    assert '<html lang="en" data-theme="dark">' in index
     assert "reference_direc:" in ui_api
     assert "state.viewerSettings.threshold = null" in viewer
     assert "const raw = document.getElementById('viewerThreshold')?.value?.trim() || ''" in viewer
     assert "category === 'planning'" in viewer
     assert "category === 'planning_trajectories'" in viewer
-    assert "typeof loadLabelVolumes === 'function'" in layout
-    assert "allOAR: true" in layout
+    assert "async function loadLabelVolumes()" in viewer
     assert "opts.allOAR" in manual_3d
     assert "const doseFraction" not in dvh
-    assert "const doseAtCursor = xr[0] + plotFraction" in dvh
+    assert "const cursorDose =" in dvh
+    assert "_interpolateDvhAtDose(best.traceX, best.traceY, displayDose)" in dvh
