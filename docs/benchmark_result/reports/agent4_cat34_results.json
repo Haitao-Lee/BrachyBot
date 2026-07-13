@@ -1,0 +1,156 @@
+[
+  {
+    "case_id": "MT001",
+    "category": "34_multi_turn",
+    "category_num": 34,
+    "input": "What is the prescription dose for I-125 prostate brachytherapy?",
+    "response": "**I-125 Prostate Brachytherapy Prescription Doses:** - **Monotherapy** (I-125 alone): **145 Gy** (TG-43 dose calculation formalism) - **Boost** (with external beam radiotherapy): **108\u2013110 Gy** (combined with ~45\u201350 Gy EBRT) **Note:** The 145 Gy monotherapy dose is based on the TG-43 calculation method. Modern post-implant dosimetry using TG-137 (which accounts for interseed attenuation and patient scatter) may yield slightly different delivered doses. AAPM Task Group 238 recommends clinical prescription using TG-43 values but verification with TG-137-based calculations for quality assurance.",
+    "response_length": 599,
+    "total_score": 0.6,
+    "dimension_scores": {
+      "keyword": 0.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 4.929051160812378,
+    "screenshot": null,
+    "timestamp": "2026-06-03T00:10:12.375152"
+  },
+  {
+    "case_id": "MT002",
+    "category": "34_multi_turn",
+    "category_num": 34,
+    "input": "What V100 should I aim for in prostate brachytherapy?",
+    "response": "**V100 \u2265 90%** (prostate CTV) is the widely accepted minimum. Most clinicians target **V100 = 95\u201399%** for the PTV. Common institutional goals: | Parameter | Target | |-----------|--------| | V100 (CTV/prostate) | \u2265 90% | | V100 (PTV) | \u2265 95\u201399% | | D90 (dose to 90% of PTV) | 100\u2013110% of prescription | **Key constraints to balance:** - **Urethra D10**: < 120% of prescription dose (typically < 150% for LDR, < 130% for HDR) - **Rectum D2cc**: < prescription dose (or \u2264 80% for some HDR protocols) - **Overdosage (V150, V200)**: Keep minimal to reduce toxicity > **Note:** V100 alone is insufficient \u2014 always evaluate D90, urethral doses, and OAR constraints together. The goal is therapeutic coverage without compromising normal tissue tolerances.",
+    "response_length": 749,
+    "total_score": 0.6,
+    "dimension_scores": {
+      "keyword": 0.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 7.195778131484985,
+    "screenshot": null,
+    "timestamp": "2026-06-03T00:12:34.639563"
+  },
+  {
+    "case_id": "MT003",
+    "category": "34_multi_turn",
+    "category_num": 34,
+    "input": "What is the rectal dose constraint for prostate brachytherapy?",
+    "response": "## Rectal Dose Constraints for Prostate Brachytherapy Based on ABS and GEC-ESTRO guidelines: ### LDR (Permanent Seed Implantation) - **D2cc < 140 Gy** (to the most exposed 2 cc of rectum) - Alternative: Rectal point dose < 100-130 Gy (at 5mm depth from the rectal surface) ### HDR (High-Dose-Rate) - **D2cc < 75 Gy EQD2** (biologically equivalent dose, \u03b1/\u03b2 = 3) - D0. 1cc < 90 Gy (maximum point dose) - Some protocols use D1cc < 80 Gy EQD2 ### Key References - Nag et al. , *Brachytherapy* 2019 (ABS consensus statement) - GEC-ESTRO recommendations for HDR prostate brachytherapy - QUANTEC rectal dose-response data ### Clinical Note The D2cc metric (minimum dose to the most exposed 2 cc) has largely replaced the traditional rectal point dose method, as it better correlates with observed rectal toxicity in clinical outcomes. Would you like me to retrieve the full clinical knowledge base entry with detailed constraint tables?",
+    "response_length": 930,
+    "total_score": 0.6,
+    "dimension_scores": {
+      "keyword": 0.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 10.148362398147583,
+    "screenshot": null,
+    "timestamp": "2026-06-03T00:14:59.739171"
+  },
+  {
+    "case_id": "MT004",
+    "category": "34_multi_turn",
+    "category_num": 34,
+    "input": "\u524d\u5217\u817a\u764c\u7684\u5904\u65b9\u5242\u91cf\u662f\u591a\u5c11\uff1f",
+    "response": "\u524d\u5217\u817a\u764c\u8fd1\u8ddd\u79bb\u653e\u7597\u7684\u5904\u65b9\u5242\u91cf\u56e0\u65b9\u6848\u800c\u5f02\uff1a **LDR\u6c38\u4e45\u7c92\u5b50\u690d\u5165\uff08\u5355\u7528\uff09\uff1a - I-125\uff1a 145 Gy - Pd-103\uff1a 125 Gy **HDR\uff08\u9ad8\u5242\u91cf\u7387\uff09\u8fd1\u8ddd\u79bb\u653e\u7597\uff1a - \u5355\u6b217\u201315 Gy\uff0c\u901a\u5e382\u20135\u6b21\u5206\u6b21 **LDR/HDR\u4f5c\u4e3a\u5916\u653e\u7597\u8865\u91cf\uff08EBRT + BT\uff09\uff1a - \u5916\u653e\u7597\uff1a 45\u201350. 4 Gy - \u8fd1\u8ddd\u79bb\u8865\u91cf\uff1a 10\u201315 Gy **\u8fd1\u8ddd\u79bb\u653e\u7597\u4f5c\u4e3a\u6839\u6cbb\u6027\u5355\u4e00\u6cbb\u7597\u65f6\uff1a - \u4f4e\u98ce\u9669\uff1a \u5904\u65b9\u5242\u91cf\u901a\u5e38\u2265145 Gy\uff08\u7b49\u6548\u751f\u7269\u5242\u91cf\uff09 \u5177\u4f53\u5904\u65b9\u5242\u91cf\u53d6\u51b3\u4e8e\u60a3\u8005\u98ce\u9669\u5206\u5c42\u3001GTV/CTV\u4f53\u79ef\u3001\u90bb\u8fd1\u5668\u5b98\u9650\u5236\u53ca\u4e34\u5e8a\u673a\u6784\u534f\u8bae\u3002 \u5efa\u8bae\u7ed3\u5408TNM\u5206\u671f\u548cNCCN/EAU\u6307\u5357\u7efc\u5408\u786e\u5b9a\u3002",
+    "response_length": 290,
+    "total_score": 0.6,
+    "dimension_scores": {
+      "keyword": 0.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 6.854102611541748,
+    "screenshot": null,
+    "timestamp": "2026-06-03T00:17:21.731374"
+  },
+  {
+    "case_id": "MT005",
+    "category": "34_multi_turn",
+    "category_num": 34,
+    "input": "What is the prescription dose for I-125 prostate brachytherapy?",
+    "response": "## I-125 Prostate Brachytherapy Prescription Doses **Monotherapy (seed implant alone):** - **145 Gy** (per updated AAPM TG-137 / TG-43 formalism) **Boost Therapy (with EBRT):** - **110 Gy** I-125 implant followed by ~45 Gy external beam **Historical (pre-2004 TG-43 update):** - Monotherapy: 160 Gy - With EBRT: 108 Gy The dose reduction from 160 Gy to 145 Gy reflects updated air-kerma strength calculations and consensus on equivalent biological effect. **Note:** These values are based on TG-43/TG-137 dosimetry protocols. Actual prescribing should follow institutional protocols and ABS/GEC-ESTRO guidelines.",
+    "response_length": 612,
+    "total_score": 0.6,
+    "dimension_scores": {
+      "keyword": 0.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 6.093718767166138,
+    "screenshot": null,
+    "timestamp": "2026-06-03T00:19:42.984722"
+  },
+  {
+    "case_id": "MT006",
+    "category": "34_multi_turn",
+    "category_num": 34,
+    "input": "What is V100?",
+    "response": "**V100** is the percentage of the target volume (CTV or PTV) that receives 100% or more of the prescribed dose. **In brachytherapy context:** - **V100 = 95\u201399%** is typically the clinical goal for adequate target coverage - It comes from DVH (Dose-Volume Histogram) analysis - For HDR prostate brachytherapy, V100 > 95% is standard - For GYN cases (cervix, uterus), similar coverage goals apply **Related metrics:** - **D90** \u2014 the dose covering 90% of the target volume (often reported alongside V100) - **V150, V200** \u2014 used to quantify the degree of dose heterogeneity (hot spots within the target) V100 alone isn't sufficient \u2014 you also need to evaluate OAR doses (D2cc, D0. 1cc) to ensure plan quality.",
+    "response_length": 707,
+    "total_score": 0.6,
+    "dimension_scores": {
+      "keyword": 0.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 5.205308675765991,
+    "screenshot": null,
+    "timestamp": "2026-06-03T00:22:02.703730"
+  },
+  {
+    "case_id": "MT007",
+    "category": "34_multi_turn",
+    "category_num": 34,
+    "input": "What is the prostate dose constraint?",
+    "response": "## Prostate Brachytherapy Dose Constraints ### LDR Permanent Seed Brachytherapy (\u00b9\u00b2\u2075I or \u00b9\u2070\u00b3Pd) | Parameter | Constraint | Guideline | |-----------|------------|-----------| | **Prescription Dose** | 140\u2013145 Gy (\u00b9\u00b2\u2075I) | ABS/AAPM | | **Prostate D90** | \u2265 140 Gy | \u2014 | | **Urethra D10** | < 200% of prescription (~280 Gy) | ABS | | **Rectum D2cc** | < 200 Gy (\u00b9\u00b2\u2075I) | QUANTEC | ### HDR Temporary Brachytherapy | Parameter | Constraint | Guideline | |-----------|------------|-----------| | **Prescription Dose** | 9. 5\u201315 Gy \u00d7 1\u20134 fractions | GEC-ESTRO/ABS | | **PTV D90** | \u2265 100% of prescription | \u2014 | | **Urethra D10** | < 120% of prescription | ABS | | **Rectum D2cc** | < 75% of prescription | GEC-ESTRO | ### Key OAR Limits (Combined EBRT + BT) | Organ | Constraint | Grade | |-------|------------|-------| | Bladder | D0. 1cc < 90 Gy EQD2 | Grade 3 GU toxicity | | Rectum | D2cc < 75 Gy EQD2 | Grade 2 GI toxicity | | Urethra | D10 < 130 Gy EQD2 | \u2014 | **Sources:** ABS/AAPM TG-64, GEC-ESTRO recommendations, QUANTEC Need specific parameters for a particular protocol or case?",
+    "response_length": 1080,
+    "total_score": 0.6,
+    "dimension_scores": {
+      "keyword": 0.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    },
+    "passed": true,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 8.17325758934021,
+    "screenshot": null,
+    "timestamp": "2026-06-03T00:24:25.709352"
+  }
+]

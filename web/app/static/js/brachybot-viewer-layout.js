@@ -837,7 +837,7 @@ function applyMeshOpacity(mesh, opacity, visible = true) {
 function _isDoseTexturableMesh(id, mesh) {
     const surface = getMeshSurface(mesh);
     if (!surface || !surface.geometry || !surface.geometry.attributes || !surface.geometry.attributes.position) return false;
-    if (id === 'ctv' || id.startsWith('ctv_') || id.startsWith('organ_')) return true;
+    if (id === 'ctv' || id.startsWith('ctv_') || id.startsWith('organ_') || id.startsWith('oar_')) return true;
     const t = surface.userData?.type || surface.userData?.source || mesh?.userData?.type || mesh?.userData?.source || '';
     return t === 'ctv' || t === 'oar' || t === 'organ';
 }
@@ -1026,8 +1026,7 @@ async function _applyDoseTextureToMesh(id, mesh) {
     const colors = new Float32Array(posAttr.count * 3);
     const v = new THREE.Vector3();
     const dMinGy = COLORBAR_MIN_GY;
-    const dMaxGy = COLORBAR_MAX_GY;
-    const baseRgb = _meshBaseColor(mesh);
+    const dMaxGy = 200; // dose surface colorbar range 0-200 Gy
     const sampleEvery = posAttr.count > 25000 ? 2 : 1;
 
     // Warm the dose-slice cache before the color loop so that the per-vertex
@@ -1060,30 +1059,24 @@ async function _applyDoseTextureToMesh(id, mesh) {
         const doseNorm = _sampleDoseNormalizedAtIndex(idx);
         const doseGy = doseNorm * (typeof _getDoseScaleGy === 'function' ? _getDoseScaleGy() : 120);
         const t = Math.max(0, Math.min(1, (doseGy - dMinGy) / (dMaxGy - dMinGy)));
-        const [r, g, b] = _petRainbow2(t);
+        const [r, g, b] = typeof _petRainbow3D === 'function' ? _petRainbow3D(t) : _petRainbowDoseSurface(t);
         const doseRgb = [r / 255, g / 255, b / 255];
-        const mix = Math.max(0.18, Math.min(0.96, t));
-        lastRgb = [
-            baseRgb[0] * (1 - mix) + doseRgb[0] * mix,
-            baseRgb[1] * (1 - mix) + doseRgb[1] * mix,
-            baseRgb[2] * (1 - mix) + doseRgb[2] * mix,
-        ];
+        lastRgb = doseRgb;
         colors[i * 3] = lastRgb[0];
         colors[i * 3 + 1] = lastRgb[1];
         colors[i * 3 + 2] = lastRgb[2];
     }
 
     surface.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    const opacity = _doseTextureOpacityForMesh(id, mesh);
     surface.material = new THREE.MeshPhongMaterial({
         vertexColors: true,
-        transparent: true,
-        opacity,
+        transparent: false,
         side: THREE.DoubleSide,
         shininess: 35,
-        depthWrite: false,
+        depthWrite: true,
     });
-    applyMeshVisibility(mesh, true, opacity);
+    mesh.visible = true;
+    surface.visible = true;
 }
 
 function fitCameraToDoseSurfaceScene() {
@@ -1124,32 +1117,36 @@ async function setDoseTextureMode(enabled, opts = {}) {
         btn.disabled = true;
         btn.textContent = enabled ? 'Mapping...' : 'Dose Surface';
     }
+    // Safety timer: if the operation hangs (network timeout, server stall),
+    // reset the button after 60 seconds so the user can retry.
+    const safetyTimer = setTimeout(() => {
+        state.doseTexture.applying = false;
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Dose Surface';
+            btn.classList.remove('active');
+        }
+    }, 60000);
     try {
         if (enabled) {
-            init3DScene();
-            // OAR label arrays are loaded lazily by the normal viewer. Dose
-            // surface mode must make that dependency explicit, otherwise a
-            // first click can texture only the already-warmed CTV mesh.
-            if (typeof loadLabelVolumes === 'function' &&
-                (typeof oarLabelData === 'undefined' || !oarLabelData)) {
-                await loadLabelVolumes();
-            }
-            await prewarmSegmentationMeshes('all', { showStatus: false, batchSize: 3, allOAR: true });
-            try { await loadSeeds3D(); } catch (e) { console.warn('[DoseTexture] seeds/needles unavailable:', e); }
+            // Dose surface mode only changes mesh texture — it does NOT
+            // add or remove models, nor reset camera. Whatever CTV/OAR
+            // meshes are already visible get the dose texture; anything
+            // hidden stays hidden.
+            const opacityBefore = state.doseOverlay?.opacity;
             if (!state.doseOverlay) await loadDoseOverlay();
             if (!state.doseOverlay?.shape) throw new Error('Dose overlay is not available');
+            if (state.doseOverlay && state.doseOverlay.opacity !== opacityBefore) {
+                console.warn('[DoseTexture] 2D dose overlay opacity changed during setDoseTextureMode:', opacityBefore, '->', state.doseOverlay.opacity);
+            }
             _prepareDoseTextureSceneVisibility();
             const entries = Object.entries(scene3D.meshes || {}).filter(([id, mesh]) => _isDoseTexturableMesh(id, mesh));
             if (entries.length === 0) throw new Error('No CTV/OAR 3D meshes are available for dose surface mapping');
-            // Each mesh first warms its required slices. Promise.all lets all
-            // unique HTTP requests run concurrently; the shared in-flight
-            // cache prevents duplicate slice requests across organs.
             await Promise.all(entries.map(([id, mesh]) => _applyDoseTextureToMesh(id, mesh)));
             _prepareDoseTextureSceneVisibility();
             state.doseTexture.enabled = true;
             // Show 3D colorbar when dose surface mode is active
             update3DColorbar(true);
-            fitCameraToDoseSurfaceScene();
         } else {
             _restoreDoseTextureMaterials();
             state.doseTexture.enabled = false;
@@ -1166,6 +1163,7 @@ async function setDoseTextureMode(enabled, opts = {}) {
         state.doseTexture.enabled = false;
         update3DColorbar(false);
     } finally {
+        clearTimeout(safetyTimer);
         state.doseTexture.applying = false;
         if (btn) {
             btn.disabled = false;

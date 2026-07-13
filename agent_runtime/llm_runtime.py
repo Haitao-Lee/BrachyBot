@@ -340,6 +340,7 @@ class LLMRuntimeMixin:
         iteration = 0
         final_response = ""
         tools_executed = False
+        _input_missing = False
         accumulated_text = ""  # Preserve text across LLM iterations
         _failed_tools = set()  # Track tools that returned 0/empty results
         _lang = self.memory.user_lang
@@ -495,7 +496,13 @@ class LLMRuntimeMixin:
                     "params": params,
                 })
 
-                if tool_name in ("self_evolve", "evolve"):
+                # Pre-execution check: if ctv_segmentation is called without
+                # tumor_type, intercept and ask instead of running and failing.
+                if tool_name == "ctv_segmentation" and not params.get("tumor_type"):
+                    logger.info("[TOOL-LOOP] ctv_segmentation missing tumor_type — intercepting")
+                    result_text = "请告知肿瘤部位，例如胰腺、肝脏、前列腺等，以便选择正确的CTV分割模型。"
+                    tool_succeeded = False
+                elif tool_name in ("self_evolve", "evolve"):
                     result_text = self._handle_self_evolution()
                     tool_succeeded = not str(result_text).lower().startswith(("error", "exception", "failed"))
                 elif tool_name in ("code_writer", "write_tool", "create_tool"):
@@ -518,6 +525,13 @@ class LLMRuntimeMixin:
                 step_status = "done" if tool_succeeded else "error"
                 steps[-1]["status"] = step_status
                 steps[-1]["result"] = result_text[:200]
+
+                # If a critical prerequisite tool fails, stop executing
+                # remaining tool calls in this batch so the LLM can ask
+                # the user for missing info instead of cascading failures.
+                if not tool_succeeded and tool_name in ("ctv_segmentation", "seed_planning"):
+                    logger.info(f"Critical tool {tool_name} failed — stopping tool batch")
+                    break
 
                 # Track tools that returned 0 results to prevent retry loops
                 if result_text and ("Found 0" in result_text or "0 match" in result_text or "No results" in result_text):
@@ -562,6 +576,10 @@ class LLMRuntimeMixin:
             # often produced mid-sentence truncation. Constrain the response
             # format to a compact table + one-line conclusion so the LLM
             # can't ramble and run out of output tokens mid-thought.
+
+            if _input_missing:
+                break
+
             #
             # IMPORTANT: this prompt must NOT give the LLM an excuse to
             # summarize early. We list the COMPLETE brachytherapy workflow
@@ -1288,6 +1306,7 @@ class LLMRuntimeMixin:
         iteration = 0
         final_response = ""
         tools_executed = False
+        _input_missing = False
         accumulated_text = ""  # Preserve text across LLM iterations
         _failed_tools = set()  # Track tools that returned 0/empty results for longer responses
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
@@ -1701,6 +1720,16 @@ class LLMRuntimeMixin:
                             self._pending_callback_events.append(("step", substep_step))
 
                 tool_result = None  # Track result for metadata
+                # Pre-execution check: if ctv_segmentation is called without
+                # tumor_type, intercept and ask instead of running and failing.
+                if tool_name == "ctv_segmentation" and not params.get("tumor_type"):
+                    logger.info("[TOOL-LOOP] ctv_segmentation missing tumor_type — intercepting")
+                    result_text = "请告知肿瘤部位，例如胰腺、肝脏、前列腺等，以便选择正确的CTV分割模型。"
+                    tool_step["status"] = "error"
+                    tool_step["content"] = "需要肿瘤部位信息"
+                    tool_step["result"] = result_text[:200]
+                    yield yield_event("step", tool_step)
+                    break
                 if tool_name in ("self_evolve", "evolve"):
                     result_text = self._handle_self_evolution()
                 elif tool_name in ("code_writer", "write_tool", "create_tool"):
@@ -1911,6 +1940,13 @@ class LLMRuntimeMixin:
                 else:
                     yield yield_event("step", tool_step)
 
+                # If a critical prerequisite tool fails, stop executing
+                # remaining tool calls in this batch so the LLM can ask
+                # the user for missing info instead of cascading failures.
+                if tool_step.get("status") == "error" and tool_name in ("ctv_segmentation", "seed_planning"):
+                    logger.info(f"Critical tool {tool_name} failed — stopping tool batch (stream)")
+                    break
+
                 # Also store ct_path for planning pipeline
                 if tool_name in ('ctv_segmentation', 'oar_segmentation') and 'image_path' in params:
                     self.memory.store("ct_path", params['image_path'])
@@ -1963,6 +1999,10 @@ class LLMRuntimeMixin:
             # often produced mid-sentence truncation. Constrain the response
             # format to a compact table + one-line conclusion so the LLM
             # can't ramble and run out of output tokens mid-thought.
+
+            if _input_missing:
+                break
+
             #
             # IMPORTANT: this prompt must NOT give the LLM an excuse to
             # summarize early. We list the COMPLETE brachytherapy workflow

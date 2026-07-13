@@ -1,0 +1,162 @@
+[
+  {
+    "case_id": "MT001",
+    "total_score": 0.8666666666666667,
+    "passed": true,
+    "response_length": 784,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 9.783933877944946,
+    "dimension_scores": {
+      "keyword": 0.6666666666666666,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    }
+  },
+  {
+    "case_id": "MT002",
+    "total_score": 1.0,
+    "passed": true,
+    "response_length": 465,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 4.567997455596924,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    }
+  },
+  {
+    "case_id": "MT003",
+    "total_score": 0.8666666666666667,
+    "passed": true,
+    "response_length": 222,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 4.043132781982422,
+    "dimension_scores": {
+      "keyword": 0.6666666666666666,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    }
+  },
+  {
+    "case_id": "MT004",
+    "total_score": 1.0,
+    "passed": true,
+    "response_length": 832,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 7.144583702087402,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    }
+  },
+  {
+    "case_id": "MT005",
+    "total_score": 0.6,
+    "passed": true,
+    "response_length": 140,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 7.121031284332275,
+    "dimension_scores": {
+      "keyword": 0.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    }
+  },
+  {
+    "case_id": "MT006",
+    "total_score": 1.0,
+    "passed": true,
+    "response_length": 1064,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 13.189709663391113,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    }
+  },
+  {
+    "case_id": "MT007",
+    "total_score": 0.7,
+    "passed": true,
+    "response_length": 505,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 9.319690942764282,
+    "dimension_scores": {
+      "keyword": 0.25,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    }
+  },
+  {
+    "case_id": "MT008",
+    "total_score": 0.8999999999999999,
+    "passed": true,
+    "response_length": 347,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 4.05424165725708,
+    "dimension_scores": {
+      "keyword": 0.75,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    }
+  },
+  {
+    "case_id": "MT009",
+    "total_score": 0.7333333333333334,
+    "passed": true,
+    "response_length": 573,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 13.776936531066895,
+    "dimension_scores": {
+      "keyword": 0.3333333333333333,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    }
+  },
+  {
+    "case_id": "MT010",
+    "total_score": 1.0,
+    "passed": true,
+    "response_length": 519,
+    "root_cause": null,
+    "root_cause_detail": null,
+    "response_time": 7.384016752243042,
+    "dimension_scores": {
+      "keyword": 1.0,
+      "completeness": 1.0,
+      "safety": 1.0,
+      "accuracy": 1.0,
+      "ux": 1.0
+    }
+  }
+]

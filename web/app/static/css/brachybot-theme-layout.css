@@ -132,43 +132,43 @@
 [data-theme="dark"] {
     color-scheme: dark;
 
-    /* Brand — slightly brighter for dark backgrounds */
-    --primary:        #60a5fa;
-    --primary-soft:   rgba(59, 130, 246, 0.15);
-    --primary-hover:  #93c5fd;
-    --primary-ink:    #bfdbfe;
+    /* Brand — clean blue for dark backgrounds */
+    --primary:        #58a6ff;
+    --primary-soft:   rgba(88, 166, 255, 0.12);
+    --primary-hover:  #79c0ff;
+    --primary-ink:    #b6d4fe;
 
     /* Semantic — keep hue, lift lightness for AA contrast on dark */
-    --success:        #34d399;
-    --success-soft:   rgba(16, 185, 129, 0.14);
-    --success-border: rgba(16, 185, 129, 0.35);
-    --warning:        #fbbf24;
-    --warning-soft:   rgba(245, 158, 11, 0.14);
-    --warning-border: rgba(245, 158, 11, 0.35);
-    --danger:         #fb7185;
-    --danger-soft:    rgba(244, 63, 94, 0.14);
-    --danger-border:  rgba(244, 63, 94, 0.35);
-    --info:           #22d3ee;
-    --info-soft:      rgba(8, 145, 178, 0.16);
+    --success:        #3fb950;
+    --success-soft:   rgba(63, 185, 80, 0.12);
+    --success-border: rgba(63, 185, 80, 0.30);
+    --warning:        #d29922;
+    --warning-soft:   rgba(210, 153, 34, 0.12);
+    --warning-border: rgba(210, 153, 34, 0.30);
+    --danger:         #f85149;
+    --danger-soft:    rgba(248, 81, 73, 0.12);
+    --danger-border:  rgba(248, 81, 73, 0.30);
+    --info:           #58a6ff;
+    --info-soft:      rgba(88, 166, 255, 0.12);
 
-    /* Neutral graphite surfaces keep medical overlays visually dominant. */
-    --bg-canvas:        #090d0f;
-    --bg-1:             #101619;
-    --bg-2:             #172025;
-    --bg-3:             #202b31;
-    --bg-sunken:        #050809;
-    --bg-sunken-strong: #020404;
-    --bg-elevated:      #202b31;
-    --bg-card:          rgba(23, 32, 37, 0.82);
+    /* Clean slate surfaces — medical and professional, no green/cyan tint */
+    --bg-canvas:        #0d1117;
+    --bg-1:             #141a23;
+    --bg-2:             #1a2230;
+    --bg-3:             #232b3d;
+    --bg-sunken:        #090c12;
+    --bg-sunken-strong: #06090e;
+    --bg-elevated:      #1e2738;
+    --bg-card:          rgba(20, 26, 35, 0.82);
 
-    /* Hairline borders — light tint on dark */
-    --glass-border:        rgba(148, 163, 184, 0.10);
-    --glass-border-strong: rgba(148, 163, 184, 0.16);
-    --border-soft:         #26343a;
-    --border:              #34464e;
-    --border-hairline:     rgba(148, 163, 184, 0.08);
-    --border-default:      rgba(148, 163, 184, 0.12);
-    --border-emphasis:     rgba(148, 163, 184, 0.20);
+    /* Hairline borders — subtle on dark slate */
+    --glass-border:        rgba(139, 148, 158, 0.10);
+    --glass-border-strong: rgba(139, 148, 158, 0.16);
+    --border-soft:         #212b3e;
+    --border:              #2d374b;
+    --border-hairline:     rgba(139, 148, 158, 0.08);
+    --border-default:      rgba(139, 148, 158, 0.12);
+    --border-emphasis:     rgba(139, 148, 158, 0.20);
 
     /* Shadows — deeper, with more lift against dark backgrounds */
     --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.40);
@@ -177,50 +177,50 @@
         0 1px 2px rgba(0, 0, 0, 0.40);
     --shadow-elevated:
         0 1px 0 rgba(0, 0, 0, 0.35),
-        0 0 0 1px rgba(148, 163, 184, 0.06),
+        0 0 0 1px rgba(139, 148, 158, 0.06),
         0 2px 4px rgba(0, 0, 0, 0.45);
     --shadow-floating:
-        0 0 0 1px rgba(148, 163, 184, 0.10),
+        0 0 0 1px rgba(139, 148, 158, 0.10),
         0 6px 12px rgba(0, 0, 0, 0.50),
         0 14px 28px rgba(0, 0, 0, 0.55);
     --shadow-lg:
-        0 0 0 1px rgba(148, 163, 184, 0.10),
+        0 0 0 1px rgba(139, 148, 158, 0.10),
         0 6px 12px rgba(0, 0, 0, 0.50),
         0 14px 28px rgba(0, 0, 0, 0.55);
     --shadow-xl:
-        0 0 0 1px rgba(148, 163, 184, 0.12),
+        0 0 0 1px rgba(139, 148, 158, 0.12),
         0 10px 20px rgba(0, 0, 0, 0.55),
         0 28px 56px rgba(0, 0, 0, 0.65);
 
-    /* Inner highlight (inverted: top is now a faint light, bottom a darker line) */
-    --inset-top:    inset 0 1px 0 rgba(148, 163, 184, 0.06);
+    /* Inner highlight */
+    --inset-top:    inset 0 1px 0 rgba(139, 148, 158, 0.06);
     --inset-bottom: inset 0 -1px 0 rgba(0, 0, 0, 0.30);
-    --glass-highlight: inset 0 1px 0 rgba(148, 163, 184, 0.10);
+    --glass-highlight: inset 0 1px 0 rgba(139, 148, 158, 0.10);
 
     /* Tinted glass — dark variants */
-    --glass-tint-cool: rgba(16, 22, 25, 0.76);
-    --glass-tint-blue: rgba(14, 29, 34, 0.70);
-    --glass-tint-warm: rgba(28, 22, 18, 0.72);
+    --glass-tint-cool: rgba(13, 17, 23, 0.76);
+    --glass-tint-blue: rgba(14, 22, 36, 0.70);
+    --glass-tint-warm: rgba(26, 20, 16, 0.72);
     --glass-blur: 16px;
     --blur-md: blur(14px) saturate(160%);
     --blur-lg: blur(20px) saturate(180%);
 
-    /* Text — light foreground on dark */
-    --text:          #e8edf5;
-    --text-secondary:#a3afc4;
-    --text-dim:      #6b7791;
-    --text-faint:    #475569;
+    /* Text — light foreground on dark slate */
+    --text:          #e6edf3;
+    --text-secondary:#9eb1cc;
+    --text-dim:      #6e84a3;
+    --text-faint:    #485a78;
 
     /* Chat semantics (dark) */
-    --msg-user-bg:           rgba(96, 165, 250, 0.14);
-    --msg-user-border:       rgba(96, 165, 250, 0.32);
-    --msg-assistant-bg:      #172025;
-    --msg-assistant-border:  rgba(148, 163, 184, 0.12);
-    --msg-hover:             rgba(148, 163, 184, 0.05);
+    --msg-user-bg:           rgba(88, 166, 255, 0.12);
+    --msg-user-border:       rgba(88, 166, 255, 0.30);
+    --msg-assistant-bg:      #1a2230;
+    --msg-assistant-border:  rgba(139, 148, 158, 0.12);
+    --msg-hover:             rgba(139, 148, 158, 0.05);
 
     /* Viewer chrome */
     --viewer-bg:        #000;
-    --viewer-chrome-bg: #101619;
+    --viewer-chrome-bg: #141a23;
     --viewer-chrome-fg: #cbd5e1;
 }
 

@@ -229,7 +229,13 @@ Use this when:
         return results[:20]  # Limit results
 
     def _get_ui_state(self, agent=None) -> Dict:
-        """Get current UI state from agent memory."""
+        """Get current UI state from agent memory.
+
+        Exposes BOTH derived tool results (ctv_array/trajectories/etc.) AND
+        the user's live UI inputs (reference_direc etc.) so the LLM can answer
+        questions like "what reference direction did the user set?" without a
+        screenshot.
+        """
         state = {
             "loaded_files": {
                 "ct": False,
@@ -246,7 +252,12 @@ Use this when:
                 "layout": "vertical",
                 "window_preset": "soft_tissue",
                 "overlays": {"ctv": False, "oar": False, "dose": False},
-            }
+            },
+            "planning_inputs": {
+                "reference_direction": None,
+                "ref_direc_auto": None,
+                "plan_mode": None,
+            },
         }
 
         if agent and hasattr(agent, 'memory'):
@@ -258,6 +269,21 @@ Use this when:
             state["computed"]["seeds"] = memory.retrieve("seed_positions") is not None
             state["computed"]["dose"] = memory.retrieve("dose_distribution") is not None
             state["computed"]["evaluation"] = memory.retrieve("metrics") is not None
+
+            # Live UI inputs from the frontend snapshot (POST /api/ui/state).
+            ui_state = memory.get_ui_state() if hasattr(memory, 'get_ui_state') else None
+            if isinstance(ui_state, dict):
+                planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
+                plan_mode = ui_state.get("plan_mode")
+                ref_direc = planning_state.get("reference_direc")
+                ref_auto = planning_state.get("ref_direc_auto")
+                if plan_mode:
+                    state["planning_inputs"]["plan_mode"] = plan_mode
+                if ref_auto:
+                    state["planning_inputs"]["ref_direc_auto"] = True
+                    state["planning_inputs"]["reference_direction"] = "auto"
+                elif isinstance(ref_direc, list) and len(ref_direc) == 3:
+                    state["planning_inputs"]["reference_direction"] = ref_direc
 
         return state
 

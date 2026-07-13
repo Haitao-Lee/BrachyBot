@@ -1291,3 +1291,46 @@
     padding-left: 0.3rem;
     font-family: 'JetBrains Mono', monospace;
 }
+
+/* Streaming with completeness check: preliminary response is dimmed */
+.preliminary-response {
+    opacity: 0.65;
+    filter: grayscale(0.3);
+    transition: opacity 0.6s ease, filter 0.6s ease;
+}
+
+.check-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    font-size: 0.75rem;
+    border-radius: 50%;
+    margin-left: 8px;
+    vertical-align: middle;
+    transition: all 0.4s ease;
+}
+.check-badge.pending {
+    color: var(--text-dim);
+    animation: pulse-check 1.5s ease-in-out infinite;
+}
+.check-badge.done {
+    color: var(--success);
+    opacity: 1;
+}
+
+@keyframes pulse-check {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* Confirmation dialog animations */
+@keyframes fadeInOverlay {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+@keyframes slideUpDialog {
+    from { opacity: 0; transform: translateY(16px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}

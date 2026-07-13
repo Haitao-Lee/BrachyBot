@@ -143,6 +143,9 @@ async function recomputeManualDose(reason = 'manual_update') {
         addChat('error', 'No manual seeds available. Add at least one seed before recomputing dose.');
         return null;
     }
+    // Save dose texture state before recompute so it can be restored after
+    // refreshPlanningUI reloads all meshes.
+    const wasDoseTextureEnabled = !!(state && state.doseTexture && state.doseTexture.enabled);
     addChat('system', 'Manual AI dose recomputing...');
     try {
         const res = await fetch(API + '/manual_planning/update', {
@@ -154,7 +157,12 @@ async function recomputeManualDose(reason = 'manual_update') {
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
         state.doseOverlay = null;
         state.dvhData = null;
+        state.doseTexture.enabled = false;  // Reset so refreshPlanningUI loads meshes without dose
         if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
+        // Restore dose texture mode if it was active before recompute
+        if (wasDoseTextureEnabled && typeof setDoseTextureMode === 'function') {
+            try { await setDoseTextureMode(true, { silent: true }); } catch (_) {}
+        }
         const m = data.metrics || {};
         const v100 = Number.isFinite(m.v100) ? `${(m.v100 * 100).toFixed(1)}%` : '--';
         const d90 = Number.isFinite(m.d90) ? `${m.d90.toFixed(1)} Gy` : '--';
@@ -866,8 +874,7 @@ function addMeshToScene(meshData) {
             .catch(e => console.warn('[addMeshToScene] dose remap failed:', e));
     }
 
-    // Fit camera to all meshes
-    fitCameraToScene();
+    // Fit camera to all meshes (removed — only reset via explicit button click)
     if (scene3D.requestRender) scene3D.requestRender(4);
 }
 
@@ -1021,7 +1028,7 @@ async function toggle3DSkin(on) {
                 typeof _prepareDoseTextureSceneVisibility === 'function') {
                 _prepareDoseTextureSceneVisibility();
             }
-            fitCameraToScene();
+            // Fit removed — camera only resets on explicit button click
         }
     } catch (e) {
         console.error('CT skin failed:', e);
@@ -1225,7 +1232,6 @@ async function loadSeeds3D() {
             updateTrajectories(state.trajectories);
         }
         renderDataTree();
-        fitCameraToScene();
         forceRender3DViewer();
         ['axial', 'sagittal', 'coronal'].forEach(axis => {
             if (state.slices && state.slices[axis] !== undefined) {
@@ -1318,7 +1324,6 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
             });
         }
         renderDataTree();
-        fitCameraToScene();
 
         return { vertices: data.vertex_count, faces: data.face_count, threshold };
     } catch (e) {
@@ -1467,8 +1472,7 @@ function _getNonTraversableOarMeshIds(ctvLabelIds) {
             .forEach(o => ids.add(o.labelId));
     }
     if (ids.size === 0) {
-        ids.add(201);
-        ids.add(202);
+        console.warn('[3D meshes] No non-traversable OARs found in dataTreeState.organs — skipping OAR mesh loading');
     }
     return [...ids];
 }
@@ -1494,9 +1498,27 @@ function _setMeshPrewarmStatus(text, show = true) {
     if (span) span.textContent = text || '3D reconstruction running...';
 }
 
+// Check whether a label ID exists in the currently loaded segmentation mask.
+// Uses a cached Set attached to the typed array for O(1) repeat lookups.
+function _labelIdInMask(labelData, labelId) {
+    if (!labelData || labelData.length === 0) return false;
+    if (!labelData._uniqueLabelSet) {
+        labelData._uniqueLabelSet = new Set(labelData);
+    }
+    return labelData._uniqueLabelSet.has(labelId);
+}
+
 async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, opacity, force = false, smoothing = 1 }) {
     if (labelId === undefined || labelId === null || !source || !organId) return { status: 'invalid' };
     if (!force && _sceneHasMesh(organId)) return { status: 'exists', id: organId };
+
+    // Validate the requested label exists in the currently loaded segmentation mask.
+    // This prevents 400 errors from the backend when the data tree contains organs
+    // whose label IDs are not present in the actual volume.
+    const labelData = source === 'ctv' ? ctvLabelData : oarLabelData;
+    if (!_labelIdInMask(labelData, labelId)) {
+        return { status: 'missing_label', id: organId };
+    }
 
     const key = _meshTaskKey(source, labelId, smoothing);
     if (_segmentationMeshPrewarm.tasks.has(key)) {
@@ -1513,7 +1535,7 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
             if (!res.ok) return { status: 'http', code: res.status, id: organId };
             const data = await res.json();
             if (!data || !data.success || !data.vertex_count) return { status: 'empty', id: organId };
-            if (data.face_count > 100000) {
+            if (data.face_count > 500000) {
                 console.warn(`[3D mesh] ${organId}: skipping (${data.face_count} faces > 100K limit)`);
                 return { status: 'too_large', id: organId };
             }
@@ -1592,7 +1614,7 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
         }
 
         await Promise.all(promises);
-        if (scene3D.renderer && scene3D.scene && scene3D.camera) fitCameraToScene();
+        // Fit removed — camera only resets on explicit button click
     } finally {
         _segmentationMeshPrewarm.activeRuns = Math.max(0, _segmentationMeshPrewarm.activeRuns - 1);
         if (_segmentationMeshPrewarm.activeRuns === 0) {
@@ -1660,27 +1682,67 @@ function _getCurrentPrescriptionGy() {
     return scale;
 }
 
-// Colorbar display range, in Gy. Matches ref.py displayNode.SetWindow(600) / SetLevel(300).
-// Dose values above this are SATURATED to the top colormap color (not rescaled).
-// Reference: BrachyBot/docs/ref.py lines 4719-4723.
-const COLORBAR_MIN_GY = 10.0;
-const COLORBAR_MAX_GY = 200.0;
+// Colorbar display range, in Gy. Restored to 0–1000 Gy to match clinical
+// dose display (D2 can reach 2500+ Gy in LDR; saturating at 200 Gy made
+// most of the colorbar show the same top color).
+const COLORBAR_MIN_GY = 0.0;
+const COLORBAR_MAX_GY = 1000.0;
 
 // Dose-surface color window used by all colorbars and overlays. This later
 // declaration is the canonical colormap for all dose overlays.
 function _petRainbow2(val) {
     const v = Math.min(1, Math.max(0, val));
     const stops = [
-        [0.00, [0, 0, 0]],
-        [0.08, [38, 0, 82]],
-        [0.18, [0, 0, 180]],
-        [0.30, [0, 180, 255]],
-        [0.43, [0, 210, 95]],
-        [0.58, [255, 235, 0]],
-        [0.72, [255, 145, 0]],
-        [0.86, [220, 0, 0]],
-        [0.96, [120, 0, 0]],
-        [1.00, [255, 255, 255]],
+        [0.000, [0, 0, 0]],         // pure black (near-zero dose)
+        [0.030, [10, 0, 25]],       // very dark purple at 30 Gy
+        [0.050, [50, 10, 100]],     // dark purple at 50 Gy
+        [0.070, [150, 30, 200]],    // vibrant purple at 70 Gy
+        [0.080, [30, 50, 220]],     // blue at 80 Gy
+        [0.100, [0, 170, 230]],     // cyan at 100 Gy
+        [0.150, [30, 200, 80]],     // green at 150 Gy
+        [0.200, [240, 220, 0]],     // yellow at 200 Gy
+        [0.350, [255, 120, 0]],     // orange at 350 Gy
+        [0.550, [220, 0, 0]],       // red at 550 Gy
+        [0.750, [130, 0, 0]],       // dark red at 750 Gy
+        [1.000, [60, 0, 0]],        // very dark red (top)
+    ];
+    for (let i = 1; i < stops.length; i++) {
+        const [p1, c1] = stops[i];
+        const [p0, c0] = stops[i - 1];
+        if (v <= p1) {
+            const s = (v - p0) / Math.max(0.0001, p1 - p0);
+            return [
+                Math.round(c0[0] + (c1[0] - c0[0]) * s),
+                Math.round(c0[1] + (c1[1] - c0[1]) * s),
+                Math.round(c0[2] + (c1[2] - c0[2]) * s),
+            ];
+        }
+    }
+    return [255, 255, 255];
+}
+
+// Dose-surface variant: clips the black low-dose range so the bottom
+// starts at vibrant purple. Used for 3D mesh vertex colors and the
+// 3D colorbar, where black would look like missing data.
+function _petRainbowDoseSurface(val) {
+    const CLIP_T = 0.070; // vibrant purple at 70 Gy — skip black/dark range for dose surface
+    return _petRainbow2(CLIP_T + Math.min(1, Math.max(0, val)) * (1 - CLIP_T));
+}
+
+// Dedicated colormap for the 3D dose surface (0–200 Gy display range).
+// Provides wider blue-cyan span and narrower red span so that red
+// starts at ~120 Gy (val ≈ 0.60). Kept separate from _petRainbow2
+// so changes do not affect the 2D dose overlay or its colorbars.
+function _petRainbow3D(val) {
+    const v = Math.min(1, Math.max(0, val));
+    const stops = [
+        [0.00, [10, 0, 40]],       // dark purple at 0 Gy
+        [0.20, [0, 60, 180]],      // blue at 40 Gy
+        [0.40, [0, 170, 210]],     // cyan at 80 Gy
+        [0.55, [30, 200, 80]],     // green at 110 Gy
+        [0.60, [200, 120, 0]],     // orange-red at 120 Gy (enters red)
+        [0.70, [200, 0, 0]],       // red at 140 Gy
+        [1.00, [60, 0, 0]],        // dark red at 200 Gy
     ];
     for (let i = 1; i < stops.length; i++) {
         const [p1, c1] = stops[i];
@@ -1740,72 +1802,48 @@ function _labelClassForDoseColorbarPosition(pos) {
         : 'doseColorbarQ3';
 }
 
-function _updateDoseColorbarLabels(container) {
-    if (!container) return;
-    container.querySelectorAll('.doseColorbarDynamicTick').forEach(el => el.remove());
-    container.querySelectorAll('.doseColorbarMax,.doseColorbarQ1,.doseColorbarMid,.doseColorbarQ3,.doseColorbarMin')
-        .forEach(el => { el.style.display = 'none'; });
-    const canvas = container.querySelector('.colorbarCanvas');
-    const specs = _doseColorbarLabelSpecs(canvas?.clientHeight || canvas?.height || 512);
-    specs.forEach(spec => {
-        const tick = document.createElement('div');
-        tick.className = 'doseColorbarDynamicTick';
-        tick.style.cssText = [
-            'position:absolute',
-            `top:${spec.pct}%`,
-            'right:18px',
-            'transform:translateY(-50%)',
-            `font-size:${spec.major ? '0.46rem' : '0.42rem'}`,
-            `font-weight:${spec.major ? '700' : '500'}`,
-            'color:rgba(255,255,255,0.92)',
-            'text-shadow:0 1px 2px #000',
-            'white-space:nowrap',
-            'line-height:1',
-            'pointer-events:none',
-        ].join(';');
-        tick.textContent = spec.label;
-        container.appendChild(tick);
-    });
-}
-
 // Update all 3 colorbars (axial/sagittal/coronal) in lock-step.
 // doseMinNorm, doseMaxNorm: dose range in NORMALIZED units (raw CNN output).
 // They are converted to Gy here so the labels show real physical dose.
-// The colorbar always spans [COLORBAR_MIN_GY, COLORBAR_MAX_GY] (= 0–600 Gy,
-// matching ref.py displayNode.SetWindow(600) / SetLevel(300)). Dose values
-// above 600 Gy are saturated to the top colormap color.
+// The colorbar always spans [COLORBAR_MIN_GY, COLORBAR_MAX_GY] (= 0–1000 Gy).
+// Dose values above 1000 Gy are saturated to the top colormap color.
 function updateDoseColorbars(visible, doseMinNorm, doseMaxNorm) {
     document.querySelectorAll('.dose-colorbar').forEach(cb => {
         const shouldShow = cb.id === 'doseColorbar3D' ? (visible && !!state.doseTexture?.enabled) : visible;
         cb.style.display = shouldShow ? 'block' : 'none';
-        if (shouldShow) _updateDoseColorbarLabels(cb);
     });
     if (!visible) return;
 
-    // Always use the fixed 0-600 Gy display range. doseMinNorm/doseMaxNorm
-    // are kept for the slice-rendering colormap (saturate at 600 Gy).
+    // Always use the fixed 0-1000 Gy display range.
     const dMinGy = COLORBAR_MIN_GY;
     const dMaxGy = COLORBAR_MAX_GY;
 
-    // Fixed 5-tick scale: 0, 25%, 50%, 75%, 100% of 600 Gy
-    const ticks = [0, 0.25, 0.5, 0.75, 1.0].map(f => dMaxGy * f);
-    const tickLabels = ticks.map(v => v.toFixed(0));
-    const positions = ['bottom', '75%', '50%', '25%', 'top']; // CSS position: bottom → top corresponds to min → max
+    // Labels every 200 Gy: 0, 200, 400, 600, 800, 1000
+    const tickGy = [0, 200, 400, 600, 800, dMaxGy];
+    const tickLabels = tickGy.map(v => v.toFixed(0) + ' Gy');
+    const tickPos = ['doseColorbarMin', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarTick', 'doseColorbarMax'];
 
-    // Update text labels
-    positions.forEach((pos, i) => {
-        const labelClass = pos === 'top' ? 'doseColorbarMax'
-                          : pos === 'bottom' ? 'doseColorbarMin'
-                          : pos === '50%' ? 'doseColorbarMid'
-                          : pos === '25%' ? 'doseColorbarQ1'  // 25% from top
-                          : 'doseColorbarQ3';                  // 75% from top
-        document.querySelectorAll('.' + labelClass).forEach(el => {
-            el.textContent = tickLabels[i] + ' Gy';
-        });
+    // Set each label by matching data-value attribute to ensure correct position.
+    // Skip the 3D colorbar — it has its own 0-200 Gy labels set by update3DColorbar().
+    tickGy.forEach((gy, i) => {
+        const cls = tickPos[i];
+        if (cls === 'doseColorbarTick') {
+            document.querySelectorAll('.dose-colorbar:not(#doseColorbar3D) .doseColorbarTick').forEach(el => {
+                if (parseFloat(el.getAttribute('data-value') || '') === gy) {
+                    el.textContent = tickLabels[i];
+                }
+            });
+        } else {
+            document.querySelectorAll('.dose-colorbar:not(#doseColorbar3D) .' + cls).forEach(el => {
+                el.textContent = tickLabels[i];
+            });
+        }
     });
 
-    // Render PETrainbow2 gradient on every colorbar canvas (same image, all 3)
-    document.querySelectorAll('.colorbarCanvas').forEach(canvas => {
+    // Render PETrainbow2 gradient on 2D viewer colorbar canvases only.
+    // The 3D colorbar is handled separately by update3DColorbar() which
+    // uses _petRainbowDoseSurface (no black range).
+    document.querySelectorAll('.dose-colorbar:not(#doseColorbar3D) .colorbarCanvas').forEach(canvas => {
         const ctx = canvas.getContext('2d');
         const h = canvas.height;
         const w = canvas.width;
@@ -1827,7 +1865,6 @@ function update3DColorbar(visible) {
 
     colorbar3D.style.display = visible ? 'block' : 'none';
     if (!visible) return;
-    _updateDoseColorbarLabels(colorbar3D);
 
     // Render the gradient on the 3D colorbar canvas
     const canvas = colorbar3D.querySelector('.colorbarCanvas');
@@ -1838,30 +1875,35 @@ function update3DColorbar(visible) {
         for (let y = 0; y < h; y++) {
             // y=0 (top) → max (val=1); y=h-1 (bottom) → min (val=0)
             const val = 1 - y / (h - 1);
-            const [r, g, b] = _petRainbow2(val);
+            const [r, g, b] = _petRainbow3D(val);
             ctx.fillStyle = `rgb(${r},${g},${b})`;
             ctx.fillRect(0, y, w, 1);
         }
     }
 
-    // Update labels (use the same 0-1000 Gy range as 2D colorbars)
-    const dMinGy = COLORBAR_MIN_GY;
-    const dMaxGy = COLORBAR_MAX_GY;
-    const ticks = [0, 0.25, 0.5, 0.75, 1.0].map(f => dMaxGy * f);
-    const tickLabels = ticks.map(v => v.toFixed(0));
-
-    // Update 3D colorbar labels specifically
-    const positions = ['bottom', '75%', '50%', '25%', 'top'];
-    positions.forEach((pos, i) => {
-        const labelClass = pos === 'top' ? 'doseColorbarMax'
-                          : pos === 'bottom' ? 'doseColorbarMin'
-                          : pos === '50%' ? 'doseColorbarMid'
-                          : pos === '25%' ? 'doseColorbarQ1'
-                          : 'doseColorbarQ3';
-        // Only update labels with data-axis="3d"
-        colorbar3D.querySelectorAll('.' + labelClass).forEach(el => {
-            el.textContent = tickLabels[i] + ' Gy';
-        });
+    // Set 3D colorbar labels to 0-200 Gy range (independent from 2D colorbars).
+    // Match by data-value to avoid overwriting all ticks with the last value.
+    const d3DTicks = [
+        { pos: 'doseColorbarMax', val: 200 },
+        { pos: 'doseColorbarTick', val: 160, dataVal: 160 },
+        { pos: 'doseColorbarTick', val: 120, dataVal: 120 },
+        { pos: 'doseColorbarTick', val: 80, dataVal: 80 },
+        { pos: 'doseColorbarTick', val: 40, dataVal: 40 },
+        { pos: 'doseColorbarMin', val: 0 },
+    ];
+    d3DTicks.forEach(({ pos, val, dataVal }) => {
+        const label = val.toFixed(0) + ' Gy';
+        if (dataVal !== undefined) {
+            colorbar3D.querySelectorAll('.' + pos).forEach(el => {
+                if (parseFloat(el.getAttribute('data-value') || '') === dataVal) {
+                    el.textContent = label;
+                }
+            });
+        } else {
+            colorbar3D.querySelectorAll('.' + pos).forEach(el => {
+                el.textContent = label;
+            });
+        }
     });
 }
 
@@ -1879,6 +1921,10 @@ async function loadDoseOverlay() {
             state.doseTexture.rawAxialSlices = {};
             state.doseTexture.rawAxialSlicePromises = {};
         }
+        // Preserve user-set opacity when reloading (e.g. after manual
+        // recompute or when Dose Surface triggers a reload). Default to
+        // 0.5 only on the very first load.
+        const prevOpacity = state.doseOverlay?.opacity;
         state.doseOverlay = {
             shape: data.dose_shape,
             doseMin: data.dose_min,
@@ -1886,7 +1932,7 @@ async function loadDoseOverlay() {
             doseUnits: data.dose_units || 'normalized_model_output',
             doseScaleGy: data.dose_scale_gy || _getDoseScaleGy(),
             visible: true,
-            opacity: 0.5,
+            opacity: Number.isFinite(prevOpacity) ? prevOpacity : 0.4,
             slices: {},  // Cache: {axis_index: sliceData}
             maxSlice: {
                 axial: (data.dose_shape?.[0] || 200) - 1,
@@ -1928,6 +1974,11 @@ async function loadDoseOverlay() {
 // version, and `renderDoseOverlay` only paints if the response's version
 // still matches the latest one requested.
 let _doseOverlayRequestVersion = 0;
+// AbortControllers keyed by cacheKey. Cancelling duplicate requests for the
+// same slice prevents browser socket-buffer exhaustion (ERR_NO_BUFFER_SPACE)
+// when the user scrolls rapidly, while still allowing concurrent preloads
+// for different slices.
+const _doseOverlayAbortControllers = new Map();
 
 async function fetchDoseOverlaySlice(axis, sliceIndex) {
     if (!state.doseOverlay) { uiDebugLog('[dose] fetch skipped: no doseOverlay state'); return null; }
@@ -1935,6 +1986,12 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
     if (state.doseOverlay.slices[cacheKey]) return state.doseOverlay.slices[cacheKey];
 
     const myVersion = ++_doseOverlayRequestVersion;
+    const existingCtrl = _doseOverlayAbortControllers.get(cacheKey);
+    if (existingCtrl) {
+        try { existingCtrl.abort(); } catch (_) {}
+    }
+    const controller = new AbortController();
+    _doseOverlayAbortControllers.set(cacheKey, controller);
     try {
         const axialMax = state.doseOverlay.maxSlice?.axial;
         const requestSliceIndex = axis === 'axial' && Number.isFinite(axialMax)
@@ -1944,7 +2001,9 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ axis, slice_index: requestSliceIndex }),
+            signal: controller.signal,
         });
+        if (controller.signal.aborted) return null;
         if (!res.ok) { uiDebugLog(`[dose] fetch HTTP ${res.status} for ${cacheKey}`); return null; }
         const data = await res.json();
         if (!data.success) { uiDebugLog(`[dose] fetch failed: ${data.error} for ${cacheKey}`); return null; }
@@ -1957,7 +2016,12 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
         state.doseOverlay.slices[cacheKey] = data.slice;
         return data.slice;
     } catch (e) {
+        if (e && e.name === 'AbortError') return null;
         return null;
+    } finally {
+        if (_doseOverlayAbortControllers.get(cacheKey) === controller) {
+            _doseOverlayAbortControllers.delete(cacheKey);
+        }
     }
 }
 
@@ -2065,6 +2129,9 @@ function setDoseOverlayOpacity(val) {
     // Update label
     const label = document.getElementById('doseOpacityVal');
     if (label) label.textContent = val + '%';
+    // Keep the data tree slider in sync so it doesn't jump on the next render.
+    const treeSlider = document.querySelector('[data-item="dose_overlay"] .opacity-slider');
+    if (treeSlider) treeSlider.value = val;
     // Force re-render by clearing the "last rendered" tracker
     // (otherwise the cache check skips re-render when slice hasn't changed)
     _doseLastRendered.axial = -1;
