@@ -818,6 +818,8 @@ async function sendChat(prefill, options) {
     let lastToolName = '';
     const steps = [];
     const screenshotTasks = [];
+    // Group screenshots emitted during one assistant turn into one gallery.
+    const screenshotGallery = {};
     const uiState = (typeof collectUIState === 'function') ? collectUIState() : {};
 
     try {
@@ -1063,7 +1065,7 @@ async function sendChat(prefill, options) {
                                 uiDebugLog('[SSE-STEP] Intercepting ui_screenshot, target:', _ssTarget);
                                 try {
                                     screenshotTasks.push(Promise.resolve(
-                                        _interceptScreenshot(_ssTarget, _ssQuestion)
+                                        _interceptScreenshot(_ssTarget, _ssQuestion, screenshotGallery)
                                     ));
                                 } catch (e) {
                                     console.warn('[SSE-STEP] Screenshot interception failed:', e);
@@ -1141,6 +1143,7 @@ async function sendChat(prefill, options) {
                         // Show streaming text as it arrives, not just after
                         // completeness check. The initial text is displayed
                         // with a "preliminary" style until the check passes.
+                        // Equivalent guard: if (!finalResponseReceived) { create once; }
                         if (!finalResponseReceived && !responseEl) {
                             // First text_chunk: create the streaming response
                             // bubble immediately (not after completeness).

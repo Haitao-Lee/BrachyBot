@@ -433,7 +433,22 @@ function removeReportFigure(idx) {
 //   Top:   Axial / Sagittal / Coronal CT with dose heatmap at
 //          peak dose voxel, arranged in a row
 //   Bottom: DVH curve (CTV + OARs)
+let _reportCapturePromise = null;
+
+// Serialize report captures. A planning refresh can be triggered by several
+// SSE events; overlapping captures otherwise race over mesh visibility and
+// leave the 3D renderer in the partially hidden state used by Figure 1.
 async function autoCaptureReportFigures() {
+    if (_reportCapturePromise) return _reportCapturePromise;
+    _reportCapturePromise = _autoCaptureReportFiguresImpl();
+    try {
+        return await _reportCapturePromise;
+    } finally {
+        _reportCapturePromise = null;
+    }
+}
+
+async function _autoCaptureReportFiguresImpl() {
     uiDebugLog('[Report] autoCaptureReportFigures called');
     if (!window.reportForm) { console.warn('[Report] No reportForm, skipping'); return; }
     if (!window.reportForm.figures) window.reportForm.figures = [];
@@ -602,7 +617,9 @@ async function autoCaptureReportFigures() {
         items.push({ type: 'swatch', color: firstOar?.color || dataTreeState.oar?.color || '#22c55e', label: 'OAR surfaces' });
         items.push({ type: 'seed', color: dataTreeState.planning?.seeds?.[0]?.color || dataTreeState.seeds?.color || '#ffcc00', label: 'I-125 seeds' });
         items.push({ type: 'needle', color: dataTreeState.planning?.needles?.[0]?.color || dataTreeState.needles?.color || '#ff2266', label: 'Needle paths' });
-        items.push({ type: 'gradient', label: 'Dose surface: <10 to >200 Gy' });
+        const doseCfg = typeof getDoseColorbarConfig === 'function'
+            ? getDoseColorbarConfig('threeD') : { minGy: 0, maxGy: 200 };
+        items.push({ type: 'gradient', label: `Dose surface: <${doseCfg.minGy.toFixed(0)} to >${doseCfg.maxGy.toFixed(0)} Gy` });
 
         ctx.save();
         ctx.fillStyle = 'rgba(2,6,23,0.94)';
@@ -678,11 +695,15 @@ async function autoCaptureReportFigures() {
 
             // Save all visibility and opacity states
             const _saved = {};
-            const _savedOpacities = {};
+            const _savedMaterials = {};
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                 if (!mesh) continue;
                 _saved[id] = mesh.visible;
-                if (mesh.material) _savedOpacities[id] = mesh.material.opacity;
+                if (mesh.material) _savedMaterials[id] = {
+                    opacity: mesh.material.opacity,
+                    transparent: mesh.material.transparent,
+                    depthWrite: mesh.material.depthWrite,
+                };
             }
 
             // Helper: compute bounding box of all visible meshes
@@ -738,13 +759,56 @@ async function autoCaptureReportFigures() {
             // Helper: render and capture 3D canvas
             async function _capture3D(label) {
                 await _waitFrames(3);
-                scene3D.renderer.render(scene3D.scene, scene3D.camera);
+                const renderer = scene3D.renderer;
+                const c = renderer && renderer.domElement;
+                if (!renderer || !c) return null;
+                const width = c.clientWidth || c.width;
+                const height = c.clientHeight || c.height;
+                if (!width || !height) {
+                    console.warn('[Report] 3D canvas has no drawable size for', label);
+                    return null;
+                }
+                renderer.setSize(width, height, false);
+                renderer.setViewport(0, 0, renderer.domElement.width, renderer.domElement.height);
+                renderer.setScissorTest(false);
+                renderer.setRenderTarget(null);
+                renderer.autoClear = true;
+                scene3D.camera.aspect = width / height;
+                scene3D.camera.updateProjectionMatrix();
+                scene3D.scene.updateMatrixWorld(true);
+                scene3D.camera.updateMatrixWorld(true);
+                renderer.clear(true, true, true);
+                renderer.render(scene3D.scene, scene3D.camera);
                 await _waitFrames(2);
-                // The actual WebGL canvas is scene3D.renderer.domElement (child of #canvas3D)
-                const c = scene3D.renderer.domElement;
-                if (!c) { console.warn('[Report] 3D canvas not found for', label); return null; }
+                // Render once more after the browser has committed visibility,
+                // material, and camera changes. This avoids intermittent black
+                // captures when the report is generated during reconstruction.
+                renderer.render(scene3D.scene, scene3D.camera);
                 try {
+                    const gl = renderer.getContext?.();
+                    if (gl && renderer.domElement.width > 0 && renderer.domElement.height > 0) {
+                        const sample = new Uint8Array(4);
+                        let hasLitPixel = false;
+                        for (let gx = 1; gx <= 5 && !hasLitPixel; gx++) {
+                            for (let gy = 1; gy <= 5 && !hasLitPixel; gy++) {
+                                gl.readPixels(
+                                    Math.floor(renderer.domElement.width * gx / 6),
+                                    Math.floor(renderer.domElement.height * gy / 6),
+                                    1, 1, gl.RGBA, gl.UNSIGNED_BYTE, sample,
+                                );
+                                hasLitPixel = sample[0] > 4 || sample[1] > 4 || sample[2] > 4;
+                            }
+                        }
+                        if (!hasLitPixel) {
+                            console.warn('[Report] 3D capture contains no lit pixels for', label);
+                            return null;
+                        }
+                    }
                     const url = c.toDataURL('image/png');
+                    if (!url || url.length < 5000) {
+                        console.warn('[Report] 3D capture appears blank for', label);
+                        return null;
+                    }
                     uiDebugLog('[Report] 3D capture', label, ':', Math.round(url.length / 1024), 'KB');
                     return url;
                 } catch (e) {
@@ -773,7 +837,12 @@ async function autoCaptureReportFigures() {
 
             _frameCameraToBox(_computeFocusedPlanBox({ includeOars: true }), 'overview');
             await _waitFrames(2);
-            const imgA = await _capture3D('View A (front+OARs)');
+            let imgA = await _capture3D('View A (front+OARs)');
+            if (!imgA) {
+                forceRender3DViewer();
+                await _waitFrames(4);
+                imgA = await _capture3D('View A (front+OARs retry)');
+            }
 
             // ── View B: Translucent tumor, seeds visible inside ──
             // Hide non-essential OARs, keep CTV + seeds + needles only
@@ -797,7 +866,12 @@ async function autoCaptureReportFigures() {
 
             _frameCameraToBox(_computeFocusedPlanBox({ includeOars: false }), 'detail');
             await _waitFrames(2);
-            const imgB = await _capture3D('View B (translucent tumor)');
+            let imgB = await _capture3D('View B (translucent tumor)');
+            if (!imgB) {
+                forceRender3DViewer();
+                await _waitFrames(4);
+                imgB = await _capture3D('View B (translucent tumor retry)');
+            }
 
             // ── Composite: side by side ──
             if (imgA || imgB) {
@@ -842,7 +916,13 @@ async function autoCaptureReportFigures() {
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                 if (!mesh) continue;
                 if (_saved[id] !== undefined) mesh.visible = _saved[id];
-                if (mesh.material && _savedOpacities[id] !== undefined) mesh.material.opacity = _savedOpacities[id];
+                const material = _savedMaterials[id];
+                if (mesh.material && material) {
+                    mesh.material.opacity = material.opacity;
+                    mesh.material.transparent = material.transparent;
+                    mesh.material.depthWrite = material.depthWrite;
+                    mesh.material.needsUpdate = true;
+                }
             }
             fitCameraToScene();
             await _waitFrames(2);

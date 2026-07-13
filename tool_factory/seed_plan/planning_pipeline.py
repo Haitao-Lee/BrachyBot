@@ -1547,8 +1547,25 @@ class PlanningPipelineTool(BaseTool):
                             "volume_voxels": int(n),
                         }
 
-        # Plan score (simple heuristic)
-        plan_score = min(100, max(0, v100 * 100 - max(0, (1 - v100) * 200)))
+        # Plan score is an advisory, data-derived summary. The former score
+        # used only V100, so plans with different hotspot, homogeneity, or OAR
+        # behavior could display the same score. Keep this transparent and
+        # deterministic; it is not a substitute for clinical approval.
+        coverage_score = min(100.0, max(0.0, v100 * 100.0))
+        hotspot_score = 100.0
+        hotspot_score -= max(0.0, (v150 - 0.50) * 100.0) * 0.60
+        hotspot_score -= max(0.0, (v200 - 0.30) * 100.0) * 0.40
+        hotspot_score = min(100.0, max(0.0, hotspot_score))
+        homogeneity_score = max(0.0, 100.0 - abs(d90 - prescription_gy) / max(prescription_gy, 1e-6) * 100.0)
+        if oar_metrics:
+            oar_peak = max(float(item.get("max_dose", 0.0)) for item in oar_metrics.values())
+            oar_score = max(0.0, 100.0 - max(0.0, oar_peak / max(prescription_gy, 1e-6) - 0.5) * 50.0)
+        else:
+            oar_peak = None
+            oar_score = 100.0
+        plan_score = round(min(100.0, max(0.0,
+            coverage_score * 0.45 + hotspot_score * 0.25
+            + homogeneity_score * 0.20 + oar_score * 0.10)), 2)
 
         # Compute DVH curve data (cumulative dose-volume histogram)
         # Reference: Zhiyuan BrachyPlan.calculate_dvh
@@ -1628,6 +1645,13 @@ class PlanningPipelineTool(BaseTool):
             "prescription_gy": prescription_gy,
             "dose_scale_gy": DOSE_SCALE,
             "plan_score": plan_score,
+            "plan_score_breakdown": {
+                "coverage": round(coverage_score, 2),
+                "hotspot_control": round(hotspot_score, 2),
+                "homogeneity": round(homogeneity_score, 2),
+                "oar_sparing": round(oar_score, 2),
+                "oar_peak_dose_gy": oar_peak,
+            },
             "oar_metrics": oar_metrics,
             "dvh_data": dvh_data,
             "ctv_voxels": int(len(target_doses)),

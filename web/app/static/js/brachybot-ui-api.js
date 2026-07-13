@@ -46,6 +46,10 @@ function collectUIState() {
             dose_opacity: state?.doseOpacity ?? null,
             dose_visible: !!state?.doseOverlay?.visible,
             dose_texture_3d: !!state?.doseTexture?.enabled,
+            dose_colorbar: (typeof getDoseColorbarConfig === 'function') ? {
+                twoD: getDoseColorbarConfig('twoD'),
+                threeD: getDoseColorbarConfig('threeD'),
+            } : null,
         },
         planning: {
             metrics: state?.metrics || {},
@@ -2106,6 +2110,10 @@ function _executeUIActionRaw(a) {
             recomputeManualDose(value || 'ui_controller');
             return;
         }
+        if (target === 'manual.plan.replan') {
+            replanManualPlan();
+            return;
+        }
         if (target === 'manual.plan.finish') {
             requestPlanningAdvice();
             return;
@@ -2508,10 +2516,92 @@ async function _captureScreenshotDataUrl(target, el) {
     return canvas.toDataURL('image/png');
 }
 
+function _openScreenshotModal(url, label, index = 0, total = 1) {
+    const old = document.querySelector('.image-modal-overlay');
+    if (old) old.remove();
+    const overlay = document.createElement('div');
+    overlay.className = 'image-modal-overlay';
+    overlay.addEventListener('click', event => { if (event.target === overlay) overlay.remove(); });
+    const close = document.createElement('button');
+    close.className = 'image-modal-close';
+    close.type = 'button';
+    close.textContent = '×';
+    close.title = 'Close image';
+    close.addEventListener('click', () => overlay.remove());
+    const image = document.createElement('img');
+    image.src = url;
+    image.alt = label || 'Screenshot';
+    image.addEventListener('click', event => event.stopPropagation());
+    const info = document.createElement('div');
+    info.className = 'image-modal-info';
+    info.textContent = total > 1 ? `${label || 'Screenshot'} · ${index + 1}/${total}` : (label || 'Screenshot');
+    overlay.append(close, image, info);
+    document.body.appendChild(overlay);
+    const onKey = event => {
+        if (event.key === 'Escape') {
+            overlay.remove();
+            document.removeEventListener('keydown', onKey);
+        }
+    };
+    document.addEventListener('keydown', onKey);
+}
+
+function _appendScreenshotToGallery(url, target, question, galleryContext) {
+    const context = galleryContext || {};
+    const messages = document.getElementById('chatMessages');
+    if (!messages || !url) return;
+    if (!context.element) {
+        const row = document.createElement('div');
+        row.className = 'chat-row bot';
+        const avatar = document.createElement('div');
+        avatar.className = 'chat-avatar bot-avatar';
+        avatar.innerHTML = (typeof CHAT_AVATAR_SVGS !== 'undefined' ? CHAT_AVATAR_SVGS.bot : 'B');
+        const wrapper = document.createElement('div');
+        wrapper.className = 'chat-msg-wrapper bot';
+        const message = document.createElement('div');
+        message.className = 'chat-msg bot screenshot-gallery-message';
+        const title = document.createElement('div');
+        title.className = 'chat-gallery-title';
+        title.textContent = 'Screenshots';
+        const gallery = document.createElement('div');
+        gallery.className = 'chat-image-gallery';
+        message.append(title, gallery);
+        wrapper.appendChild(message);
+        row.append(avatar, wrapper);
+        messages.appendChild(row);
+        context.element = gallery;
+        context.title = title;
+        context.items = [];
+    }
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'chat-image-container chat-gallery-item';
+    item.title = 'Open screenshot';
+    const image = document.createElement('img');
+    image.className = 'chat-screenshot';
+    image.src = url;
+    image.alt = target || 'Screenshot';
+    const zoom = document.createElement('span');
+    zoom.className = 'chat-image-zoom-icon';
+    zoom.textContent = 'Open';
+    const caption = document.createElement('span');
+    caption.className = 'chat-image-caption';
+    caption.textContent = target || 'Screenshot';
+    item.append(image, zoom, caption);
+    context.element.appendChild(item);
+    context.items.push({ url, label: target || 'Screenshot', question: question || '' });
+    context.title.textContent = `Screenshots (${context.items.length})`;
+    item.addEventListener('click', () => {
+        const index = context.items.findIndex(entry => entry.url === url && entry.label === (target || 'Screenshot'));
+        _openScreenshotModal(url, question || target || 'Screenshot', Math.max(0, index), context.items.length);
+    });
+    scrollToBottom();
+}
+
 // Intercept ui_screenshot: capture the target element, upload to server,
 // and display the image in the chat. This bridges the gap between the
 // LLM's ui_screenshot tool call and the frontend's actual capture.
-async function _interceptScreenshot(target, question) {
+async function _interceptScreenshot(target, question, galleryContext) {
     // Unified screenshot target map — single source of truth for both
     // _interceptScreenshot (SSE-driven) and _captureScreenshot (direct).
     uiDebugLog('[screenshot] Capturing target:', target);
@@ -2557,15 +2647,16 @@ async function _interceptScreenshot(target, question) {
         const screenshotUrl = data.url || data.screenshot_url || data.image_url || data.path
             || (data.data && (data.data.url || data.data.path));
         if (!screenshotUrl) throw new Error(data.error || data.message || 'server did not return a screenshot URL');
-        if (typeof addChat === 'function') {
-            addChat('bot', `<img src="${screenshotUrl}" class="chat-screenshot" alt="${escHtml(target)}">\n\n${question || ''}`);
-        }
+        _appendScreenshotToGallery(screenshotUrl, normalizedTarget, question, galleryContext);
         uiDebugLog('[screenshot] Captured and uploaded:', screenshotUrl);
         return { success: true, url: screenshotUrl, target: normalizedTarget };
     } catch (e) {
         console.warn('[screenshot] Capture or upload failed:', e);
-        if (typeof addChat === 'function' && dataUrl) {
-            addChat('bot', `<img src="${dataUrl}" class="chat-screenshot" alt="${escHtml(target)}">\n\n${question || ''}\n\nScreenshot captured locally, but server persistence failed: ${escHtml(e.message || String(e))}`);
+        if (dataUrl) {
+            _appendScreenshotToGallery(dataUrl, normalizedTarget, question, galleryContext);
+            if (!galleryContext && typeof addChat === 'function') {
+                addChat('system', `Screenshot captured locally, but server persistence failed: ${escHtml(e.message || String(e))}`);
+            }
         } else if (typeof addChat === 'function') {
             addChat('error', `Screenshot failed: ${e.message || String(e)}`);
         }

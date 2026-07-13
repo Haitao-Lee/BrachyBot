@@ -48,7 +48,7 @@
     <script src="static/js/OrbitControls.js?v=2" onerror="console.error('Failed to load OrbitControls.js')"></script>
     <script src="static/js/html2canvas.min.js?v=2" onerror="console.error('Failed to load html2canvas.min.js')"></script>
     <link rel="stylesheet" href="static/css/brachybot-theme-layout.css?v=7">
-    <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=5">
+    <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=6">
     <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=5">
     <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=6">
     <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=3">
@@ -177,17 +177,6 @@
         <div id="chatTodoDock" style="display:none;flex-shrink:0;max-height:40vh;overflow-y:auto;overflow-x:hidden;background:linear-gradient(180deg, var(--bg-1) 0%, var(--bg-sunken) 100%);border-top:1px solid var(--border-hairline);padding:0.4rem 0.5rem 0.3rem;"></div>
 
         <div class="chat-input-area" style="position:relative;">
-            <!-- Tool Progress Display -->
-            <div id="toolProgressContainer" style="display:none;padding:0.5rem 1rem;background:var(--bg-2);border-top:1px solid var(--card-border);">
-                <div style="display:flex;align-items:center;gap:0.5rem;">
-                    <div class="spinner-ring spinner-ring--sm"></div>
-                    <span id="toolProgressText" style="font-size:0.75rem;color:var(--text);">Processing...</span>
-                </div>
-                <div style="margin-top:0.25rem;height:3px;background:var(--bg-3);border-radius:2px;overflow:hidden;">
-                    <div id="toolProgressBar" style="height:100%;background:var(--primary);border-radius:2px;width:0%;transition:width 0.3s ease;"></div>
-                </div>
-            </div>
-
             <!-- Slash Command Menu -->
             <div id="slashCommandMenu" style="display:none;position:absolute;bottom:100%;left:0;right:0;background:var(--bg-2);border:1px solid var(--card-border);border-radius:8px 8px 0 0;max-height:200px;overflow-y:auto;z-index:100;">
                 <div class="slash-cmd" data-cmd="/help" style="padding:0.5rem 1rem;cursor:pointer;font-size:0.75rem;" onclick="insertSlashCommand('/help')">
@@ -522,6 +511,7 @@
                         <button class="btn btn-outline" onclick="addManualNeedle()" style="font-size:0.6rem;padding:5px 6px;">Add Needle</button>
                         <button class="btn btn-outline" onclick="addManualSeed()" style="font-size:0.6rem;padding:5px 6px;">Add Seed</button>
                         <button class="btn btn-outline" onclick="recomputeManualDose('manual_button')" style="font-size:0.6rem;padding:5px 6px;">Recompute AI Dose</button>
+                        <button class="btn btn-outline" onclick="replanManualPlan()" style="font-size:0.6rem;padding:5px 6px;">Replan Geometry</button>
                         <button class="btn btn-outline" onclick="requestPlanningAdvice()" style="font-size:0.6rem;padding:5px 6px;">Detailed Advice</button>
                         <button class="btn btn-outline" onclick="checkSystemReadiness()" style="font-size:0.6rem;padding:5px 6px;">Readiness</button>
                     </div>
@@ -816,6 +806,28 @@
                     <span id="doseOpacityVal" style="font-size:0.55rem;min-width:20px;">50%</span>
                 </label>
                 <button class="file-btn" id="doseTextureToggle" style="padding:2px 6px;font-size:0.6rem;white-space:nowrap;" onclick="toggleDoseTextureMode()" title="Map dose intensity onto CTV/OAR 3D surfaces">Dose Surface</button>
+                <button class="file-btn" id="doseColorbarButton" style="padding:2px 6px;font-size:0.6rem;white-space:nowrap;" onclick="toggleDoseColorbarPanel()" title="Adjust dose colorbar ranges and palette">Dose Scale</button>
+                <div id="doseColorbarPanel" hidden style="position:absolute;right:10px;top:34px;z-index:1200;min-width:245px;padding:10px;background:var(--bg-2);border:1px solid var(--card-border);border-radius:6px;box-shadow:0 10px 30px rgba(0,0,0,.4);">
+                    <div style="font-size:.68rem;font-weight:700;color:var(--text);margin-bottom:7px;">Dose Colorbar</div>
+                    <div style="display:grid;grid-template-columns:70px 1fr;gap:6px;align-items:center;font-size:.62rem;color:var(--text-dim);">
+                        <label for="doseColorbarScope">Viewer</label>
+                        <select id="doseColorbarScope" onchange="syncDoseColorbarControls()" style="background:var(--bg-3);color:var(--text);border:1px solid var(--card-border);font-size:.62rem;padding:3px;">
+                            <option value="twoD">2D shared</option><option value="threeD">3D surface</option>
+                        </select>
+                        <label for="doseColorbarMinInput">Min (Gy)</label>
+                        <input id="doseColorbarMinInput" type="number" step="0.1" style="width:100%;background:var(--bg-3);color:var(--text);border:1px solid var(--card-border);font-size:.62rem;padding:3px;">
+                        <label for="doseColorbarMaxInput">Max (Gy)</label>
+                        <input id="doseColorbarMaxInput" type="number" step="0.1" style="width:100%;background:var(--bg-3);color:var(--text);border:1px solid var(--card-border);font-size:.62rem;padding:3px;">
+                        <label for="doseColorbarPalette">Palette</label>
+                        <select id="doseColorbarPalette" style="background:var(--bg-3);color:var(--text);border:1px solid var(--card-border);font-size:.62rem;padding:3px;">
+                            <option value="petRainbow2">PET Rainbow</option><option value="petRainbow3D">Surface Rainbow</option><option value="viridis">Viridis</option><option value="hot">Hot</option><option value="grayscale">Grayscale</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end;gap:5px;margin-top:9px;">
+                        <button class="file-btn" onclick="resetDoseColorbarSettings()" style="font-size:.6rem;padding:3px 7px;">Reset</button>
+                        <button class="btn btn-primary" onclick="applyDoseColorbarSettings()" style="font-size:.6rem;padding:3px 8px;">Apply</button>
+                    </div>
+                </div>
                 <div class="ctrl-sep" style="height:16px;"></div>
                 <!-- Tools -->
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;white-space:nowrap;" onclick="setViewerTool('crosshair')" id="toolCrosshair">&#10799; Crosshair</button>
@@ -1085,16 +1097,16 @@
   strict mode to isolated files; migrate the bundle to ES modules as one
   versioned change so implicit legacy bindings cannot break selectively.
 -->
-<script src="static/js/brachybot-chat-core.js?v=5"></script>
-<script src="static/js/brachybot-chat-todo.js?v=5"></script>
-<script src="static/js/brachybot-ui-api.js?v=5"></script>
+<script src="static/js/brachybot-chat-core.js?v=6"></script>
+<script src="static/js/brachybot-chat-todo.js?v=6"></script>
+<script src="static/js/brachybot-ui-api.js?v=6"></script>
 <script src="static/js/brachybot-viewer-volume.js?v=7"></script>
-<script src="static/js/brachybot-viewer-layout.js?v=5"></script>
-<script src="static/js/brachybot-3d-manual.js?v=6"></script>
+<script src="static/js/brachybot-viewer-layout.js?v=6"></script>
+<script src="static/js/brachybot-3d-manual.js?v=7"></script>
 <script src="static/js/brachybot-manual-annotation.js?v=6"></script>
-<script src="static/js/brachybot-dvh-planning.js?v=5"></script>
+<script src="static/js/brachybot-dvh-planning.js?v=6"></script>
 <script src="static/js/brachybot-report-shell.js?v=8"></script>
-<script src="static/js/brachybot-report-editor.js?v=7"></script>
+<script src="static/js/brachybot-report-editor.js?v=8"></script>
 <script src="static/js/brachybot-report-export.js?v=7"></script>
 </body>
 </html>

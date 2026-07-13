@@ -876,10 +876,10 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         return [0.0, -1.0, 0.0]
 
     def _reversed_reference_direction(self):
-        """Get the reference direction for planning.
-        UI-originated values are already in RAS (use as-is).
-        Config/memory fallbacks are negated for coordinate convention."""
-        # UI input: already in RAS, no negation needed.
+        """Return the negated current reference direction for an explicit replan."""
+        # UI input is already in RAS, so reverse the vector directly. The
+        # earlier implementation returned it unchanged, making a user request
+        # to reverse the direction produce the same plan orientation.
         ui_state = self.memory.get_ui_state() or {}
         planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
         if planning_state.get("ref_direc_auto") or planning_state.get("reference_direc") == "auto":
@@ -889,7 +889,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             try:
                 values = [float(v) for v in ref_direc]
                 if all(math.isfinite(v) for v in values) and math.sqrt(sum(v * v for v in values)) > 1e-9:
-                    return values  # UI value in RAS, use directly
+                    return [-value for value in values]
             except (TypeError, ValueError):
                 pass
         # Fall back: negate config direction (historical convention).
@@ -971,7 +971,12 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 "step": "full",
             }
             # Read ALL planning inputs from the live UI snapshot.
-            ui_state = self.memory.get_ui_state() or {}
+            # Older memory adapters and lightweight test doubles may expose
+            # retrieve/store but not the optional UI snapshot API. Planning
+            # must still proceed with the explicit message parameters.
+            get_ui_state = getattr(self.memory, "get_ui_state", None)
+            ui_state = get_ui_state() if callable(get_ui_state) else {}
+            ui_state = ui_state or {}
             planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
             ui_mode = ui_state.get("plan_mode")
             planning_params["mode"] = ui_mode or "rule_based"

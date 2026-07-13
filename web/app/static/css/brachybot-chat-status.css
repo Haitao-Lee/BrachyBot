@@ -567,6 +567,43 @@
     transition: opacity var(--t-base) var(--ease);
 }
 .chat-image-container:hover .chat-image-zoom-icon { opacity: 1; }
+.screenshot-gallery-message {
+    min-width: min(360px, 72vw);
+    padding: 0.65rem;
+}
+.chat-gallery-title {
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+    font-weight: 700;
+    margin-bottom: 0.45rem;
+}
+.chat-image-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 0.45rem;
+    max-width: min(720px, 72vw);
+}
+.chat-gallery-item {
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    cursor: zoom-in;
+    text-align: left;
+    color: inherit;
+}
+.chat-gallery-item img {
+    width: 100%;
+    height: 108px;
+    object-fit: contain;
+    background: #020617;
+}
+.chat-gallery-item .chat-image-caption {
+    display: block;
+    padding: 0.25rem 0.35rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
 .image-modal-overlay {
     position: fixed;
