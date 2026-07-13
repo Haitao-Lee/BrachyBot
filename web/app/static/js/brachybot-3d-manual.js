@@ -575,6 +575,9 @@ function init3DScene() {
         if (obj.userData?.type !== 'needle_handle') return false;
 
         event.preventDefault();
+        // Stop OrbitControls from consuming the same click after an endpoint
+        // hit. This capture-phase guard keeps endpoint editing deterministic.
+        event.stopImmediatePropagation();
         event.__brachyNeedleHandle = true;
         if (selectedObject?.material?.emissive) {
             selectedObject.material.emissive.setHex(selectedObject.userData.originalEmissive || 0x332200);
@@ -2019,6 +2022,25 @@ function toggleDoseColorbarPanel(force) {
     const open = typeof force === 'boolean' ? force : panel.hidden;
     panel.hidden = !open;
     if (open) syncDoseColorbarControls();
+}
+
+function closeDoseColorbarPanel() {
+    toggleDoseColorbarPanel(false);
+}
+
+// The panel can cover its toggle button in narrow layouts. Provide reliable
+// dismissal through outside click and Escape in addition to the close button.
+if (!window._doseColorbarPanelDismissBound) {
+    window._doseColorbarPanelDismissBound = true;
+    document.addEventListener('click', (event) => {
+        const panel = document.getElementById('doseColorbarPanel');
+        const button = document.getElementById('doseColorbarButton');
+        if (!panel || panel.hidden || panel.contains(event.target) || button?.contains(event.target)) return;
+        closeDoseColorbarPanel();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeDoseColorbarPanel();
+    });
 }
 
 function syncDoseColorbarControls() {

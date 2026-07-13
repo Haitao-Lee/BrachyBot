@@ -116,15 +116,12 @@ function _todoCreate() {
             // may emit events out of order (e.g. re-emit an old step
             // as 'pending' while a newer step is already done).
             if (item.status === 'done' || item.status === 'error') return;
-            // demote previous active, promote this one
-            for (const it of api.items) {
-                if (it.status === 'active') {
-                    it.status = 'pending';  // will be moved to done by the next done event
-                    it.node.classList.remove('active');
-                    // Stop the old item's timer — otherwise it keeps
-                    // ticking and the user sees "341.7s" on a done step.
-                    if (it._timer) { clearInterval(it._timer); it._timer = null; }
-                }
+            // Keep every unfinished step active. Planning may run several
+            // independent tasks in parallel, so demoting the previous row
+            // would incorrectly stop its breathing animation and timer.
+            if (item.status === 'active') {
+                _todoUpdateCount();
+                return;
             }
             item.status = 'active';
             // BUG FIX 2026-06-16: the user reported that after CTV

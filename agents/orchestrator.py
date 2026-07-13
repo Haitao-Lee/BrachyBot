@@ -329,10 +329,10 @@ Bullet-point summary of requirements and what was addressed:""",
                 "human_review": "Requires Human Review",
             },
             "zh": {
-                "title": "Quality Review",
-                "concerns": "Concerns",
-                "suggestions": "Suggestions",
-                "human_review": "Requires Human Review",
+                "title": "\u8d28\u91cf\u5ba1\u67e5",
+                "concerns": "\u9700\u8981\u5173\u6ce8",
+                "suggestions": "\u5efa\u8bae",
+                "human_review": "\u9700\u8981\u4eba\u5de5\u590d\u6838",
             },
         }
         labels = all_labels.get(lang, all_labels["en"])
