@@ -3860,5 +3860,27 @@ Only single quotes are escaped. If `key` contains `"`, it breaks out of the `onc
 
 *Report updated 2026-07-10. ~145 total issues found across 5 rounds: 18 CRITICAL, 32 HIGH, 44 MEDIUM, 51 LOW.*
 
-
 ---
+
+## 2026-07-13 — Round 8: UI state planning parameters take effect
+
+**Audit base:** `37d3ae8`
+
+**Problem:** The Web UI exposes editable seed/radiation/optimization parameters (e.g. `in_lowest_energy`, `dvh_rate`, `max_iter`, `distance_filter`, `seed_info`, `radiation_params`, etc.) but changing them in the UI and running planning had no effect — the backend always used the default values from `agent.config`.
+
+**Root cause:** The `planning` block in `collectUIState()` only sent `reference_direc`. The backend read planning params exclusively from `agent.config` defaults.
+
+### Changes
+
+| File | Change |
+|------|--------|
+| `web/app/static/js/brachybot-ui-api.js` | Added `plan_mode`, `seed_info`, `radiation_params`, `in_lowest_energy`, `out_highest_energy`, `dvh_rate`, `max_iter`, `iter_rate`, `replan_rate`, `distance_filter` to the `planning` block in `collectUIState()`. |
+| `AgenticSys.py` | `_normalize_clinical_tool_calls()` now reads all planning params from `ui_state.planning` (with fallback to `agent.config`) and passes them as kwargs to `planning_pipeline`. |
+| `web/routes/planning_routes.py` | `api_planning_run` reads all params from `ui_state.planning` first, falling back to `agent.config`. |
+| `AgenticSys.py` | Fixed key name mismatch: `max_candi_traj` → `maximum_candidate_trajectories`. |
+
+### Verification
+
+- `py_compile`: all modified files pass.
+- `node --check`: `brachybot-ui-api.js` passes.
+- Manual: restart server, change a parameter in the UI, run planning — the new value is used by the backend.`
