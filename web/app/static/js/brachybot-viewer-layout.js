@@ -1091,7 +1091,8 @@ function fitCameraToDoseSurfaceScene() {
     });
     const box = priorityBox.isEmpty() ? contextBox : priorityBox;
     if (box.isEmpty()) {
-        fitCameraToScene();
+        // Dose-surface toggles must not reset the user's camera. Keep the
+        // current pose when there is no dose geometry to frame.
         return;
     }
     const center = new THREE.Vector3();

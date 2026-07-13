@@ -745,8 +745,11 @@ async function _autoCaptureReportFiguresImpl() {
                     scene3D.controls.target.copy(_savedCamera.target);
                     scene3D.camera.updateProjectionMatrix();
                     scene3D.controls.update();
-                } else {
-                    fitCameraToScene();
+                } else if (scene3D.controls) {
+                    // A report capture may not have a saved camera only when
+                    // the viewer was not initialized. Never fit implicitly;
+                    // Fit/Reset are explicit user actions.
+                    scene3D.controls.update();
                 }
                 forceRender3DViewer();
             };
@@ -1037,6 +1040,14 @@ async function _autoCaptureReportFiguresImpl() {
             let restoreDoseSurfaceState = null;
             try {
                 const savedTextureMode = !!state.doseTexture.enabled;
+                const savedCamera = scene3D.camera && scene3D.controls ? {
+                    position: scene3D.camera.position.clone(),
+                    quaternion: scene3D.camera.quaternion.clone(),
+                    near: scene3D.camera.near,
+                    far: scene3D.camera.far,
+                    aspect: scene3D.camera.aspect,
+                    target: scene3D.controls.target.clone(),
+                } : null;
                 const savedVis = {};
                 const savedOp = {};
                 for (const [id, mesh] of Object.entries(scene3D.meshes || {})) {
@@ -1055,7 +1066,16 @@ async function _autoCaptureReportFiguresImpl() {
                     if (!savedTextureMode && state.doseTexture.enabled) {
                         await setDoseTextureMode(false, { silent: true });
                     }
-                    fitCameraToScene();
+                    if (savedCamera && scene3D.camera && scene3D.controls) {
+                        scene3D.camera.position.copy(savedCamera.position);
+                        scene3D.camera.quaternion.copy(savedCamera.quaternion);
+                        scene3D.camera.near = savedCamera.near;
+                        scene3D.camera.far = savedCamera.far;
+                        scene3D.camera.aspect = savedCamera.aspect;
+                        scene3D.controls.target.copy(savedCamera.target);
+                        scene3D.camera.updateProjectionMatrix();
+                        scene3D.controls.update();
+                    }
                     forceRender3DViewer();
                 };
                 await setDoseTextureMode(true, { silent: true });

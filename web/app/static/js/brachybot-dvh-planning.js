@@ -852,6 +852,25 @@ async function refreshPlanningUI(options = {}) {
 
             // 4f-2a. CTV zoomed capture (hide non-CTV meshes)
             const ctvMesh = scene3D.meshes['ctv'] || Object.values(scene3D.meshes).find(m => m?.userData?.type === 'ctv');
+            const _savedCamera = scene3D.camera && scene3D.controls ? {
+                position: scene3D.camera.position.clone(),
+                quaternion: scene3D.camera.quaternion.clone(),
+                near: scene3D.camera.near,
+                far: scene3D.camera.far,
+                aspect: scene3D.camera.aspect,
+                target: scene3D.controls.target.clone(),
+            } : null;
+            const _restoreCamera = () => {
+                if (!_savedCamera || !scene3D.camera || !scene3D.controls) return;
+                scene3D.camera.position.copy(_savedCamera.position);
+                scene3D.camera.quaternion.copy(_savedCamera.quaternion);
+                scene3D.camera.near = _savedCamera.near;
+                scene3D.camera.far = _savedCamera.far;
+                scene3D.camera.aspect = _savedCamera.aspect;
+                scene3D.controls.target.copy(_savedCamera.target);
+                scene3D.camera.updateProjectionMatrix();
+                scene3D.controls.update();
+            };
             const _savedVis = {};
             try {
                 if (ctvMesh && scene3D.camera && scene3D.controls) {
@@ -883,18 +902,21 @@ async function refreshPlanningUI(options = {}) {
                     const mesh = scene3D.meshes[id];
                     if (mesh) mesh.visible = vis;
                 }
+                _restoreCamera();
             }
 
             // 4f-2b. Seeds overview capture
-            fitCameraToScene();
+            _restoreCamera();
             await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
             scene3D.renderer.render(scene3D.scene, scene3D.camera);
             await new Promise(r => requestAnimationFrame(r));
             const c2 = document.querySelector('#canvas3D canvas');
             if (c2) _replaceOrCreate('3d_seeds', _seedTitle, _seedCap, c2.toDataURL('image/png'));
 
-            // Restore overview camera
-            fitCameraToScene();
+            // Restore the exact camera pose that was active before the
+            // report-only temporary close-up.
+            _restoreCamera();
+            forceRender3DViewer();
             uiDebugLog('[3D re-capture] Re-captured CTV + seeds figures');
         } catch (e) { console.warn('[3D re-capture] failed:', e); }
 
