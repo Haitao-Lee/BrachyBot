@@ -3918,3 +3918,24 @@ Only single quotes are escaped. If `key` contains `"`, it breaks out of the `onc
 - `py_compile`: all modified files pass.
 - `node --check`: `brachybot-ui-api.js` passes.
 - Manual: restart server, change a parameter in the UI, run planning — the new value is used by the backend.`
+
+## Round 9 Fixes (2026-07-13)
+
+The following seven reported behaviors were rechecked against the current code and fixed only where the defect was reproducible in the implementation:
+
+| Area | Verified cause | Fix |
+|------|----------------|-----|
+| Manual needle editing | Endpoint hits were allowed to reach OrbitControls after the capture-phase hit test. | Endpoint selection now stops the competing event, preserving camera orbit for non-handle clicks; endpoint updates still flow through the existing manual replan path. |
+| DVH tooltip | The tooltip mixed Plotly SVG `_size` pixels with CSS-scaled container pixels. | Tooltip conversion now uses the rendered Plotly plot overlay rectangle and maps both axes in the same viewport coordinate system. |
+| Figure 1 black capture / missing OARs | Figure 1 visibility/material restoration was not guaranteed when WebGL capture or canvas composition failed. | Figure 1 saves camera and mesh state and restores it in `finally`; Figure 2 dose-surface capture has the same unconditional restoration guard. A report status message confirms viewer restoration. |
+| Dose colorbar dialog | The existing popup had no explicit close affordance and could cover its toggle button. | Added close button, outside-click dismissal, and Escape dismissal. Existing defaults and 2D/3D scope behavior are unchanged. |
+| Todo breathing animation | `markActive()` demoted every earlier active step to `pending`, stopping its animation and timer. | Unfinished active rows remain active until their own done/error event, supporting parallel long-running steps. |
+| Review language | Quality-gate labels and deterministic review text were always formatted in English; completeness output had the same issue. | Chinese review labels, deterministic plan-review messages, and completeness concerns/suggestions now follow the detected conversation language. English behavior is unchanged. |
+
+### Verification
+
+- `node --check` passes for the four modified viewer/report JavaScript files.
+- `py_compile` passes for the three modified review Python modules.
+- `tests/test_round9_regressions.py`: 6 tests passed with the standard-library `unittest` runner.
+- `git diff --check` passes.
+- The repository's `pytest` executable was unavailable in the local Windows runtime; this is an environment limitation, not a test failure.

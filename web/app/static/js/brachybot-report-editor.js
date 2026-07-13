@@ -688,6 +688,7 @@ async function _autoCaptureReportFiguresImpl() {
     //   Right: Translucent tumor showing seeds inside
     //   Combined into a single side-by-side image
     // ═══════════════════════════════════════════════════════════
+    let _restoreFigure1State = null;
     try {
         const _meshCount = Object.keys(scene3D.meshes).length;
         if (scene3D.camera && scene3D.controls && scene3D.renderer && _meshCount > 0) {
@@ -705,6 +706,38 @@ async function _autoCaptureReportFiguresImpl() {
                     depthWrite: mesh.material.depthWrite,
                 };
             }
+            const _savedCamera = scene3D.camera ? {
+                position: scene3D.camera.position.clone(),
+                near: scene3D.camera.near,
+                far: scene3D.camera.far,
+                aspect: scene3D.camera.aspect,
+                target: scene3D.controls.target.clone(),
+            } : null;
+            _restoreFigure1State = () => {
+                for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                    if (!mesh) continue;
+                    if (_saved[id] !== undefined) mesh.visible = _saved[id];
+                    const material = _savedMaterials[id];
+                    if (mesh.material && material) {
+                        mesh.material.opacity = material.opacity;
+                        mesh.material.transparent = material.transparent;
+                        mesh.material.depthWrite = material.depthWrite;
+                        mesh.material.needsUpdate = true;
+                    }
+                }
+                if (_savedCamera && scene3D.camera && scene3D.controls) {
+                    scene3D.camera.position.copy(_savedCamera.position);
+                    scene3D.camera.near = _savedCamera.near;
+                    scene3D.camera.far = _savedCamera.far;
+                    scene3D.camera.aspect = _savedCamera.aspect;
+                    scene3D.controls.target.copy(_savedCamera.target);
+                    scene3D.camera.updateProjectionMatrix();
+                    scene3D.controls.update();
+                } else {
+                    fitCameraToScene();
+                }
+                forceRender3DViewer();
+            };
 
             // Helper: compute bounding box of all visible meshes
             function _computeSceneBox() {
@@ -912,19 +945,9 @@ async function _autoCaptureReportFiguresImpl() {
                 _push(labels.seed3d, labels.seed3dCap, compCanvas.toDataURL('image/png'), '3d_seeds');
             }
 
-            // Restore all states
-            for (const [id, mesh] of Object.entries(scene3D.meshes)) {
-                if (!mesh) continue;
-                if (_saved[id] !== undefined) mesh.visible = _saved[id];
-                const material = _savedMaterials[id];
-                if (mesh.material && material) {
-                    mesh.material.opacity = material.opacity;
-                    mesh.material.transparent = material.transparent;
-                    mesh.material.depthWrite = material.depthWrite;
-                    mesh.material.needsUpdate = true;
-                }
-            }
-            fitCameraToScene();
+            // Restore immediately on the normal path; the finally block
+            // repeats this idempotently for any capture/composition error.
+            _restoreFigure1State();
             await _waitFrames(2);
         } else {
             console.warn('[Report] Figure 1 skipped: 3D scene not ready', {
@@ -933,6 +956,15 @@ async function _autoCaptureReportFiguresImpl() {
             });
         }
     } catch (e) { console.warn('[Report] Figure 1 (3D seed plan) capture failed:', e); }
+    finally {
+        // A blank WebGL capture, canvas error, or image decode failure must
+        // never leave OAR meshes hidden. This was the cause of the post-report
+        // flicker followed by a viewer containing only CTV/seeds/needles.
+        try { _restoreFigure1State?.(); } catch (restoreError) {
+            console.warn('[Report] Figure 1 state restore failed:', restoreError);
+        }
+        try { _setReportStatus?.('3D viewer restored after report capture', 'info'); } catch (_) {}
+    }
 
     // ═══════════════════════════════════════════════════════════
     // FIGURE 2: DOSE + DVH COMPOSITE
@@ -990,9 +1022,9 @@ async function _autoCaptureReportFiguresImpl() {
             }
 
             let doseSurfaceDataUrl = null;
+            let restoreDoseSurfaceState = null;
             try {
                 const savedTextureMode = !!state.doseTexture.enabled;
-                await setDoseTextureMode(true, { silent: true });
                 const savedVis = {};
                 const savedOp = {};
                 for (const [id, mesh] of Object.entries(scene3D.meshes || {})) {
@@ -1000,6 +1032,23 @@ async function _autoCaptureReportFiguresImpl() {
                     savedVis[id] = mesh.visible;
                     const surface = getMeshSurface(mesh);
                     if (surface?.material && !Array.isArray(surface.material)) savedOp[id] = surface.material.opacity;
+                }
+                restoreDoseSurfaceState = async () => {
+                    for (const [id, vis] of Object.entries(savedVis)) {
+                        const mesh = scene3D.meshes[id];
+                        if (!mesh) continue;
+                        mesh.visible = vis;
+                        if (savedOp[id] !== undefined) applyMeshOpacity(mesh, savedOp[id], vis);
+                    }
+                    if (!savedTextureMode && state.doseTexture.enabled) {
+                        await setDoseTextureMode(false, { silent: true });
+                    }
+                    fitCameraToScene();
+                    forceRender3DViewer();
+                };
+                await setDoseTextureMode(true, { silent: true });
+                for (const [id, mesh] of Object.entries(scene3D.meshes || {})) {
+                    if (!mesh) continue;
                     const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.type === 'ctv';
                     const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed';
                     const isNeedle = id.startsWith('needle_') || mesh?.userData?.type === 'needle';
@@ -1029,17 +1078,14 @@ async function _autoCaptureReportFiguresImpl() {
                     scene3D.renderer.render(scene3D.scene, scene3D.camera);
                     doseSurfaceDataUrl = scene3D.renderer.domElement.toDataURL('image/png');
                 }
-                for (const [id, vis] of Object.entries(savedVis)) {
-                    const mesh = scene3D.meshes[id];
-                    if (!mesh) continue;
-                    mesh.visible = vis;
-                    if (savedOp[id] !== undefined) applyMeshOpacity(mesh, savedOp[id], vis);
-                }
-                if (!savedTextureMode) await setDoseTextureMode(false, { silent: true });
-                fitCameraToScene();
+                await restoreDoseSurfaceState();
                 await _waitFrames(2);
             } catch (e) {
                 console.warn('[Report] dose surface close-up capture failed:', e);
+            } finally {
+                try { await restoreDoseSurfaceState?.(); } catch (restoreError) {
+                    console.warn('[Report] dose surface state restore failed:', restoreError);
+                }
             }
 
             // Restore original slices and opacity

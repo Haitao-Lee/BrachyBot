@@ -163,15 +163,26 @@ function _setupDvhCustomTooltip(dvhEl) {
         const layout = dvhEl._fullLayout;
         if (!layout || !layout.xaxis || !layout.yaxis) { tip.style.display = 'none'; return; }
         const box = dvhEl.getBoundingClientRect();
+        // Plotly's _size is in SVG pixels, while the container may be CSS
+        // scaled by the panel splitter. Use the rendered plot overlay rect
+        // so the mouse and axis conversion share one viewport coordinate
+        // system. This removes the persistent horizontal tooltip offset.
+        const plotNode = dvhEl.querySelector('.nsewdrag')
+            || dvhEl.querySelector('g.plot')
+            || dvhEl.querySelector('.plot');
+        const plotBox = plotNode?.getBoundingClientRect?.();
+        const hasPlotRect = plotBox && plotBox.width > 1 && plotBox.height > 1;
         const size = layout._size || {};
         const sx = box.width > 0 && dvhEl.clientWidth > 0 ? box.width / dvhEl.clientWidth : 1;
         const sy = box.height > 0 && dvhEl.clientHeight > 0 ? box.height / dvhEl.clientHeight : 1;
-        const mx = ev.clientX - box.left;
-        const my = ev.clientY - box.top;
-        const plotLeft = (size.l || 0) * sx;
-        const plotWidth = Math.max(1, (size.w || 1) * sx);
-        const plotTop  = (size.t || 0) * sy;
-        const plotH    = (size.h || 1) * sy;
+        const mx = Number.isFinite(ev.clientX) ? ev.clientX - box.left
+            : Number(ev.pageX) - window.scrollX - box.left;
+        const my = Number.isFinite(ev.clientY) ? ev.clientY - box.top
+            : Number(ev.pageY) - window.scrollY - box.top;
+        const plotLeft = hasPlotRect ? plotBox.left - box.left : (size.l || 0) * sx;
+        const plotWidth = Math.max(1, hasPlotRect ? plotBox.width : (size.w || 1) * sx);
+        const plotTop = hasPlotRect ? plotBox.top - box.top : (size.t || 0) * sy;
+        const plotH = Math.max(1, hasPlotRect ? plotBox.height : (size.h || 1) * sy);
         if (mx < plotLeft || mx > plotLeft + plotWidth || my < plotTop || my > plotTop + plotH) {
             tip.style.display = 'none';
             return;
@@ -188,9 +199,12 @@ function _setupDvhCustomTooltip(dvhEl) {
         for (const p of points) {
             if (!p || !Number.isFinite(p.y) || !p.fullData) continue;
             if (p.fullData.visible === false || p.fullData.visible === 'legendonly') continue;
-            const pyViewport = typeof layout.yaxis.l2p === 'function'
-                ? layout.yaxis.l2p(p.y) * sy + plotTop
-                : (1 - (p.y - (layout.yaxis.range || [0, 1])[0]) / Math.max((layout.yaxis.range || [0, 1])[1] - (layout.yaxis.range || [0, 1])[0], 1e-9)) * plotH + plotTop;
+            const yRange = Array.isArray(layout.yaxis.range) && layout.yaxis.range.length >= 2
+                ? layout.yaxis.range : [0, 100];
+            const ySpan = Number(yRange[1]) - Number(yRange[0]);
+            const pyViewport = plotTop + (Number.isFinite(ySpan) && Math.abs(ySpan) > 1e-9
+                ? (Number(yRange[1]) - p.y) / ySpan * plotH
+                : plotH / 2);
             const dy = Math.abs(pyViewport - my);
             if (dy < bestDy) {
                 bestDy = dy;

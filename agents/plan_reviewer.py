@@ -97,7 +97,7 @@ Return JSON only:
 
         det_results = self._deterministic_checks(dose_metrics, plan_config)
         llm_results = await self._llm_interpretation(det_results, plan_config, content)
-        merged = self._merge_results(det_results, llm_results, plan_info)
+        merged = self._merge_results(det_results, llm_results, plan_info, self._lang)
 
         return AgentResponse(
             agent_role=self.role,
@@ -373,35 +373,67 @@ Return JSON only:
             sections.append("## Clinical Context\n" + "\n".join(clinical_lines))
         return "\n\n".join(sections) if sections else "No additional context available."
 
-    def _merge_results(self, det_results: dict, llm_results: Optional[dict], plan_info: Dict[str, Any]) -> ReviewResult:
+    @staticmethod
+    def _localize_review_text(text: str, lang: str) -> str:
+        """Keep deterministic review output in the user's conversation language."""
+        if lang != "zh":
+            return text
+        translations = {
+            "Plan output is missing core review metrics": "计划输出缺少核心审查指标",
+            "No source-backed target coverage thresholds were supplied in plan_config.": "plan_config 未提供有来源支撑的靶区覆盖阈值。",
+            "OAR dose metrics are present, but no source-backed OAR constraints were supplied.": "已有 OAR 剂量指标，但未提供有来源支撑的 OAR 限值。",
+            "Recheck seed distribution, dose scaling, and DVH before clinical approval.": "临床批准前请复核粒子分布、剂量缩放和 DVH。",
+            "Query clinical_kb for site-specific target and OAR limits before final clinical approval.": "最终临床批准前，请从 clinical_kb 检索部位特异性的靶区和 OAR 限值。",
+            "Plan info does not report any seeds.": "计划信息未报告任何粒子。",
+        }
+        # Use escapes here because this module historically contains mixed
+        # encodings; runtime output must remain valid UTF-8 Chinese.
+        translations.update({
+            "Plan output is missing core review metrics": "\u8ba1\u5212\u8f93\u51fa\u7f3a\u5c11\u6838\u5fc3\u5ba1\u67e5\u6307\u6807",
+            "No source-backed target coverage thresholds were supplied in plan_config.": "plan_config \u672a\u63d0\u4f9b\u6709\u6765\u6e90\u652f\u6491\u7684\u9776\u533a\u8986\u76d6\u9608\u503c\u3002",
+            "OAR dose metrics are present, but no source-backed OAR constraints were supplied.": "\u5df2\u6709 OAR \u5242\u91cf\u6307\u6807\uff0c\u4f46\u672a\u63d0\u4f9b\u6709\u6765\u6e90\u652f\u6491\u7684 OAR \u9650\u503c\u3002",
+            "Recheck seed distribution, dose scaling, and DVH before clinical approval.": "\u4e34\u5e8a\u6279\u51c6\u524d\u8bf7\u590d\u6838\u7c92\u5b50\u5206\u5e03\u3001\u5242\u91cf\u7f29\u653e\u548c DVH\u3002",
+            "Query clinical_kb for site-specific target and OAR limits before final clinical approval.": "\u6700\u7ec8\u4e34\u5e8a\u6279\u51c6\u524d\u8bf7\u4ece clinical_kb \u68c0\u7d22\u90e8\u4f4d\u7279\u5f02\u6027\u7684\u9776\u533a\u548c OAR \u9650\u503c\u3002",
+            "Plan info does not report any seeds.": "\u8ba1\u5212\u4fe1\u606f\u672a\u62a5\u544a\u4efb\u4f55\u7c92\u5b50\u3002",
+        })
+        for source, target in translations.items():
+            if text == source:
+                return target
+            if text.startswith(source):
+                return target + text[len(source):]
+        return text
+
+    def _merge_results(self, det_results: dict, llm_results: Optional[dict], plan_info: Dict[str, Any], lang: str = "en") -> ReviewResult:
         concerns: List[str] = []
         for issue in det_results["issues"]:
             unit = f" {issue.get('unit')}" if issue.get("unit") else ""
-            concerns.append(
+            concerns.append(self._localize_review_text(
                 f"{issue['metric']}={issue['value']:.3g}{unit}, "
-                f"required {issue['operator']} {issue['threshold']:.3g}{unit} ({issue['status']})"
-            )
+                f"required {issue['operator']} {issue['threshold']:.3g}{unit} ({issue['status']})",
+                lang,
+            ))
         for issue in det_results["oar_issues"]:
-            concerns.append(
+            concerns.append(self._localize_review_text(
                 f"{issue['organ']} {issue['metric']}={issue['value']:.1f} Gy, "
-                f"limit={issue['limit']:.1f} Gy ({issue['status']})"
-            )
-        concerns.extend(det_results.get("advisory_issues", []))
-        concerns.extend(det_results["unverified"])
+                f"limit={issue['limit']:.1f} Gy ({issue['status']})",
+                lang,
+            ))
+        concerns.extend(self._localize_review_text(c, lang) for c in det_results.get("advisory_issues", []))
+        concerns.extend(self._localize_review_text(c, lang) for c in det_results["unverified"])
 
         suggestions: List[str] = []
         if llm_results:
-            suggestions.extend(llm_results.get("suggestions", []) or [])
+            suggestions.extend(self._localize_review_text(s, lang) for s in (llm_results.get("suggestions", []) or []))
             summary = llm_results.get("clinical_summary", "")
             if summary and len(summary) > 20:
-                suggestions.insert(0, summary)
+                suggestions.insert(0, self._localize_review_text(summary, lang))
         elif det_results.get("advisory_issues"):
-            suggestions.append("Recheck seed distribution, dose scaling, and DVH before clinical approval.")
+            suggestions.append(self._localize_review_text("Recheck seed distribution, dose scaling, and DVH before clinical approval.", lang))
         elif det_results["unverified"]:
-            suggestions.append("Query clinical_kb for site-specific target and OAR limits before final clinical approval.")
+            suggestions.append(self._localize_review_text("Query clinical_kb for site-specific target and OAR limits before final clinical approval.", lang))
 
         if not plan_info.get("total_seeds"):
-            concerns.append("Plan info does not report any seeds.")
+            concerns.append(self._localize_review_text("Plan info does not report any seeds.", lang))
 
         if det_results["issues"] or det_results["oar_issues"] or det_results.get("advisory_issues"):
             decision = "conditional"
@@ -441,13 +473,23 @@ Return JSON only:
             return ""
 
         if lang == "zh":
+            # Keep the Chinese branch independent from legacy mojibake text
+            # left in older source files. This is the user-visible contract.
+            lines = [f"### \u8d28\u91cf\u5ba1\u67e5 (\u8bc4\u5206: {result.score:.1f}/10)"]
+            if result.concerns:
+                lines.append("\n**\u9700\u8981\u5173\u6ce8**:")
+                lines.extend(f"- {self._localize_review_text(c, lang)}" for c in result.concerns[:5])
+            if result.suggestions:
+                lines.append("\n**\u5efa\u8bae**:")
+                lines.extend(f"- {self._localize_review_text(s, lang)}" for s in result.suggestions[:3])
+            return "\n".join(lines)
             lines = [f"### 质量审查 (评分: {result.score:.1f}/10)"]
             if result.concerns:
                 lines.append("\n**需要关注**:")
-                lines.extend(f"- {c}" for c in result.concerns[:5])
+                lines.extend(f"- {self._localize_review_text(c, lang)}" for c in result.concerns[:5])
             if result.suggestions:
                 lines.append("\n**建议**:")
-                lines.extend(f"- {s}" for s in result.suggestions[:3])
+                lines.extend(f"- {self._localize_review_text(s, lang)}" for s in result.suggestions[:3])
         else:
             lines = [f"### Quality Review (Score: {result.score:.1f}/10)"]
             if result.concerns:

@@ -123,8 +123,12 @@ class CompletenessChecker(LLMCapableAgent):
         addressed_count = len(final_addressed)
         score = (addressed_count / total * 10) if total > 0 else 10.0
 
-        concerns = [f"Missed: {m}" for m in final_missed]
-        suggestions = [f"Address: {m}" for m in final_missed[:3]]
+        if self._lang == "zh":
+            concerns = [f"\u672a\u6ee1\u8db3: {m}" for m in final_missed]
+            suggestions = [f"\u8bf7\u8865\u5145: {m}" for m in final_missed[:3]]
+        else:
+            concerns = [f"Missed: {m}" for m in final_missed]
+            suggestions = [f"Address: {m}" for m in final_missed[:3]]
 
         result = ReviewResult(
             reviewer="Completeness Checker",
@@ -264,6 +268,10 @@ class CompletenessChecker(LLMCapableAgent):
             return ""
 
         if lang == "zh":
+            lines = [f"### \u9700\u6c42\u8986\u76d6\u68c0\u67e5 (\u8986\u76d6: {result.score / 10:.0%})"]
+            lines.append("\n**\u672a\u54cd\u5e94\u7684\u9700\u6c42**:")
+            lines.extend(f"- {concern}" for concern in result.concerns[:5])
+            return "\n".join(lines)
             lines = [f"### 📋 需求覆盖检查 (覆盖: {result.score / 10:.0%})"]
             if result.concerns:
                 lines.append("\n**未响应的需求**:")
