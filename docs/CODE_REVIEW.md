@@ -3939,3 +3939,24 @@ The following seven reported behaviors were rechecked against the current code a
 - `tests/test_round9_regressions.py`: 6 tests passed with the standard-library `unittest` runner.
 - `git diff --check` passes.
 - The repository's `pytest` executable was unavailable in the local Windows runtime; this is an environment limitation, not a test failure.
+
+## Round 10 Fixes (2026-07-13)
+
+### Missing tumor-site clarification incorrectly continued the workflow
+
+**Verified cause:** CTV segmentation already returned `metadata.clarification_required` and a clarification question when `tumor_type` was absent. The LLM runtime stopped only the current tool-call batch, but did not set its outer `_input_missing` guard or final response. The next LLM iterations therefore continued and the UI remained in a running state.
+
+**Fix:** Both streaming and non-streaming tool loops now promote clarification metadata to an input-waiting terminal response, mark the step with `requires_input`, and stop before any OAR/planning tool or extra LLM round can run. The explicit missing-`tumor_type` interception follows the same path.
+
+### Running progress animation stopped early
+
+**Verified cause:** Active Todo rows could be redrawn by later SSE events without preserving the CSS animation state; error events matched against predicted rows were also not handled in the deduplication branch.
+
+**Fix:** Error/clarification events now terminate the matching active row. Active rows receive a lightweight state guard that keeps the active class and `animation-play-state` alive until done/error. Todo, pipeline, and execution-trace pending animations explicitly use infinite running animation state.
+
+### Verification
+
+- `agent_runtime/llm_runtime.py`: `py_compile` passes.
+- `brachybot-chat-todo.js`: `node --check` passes.
+- Round 9/10 regression suite: 7 tests pass with `unittest`.
+- `git diff --check` passes.
