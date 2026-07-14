@@ -4094,3 +4094,20 @@ the independent clinical dose verification requirement remains unchanged.
   completed a one-particle smoke test using the new 1 mm preprocessing.
 - Full clinical planning and WebGL execution require the RTX runtime and are
   recorded as deployment smoke tests, not replaced by local syntax checks.
+
+### Round 14 unit-boundary addendum
+
+The adapter does not use the retired analytical model. The upstream predictor
+divides the neural-network output by the checkpoint's `dose_multiplier`; that
+raw value is numerically too small for BrachyBot's established normalized
+planning threshold. `model_loader.py` therefore records an explicit
+`planning_output_scale`, defaulting to the same checkpoint multiplier and
+optionally overridden by `BRACHYBOT_DOSE_MODEL_PLANNING_SCALE`. `inference.py`
+applies that reversible checkpoint-scale conversion before returning the model
+dose array. This preserves the existing planner/report unit contract while
+keeping the new DoseUNet as the only dose source. It is not a Gaussian,
+analytical, or legacy-model fallback.
+
+The `32^3` and `64^3` references in the historical review text mean cubic
+voxel crops/windows; the deployed adapter uses the checkpoint-compatible
+`64^3` sliding window.
