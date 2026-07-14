@@ -517,6 +517,66 @@ def _build_radiation_volume(
     return radiation_volume
 
 
+def _trajectory_path_hits_obstacle(trajectory, radiation_volume, obstacle_value, extra_forward_voxels=3.0):
+    """Return True when the sampled needle path intersects an obstacle voxel.
+
+    The legacy depth routine only used an obstacle found on the reverse scan
+    to reject a candidate.  Its forward scan stopped at an obstacle but still
+    returned the trajectory, which allowed a displayed or inserted needle to
+    cross the far side of a non-traversable structure.  This check samples the
+    complete usable segment in planning-grid coordinates in both directions.
+    The planning coordinate convention is unchanged: points are array-order
+    ``[z, y, x]`` and the direction is the trajectory's existing voxel vector.
+    """
+    if radiation_volume is None or not isinstance(trajectory, (list, tuple)) or len(trajectory) < 2:
+        return True
+    try:
+        point = np.asarray(trajectory[0], dtype=np.float64).reshape(-1)[:3]
+        direction = np.asarray(trajectory[1], dtype=np.float64).reshape(-1)[:3]
+        if point.size != 3 or direction.size != 3 or not np.all(np.isfinite(point + direction)):
+            return True
+        major = float(np.max(np.abs(direction)))
+        if major <= 1e-12:
+            return True
+        direction = direction / major
+        # The reverse side must be clear to the image boundary.  The forward
+        # side covers the recorded target/background path plus a small tip
+        # margin, without changing the existing coordinate transform.
+        backward_limit = float(max(radiation_volume.shape)) * 2.0 + 2.0
+        forward_lengths = []
+        for idx in (2, 3):
+            values = trajectory[idx] if len(trajectory) > idx else []
+            if isinstance(values, (list, tuple, np.ndarray)):
+                forward_lengths.extend(float(v) for v in values if np.isfinite(v))
+        forward_limit = max(float(sum(forward_lengths)) + float(extra_forward_voxels), float(extra_forward_voxels))
+        samples = np.arange(-backward_limit, forward_limit + 0.125, 0.25, dtype=np.float64)
+        coords = point[None, :] + samples[:, None] * direction[None, :]
+        inside = np.all((coords >= 0.0) & (coords < np.asarray(radiation_volume.shape, dtype=np.float64)), axis=1)
+        if not np.any(inside):
+            return True
+        indices = np.floor(coords[inside]).astype(np.int64)
+        values = radiation_volume[indices[:, 0], indices[:, 1], indices[:, 2]]
+        return bool(np.any(values == obstacle_value))
+    except Exception:
+        # A malformed trajectory must never bypass the safety gate.
+        logger.exception("[obstacle_check] Failed to validate trajectory")
+        return True
+
+
+def _filter_safe_trajectories(trajectories, radiation_volume, obstacle_value):
+    """Keep only trajectories whose complete usable path is obstacle-free."""
+    safe = []
+    rejected = 0
+    for trajectory in trajectories or []:
+        if _trajectory_path_hits_obstacle(trajectory, radiation_volume, obstacle_value):
+            rejected += 1
+        else:
+            safe.append(trajectory)
+    if rejected:
+        logger.warning("[obstacle_check] rejected %d/%d trajectories that intersect non-traversable voxels", rejected, len(trajectories or []))
+    return safe
+
+
 class PlanningPipelineTool(BaseTool):
     """
     Unified brachytherapy planning pipeline orchestrator.
@@ -1000,7 +1060,18 @@ class PlanningPipelineTool(BaseTool):
                 success=False,
                 error="[trajectory_init] No valid trajectories generated. Possible causes: "
                       "CTV too small, reference direction misaligned, or CTV mask empty. "
-                      f"Target voxels: {target_count}, Direction: {voxel_direc.tolist()}"
+                f"Target voxels: {target_count}, Direction: {voxel_direc.tolist()}"
+            )
+
+        trajectories = _filter_safe_trajectories(
+            trajectories,
+            radiation_volume,
+            args.radiation_array_params['obstacle_value'],
+        )
+        if not trajectories:
+            return ToolResult(
+                success=False,
+                error="[trajectory_init] No trajectories remain after non-traversable obstacle validation.",
             )
 
         # Store results
@@ -1087,11 +1158,24 @@ class PlanningPipelineTool(BaseTool):
         args = setting()
         min_depth = args.radiation_array_params.get('min_depth_rate', 5)
 
-        refined = [t for t in trajectories if t[4] >= min_depth]
+        depth_candidates = [t for t in trajectories if t[4] >= min_depth]
+        if not depth_candidates:
+            logger.warning(f"No trajectories with depth >= {min_depth}; checking all {len(trajectories)} candidates")
+            depth_candidates = list(trajectories)
+
+        if radiation_volume is not None:
+            refined = _filter_safe_trajectories(
+                depth_candidates,
+                radiation_volume,
+                args.radiation_array_params['obstacle_value'],
+            )
+        else:
+            refined = depth_candidates
         if not refined:
-            # Fall back to all trajectories
-            refined = trajectories
-            logger.warning(f"No trajectories with depth >= {min_depth}, using all {len(trajectories)}")
+            return ToolResult(
+                success=False,
+                error="[trajectory_refine] No trajectories remain after non-traversable obstacle validation.",
+            )
 
         # Sort by depth (best first)
         refined.sort(key=lambda t: t[4], reverse=True)
@@ -1195,6 +1279,19 @@ class PlanningPipelineTool(BaseTool):
                 agent.memory.store("radiation_volume", radiation_volume)
                 agent.memory.store("obstacle_label_ids", sorted(obstacle_labels))
                 agent.memory.store("obstacle_label_source", obstacle_source)
+
+        if radiation_volume is not None:
+            obstacle_args = args_current if 'args_current' in locals() else setting()
+            trajectories = _filter_safe_trajectories(
+                trajectories,
+                radiation_volume,
+                obstacle_args.radiation_array_params['obstacle_value'],
+            )
+            if not trajectories:
+                return ToolResult(
+                    success=False,
+                    error="[seed_planning] No trajectories remain after non-traversable obstacle validation.",
+                )
 
         # Load dose model
         dose_model, model_err = _load_dose_model()
