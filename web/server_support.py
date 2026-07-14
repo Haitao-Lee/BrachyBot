@@ -298,7 +298,7 @@ def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any
 
     if v100 is not None:
         strengths.append(
-            f"CTV V100 is {v100 * 100:.1f}%; compare it with the site-specific clinical_kb or plan_config target."
+            f"CTV V100 is {v100 * 100:.1f}%; compare it with the applicable site-specific guidance or confirmed case protocol target."
         )
         advice.append("Inspect cold CTV regions against the intended prescription coverage, then recompute dose and DVH after edits.")
     else:
@@ -328,7 +328,7 @@ def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any
         if high_oars:
             top = sorted(high_oars, key=lambda x: max(x[1], x[2]), reverse=True)[:5]
             strengths.append("Top OAR doses: " + ", ".join(f"{n} Dmax={dm:.1f} Gy D2cc={d2:.1f} Gy" for n, dm, d2 in top))
-            advice.append("Compare OAR doses against clinical_kb or plan_config constraints before classifying safety.")
+            advice.append("Compare OAR doses against applicable site-specific guidance or the confirmed case protocol before classifying safety.")
 
     if snapshot.get("total_seeds", 0) == 0:
         advice.append("No seeds are present. Add a needle and place seeds through the CTV before dose evaluation.")
@@ -417,7 +417,7 @@ def _build_system_readiness(agent, session_id: Optional[str] = None) -> Dict[str
         ),
         _readiness_item("dose", "Dose and DVH", dose_ready, "Dose distribution and metrics are available." if dose_ready else "Dose/DVH metrics are not current.", "Recompute dose/DVH after planning edits."),
         _readiness_item("report", "Report data", report_ready, "Report can be auto-filled from current data." if report_ready else "Report data is not ready.", "Auto-fill report after dose evaluation."),
-        _readiness_item("clinical_kb", "Clinical KB", kb_ready, "Clinical KB source index is present." if kb_ready else "Clinical KB source index is missing.", "Repair clinical_kb before source-backed clinical claims."),
+        _readiness_item("clinical_kb", "Clinical evidence", kb_ready, "Clinical evidence source index is present." if kb_ready else "Clinical evidence source index is missing.", "Repair the clinical evidence index before making source-backed clinical claims."),
         _readiness_item(
             "screenshots",
             "Screenshot feedback",
@@ -447,8 +447,8 @@ def _build_system_readiness(agent, session_id: Optional[str] = None) -> Dict[str
         "execution_tools": execution_tools,
         "clinical_governance": {
             "clinical_kb_required": True,
-            "constraint_policy": "Use clinical_kb or explicit plan_config for target/OAR thresholds.",
-            "threshold_policy": "Use clinical_kb or explicit plan_config for target/OAR thresholds.",
+            "constraint_policy": "Use applicable site-specific clinical guidance or confirmed case-protocol limits for target/OAR thresholds.",
+            "threshold_policy": "Use applicable site-specific clinical guidance or confirmed case-protocol limits for target/OAR thresholds.",
             "local_templates": "Metric summaries only; no local-template clinical approval.",
         },
         "generated_at": datetime.utcnow().isoformat() + "Z",

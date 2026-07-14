@@ -177,7 +177,7 @@ function _autoFillInterpretation() {
 
     lines.push('**Planning metric interpretation**');
     lines.push('');
-    lines.push('This section summarizes observed planning metrics only. Clinical pass/fail decisions must use source-backed thresholds from `clinical_kb` retrieval results or explicit `plan_config` constraints for the current tumor site.');
+    lines.push('This section summarizes observed planning metrics only. Clinical pass/fail decisions must use source-backed thresholds from applicable site-specific guidance or the confirmed case protocol.');
     lines.push('');
 
     if (v100 !== null) {
@@ -210,13 +210,13 @@ function _autoFillInterpretation() {
     }
 
     lines.push('**Recommended next steps**:');
-    lines.push('- Query `clinical_kb` for prescription dose, V100/D90/V150/V200 criteria, and OAR limits for the current tumor site; include real links in report references.');
+    lines.push('- Verify prescription dose, V100/D90/V150/V200 criteria, and OAR limits against applicable site-specific guidance; include real links in report references.');
     lines.push('- Radiation oncologist and physicist review should combine sourced thresholds, image registration, trajectory feasibility, and independent dose verification.');
     lines.push('');
     lines.push('_This is an auto-generated metric summary from BrachyBot; it does not replace a signed clinical treatment plan._');
 
     f.interpretation = lines.join('\n');
-    f.safety = '**Safety & Quality Control**\n\n- Seed activity and source strength require physicist verification.\n- Pre/post-treatment dose verification should use an independent method.\n- OAR limits and target coverage thresholds must come from `clinical_kb` or explicit `plan_config`, not local report defaults.\n- Informed consent and final sign-off follow institutional workflow.';
+    f.safety = '**Safety & Quality Control**\n\n- Seed activity and source strength require physicist verification.\n- Pre/post-treatment dose verification should use an independent method.\n- OAR limits and target coverage thresholds must come from applicable site-specific guidance or confirmed case-protocol settings, not local report defaults.\n- Informed consent and final sign-off follow institutional workflow.';
 }
 
 // ----- 13. Reset -----

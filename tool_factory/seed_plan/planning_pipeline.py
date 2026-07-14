@@ -20,6 +20,7 @@ import os
 import json
 import copy
 import logging
+import re
 import numpy as np
 from typing import Dict, List, Optional, Any
 
@@ -40,27 +41,99 @@ CONFIG_PATH = os.path.join(PLANS_DIR, "config.json")
 # No Gy conversion needed - all metrics use normalized units.
 NEW_SLICES_ROUNDED = 64
 
-# TotalSegmentator v2 organ labels that physically block a needle trajectory.
-# Soft parenchymal organs (lung, liver, kidney, spleen, muscle) are deliberately
-# excluded so the posterior / trans-abdominal approach can find a path to the CTV
-# even when the OAR mask contains the full body atlas (117 organs).
-# See memory/oar-obstacle-filter-fix.md for rationale.
-OBSTACLE_ORGAN_LABELS = frozenset({
-    # Vessels (aorta, vena cava, portal, iliac, pulmonary, brachiocephalic, etc.)
-    15, 52, 53, 54, 55, 56, 57, 58, 59, 60, 62, 63, 64, 65, 66, 67, 68,
-    # Bowel
-    18, 19, 20,
-    # Bone — vertebrae (cervical, thoracic, lumbar, sacrum), ribs, sternum, humerus,
-    # scapula, clavicula, femur, hip, spinal cord
-    25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
-    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 79,
-    69, 70, 71, 72, 73, 74, 75, 76, 77, 78,
-    # Soft but high-risk for transabdominal / posterior approach
-    6,    # stomach
-    16,   # trachea
-    17,   # thyroid
-    51,   # heart
-})
+# The Data tree and the planning backend must use the same default policy.
+# Derive labels from TotalSegmentator names rather than fragile numeric lists.
+_NON_TRAVERSABLE_NAME_PATTERNS = (
+    r"bone|rib|skull|spine|vertebra|sacrum|sternum|pelvis|femur|humerus|scapula|"
+    r"clavicula|hip|ilium|ischium|pubis",
+    r"cartilage|disc|meniscus",
+    r"aorta|vena\s*cava|iliac\s+(?:artery|vein|vena)|femoral\s*(?:artery|vein)|"
+    r"carotid|jugular|artery|vein|vessel|brachiocephalic\s+trunk",
+    r"nerve|plexus|sciatic|spinal\s*cord|brachial",
+)
+
+
+def _is_default_non_traversable_name(name: str) -> bool:
+    normalized = str(name or "").replace("_", " ").lower()
+    return any(re.search(pattern, normalized) for pattern in _NON_TRAVERSABLE_NAME_PATTERNS)
+
+
+def _default_obstacle_label_ids():
+    """Return TotalSegmentator labels classified as non-traversable by default."""
+    try:
+        from tool_factory.OAR_seg.totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
+        return frozenset(
+            int(label_id)
+            for label_id, name in TOTALSEG_LABEL_MAPPING.items()
+            if _is_default_non_traversable_name(name)
+        )
+    except Exception as exc:
+        # Reduced test environments may omit TotalSegmentator dependencies.
+        logger.warning("Unable to load TotalSegmentator label mapping: %s", exc)
+        # Keep the safety default conservative if a lightweight environment
+        # can read a previously generated OAR mask but cannot import the map.
+        return frozenset(
+            set(range(25, 51))
+            | set(range(52, 61))
+            | set(range(62, 69))
+            | set(range(69, 80))
+            | set(range(91, 118))
+        )
+
+
+# Keep the old public symbol for integrations that import it directly, while
+# making its contents come from the authoritative TotalSegmentator mapping.
+OBSTACLE_ORGAN_LABELS = _default_obstacle_label_ids()
+
+
+def _resolve_data_tree_obstacle_labels(agent):
+    """Resolve the current Data tree non-traversable OAR whitelist.
+
+    A complete Data tree organ list is authoritative. Older clients that only
+    send aggregate counts fall back to the name-derived default policy.
+    CTV sub-labels are excluded because CTV labels 2 and 3 are always hard
+    obstacles from the CTV mask itself.
+    """
+    defaults = set(OBSTACLE_ORGAN_LABELS or _default_obstacle_label_ids())
+    if agent is None or not getattr(agent, "memory", None):
+        return defaults, "default"
+    try:
+        ui_state = agent.memory.get_ui_state() or {}
+    except Exception as exc:
+        logger.debug("[OAR filter] UI state unavailable; using defaults: %s", exc)
+        return defaults, "default"
+
+    data_tree = ui_state.get("data_tree") if isinstance(ui_state, dict) else None
+    organs = data_tree.get("organs") if isinstance(data_tree, dict) else None
+    if not isinstance(organs, list):
+        return defaults, "default"
+
+    selected = set()
+    usable_oar_entries = 0
+    for item in organs:
+        if not isinstance(item, dict):
+            continue
+        source = str(item.get("source") or "oar").strip().lower()
+        item_id = str(item.get("id") or "").strip().lower()
+        if source == "ctv" or item_id.startswith("ctv_"):
+            continue
+        try:
+            label_id = int(item.get("label_id", item.get("labelId")))
+        except (TypeError, ValueError):
+            continue
+        usable_oar_entries += 1
+        category = str(item.get("category") or "traversable").strip().lower()
+        if category == "non_traversable":
+            selected.add(label_id)
+
+    if not usable_oar_entries:
+        logger.debug("[OAR filter] Data tree has no usable OAR labels; using defaults")
+        return defaults, "default"
+    logger.info(
+        "[OAR filter] using Data tree whitelist: %d non-traversable labels from %d OAR entries",
+        len(selected), usable_oar_entries,
+    )
+    return selected, "data_tree"
 
 
 def _safe_dicom_orient(image, target_orientation='LPI', context=""):
@@ -390,7 +463,14 @@ def _load_dose_model(device=None):
     return model, error
 
 
-def _build_radiation_volume(ctv_mask, oar_mask, target_value=1, obstacle_value=2):
+def _build_radiation_volume(
+    ctv_mask,
+    oar_mask,
+    target_value=1,
+    obstacle_value=2,
+    obstacle_labels=None,
+    obstacle_source="default",
+):
     """Build radiation volume from CTV and OAR masks.
 
     CTV mask from nnUNet pancreatic segmentation:
@@ -410,14 +490,17 @@ def _build_radiation_volume(ctv_mask, oar_mask, target_value=1, obstacle_value=2
     radiation_volume[ctv_mask == 1] = target_value
     # Artery and vein are obstacles (non-traversable) — handled directly from CTV mask
     radiation_volume[(ctv_mask == 2) | (ctv_mask == 3)] = obstacle_value
-    # OAR from TotalSegmentator (if provided): apply whitelist filter
+    # OAR from TotalSegmentator (if provided): apply the current whitelist.
     if oar_mask is not None:
+        selected_labels = set(
+            OBSTACLE_ORGAN_LABELS if obstacle_labels is None else obstacle_labels
+        )
         total_oar_voxels = int((oar_mask > 0).sum())
-        obstacle_mask = np.isin(oar_mask, list(OBSTACLE_ORGAN_LABELS))
+        obstacle_mask = np.isin(oar_mask, list(selected_labels))
         filtered_voxels = int(obstacle_mask.sum())
         radiation_volume[obstacle_mask & (radiation_volume == 0)] = obstacle_value
         logger.info(
-            f"[OAR filter] blocking voxels: {filtered_voxels} / {total_oar_voxels} "
+            f"[OAR filter:{obstacle_source}] blocking voxels: {filtered_voxels} / {total_oar_voxels} "
             f"total OAR ({total_oar_voxels - filtered_voxels} non-blocking skipped)"
         )
         # Warn if OAR mask has labels beyond TotalSegmentator v2's 117
@@ -860,11 +943,16 @@ class PlanningPipelineTool(BaseTool):
             logger.error(f"Resampling failed: {e}")
             return ToolResult(success=False, error=f"[trajectory_init] Resampling failed: {e}")
 
+        # Resolve the current Data tree category state before planning.
+        obstacle_labels, obstacle_source = _resolve_data_tree_obstacle_labels(agent)
+
         # Build radiation volume
         radiation_volume = _build_radiation_volume(
             resampled_ctv, resampled_oar,
             target_value=args.radiation_array_params['target_value'],
-            obstacle_value=args.radiation_array_params['obstacle_value']
+            obstacle_value=args.radiation_array_params['obstacle_value'],
+            obstacle_labels=obstacle_labels,
+            obstacle_source=obstacle_source,
         )
         target_count = int(np.sum(radiation_volume == args.radiation_array_params['target_value']))
         obstacle_count = int(np.sum(radiation_volume == args.radiation_array_params['obstacle_value']))
@@ -922,6 +1010,8 @@ class PlanningPipelineTool(BaseTool):
             agent.memory.store("resampled_ctv", resampled_ctv)
             agent.memory.store("resampled_oar", resampled_oar)
             agent.memory.store("radiation_volume", radiation_volume)
+            agent.memory.store("obstacle_label_ids", sorted(obstacle_labels))
+            agent.memory.store("obstacle_label_source", obstacle_source)
             agent.memory.store("ref_direc_voxel", voxel_direc)
             logger.info(f"[trajectory_init] Stored resampled_ct: size={resampled_ct.GetSize()}, spacing={resampled_ct.GetSpacing()}")
 
@@ -971,23 +1061,26 @@ class PlanningPipelineTool(BaseTool):
         if not trajectories:
             return ToolResult(success=False, error="[trajectory_refine] No trajectories generated. Check CTV mask.")
 
-        # Get radiation volume
+        # Rebuild from the current Data tree state. Users may move an OAR
+        # between parent categories after trajectory initialization.
         radiation_volume = None
-        if agent:
-            radiation_volume = agent.memory.retrieve("radiation_volume")
-
-        if radiation_volume is None:
-            # Build it
+        resampled_ctv = agent.memory.retrieve("resampled_ctv") if agent else None
+        resampled_oar = agent.memory.retrieve("resampled_oar") if agent else None
+        if resampled_ctv is not None:
             from plans.config import setting
             args = setting()
-            resampled_ctv = agent.memory.retrieve("resampled_ctv") if agent else None
-            resampled_oar = agent.memory.retrieve("resampled_oar") if agent else None
-            if resampled_ctv is not None:
-                radiation_volume = _build_radiation_volume(
-                    resampled_ctv, resampled_oar,
-                    target_value=args.radiation_array_params['target_value'],
-                    obstacle_value=args.radiation_array_params['obstacle_value']
-                )
+            obstacle_labels, obstacle_source = _resolve_data_tree_obstacle_labels(agent)
+            radiation_volume = _build_radiation_volume(
+                resampled_ctv, resampled_oar,
+                target_value=args.radiation_array_params['target_value'],
+                obstacle_value=args.radiation_array_params['obstacle_value'],
+                obstacle_labels=obstacle_labels,
+                obstacle_source=obstacle_source,
+            )
+            if agent:
+                agent.memory.store("radiation_volume", radiation_volume)
+                agent.memory.store("obstacle_label_ids", sorted(obstacle_labels))
+                agent.memory.store("obstacle_label_source", obstacle_source)
 
         # Filter trajectories by depth
         from plans.config import setting
@@ -1071,16 +1164,37 @@ class PlanningPipelineTool(BaseTool):
             )
             from plans.config import setting
             args_tmp = setting()
+            obstacle_labels, obstacle_source = _resolve_data_tree_obstacle_labels(agent)
             radiation_volume = _build_radiation_volume(
                 resampled_ctv, resampled_oar,
                 target_value=args_tmp.radiation_array_params['target_value'],
-                obstacle_value=args_tmp.radiation_array_params['obstacle_value']
+                obstacle_value=args_tmp.radiation_array_params['obstacle_value'],
+                obstacle_labels=obstacle_labels,
+                obstacle_source=obstacle_source,
             )
             if agent:
                 agent.memory.store("resampled_ct", resampled_ct)
                 agent.memory.store("resampled_ctv", resampled_ctv)
                 agent.memory.store("resampled_oar", resampled_oar)
                 agent.memory.store("radiation_volume", radiation_volume)
+
+        # Always refresh the volume immediately before seed optimization so a
+        # Data tree category change is honored without restarting the session.
+        if resampled_ctv is not None:
+            from plans.config import setting
+            args_current = setting()
+            obstacle_labels, obstacle_source = _resolve_data_tree_obstacle_labels(agent)
+            radiation_volume = _build_radiation_volume(
+                resampled_ctv, resampled_oar,
+                target_value=args_current.radiation_array_params['target_value'],
+                obstacle_value=args_current.radiation_array_params['obstacle_value'],
+                obstacle_labels=obstacle_labels,
+                obstacle_source=obstacle_source,
+            )
+            if agent:
+                agent.memory.store("radiation_volume", radiation_volume)
+                agent.memory.store("obstacle_label_ids", sorted(obstacle_labels))
+                agent.memory.store("obstacle_label_source", obstacle_source)
 
         # Load dose model
         dose_model, model_err = _load_dose_model()

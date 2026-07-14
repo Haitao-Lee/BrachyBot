@@ -390,7 +390,7 @@ window.Report = (function () {
                     f.references.push({
                         citeKey: `clinical-kb-${value.site || 'case'}-${index + 1}`,
                         title: `Clinical criterion source (${value.site || 'case'})`,
-                        publisher: 'clinical_kb verified source',
+                        publisher: 'Verified clinical source',
                         year: '',
                         url,
                         custom: false,

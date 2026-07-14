@@ -311,7 +311,7 @@ function _formatReadinessReport(data) {
         const governance = data.clinical_governance;
         lines.push('');
         lines.push('**Clinical Governance**');
-        lines.push(`- ${governance.clinical_kb_required ? 'Clinical KB evidence is required for clinical claims.' : 'Clinical KB evidence is optional.'}`);
+        lines.push(`- ${governance.clinical_kb_required ? 'Source-backed clinical evidence is required for clinical claims.' : 'Source-backed clinical evidence is optional.'}`);
         lines.push(`- ${governance.constraint_policy || governance.threshold_policy || 'Dose constraints must be source-backed.'}`);
     }
     return lines.join('\n');

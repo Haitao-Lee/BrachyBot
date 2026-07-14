@@ -1311,7 +1311,7 @@ function updateClinicalEvaluation() {
         const name = _resolveOARDisplayName(rawName, m);
         const dmax = Number(m.dmax || m.max_dose || m.Dmax || 0);
         const d2cc = Number(m.d2cc || 0);
-        observations.push(`${name}: Dmax ${fmt(dmax, 2, ' Gy')}, D2cc ${fmt(d2cc, 2, ' Gy')}. Interpret using clinical_kb/plan_config OAR limits.`);
+        observations.push(`${name}: Dmax ${fmt(dmax, 2, ' Gy')}, D2cc ${fmt(d2cc, 2, ' Gy')}. Interpret using applicable site-specific OAR limits.`);
     });
     if (!topOars.length) observations.push('No OAR dose metrics are available yet. Run OAR segmentation and dose evaluation before OAR review.');
 
@@ -1337,7 +1337,7 @@ function updateClinicalEvaluation() {
         <div style="border-top:1px solid var(--border-hairline);padding-top:8px;">
             <div style="font-weight:600;color:var(--text);margin-bottom:4px;">Source policy</div>
             <div style="line-height:1.7;font-size:0.66rem;color:var(--text-secondary);">
-                <div>Clinical pass/fail labels require retrieved <code>clinical_kb</code> evidence or explicit <code>plan_config</code> constraints.</div>
+                <div>Clinical pass/fail labels require source-backed, site-specific guidance or confirmed case-protocol limits.</div>
                 <div>General references: AAPM TG-43/TG-229 ${_refLinkHtml('TG43')}, ICRU Report 89 ${_refLinkHtml('ICRU89')}, ABS ${_refLinkHtml('ABS')}, NCCN ${_refLinkHtml('NCCN_PANC')}.</div>
             </div>
         </div>
@@ -1567,8 +1567,8 @@ const REPORT_TEMPLATES = {
         i125: true,
         prescriptionGy: 120,
         interpretation: {
-            zh: 'Pancreatic seed brachytherapy plan. Observed coverage and OAR metrics must be interpreted with retrieved clinical_kb evidence or explicit plan_config constraints for pancreatic disease.',
-            en: 'Pancreatic seed brachytherapy plan. Observed coverage and OAR metrics must be interpreted with retrieved clinical_kb evidence or explicit plan_config constraints for pancreatic disease.',
+            zh: '胰腺放射性粒子植入计划。覆盖率和 OAR 指标应结合胰腺部位适用的临床指南或已确认的病例方案判读。',
+            en: 'Pancreatic seed brachytherapy plan. Coverage and OAR metrics must be interpreted using applicable pancreatic guidance or confirmed case-protocol limits.',
         },
         defaultReferences: ['NCCN_PANC', 'PANCREAS_TRIAL', 'GBZ_DOSE', 'ICRU_DOSE', 'AAPM_DOSE', 'ESTRO_DVH'],
     },
@@ -1585,8 +1585,8 @@ const REPORT_TEMPLATES = {
         i125: false,
         prescriptionGy: 60,
         interpretation: {
-            zh: 'Head and neck brachytherapy plan. Critical-structure limits must be retrieved from clinical_kb or supplied in plan_config for this specific site.',
-            en: 'Head and neck brachytherapy plan. Critical-structure limits must be retrieved from clinical_kb or supplied in plan_config for this specific site.',
+            zh: '头颈部近距离放疗计划。危及器官限值应依据头颈部适用的临床指南或已确认的病例方案。',
+            en: 'Head and neck brachytherapy plan. Critical-structure limits must come from applicable head-and-neck guidance or confirmed case-protocol settings.',
         },
         defaultReferences: ['HEAD_NECK', 'ICRU_DOSE', 'AAPM_DOSE'],
     },
@@ -1603,8 +1603,8 @@ const REPORT_TEMPLATES = {
         i125: true,
         prescriptionGy: 120,
         interpretation: {
-            zh: 'Liver seed brachytherapy plan. Coverage and gastrointestinal/biliary OAR constraints require retrieved clinical_kb evidence or explicit plan_config limits.',
-            en: 'Liver seed brachytherapy plan. Coverage and gastrointestinal/biliary OAR constraints require retrieved clinical_kb evidence or explicit plan_config limits.',
+            zh: '肝脏放射性粒子植入计划。覆盖率以及胃肠道/胆道 OAR 限值应依据肝脏部位适用的临床指南或已确认的病例方案。',
+            en: 'Liver seed brachytherapy plan. Coverage and gastrointestinal/biliary OAR limits must come from applicable liver guidance or confirmed case-protocol settings.',
         },
         defaultReferences: ['ICRU_DOSE', 'AAPM_DOSE', 'ESTRO_DVH'],
     },

@@ -161,7 +161,7 @@ Capabilities:
                 "## Prescription Dose Rationale",
                 f"- **Current Prescription:** {fmt_float(prescription_rationale.get('prescription_gy', rx_gy), 1)} Gy",
                 f"- **Rationale:** {prescription_rationale.get('rationale', 'No case-specific rationale provided')}",
-                f"- **clinical_kb Site:** {prescription_rationale.get('site', 'unknown')}",
+                f"- **Clinical guidance site:** {prescription_rationale.get('site', 'unknown')}",
             ]
             if prescription_rationale.get("target_criteria"):
                 lines.append(f"- **Target Criteria:** {prescription_rationale.get('target_criteria')}")

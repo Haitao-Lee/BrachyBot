@@ -302,8 +302,8 @@ def build_prescription_rationale(memory: Any) -> Dict[str, Any]:
             rationale = (
                 f"Prescription is reported as {rx_gy:.1f} Gy from {rx_source}. "
                 f"When no case-specific prescription rationale is provided, BrachyBot uses the current "
-                f"planning convention and evaluates target coverage relative to site-specific clinical_kb "
-                f"standards for {standard_site}."
+                f"planning convention and evaluates target coverage relative to applicable site-specific "
+                f"clinical guidance for {standard_site}."
             )
         else:
             rationale = (
@@ -321,7 +321,7 @@ def build_prescription_rationale(memory: Any) -> Dict[str, Any]:
         "oar_criteria": oar,
         "sources": sources,
         "clinical_boundary": (
-            "If the clinician provides a prescription dose or rationale in plan_config, it overrides this generated text."
+            "A clinician-confirmed prescription dose or rationale overrides this generated text."
         ),
     }
 
@@ -389,7 +389,7 @@ def format_prescription_rationale_markdown(context: Dict[str, Any], lang: str = 
             f"- **选择原因**: {rx.get('rationale')}",
         ]
         if criteria_parts:
-            lines.append(f"- **clinical_kb 目标覆盖参考**: {', '.join(criteria_parts)}。")
+            lines.append(f"- **部位特异性目标覆盖参考**: {', '.join(criteria_parts)}。")
         if source_text:
             lines.append(f"- **来源**: {source_text}。")
         lines.append(f"- **边界**: {rx.get('clinical_boundary')}")
@@ -401,7 +401,7 @@ def format_prescription_rationale_markdown(context: Dict[str, Any], lang: str = 
             f"- **Rationale**: {rx.get('rationale')}",
         ]
         if criteria_parts:
-            lines.append(f"- **clinical_kb target reference**: {', '.join(criteria_parts)}.")
+            lines.append(f"- **Site-specific target reference**: {', '.join(criteria_parts)}.")
         if source_text:
             lines.append(f"- **Sources**: {source_text}.")
         lines.append(f"- **Boundary**: {rx.get('clinical_boundary')}")

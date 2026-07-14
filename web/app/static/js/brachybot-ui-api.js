@@ -112,6 +112,15 @@ function collectUIState() {
         data_tree: (typeof dataTreeState !== 'undefined') ? {
             ctv_loaded: !!dataTreeState.ctv?.loaded,
             oar_count: dataTreeState.organs?.length || 0,
+            // Planning consumes this compact whitelist. Keep IDs, labels and
+            // parent categories, but never serialize mesh geometry here.
+            organs: (dataTreeState.organs || []).map((organ) => ({
+                id: organ.id || null,
+                label_id: Number.isFinite(Number(organ.labelId)) ? Number(organ.labelId) : null,
+                label: organ.label || organ.name || null,
+                category: organ.category === 'non_traversable' ? 'non_traversable' : 'traversable',
+                source: organ.source || (String(organ.id || '').startsWith('ctv_') ? 'ctv' : 'oar'),
+            })).filter((organ) => organ.id || organ.label_id !== null),
             seeds: dataTreeState.planning?.seeds?.length || 0,
             needles: dataTreeState.planning?.needles?.length || 0,
             dose_levels: dataTreeState.planning?.doseLevels?.length || 0,

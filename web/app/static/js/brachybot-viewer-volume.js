@@ -1256,9 +1256,9 @@ const ORGAN_CATEGORIES = {
 // Default category classification by organ name keywords
 const CATEGORY_RULES = [
     // Non-traversable: bones, cartilage, major vessels, nerves
-    { pattern: /bone|rib|spine|vertebra|sacrum|pelvis|femur|ilium|ischium|pubis/i, category: 'non_traversable' },
+    { pattern: /bone|rib|skull|spine|vertebra|sacrum|sternum|pelvis|femur|humerus|scapula|clavicula|hip|ilium|ischium|pubis/i, category: 'non_traversable' },
     { pattern: /cartilage|disc|meniscus/i, category: 'non_traversable' },
-    { pattern: /aorta|vena\s*cava|iliac\s*(artery|vein)|femoral\s*(artery|vein)|carotid|jugular|artery|vein|vessel/i, category: 'non_traversable' },
+    { pattern: /aorta|vena\s*cava|iliac\s+(artery|vein|vena)|femoral\s*(artery|vein)|carotid|jugular|artery|vein|vessel|brachiocephalic\s+trunk/i, category: 'non_traversable' },
     { pattern: /nerve|plexus|sciatic|spinal\s*cord|brachial/i, category: 'non_traversable' },
     // Traversable: soft tissue organs
     { pattern: /bladder|rectum|sigmoid|colon|small\s*bowel|intestine|stomach/i, category: 'traversable' },
@@ -1329,6 +1329,7 @@ function updateOrganList(organData) {
             opacity: existing?.opacity ?? 0.5,
             voxelCount: info.voxel_count || 0,
             category: cat,
+            source: 'oar',
         });
         i++;
     }
@@ -2008,6 +2009,18 @@ function handleTreeItemClick(id, event) {
 function handleTreeItemRightClick(id, event) {
     event.preventDefault();
     event.stopPropagation();
+    // Group headers must open the group menu directly. Routing a group id
+    // through the item menu leaves no selected organ and appears unresponsive.
+    const groupIds = new Set([
+        'ctv', 'oar', 'non_traversable', 'traversable',
+        'planning', 'planning_trajectories', 'planning_seeds',
+        'planning_needles', 'dose_isosurfaces', 'planning_meshes',
+    ]);
+    if (groupIds.has(id)) {
+        selectedItems.clear();
+        showGroupContextMenu(event.clientX, event.clientY, id);
+        return;
+    }
     // If right-clicking an unselected item, select only it
     if (!selectedItems.has(id)) {
         selectedItems.clear();
@@ -2023,7 +2036,10 @@ function showGroupContextMenu(x, y, category) {
 
     // Determine group info based on category
     let catInfo, count;
-    if (category === 'oar') {
+    if (category === 'ctv') {
+        catInfo = { label: 'CTV', icon: '🎯' };
+        count = dataTreeState.ctv.loaded ? 1 : 0;
+    } else if (category === 'oar') {
         catInfo = { label: 'All OARs', icon: '🏥' };
         count = dataTreeState.organs.length;
     } else if (category === 'planning_seeds') {
@@ -2035,6 +2051,9 @@ function showGroupContextMenu(x, y, category) {
     } else if (category === 'dose_isosurfaces') {
         catInfo = { label: 'Dose Isosurfaces', icon: '🌈' };
         count = dataTreeState.planning.doseLevels.length;
+    } else if (category === 'planning_meshes') {
+        catInfo = { label: 'Planning Meshes', icon: '▣' };
+        count = (dataTreeState.planning.meshes || []).length;
     } else if (category === 'planning' || category === 'planning_trajectories') {
         catInfo = { label: category === 'planning' ? 'Planning' : 'Trajectories', icon: 'P' };
         count = category === 'planning' ? _planningVisualEntries().length : dataTreeState.planning.trajectories.length;
@@ -2054,7 +2073,7 @@ function showGroupContextMenu(x, y, category) {
     items += `<div class="ctx-menu-sep"></div>`;
 
     // 3D Reconstruct all in group (only for OAR/organ groups)
-    if (category === 'oar' || ORGAN_CATEGORIES[category]) {
+    if (category === 'oar' || (ORGAN_CATEGORIES[category] && category !== 'ctv')) {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();groupReconstruct3D('${category}')">
             <span class="ctx-icon">&#9638;</span> 3D Reconstruct All (${count})</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
@@ -2067,13 +2086,13 @@ function showGroupContextMenu(x, y, category) {
         <span class="ctx-icon">&#128064;</span> Hide All</div>`;
 
     // Solo this group (only for organ groups)
-    if (category === 'oar' || ORGAN_CATEGORIES[category]) {
+    if (category === 'oar' || (ORGAN_CATEGORIES[category] && category !== 'ctv')) {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();soloGroup('${category}')">
             <span class="ctx-icon">&#128269;</span> Solo This Group</div>`;
     }
 
     // Clear planning visualization (only for planning groups)
-    if (category === 'planning' || category === 'planning_trajectories' || category === 'planning_seeds' || category === 'planning_needles' || category === 'dose_isosurfaces') {
+    if (category === 'planning' || category === 'planning_trajectories' || category === 'planning_seeds' || category === 'planning_needles' || category === 'dose_isosurfaces' || category === 'planning_meshes') {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();clearPlanningVisualization()">
             <span class="ctx-icon">&#128465;</span> Clear Planning</div>`;
     }
@@ -2349,6 +2368,7 @@ function batchMoveToCategory(category) {
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
     redrawSeedNeedleOverlays();
+    if (typeof syncUIBridgeState === 'function') syncUIBridgeState('data_tree.category').catch(() => {});
 }
 
 function batchSolo() {
@@ -2418,6 +2438,7 @@ function moveOrganToCategory(organId, newCategory) {
         organ.category = newCategory;
         renderDataTree();
         if (state.ctLoaded) loadAllSlices();
+        if (typeof syncUIBridgeState === 'function') syncUIBridgeState('data_tree.category').catch(() => {});
     }
 }
 

@@ -504,7 +504,7 @@ print(json.dumps(result))
                 # Do not infer PASS/WARN/FAIL from generic local ratios.
                 # OAR tolerances are site-specific; use clinical_kb or explicit
                 # plan_config constraints for clinical interpretation.
-                status = L('需结合 clinical_kb/plan_config 判读', 'Needs clinical_kb/plan_config review')
+                status = L('需结合当前肿瘤部位的适用指南或病例方案判读', 'Requires review against applicable site-specific guidance or the confirmed case protocol')
                 lines.append(f"| {organ} | {dmax:.2f} | {d2cc:.2f} | {d1cc:.2f} | {status} |")
         else:
             lines.append(L('(剂量评估未返回 OAR 指标)', '(No OAR metrics returned by dose evaluation)'))
@@ -520,7 +520,7 @@ print(json.dumps(result))
                 d2cc = om.get('d2cc') or 0
                 review_items.append(
                     f"- {organ}: Dmax={dmax:.2f} Gy, D2cc={d2cc:.2f} Gy. "
-                    f"{L('请用 clinical_kb 或显式 plan_config 的部位特异性限值判读。', 'Interpret with site-specific limits from clinical_kb or explicit plan_config.')}"
+                    f"{L('请依据当前肿瘤部位适用的临床指南或已确认的病例方案限值判读。', 'Interpret using applicable site-specific guidance or confirmed case-protocol limits.')}"
                 )
         review_items.append(
             f"- V100={v100:.1f}%, V150={v150:.1f}%, V200={v200:.1f}%, D90={d90:.2f} Gy. "
@@ -535,14 +535,14 @@ print(json.dumps(result))
         lines.append(f"- {L('请放射肿瘤科医师审核本计划并签署批准', 'Have a radiation oncologist review and sign off on this plan')}")
         lines.append(f"- {L('使用独立剂量算法进行二次校验(蒙特卡罗或 TG-43)', 'Perform secondary dose verification using an independent algorithm (Monte Carlo or TG-43)')}")
         if oar_metrics:
-            lines.append(f"- {L('在 clinical_kb 中检索当前病种的 OAR 限值后再给出超限/通过结论', 'Query clinical_kb for this tumor site before labeling any OAR as exceeded or passed')}")
+            lines.append(f"- {L('请在最终临床审核时，依据当前肿瘤部位的适用指南和已确认的病例方案限值复核 OAR 剂量，避免仅凭软件默认值下结论。', 'During final clinical review, verify OAR doses against applicable site-specific guidance and confirmed case-protocol limits; do not rely on software defaults alone.')}")
         lines.append(f"- {L('术后 1 个月复查 CT,评估粒子迁移和剂量验证', 'Schedule a 1-month follow-up CT to assess seed migration and dose verification')}")
         lines.append("")
 
         # Section 9: References
         lines.append(f"## {L('9. 参考文献', '9. References')}")
         lines.append("")
-        lines.append(f"- {L('部位特异性阈值和 OAR 限值应由 clinical_kb 检索结果或显式 plan_config 提供。', 'Site-specific thresholds and OAR limits should come from clinical_kb retrieval results or explicit plan_config.')}")
+        lines.append(f"- {L('部位特异性阈值和 OAR 限值应以当前肿瘤部位适用的临床指南、机构协议或已确认的病例方案为准。', 'Site-specific thresholds and OAR limits should come from applicable clinical guidance, institutional protocols, or confirmed case-specific settings.')}")
         lines.append(f"- [AAPM TG-43U1](https://pubmed.ncbi.nlm.nih.gov/15070264/) — {L('近距离放疗源剂量学报告框架', 'Brachytherapy source dosimetry reporting framework')}")
         lines.append(f"- [ICRU Report 89](https://www.icru.org/report/icru-report-89-prescribing-recording-and-reporting-photon-beam-therapy-2nd-edition) — {L('处方、记录和报告原则', 'Prescribing, recording, and reporting principles')}")
         lines.append("")
