@@ -240,6 +240,34 @@ function _todoCreate() {
             }
             _todoUpdateCount();
         },
+        cancel(reason) {
+            // Abort is a terminal UI state. Do not leave active rows, elapsed
+            // timers, GPU polling, or breathing guards alive after the user
+            // presses Stop while the SSE stream is being torn down.
+            const message = reason || 'Stopped';
+            for (const it of api.items) {
+                if (it.status !== 'pending' && it.status !== 'active' && it.status !== 'predicted') continue;
+                if (it._timer) { clearInterval(it._timer); it._timer = null; }
+                if (it._animationGuard) { clearInterval(it._animationGuard); it._animationGuard = null; }
+                it.node.style.animationPlayState = '';
+                _todoStopGpuBadge(it);
+                it.status = 'error';
+                it.endedAt = Date.now();
+                if (it.startedAt == null || it.startedAt <= 0 || it.startedAt > Date.now() + 60000) {
+                    it.startedAt = it.endedAt;
+                }
+                it.node.classList.remove('pending', 'active', 'predicted', 'done');
+                it.node.classList.add('error');
+                const dot = it.node.querySelector('.chat-todo-dot');
+                if (dot) dot.textContent = 'x';
+                const time = it.node.querySelector('.chat-todo-time');
+                if (time) time.textContent = message;
+            }
+            _todoUpdateCount();
+            // Keep the stopped summary briefly readable, but never leave a
+            // live progress row expanded after cancellation.
+            this.fold();
+        },
         fold() {
             // Final assistant response arrived — mark all remaining
             // pending/active items as done so the count is accurate.
@@ -793,8 +821,12 @@ async function sendChat(prefill, options) {
     // This must run before reading/validating the input box; during streaming
     // the input is usually empty, and the old ordering returned early before
     // aborting anything.
-    if (chatAbortController && window._chatStreaming) {
+    if (chatAbortController && window._chatTurnActive) {
+        try {
+            if (typeof window._chatTurnCancelUi === 'function') window._chatTurnCancelUi('Stopped');
+        } catch (_) {}
         try { chatAbortController.abort(); } catch (_) {}
+        window._chatTurnActive = false;
         window._chatStreaming = false;
         setStreamingState(false);
         try { fetch(API + '/chat/abort', { method: 'POST' }); } catch (_) {}
@@ -866,9 +898,30 @@ async function sendChat(prefill, options) {
     // Group screenshots emitted during one assistant turn into one gallery.
     const screenshotGallery = {};
     const uiState = (typeof collectUIState === 'function') ? collectUIState() : {};
+    const cancelTurnUi = (reason) => {
+        if (thinkingEl && typeof removeThinkingIndicator === 'function') {
+            removeThinkingIndicator(thinkingEl);
+        }
+        if (todo && typeof todo.cancel === 'function') {
+            todo.cancel(reason || 'Stopped');
+        }
+        if (chainEl && typeof cancelThinkingChain === 'function') {
+            cancelThinkingChain(chainEl, headerEl);
+        }
+        if (window._toolProgressEls && window._toolProgressEls.length) {
+            window._toolProgressEls.forEach(el => {
+                try { el.style.display = 'none'; } catch (_) {}
+            });
+            window._toolProgressEls = [];
+        }
+    };
+    window._chatTurnCancelUi = cancelTurnUi;
+    window._chatTurnActive = true;
+    let turnAbortController = null;
 
     try {
         chatAbortController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        turnAbortController = chatAbortController;
         setStreamingState(true);
         thinkingEl = (typeof showThinkingIndicator === 'function') ? showThinkingIndicator() : null;
 
@@ -876,7 +929,7 @@ async function sendChat(prefill, options) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: text, ui_state: uiState, stream: true, clear_context: false }),
-            signal: chatAbortController ? chatAbortController.signal : undefined,
+            signal: turnAbortController ? turnAbortController.signal : undefined,
         });
 
         if (!resp.ok) {
@@ -1410,6 +1463,7 @@ async function sendChat(prefill, options) {
         if (typeof addChat === 'function') {
             // Don't show error for user-initiated abort (clicking stop button)
             if (e.name === 'AbortError' || /abort/i.test(e.message)) {
+                cancelTurnUi('Stopped');
                 addChat('system', '⏹ Stopped.');
             } else {
                 addChat('error', 'Send failed: ' + e.message);
@@ -1418,9 +1472,17 @@ async function sendChat(prefill, options) {
             console.error('sendChat failed and addChat missing:', e);
         }
     } finally {
-        window._chatStreaming = false;
-        setStreamingState(false);
-        setTimeout(() => { try { _flushHiddenChatQueue(); } catch (_) {} }, 0);
+        const isCurrentTurn = window._chatTurnCancelUi === cancelTurnUi;
+        if (isCurrentTurn) {
+            window._chatTurnActive = false;
+            window._chatTurnCancelUi = null;
+        }
+        if (chatAbortController === turnAbortController) chatAbortController = null;
+        if (isCurrentTurn) {
+            window._chatStreaming = false;
+            setStreamingState(false);
+            setTimeout(() => { try { _flushHiddenChatQueue(); } catch (_) {} }, 0);
+        }
     }
 }
 

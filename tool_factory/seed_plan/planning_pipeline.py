@@ -370,14 +370,23 @@ def _resolve_ref_direc(ref_direc_input, ct_image, ctv_mask, agent) -> np.ndarray
     return _normalize_ref_direc(_GLOBAL_DEFAULT_REFDIREC)
 
 
-def _load_dose_model():
+def _load_dose_model(device=None):
     """Load the dose prediction model.
+
+    The production planning path must use the same centralized device
+    selection as the standalone dose engine. Keeping this argument injectable
+    preserves deterministic CPU tests while the normal pipeline selects the
+    best available GPU and only falls back to CPU when CUDA is unavailable.
 
     Returns:
         (model, error_message) - model is None if loading failed
     """
     from plans.dose_pre.model_loader import load_dose_model
-    model, error, _ = load_dose_model(device="cpu")
+    if device is None:
+        from plans.device_manager import get_device
+        device = get_device(caller="planning_pipeline_dose")
+    logger.info("[dose_model] loading dose_unet_spacing1mm on %s", device)
+    model, error, _ = load_dose_model(device=device)
     return model, error
 
 
