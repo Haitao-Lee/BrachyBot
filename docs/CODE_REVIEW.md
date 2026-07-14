@@ -4111,3 +4111,10 @@ analytical, or legacy-model fallback.
 The `32^3` and `64^3` references in the historical review text mean cubic
 voxel crops/windows; the deployed adapter uses the checkpoint-compatible
 `64^3` sliding window.
+
+### Naming follow-up
+
+The active clinical knowledge-base entry and the dose-model path regression
+test were also updated to the canonical `dose_unet_spacing1mm` name. The
+remaining historical references to retired implementations are retained only
+inside review history, where they document what was removed.

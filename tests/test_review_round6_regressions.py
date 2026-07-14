@@ -256,7 +256,7 @@ def test_native_provider_multimodal_adapters_preserve_text_and_image():
 def test_dose_model_path_can_be_configured(tmp_path, monkeypatch):
     from plans.dose_pre.model_loader import resolve_dose_model_path
 
-    checkpoint = tmp_path / "dose_model.pth"
+    checkpoint = tmp_path / "dose_unet_spacing1mm_test.pth"
     checkpoint.write_bytes(b"placeholder")
     monkeypatch.setenv("BRACHYBOT_DOSE_MODEL_PATH", str(checkpoint))
     assert resolve_dose_model_path() == checkpoint.resolve()

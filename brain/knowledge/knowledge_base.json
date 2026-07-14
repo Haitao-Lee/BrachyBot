@@ -74,8 +74,8 @@
     },
     {
       "id": 15,
-      "text": "BrachyBot's only supported dose calculation engine is the CNN surrogate (myDoseNet) — a deep-learning model that predicts the 3D dose distribution around a seed given the local CT context. The earlier analytical Gaussian fallback has been removed because its 1/r^2 approximation was not clinically reliable; always rely on the CNN engine for dose evaluation and replanning.",
-      "tags": ["cnn", "mydosnet", "dose", "engine", "fall-off"]
+      "text": "BrachyBot's only supported dose calculation engine is the dose_unet_spacing1mm CNN surrogate — a deep-learning model that predicts the 3D dose distribution around a seed given the local CT context. The earlier analytical Gaussian fallback has been removed because its 1/r^2 approximation was not clinically reliable; always rely on the dose_unet_spacing1mm engine for dose evaluation and replanning.",
+      "tags": ["cnn", "dose_unet_spacing1mm", "dose", "engine", "fall-off"]
     }
   ]
 }
