@@ -35,6 +35,8 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("step.requires_input ? 'User input required'", source)
         self.assertIn("cancel(reason)", source)
         self.assertIn("window._chatTurnCancelUi", source)
+        self.assertIn("if (window._chatTurnActive)", source)
+        self.assertIn("window.cancelVisibleChatProgress", source)
         css = self.read("web/app/static/css/brachybot-chat-status.css")
         self.assertIn("animation-play-state: running !important", css)
         responsive = self.read("web/app/static/css/brachybot-responsive.css")
@@ -45,6 +47,12 @@ class Round9RegressionTests(unittest.TestCase):
         source = self.read("tool_factory/seed_plan/planning_pipeline.py")
         self.assertIn('get_device(caller="planning_pipeline_dose")', source)
         self.assertNotIn('load_dose_model(device="cpu")', source)
+
+    def test_stage_two_planning_cannot_spin_forever(self):
+        source = self.read("plans/core.py")
+        self.assertIn("max_stage2_iterations = 100", source)
+        self.assertIn("stage2_iterations > max_stage2_iterations", source)
+        self.assertIn("no measurable DVH", source)
 
     def test_missing_tumor_site_short_circuits_llm_tool_loop(self):
         source = self.read("agent_runtime/llm_runtime.py")
