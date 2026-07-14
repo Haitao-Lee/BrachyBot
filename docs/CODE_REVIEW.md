@@ -4199,6 +4199,8 @@ agent turn token. A stopped turn is never reused as a successful plan result.
 - `node --check` passes for both modified chat scripts.
 - `git diff --check` passes.
 - Regression coverage checks the global Stop fallback and the Stage 2 bound.
+- The modified chat scripts use a new static query version so an already-open
+  browser does not silently reuse the pre-fix Stop handler.
 - Python unit execution was unavailable in the Windows checkout because its
   local interpreter is missing the standard `encodings` package; the remote
   `brachytherapy` interpreter is the authoritative runtime check.
