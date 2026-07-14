@@ -4161,3 +4161,44 @@ clearing a newer request's AbortController.
 - Remote RTX smoke testing should verify `planning_pipeline_dose` reports
   `cuda:0` or `cuda:1` and that a multi-seed plan no longer runs the new model
   on CPU.
+
+## Round 16 Dose-runtime and cancellation follow-up (2026-07-14)
+
+### Coordinate-chain verification
+
+The new DoseUNet adapter was checked on the deployed CT geometry without
+changing the established `(z, y, x)` planner convention or the SimpleITK LPS
+world conversion. The actual CT inference returned a finite, non-empty dose
+array, and the selected CUDA device was reported as `cuda:1`. This is evidence
+against a coordinate conversion producing an empty dose field in the observed
+slow run; the coordinate contract is intentionally left unchanged because it
+is already coupled to the viewer and seed transforms.
+
+### Bounded Stage 2 replanning
+
+`plans/core.py` had a real robustness defect: the Stage 2 `replan` loop had no
+iteration cap, and `plans.utilizations.replan()` could report success when the
+coverage value did not measurably improve. If the target coverage was
+unreachable because of a model/unit/input issue, the same expensive dose-model
+sweep could repeat indefinitely. Stage 2 now has a 100-iteration upper bound
+and stops when the coverage change is at most `1e-6`, retaining the best plan
+found and logging the reason. This bounds worst-case work without modifying
+coordinate math or silently declaring an unmet target successful.
+
+### Stop-state hardening
+
+The local Stop path now handles the case where browser AbortController/SSE
+state is already out of sync. It invokes a global visible-progress cleanup in
+addition to the turn-local cleanup, clearing thinking rows, live trace timers,
+todo timers, GPU polling, animation guards, and floating progress remnants.
+The backend cancellation request remains in place to invalidate the active
+agent turn token. A stopped turn is never reused as a successful plan result.
+
+### Verification
+
+- `node --check` passes for both modified chat scripts.
+- `git diff --check` passes.
+- Regression coverage checks the global Stop fallback and the Stage 2 bound.
+- Python unit execution was unavailable in the Windows checkout because its
+  local interpreter is missing the standard `encodings` package; the remote
+  `brachytherapy` interpreter is the authoritative runtime check.
