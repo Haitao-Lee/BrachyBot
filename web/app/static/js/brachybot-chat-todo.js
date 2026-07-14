@@ -821,9 +821,14 @@ async function sendChat(prefill, options) {
     // This must run before reading/validating the input box; during streaming
     // the input is usually empty, and the old ordering returned early before
     // aborting anything.
-    if (chatAbortController && window._chatTurnActive) {
+    if (window._chatTurnActive) {
         try {
             if (typeof window._chatTurnCancelUi === 'function') window._chatTurnCancelUi('Stopped');
+        } catch (_) {}
+        try {
+            if (typeof window.cancelVisibleChatProgress === 'function') {
+                window.cancelVisibleChatProgress('Stopped');
+            }
         } catch (_) {}
         try { chatAbortController.abort(); } catch (_) {}
         window._chatTurnActive = false;

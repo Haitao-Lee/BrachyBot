@@ -204,11 +204,27 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
 
     cur_DVH_rate = 0
     minus_radiation = np.zeros_like(radiation_volume)
+    # Stage 2 evaluates a full dose-model sweep for every replan attempt.
+    # Keep the loop finite even when the target is unreachable or a candidate
+    # is reported as successful without improving the coverage metric.
+    max_stage2_iterations = 100
+    stage2_iterations = 0
 
     progressDialog.setValue(55)
     progressDialog.setLabelText("Optimal Planning...")
 
     while cur_DVH_rate < DVH_rate:
+        stage2_iterations += 1
+        if stage2_iterations > max_stage2_iterations:
+            _logger.warning(
+                "[optimal_plan] Stage 2 reached the iteration cap (%d) "
+                "with DVH=%.4f/%.4f; returning the best plan found",
+                max_stage2_iterations,
+                cur_DVH_rate,
+                DVH_rate,
+            )
+            break
+        previous_DVH_rate = cur_DVH_rate
         try:
             minus_res, updated_DVH_rate, minus_radiation, sign = utilizations.replan(
                 minus_res,
@@ -234,6 +250,14 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
             break
         if sign:
             cur_DVH_rate = updated_DVH_rate
+            if cur_DVH_rate <= previous_DVH_rate + 1e-6:
+                _logger.warning(
+                    "[optimal_plan] Stage 2 stopped after no measurable DVH "
+                    "improvement (%.4f -> %.4f)",
+                    previous_DVH_rate,
+                    cur_DVH_rate,
+                )
+                break
         else:
             minus_res = copy.deepcopy(init_planned_res)
             minus_radiation = cur_radiation

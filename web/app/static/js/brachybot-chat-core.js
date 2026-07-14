@@ -1441,6 +1441,40 @@ function setStreamingState(streaming) {
     }
 }
 
+// Stop any progress surfaces that may have outlived the local sendChat
+// closure. This is a defensive UI boundary for browser races: an aborted
+// fetch can reject before the closure receives the final SSE event, while a
+// timer stored on a DOM node would otherwise keep updating the screen.
+function cancelVisibleChatProgress(reason) {
+    const message = reason || 'Stopped';
+    try {
+        if (window._activeTodoApi && typeof window._activeTodoApi.cancel === 'function') {
+            window._activeTodoApi.cancel(message);
+        }
+    } catch (_) {}
+    try {
+        document.querySelectorAll('#thinkingRow').forEach(row => {
+            removeThinkingIndicator(row);
+        });
+    } catch (_) {}
+    try {
+        document.querySelectorAll('#liveThinkingChain').forEach(chain => {
+            const header = chain.querySelector('.thinking-header');
+            cancelThinkingChain(chain, header);
+        });
+    } catch (_) {}
+    try {
+        if (window._toolProgressEls && window._toolProgressEls.length) {
+            window._toolProgressEls.forEach(el => {
+                try { el.remove(); } catch (_) { try { el.style.display = 'none'; } catch (_) {} }
+            });
+            window._toolProgressEls = [];
+        }
+    } catch (_) {}
+}
+
+window.cancelVisibleChatProgress = cancelVisibleChatProgress;
+
 function toggleThinkingChain(wrapper, _steps) {
     const toggle = wrapper.querySelector('.thinking-toggle');
     const stepsDiv = wrapper.querySelector('.thinking-steps');
