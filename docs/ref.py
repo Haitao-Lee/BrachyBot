@@ -39,7 +39,7 @@ from SubjectHierarchyPlugins.AbstractScriptedSubjectHierarchyPlugin import *
 import SlicerCustomAppUtilities
 from plans.brachy_plan_v2 import brachy_plan, brachy_plan_rf
 from plans.config import setting
-from plans.dose_pre.myDoseNet import myDoseNet
+from plans.dose_pre.model_loader import load_dose_model
 from plans.utilizations_v2 import position_transform, direction_transform, compute_body_shell_and_ref_direction, ras_direction_to_voxel
 from Resources import BrachyPlanResources  # noqa: F401
 
@@ -67,7 +67,6 @@ RESAMPLE_DEFAULT_SIZE = [128, 128, 128]
 RESAMPLE_DEFAULT_SPACING = [1, 1, 1]
 CAPSULE_CYLINDER_RESOLUTION = 24
 CAPSULE_SPHERE_RADIUS_OFFSET = 0.01
-DOSE_MODEL_FEATURES = (16, 32, 64, 128, 256, 32)
 DOSE_MODEL_IN_CHANNELS = 3
 DOSE_MODEL_OUT_CHANNELS = 1
 DIRECTION_REVERSAL_SIGN = -1
@@ -5134,29 +5133,21 @@ class BrachyPlanLogic(ScriptedLoadableModuleLogic):
         """Get the cached dose model, loading it if necessary.
 
         Returns:
-            myDoseNet: The loaded dose prediction model in eval mode.
+            DoseUNet: The loaded spacing-normalized dose prediction model in eval mode.
 
         Raises:
             RuntimeError: If the model file does not exist or fails to load.
         """
-        model_path = os.path.join(os.path.dirname(__file__), "plans", "dose_pre", "dose_model.pth")
-        import torch
+        from plans.dose_pre.model_loader import resolve_dose_model_path
 
-        if self._dose_model is not None and self._dose_model_path == model_path:
+        resolved_path = resolve_dose_model_path()
+        if resolved_path and self._dose_model is not None and self._dose_model_path == str(resolved_path):
             return self._dose_model
 
         self.log("Loading dose prediction model...")
-        dose_model = myDoseNet(
-            spatial_dims=3,
-            in_channels=DOSE_MODEL_IN_CHANNELS,
-            out_channels=DOSE_MODEL_OUT_CHANNELS,
-            features=DOSE_MODEL_FEATURES,
-        )
-        if os.path.exists(model_path):
-            dose_model.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=True))
-        else:
-            raise RuntimeError(f"Dose model not found at {model_path}")
-        dose_model.eval()
+        dose_model, model_error, model_path = load_dose_model(device="cpu")
+        if dose_model is None:
+            raise RuntimeError(model_error or "dose_unet_spacing1mm model could not be loaded")
 
         self._dose_model = dose_model
         self._dose_model_path = model_path

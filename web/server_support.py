@@ -541,7 +541,7 @@ def _safe_float_list(values: Any, length: int = 3, default: Optional[list] = Non
 
 
 def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]:
-    """Recompute manual-plan dose with the trained myDoseNet model only.
+    """Recompute manual-plan dose with the trained DoseUNet model only.
 
     Manual seed and needle coordinates remain in frontend world coordinates.
     For model inference only, seed positions are transformed onto the existing
@@ -602,7 +602,7 @@ def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]
 
     dose_model, model_error = _load_dose_model()
     if dose_model is None:
-        raise ValueError(model_error or "myDoseNet dose model is unavailable")
+        raise ValueError(model_error or "dose_unet_spacing1mm dose model is unavailable")
 
     norm_seeds = []
     model_seeds = []
@@ -716,7 +716,7 @@ def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]
     metrics: Dict[str, Any] = {
         "prescribed_dose": 1.0,
         "manual_preview": True,
-        "dose_engine": "myDoseNet",
+        "dose_engine": "dose_unet_spacing1mm",
         "total_seeds": len(norm_seeds),
         "num_trajectories": len(grouped),
     }
@@ -833,7 +833,7 @@ def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]
 
     agent.memory.store("manual_planning_preview", True)
     agent.memory.store("manual_ai_dose", True)
-    agent.memory.store("dose_engine", "myDoseNet")
+    agent.memory.store("dose_engine", "dose_unet_spacing1mm")
     agent.memory.store("manual_seeds", norm_seeds)
     agent.memory.store("manual_needles", norm_needles)
     agent.memory.store("seed_plan", plan_serialized)
@@ -851,7 +851,7 @@ def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]
     return {
         "success": True,
         "manual_preview": True,
-        "dose_engine": "myDoseNet",
+        "dose_engine": "dose_unet_spacing1mm",
         "total_seeds": len(norm_seeds),
         "num_trajectories": len(grouped),
         "metrics": metrics,

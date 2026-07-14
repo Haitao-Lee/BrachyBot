@@ -59,7 +59,7 @@ class RLSeedPlanningTool(BaseTool):
                 },
                 "dose_cal_model": {
                     "type": "object",
-                    "description": "Optional injected myDoseNet model; otherwise the configured checkpoint is loaded",
+                    "description": "Optional injected dose_unet_spacing1mm model; otherwise the configured checkpoint is loaded",
                 },
                 "rf_params": {
                     "type": "object",
@@ -87,7 +87,7 @@ class RLSeedPlanningTool(BaseTool):
                 },
                 "infer_img_size": {
                     "type": "array",
-                    "description": "CNN inference patch size [h, w, d] (default: [32, 32, 32])",
+                    "description": "DoseUNet sliding-window patch size [z, y, x] (default: [64, 64, 64])",
                     "items": {"type": "integer"},
                 },
                 "interval_rate": {
@@ -150,7 +150,7 @@ class RLSeedPlanningTool(BaseTool):
         in_lowest_dose = kwargs.get("in_lowest_dose", 1)
         out_highest_dose = kwargs.get("out_highest_dose", 1)
         DVH_rate = kwargs.get("DVH_rate", 0.9)
-        infer_img_size = tuple(kwargs.get("infer_img_size", (32, 32, 32)))
+        infer_img_size = tuple(kwargs.get("infer_img_size", (64, 64, 64)))
         interval_rate = kwargs.get("interval_rate", 2)
         seed_info = kwargs.get("seed_info", {"radius": 0.4, "length": 4.5, "seed_avr_dose": 50})
         image_normalize = kwargs.get("image_normalize", [-1000, 3000, 255])

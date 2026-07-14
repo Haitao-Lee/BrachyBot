@@ -60,7 +60,7 @@ class RuleBasedSeedPlanningTool(BaseTool):
                 },
                 "dose_cal_model": {
                     "type": "object",
-                    "description": "Optional injected myDoseNet model; otherwise the configured checkpoint is loaded",
+                    "description": "Optional injected dose_unet_spacing1mm model; otherwise the configured checkpoint is loaded",
                 },
                 "target_value": {
                     "type": "number",
@@ -94,7 +94,7 @@ class RuleBasedSeedPlanningTool(BaseTool):
                 },
                 "infer_img_size": {
                     "type": "array",
-                    "description": "CNN inference patch size [h, w, d] (default: [32, 32, 32])",
+                    "description": "DoseUNet sliding-window patch size [z, y, x] (default: [64, 64, 64])",
                     "items": {"type": "integer"},
                 },
                 "lower_bound": {
@@ -169,7 +169,7 @@ class RuleBasedSeedPlanningTool(BaseTool):
         in_lowest_dose = kwargs.get("in_lowest_dose", 1)
         out_highest_dose = kwargs.get("out_highest_dose", 1)
         DVH_rate = kwargs.get("DVH_rate", 0.9)
-        infer_img_size = tuple(kwargs.get("infer_img_size", (32, 32, 32)))
+        infer_img_size = tuple(kwargs.get("infer_img_size", (64, 64, 64)))
         lower_bound = kwargs.get("lower_bound", 0.8)
         upper_bound = kwargs.get("upper_bound", 10)
         distance_rate = kwargs.get("distance_rate", 0.8)

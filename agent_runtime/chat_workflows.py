@@ -1849,7 +1849,7 @@ class ChatWorkflowMixin:
         backlit_angle = radiation_array_params.get("backlit_angle", 0.5)
         max_candi_traj = radiation_array_params.get("maximum_candidate_trajectories", 200)
         min_depth = radiation_array_params.get("min_depth", 2)
-        infer_img_size = radiation_array_params.get("infer_img_size", [32, 32, 32])
+        infer_img_size = radiation_array_params.get("infer_img_size", [64, 64, 64])
         direc_resolution = self.config.get("direc_resolution", [30, 3, 2])
         image_normalize = self.config.get("image_normalize", [-1000, 3000, 255])
         dl_params = self.config.get("dl_params", {})
@@ -2287,14 +2287,14 @@ class ChatWorkflowMixin:
             return {"success": False, "error": "No target voxels remain after applying OAR obstacles"}
 
         dl_params = dict(self.config.get("dl_params", {}) or {})
-        dl_params.setdefault("infer_img_size", radiation_config.get("infer_img_size", [32, 32, 32]))
+        dl_params.setdefault("infer_img_size", radiation_config.get("infer_img_size", [64, 64, 64]))
         dl_params.setdefault("image_normalize", self.config.get("image_normalize", [-1000, 3000, 255]))
         seed_info = self.config.get(
             "seed_info", {"radius": 0.4, "length": 4.5, "seed_avr_dose": 50}
         )
         dose_model, model_error = resolve_dose_model({}, dl_params)
         if dose_model is None:
-            return {"success": False, "error": model_error or "myDoseNet is unavailable"}
+            return {"success": False, "error": model_error or "dose_unet_spacing1mm is unavailable"}
 
         try:
             delivered_dose, accepted_detected = compute_world_seed_dose_grid(
@@ -2430,7 +2430,7 @@ class ChatWorkflowMixin:
             "total_seeds": total_seeds,
             "metrics": eval_result.metadata or {},
             "registration_status": "physical_frame_verified",
-            "dose_engine": "myDoseNet",
+            "dose_engine": "dose_unet_spacing1mm",
         }
 
     def get_status(self) -> Dict:

@@ -3,7 +3,7 @@ Dose Engine Tool
 ================
 Dose calculation engine module.
 
-The only supported engine is the CNN surrogate (``myDoseNet``) — a deep
+The only supported engine is the spacing-normalized DoseUNet — a deep
 learning model that predicts 3D dose distributions from seed positions,
 directions, and the surrounding CT context.  The earlier analytical
 Gaussian engine was removed: its dose-fall-off approximation is not
@@ -19,7 +19,7 @@ from tool_factory.dose_engine.cnn_dose_engine import CNNDoseEngineTool
 
 class DoseEngineTool(BaseTool):
     """
-    CNN-based dose calculation tool (myDoseNet surrogate).
+    CNN-based dose calculation tool (DoseUNet surrogate).
 
     The dose-engine dispatcher is a thin wrapper that forwards every call
     to :class:`CNNDoseEngineTool`.  The ``engine`` parameter is retained
@@ -34,7 +34,7 @@ class DoseEngineTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Calculate radiation dose distribution using the CNN (myDoseNet) "
+            "Calculate radiation dose distribution using the spacing-normalized DoseUNet "
             "deep-learning surrogate. "
             "Input: CT image, seed positions/directions, and CNN inference parameters. "
             "Output: 3D dose distribution array and per-seed dose contributions."
@@ -59,9 +59,9 @@ class DoseEngineTool(BaseTool):
                 },
                 "infer_img_size": {
                     "type": "array",
-                    "description": "CNN inference patch size (default: [32, 32, 32])",
+                    "description": "DoseUNet sliding-window patch size (default: [64, 64, 64])",
                     "items": {"type": "integer"},
-                    "default": [32, 32, 32],
+                    "default": [64, 64, 64],
                 },
                 "normalize_min": {
                     "type": "number",
@@ -85,7 +85,7 @@ class DoseEngineTool(BaseTool):
                 },
                 "engine": {
                     "type": "string",
-                    "description": "Dose calculation engine. Only 'cnn' (myDoseNet) is supported; the legacy 'gaussian' engine has been removed.",
+                    "description": "Dose calculation engine. Only 'cnn' (dose_unet_spacing1mm) is supported; the legacy 'gaussian' engine has been removed.",
                     "enum": ["cnn"],
                     "default": "cnn",
                 },
@@ -132,7 +132,7 @@ class DoseEngineTool(BaseTool):
                 success=False,
                 error=(
                     f"Unknown engine: {engine!r}. The only supported engine is 'cnn' "
-                    f"(myDoseNet); the legacy 'gaussian' analytical engine has been removed."
+                    f"(dose_unet_spacing1mm); the legacy 'gaussian' analytical engine has been removed."
                 ),
             )
 
@@ -147,10 +147,10 @@ def main():
     import json
     import SimpleITK as sitk
 
-    parser = argparse.ArgumentParser(description="Dose Engine Tool (CNN / myDoseNet)")
+    parser = argparse.ArgumentParser(description="Dose Engine Tool (CNN / dose_unet_spacing1mm)")
     parser.add_argument("--dose_image", required=True, help="Path to CT dose image (.nii.gz)")
     parser.add_argument("--seeds", required=True, help="JSON string: list of [[position], [direction]] entries")
-    parser.add_argument("--infer_img_size", nargs=3, type=int, default=[32, 32, 32], help="CNN inference patch size")
+    parser.add_argument("--infer_img_size", nargs=3, type=int, default=[64, 64, 64], help="DoseUNet sliding-window patch size")
     parser.add_argument("--normalize_min", type=float, default=-1000, help="Image normalization min")
     parser.add_argument("--normalize_max", type=float, default=3000, help="Image normalization max")
     parser.add_argument("--normalize_scale", type=float, default=255, help="Image normalization scale")

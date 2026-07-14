@@ -296,7 +296,7 @@ print(json.dumps(result))
 
         # Extract prescription dose in Gy.
         #
-        # DOSE_SCALE (120.0): the dose prediction model (myDoseNet) was
+        # DOSE_SCALE (120.0): the deployed dose_unet_spacing1mm model uses
         # trained with labels where model output 1.0 = 120 Gy.  All
         # internal dose values are in "normalized" units (0~1.0 for
         # prescription, 0~255 for raw CNN output).  To convert to Gy:

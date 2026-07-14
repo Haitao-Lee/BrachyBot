@@ -8,14 +8,14 @@ from typing import Any, Dict, Optional, Tuple
 def resolve_dose_model(
     kwargs: Dict[str, Any], dl_params: Dict[str, Any]
 ) -> Tuple[Any, Optional[str]]:
-    """Return an injected or configured myDoseNet model without fabricating dose."""
+    """Return an injected or configured spacing-normalized DoseUNet model."""
     injected_model = kwargs.get("dose_cal_model")
     if injected_model is not None:
         return injected_model, None
 
     from plans.dose_pre.model_loader import load_dose_model
 
-    features = dl_params.get("dose_cal_features", (16, 32, 64, 128, 256, 32))
+    features = dl_params.get("dose_cal_features", (16, 32, 64, 128, 256))
     model, error, _ = load_dose_model(
         explicit_path=dl_params.get("dose_model_path"),
         device=dl_params.get("device", "cpu"),
@@ -34,7 +34,7 @@ def compute_world_seed_dose_grid(
     dl_params: Dict[str, Any],
     seed_info: Dict[str, Any],
 ) -> Tuple[Any, list]:
-    """Run myDoseNet for physical LPS seed positions on ``dose_image``.
+    """Run DoseUNet for physical LPS seed positions on ``dose_image``.
 
     Positions and directions stay in the deployed physical LPS convention at
     the API boundary. They are converted to NumPy ``(z, y, x)`` coordinates
@@ -46,7 +46,7 @@ def compute_world_seed_dose_grid(
     from plans import utilizations
 
     if dose_model is None:
-        raise ValueError("A trained myDoseNet model is required")
+        raise ValueError("A trained dose_unet_spacing1mm model is required")
     if dose_image is None:
         raise ValueError("dose_image is required")
 
@@ -115,7 +115,7 @@ def compute_world_seed_dose_grid(
         raise ValueError("No seed positions fall inside the planning dose grid")
 
     image_normalize = dl_params.get("image_normalize", [-1000, 3000, 255])
-    infer_size = dl_params.get("infer_img_size", [32, 32, 32])
+    infer_size = dl_params.get("infer_img_size", [64, 64, 64])
     per_seed_doses = utilizations.batch_seed_dose_calculation_dl(
         model_seeds,
         dose_image,
@@ -131,7 +131,7 @@ def compute_world_seed_dose_grid(
         seed_array = np.asarray(seed_dose, dtype=np.float32)
         if seed_array.shape != dose.shape:
             raise ValueError(
-                f"myDoseNet returned shape {seed_array.shape}, expected {dose.shape}"
+                f"dose_unet_spacing1mm returned shape {seed_array.shape}, expected {dose.shape}"
             )
         dose += seed_array
     dose = np.nan_to_num(dose, nan=0.0, posinf=0.0, neginf=0.0)

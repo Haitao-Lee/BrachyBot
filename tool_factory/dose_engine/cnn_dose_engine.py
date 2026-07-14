@@ -1,7 +1,7 @@
 """
 CNN Dose Engine Tool
 ===================
-Deep learning based dose calculation using myDoseNet.
+Deep learning dose calculation using the spacing-normalized DoseUNet.
 Supports batch inference for multiple seeds simultaneously.
 """
 
@@ -16,7 +16,7 @@ from typing import Dict, List
 
 class CNNDoseEngineTool(BaseTool):
     """
-    Tool for calculating radiation dose distributions using deep learning (myDoseNet).
+    Tool for calculating radiation dose distributions using DoseUNet.
 
     Uses a CNN surrogate model to predict dose distributions.
     Supports batch inference for efficient multi-seed calculation.
@@ -29,7 +29,7 @@ class CNNDoseEngineTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Calculate radiation dose distribution using CNN (myDoseNet). "
+            "Calculate radiation dose distribution using DoseUNet (spacing-normalized CNN). "
             "Input: CT image, seed positions/directions, and model parameters. "
             "Output: 3D dose distribution array and per-seed dose contributions."
         )
@@ -53,9 +53,9 @@ class CNNDoseEngineTool(BaseTool):
                 },
                 "infer_img_size": {
                     "type": "array",
-                    "description": "CNN inference patch size (default: [32, 32, 32])",
+                    "description": "DoseUNet sliding-window patch size (default: [64, 64, 64])",
                     "items": {"type": "integer"},
-                    "default": [32, 32, 32],
+                    "default": [64, 64, 64],
                 },
                 "normalize_min": {
                     "type": "number",
@@ -119,7 +119,7 @@ class CNNDoseEngineTool(BaseTool):
         dose_image = kwargs["dose_image"]
         seeds = kwargs["seeds"]
         dl_params = kwargs.get("dl_params", {})
-        infer_img_size = tuple(kwargs.get("infer_img_size", [32, 32, 32]))
+        infer_img_size = tuple(kwargs.get("infer_img_size", [64, 64, 64]))
         norm_min = kwargs.get("normalize_min", -1000)
         norm_max = kwargs.get("normalize_max", 3000)
         norm_scale = kwargs.get("normalize_scale", 255)
@@ -142,12 +142,15 @@ class CNNDoseEngineTool(BaseTool):
                 spatial_dims=dl_params.get("dose_spatial_dims", 3),
                 in_channels=dl_params.get("dose_in_channel", 3),
                 out_channels=dl_params.get("dose_out_channel", 1),
-                features=dl_params.get("dose_cal_features", (16, 32, 64, 128, 256, 32)),
+                features=dl_params.get("dose_cal_features", (16, 32, 64, 128, 256)),
             )
             if model is None:
                 return ToolResult(success=False, error=model_error, message=model_error)
             if dl_params.get("multi_GPU", False):
                 model = torch.nn.DataParallel(model)
+                # Preserve the preprocessing contract on the wrapper as well
+                # as the underlying module for downstream metadata/reporting.
+                model._brachybot_dose_contract = model.module._brachybot_dose_contract
             dl_params["dose_model"] = model
             dl_params["device"] = device
             dl_params["dose_model_path"] = model_path
@@ -161,6 +164,9 @@ class CNNDoseEngineTool(BaseTool):
         )
 
         cumulative_dose = np.sum(np.asarray(per_seed_doses), axis=0)
+        contract = getattr(dose_model, "_brachybot_dose_contract", None)
+        if contract is None:
+            contract = getattr(getattr(dose_model, "module", None), "_brachybot_dose_contract", {})
 
         return ToolResult(
             success=True,
@@ -171,7 +177,8 @@ class CNNDoseEngineTool(BaseTool):
                 "per_seed_doses": per_seed_doses,
                 "max_dose": float(np.max(cumulative_dose)),
                 "mean_dose": float(np.mean(cumulative_dose[cumulative_dose > 0])) if np.any(cumulative_dose > 0) else 0.0,
-                "engine": "cnn",
+                "engine": "dose_unet_spacing1mm",
+                "model_name": contract.get("name", "dose_unet_spacing1mm"),
                 "num_seeds": len(per_seed_doses),
             },
         )
@@ -181,10 +188,10 @@ def main():
     import argparse
     import json
 
-    parser = argparse.ArgumentParser(description="CNN Dose Engine Tool")
+    parser = argparse.ArgumentParser(description="DoseUNet spacing-normalized dose engine")
     parser.add_argument("--dose_image", required=True, help="Path to CT dose image (.nii.gz)")
     parser.add_argument("--seeds", required=True, help="JSON string: list of [[position], [direction]] entries")
-    parser.add_argument("--infer_img_size", nargs=3, type=int, default=[32, 32, 32], help="CNN inference patch size")
+    parser.add_argument("--infer_img_size", nargs=3, type=int, default=[64, 64, 64], help="DoseUNet sliding-window patch size")
     parser.add_argument("--normalize_min", type=float, default=-1000, help="Image normalization min")
     parser.add_argument("--normalize_max", type=float, default=3000, help="Image normalization max")
     parser.add_argument("--normalize_scale", type=float, default=255, help="Image normalization scale")

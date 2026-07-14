@@ -53,7 +53,7 @@ function _manualPayload() {
             points: (n.points || []).map(p => _vec3Array(p)),
             trajectory_id: n.trajectory_id,
         })),
-        dose_engine: 'myDoseNet',
+        dose_engine: 'dose_unet_spacing1mm',
     };
 }
 
@@ -1643,7 +1643,7 @@ function _setMeshPrewarmStatus(text, show = true) {
 }
 
 // Explicit replan command for the edited manual geometry. This uses the same
-// trained myDoseNet path as seed/needle edits, but gives chat and the UI a
+// trained dose_unet_spacing1mm path as seed/needle edits, but gives chat and the UI a
 // stable action name instead of silently treating a replan as a generic edit.
 async function replanManualPlan() {
     return recomputeManualDose('manual_replan');
