@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # ===== Local modules =====
 # Legacy analytical dose-fitting code has been removed. Dose calculations must
-# go through the trained myDoseNet helpers in this module.
+# go through the trained dose_unet_spacing1mm helpers in this module.
 from . import geometry
 try:
     from . import reinforcement
@@ -57,16 +57,15 @@ def throttled_process_events():
 
 
 class DoseImageContext:
-    """Cache for dose image preprocessing results.
+    """Cache immutable dose-grid metadata shared by the planning loop.
 
-    Caches the normalized dose image and its numpy array to avoid
-    redundant normalization and SimpleITK-to-numpy conversions
-    across multiple single_seed_dose_calculation_dl calls.
+    DoseUNet owns physical cropping and intensity preprocessing in
+    ``plans.dose_pre.inference``. This context no longer materializes the old
+    normalized full-volume image, which both avoids stale preprocessing and
+    prevents an unnecessary full CT copy for every planning request.
 
     Attributes:
         dose_image: Original SimpleITK dose image.
-        norm_dose_image: Normalized SimpleITK dose image.
-        norm_dose_np: Normalized dose image as numpy array.
         image_direction: Image direction cosine matrix.
         image_spacing: Image voxel spacing.
         image_origin: Image origin coordinates.
@@ -75,12 +74,12 @@ class DoseImageContext:
     """
 
     def __init__(self, dose_image, image_normalize_min, image_normalize_max, dose_cal_model):
-        """Initialize the dose image context with cached preprocessing.
+        """Initialize the dose image context with immutable grid metadata.
 
         Args:
             dose_image: SimpleITK dose image.
-            image_normalize_min: Minimum value for intensity windowing.
-            image_normalize_max: Maximum value for intensity windowing.
+            image_normalize_min: Retained for planner-call compatibility.
+            image_normalize_max: Retained for planner-call compatibility.
             dose_cal_model: Dose prediction model (used to determine device).
         """
         self.dose_image = dose_image
@@ -90,14 +89,6 @@ class DoseImageContext:
         self.image_shape = dose_image.GetSize()[::-1]
         self.device = next(dose_cal_model.parameters()).device
 
-        self.norm_dose_image = normalize_dose_image(
-            dose_image,
-            image_normalize_min,
-            image_normalize_max,
-            image_normalize_min,
-            image_normalize_max
-        )
-        self.norm_dose_np = sitk.GetArrayFromImage(self.norm_dose_image)
 
 
 def create_folder_if_not_exists(folder_path):
@@ -621,7 +612,7 @@ def cal_next_seed_pos_direc(mask_volume, cur_radiation, in_lowest_dose, single_s
     """Legacy analytical seed-placement path retained only for import compatibility."""
     raise NotImplementedError(
         "cal_next_seed_pos_direc used the removed analytical Gaussian dose path. "
-        "Use cal_next_seed_pos_direc_v2 or the myDoseNet planning path instead."
+        "Use cal_next_seed_pos_direc_v2 or the dose_unet_spacing1mm planning path instead."
     )
 
 
@@ -830,11 +821,11 @@ def simple_single_dose_calculation(shape, pos, direc, seed_sigma, seed_avr_dose)
 
     The simplified Gaussian seed-dose approximation has been removed from the
     active code path. Use `single_seed_dose_calculation_dl` or
-    `batch_seed_dose_calculation_dl`, which call the trained myDoseNet model.
+    `batch_seed_dose_calculation_dl`, which call the trained dose_unet_spacing1mm model.
     """
     raise NotImplementedError(
         "The legacy analytical Gaussian dose model has been removed. "
-        "Use myDoseNet via single_seed_dose_calculation_dl or "
+        "Use dose_unet_spacing1mm via single_seed_dose_calculation_dl or "
         "batch_seed_dose_calculation_dl."
     )
 
@@ -871,109 +862,39 @@ def single_dose_calculation_v2(pos, direc, dose_image, dose_cal_model):
 
 
 def single_seed_dose_calculation_dl(pos, direc, dose_image, dose_cal_model, infer_image_size, seed_info, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None):
-    """Calculate the radiation dose distribution for a single seed using a deep learning model.
+    """Predict one seed with the deployed spacing-normalized DoseUNet.
 
-    This function predicts the radiation dose distribution based on the seed's
-    spatial position, orientation, and physical properties. When a DoseImageContext
-    is provided, it reuses cached normalization results to avoid redundant
-    SimpleITK operations.
-
-    Args:
-        pos: The (z, y, x) coordinates of the seed position in voxel space.
-        direc: A direction vector (dx, dy, dz) indicating the orientation.
-        dose_image: A SimpleITK.Image representing the dose grid.
-        dose_cal_model: A pre-trained deep learning model for dose prediction.
-        infer_image_size: The size of the cropped region used for inference.
-        seed_info: Dictionary containing seed-specific parameters ('length').
-        image_normalize_min: Minimum value for image normalization.
-        image_normalize_max: Maximum value for image normalization.
-        image_normalize_scale: Scaling factor applied during normalization.
-        dose_context: Optional DoseImageContext with cached preprocessing.
-            When provided, avoids redundant normalize_dose_image calls.
-
-    Returns:
-        A 3D NumPy array representing the predicted radiation dose distribution.
+    The long signature is retained for planner compatibility. The new model
+    owns its physical crop, 1 mm resampling, channel order, and dose scaling;
+    legacy normalization arguments are intentionally ignored. ``pos`` and
+    ``direc`` remain the existing ``(z, y, x)`` voxel-space inputs so the
+    established planner coordinate chain is unchanged.
     """
+    from .dose_pre.inference import predict_seed_dose
 
-    with torch.no_grad():
-        if dose_context is not None:
-            image_direction = dose_context.image_direction
-            image_spacing = dose_context.image_spacing
-            image_origin = dose_context.image_origin
-            norm_dose_image = dose_context.norm_dose_image
-            device = dose_context.device
-        else:
-            image_direction = dose_image.GetDirection()
-            image_spacing = dose_image.GetSpacing()
-            image_origin = dose_image.GetOrigin()
-            norm_dose_image = normalize_dose_image(
-                dose_image,
-                image_normalize_min,
-                image_normalize_max,
-                image_normalize_min,
-                image_normalize_max
-            )
-            device = next(dose_cal_model.parameters()).device
-
-        crop_np, crop_info = crop_from_pos(
-            pos[::-1],
-            norm_dose_image,
-            infer_image_size
-        )
-        crop_img = sitk.GetImageFromArray(crop_np)
-        crop_img.SetSpacing(image_spacing)
-        crop_img.SetOrigin(image_origin)
-        crop_img.SetDirection(image_direction)
-
-        physical_pos = position_transform(dose_image, pos)[0]
-
-        soft_treatment_plan = position_soft_method(
-            physical_pos,
-            image_origin,
-            infer_image_size,
-            image_spacing
-        )
-
-        line_map = line_source_map(
-            physical_pos,
-            direction_transform(dose_image, direc)[0],
-            image_origin,
-            infer_image_size,
-            image_spacing,
-            seed_info['length']
-        )
-
-        train_image = torch.FloatTensor(
-            normalize_dose_array(
-                crop_np,
-                image_normalize_min,
-                image_normalize_max,
-                image_normalize_scale
-            )
-        ).unsqueeze(0).unsqueeze(0).to(device)
-
-        train_label = torch.FloatTensor(soft_treatment_plan).unsqueeze(0).unsqueeze(0).to(device)
-        train_map = torch.FloatTensor(line_map).unsqueeze(0).unsqueeze(0).to(device)
-
-        train_input = torch.cat((train_image, train_label, train_map), dim=1).to(device)
-
-        pred_label = dose_cal_model(train_input)
-        output = pred_label.squeeze(0).squeeze(0).detach().cpu().numpy()
-
-    pred_label_image = sitk.GetImageFromArray(output)
-    pred_label_image.CopyInformation(crop_img)
-
-    pred_label_image = pad_to_original_size_np(
-        pred_label_image,
+    index_xyz = np.asarray(pos, dtype=np.float64).reshape(-1)[::-1]
+    if index_xyz.size != 3:
+        raise ValueError(f"DoseUNet seed position must have 3 coordinates, got {pos}")
+    position_xyz = np.asarray(
+        dose_image.TransformContinuousIndexToPhysicalPoint(tuple(float(v) for v in index_xyz)),
+        dtype=np.float64,
+    )
+    direction_lps = np.asarray(direction_transform(dose_image, direc)[0], dtype=np.float64).reshape(-1)
+    if direction_lps.size != 3 or not np.all(np.isfinite(direction_lps)):
+        raise ValueError(f"DoseUNet seed direction is invalid: {direc}")
+    direction_norm = float(np.linalg.norm(direction_lps))
+    if direction_norm <= 1e-8:
+        raise ValueError("DoseUNet seed direction must be non-zero")
+    return predict_seed_dose(
+        position_xyz,
+        direction_lps / direction_norm,
         dose_image,
-        crop_info
+        dose_cal_model,
     )
 
-    return sitk.GetArrayFromImage(pred_label_image)
 
 
-
-def batch_seed_dose_calculation_dl(seeds, dose_image, dose_cal_model, infer_image_size, seed_info,
+def _legacy_batch_seed_dose_calculation_dl(seeds, dose_image, dose_cal_model, infer_image_size, seed_info,
                                    image_normalize_min, image_normalize_max, image_normalize_scale):
     """
     Batch calculate radiation dose distributions for multiple seeds using a deep learning model.
@@ -1083,6 +1004,49 @@ def batch_seed_dose_calculation_dl(seeds, dose_image, dose_cal_model, infer_imag
         )
         dose_maps.append(sitk.GetArrayFromImage(pred_label_image))
 
+    return dose_maps
+
+
+def batch_seed_dose_calculation_dl(seeds, dose_image, dose_cal_model, infer_image_size, seed_info,
+                                   image_normalize_min, image_normalize_max, image_normalize_scale):
+    """Predict dose maps with the deployed spacing-normalized DoseUNet.
+
+    This public adapter preserves the old planner signature and input
+    coordinate convention. The new checkpoint uses a seed-centered physical
+    crop, so each seed is evaluated independently and returned on the original
+    CT grid for unchanged DVH and visualization code.
+    """
+    from .dose_pre.inference import predict_seed_dose
+
+    dose_maps = []
+    for seed in seeds:
+        throttled_process_events()
+        if len(seed) < 2:
+            raise ValueError(f"DoseUNet seed entry must contain position and direction: {seed}")
+        position, direction = seed[0], seed[1]
+        weight = float(seed[2]) if len(seed) >= 3 else 1.0
+        index_xyz = np.asarray(position, dtype=np.float64).reshape(-1)[::-1]
+        if index_xyz.size != 3:
+            raise ValueError(f"DoseUNet seed position must have 3 coordinates, got {position}")
+        position_xyz = np.asarray(
+            dose_image.TransformContinuousIndexToPhysicalPoint(tuple(float(v) for v in index_xyz)),
+            dtype=np.float64,
+        )
+        direction_lps = np.asarray(direction_transform(dose_image, direction)[0], dtype=np.float64).reshape(-1)
+        if direction_lps.size != 3 or not np.all(np.isfinite(direction_lps)):
+            raise ValueError(f"DoseUNet seed direction is invalid: {direction}")
+        direction_norm = float(np.linalg.norm(direction_lps))
+        if direction_norm <= 1e-8:
+            raise ValueError("DoseUNet seed direction must be non-zero")
+        dose_maps.append(
+            predict_seed_dose(
+                position_xyz,
+                direction_lps / direction_norm,
+                dose_image,
+                dose_cal_model,
+                seed_weight=weight,
+            )
+        )
     return dose_maps
 
 
@@ -1346,7 +1310,7 @@ def objective_function(x, dose_volume, radiation_volume, seed_sigma, lowest_dose
     """Legacy analytical optimization objective retained only for import compatibility."""
     raise NotImplementedError(
         "objective_function used the removed analytical Gaussian dose path. "
-        "Use myDoseNet-backed dose evaluation for optimization scoring."
+        "Use dose_unet_spacing1mm-backed dose evaluation for optimization scoring."
     )
 
 
@@ -1525,7 +1489,7 @@ def process_best_x(best_x, cur_radiation, mask_volume, in_lowest_dose, volume, s
     """Legacy analytical optimizer conversion retained only for import compatibility."""
     raise NotImplementedError(
         "process_best_x depended on the removed analytical Gaussian dose path. "
-        "Use myDoseNet-backed seed planning outputs instead."
+        "Use dose_unet_spacing1mm-backed seed planning outputs instead."
     )
 
 
@@ -1629,7 +1593,7 @@ def from_x_to_seeds(x):
 
 def position_soft_method(seed, image_origin, image_size, image_spacing):
     """
-    Generate the seed-location conditioning channel consumed by myDoseNet.
+    Generate the seed-location conditioning channel consumed by the legacy path.
 
     This geometric feature is never returned as dose and is not an analytical
     dose fallback. The trained model receives it together with CT and the line
@@ -1984,7 +1948,7 @@ def pad_to_original_size_np(cropped_image, original_image, crop_info):
 
 def line_source_map(seed, direction, image_origin, image_size, image_spacing, seed_length):
     """
-    Generate the line-orientation conditioning channel consumed by myDoseNet.
+    Generate the line-orientation conditioning channel consumed by the legacy path.
 
     The returned geometry map encodes source orientation; it is not interpreted
     or exposed as a dose distribution. Dose is produced only by the trained
@@ -2170,7 +2134,7 @@ def place_and_evaluate_seed(pos, direc, cur_radiation, mask_volume, in_lowest_do
     """Legacy analytical seed-evaluation path retained only for import compatibility."""
     raise NotImplementedError(
         "place_and_evaluate_seed used the removed analytical Gaussian dose path. "
-        "Use place_and_evaluate_seed_v2 or the myDoseNet planning path instead."
+        "Use place_and_evaluate_seed_v2 or the dose_unet_spacing1mm planning path instead."
     )
 
 
@@ -2234,13 +2198,13 @@ def deep_learning_optimization(planned_seeds, radiation_volume, cur_radiation, m
     """Legacy optimizer disabled.
 
     This path depended on an analytical dose approximation. Product dose
-    evaluation must use myDoseNet through `single_seed_dose_calculation_dl`,
+    evaluation must use dose_unet_spacing1mm through `single_seed_dose_calculation_dl`,
     `batch_seed_dose_calculation_dl`, `dose_engine`, or the planning pipeline.
     """
     raise NotImplementedError(
         "deep_learning_optimization was removed because it depended on a "
         "legacy analytical dose approximation. Recompute candidate plans with "
-        "the trained myDoseNet dose path instead."
+        "the trained dose_unet_spacing1mm dose path instead."
     )
 
 
