@@ -4257,3 +4257,64 @@ clinical calibration would be unsafe.
 - Prior RTX inference on the deployed CT produced a finite, non-empty dose
   field; no evidence supports a normalization-induced empty or runaway dose.
 - The remote working tree was clean before this documentation-only update.
+
+## Round 18 Data-tree obstacle policy and user-facing terminology (2026-07-14)
+
+### Confirmed findings
+
+The trajectory planner already consumed an obstacle-valued radiation volume,
+and the downstream trajectory code already rejected candidate paths that
+intersected obstacle voxels. The defect was upstream: the backend used a stale
+numeric whitelist that incorrectly blocked esophagus, trachea, thyroid,
+heart, stomach, and bowel while omitting several real bones and cartilage
+labels. More importantly, the browser only synchronized aggregate Data tree
+counts, so a user moving a mask between the Traversable and Non-traversable
+parents could not affect planning.
+
+The Data tree parent classification is now the authoritative per-session
+whitelist. The browser sends each organ's stable label ID, display name,
+source, and parent category. The planning pipeline reads that state before
+trajectory initialization, refreshes it before trajectory refinement, and
+refreshes it again immediately before seed optimization. CTV artery/vein
+labels remain hard obstacles independently of the OAR whitelist. Older
+clients that do not send the detailed organ list retain a name-derived
+default policy.
+
+### Default classification
+
+The default policy is derived from the installed TotalSegmentator name map,
+not a hand-maintained numeric list. It marks all segmented bones (including
+skull, vertebrae, ribs, sternum, cartilage, hips, scapulae, clavicles and
+long bones), all artery/vein/vessel structures, and the existing spinal-cord
+and nerve safety structures as non-traversable. Soft parenchymal organs remain
+traversable by default unless the user explicitly moves them into the
+Non-traversable parent. The frontend and backend use matching name rules.
+
+### Data tree interaction fix
+
+Several parent rows, especially the CTV and OAR master rows, routed their
+right-click event through the single-item menu. They now open the matching
+group menu directly, including visibility, opacity, solo, and reconstruction
+actions where applicable. Category changes also trigger an immediate UI-state
+synchronization so the next planning call sees the user's whitelist.
+
+### User-facing clinical wording
+
+Final planning responses, report auto-fill text, DVH interpretation text, and
+optimization advice no longer expose implementation names such as
+`clinical_kb` or `plan_config` to the user. They now say that interpretation
+requires applicable site-specific guidance, institutional protocols, or a
+confirmed case protocol, while internal memory keys and tool names remain
+unchanged for compatibility.
+
+### Verification
+
+- Remote Python compilation passed for all modified Python modules.
+- Targeted obstacle policy tests passed on the remote `brachytherapy`
+  interpreter, including default bone/vessel/cartilage coverage, explicit
+  Data tree override behavior, and preservation of CTV vessel obstacles.
+- `git diff --check` passed remotely.
+- The remote host does not provide Node.js or pytest, so browser JavaScript
+  parsing and the broader pytest suite remain environment-limited; the
+  modified JavaScript was kept syntax-local and the server-side contract was
+  exercised through the targeted runtime tests.

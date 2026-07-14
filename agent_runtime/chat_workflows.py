@@ -1765,11 +1765,11 @@ class ChatWorkflowMixin:
         v200 = metrics.get("v200")
         if v100 is not None:
             suggestions.append(
-                f"Observed V100={float(v100):.1%}. Compare this with site-specific clinical_kb or plan_config coverage criteria before judging acceptability."
+                f"Observed V100={float(v100):.1%}. Compare this with applicable site-specific guidance or the confirmed case protocol before judging acceptability."
             )
         if v200 is not None:
             suggestions.append(
-                f"Observed V200={float(v200):.1%}. Review hotspot limits from clinical_kb or plan_config before labeling overdose."
+                f"Observed V200={float(v200):.1%}. Review applicable hotspot limits before labeling a dose excess."
             )
         if metrics.get("oar_violations"):
             violations = metrics["oar_violations"]
@@ -1782,7 +1782,7 @@ class ChatWorkflowMixin:
                 f"Plan score={plan_score}. Treat this as an advisory ranking signal, not final clinical approval."
             )
         if not suggestions:
-            suggestions.append("Plan evaluation complete. Query clinical_kb or provide plan_config to produce source-backed optimization guidance.")
+            suggestions.append("Plan evaluation complete. Retrieve applicable site-specific guidance to produce source-backed optimization advice.")
         return f"Optimization suggestions:\n" + "\n".join(f"  - {s}" for s in suggestions)
 
     def run_preoperative_plan(

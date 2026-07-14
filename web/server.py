@@ -584,7 +584,7 @@ def create_app(config: Optional[Dict] = None):
         lines = [
             "**Dosimetric Evaluation & Clinical Interpretation**",
             "",
-            "This auto-filled interpretation reports observed metrics only. Clinical pass/fail decisions must cite `clinical_kb` evidence or explicit case `plan_config` constraints for the current tumor site.",
+            "This auto-filled interpretation reports observed metrics only. Clinical pass/fail decisions must cite applicable site-specific guidance or confirmed case-protocol limits.",
             "",
             "**Observed metrics**",
         ]
@@ -611,7 +611,7 @@ def create_app(config: Optional[Dict] = None):
         lines.extend([
             "",
             "**Required review before clinical use**",
-            "- Retrieve site-specific target coverage and OAR tolerance criteria from `clinical_kb`, or provide them in `plan_config`.",
+            "- Verify site-specific target coverage and OAR tolerance criteria against applicable clinical guidance or confirmed case-protocol limits.",
             "- Verify CTV/OAR masks, coordinate registration, needle feasibility, seed coordinates, DVH, and high-dose regions.",
             "- Perform independent dose verification and obtain radiation oncologist/physicist sign-off.",
             "",
@@ -621,7 +621,7 @@ def create_app(config: Optional[Dict] = None):
             "**Safety & Quality Control**\n\n"
             "- Verify seed activity, prescription dose, coordinate system, needle paths, and seed coordinates.\n"
             "- Review CTV/OAR masks, DVH, hot spots, and high-dose OAR regions.\n"
-            "- Final clinical limits must come from retrieved knowledge-base/guideline evidence or explicit plan_config.\n"
+            "- Final clinical limits must come from retrieved guideline evidence or confirmed case-protocol settings.\n"
             f"- Current report prescription dose: {prescribed:.1f} Gy."
         )
         return "\n".join(lines), safety
