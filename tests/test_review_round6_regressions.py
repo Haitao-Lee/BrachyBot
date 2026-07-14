@@ -778,12 +778,12 @@ def test_trusted_network_does_not_disable_a_configured_api_key():
     assert "_TRUST_NETWORK" not in assignment
 
 
-def test_dose_model_public_exports_are_defined():
-    """The legacy star-import wrapper must not request nonexistent symbols."""
+def test_spacing_normalized_dose_model_exports_are_defined():
+    """The deployed DoseUNet module exposes only its real public symbols."""
     import ast
     from pathlib import Path
 
-    source_path = Path(__file__).resolve().parents[1] / "plans/dose_pre/myDoseNet.py"
+    source_path = Path(__file__).resolve().parents[1] / "plans/dose_pre/dose_unet.py"
     module = ast.parse(source_path.read_text(encoding="utf-8"))
     definitions = {
         node.name
@@ -798,7 +798,7 @@ def test_dose_model_public_exports_are_defined():
     )
     exports = set(ast.literal_eval(export_assignment.value))
 
-    assert "myDoseNet" in exports
+    assert "DoseUNet" in exports
     assert exports <= definitions
 
 
@@ -1586,6 +1586,6 @@ def test_intraoperative_replanning_combines_delivered_and_supplemental_ai_dose(
     assert result["success"] is True
     assert result["implanted_seed_count"] == 1
     assert result["supplemental_seed_count"] == 1
-    assert result["dose_engine"] == "myDoseNet"
+    assert result["dose_engine"] == "dose_unet_spacing1mm"
     assert np.allclose(workflow.memory.values["dose_distribution"], 0.75)
     assert len(workflow.memory.values["seed_plan"]) == 2

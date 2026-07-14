@@ -545,7 +545,7 @@ def register_planning_routes(app, get_agent):
             # Include the prescription dose so the frontend can compute
             # absolute Gy from relative multipliers.
             #
-            # DOSE_MODEL_SCALE_GY: the myDoseNet dose prediction model was
+            # DOSE_MODEL_SCALE_GY: the dose_unet_spacing1mm model is rendered
             # trained with labels where output 1.0 = 120 Gy.  All internal
             # dose values are normalized; multiply by this constant to get Gy.
             # This constant is shared with planning_pipeline.py and
@@ -891,7 +891,7 @@ def register_planning_routes(app, get_agent):
             # Read prescription in Gy: prefer memory dose_metrics
             # (already in normalized units * DOSE_MODEL_SCALE_GY) then fall
             # back to reportForm, then default 120 Gy.
-            # DOSE_MODEL_SCALE_GY: myDoseNet model output 1.0 = 120 Gy.
+            # DOSE_MODEL_SCALE_GY: normalized DoseUNet output is rendered as 120 Gy.
             prescription_gy = DOSE_MODEL_SCALE_GY  # I-125 pancreatic default
             try:
                 dm = agent.memory.retrieve("dose_metrics") or {}
@@ -1135,7 +1135,7 @@ def register_planning_routes(app, get_agent):
             "manual_3d_planning": {
                 "needles": ["create", "drag_endpoints", "toggle_visibility", "set_opacity"],
                 "seeds": ["add", "drag", "toggle_visibility", "set_opacity"],
-                "dose_recompute": "myDoseNet",
+                "dose_recompute": "dose_unet_spacing1mm",
             },
             "training_monitor": {
                 "live_monitoring": True,
@@ -1284,7 +1284,7 @@ def register_planning_routes(app, get_agent):
     @require_api_key
     @rate_limit
     def api_manual_planning_update():
-        """Update manual world-coordinate seeds/needles and recompute myDoseNet dose."""
+        """Update manual world-coordinate seeds/needles and recompute DoseUNet dose."""
         data = request.get_json() or {}
         session_id = request_ui_session_id(data)
         agent = get_agent(session_id)
@@ -1303,7 +1303,7 @@ def register_planning_routes(app, get_agent):
                     "seeds": result.get("total_seeds", 0),
                     "trajectories": result.get("num_trajectories", 0),
                     "manual_preview": True,
-                    "dose_engine": "myDoseNet",
+                    "dose_engine": "dose_unet_spacing1mm",
                 },
             })
             result["event"] = event

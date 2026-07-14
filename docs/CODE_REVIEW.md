@@ -4034,3 +4034,63 @@ The following seven reported behaviors were rechecked against the current code a
 - `brachybot-chat-todo.js`: `node --check` passes.
 - Round 9/10 regression suite: 7 tests pass with `unittest`.
 - `git diff --check` passes.
+
+## Round 14 Dose Engine Replacement (2026-07-14)
+
+### Verified issue: BrachyBot still loaded the retired dose model
+
+The repository was still resolving `plans/dose_pre/dose_model.pth`, importing the
+old `myDoseNet` architecture, and preparing fixed 32³ crops with the previous
+conditioning helpers. This was a real integration defect: the newly trained
+checkpoint is a different architecture and requires spacing-normalized physical
+preprocessing. Replacing only the checkpoint would therefore either fail state
+loading or silently produce invalid dose inputs.
+
+### Implemented fix
+
+- Added the canonical `DoseUNet` implementation in
+  `plans/dose_pre/dose_unet.py`, matching the training source exactly:
+  five feature widths `(16, 32, 64, 128, 256)`, InstanceNorm3d blocks,
+  transpose-convolution decoder, replicate padding, and Softplus output.
+- Added `plans/dose_pre/inference.py` implementing the deployed contract:
+  physical 12 cm seed-centered crop, target-spacing resampling (1 mm),
+  channel order `line_map -> ct -> soft_pos`, 64³ sliding-window averaging,
+  checkpoint `dose_multiplier` reversal, and resampling back to the original
+  CT grid.
+- Reworked `plans/dose_pre/model_loader.py` to use one canonical identity and
+  path: `dose_unet_spacing1mm` at
+  `models/dose_unet_spacing1mm/best_model.pth`. Loading now validates
+  `model_state_dict`, channel order, target spacing, and dose multiplier, and
+  attaches the contract to the model. Legacy caller feature arguments cannot
+  select the retired network.
+- Kept the existing external `(z, y, x)` voxel and LPS direction interfaces.
+  Conversion to physical position/direction occurs only inside the new dose
+  adapter, so the established viewer/planner coordinate chain is unchanged.
+- Removed the old model implementation, old crop predictor, and duplicate
+  wrappers from both `plans/dose_pre/` and `dose_pre/`. No dose checkpoint is
+  committed to Git; the deployed checkpoint is installed separately on the
+  RTX host because repository ignore rules intentionally exclude model files.
+- Updated planning, manual replanning, UI metadata, configuration defaults,
+  tests, and documentation to use the same model name and 64³ inference
+  setting. `DoseImageContext` now caches only immutable grid metadata and no
+  longer materializes the retired full-volume normalization.
+
+### Deployment and unit boundary
+
+The remote checkpoint was verified as the requested file, with checkpoint
+metadata `channel_order=[line_map, ct, soft_pos]`, `target_spacing=[1,1,1]`,
+and `dose_multiplier=1e12`. The supplied upstream predictor was also run for
+one test particle: it produced the expected raw dose output after dividing by
+the training multiplier. BrachyBot therefore treats the adapter output as the
+model dose array and retains the existing explicit report calibration boundary;
+the independent clinical dose verification requirement remains unchanged.
+
+### Verification
+
+- Modified Python modules pass `py_compile` after clearing the broken local
+  `PYTHONHOME/PYTHONPATH` environment overrides.
+- `git diff --check` passes.
+- The RTX environment loaded the new checkpoint and the upstream predictor
+  completed a one-particle smoke test using the new 1 mm preprocessing.
+- Full clinical planning and WebGL execution require the RTX runtime and are
+  recorded as deployment smoke tests, not replaced by local syntax checks.

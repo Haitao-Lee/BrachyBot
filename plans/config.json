@@ -24,7 +24,7 @@
         "min_depth_rate": 5,
         "smooth_sigma": 1,
         "dose_img_dimention": [128, 128, 64],
-        "infer_img_size": [32, 32, 32]
+        "infer_img_size": [64, 64, 64]
     },
     "in_lowest_energy": 1,
     "out_highest_energy": 1,
@@ -51,11 +51,16 @@
         "search_region": 0.5,
         "loss_weights": [1, 1, 1],
         "DVH_margin": 0.05,
-        "dose_model_path": "./plans/dose_pre/dose_model.pth",
+        "dose_model_path": "./models/dose_unet_spacing1mm/best_model.pth",
         "dose_spatial_dims": 3,
         "dose_in_channel": 3,
         "dose_out_channel": 1,
-        "dose_cal_features": [16, 32, 64, 128, 256, 32],
+        "dose_cal_features": [16, 32, 64, 128, 256],
+        "dose_model_name": "dose_unet_spacing1mm",
+        "dose_model_target_spacing": [1.0, 1.0, 1.0],
+        "dose_model_output_size_cm": 12.0,
+        "dose_model_overlap": 0.5,
+        "dose_model_line_length": 4.5,
         "multi_GPU": false,
         "device": "cuda"
     },

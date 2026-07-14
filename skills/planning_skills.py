@@ -61,12 +61,12 @@ class RLPlanningSkill(Skill):
 
 
 class QuickPlanningSkill(Skill):
-    """Quick planning using CNN dose model (myDoseNet) for fast iteration."""
+    """Quick planning using the spacing-normalized DoseUNet for fast iteration."""
 
     def __init__(self):
         super().__init__(
             name="quick_planning",
-            description="Quick planning mode using CNN (myDoseNet) dose model",
+            description="Quick planning mode using the spacing-normalized DoseUNet",
             category="planning",
             triggers=["快速", "quick", "预览", "preview", "速览"],
             tool_sequence=[

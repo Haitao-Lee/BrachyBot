@@ -120,7 +120,7 @@ function collectUIState() {
             active_needle_id: manualPlanningState.activeNeedleId,
             seed_counter: manualPlanningState.seedCounter,
             needle_counter: manualPlanningState.needleCounter,
-            dose_engine: manualPlanningState.doseEngine || 'myDoseNet',
+            dose_engine: manualPlanningState.doseEngine || 'dose_unet_spacing1mm',
         } : {},
         training: (typeof trainingMonitorState !== 'undefined') ? {
             active: !!trainingMonitorState.active,
@@ -221,7 +221,7 @@ var manualPlanningState = {
     activeNeedleId: null,
     seedCounter: 0,
     needleCounter: 0,
-    doseEngine: 'myDoseNet',
+    doseEngine: 'dose_unet_spacing1mm',
 };
 
 function _activeApiSessionId() {

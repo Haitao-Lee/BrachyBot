@@ -1416,7 +1416,7 @@ class PlanningPipelineTool(BaseTool):
 
         # Compute DVH metrics (reference: Zhiyuan BrachyPlan.calculate_dvh)
         #
-        # DOSE_SCALE (120.0): the myDoseNet CNN dose prediction model was
+        # DOSE_SCALE (120.0): dose_unet_spacing1mm output is rendered using
         # trained with ground-truth labels where model output 1.0 = 120 Gy.
         # All internal dose values live in "normalized" space:
         #   - CNN raw output: 0 ~ 255 (uint8 image_normalize_scale)

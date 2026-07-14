@@ -21,7 +21,7 @@ class PlanRefinementTool(BaseTool):
 
     This tool proposes seed-placement changes from the current dose map. It
     does not simulate dose. Any changed plan must be re-evaluated by the
-    trained myDoseNet dose path.
+    trained dose_unet_spacing1mm dose path.
     """
 
     @property
@@ -34,7 +34,7 @@ class PlanRefinementTool(BaseTool):
             "Iteratively refine seed placement based on dose evaluation feedback. "
             "Suggests seed additions in under-dosed CTV regions. "
             "It does not use an analytical/Gaussian dose approximation; run "
-            "dose_engine or planning_pipeline afterward to recompute dose with myDoseNet. "
+            "dose_engine or planning_pipeline afterward to recompute dose with dose_unet_spacing1mm. "
             "Input: current plan, dose distribution, target metrics. "
             "Output: candidate refined plan plus current metrics."
         )
@@ -76,10 +76,10 @@ class PlanRefinementTool(BaseTool):
             "type": "object",
             "properties": {
                 "refined_plan": {"type": "array", "description": "Refined seed plan"},
-                "candidate_seeds": {"type": "array", "description": "Seed candidates proposed for the next myDoseNet recalculation"},
+                "candidate_seeds": {"type": "array", "description": "Seed candidates proposed for the next dose_unet_spacing1mm recalculation"},
                 "metrics_before": {"type": "object", "description": "Metrics measured on the input dose distribution"},
                 "requires_dose_recalculation": {"type": "boolean", "description": "Always true when candidates are proposed"},
-                "improved_metrics": {"type": "object", "description": "Backward-compatible metrics object; final metrics are null until myDoseNet is rerun"},
+                "improved_metrics": {"type": "object", "description": "Backward-compatible metrics object; final metrics are null until dose_unet_spacing1mm is rerun"},
                 "iterations_used": {"type": "integer", "description": "Number of refinement iterations"},
             },
         }
@@ -176,7 +176,7 @@ class PlanRefinementTool(BaseTool):
             "current_d90": current_d90,
             "final_v100": None,
             "requires_dose_recalculation": iterations > 0,
-            "dose_engine_required": "myDoseNet",
+            "dose_engine_required": "dose_unet_spacing1mm",
         }
 
         metrics_before = {
@@ -191,7 +191,7 @@ class PlanRefinementTool(BaseTool):
         if iterations:
             message = (
                 f"Plan refinement proposed {iterations} seed candidate(s). "
-                f"Input V100: {current_v100:.1%}. Recompute dose with myDoseNet "
+                f"Input V100: {current_v100:.1%}. Recompute dose with dose_unet_spacing1mm "
                 "before accepting the refined plan."
             )
         else:
@@ -209,7 +209,7 @@ class PlanRefinementTool(BaseTool):
                 "metrics_before": metrics_before,
                 "improved_metrics": improvements,
                 "requires_dose_recalculation": iterations > 0,
-                "dose_engine": "myDoseNet",
+                "dose_engine": "dose_unet_spacing1mm",
                 "oar_aware_ranking": oar_clearance is not None,
                 "iterations_used": iterations,
             },
@@ -245,7 +245,7 @@ class PlanRefinementTool(BaseTool):
                 (clearances - np.min(clearances)) / (clearance_span if clearance_span > 0 else 1.0)
             )
             # Coverage remains the primary objective. Clearance only breaks or
-            # gently reorders similarly cold candidates before myDoseNet reruns.
+            # gently reorders similarly cold candidates before DoseUNet reruns.
             priority = normalized_dose - 0.1 * normalized_clearance
             order = np.argsort(priority)
         else:
@@ -256,7 +256,7 @@ class PlanRefinementTool(BaseTool):
         min_sep = max(4.0, float(min_dim) * 0.04)
 
         # Prefer the coldest voxels, but keep candidates spatially separated so
-        # the follow-up myDoseNet calculation has meaningful alternatives.
+        # the follow-up DoseUNet calculation has meaningful alternatives.
         for idx in order:
             candidate = coords[int(idx)].astype(np.float32)
             if self._is_far_enough(candidate, existing + selected, min_sep):

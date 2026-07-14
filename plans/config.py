@@ -46,6 +46,10 @@ def setting():
 
     # Convert dose_cal_features to tuple
     config["dl_params"]["dose_cal_features"] = tuple(config["dl_params"]["dose_cal_features"])
+    if "dose_model_target_spacing" in config["dl_params"]:
+        config["dl_params"]["dose_model_target_spacing"] = tuple(
+            float(value) for value in config["dl_params"]["dose_model_target_spacing"]
+        )
 
     # Convert dl_params loss_weights to list
     config["dl_params"]["loss_weights"] = list(config["dl_params"]["loss_weights"])
