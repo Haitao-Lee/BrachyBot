@@ -269,6 +269,7 @@ def predict_seed_dose(position_xyz: Sequence[float], direction_lps: Sequence[flo
     line_length = float(contract.get("line_length", 4.5))
     overlap = float(contract.get("overlap", 0.5))
     dose_multiplier = float(contract["dose_multiplier"])
+    planning_output_scale = float(contract.get("planning_output_scale", 1.0))
     device = next(model.parameters()).device
 
     crop_image = crop_ct_center_on_seed(dose_image, position_xyz, output_size_cm)
@@ -282,7 +283,12 @@ def predict_seed_dose(position_xyz: Sequence[float], direction_lps: Sequence[flo
     line = sitk.GetArrayFromImage(generate_line_map(network_image, position_xyz, direction_lps, line_length)).astype(np.float32)
     inputs = np.stack([normalize_unit(line), normalize_ct(ct_crop), normalize_unit(soft)], axis=0)
     prediction_scaled = sliding_window_predict(model, inputs, patch_size, overlap, device)
-    prediction = (prediction_scaled / dose_multiplier) * float(seed_weight)
+    # ``prediction_scaled / dose_multiplier`` is the raw upstream predictor
+    # output. The planner explicitly consumes training-scaled model units, so
+    # apply the contract's reversible planning scale at this boundary.
+    prediction = (
+        prediction_scaled / dose_multiplier * planning_output_scale * float(seed_weight)
+    )
     prediction = np.nan_to_num(prediction, nan=0.0, posinf=0.0, neginf=0.0)
     prediction[prediction < 0.0] = 0.0
     return resample_crop_to_full(network_image, prediction, dose_image)

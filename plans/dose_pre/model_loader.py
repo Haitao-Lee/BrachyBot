@@ -80,6 +80,16 @@ def load_dose_model(explicit_path: Optional[str] = None,
             raise ValueError(
                 f"{DOSE_MODEL_NAME} checkpoint is missing a positive dose_multiplier"
             )
+        try:
+            planning_output_scale = float(
+                os.environ.get("BRACHYBOT_DOSE_MODEL_PLANNING_SCALE", str(dose_multiplier))
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "BRACHYBOT_DOSE_MODEL_PLANNING_SCALE must be numeric"
+            ) from exc
+        if planning_output_scale <= 0:
+            raise ValueError("BRACHYBOT_DOSE_MODEL_PLANNING_SCALE must be positive")
 
         from .dose_unet import DoseUNet
 
@@ -94,6 +104,10 @@ def load_dose_model(explicit_path: Optional[str] = None,
             "channel_order": expected_channels,
             "target_spacing": tuple(float(value) for value in target_spacing),
             "dose_multiplier": float(dose_multiplier),
+            # The upstream predictor returns raw dose after reversing the
+            # training multiplier. BrachyBot's planner consumes the same
+            # training-scaled normalized units as its explicit Rx calibration.
+            "planning_output_scale": planning_output_scale,
             "patch_size": tuple(int(value) for value in patch_size),
             "overlap": 0.5,
             "output_size_cm": 12.0,
