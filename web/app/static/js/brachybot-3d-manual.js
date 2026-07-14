@@ -1961,7 +1961,7 @@ function _petRainbowDoseSurface(val) {
 function _petRainbow3D(val) {
     const v = Math.min(1, Math.max(0, val));
     const stops = [
-        [0.00, [10, 0, 40]],       // dark purple at 0 Gy
+        [0.00, [40, 20, 90]],       // lighter purple at 0 Gy
         [0.20, [0, 60, 180]],      // blue at 40 Gy
         [0.40, [0, 170, 210]],     // cyan at 80 Gy
         [0.55, [30, 200, 80]],     // green at 110 Gy
