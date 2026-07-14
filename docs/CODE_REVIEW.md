@@ -4118,3 +4118,46 @@ The active clinical knowledge-base entry and the dose-model path regression
 test were also updated to the canonical `dose_unet_spacing1mm` name. The
 remaining historical references to retired implementations are retained only
 inside review history, where they document what was removed.
+## Round 15 Progress and cancellation follow-up (2026-07-14)
+
+### Progress breathing animation
+
+The active Progress row already used an infinite animation, but the later
+`prefers-reduced-motion` rule applied `animation-iteration-count: 1` globally.
+On systems with reduced motion enabled, a still-running step therefore pulsed
+once and looked frozen. The responsive stylesheet now explicitly keeps active
+Progress and pipeline indicators running until their done/error state, while
+unrelated animations continue to honor reduced-motion settings.
+
+### Dose pipeline hardware selection
+
+The standalone DoseUNet adapter correctly selected CUDA, but the production
+`planning_pipeline` helper still called `load_dose_model(device="cpu")`.
+This was a real performance defect: the full seed optimization could execute
+the neural dose model repeatedly on CPU even when RTX GPUs were idle. The
+pipeline now uses `plans.device_manager.get_device` with caller identity
+`planning_pipeline_dose`, logs the selected device, and falls back to CPU only
+when the centralized manager cannot provide CUDA. The model architecture,
+preprocessing contract, and coordinate conversion remain unchanged.
+
+### Stop-button cleanup
+
+The Stop button aborted the fetch and notified the backend, but the early
+abort path returned before the local thinking-chain and todo cleanup code. The
+live thinking timer, todo elapsed timers, GPU polling, animation guards, and
+active CSS classes could therefore continue after cancellation. A turn-local
+cleanup callback now marks unfinished todo rows terminal, clears all timers and
+polling, stops the breathing state, cancels pending trace pills, and folds the
+progress dock. The active-turn identity guards against an old aborted request
+clearing a newer request's AbortController.
+
+### Verification
+
+- `node --check` passes for the modified chat JavaScript.
+- Python syntax checks pass for the modified planning pipeline and regression
+  test.
+- Regression assertions cover persistent reduced-motion animation, centralized
+  dose-device selection, and stop cleanup.
+- Remote RTX smoke testing should verify `planning_pipeline_dose` reports
+  `cuda:0` or `cuda:1` and that a multi-seed plan no longer runs the new model
+  on CPU.

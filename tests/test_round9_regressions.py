@@ -33,8 +33,18 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("Keep every unfinished step active", source)
         self.assertNotIn("it.status = 'pending';  // will be moved to done", source)
         self.assertIn("step.requires_input ? 'User input required'", source)
+        self.assertIn("cancel(reason)", source)
+        self.assertIn("window._chatTurnCancelUi", source)
         css = self.read("web/app/static/css/brachybot-chat-status.css")
         self.assertIn("animation-play-state: running !important", css)
+        responsive = self.read("web/app/static/css/brachybot-responsive.css")
+        self.assertIn(".chat-todo-item.active .chat-todo-gpu", responsive)
+        self.assertIn("animation-iteration-count: infinite !important", responsive)
+
+    def test_planning_dose_model_uses_centralized_device_selection(self):
+        source = self.read("tool_factory/seed_plan/planning_pipeline.py")
+        self.assertIn('get_device(caller="planning_pipeline_dose")', source)
+        self.assertNotIn('load_dose_model(device="cpu")', source)
 
     def test_missing_tumor_site_short_circuits_llm_tool_loop(self):
         source = self.read("agent_runtime/llm_runtime.py")

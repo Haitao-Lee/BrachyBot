@@ -809,6 +809,7 @@ const _CHAIN_I18N = {
         pending: 'pending',
         done: 'done',
         error: 'error',
+        stopped: 'stopped',
     },
     zh: {
         header: '执行追踪',
@@ -1772,6 +1773,38 @@ function finalizeThinkingChain(chainEl, headerEl, steps) {
     // the .expanded class after the sync call).
     setTimeout(_collapse, 300);
     setTimeout(_collapse, 800);
+}
+
+function cancelThinkingChain(chainEl, headerEl) {
+    if (!chainEl) return;
+    chainEl.dataset.finalized = '1';
+    chainEl.dataset.cancelled = '1';
+    if (headerEl && headerEl._timer) {
+        clearInterval(headerEl._timer);
+        headerEl._timer = null;
+    }
+    const labelEl = headerEl && headerEl.querySelector('.thinking-label');
+    const countEl = headerEl && headerEl.querySelector('.thinking-count');
+    if (labelEl) labelEl.textContent = _chainI18n('header');
+    if (countEl) countEl.textContent = _chainI18n('stopped');
+    // Pending step pills and their parent glow are the remaining animated
+    // parts of the trace. Turn them into terminal error states before
+    // collapsing the trace so expanding it later cannot restart motion.
+    const stoppedText = _chainI18n('stopped');
+    chainEl.querySelectorAll('.step-status.pending').forEach(status => {
+        status.classList.remove('pending');
+        status.classList.add('error');
+        status.textContent = stoppedText;
+    });
+    const toggle = chainEl.querySelector('.thinking-toggle');
+    const stepsDiv = chainEl.querySelector('.thinking-steps');
+    const timeEl = chainEl.querySelector('.thinking-time');
+    if (toggle) toggle.classList.remove('expanded');
+    if (stepsDiv) {
+        stepsDiv.classList.remove('expanded');
+        stepsDiv.querySelectorAll('.step-body').forEach(body => body.classList.remove('expanded'));
+    }
+    if (timeEl) timeEl.style.display = 'none';
 }
 
 function createStreamingResponse() {
