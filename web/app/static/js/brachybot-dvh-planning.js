@@ -54,7 +54,7 @@ function _pickTickStep(span, targetCount = 8, preferDivisibleBy2 = false) {
 // autorange sometimes overrides dtick to its default of 1. We
 // explicitly compute and set dtick from the visible span.
 function _dvhDefaultDticks(xRange, yRange) {
-    // Dose axis (x): 0-600 default → 30 ticks @ 20 Gy each (or
+    // Dose axis (x): 0-300 default → 15 ticks @ 20 Gy each (or
     // proportional on zoom).
     let xTick = 20;
     if (Array.isArray(xRange) && xRange.length === 2) {
@@ -188,7 +188,7 @@ function _setupDvhCustomTooltip(dvhEl) {
             return;
         }
         const xRange = Array.isArray(layout.xaxis.range) && layout.xaxis.range.length >= 2
-            ? layout.xaxis.range : [0, 600];
+            ? layout.xaxis.range : [0, 300];
         const xSpan = Number(xRange[1]) - Number(xRange[0]);
         const cursorDose = Number.isFinite(xSpan) && Math.abs(xSpan) > 1e-9
             ? Number(xRange[0]) + ((mx - plotLeft) / plotWidth) * xSpan
@@ -302,7 +302,7 @@ function _interpolateDvhAtDose(xs, ys, dose) {
     return pairs[pairs.length - 1][1];
 }
 
-function _smoothDvhCurveForDisplay(doseBins, volPcts, maxSmoothDose = 600) {
+function _smoothDvhCurveForDisplay(doseBins, volPcts, maxSmoothDose = 300) {
     const pairs = [];
     for (let i = 0; i < Math.min(doseBins.length, volPcts.length); i++) {
         const x = Number(doseBins[i]);
@@ -409,9 +409,9 @@ function drawDVH() {
         // Use legendgroup = name so Plotly's legend click toggles
         // the trace visibility (the data tree can also call
         // setGroupVisibility for the same effect).
-        // Interpolate only within 0-600 Gy and clamp every generated value to
+        // Interpolate only within 0-300 Gy and clamp every generated value to
         // the physically valid 0-100% interval.
-        const displaySmooth = _smoothDvhCurveForDisplay(doseBins, volPcts, 600);
+        const displaySmooth = _smoothDvhCurveForDisplay(doseBins, volPcts, 300);
         const smoothX = displaySmooth.x;
         const smoothY = displaySmooth.y;
         if (name === ctvName) {
@@ -436,13 +436,13 @@ function drawDVH() {
     dvhEl.style.height = '100%';
 
     // BUG FIX 2026-06-16: user asked for the DVH chart to default
-    // to a FIXED 0–600 Gy x-range (the brachytherapy planning view
-    // is typically ≤200 Gy, but the user wants consistent axis
-    // comparison across plans). The previous "adaptive" range that
+    // to a FIXED 0–300 Gy x-range (the brachytherapy planning view
+    // is typically ≤200 Gy, while high-dose OAR tails remain readable).
+    // The previous "adaptive" range that
     // snapped to actual data max made the chart look different every
     // time and the Rx line moved around. The reset button restores
-    // this 0–600 Gy default.
-    const xRange = [0, 600];
+    // this 0–300 Gy default.
+    const xRange = [0, 300];
     // BUG FIX 2026-06-16: user wants x-axis to default to 20 Gy
     // tick spacing (so 0, 20, 40, 60, ..., 600 — 31 ticks) and
     // y-axis to default to 10% (0, 10, 20, ..., 100 — 11 ticks).

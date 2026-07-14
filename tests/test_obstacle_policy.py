@@ -4,6 +4,7 @@ from tool_factory.seed_plan.planning_pipeline import (
     _build_radiation_volume,
     _default_obstacle_label_ids,
     _resolve_data_tree_obstacle_labels,
+    _trajectory_path_hits_obstacle,
 )
 
 
@@ -47,3 +48,18 @@ def test_data_tree_whitelist_overrides_default_policy():
     assert volume[0, 0, 1] == 2  # CTV vessel labels remain hard obstacles.
     assert volume[0, 0, 2] == 0  # Traversable by the current Data tree state.
     assert volume[0, 0, 3] == 0
+
+
+def test_trajectory_obstacle_gate_checks_forward_and_reverse_segments():
+    volume = np.zeros((1, 1, 12), dtype=np.int16)
+    trajectory = (np.array([0, 0, 3]), np.array([0.0, 0.0, 1.0]), [3], [3], 3)
+
+    volume[0, 0, 7] = 2
+    assert _trajectory_path_hits_obstacle(trajectory, volume, 2)
+
+    volume[0, 0, 7] = 0
+    volume[0, 0, 1] = 2
+    assert _trajectory_path_hits_obstacle(trajectory, volume, 2)
+
+    volume[0, 0, 1] = 0
+    assert not _trajectory_path_hits_obstacle(trajectory, volume, 2)

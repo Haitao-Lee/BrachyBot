@@ -659,6 +659,24 @@
     min-height: 0;
 }
 
+/* Keep Plotly's reset/home control inside the chart panel. Plotly positions
+   the modebar against the outer SVG edge; the DVH panel clips overflow so a
+   default right:2px placement can leave the last button partly unreachable.
+   The explicit inset is intentionally limited to this chart and does not
+   change the viewer toolbars or the chart's coordinate system. */
+.dvh-container .modebar {
+    top: 8px !important;
+    right: 10px !important;
+    z-index: 20;
+}
+.dvh-container .modebar-group {
+    padding-left: 4px;
+}
+.dvh-container .modebar-btn {
+    padding-left: 3px;
+    padding-right: 3px;
+}
+
 .dvh-placeholder {
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;

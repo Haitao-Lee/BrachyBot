@@ -4318,3 +4318,47 @@ unchanged for compatibility.
   parsing and the broader pytest suite remain environment-limited; the
   modified JavaScript was kept syntax-local and the server-side contract was
   exercised through the targeted runtime tests.
+
+## Round 19 Obstacle-path enforcement, safe needle rendering, and DVH usability (2026-07-15)
+
+### Confirmed findings
+
+The previous Data tree whitelist fix was real but incomplete. The legacy
+trajectory depth scan used a forward obstacle only as a stopping condition;
+it did not set the rejection flag. A candidate could therefore survive when
+its forward needle segment entered a non-traversable voxel. Separately, the
+3D seeds route reconstructed every needle from seed positions and extended
+the shallow end by a fixed 100 mm. That display-only extension could cross
+segmented OAR, bone, or vessel meshes even when the seed positions themselves
+were valid. This explains the red lines passing through the structures in the
+reported screenshot.
+
+### Corrective changes
+
+- Added a conservative 0.25-voxel, bidirectional obstacle gate in the
+  planning-grid coordinate system. It validates the reverse path to the image
+  boundary and the forward target/background path plus a small tip margin.
+- Applied the gate after trajectory initialization, during refinement after
+  rebuilding the current Data tree obstacle volume, and immediately before
+  seed optimization. Invalid trajectories cannot be restored by the old
+  depth-filter fallback.
+- Replaced the 100 mm viewer extension with world-space endpoint clipping
+  against the same `radiation_volume`. Endpoints stop before the first
+  non-traversable voxel or at the CT boundary. The existing SimpleITK world /
+  planning-array conversion chain is preserved.
+- Changed the DVH default x-axis to 0–300 Gy and limited display smoothing to
+  the same visible 0–300 Gy interval. The Plotly modebar is inset inside the
+  DVH panel so the reset/home button is reachable while the panel still clips
+  tooltip overflow.
+
+### Verification
+
+- `py_compile` and `compileall` passed for the modified backend.
+- Targeted obstacle policy tests passed, including forward and reverse
+  synthetic collisions and a safe path.
+- The existing trajectory-refinement obstacle regression passed.
+- `git diff --check` passed.
+- Node.js, pytest, and a live browser session are unavailable on the remote
+  host; the remaining UI verification should be performed by refreshing the
+  browser and checking the DVH reset control plus a completed plan's needle
+  endpoints against the Data tree Non-traversable meshes.
