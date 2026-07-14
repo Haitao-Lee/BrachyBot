@@ -4204,3 +4204,56 @@ agent turn token. A stopped turn is never reused as a successful plan result.
 - Python unit execution was unavailable in the Windows checkout because its
   local interpreter is missing the standard `encodings` package; the remote
   `brachytherapy` interpreter is the authoritative runtime check.
+
+## Round 17 Dose-normalization audit (2026-07-14)
+
+### Scope
+
+This pass rechecked the deployed `dose_unet_spacing1mm` checkpoint and traced
+the complete training-to-report unit path. The audit covered checkpoint
+metadata, the standalone predictor, the production model adapter, seed-plan
+accumulation, dose evaluation, manual preview, 2D overlays, and 3D
+isosurfaces. The established coordinate chain was not changed.
+
+### Verified contract
+
+- Training stores the target as `dose_raw * dose_multiplier`, where the
+  deployed checkpoint records `dose_multiplier = 1e12`.
+- The standalone predictor reverses that training multiplier exactly once.
+- The BrachyBot adapter applies its explicit `planning_output_scale`, which
+  currently defaults to the same checkpoint multiplier. The verified ratio is
+  `planning_output_scale / dose_multiplier = 1.0`, so the planner receives the
+  same normalized dose units used by the existing planning thresholds.
+- The checkpoint records channel order
+  `(line_map, ct, soft_pos)` and target spacing `(1.0, 1.0, 1.0)`. The
+  production loader accepted the checkpoint and attached the matching
+  contract.
+- Internal dose arrays are normalized model output. The explicit clinical
+  display calibration is `DOSE_MODEL_SCALE_GY` (default `120.0`), so physical
+  dose conversion is performed once as `normalized_dose * dose_scale_gy`.
+  D/V metrics, DVH bins, report values, manual preview, overlay labels, and
+  isosurface thresholds follow this same boundary.
+
+### Confirmed issue status
+
+The historical memory key `dose_distribution_gy` is still a compatibility
+alias for the resampled normalized array; its name must not be interpreted as
+physical Gy. This is a real naming hazard, but it is not currently a numeric
+normalization defect: active consumers explicitly read `dose_units` and
+`dose_scale_gy`, and the existing endpoints convert thresholds or display
+values at the boundary. The alias is retained intentionally to avoid breaking
+stored sessions and frontend clients. New code should use the explicit unit
+metadata and must not multiply this array by the scale more than once.
+
+No further normalization or coordinate patch was applied in this round because
+changing the calibrated `120.0 Gy` boundary without an independently validated
+clinical calibration would be unsafe.
+
+### Verification
+
+- Remote checkpoint metadata inspection passed.
+- Remote production `load_dose_model(..., device='cpu')` smoke test passed and
+  confirmed the contract ratio is exactly `1.0`.
+- Prior RTX inference on the deployed CT produced a finite, non-empty dose
+  field; no evidence supports a normalization-induced empty or runaway dose.
+- The remote working tree was clean before this documentation-only update.
