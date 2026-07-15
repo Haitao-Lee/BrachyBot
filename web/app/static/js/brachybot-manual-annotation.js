@@ -173,7 +173,7 @@ async function applyHyperparams() {
         },
         reference_direc: document.getElementById('refDirecAuto')?.checked
             ? 'auto'
-            : [_num('refDirecX', 0), _num('refDirecY', -1), _num('refDirecZ', 0)],
+            : [_num('refDirecX', 0), _num('refDirecY', 1), _num('refDirecZ', 0)],
         in_lowest_energy: _num('inLowestEnergy', 1),
         out_highest_energy: _num('outHighestEnergy', 1),
         DVH_rate: _num('dvhRate', 0.9),

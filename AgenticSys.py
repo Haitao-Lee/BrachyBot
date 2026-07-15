@@ -873,7 +873,9 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             direction = self._coerce_reference_direction(candidate)
             if direction is not None:
                 return direction
-        return [0.0, -1.0, 0.0]
+        # Keep the defensive fallback aligned with plans/config.json and the
+        # manual Web UI default. Explicit UI/config directions still win.
+        return [0.0, 1.0, 0.0]
 
     def _reversed_reference_direction(self):
         """Return the negated current reference direction for an explicit replan."""

@@ -4342,10 +4342,16 @@ reported screenshot.
   rebuilding the current Data tree obstacle volume, and immediately before
   seed optimization. Invalid trajectories cannot be restored by the old
   depth-filter fallback.
-- Replaced the 100 mm viewer extension with world-space endpoint clipping
-  against the same `radiation_volume`. Endpoints stop before the first
-  non-traversable voxel or at the CT boundary. The existing SimpleITK world /
+- Kept the needle display strategy independent from the obstacle gate: the
+  needle enters from outside and terminates at the deepest seed position. The
+  configurable insertion extension is now 150 mm in the shared planning
+  settings and the viewer uses that same value. The existing SimpleITK world /
   planning-array conversion chain is preserved.
+- Corrected the default reference direction consistently to `[0, 1, 0]` in
+  `plans/config.json`, the manual planning controls, the UI-state snapshot,
+  the agent defensive fallback, and the chat workflow fallback. Explicit
+  user-entered directions and `auto` mode remain unchanged; organ-specific
+  `auto` defaults are clinical policy rather than this global fallback.
 - Changed the DVH default x-axis to 0–300 Gy and limited display smoothing to
   the same visible 0–300 Gy interval. The Plotly modebar is inset inside the
   DVH panel so the reset/home button is reachable while the panel still clips
@@ -4354,6 +4360,9 @@ reported screenshot.
 ### Verification
 
 - `py_compile` and `compileall` passed for the modified backend.
+- Runtime configuration checks confirmed `DIRECTION_EXTENSION=150` and the
+  persisted/global default direction `[0, 1, 0]` are visible to both the
+  pipeline and Web UI integration paths.
 - Targeted obstacle policy tests passed, including forward and reverse
   synthetic collisions and a safe path.
 - The existing trajectory-refinement obstacle regression passed.

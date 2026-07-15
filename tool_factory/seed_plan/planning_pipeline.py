@@ -272,10 +272,9 @@ _ORGAN_DEFAULT_REFDIREC = {
     "brats21":   [0.0, 0.0, 1.0],
 }
 
-# Global default if no organ hint is available. Changed from anterior [0,1,0]
-# to posterior [-1,0,0] as a safer fallback — anterior approach is blocked
-# by OARs (stomach/duodenum) for most abdominal tumors.
-_GLOBAL_DEFAULT_REFDIREC = [0.0, -1.0, 0.0]
+# Global default if no organ hint is available. Keep this aligned with the
+# persisted planning setting and the manual Web UI default.
+_GLOBAL_DEFAULT_REFDIREC = [0.0, 1.0, 0.0]
 
 
 def _normalize_ref_direc(d):
@@ -1219,7 +1218,7 @@ class PlanningPipelineTool(BaseTool):
 
         if not trajectories:
             logger.info("No trajectories found, running trajectory_init + refine first...")
-            # Use organ-aware direction resolution instead of hardcoded anterior [0,1,0]
+            # Use the configured or organ-aware direction resolution.
             ref_direc_input = agent_config.get("reference_direc") if agent_config else None
             if ref_direc_input is None:
                 ref_direc_input = CONFIG.get("reference_direc", "auto")
