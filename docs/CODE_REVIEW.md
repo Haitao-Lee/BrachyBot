@@ -4352,10 +4352,27 @@ reported screenshot.
   the agent defensive fallback, and the chat workflow fallback. Explicit
   user-entered directions and `auto` mode remain unchanged; organ-specific
   `auto` defaults are clinical policy rather than this global fallback.
-- Changed the DVH default x-axis to 0–300 Gy and limited display smoothing to
-  the same visible 0–300 Gy interval. The Plotly modebar is inset inside the
-  DVH panel so the reset/home button is reachable while the panel still clips
-  tooltip overflow.
+- Changed the DVH default x-axis to 0–400 Gy and limited display smoothing to
+  the same visible 0–400 Gy interval. The Plotly modebar is inset further
+  inside the panel so the reset/home control remains fully clickable.
+- Added dedicated X-axis-only and Y-axis-only zoom modebar buttons. Each locks
+  the other axis during rectangle zoom; Home restores both axes, their zero
+  origins, and the default `[0, 400] × [0, 100]` window.
+- Updated the 3D viewer controls to match the 3D Slicer mouse convention:
+  left-drag rotates, middle-drag pans, right-drag zooms, and the wheel zooms.
+  Damping was disabled for direct manipulation and a small polar guard avoids
+  the singular pose that made rotation appear stuck. Needle endpoint capture
+  and all coordinate conversion paths are unchanged.
+
+### Round 20 Verification
+
+- Updated the DVH script cache version and verified all 0–300 default references
+  in the chart/tooltip path were replaced by the shared 0–400 constant.
+- `git diff --check` passed; Python backend changes from Round 19 remain
+  compiled and unchanged by this UI-only update.
+- Node.js and a live browser session are unavailable on the remote host; after
+  refreshing the Web UI, verify the two axis-only buttons by dragging a zoom
+  rectangle and verify Home restores `(0, 0)` at the lower-left corner.
 
 ### Verification
 
