@@ -1294,8 +1294,16 @@ def register_planning_routes(app, get_agent):
         seeds = data.get("seeds") or []
         needles = data.get("needles") or []
         reason = data.get("reason") or "manual_update"
+        previous_needles = data.get("previous_needles") or []
+        reproject_seeds = bool(data.get("reproject_seeds")) or reason in {"needle_drag", "manual_replan"}
         try:
-            result = _compute_manual_ai_dose(agent, seeds, needles)
+            result = _compute_manual_ai_dose(
+                agent,
+                seeds,
+                needles,
+                previous_needles=previous_needles,
+                reproject_seeds=reproject_seeds,
+            )
             event = _append_ui_event(session_id, {
                 "type": "manual.dose",
                 "label": reason,

@@ -4388,3 +4388,65 @@ reported screenshot.
   host; the remaining UI verification should be performed by refreshing the
   browser and checking the DVH reset control plus a completed plan's needle
   endpoints against the Data tree Non-traversable meshes.
+
+## Round 21 Manual needle replan persistence, request coalescing, and chat event timeline (2026-07-15)
+
+### Confirmed findings
+
+The manual needle drag path did update the browser-side needle mesh, but the
+next `/api/manual_planning/update` request only recomputed dose from the old
+seed coordinates. More importantly, `/api/planning/seeds_3d` discarded the
+explicit needle endpoints saved by the manual planner and reconstructed a new
+needle from seed positions on every refresh. Consequently a successful dose
+response could be followed by a refresh that visually restored the old needle
+and left the particles at their previous positions. This was a real state
+round-trip defect, not an intentional clinical behavior.
+
+The chat also rendered every system event as a centered dashed bubble. A
+single drag can legitimately produce selection, endpoint update, recompute,
+and metric events, so the layout became a tall column of visually repetitive
+notices without timestamps. The existing one-shot recompute calls also allowed
+multiple needle drags to overlap at the HTTP layer; an older response could
+repaint the scene after a newer drag.
+
+### Corrective changes
+
+- Added a world-coordinate seed reprojection step for `needle_drag` and
+  `manual_replan`. Each seed is projected onto the previous needle segment and
+  placed at the same normalized depth on the new segment; its direction follows
+  the new needle axis. Explicit seed drags remain authoritative and are not
+  altered by this path.
+- Made the manual planning route accept the previous needle geometry and
+  return the number of reprojected seeds in the response and metrics. The
+  existing DoseUNet inference and patient-world to planning-grid coordinate
+  chain remain unchanged.
+- Made `/api/planning/seeds_3d` preserve valid explicit world-coordinate
+  endpoint pairs saved in a manual plan. Legacy automatic plans without
+  explicit points continue using the existing seed-derived needle strategy.
+- Added a client-side single-flight queue for manual dose updates. When a new
+  drag arrives during an active inference request, only the latest payload is
+  queued and stale responses are prevented from repainting the UI. The latest
+  successful geometry becomes the next drag baseline.
+- Added a persistent-in-progress chat status row with a breathing indicator
+  during manual replanning, a queued state for rapid successive drags, and a
+  completion/failure transition. The row is removed after the final status is
+  shown, while the metric event remains in the session history.
+- Replaced centered system/error bubbles with left-aligned timeline rows that
+  include a compact status icon, readable wrapping, and `HH:mm:ss` timestamps.
+  Session-restored notices use their stored timestamp; live notices use the
+  event creation time. The CSS cache version was bumped to ensure the new
+  layout is loaded.
+
+### Verification
+
+- Remote `py_compile` passed for `web/server_support.py`,
+  `web/routes/planning_routes.py`, and `web/routes/viewer_routes.py`.
+- A remote runtime smoke test confirmed that a translated needle moves an
+  associated seed by the same relative depth and updates its direction.
+- Remote `git diff --check` passed.
+- Local Node.js syntax checks passed for the three changed JavaScript files;
+  Node.js is not installed on the remote host.
+- The full browser interaction still needs one live UI check: drag one needle
+  endpoint, wait for the status row to complete, confirm the seed and needle
+  remain at the edited geometry, then drag again before completion and confirm
+  only the newest result is shown.

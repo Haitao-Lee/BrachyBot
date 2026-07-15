@@ -466,8 +466,8 @@ function saveSessionMessage(type, content, steps, timestamp) {
 //     on the side (the design system expects this DOM shape; without
 //     the wrapper, avatars were never rendered even though the CSS
 //     .chat-avatar { … } exists).
-//   - For system / error messages: keeps the simpler flat structure
-//     they were rendered with before, so existing styles still match.
+//   - For system / error messages: renders a compact timestamped timeline row
+//     so repeated UI events remain readable without looking like bot answers.
 //   - preserves newlines (becomes <br>)
 //   - autoscrolls to the bottom
 //   - tolerates missing container, missing type, undefined content
@@ -739,15 +739,32 @@ function addChat(type, content, scroll, timestamp, fromSession) {
             row.appendChild(wrapper);
             container.appendChild(row);
         } else {
-            // Flat layout for system / error (matches the welcome message)
-            const div = document.createElement('div');
-            div.className = 'chat-msg ' + safeType;
-            div.innerHTML = c
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/\n/g, '<br>');
-            container.appendChild(div);
+            // System and error events use a compact left-aligned timeline row.
+            // These are user-action/status records, not assistant messages, so
+            // they should not look like repeated centered answer bubbles.
+            const row = document.createElement('div');
+            row.className = 'chat-event-row ' + safeType;
+            const icon = document.createElement('span');
+            icon.className = 'chat-event-icon';
+            icon.textContent = safeType === 'error' ? '!' : 'i';
+            const body = document.createElement('div');
+            body.className = 'chat-event-content';
+            const message = document.createElement('span');
+            message.className = 'chat-event-text';
+            message.textContent = c;
+            const ts = document.createElement('time');
+            ts.className = 'chat-event-timestamp';
+            try {
+                const tsSrc = (typeof timestamp === 'number' && timestamp > 0)
+                    ? new Date(timestamp)
+                    : new Date();
+                ts.textContent = tsSrc.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            } catch (_) { ts.textContent = ''; }
+            body.appendChild(message);
+            body.appendChild(ts);
+            row.appendChild(icon);
+            row.appendChild(body);
+            container.appendChild(row);
         }
 
         if (scroll !== false) {

@@ -269,6 +269,91 @@
     box-shadow: var(--inset-bottom), var(--shadow-xs);
 }
 
+/* Action/status events are a timeline, not assistant bubbles. The layout is
+   intentionally full-width and left aligned so repeated drag/recompute events
+   remain easy to scan without a column of centered floating pills. */
+.chat-event-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.12rem 0.1rem;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    line-height: 1.35;
+}
+.chat-event-icon {
+    flex: 0 0 1.2rem;
+    width: 1.2rem;
+    height: 1.2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 0.08rem;
+    border: 1px solid var(--border-soft);
+    border-radius: 50%;
+    color: var(--primary-ink);
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+.chat-event-content {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    min-width: 0;
+    max-width: 100%;
+    padding: 0.35rem 0.6rem;
+    background: rgba(15, 23, 42, 0.46);
+    border: 1px solid var(--border-hairline);
+    border-radius: 0.45rem;
+    box-shadow: var(--shadow-xs);
+}
+.chat-event-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+.chat-event-timestamp {
+    flex: 0 0 auto;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.62rem;
+    white-space: nowrap;
+}
+.chat-event-row.error .chat-event-icon {
+    color: var(--danger);
+    border-color: var(--danger-border);
+}
+.chat-event-row.error .chat-event-content {
+    color: var(--danger);
+    background: var(--danger-soft);
+    border-color: var(--danger-border);
+}
+.chat-event-row.manual-dose-progress .chat-event-icon {
+    color: var(--primary);
+    border-color: var(--primary);
+}
+.chat-event-row.manual-dose-progress.is-running .chat-event-icon {
+    animation: chat-event-breathe 1.35s ease-in-out infinite;
+}
+.chat-event-row.manual-dose-progress.is-queued .chat-event-content {
+    border-color: var(--warning);
+}
+.chat-event-row.manual-dose-progress.is-done .chat-event-icon {
+    color: var(--success);
+    border-color: var(--success);
+}
+.chat-event-row.manual-dose-progress.is-error .chat-event-icon {
+    color: var(--danger);
+    border-color: var(--danger);
+}
+@keyframes chat-event-breathe {
+    0%, 100% { transform: scale(0.92); opacity: 0.55; }
+    50% { transform: scale(1.08); opacity: 1; }
+}
+
 /* Markdown — code block blends with dark chat theme */
 .md-code-block {
     background: rgba(15, 23, 42, 0.6);

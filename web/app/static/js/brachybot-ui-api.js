@@ -130,6 +130,8 @@ function collectUIState() {
             seed_counter: manualPlanningState.seedCounter,
             needle_counter: manualPlanningState.needleCounter,
             dose_engine: manualPlanningState.doseEngine || 'dose_unet_spacing1mm',
+            dose_recompute_running: !!manualPlanningState.doseRecomputeRunning,
+            dose_recompute_queued: !!manualPlanningState.doseRecomputeQueued,
         } : {},
         training: (typeof trainingMonitorState !== 'undefined') ? {
             active: !!trainingMonitorState.active,
@@ -231,6 +233,10 @@ var manualPlanningState = {
     seedCounter: 0,
     needleCounter: 0,
     doseEngine: 'dose_unet_spacing1mm',
+    doseRecomputeRunning: false,
+    doseRecomputeQueued: false,
+    doseRecomputeSequence: 0,
+    lastDoseNeedles: null,
 };
 
 function _activeApiSessionId() {
