@@ -540,7 +540,93 @@ def _safe_float_list(values: Any, length: int = 3, default: Optional[list] = Non
         return list(default)
 
 
-def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]:
+def _reproject_seeds_onto_needles(
+    seeds: list,
+    needles: list,
+    previous_needles: list,
+) -> tuple[list, int]:
+    """Move seeds with a dragged needle while preserving their relative depth.
+
+    The browser keeps seed positions in patient-world coordinates. A needle
+    edit changes the treatment geometry, so retaining the old seed coordinates
+    would make the next dose calculation inconsistent with the visible needle.
+    The old and new endpoint pairs define a one-dimensional parameter t; each
+    seed is projected onto the old line and reconstructed on the new line at
+    the same t. This is intentionally limited to needle edits and never
+    changes an explicit seed drag.
+    """
+    import numpy as np
+
+    def _points_by_trajectory(items):
+        result = {}
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            points = item.get("points")
+            if not isinstance(points, list) or len(points) < 2:
+                continue
+            try:
+                p0 = np.asarray(_safe_float_list(points[0], 3), dtype=np.float64)
+                p1 = np.asarray(_safe_float_list(points[-1], 3), dtype=np.float64)
+                if not np.all(np.isfinite(p0)) or not np.all(np.isfinite(p1)):
+                    continue
+                key = str(item.get("trajectory_id") or item.get("id") or "")
+                if key:
+                    result[key] = (p0, p1)
+            except Exception:
+                continue
+        return result
+
+    old_by_traj = _points_by_trajectory(previous_needles)
+    new_by_traj = _points_by_trajectory(needles)
+    if not old_by_traj or not new_by_traj:
+        return list(seeds or []), 0
+
+    updated = []
+    changed = 0
+    for seed in seeds or []:
+        if not isinstance(seed, dict):
+            updated.append(seed)
+            continue
+        trajectory_id = str(seed.get("trajectory_id") or "")
+        old_line = old_by_traj.get(trajectory_id)
+        new_line = new_by_traj.get(trajectory_id)
+        if old_line is None or new_line is None:
+            updated.append(dict(seed))
+            continue
+        try:
+            position = np.asarray(_safe_float_list(seed.get("position") or seed.get("pos"), 3), dtype=np.float64)
+            old_target, old_entry = old_line
+            new_target, new_entry = new_line
+            old_axis = old_target - old_entry
+            new_axis = new_target - new_entry
+            old_length_sq = float(np.dot(old_axis, old_axis))
+            new_length = float(np.linalg.norm(new_axis))
+            if old_length_sq <= 1e-8 or new_length <= 1e-8:
+                updated.append(dict(seed))
+                continue
+            t = float(np.dot(position - old_entry, old_axis) / old_length_sq)
+            t = float(np.clip(t, 0.0, 1.0))
+            replacement = new_entry + t * new_axis
+            replacement_direction = (new_axis / new_length).tolist()
+            item = dict(seed)
+            item["position"] = replacement.tolist()
+            item["direction"] = replacement_direction
+            updated.append(item)
+            changed += 1
+        except Exception:
+            updated.append(dict(seed))
+    return updated, changed
+
+
+def _compute_manual_ai_dose(
+    agent,
+    seeds: list,
+    needles: list,
+    *,
+    previous_needles: Optional[list] = None,
+    reproject_seeds: bool = False,
+) -> Dict[str, Any]:
     """Recompute manual-plan dose with the trained DoseUNet model only.
 
     Manual seed and needle coordinates remain in frontend world coordinates.
@@ -555,6 +641,16 @@ def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]
 
     if agent is None or not hasattr(agent, "memory"):
         raise ValueError("Agent not available")
+
+    # A needle drag is a geometry edit, not merely a dose refresh. Reproject
+    # the submitted seeds onto the new needle before converting coordinates for
+    # DoseUNet inference. The previous geometry is supplied by the browser so
+    # this remains correct even when the stored plan came from automatic mode.
+    seeds, reprojection_count = _reproject_seeds_onto_needles(
+        seeds,
+        needles,
+        previous_needles or [],
+    ) if reproject_seeds else (list(seeds or []), 0)
     ct_image = agent.memory.retrieve("ct_image")
     ct_data = agent.memory.retrieve("ct_data")
     if ct_image is None or ct_data is None:
@@ -719,6 +815,7 @@ def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]
         "dose_engine": "dose_unet_spacing1mm",
         "total_seeds": len(norm_seeds),
         "num_trajectories": len(grouped),
+        "reprojected_seeds": int(reprojection_count),
     }
     dvh_data: Dict[str, Any] = {}
     if ctv_mask is not None and np.any(ctv_mask > 0):
@@ -854,6 +951,7 @@ def _compute_manual_ai_dose(agent, seeds: list, needles: list) -> Dict[str, Any]
         "dose_engine": "dose_unet_spacing1mm",
         "total_seeds": len(norm_seeds),
         "num_trajectories": len(grouped),
+        "reprojected_seeds": int(reprojection_count),
         "metrics": metrics,
         "dose_range": [float(dose_original.min()), float(dose_original.max())],
         "dose_range_normalized": [float(dose_original.min()), float(dose_original.max())],

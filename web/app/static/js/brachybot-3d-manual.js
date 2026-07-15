@@ -38,9 +38,30 @@ function _syncSeedsOverlayFromDataTree() {
     redrawSeedNeedleOverlays();
 }
 
-function _manualPayload() {
+function _cloneNeedleGeometry(needles) {
+    return (needles || []).map((needle) => ({
+        id: needle?.id,
+        points: (needle?.points || []).map((point) => _vec3Array(point)),
+        trajectory_id: needle?.trajectory_id,
+    })).filter((needle) => needle.points.length >= 2);
+}
+
+function _currentManualNeedles() {
+    return _cloneNeedleGeometry(dataTreeState?.planning?.needles || []);
+}
+
+function _manualDoseBaselineNeedles() {
+    if (Array.isArray(manualPlanningState.lastDoseNeedles) && manualPlanningState.lastDoseNeedles.length) {
+        return _cloneNeedleGeometry(manualPlanningState.lastDoseNeedles);
+    }
+    const snapshot = _currentManualNeedles();
+    manualPlanningState.lastDoseNeedles = _cloneNeedleGeometry(snapshot);
+    return snapshot;
+}
+
+function _manualPayload(options = {}) {
     _syncSeedsOverlayFromDataTree();
-    return {
+    const payload = {
         session_id: _activeApiSessionId(),
         seeds: state.seedsOverlay.seeds.map(s => ({
             id: s.id,
@@ -55,6 +76,13 @@ function _manualPayload() {
         })),
         dose_engine: 'dose_unet_spacing1mm',
     };
+    if (options.reprojectSeeds) {
+        payload.reproject_seeds = true;
+        payload.previous_needles = _cloneNeedleGeometry(
+            options.previousNeedles || _manualDoseBaselineNeedles()
+        );
+    }
+    return payload;
 }
 
 function addManualNeedle() {
@@ -138,17 +166,56 @@ async function addManualSeed() {
     await recomputeManualDose('seed_add');
 }
 
-async function recomputeManualDose(reason = 'manual_update') {
-    const payload = _manualPayload();
-    payload.reason = reason;
+function _setManualDoseProgress(stateName, text) {
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+    let row = document.getElementById('manualDoseProgress');
+    if (!row) {
+        row = document.createElement('div');
+        row.id = 'manualDoseProgress';
+        row.className = 'chat-event-row manual-dose-progress';
+        const icon = document.createElement('span');
+        icon.className = 'chat-event-icon';
+        icon.textContent = 'AI';
+        const body = document.createElement('div');
+        body.className = 'chat-event-content';
+        const message = document.createElement('span');
+        message.className = 'chat-event-text';
+        const timestamp = document.createElement('time');
+        timestamp.className = 'chat-event-timestamp';
+        body.appendChild(message);
+        body.appendChild(timestamp);
+        row.appendChild(icon);
+        row.appendChild(body);
+        container.appendChild(row);
+    }
+    const message = row.querySelector('.chat-event-text');
+    const timestamp = row.querySelector('.chat-event-timestamp');
+    if (message) message.textContent = text;
+    if (timestamp) timestamp.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    row.classList.toggle('is-running', stateName === 'running' || stateName === 'queued');
+    row.classList.toggle('is-queued', stateName === 'queued');
+    row.classList.toggle('is-done', stateName === 'done');
+    row.classList.toggle('is-error', stateName === 'error');
+    container.scrollTop = container.scrollHeight;
+    if (stateName === 'done' || stateName === 'error') {
+        setTimeout(() => {
+            if (row && row.parentNode) row.parentNode.removeChild(row);
+        }, 2200);
+    }
+}
+
+async function _runManualDoseJob(job) {
+    const { payload, wasDoseTextureEnabled } = job;
+    const requestSequence = ++manualPlanningState.doseRecomputeSequence;
+    _setManualDoseProgress(
+        'running',
+        payload.reproject_seeds ? 'Replanning with the latest needle geometry...' : 'Recomputing the AI dose...'
+    );
     if (!payload.seeds.length) {
         addChat('error', 'No manual seeds available. Add at least one seed before recomputing dose.');
         return null;
     }
-    // Save dose texture state before recompute so it can be restored after
-    // refreshPlanningUI reloads all meshes.
-    const wasDoseTextureEnabled = !!(state && state.doseTexture && state.doseTexture.enabled);
-    addChat('system', 'Manual AI dose recomputing...');
     try {
         const res = await fetch(API + '/manual_planning/update', {
             method: 'POST',
@@ -157,6 +224,12 @@ async function recomputeManualDose(reason = 'manual_update') {
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
+        // If another drag arrived while this request was running, keep the
+        // response for diagnostics but do not repaint the UI with stale seeds,
+        // dose, or DVH. The queued latest request owns the next repaint.
+        const superseded = manualPlanningState.doseRecomputeQueued
+            && manualPlanningState._doseRecomputeJob !== job;
+        if (superseded || requestSequence !== manualPlanningState.doseRecomputeSequence) return data;
         state.doseOverlay = null;
         state.dvhData = null;
         state.doseTexture.enabled = false;  // Reset so refreshPlanningUI loads meshes without dose
@@ -168,15 +241,60 @@ async function recomputeManualDose(reason = 'manual_update') {
         const m = data.metrics || {};
         const v100 = Number.isFinite(m.v100) ? `${(m.v100 * 100).toFixed(1)}%` : '--';
         const d90 = Number.isFinite(m.d90) ? `${m.d90.toFixed(1)} Gy` : '--';
+        if (payload.reproject_seeds) {
+            manualPlanningState.lastDoseNeedles = _cloneNeedleGeometry(payload.needles);
+        }
+        _setManualDoseProgress('done', `Replanning complete: ${data.total_seeds} seeds, V100=${v100}, D90=${d90}.`);
         addChat('system', `Manual AI dose updated: ${data.total_seeds} seeds, V100=${v100}, D90=${d90}.`);
         if (data.advice && data.advice.advice && trainingMonitorState.active) {
             addChat('system', 'Monitor advice: ' + data.advice.advice.slice(0, 2).join(' '));
         }
         return data;
     } catch (e) {
-        addChat('error', `Manual AI dose failed: ${e.message}`);
+        if (!manualPlanningState.doseRecomputeQueued) {
+            _setManualDoseProgress('error', `Replanning failed: ${e.message}`);
+            addChat('error', `Manual AI dose failed: ${e.message}`);
+        }
         return null;
     }
+}
+
+async function recomputeManualDose(reason = 'manual_update', options = {}) {
+    const payload = _manualPayload(options);
+    payload.reason = reason;
+    if (!payload.seeds.length) {
+        addChat('error', 'No manual seeds available. Add at least one seed before recomputing dose.');
+        return null;
+    }
+    const wasDoseTextureEnabled = !!(state && state.doseTexture && state.doseTexture.enabled);
+    manualPlanningState._doseRecomputeJob = { payload, wasDoseTextureEnabled };
+    if (manualPlanningState.doseRecomputeRunning) {
+        // Invalidate the active job immediately. This prevents a response
+        // that finishes while refreshPlanningUI is awaiting mesh work from
+        // repainting the scene with an older drag.
+        manualPlanningState.doseRecomputeSequence += 1;
+        manualPlanningState.doseRecomputeQueued = true;
+        _setManualDoseProgress('queued', 'A newer needle position is queued; finishing the current calculation first...');
+        return manualPlanningState._doseRecomputePromise || null;
+    }
+    manualPlanningState.doseRecomputeRunning = true;
+    manualPlanningState.doseRecomputeQueued = false;
+    manualPlanningState._doseRecomputePromise = (async () => {
+        let result = null;
+        try {
+            do {
+                manualPlanningState.doseRecomputeQueued = false;
+                const job = manualPlanningState._doseRecomputeJob;
+                result = await _runManualDoseJob(job);
+            } while (manualPlanningState.doseRecomputeQueued && manualPlanningState._doseRecomputeJob);
+        } finally {
+            manualPlanningState.doseRecomputeRunning = false;
+            manualPlanningState.doseRecomputeQueued = false;
+            manualPlanningState._doseRecomputePromise = null;
+        }
+        return result;
+    })();
+    return manualPlanningState._doseRecomputePromise;
 }
 
 async function onManualSeedEdited(seedId, position) {
@@ -192,6 +310,7 @@ async function onManualNeedleHandleEdited(handle) {
     const pointIndex = handle?.userData?.pointIndex;
     const needle = dataTreeState.planning.needles.find(n => n.id === needleId);
     if (!needle || pointIndex === undefined) return;
+    const previousNeedles = _manualDoseBaselineNeedles();
     needle.points[pointIndex] = [handle.position.x, handle.position.y, handle.position.z];
     _upsertSceneMesh(needle.id, _makeNeedleMesh(needle));
     _syncNeedleHandles(needle);
@@ -199,7 +318,12 @@ async function onManualNeedleHandleEdited(handle) {
     renderDataTree();
     reportUIEvent('manual.needle.drag', needleId, { point_index: pointIndex, points: needle.points });
     const hasSeeds = dataTreeState.planning.seeds.some(s => s.trajectory_id === needle.trajectory_id);
-    if (hasSeeds) await recomputeManualDose('needle_drag');
+    if (hasSeeds) {
+        await recomputeManualDose('needle_drag', {
+            reprojectSeeds: true,
+            previousNeedles,
+        });
+    }
 }
 
 async function startTrainingMode(goal = 'Monitor planning workflow') {

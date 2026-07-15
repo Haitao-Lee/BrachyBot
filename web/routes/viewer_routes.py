@@ -1097,8 +1097,21 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
             plan_source = seed_plan if seed_plan is not None else seed_plan_serialized
             for i, entry in enumerate(plan_source):
+                explicit_needle_points = None
+                trajectory_id = i
                 if isinstance(entry, dict):
                     seed_list = entry.get("seeds") or []
+                    trajectory_id = entry.get("trajectory_id", entry.get("id", i))
+                    trajectory = entry.get("trajectory")
+                    if isinstance(trajectory, dict):
+                        candidate_points = trajectory.get("points")
+                        if isinstance(candidate_points, list) and len(candidate_points) >= 2:
+                            try:
+                                points = [np.asarray(p, dtype=np.float64).flatten()[:3] for p in candidate_points[:2]]
+                                if all(p.size == 3 and np.all(np.isfinite(p)) for p in points):
+                                    explicit_needle_points = [p.tolist() for p in points]
+                            except Exception:
+                                explicit_needle_points = None
                 elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
                     seed_list = entry[1] if len(entry) > 1 else []
                 else:
@@ -1133,11 +1146,23 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         "position": pos_world.tolist(),
                         "voxel_index": _world_to_ct_voxel_index(pos_world),
                         "direction": direc_world.tolist(),
-                        "trajectory_id": i,
+                        "trajectory_id": trajectory_id,
                         "seed_index": j,
                     }
                     seeds.append(seed_data)
                     needle_seeds.append(pos_world)
+
+                # A manual update stores explicit world-coordinate endpoint
+                # pairs. Preserve them as the authoritative geometry; falling
+                # back to seed-derived geometry is only for legacy automatic
+                # plans that do not carry explicit needle points.
+                if explicit_needle_points is not None:
+                    needles.append({
+                        "id": f"needle_{i}",
+                        "points": explicit_needle_points,
+                        "trajectory_id": trajectory_id,
+                    })
+                    continue
 
                 # Build needle line from SEED POSITIONS (matching ref.py).
                 # ref.py constructs needle lines by projecting seeds onto
