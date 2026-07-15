@@ -1086,84 +1086,14 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             seeds = []
             needles = []
 
-            # The old viewer extended every needle 100 mm behind the shallowest
-            # seed. That was only a visual convenience and could draw a red line
-            # through an OAR even when the planning candidate itself was safe.
-            # Clip both ends against the same planning-grid obstacle volume used
-            # by the planner. World/voxel conversion deliberately uses the
-            # existing SimpleITK metadata chain and does not alter coordinates.
-            resampled_ct = agent.memory.retrieve("resampled_ct")
-            radiation_volume = agent.memory.retrieve("radiation_volume")
-            obstacle_value = 2
-            if radiation_volume is not None:
-                try:
-                    from plans.config import setting
-                    obstacle_value = int(setting().radiation_array_params.get("obstacle_value", 2))
-                except Exception:
-                    pass
-
-            def _is_obstacle_world(world_point):
-                if resampled_ct is None or radiation_volume is None:
-                    return False
-                try:
-                    xyz = resampled_ct.TransformPhysicalPointToContinuousIndex(
-                        tuple(float(v) for v in world_point[:3])
-                    )
-                    # SimpleITK returns [x, y, z]; planning arrays use [z, y, x].
-                    arr_idx = np.floor(np.asarray(xyz, dtype=np.float64)[::-1]).astype(np.int64)
-                    if np.any(arr_idx < 0) or np.any(arr_idx >= np.asarray(radiation_volume.shape)):
-                        return False
-                    return int(radiation_volume[tuple(arr_idx)]) == obstacle_value
-                except Exception:
-                    return False
-
-            def _clip_endpoint(start, direction):
-                start = np.asarray(start, dtype=np.float64)
-                direction = np.asarray(direction, dtype=np.float64)
-                norm = float(np.linalg.norm(direction))
-                if norm <= 1e-10:
-                    return start
-                direction = direction / norm
-                if resampled_ct is not None:
-                    try:
-                        size = np.asarray(resampled_ct.GetSize(), dtype=np.float64)
-                        spacing = np.asarray(resampled_ct.GetSpacing(), dtype=np.float64)
-                        max_distance = float(np.linalg.norm(size * spacing) + 10.0)
-                    except Exception:
-                        max_distance = 400.0
-                else:
-                    max_distance = 100.0
-                last_safe = start.copy()
-                # 0.5 mm sampling is finer than the planning grid in this
-                # application and prevents a thin obstacle from being skipped.
-                for distance in np.arange(0.5, max_distance + 0.5, 0.5):
-                    candidate = start + direction * float(distance)
-                    if _is_obstacle_world(candidate):
-                        break
-                    if resampled_ct is not None:
-                        try:
-                            idx_xyz = np.asarray(
-                                resampled_ct.TransformPhysicalPointToContinuousIndex(tuple(candidate.tolist())),
-                                dtype=np.float64,
-                            )
-                            if np.any(idx_xyz < 0.0) or np.any(idx_xyz >= np.asarray(resampled_ct.GetSize(), dtype=np.float64)):
-                                break
-                        except Exception:
-                            break
-                    last_safe = candidate
-                return last_safe
-
-            def _safe_needle_points(shallow, deep, direction):
-                direction = np.asarray(direction, dtype=np.float64)
-                norm = float(np.linalg.norm(direction))
-                if norm <= 1e-10:
-                    return [np.asarray(deep).tolist(), np.asarray(shallow).tolist()]
-                direction = direction / norm
-                shallow = np.asarray(shallow, dtype=np.float64)
-                deep = np.asarray(deep, dtype=np.float64)
-                start = _clip_endpoint(shallow - 2.0 * direction, -direction)
-                end = _clip_endpoint(deep + 2.0 * direction, direction)
-                return [end.tolist(), start.tolist()]
+            # Keep the physical needle display strategy independent from the
+            # obstacle gate: the needle enters from outside and is drawn to the
+            # deepest seed position. Its configurable insertion length is 150mm.
+            try:
+                from plans.config import setting
+                direction_extension = float(setting().module_constants.get("DIRECTION_EXTENSION", 150.0))
+            except Exception:
+                direction_extension = 150.0
 
             plan_source = seed_plan if seed_plan is not None else seed_plan_serialized
             for i, entry in enumerate(plan_source):
@@ -1233,7 +1163,10 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     shallow_center = p0 + t_min * dir_vec
                     deep_center = p0 + t_max * dir_vec
 
-                    all_points = _safe_needle_points(shallow_center, deep_center, dir_vec)
+                    all_points = [
+                        deep_center.tolist(),
+                        (shallow_center - direction_extension * dir_vec).tolist(),
+                    ]
                     needles.append({
                         "id": f"needle_{i}",
                         "points": all_points,
@@ -1247,7 +1180,10 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     else: dir_vec = np.array([0.0, 0.0, 1.0])
                     needles.append({
                         "id": f"needle_{i}",
-                        "points": _safe_needle_points(sp, sp, dir_vec),
+                        "points": [
+                            sp.tolist(),
+                            (sp - direction_extension * dir_vec).tolist(),
+                        ],
                         "trajectory_id": i,
                     })
 

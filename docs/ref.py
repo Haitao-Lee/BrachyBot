@@ -61,7 +61,7 @@ NEW_SLICES_ROUNDED = _module_constants.get("NEW_SLICES_ROUNDED", 64)
 SEED_LENGTH = _module_constants.get("SEED_LENGTH", 3.7)
 SEED_RADIUS = _module_constants.get("SEED_RADIUS", 0.4)
 SEED_RESOLUTION = _module_constants.get("SEED_RESOLUTION", 60)
-DIRECTION_EXTENSION = _module_constants.get("DIRECTION_EXTENSION", 100)
+DIRECTION_EXTENSION = _module_constants.get("DIRECTION_EXTENSION", 150)
 
 RESAMPLE_DEFAULT_SIZE = [128, 128, 128]
 RESAMPLE_DEFAULT_SPACING = [1, 1, 1]
@@ -4446,7 +4446,7 @@ class BrachyPlanWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
                 # Use the dragged needle direction directly as ground truth.
                 # Deriving dir_vec from seed directions introduces small angular
-                # errors that get amplified by DIRECTION_EXTENSION (100mm),
+                # errors that get amplified by DIRECTION_EXTENSION (150mm),
                 # causing large needle displacement after replan.
                 needle_dir = np.array(end_pos) - np.array(start_pos)
                 needle_dir_norm = np.linalg.norm(needle_dir)

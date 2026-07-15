@@ -82,7 +82,7 @@ function collectUIState() {
                 ? 'auto'
                 : [
                     Number(document.getElementById('refDirecX')?.value || 0),
-                    Number(document.getElementById('refDirecY')?.value || 0),
+                    Number(document.getElementById('refDirecY')?.value || 1),
                     Number(document.getElementById('refDirecZ')?.value || 0),
                 ],
             plan_mode: gc('useRLToggle') ? 'rl' : 'rule_based',

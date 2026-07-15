@@ -4,7 +4,7 @@
         "SEED_LENGTH": 3.7,
         "SEED_RADIUS": 0.4,
         "SEED_RESOLUTION": 60,
-        "DIRECTION_EXTENSION": 100
+        "DIRECTION_EXTENSION": 150
     },
     "image_normalize": [-1000, 3000, 255],
     "use_rf": true,
@@ -13,7 +13,7 @@
         "length": 3.7,
         "margin_rate": 1.5
     },
-    "reference_direc": [0, -1, 0],
+    "reference_direc": [0, 1, 0],
     "radiation_array_params": {
         "target_value": 1,
         "obstacle_value": 2,

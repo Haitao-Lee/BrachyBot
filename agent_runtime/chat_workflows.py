@@ -1837,7 +1837,7 @@ class ChatWorkflowMixin:
         if reference_direc is None:
             ui_state = self.memory.get_ui_state() if hasattr(self, 'memory') and hasattr(self.memory, 'get_ui_state') else {}
             planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
-            reference_direc = planning_state.get("reference_direc") or [0, -1, 0]
+            reference_direc = planning_state.get("reference_direc") or [0, 1, 0]
         in_lowest_energy = in_lowest_energy if in_lowest_energy is not None else self.config.get("in_lowest_energy", 1)
         out_highest_energy = out_highest_energy if out_highest_energy is not None else self.config.get("out_highest_energy", 1)
         DVH_rate = DVH_rate if DVH_rate is not None else self.config.get("DVH_rate", 0.9)
