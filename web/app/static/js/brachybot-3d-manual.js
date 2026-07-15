@@ -374,24 +374,30 @@ function init3DScene() {
         setTimeout(() => forceRender3DViewer(), 0);
     }, false);
 
-    // OrbitControls: 3D Slicer style — left=rotate, right=pan, scroll=zoom
+    // OrbitControls: 3D Slicer style — left=rotate, middle=pan,
+    // right=zoom, wheel=zoom. Keep the mapping explicit because OrbitControls'
+    // library default maps middle/right in the opposite order.
     scene3D.controls = new THREE.OrbitControls(scene3D.camera, scene3D.renderer.domElement);
-    // 3D Slicer-like interaction: responsive rotation, low inertia, fast zoom
-    scene3D.controls.enableDamping = true;
-    scene3D.controls.dampingFactor = 0.08;     // Low inertia — more direct response
-    scene3D.controls.rotateSpeed = 1.2;        // Fast rotation
-    scene3D.controls.zoomSpeed = 2.0;          // Fast zoom
-    scene3D.controls.panSpeed = 1.5;           // Fast pan
+    // Direct manipulation avoids the apparent "stuck" state caused by
+    // damping continuing after a drag has ended. A small polar guard avoids
+    // the singular top/bottom camera pose where OrbitControls can feel locked.
+    scene3D.controls.enableDamping = false;
+    scene3D.controls.dampingFactor = 0;
+    scene3D.controls.rotateSpeed = 1.0;
+    scene3D.controls.zoomSpeed = 1.0;
+    scene3D.controls.panSpeed = 1.0;
     scene3D.controls.screenSpacePanning = true;
     scene3D.controls.enablePan = true;
     scene3D.controls.enableZoom = true;
     scene3D.controls.enableRotate = true;
+    scene3D.controls.minPolarAngle = 0.01;
+    scene3D.controls.maxPolarAngle = Math.PI - 0.01;
     scene3D.controls.minDistance = 5;
     scene3D.controls.maxDistance = 3000;
     scene3D.controls.mouseButtons = {
         LEFT: THREE.MOUSE.ROTATE,
-        MIDDLE: THREE.MOUSE.DOLLY,
-        RIGHT: THREE.MOUSE.PAN
+        MIDDLE: THREE.MOUSE.PAN,
+        RIGHT: THREE.MOUSE.DOLLY
     };
     scene3D.controls.touches = {
         ONE: THREE.TOUCH.ROTATE,

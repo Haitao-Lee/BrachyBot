@@ -666,7 +666,10 @@
    change the viewer toolbars or the chart's coordinate system. */
 .dvh-container .modebar {
     top: 8px !important;
-    right: 10px !important;
+    /* Plotly anchors the last button at the SVG edge. Keep the complete
+       toolbar, including Home and the axis-only zoom buttons, inside the
+       clipped DVH panel rather than letting the rightmost control overflow. */
+    right: 28px !important;
     z-index: 20;
 }
 .dvh-container .modebar-group {
