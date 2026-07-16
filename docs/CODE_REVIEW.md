@@ -4450,3 +4450,37 @@ repaint the scene after a newer drag.
   endpoint, wait for the status row to complete, confirm the seed and needle
   remain at the edited geometry, then drag again before completion and confirm
   only the newest result is shown.
+
+## Round 22 3D dose-surface low-end color clipping (2026-07-16)
+
+### Confirmed finding
+
+The 3D dose-surface mesh colors and the independent 3D color bar shared the
+`threeD` color mapping entry point, but the low end of several selectable
+palettes still sampled black or near-black values. The existing
+`_petRainbowDoseSurface()` helper was not connected to that common path, so a
+zero or very low dose could look like a missing surface. This was limited to
+the 3D dose-surface presentation; the 2D dose overlay intentionally retained
+its original mapping.
+
+### Corrective change
+
+- Added a shared 7% low-end display clip at the 3D color-mapping boundary.
+  `petRainbow3D`, `petRainbow2`, `hot`, `grayscale`, and `viridis` therefore
+  begin with a visible colored sample while the color bar labels still retain
+  the true configured minimum dose. The same mapping is used by 3D mesh
+  vertex colors and the 3D color bar, so they cannot disagree.
+- Kept the 2D path unchanged, including its zero-dose black sample and its
+  existing physical dose range.
+- Bumped the 3D script cache version to ensure browsers load the corrected
+  mapping.
+
+### Verification
+
+- Local Node.js syntax check passed for the modified 3D viewer script.
+- A VM smoke test verified that every supported 3D palette produces a
+  non-black color at the display minimum and that the 2D `petRainbow2` zero
+  sample remains black.
+- The remote code is ready for a browser refresh; the live WebGL surface
+  should be checked once after server/static reload to confirm the selected
+  palette and color bar visually match.
