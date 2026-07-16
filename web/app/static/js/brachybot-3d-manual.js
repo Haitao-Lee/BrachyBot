@@ -2080,8 +2080,18 @@ function _petRainbow2(val) {
 // starts at vibrant purple. Used for 3D mesh vertex colors and the
 // 3D colorbar, where black would look like missing data.
 function _petRainbowDoseSurface(val) {
-    const CLIP_T = 0.070; // vibrant purple at 70 Gy — skip black/dark range for dose surface
-    return _petRainbow2(CLIP_T + Math.min(1, Math.max(0, val)) * (1 - CLIP_T));
+    return _petRainbow2(_doseSurfaceColorT(val));
+}
+
+// The lowest part of several palettes is black or almost black. In a 3D
+// anatomical surface that reads as a missing mesh and hides low-dose anatomy.
+// Keep the numeric 0 Gy label, but map the lowest visible dose to a colored
+// sample. This is deliberately applied only to the 3D scope; 2D dose overlays
+// retain their existing physical color mapping.
+const DOSE_SURFACE_LOW_CLIP_T = 0.070;
+function _doseSurfaceColorT(value) {
+    const v = Math.min(1, Math.max(0, Number(value) || 0));
+    return DOSE_SURFACE_LOW_CLIP_T + v * (1 - DOSE_SURFACE_LOW_CLIP_T);
 }
 
 // Dedicated colormap for the 3D dose surface (0–200 Gy display range).
@@ -2121,9 +2131,13 @@ function _doseDisplayT(doseGy, scope = 'twoD') {
 
 function _doseColorFromScope(scope, t) {
     const palette = getDoseColorbarConfig(scope).palette;
-    const custom = _doseColorStopsRgb(palette, t);
+    const colorT = scope === 'threeD' ? _doseSurfaceColorT(t) : Math.max(0, Math.min(1, Number(t) || 0));
+    if (scope === 'threeD' && palette === 'petRainbow2') {
+        return _petRainbowDoseSurface(t);
+    }
+    const custom = _doseColorStopsRgb(palette, colorT);
     if (custom) return custom;
-    return palette === 'petRainbow3D' ? _petRainbow3D(t) : _petRainbow2(t);
+    return palette === 'petRainbow3D' ? _petRainbow3D(colorT) : _petRainbow2(colorT);
 }
 
 function _doseGyToRgb(doseGy, scope = 'twoD') {
