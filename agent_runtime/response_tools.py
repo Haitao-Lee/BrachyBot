@@ -495,17 +495,17 @@ print(json.dumps(result))
         if isinstance(oar_metrics, dict):
             oar_metrics = {_display_organ_name(organ): om for organ, om in oar_metrics.items()}
         if oar_metrics:
-            lines.append(f"| {L('危及器官', 'OAR')} | {L('最大剂量 (Gy)', 'Dmax (Gy)')} | D2cc (Gy) | D1cc (Gy) | {L('解释状态', 'Interpretation status')} |")
-            lines.append("|" + "|".join(["---"] * 5) + "|")
+            lines.append(L(
+                "以下 OAR 数值为观测结果；请在最终临床审核时依据当前部位适用指南或已确认的病例方案判读，不将软件默认值当作通过/超限结论。",
+                "The OAR values below are observed metrics. Interpret them during final clinical review against applicable site-specific guidance or a confirmed case protocol; the software does not infer pass/fail from defaults."
+            ))
+            lines.append(f"| {L('危及器官', 'OAR')} | {L('最大剂量 (Gy)', 'Dmax (Gy)')} | D2cc (Gy) | D1cc (Gy) |")
+            lines.append("|" + "|".join(["---"] * 4) + "|")
             for organ, om in sorted(oar_metrics.items(), key=lambda kv: _metric_dmax(kv[1]), reverse=True):
                 dmax = _metric_dmax(om)
                 d2cc = om.get('d2cc') or 0
                 d1cc = om.get('d1cc') or 0
-                # Do not infer PASS/WARN/FAIL from generic local ratios.
-                # OAR tolerances are site-specific; use clinical_kb or explicit
-                # plan_config constraints for clinical interpretation.
-                status = L('需结合当前肿瘤部位的适用指南或病例方案判读', 'Requires review against applicable site-specific guidance or the confirmed case protocol')
-                lines.append(f"| {organ} | {dmax:.2f} | {d2cc:.2f} | {d1cc:.2f} | {status} |")
+                lines.append(f"| {organ} | {dmax:.2f} | {d2cc:.2f} | {d1cc:.2f} |")
         else:
             lines.append(L('(剂量评估未返回 OAR 指标)', '(No OAR metrics returned by dose evaluation)'))
         lines.append("")
@@ -519,8 +519,7 @@ print(json.dumps(result))
                 dmax = _metric_dmax(om)
                 d2cc = om.get('d2cc') or 0
                 review_items.append(
-                    f"- {organ}: Dmax={dmax:.2f} Gy, D2cc={d2cc:.2f} Gy. "
-                    f"{L('请依据当前肿瘤部位适用的临床指南或已确认的病例方案限值判读。', 'Interpret using applicable site-specific guidance or confirmed case-protocol limits.')}"
+                    f"- {organ}: Dmax={dmax:.2f} Gy, D2cc={d2cc:.2f} Gy."
                 )
         review_items.append(
             f"- V100={v100:.1f}%, V150={v150:.1f}%, V200={v200:.1f}%, D90={d90:.2f} Gy. "

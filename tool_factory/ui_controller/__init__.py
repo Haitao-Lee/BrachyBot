@@ -122,6 +122,10 @@ CONTROL_REGISTRY = {
         "value_type": "int",
         "description": "Navigate coronal slice"
     },
+    "viewer.dose_peak": {
+        "commands": ["run"],
+        "description": "Move all three 2D viewers to the axial, sagittal, and coronal slices containing the maximum dose voxel. Requires a loaded dose overlay."
+    },
     # ── Layout ──
     "layout": {
         "commands": ["set"],

@@ -1011,6 +1011,16 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             if dist_filter:
                 planning_params["distance_filter"] = dist_filter
 
+            # Preserve the live UI direction for both rule-based and RL
+            # planning. The auto checkbox is an explicit geometric request;
+            # do not replace it with the stale manual vector from the form.
+            if not replan_requested:
+                live_ref = planning_state.get("reference_direc")
+                if planning_state.get("ref_direc_auto"):
+                    live_ref = "auto"
+                if live_ref is not None:
+                    planning_params["ref_direc"] = live_ref
+
             if replan_requested:
                 planning_params["ref_direc"] = self._reversed_reference_direction()
             ordered.append(ensure_call("planning_pipeline", planning_params))

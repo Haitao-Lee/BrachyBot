@@ -384,12 +384,14 @@ window.Report = (function () {
             sources.set(key, source);
             if (key === 'planning.prescriptionRationale' && value && Array.isArray(value.sources)) {
                 if (!Array.isArray(f.references)) f.references = [];
-                value.sources.forEach((url, index) => {
+                value.sources.forEach((sourceItem, index) => {
+                    const url = typeof sourceItem === 'string' ? sourceItem : sourceItem?.url;
+                    const title = typeof sourceItem === 'string' ? '' : sourceItem?.title;
                     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return;
                     if (f.references.some(ref => ref && ref.url === url)) return;
                     f.references.push({
                         citeKey: `clinical-kb-${value.site || 'case'}-${index + 1}`,
-                        title: `Clinical criterion source (${value.site || 'case'})`,
+                        title: title || `Clinical criterion source (${value.site || 'case'})`,
                         publisher: 'Verified clinical source',
                         year: '',
                         url,

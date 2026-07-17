@@ -883,7 +883,10 @@ async function refreshPlanningUI(options = {}) {
         const _meshPromises = [];
         // Isodose surfaces
         if (data.has_dose) {
-            _meshPromises.push(_withTimeout(loadAllIsoSurfaces(), 'Isosurfaces'));
+            _meshPromises.push(_withTimeout(
+                loadAllIsoSurfaces({ reconstruct3d: false }),
+                'Isosurface metadata'
+            ));
         }
         // CTV + OAR meshes
         _meshPromises.push(
@@ -933,14 +936,14 @@ async function refreshPlanningUI(options = {}) {
                 }
             };
             const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
-            const _ctvTitle = lang === 'zh' ? '三维靶区重建' : '3D CTV Reconstruction';
-            const _ctvCap = lang === 'zh' ? 'CTV 靶区（红色）三维表面重建' : 'CTV tumor (red) 3D surface reconstruction';
+            const _ctvTitle = lang === 'zh' ? 'CTV 与粒子分布特写' : 'CTV and Seed Distribution Close-up';
+            const _ctvCap = lang === 'zh' ? '半透明 CTV 内部粒子分布特写；针道不要求完整入镜' : 'Close-up of internal seed distribution within the translucent CTV; needle paths need not be fully in frame';
             const _seedTitle = lang === 'zh' ? '粒子植入方案' : 'Seed Implant Plan';
             const _seedCap = lang === 'zh' ? '穿刺针道（红色）、放射性粒子（黄色）与 CTV（半透明红色）三维重建' : 'Needle paths (red), radioactive seeds (yellow), and CTV (translucent red) 3D view';
 
             forceRender3DViewer();
 
-            // 4f-2a. CTV zoomed capture (hide non-CTV meshes)
+            // 4f-2a. Close-up capture: keep CTV and seeds, hide OAR/skin/needles.
             const ctvMesh = scene3D.meshes['ctv'] || Object.values(scene3D.meshes).find(m => m?.userData?.type === 'ctv');
             const _savedCamera = scene3D.camera && scene3D.controls ? {
                 position: scene3D.camera.position.clone(),
@@ -965,17 +968,24 @@ async function refreshPlanningUI(options = {}) {
             try {
                 if (ctvMesh && scene3D.camera && scene3D.controls) {
                     for (const [id, mesh] of Object.entries(scene3D.meshes)) {
-                        if (!mesh || id === 'ctv') continue;
+                        if (!mesh) continue;
                         _savedVis[id] = mesh.visible;
-                        mesh.visible = false;
+                        const isCtv = id === 'ctv' || mesh?.userData?.type === 'ctv' || id.startsWith('ctv_');
+                        const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed' || mesh?.userData?.kind === 'seed';
+                        mesh.visible = isCtv || isSeed;
                     }
                     if (scene3D.skinMesh) { _savedVis['__skin__'] = scene3D.skinMesh.visible; scene3D.skinMesh.visible = false; }
 
                     const box = new THREE.Box3().setFromObject(ctvMesh);
+                    for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                        if (!mesh || !mesh.visible) continue;
+                        const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed' || mesh?.userData?.kind === 'seed';
+                        if (isSeed) box.union(new THREE.Box3().setFromObject(mesh));
+                    }
                     const center = box.getCenter(new THREE.Vector3());
                     const size = box.getSize(new THREE.Vector3());
                     const maxDim = Math.max(size.x, size.y, size.z);
-                    const dist = maxDim * 2.5;
+                    const dist = Math.max(maxDim * 1.75, 1.0);
                     scene3D.controls.target.copy(center);
                     scene3D.camera.position.set(center.x + dist * 0.6, center.y + dist * 0.4, center.z + dist * 0.7);
                     scene3D.camera.updateProjectionMatrix();

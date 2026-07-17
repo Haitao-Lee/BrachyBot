@@ -79,7 +79,7 @@
     "needle_opacity": 0.85,
     "ctv_opacity": 0.65,
     "oar_opacity": 0.55,
-    "show_isosurfaces_by_default": true,
+    "show_isosurfaces_by_default": false,
     "show_seeds_by_default": true,
     "show_needles_by_default": true
   }

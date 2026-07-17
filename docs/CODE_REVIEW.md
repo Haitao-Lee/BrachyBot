@@ -4484,3 +4484,53 @@ its original mapping.
 - The remote code is ready for a browser refresh; the live WebGL surface
   should be checked once after server/static reload to confirm the selected
   palette and color bar visually match.
+
+## Round 23 Verified planning, viewer, report, and UI-control fixes (2026-07-17)
+
+### Confirmed findings
+
+- Automatic reference direction was not consistently derived from the patient
+  body surface. The planning pipeline now computes a body shell, selects the
+  closest surface point to the CTV, and resolves the entry-to-CTV-center vector
+  in the existing image/world coordinate contract. Explicit numeric directions
+  still take precedence.
+- RL planning and rule-based planning did not share the same final trajectory
+  safety path. The RL branch now uses the already obstacle-filtered trajectory
+  list and the same radiation volume and resolved direction. The previous
+  memory re-read that could reintroduce unfiltered trajectories was removed.
+- A request to move all 2D viewers to the dose peak could fall into disabled
+  code execution and generic screenshots. A dedicated `viewer.dose_peak` UI
+  action now maps the stored peak voxel to axial, sagittal, and coronal slice
+  indices and updates all three sliders directly.
+- 2D and 3D colorbar defaults were inconsistent with the requested display.
+  2D now defaults to a linear 0-600 Gy hot scale; 3D defaults to the PET
+  Rainbow palette with its independent range. Dose colorbar changes and Data
+  tree visibility/opacity changes now schedule a unified immediate redraw of
+  all three 2D canvases and the 3D renderer.
+- Dose isosurfaces were reconstructed too early. They now load contour metadata
+  and 2D contours by default; an explicit group or item context-menu action is
+  required for 3D reconstruction.
+- OAR output repeated the same clinical caveat in every table row and exposed
+  an unsupported status column. The response and exported report now show
+  observed metrics with one global interpretation note and do not infer
+  clinical pass/fail from defaults.
+- Prescription source formatting used placeholders such as `source 1`. The
+  report context now preserves verified URLs together with human-readable
+  titles for the pancreatic PubMed records, and the report editor/legacy text
+  generator accept both the new object format and legacy string URLs.
+- The Figure 1 close-up capture hid seeds and framed only the CTV, making the
+  requested internal distribution unreadable. The capture now keeps CTV and
+  seed meshes, hides OAR/skin/needles, fits their combined bounding box, and
+  restores the exact pre-capture visibility and camera state afterward.
+
+### Verification performed
+
+- Local `node --check` passed for the modified viewer, UI API, report, and
+  layout scripts.
+- Local JSON parsing confirmed `display_3d.show_isosurfaces_by_default=false`.
+- Remote source compilation, import smoke tests for the planning/UI/report
+  modules, the synthetic automatic-direction check, and `git diff --check`
+  passed on the target environment before commit.
+- The expensive clinical planning pipeline was not silently replaced by a
+  synthetic end-to-end test. A real case should still be run with a clinician
+  reviewing the resulting direction, obstacle avoidance, dose, and report.

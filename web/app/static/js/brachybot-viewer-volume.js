@@ -1072,9 +1072,36 @@ function updateSlice(view, val) {
     }
 }
 
+// Coalesce visual updates from controls that change scene state without a
+// camera interaction.  This keeps all 2D canvases and the 3D renderer in sync
+// while preserving the current slice indices and camera pose.
+let _viewerRefreshTimer = null;
+function refreshAllViewerCanvases(reason = 'ui-change') {
+    if (!state || !state.ctLoaded) {
+        if (typeof forceRender3DViewer === 'function') forceRender3DViewer();
+        return;
+    }
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const value = Number.isFinite(Number(state.slices?.[axis])) ? Number(state.slices[axis]) : 0;
+        const slider = document.getElementById('slider' + capitalize(axis));
+        if (slider) slider.value = String(value);
+        updateSlice(axis, value);
+    });
+    if (typeof forceRender3DViewer === 'function') forceRender3DViewer();
+    uiDebugLog(`Viewer refresh: ${reason}`);
+}
+
+function requestViewerVisualRefresh(reason = 'ui-change') {
+    clearTimeout(_viewerRefreshTimer);
+    _viewerRefreshTimer = setTimeout(() => {
+        _viewerRefreshTimer = null;
+        refreshAllViewerCanvases(reason);
+    }, 0);
+}
+
 function updateDoseOpacity(val) {
     state.doseOpacity = val / 100;
-    if (window.dose3D) render3D();
+    requestViewerVisualRefresh('dose-opacity');
 }
 
 function updateLabelImage(view) {
@@ -1742,6 +1769,7 @@ function renderDataTree() {
     html += `</div></div>`; // close Planning group
 
     body.innerHTML = html;
+    requestViewerVisualRefresh('data-tree-render');
 }
 
 function renderTreeItem(id, itemState, info) {
@@ -2078,6 +2106,11 @@ function showGroupContextMenu(x, y, category) {
             <span class="ctx-icon">&#9638;</span> 3D Reconstruct All (${count})</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
     }
+    if (category === 'dose_isosurfaces') {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();reconstructDoseIsosurfaces3D()">
+            <span class="ctx-icon">&#9638;</span> 3D Reconstruct All (${count})</div>`;
+        items += `<div class="ctx-menu-sep"></div>`;
+    }
 
     // Visibility
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility('${category}',true)">
@@ -2212,7 +2245,8 @@ function showContextMenu(x, y) {
         items += `<div class="ctx-menu-sep"></div>`;
     }
 
-    // 3D Reconstruct (only for organs/CTV, not planning items)
+    // 3D Reconstruct (only for organs/CTV; dose iso reconstruction is
+    // explicit because dose surfaces are intentionally not built by default)
     if (!isPlanningItem) {
         if (isSingle) {
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();reconstructOrgan3D('${firstId}')">
@@ -2221,6 +2255,11 @@ function showContextMenu(x, y) {
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchReconstruct3D()">
                 <span class="ctx-icon">&#9638;</span> 3D Reconstruct All (${selIds.length})</div>`;
         }
+        items += `<div class="ctx-menu-sep"></div>`;
+    }
+    if (isSingle && firstId.startsWith('dose_iso_')) {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();reconstructDoseIsosurface3D('${firstId}')">
+            <span class="ctx-icon">&#9638;</span> 3D Reconstruct</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
     }
 
@@ -2356,6 +2395,7 @@ function batchToggleVisibility(visible) {
     renderDataTree();
     if (state.ctLoaded) reloadOverlays();
     redrawSeedNeedleOverlays();
+    requestViewerVisualRefresh('batch-visibility');
 }
 
 function batchMoveToCategory(category) {
@@ -2368,6 +2408,7 @@ function batchMoveToCategory(category) {
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
     redrawSeedNeedleOverlays();
+    requestViewerVisualRefresh('batch-category');
     if (typeof syncUIBridgeState === 'function') syncUIBridgeState('data_tree.category').catch(() => {});
 }
 
@@ -2377,6 +2418,7 @@ function batchSolo() {
     dataTreeState.ctv.visible = selSet.has('ctv');
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
+    requestViewerVisualRefresh('batch-solo');
 }
 
 function batchSetOpacity(opacity) {
@@ -2567,6 +2609,7 @@ function setGroupVisibility(category, visible) {
     renderDataTree();
     if (state.ctLoaded) reloadOverlays();
     redrawSeedNeedleOverlays();
+    requestViewerVisualRefresh('group-visibility');
 }
 
 let _groupOpacityTimer = null;
@@ -2652,6 +2695,7 @@ function setGroupOpacity(category, value) {
         renderDataTree();
         if (state.ctLoaded) loadAllSlices();
         redrawSeedNeedleOverlays();
+        requestViewerVisualRefresh('group-opacity');
     }, 150);
 }
 
@@ -2861,7 +2905,10 @@ function setDataOpacity(id, value) {
         }
         // Debounce overlay reload
         clearTimeout(_opacityTimer);
-        _opacityTimer = setTimeout(() => { if (state.ctLoaded) reloadOverlays(); }, 150);
+        _opacityTimer = setTimeout(() => {
+            if (state.ctLoaded) reloadOverlays();
+            requestViewerVisualRefresh('organ-opacity');
+        }, 150);
         return;
     }
 
@@ -2877,7 +2924,10 @@ function setDataOpacity(id, value) {
         applyMeshOpacity(scene3D.meshes[id], opacity, dataTreeState.ctvLabels[id].visible !== false);
         // Debounce overlay reload
         clearTimeout(_opacityTimer);
-        _opacityTimer = setTimeout(() => { if (state.ctLoaded) reloadOverlays(); }, 150);
+        _opacityTimer = setTimeout(() => {
+            if (state.ctLoaded) reloadOverlays();
+            requestViewerVisualRefresh('ctv-opacity');
+        }, 150);
         return;
     }
 
@@ -2905,6 +2955,7 @@ function setDataOpacity(id, value) {
             seed.opacity = opacity;
             applyMeshOpacity(scene3D.meshes[id], opacity, seed.visible !== false);
             redrawSeedNeedleOverlays();
+            requestViewerVisualRefresh('seed-opacity');
         }
         return;
     }
@@ -2919,6 +2970,7 @@ function setDataOpacity(id, value) {
                 _setNeedleHandlesVisibility(needle.id, needle.visible !== false, opacity);
             }
             redrawSeedNeedleOverlays();
+            requestViewerVisualRefresh('needle-opacity');
         }
         return;
     }
@@ -2930,6 +2982,7 @@ function setDataOpacity(id, value) {
         if (level) {
             level.opacity = opacity;
             applyMeshOpacity(scene3D.meshes[id], opacity, level.visible !== false);
+            requestViewerVisualRefresh('dose-isosurface-opacity');
         }
         return;
     }
@@ -2938,6 +2991,7 @@ function setDataOpacity(id, value) {
     if (meshEntry) {
         meshEntry.opacity = opacity;
         applyMeshOpacity(scene3D.meshes[id], opacity, meshEntry.visible !== false);
+        requestViewerVisualRefresh('planning-mesh-opacity');
         return;
     }
 
@@ -2949,6 +3003,7 @@ function setDataOpacity(id, value) {
     }
 
     if (state.ctLoaded) reloadOverlays();
+    requestViewerVisualRefresh('data-opacity');
 }
 
 function selectDataItem(id) {

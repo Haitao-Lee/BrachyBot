@@ -450,9 +450,10 @@ function _sourceBackedMetricAssessment(form, metricKey, value) {
 function _sourceBackedOarAssessment(form, row) {
     const rationale = form?.planning?.prescriptionRationale || {};
     const allCriteria = rationale.oar_criteria || {};
-    const sources = Array.isArray(rationale.sources) ? rationale.sources : [];
+    const sourceUrls = (Array.isArray(rationale.sources) ? rationale.sources : [])
+        .map(src => typeof src === 'string' ? src : src?.url).filter(Boolean);
     const notAssessed = form?.language === 'zh' ? '未评估' : 'Not assessed';
-    if (!sources.length || !allCriteria || typeof allCriteria !== 'object') {
+    if (!sourceUrls.length || !allCriteria || typeof allCriteria !== 'object') {
         return { statusClass: null, statusText: notAssessed };
     }
     const normalized = String(row?.organ || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
@@ -632,21 +633,20 @@ function _updateReportPreview() {
     if (f.oarDose && f.oarDose.length > 0) {
         p3 += `<h2 class="hp-section-title">${escHtml(s.section3)}${secondaryTitle('OAR Dose')}</h2>
         <div class="hp-section-body">
+            <p class="no-indent">${escHtml(f.language === 'zh'
+                ? '以下 OAR 数值为观测结果；请依据当前部位适用指南或已确认的病例方案进行临床判读，软件不依据默认值自动给出通过或超限结论。'
+                : 'The OAR values below are observed metrics. Interpret them against applicable site-specific guidance or a confirmed case protocol; the software does not infer pass/fail from defaults.')}</p>
             <table class="hp-grid-table">
-                <thead><tr><th>${escHtml(s.organ)}</th><th>${d2ccLabel} (${U.Gy})</th><th>${d1ccLabel} (${U.Gy})</th><th>${d01ccLabel} (${U.Gy})</th><th>${v100Label} (${U.percent})</th><th>${t('status')}</th></tr></thead>
+                <thead><tr><th>${escHtml(s.organ)}</th><th>${d2ccLabel} (${U.Gy})</th><th>${d1ccLabel} (${U.Gy})</th><th>${d01ccLabel} (${U.Gy})</th><th>${v100Label} (${U.percent})</th></tr></thead>
                 <tbody>
                 ${f.oarDose.map(o => {
                     const organName = _resolveOARDisplayName(o.organ, o);
-                    const assessment = _sourceBackedOarAssessment(f, o);
-                    const cls = assessment.statusClass || '';
-                    const statusText = assessment.statusText;
                     return `<tr>
                         <td>${escHtml(organName)}</td>
                         <td>${o.d2cc !== null ? o.d2cc.toFixed(1) : ND}</td>
                         <td>${o.d1cc !== null ? o.d1cc.toFixed(1) : ND}</td>
                         <td>${o.d0_1cc !== null ? o.d0_1cc.toFixed(1) : ND}</td>
                         <td>${o.v100 !== null ? o.v100.toFixed(1) : ND}</td>
-                        <td class="${cls}">${escHtml(statusText)}</td>
                     </tr>`;
                 }).join('')}
                 </tbody>
