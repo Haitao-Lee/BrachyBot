@@ -89,8 +89,9 @@ OBSTACLE_ORGAN_LABELS = _default_obstacle_label_ids()
 def _resolve_data_tree_obstacle_labels(agent):
     """Resolve the current Data tree non-traversable OAR whitelist.
 
-    A complete Data tree organ list is authoritative. Older clients that only
-    send aggregate counts fall back to the name-derived default policy.
+    The Data tree can add case-specific hard obstacles, while the default
+    bone/cartilage/vessel baseline remains mandatory. A client-side category
+    change must never silently downgrade those hard obstacles to traversable.
     CTV sub-labels are excluded because CTV labels 2 and 3 are always hard
     obstacles from the CTV mask itself.
     """
@@ -129,11 +130,13 @@ def _resolve_data_tree_obstacle_labels(agent):
     if not usable_oar_entries:
         logger.debug("[OAR filter] Data tree has no usable OAR labels; using defaults")
         return defaults, "default"
+    resolved = defaults | selected
     logger.info(
-        "[OAR filter] using Data tree whitelist: %d non-traversable labels from %d OAR entries",
-        len(selected), usable_oar_entries,
+        "[OAR filter] using mandatory baseline plus Data tree additions: %d hard labels "
+        "(%d manually selected from %d OAR entries)",
+        len(resolved), len(selected), usable_oar_entries,
     )
-    return selected, "data_tree"
+    return resolved, "data_tree_plus_default"
 
 
 def _safe_dicom_orient(image, target_orientation='LPI', context=""):
@@ -611,6 +614,234 @@ def _filter_safe_trajectories(trajectories, radiation_volume, obstacle_value):
     if rejected:
         logger.warning("[obstacle_check] rejected %d/%d trajectories that intersect non-traversable voxels", rejected, len(trajectories or []))
     return safe
+
+
+def _needle_extension_mm():
+    """Return the configured physical insertion length for automatic needles."""
+    try:
+        from plans.config import setting
+        length = float(setting().module_constants.get("DIRECTION_EXTENSION", 150.0))
+    except Exception:
+        length = 150.0
+    if not np.isfinite(length) or length <= 0.0:
+        logger.warning("[needle_safety] Invalid needle extension %r; using 150 mm", length)
+        return 150.0
+    return length
+
+
+def _trajectory_forward_steps(trajectory, tip_margin_voxels=3.0):
+    """Return a conservative forward extent in the trajectory grid convention."""
+    lengths = []
+    for index in (2, 3):
+        values = trajectory[index] if len(trajectory) > index else []
+        if not isinstance(values, (list, tuple, np.ndarray)):
+            continue
+        for value in values:
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                continue
+            if np.isfinite(number) and number > 0.0:
+                lengths.append(number)
+    return max(float(sum(lengths)) + float(tip_margin_voxels), float(tip_margin_voxels))
+
+
+def _candidate_world_needle_points(trajectory, planning_image, extension_mm=None):
+    """Build the full physical needle segment represented by a trajectory.
+
+    The segment keeps the established 150 mm outside-to-deep-target strategy.
+    It deliberately uses the same array-order [z, y, x] to world transform as
+    seed generation, so safety validation does not introduce another coordinate
+    chain.
+    """
+    if planning_image is None or not isinstance(trajectory, (list, tuple)) or len(trajectory) < 2:
+        return None
+    try:
+        from plans import utilizations
+
+        point = np.asarray(trajectory[0], dtype=np.float64).reshape(-1)[:3]
+        direction = np.asarray(trajectory[1], dtype=np.float64).reshape(-1)[:3]
+        if point.size != 3 or direction.size != 3 or not np.all(np.isfinite(point + direction)):
+            return None
+        major = float(np.max(np.abs(direction)))
+        if major <= 1e-12:
+            return None
+        voxel_direction = direction / major
+        world_direction = np.asarray(
+            utilizations.direction_transform(planning_image, direction), dtype=np.float64
+        ).reshape(-1)[:3]
+        world_norm = float(np.linalg.norm(world_direction))
+        if world_norm <= 1e-12:
+            return None
+        world_direction /= world_norm
+        anchor_world = np.asarray(
+            utilizations.position_transform(planning_image, point)[0], dtype=np.float64
+        )
+        deep_voxel = point + _trajectory_forward_steps(trajectory) * voxel_direction
+        deep_world = np.asarray(
+            utilizations.position_transform(planning_image, deep_voxel)[0], dtype=np.float64
+        )
+        extension = _needle_extension_mm() if extension_mm is None else float(extension_mm)
+        return [deep_world, anchor_world - extension * world_direction]
+    except Exception:
+        logger.exception("[needle_safety] Unable to build candidate world needle segment")
+        return None
+
+
+def _seed_plan_entry_needle_points(entry, extension_mm=None):
+    """Return the exact world-coordinate needle geometry displayed for a plan entry."""
+    try:
+        if isinstance(entry, dict):
+            seeds = entry.get("seeds") or []
+        elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+            seeds = entry[1] or []
+        else:
+            return None
+
+        positions = []
+        direction = None
+        for seed in seeds:
+            if isinstance(seed, dict):
+                position = seed.get("position") or seed.get("pos")
+                seed_direction = seed.get("direction") or seed.get("dir")
+            elif isinstance(seed, (list, tuple)) and len(seed) >= 2:
+                position, seed_direction = seed[0], seed[1]
+            else:
+                continue
+            point = np.asarray(position, dtype=np.float64).reshape(-1)[:3]
+            vector = np.asarray(seed_direction, dtype=np.float64).reshape(-1)[:3]
+            if point.size != 3 or vector.size != 3 or not np.all(np.isfinite(point + vector)):
+                continue
+            positions.append(point)
+            direction = vector
+
+        if not positions or direction is None:
+            return None
+        direction_norm = float(np.linalg.norm(direction))
+        if direction_norm <= 1e-12:
+            return None
+        direction /= direction_norm
+        extension = _needle_extension_mm() if extension_mm is None else float(extension_mm)
+        if len(positions) == 1:
+            return [positions[0], positions[0] - extension * direction]
+
+        positions = np.asarray(positions, dtype=np.float64)
+        origin = positions[0]
+        projections = np.dot(positions - origin, direction)
+        shallow = origin + float(np.min(projections)) * direction
+        deep = origin + float(np.max(projections)) * direction
+        return [deep, shallow - extension * direction]
+    except Exception:
+        logger.exception("[needle_safety] Unable to build final world needle segment")
+        return None
+
+
+def _world_segment_hits_obstacle(
+    points,
+    ct_image,
+    ctv_mask,
+    oar_mask,
+    obstacle_labels,
+    sample_spacing_mm=0.75,
+):
+    """Check the complete physical needle segment against original-grid hard masks.
+
+    Planning candidates are built on a resampled grid, whereas the rendered
+    needle uses patient-world coordinates and a 150 mm external extension.
+    This validator samples that exact world segment and maps each point back
+    through SimpleITK's canonical physical-to-index transform. No RAS/LPS flip
+    or hand-written voxel transform is introduced here.
+    """
+    if ct_image is None or points is None or len(points) != 2:
+        return True
+    try:
+        start = np.asarray(points[0], dtype=np.float64).reshape(-1)[:3]
+        end = np.asarray(points[1], dtype=np.float64).reshape(-1)[:3]
+        if start.size != 3 or end.size != 3 or not np.all(np.isfinite(start + end)):
+            return True
+        reference_shape = tuple(int(value) for value in reversed(ct_image.GetSize()))
+        ctv = None if ctv_mask is None else np.asarray(ctv_mask)
+        oar = None if oar_mask is None else np.asarray(oar_mask)
+        if ctv is None and oar is None:
+            logger.error("[needle_safety] No original-grid masks available for final needle validation")
+            return True
+        if ctv is not None and tuple(ctv.shape) != reference_shape:
+            logger.error("[needle_safety] CTV shape %s does not match CT shape %s", ctv.shape, reference_shape)
+            return True
+        if oar is not None and tuple(oar.shape) != reference_shape:
+            logger.error("[needle_safety] OAR shape %s does not match CT shape %s", oar.shape, reference_shape)
+            return True
+
+        distance = float(np.linalg.norm(end - start))
+        # Use at most half of the smallest original voxel spacing. A fixed
+        # 0.75 mm step could skip a thin oblique intersection in sub-mm CT.
+        # The 0.25 mm floor caps work for unusually high-resolution scans.
+        min_spacing = float(np.min(np.abs(np.asarray(ct_image.GetSpacing(), dtype=np.float64))))
+        effective_step = min(
+            max(float(sample_spacing_mm), 0.25),
+            max(min_spacing * 0.5, 0.25),
+        )
+        count = max(2, int(np.ceil(distance / effective_step)) + 1)
+        label_ids = set(int(label) for label in (obstacle_labels or ()))
+        size_xyz = np.asarray(ct_image.GetSize(), dtype=np.float64)
+        for fraction in np.linspace(0.0, 1.0, count, dtype=np.float64):
+            world = start + fraction * (end - start)
+            index_xyz = np.asarray(
+                ct_image.TransformPhysicalPointToContinuousIndex(tuple(float(value) for value in world)),
+                dtype=np.float64,
+            )
+            # The external portion is allowed to be outside the CT field of view.
+            if np.any(index_xyz < 0.0) or np.any(index_xyz > (size_xyz - 1.0)):
+                continue
+            x, y, z = np.rint(index_xyz).astype(np.int64)
+            if ctv is not None and int(ctv[z, y, x]) in (2, 3):
+                return True
+            if oar is not None and int(oar[z, y, x]) in label_ids:
+                return True
+        return False
+    except Exception:
+        logger.exception("[needle_safety] Original-grid obstacle validation failed")
+        return True
+
+
+def _filter_world_safe_trajectories(
+    trajectories,
+    planning_image,
+    ct_image,
+    ctv_mask,
+    oar_mask,
+    obstacle_labels,
+):
+    """Reject candidates whose full 150 mm physical needle intersects hard masks."""
+    safe = []
+    rejected = 0
+    extension = _needle_extension_mm()
+    for trajectory in trajectories or []:
+        points = _candidate_world_needle_points(trajectory, planning_image, extension)
+        if _world_segment_hits_obstacle(points, ct_image, ctv_mask, oar_mask, obstacle_labels):
+            rejected += 1
+        else:
+            safe.append(trajectory)
+    if rejected:
+        logger.warning(
+            "[needle_safety] rejected %d/%d candidates after full %.1f mm physical needle validation",
+            rejected, len(trajectories or []), extension,
+        )
+    return safe
+
+
+def _validated_needle_geometry(plan_res, ct_image, ctv_mask, oar_mask, obstacle_labels):
+    """Return display geometry only when every final automatic needle is safe."""
+    geometry = {}
+    unsafe_indices = []
+    extension = _needle_extension_mm()
+    for index, entry in enumerate(plan_res or []):
+        points = _seed_plan_entry_needle_points(entry, extension)
+        if _world_segment_hits_obstacle(points, ct_image, ctv_mask, oar_mask, obstacle_labels):
+            unsafe_indices.append(index)
+            continue
+        geometry[str(index)] = [point.tolist() for point in points]
+    return geometry, unsafe_indices
 
 
 class PlanningPipelineTool(BaseTool):
@@ -1104,6 +1335,14 @@ class PlanningPipelineTool(BaseTool):
             radiation_volume,
             args.radiation_array_params['obstacle_value'],
         )
+        trajectories = _filter_world_safe_trajectories(
+            trajectories,
+            resampled_ct,
+            ct_image,
+            ctv_mask,
+            oar_mask,
+            obstacle_labels,
+        )
         if not trajectories:
             return ToolResult(
                 success=False,
@@ -1171,8 +1410,10 @@ class PlanningPipelineTool(BaseTool):
         # Rebuild from the current Data tree state. Users may move an OAR
         # between parent categories after trajectory initialization.
         radiation_volume = None
+        resampled_ct = agent.memory.retrieve("resampled_ct") if agent else None
         resampled_ctv = agent.memory.retrieve("resampled_ctv") if agent else None
         resampled_oar = agent.memory.retrieve("resampled_oar") if agent else None
+        obstacle_labels = set(OBSTACLE_ORGAN_LABELS)
         if resampled_ctv is not None:
             from plans.config import setting
             args = setting()
@@ -1204,6 +1445,19 @@ class PlanningPipelineTool(BaseTool):
                 depth_candidates,
                 radiation_volume,
                 args.radiation_array_params['obstacle_value'],
+            )
+            if resampled_ct is None:
+                return ToolResult(
+                    success=False,
+                    error="[trajectory_refine] Planning geometry is unavailable for full needle safety validation. Re-run trajectory initialization.",
+                )
+            refined = _filter_world_safe_trajectories(
+                refined,
+                resampled_ct,
+                ct_image,
+                ctv_mask,
+                oar_mask,
+                obstacle_labels,
             )
         else:
             refined = depth_candidates
@@ -1316,12 +1570,21 @@ class PlanningPipelineTool(BaseTool):
                 agent.memory.store("obstacle_label_ids", sorted(obstacle_labels))
                 agent.memory.store("obstacle_label_source", obstacle_source)
 
+        obstacle_labels = set(locals().get("obstacle_labels", OBSTACLE_ORGAN_LABELS))
         if radiation_volume is not None:
             obstacle_args = args_current if 'args_current' in locals() else setting()
             trajectories = _filter_safe_trajectories(
                 trajectories,
                 radiation_volume,
                 obstacle_args.radiation_array_params['obstacle_value'],
+            )
+            trajectories = _filter_world_safe_trajectories(
+                trajectories,
+                resampled_ct,
+                ct_image,
+                ctv_mask,
+                oar_mask,
+                obstacle_labels,
             )
             if not trajectories:
                 return ToolResult(
@@ -1441,6 +1704,29 @@ class PlanningPipelineTool(BaseTool):
             traceback.print_exc()
             return ToolResult(success=False, error=f"[seed_planning] Planning algorithm failed: {e}")
 
+        verified_needle_geometry, unsafe_needle_indices = _validated_needle_geometry(
+            plan_res,
+            ct_image,
+            ctv_mask,
+            oar_mask,
+            obstacle_labels,
+        )
+        if unsafe_needle_indices:
+            # This is a defense-in-depth assertion. Candidate validation above
+            # should prevent it, but a plan must never be accepted or rendered
+            # when its actual seed-derived 150 mm needle is unsafe.
+            logger.error(
+                "[needle_safety] Final seed plan failed physical obstacle validation for needles: %s",
+                unsafe_needle_indices,
+            )
+            return ToolResult(
+                success=False,
+                error=(
+                    "[seed_planning] Safety validation rejected the final needle geometry "
+                    f"for trajectory indices {unsafe_needle_indices}. No unsafe plan was published."
+                ),
+            )
+
         # Extract results
         total_seeds = 0
         num_trajectories = len(plan_res) if plan_res else 0
@@ -1462,6 +1748,9 @@ class PlanningPipelineTool(BaseTool):
         if agent:
             agent.memory.store("seed_plan", plan_res)
             agent.memory.store("seed_plan_serialized", seed_plan)
+            # The viewer consumes these already validated world-coordinate
+            # endpoints instead of reconstructing an unchecked 150 mm line.
+            agent.memory.store("verified_needle_geometry", verified_needle_geometry)
             agent.memory.store("dose_distribution", sum_image)
             agent.memory.store("total_seeds", total_seeds)
             agent.memory.store("num_trajectories", num_trajectories)

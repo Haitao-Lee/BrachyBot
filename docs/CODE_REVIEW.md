@@ -4,6 +4,33 @@ _This file consolidates all code review reports. Sections are organized by date.
 
 ---
 
+## 2026-07-17 - Round 9: Full needle-path obstacle validation
+
+**Audit base:** GitHub `main` at `6161ab4`, the remote planning pipeline, and the user-provided 3D reconstruction showing multiple needle paths passing through colored obstacle meshes.
+
+**Confirmed root cause:** the previous obstacle gate validated a candidate's finite segment on the resampled planning grid. The 3D viewer then independently rebuilt each automatic needle by extending it 150 mm from the shallowest seed toward the skin. That full physical segment was never checked on the original CT/OAR grid, so a candidate could pass planning validation while its displayed and clinically relevant insertion path crossed a non-traversable structure. The manual needle-drag endpoint API had the same bypass because it accepted explicit world-coordinate lines without an obstacle check.
+
+| Surface | Correction |
+|---|---|
+| Default obstacle policy | Bone, cartilage, vessels, nerves, and spinal cord remain a mandatory backend baseline. Data Tree classifications can add case-specific non-traversable OARs but cannot silently downgrade the baseline through an incomplete or stale client snapshot. |
+| Automatic trajectory generation | Candidate trajectories now receive a second validation on the complete world-coordinate needle line, including the established 150 mm external insertion extension. Sampling adapts to at most half the smallest original voxel spacing, then each sample is transformed through `SimpleITK.TransformPhysicalPointToContinuousIndex` into the original CT/OAR grid; no new RAS/LPS or voxel-order conversion is introduced. |
+| Final automatic plan and 3D viewer | After seed optimization, the exact seed-derived 150 mm segment is validated again. Only those validated endpoint pairs are stored as `verified_needle_geometry`; `/api/planning/seeds_3d` consumes this data and refuses to reconstruct an unchecked automatic line from seeds. Existing sessions without validated geometry require a replan instead of rendering an unverified needle. |
+| Manual needle editing | `/api/manual_planning/update` applies the same original-grid hard-obstacle validation before DoseUNet inference. A rejected drag returns HTTP 422 with `manual_needle_intersects_obstacle`, and the browser restores the last accepted needle geometry. |
+
+### Deliberate geometry boundary
+
+The 150 mm insertion-length strategy is preserved. The correction does **not** truncate needles at an obstacle, shorten them, or alter the established world/index coordinate chain. An unsafe candidate is rejected and the planner must select a different path; if no safe path exists, no unsafe plan is published.
+
+### Verification
+
+- `py_compile` passed for `planning_pipeline.py`, `viewer_routes.py`, `server_support.py`, and `planning_routes.py` with the deployed `brachytherapy` environment.
+- `node --check` passed for `brachybot-3d-manual.js`.
+- `git diff --check` passed.
+- `python tests/test_needle_obstacle_safety.py`: **3 passed** in the deployed `brachytherapy` environment.
+- The regression suite verifies an original-grid 150 mm automatic segment, a clear parallel segment, candidate filtering, final seed-derived endpoints, and a manually tagged Data Tree hard obstacle.
+
+---
+
 ## 2026-07-13 - Round 8: Manual needle editing, DVH precision, report capture, and viewer controls
 
 **Audit base:** merged GitHub `main` at `a93d48c` (including remote `8693816`), plus the user-provided reproduction traces.
