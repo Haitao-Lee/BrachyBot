@@ -326,6 +326,45 @@ async function onManualNeedleHandleEdited(handle) {
     }
 }
 
+function _manualUiPosition(rawPosition) {
+    if (!Array.isArray(rawPosition) || rawPosition.length !== 3) return null;
+    const position = rawPosition.map(Number);
+    return position.every(Number.isFinite) ? position : null;
+}
+
+async function moveManualNeedleEndpointFromUi(value) {
+    const payload = typeof value === 'string' ? JSON.parse(value) : (value || {});
+    const needleId = String(payload.needle_id || payload.needleId || '');
+    const pointIndex = Number.parseInt(payload.point_index ?? payload.pointIndex, 10);
+    const position = _manualUiPosition(payload.position);
+    const needle = dataTreeState.planning.needles.find(item => item.id === needleId);
+
+    if (!needleId || !Number.isInteger(pointIndex) || !position || !needle ||
+        pointIndex < 0 || pointIndex >= needle.points.length) {
+        throw new Error('A valid needle_id, endpoint point_index, and [x, y, z] position are required.');
+    }
+
+    // Reuse the manual drag pathway so chat commands preserve the established 3D world-mm coordinates.
+    return onManualNeedleHandleEdited({
+        userData: { needleId, pointIndex },
+        position: { x: position[0], y: position[1], z: position[2] },
+    });
+}
+
+async function moveManualSeedFromUi(value) {
+    const payload = typeof value === 'string' ? JSON.parse(value) : (value || {});
+    const seedId = String(payload.seed_id || payload.seedId || '');
+    const position = _manualUiPosition(payload.position);
+    const seed = dataTreeState.planning.seeds.find(item => item.id === seedId);
+
+    if (!seedId || !position || !seed) {
+        throw new Error('A valid seed_id and [x, y, z] position are required.');
+    }
+
+    // Reuse the manual drag pathway so chat commands preserve the established 3D world-mm coordinates.
+    return onManualSeedEdited(seedId, { x: position[0], y: position[1], z: position[2] });
+}
+
 async function startTrainingMode(goal = 'Monitor planning workflow') {
     trainingMonitorState.sessionId = _activeApiSessionId();
     trainingMonitorState.goal = goal;

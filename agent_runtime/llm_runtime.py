@@ -262,14 +262,38 @@ class LLMRuntimeMixin:
             user_content = self._build_multimodal_content(message)
             messages.append({"role": "user", "content": user_content})
 
+        # External-project requests are source-bound to public web tools.  Do
+        # this before direct-tool routing so a follow-up such as "其代码在哪"
+        # cannot fall through to local filesystem tools.
+        _external_project_query = self._detect_external_project_query(message)
+
         # Direct tool execution for explicit tool requests
-        _direct_tool_calls = self._detect_tool_request(message)
+        _direct_tool_calls = None if _external_project_query else self._detect_tool_request(message)
         if _direct_tool_calls:
             logger.info(f"Direct tool execution: {len(_direct_tool_calls)} tools")
             return self._execute_direct_tools(_direct_tool_calls, steps, step_id_ref)
 
-        # Force web search for real-time queries (weather, time, news, sports, etc.)
-        _forced_search_query = self._detect_realtime_query(message)
+        # Force web search for real-time queries and named external projects.
+        _forced_search_query = (
+            self._detect_realtime_query(message) or _external_project_query
+        )
+        _forced_search_type = (
+            "github_repos"
+            if _external_project_query and any(
+                marker in message.lower()
+                for marker in ("代码", "源码", "source code", "repository", "repo", "github", "gitlab")
+            )
+            else "general"
+        )
+        if _external_project_query:
+            enhanced_context += (
+                "\n### External Project Scope Lock\n"
+                "The user is asking about an external project. Use only web_search, "
+                "web_fetch, or web_access for that project. Never inspect BrachyBot's "
+                "local files, memory paths, or internal code unless the user explicitly "
+                "asks about BrachyBot itself. Local filesystem listings are not evidence "
+                "about the external project.\n"
+            )
         logger.info(f"Forced search check: msg='{message[:50]}', detected='{_forced_search_query}'")
         _had_forced_search = False
         if _forced_search_query:
@@ -279,10 +303,10 @@ class LLMRuntimeMixin:
                     "id": step_id_ref[0],
                     "type": "tool",
                     "title": f"Auto search: {_forced_search_query}",
-                    "content": json.dumps({"query": _forced_search_query, "search_type": "general"}, default=str)[:200],
+                    "content": json.dumps({"query": _forced_search_query, "search_type": _forced_search_type}, default=str)[:200],
                     "status": "pending",
                     "tool": "web_search",
-                    "params": {"query": _forced_search_query, "search_type": "general"},
+                    "params": {"query": _forced_search_query, "search_type": _forced_search_type},
                 }
                 steps.append(forced_step)
 
@@ -290,7 +314,7 @@ class LLMRuntimeMixin:
                 search_tool = self.registry.get("web_search")
                 search_result = None
                 if search_tool:
-                    search_result = search_tool.execute(query=_forced_search_query, search_type="general", max_results=5)
+                    search_result = search_tool.execute(query=_forced_search_query, search_type=_forced_search_type, max_results=5)
 
                 # Build result text from search results
                 result_text = ""
@@ -444,7 +468,9 @@ class LLMRuntimeMixin:
                     for t in ("planning_pipeline", "seed_planning",
                              "trajectory_planning", "dose_engine", "dose_evaluation")
                 )
-                if _planning_done:
+                # A completed plan in memory must never override a new
+                # knowledge or external-project request with a stale report.
+                if _planning_done and not _external_project_query:
                     final_response = self._build_planning_report(
                         self.memory.user_lang, steps
                     )
@@ -456,6 +482,12 @@ class LLMRuntimeMixin:
 
             # Filter out tool calls with empty required params, normalize param names
             valid_tool_calls = self._normalize_tool_params(tool_calls)
+
+            if _external_project_query:
+                valid_tool_calls = [
+                    tc for tc in valid_tool_calls
+                    if tc.get("tool", "") in {"web_search", "web_fetch", "web_access"}
+                ]
 
             # When CT is not loaded, block CT-dependent tool calls
             if _no_files_loaded and valid_tool_calls:
@@ -1254,9 +1286,29 @@ class LLMRuntimeMixin:
             user_content = self._build_multimodal_content(message)
             messages.append({"role": "user", "content": user_content})
 
-        # Force web search for real-time queries (weather, time, news, sports, etc.)
+        # Force web search for real-time queries and named external projects.
         # Uses direct Bing/Baidu search instead of PubMed-based general search
-        _forced_search_query = self._detect_realtime_query(message)
+        _external_project_query = self._detect_external_project_query(message)
+        _forced_search_query = (
+            self._detect_realtime_query(message) or _external_project_query
+        )
+        _forced_search_type = (
+            "github_repos"
+            if _external_project_query and any(
+                marker in message.lower()
+                for marker in ("代码", "源码", "source code", "repository", "repo", "github", "gitlab")
+            )
+            else "general"
+        )
+        if _external_project_query:
+            enhanced_context += (
+                "\n### External Project Scope Lock\n"
+                "The user is asking about an external project. Use only web_search, "
+                "web_fetch, or web_access for that project. Never inspect BrachyBot's "
+                "local files, memory paths, or internal code unless the user explicitly "
+                "asks about BrachyBot itself. Local filesystem listings are not evidence "
+                "about the external project.\n"
+            )
         logger.info(f"Forced search check: msg='{message[:50]}', detected='{_forced_search_query}'")
         _had_forced_search = False
         if _forced_search_query:
@@ -1278,7 +1330,7 @@ class LLMRuntimeMixin:
                 search_tool = self.registry.get("web_search")
                 search_result = None
                 if search_tool:
-                    search_result = search_tool.execute(query=_forced_search_query, search_type="general", max_results=5)
+                    search_result = search_tool.execute(query=_forced_search_query, search_type=_forced_search_type, max_results=5)
 
                 result_text = ""
                 if search_result and search_result.success:
@@ -1388,6 +1440,13 @@ class LLMRuntimeMixin:
                     }
                     tools_for_llm = [t for t in tools_for_llm
                                       if t.get("function", {}).get("name", "") in _allowed_without_ct]
+
+                if _external_project_query and tools_for_llm is not None:
+                    _external_tools = {"web_search", "web_fetch", "web_access"}
+                    tools_for_llm = [
+                        t for t in tools_for_llm
+                        if t.get("function", {}).get("name", "") in _external_tools
+                    ]
 
                 # Use streaming LLM call with tools
                 prev_cleaned_len = 0
@@ -1516,7 +1575,10 @@ class LLMRuntimeMixin:
                     for t in ("planning_pipeline", "seed_planning",
                              "trajectory_planning", "dose_engine", "dose_evaluation")
                 )
-                if _planning_done_in_stream:
+                # Keep the planning fast-path limited to actual planning
+                # requests; external-project answers must come from the LLM's
+                # verified web evidence, never from the previous plan.
+                if _planning_done_in_stream and not _external_project_query:
                     final_response = self._build_planning_report(
                         self.memory.user_lang, steps
                     )
@@ -1546,6 +1608,12 @@ class LLMRuntimeMixin:
 
             # Filter out tool calls with empty required params, normalize param names
             valid_tool_calls = self._normalize_tool_params(tool_calls)
+
+            if _external_project_query:
+                valid_tool_calls = [
+                    tc for tc in valid_tool_calls
+                    if tc.get("tool", "") in {"web_search", "web_fetch", "web_access"}
+                ]
 
             # When CT is not loaded, block CT-dependent tool calls from text-parsed results
             if not ct_loaded and valid_tool_calls:

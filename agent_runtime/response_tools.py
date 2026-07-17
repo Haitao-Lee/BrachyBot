@@ -991,6 +991,81 @@ Output (JSON array of strings):"""
                 return message.strip()
         return None
 
+    def _detect_external_project_query(self, message: str) -> Optional[str]:
+        """Detect external-project research and return a web-search query.
+
+        A named external project must be researched from public sources.  This
+        detector also handles short follow-ups such as ``其代码在哪里`` by
+        looking at recent user messages, while an explicit BrachyBot path/name
+        keeps the request in the local-code workflow.
+        """
+        msg = str(message or "").strip()
+        if not msg:
+            return None
+        low = msg.lower()
+        local_markers = (
+            "brachybot", "brachyplan", "本项目", "当前项目", "本地代码",
+            "当前仓库", "/home/lht/snap/brachyplan/brachybot",
+        )
+        if any(marker in low for marker in local_markers):
+            return None
+
+        followup = bool(re.search(
+            r"(其|它|该项目|这个项目|the project|its)"
+            r".{0,10}(代码|源码|仓库|repository|repo|source code|github|gitlab|code)",
+            low,
+            re.IGNORECASE,
+        ))
+        context_parts = [msg]
+        if followup:
+            for item in reversed(getattr(self.memory, "conversation", []) or []):
+                if item.get("role") == "user":
+                    content = str(item.get("content", "")).strip()
+                    if content:
+                        context_parts.append(content)
+                    if len(context_parts) >= 7:
+                        break
+        scope_text = "\n".join(context_parts)
+        scope_low = scope_text.lower()
+        external_markers = (
+            "github", "gitlab", "repository", "repo", "source code",
+            "代码", "源码", "项目", "project", "论文", "paper",
+        )
+        lookup_markers = (
+            "查", "查询", "介绍", "研究", "find", "search", "look",
+            "code", "源码", "代码", "repository", "仓库",
+        )
+        # ``\b`` does not split a Latin project name from adjacent CJK text
+        # because both sides are Unicode word characters. Use ASCII-aware
+        # guards so strings such as ``查询DeepRare，`` are recognized.
+        named_projects = re.findall(
+            r"(?<![A-Za-z0-9_])[A-Z][A-Za-z0-9_-]{2,}(?![A-Za-z0-9_])",
+            scope_text,
+        )
+        named_projects = [
+            name for name in named_projects
+            if name.lower() not in {"BrachyBot".lower(), "BrachyPlan".lower()}
+        ]
+        if not named_projects and not any(
+            marker in scope_low for marker in ("github", "gitlab", "repository", "项目", "project")
+        ):
+            return None
+        if not any(marker in scope_low for marker in external_markers + lookup_markers):
+            return None
+
+        # Keep the user's wording and add a source-oriented suffix so the
+        # search tool is used instead of a local filesystem tool.
+        suffix = " official repository source code" if any(
+            marker in scope_low for marker in ("代码", "源码", "source code", "repository", "github", "gitlab", "code")
+        ) else " authoritative project information"
+        query_text = msg
+        if followup and named_projects:
+            # The current turn may only say "its code". Carry forward the
+            # most recent named external project instead of searching that
+            # pronoun literally.
+            query_text = f"{named_projects[-1]} {msg}"
+        return f"{query_text}{suffix}"
+
     def _normalize_tool_params(self, tool_calls: List[Dict]) -> List[Dict]:
         """Normalize tool call parameters (alias mapping, validation).
 

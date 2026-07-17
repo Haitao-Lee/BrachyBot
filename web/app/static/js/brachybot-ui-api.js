@@ -199,7 +199,7 @@ const state = {
         flipV: false,
         rotation: 0,
         activeTool: 'crosshair',
-        layout: 'vertical',
+        layout: '3d-top',
     },
     annotations: [],
     annotationUndoStack: [],
@@ -1256,8 +1256,9 @@ async function init() {
     }
     syncUIBridgeState('init').catch(e => console.warn('Initial UI state sync failed:', e));
 
-    // Apply default viewer layout (vertical = 4 rows in 1 column)
-    setViewerLayout(state.viewerSettings.layout || 'vertical');
+    // New workspaces open with 3D on top and all orthogonal 2D viewers below.
+    // A persisted user choice is intentionally retained across session restores.
+    setViewerLayout(state.viewerSettings.layout || '3d-top');
 
     // Install the drag-resize splitters. These were previously defined
     // but never called — the user reported that the chat/right-panel
@@ -1880,13 +1881,68 @@ function _executeUIAction(a) {
             'chat.clear_history': ['确定要清空当前聊天记录吗？', 'Clear the current chat history?'],
         };
         const p = pairs[target] || [`确定要执行 ${target} 吗？`, `Execute ${target}?`];
-        _confirmAction(p[0], p[1]).then(ok => { if (ok) _executeUIActionRaw(a); });
-        return;
+        return _confirmAction(p[0], p[1]).then(ok => {
+            if (!ok) return { success: false, cancelled: true };
+            return Promise.resolve(_executeUIActionRaw(a));
+        });
     }
-    _executeUIActionRaw(a);
+    return Promise.resolve(_executeUIActionRaw(a));
 }
 
-function navigateToDosePeakSlices() {
+function _emitUIActionProgress(step) {
+    try {
+        document.dispatchEvent(new CustomEvent('brachy:ui-action-progress', { detail: step }));
+    } catch (_) { /* Progress reporting must never block a UI action. */ }
+}
+
+async function _executeUIActionsWithProgress(actions) {
+    const results = [];
+    for (let i = 0; i < actions.length; i += 1) {
+        const action = actions[i] || {};
+        const id = `ui-action-${Date.now()}-${i}`;
+        const target = String(action.target || 'ui.control');
+        const command = String(action.command || 'run');
+        const base = {
+            id,
+            // The todo renderer treats assistant milestones as business
+            // steps, while the tool trace still shows the exact target.
+            type: 'assistant',
+            title: `UI action: ${target} / ${command}`,
+            tool: id,
+            parent_tool: 'ui_controller',
+            params: { target, command, value: action.value },
+        };
+        _emitUIActionProgress({ ...base, status: 'pending', content: 'Applying UI action' });
+        // Yield once so the live Execution Trace can paint its breathing state
+        // before a synchronous control handler starts doing work.
+        await new Promise(resolve => setTimeout(resolve, 0));
+        try {
+            const result = await _executeUIAction(action);
+            results.push(result);
+            const failed = result === false || (result && result.success === false);
+            if (failed) {
+                const message = (result && result.error) || 'The browser could not apply this UI action.';
+                _emitUIActionProgress({ ...base, status: 'error', result: message });
+                break;
+            }
+            _emitUIActionProgress({
+                ...base,
+                status: result && result.cancelled ? 'cancelled' : 'done',
+                result: result || 'Applied',
+            });
+            if (result && result.cancelled) break;
+        } catch (error) {
+            const failure = { success: false, error: String(error) };
+            results.push(failure);
+            _emitUIActionProgress({ ...base, status: 'error', result: failure.error });
+            break;
+        }
+    }
+    return results;
+}
+window._executeUIActionsWithProgress = _executeUIActionsWithProgress;
+
+async function navigateToDosePeakSlices() {
     const peak = state?.doseOverlay?.peakVoxel;
     if (!peak) {
         const message = 'Dose peak is unavailable until a dose overlay has been calculated.';
@@ -1894,14 +1950,16 @@ function navigateToDosePeakSlices() {
         return { success: false, error: message };
     }
     const requested = { axial: peak.z, sagittal: peak.x, coronal: peak.y };
+    const updates = [];
     Object.entries(requested).forEach(([axis, rawValue]) => {
         const slider = document.getElementById('slider' + capitalize(axis));
         if (!slider) return;
         const max = Number.parseInt(slider.max, 10);
         const value = Math.max(0, Math.min(Number.isFinite(max) ? max : Number(rawValue), Math.round(Number(rawValue) || 0)));
         slider.value = String(value);
-        updateSlice(axis, value);
+        updates.push(Promise.resolve(updateSlice(axis, value)));
     });
+    await Promise.all(updates);
     if (typeof reportUIEvent === 'function') {
         reportUIEvent('viewer.dose_peak', 'Moved axial, sagittal, and coronal viewers to the dose peak', requested);
     }
@@ -1912,8 +1970,7 @@ function _executeUIActionRaw(a) {
     const { target, command, value } = a;
     try {
         if (target === 'ui.control') {
-            executeGenericUIControl(command, value);
-            return;
+            return executeGenericUIControl(command, value);
         }
         // ── Panel switching ──
         if (target === 'panel' && command === 'switch') {
@@ -1932,7 +1989,7 @@ function _executeUIActionRaw(a) {
             else if (command === 'increase') v += parseInt(value) || 50;
             else if (command === 'decrease') v -= parseInt(value) || 50;
             el.value = v; state.viewerSettings.window = v;
-            if (state.ctLoaded) loadAllSlices();
+            if (state.ctLoaded) return loadAllSlices();
             return;
         }
         if (target === 'viewer.level') {
@@ -1943,7 +2000,7 @@ function _executeUIActionRaw(a) {
             else if (command === 'increase') v += parseInt(value) || 20;
             else if (command === 'decrease') v -= parseInt(value) || 20;
             el.value = v; state.viewerSettings.level = v;
-            if (state.ctLoaded) loadAllSlices();
+            if (state.ctLoaded) return loadAllSlices();
             return;
         }
         if (target === 'viewer.zoom') {
@@ -2006,6 +2063,40 @@ function _executeUIActionRaw(a) {
             navigateToDosePeakSlices();
             return;
         }
+        if (target === 'viewer.transform') {
+            const handlers = {
+                flip_h: window.viewerFlipH,
+                flip_v: window.viewerFlipV,
+                rotate: window.viewerRotate,
+                undo: window.viewerUndo,
+                redo: window.viewerRedo,
+                fit: window.fitView,
+                reset: window.resetViewer,
+            };
+            const handler = handlers[command];
+            if (typeof handler === 'function') return handler();
+            return { success: false, error: `Viewer transform is unavailable: ${command}` };
+        }
+        if (target === 'viewer.tool') {
+            setViewerTool(value);
+            return;
+        }
+        if (target === 'viewer.colorbar' || target === 'viewer.dose_scale') {
+            if (command === 'reset') return resetDoseColorbarSettings();
+            const cfg = _parseUIControlPayload(value);
+            const scope = cfg.scope === 'threeD' ? 'threeD' : 'twoD';
+            const scopeEl = document.getElementById('doseColorbarScope');
+            const minEl = document.getElementById('doseColorbarMinInput');
+            const maxEl = document.getElementById('doseColorbarMaxInput');
+            const paletteEl = document.getElementById('doseColorbarPalette');
+            if (scopeEl) scopeEl.value = scope;
+            if (cfg.min !== undefined && minEl) minEl.value = cfg.min;
+            if (cfg.minGy !== undefined && minEl) minEl.value = cfg.minGy;
+            if (cfg.max !== undefined && maxEl) maxEl.value = cfg.max;
+            if (cfg.maxGy !== undefined && maxEl) maxEl.value = cfg.maxGy;
+            if (cfg.palette !== undefined && paletteEl) paletteEl.value = cfg.palette;
+            return applyDoseColorbarSettings();
+        }
         // ── Slice navigation ──
         if (target.startsWith('slice.')) {
             const axis = target.split('.')[1];
@@ -2018,8 +2109,8 @@ function _executeUIActionRaw(a) {
             else if (command === 'prev') v = Math.max(v - 1, 0);
             else if (command === 'first') v = 0;
             else if (command === 'last') v = max;
-            slider.value = v; updateSlice(axis, v);
-            return;
+            slider.value = v;
+            return updateSlice(axis, v);
         }
         // ── Layout ──
         if (target === 'layout') {
@@ -2063,8 +2154,7 @@ function _executeUIActionRaw(a) {
         }
         if (target === 'tree.reconstruct3d') {
             // Use the same function as right-click → 3D reconstruction
-            reconstructOrgan3D(value);
-            return;
+            return reconstructOrgan3D(value);
         }
         if (target === 'tree.group.visibility') {
             const [group, vis] = (value || '').split(',');
@@ -2096,7 +2186,7 @@ function _executeUIActionRaw(a) {
         if (target === 'tree.dose.visibility') {
             if (state.doseOverlay) {
                 state.doseOverlay.visible = value === 'on';
-                if (state.ctLoaded) loadAllSlices();
+                if (state.ctLoaded) return loadAllSlices();
             }
             return;
         }
@@ -2130,15 +2220,14 @@ function _executeUIActionRaw(a) {
         if (target === 'session.clear_all') { clearLocalChatData({ skipConfirm: true }); return; }
         // ── Planning ──
         if (target === 'plan.run') {
-            runPlanning();
-            return;
+            return runPlanning();
         }
         if (target === 'plan.run_manual_step') {
             const step = String(value || '').trim();
             if (step === 'ctv_segmentation' || step === 'oar_segmentation') {
-                runSegmentationStep(step);
+                return runSegmentationStep(step);
             } else if (step) {
-                runPlanningStep(step);
+                return runPlanningStep(step);
             }
             return;
         }
@@ -2151,6 +2240,12 @@ function _executeUIActionRaw(a) {
             if (typeof addChat === 'function') addChat('system', 'UI state snapshot synced.');
             return;
         }
+        if (target === 'ui.catalog') {
+            return { success: true, message: 'The server-side declarative UI catalog is already included in the ui_controller schema.' };
+        }
+        if (target === 'planning.parameter') {
+            return executeGenericUIControl('set', value);
+        }
         if (target === 'training.mode') {
             if (command === 'start') startTrainingMode(value || 'Monitor planning workflow');
             else if (command === 'stop') stopTrainingMode();
@@ -2161,24 +2256,31 @@ function _executeUIActionRaw(a) {
             return;
         }
         if (target === 'manual.needle.create') {
-            addManualNeedle();
-            return;
+            return addManualNeedle();
+        }
+        if (target === 'manual.needle.endpoint') {
+            if (typeof moveManualNeedleEndpointFromUi !== 'function') {
+                return { success: false, error: 'Manual needle editing is unavailable before the 3D viewer initializes.' };
+            }
+            return moveManualNeedleEndpointFromUi(value);
         }
         if (target === 'manual.seed.add') {
-            addManualSeed();
-            return;
+            return addManualSeed();
+        }
+        if (target === 'manual.seed.position') {
+            if (typeof moveManualSeedFromUi !== 'function') {
+                return { success: false, error: 'Manual seed editing is unavailable before the 3D viewer initializes.' };
+            }
+            return moveManualSeedFromUi(value);
         }
         if (target === 'manual.dose.recompute') {
-            recomputeManualDose(value || 'ui_controller');
-            return;
+            return recomputeManualDose(value || 'ui_controller');
         }
         if (target === 'manual.plan.replan') {
-            replanManualPlan();
-            return;
+            return replanManualPlan();
         }
         if (target === 'manual.plan.finish') {
-            requestPlanningAdvice();
-            return;
+            return requestPlanningAdvice();
         }
         if (target === 'system.readiness') {
             checkSystemReadiness();
@@ -2240,8 +2342,7 @@ function _executeUIActionRaw(a) {
         // ── 3D controls ──
         if (target === '3d.reconstruct') {
             // Use the same function as right-click → 3D reconstruction
-            reconstructOrgan3D(value);
-            return;
+            return reconstructOrgan3D(value);
         }
         if (target === '3d.wireframe') {
             const on = value === 'on' || (value === undefined);
@@ -2262,8 +2363,35 @@ function _executeUIActionRaw(a) {
         }
         if (target === '3d.dose_surface') {
             const on = value === 'on' ? true : value === 'off' ? false : !state.doseTexture?.enabled;
-            setDoseTextureMode(on);
-            return;
+            return setDoseTextureMode(on);
+        }
+        if (target === '3d.mesh_opacity') {
+            const slider = document.getElementById('meshOpacity3D');
+            if (!slider) return { success: false, error: '3D mesh opacity control is unavailable' };
+            let next = Number(slider.value || 70);
+            if (command === 'increase') next += Number(value || 10);
+            else if (command === 'decrease') next -= Number(value || 10);
+            else next = Number(value);
+            next = Math.max(Number(slider.min || 0), Math.min(Number(slider.max || 100), next));
+            slider.value = String(next);
+            return update3DMeshOpacity(next);
+        }
+        if (target === '3d.labels') {
+            const checkbox = document.getElementById('labelShow3d');
+            const on = value === 'on' || (value === undefined && !checkbox?.checked);
+            if (checkbox) checkbox.checked = on;
+            return updateLabelImage('3d');
+        }
+        if (target === '3d.label_opacity') {
+            const slider = document.getElementById('labelOp3d');
+            if (!slider) return { success: false, error: '3D label opacity control is unavailable' };
+            let next = Number(slider.value || 70);
+            if (command === 'increase') next += Number(value || 10);
+            else if (command === 'decrease') next -= Number(value || 10);
+            else next = Number(value);
+            next = Math.max(Number(slider.min || 0), Math.min(Number(slider.max || 100), next));
+            slider.value = String(next);
+            return updateLabelImage('3d');
         }
         if (target === '3d.fit') { fitCameraToScene(); return; }
         if (target === '3d.reset') {
@@ -2292,12 +2420,14 @@ function _executeUIActionRaw(a) {
         if (target === 'chat.sidebar.toggle') { toggleSessionSidebar(); return; }
         // ── Screenshot ──
         if (target === 'screenshot') {
-            _captureScreenshot(value); return;
+            return _captureScreenshot(value);
         }
         // ── Tools ──
         if (target === 'tool') { setViewerTool(value); return; }
+        return { success: false, error: `No browser dispatcher is available for ${target}.` };
     } catch (e) {
         console.warn('[UIAction] Error executing:', target, command, value, e);
+        return { success: false, error: String(e && e.message ? e.message : e) };
     }
 }
 
