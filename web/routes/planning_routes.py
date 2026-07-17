@@ -1330,7 +1330,12 @@ def register_planning_routes(app, get_agent):
             logger.error(f"Manual planning update failed: {e}")
             import traceback
             logger.error(traceback.format_exc())
-            return jsonify({"success": False, "error": str(e)}), 500
+            error_code = getattr(e, "code", None)
+            response = {"success": False, "error": str(e)}
+            if error_code:
+                response["code"] = error_code
+                response["rejected_needle_ids"] = getattr(e, "rejected_needle_ids", [])
+            return jsonify(response), 422 if error_code == "manual_needle_intersects_obstacle" else 500
 
     @app.route("/api/status", methods=["GET"])
     @require_api_key

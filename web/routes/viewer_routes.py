@@ -1067,6 +1067,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
             seed_plan = agent.memory.retrieve("seed_plan")
             seed_plan_serialized = agent.memory.retrieve("seed_plan_serialized") or []
+            verified_needle_geometry = agent.memory.retrieve("verified_needle_geometry") or {}
             if seed_plan is None and not seed_plan_serialized:
                 return jsonify({"success": True, "seeds": [], "needles": [], "message": "No seed plan available"})
 
@@ -1085,15 +1086,6 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
             seeds = []
             needles = []
-
-            # Keep the physical needle display strategy independent from the
-            # obstacle gate: the needle enters from outside and is drawn to the
-            # deepest seed position. Its configurable insertion length is 150mm.
-            try:
-                from plans.config import setting
-                direction_extension = float(setting().module_constants.get("DIRECTION_EXTENSION", 150.0))
-            except Exception:
-                direction_extension = 150.0
 
             plan_source = seed_plan if seed_plan is not None else seed_plan_serialized
             for i, entry in enumerate(plan_source):
@@ -1164,53 +1156,29 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     })
                     continue
 
-                # Build needle line from SEED POSITIONS (matching ref.py).
-                # ref.py constructs needle lines by projecting seeds onto
-                # the direction vector, finding shallow/deep extremes, and
-                # extending beyond. We do the same using world-coordinate
-                # seed positions — this avoids trajectory coordinate system
-                # mismatches.
-                if len(needle_seeds) >= 2:
-                    positions = np.array(needle_seeds, dtype=np.float64)
-                    # Use the seed direction (already in world coords) for extension
-                    dir_vec = np.array(direc_world, dtype=np.float64)
-                    dir_norm = np.linalg.norm(dir_vec)
-                    if dir_norm > 1e-10:
-                        dir_vec = dir_vec / dir_norm
-                    else:
-                        dir_vec = np.array([0.0, 0.0, 1.0])
-
-                    p0 = positions[0]
-                    # Project all seeds onto direction to find extent
-                    t_values = np.dot(positions - p0, dir_vec)
-                    t_min = float(np.min(t_values))
-                    t_max = float(np.max(t_values))
-                    shallow_center = p0 + t_min * dir_vec
-                    deep_center = p0 + t_max * dir_vec
-
-                    all_points = [
-                        deep_center.tolist(),
-                        (shallow_center - direction_extension * dir_vec).tolist(),
-                    ]
+                # Automatic needles must come from the planning pipeline's
+                # original-grid safety validation. Reconstructing a new 150 mm
+                # line here would reintroduce a geometry that was never checked
+                # against the Data Tree hard-obstacle policy.
+                validated_points = None
+                if isinstance(verified_needle_geometry, dict):
+                    validated_points = verified_needle_geometry.get(str(i))
+                    if validated_points is None:
+                        validated_points = verified_needle_geometry.get(i)
+                try:
+                    points = [np.asarray(point, dtype=np.float64).reshape(-1)[:3] for point in validated_points]
+                    if len(points) != 2 or not all(point.size == 3 and np.all(np.isfinite(point)) for point in points):
+                        raise ValueError("invalid validated needle points")
                     needles.append({
                         "id": f"needle_{i}",
-                        "points": all_points,
-                        "trajectory_id": i,
+                        "points": [point.tolist() for point in points],
+                        "trajectory_id": trajectory_id,
                     })
-                elif len(needle_seeds) == 1:
-                    sp = np.array(needle_seeds[0], dtype=np.float64)
-                    dir_vec = np.array(direc_world, dtype=np.float64)
-                    dn = np.linalg.norm(dir_vec)
-                    if dn > 1e-10: dir_vec = dir_vec / dn
-                    else: dir_vec = np.array([0.0, 0.0, 1.0])
-                    needles.append({
-                        "id": f"needle_{i}",
-                        "points": [
-                            sp.tolist(),
-                            (sp - direction_extension * dir_vec).tolist(),
-                        ],
-                        "trajectory_id": i,
-                    })
+                except Exception:
+                    logger.warning(
+                        "[seeds_3d] Withholding automatic needle_%s because no validated geometry is available; re-run planning.",
+                        i,
+                    )
 
             logger.info(f"[seeds_3d] returning {len(seeds)} seeds, {len(needles)} needles")
             return jsonify({

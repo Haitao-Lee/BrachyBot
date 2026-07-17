@@ -59,6 +59,20 @@ function _manualDoseBaselineNeedles() {
     return snapshot;
 }
 
+function _restoreManualNeedles(snapshot) {
+    const byId = new Map((snapshot || []).map((needle) => [String(needle.id || ''), needle]));
+    for (const needle of dataTreeState?.planning?.needles || []) {
+        const previous = byId.get(String(needle.id || ''));
+        if (!previous || !Array.isArray(previous.points) || previous.points.length < 2) continue;
+        needle.points = previous.points.map((point) => _vec3Array(point));
+        _upsertSceneMesh(needle.id, _makeNeedleMesh(needle));
+        _syncNeedleHandles(needle);
+    }
+    _syncSeedsOverlayFromDataTree();
+    renderDataTree();
+    if (scene3D.requestRender) scene3D.requestRender(3);
+}
+
 function _manualPayload(options = {}) {
     _syncSeedsOverlayFromDataTree();
     const payload = {
@@ -223,7 +237,11 @@ async function _runManualDoseJob(job) {
             body: JSON.stringify(payload),
         });
         const data = await res.json().catch(() => null);
-        if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
+        if (!res.ok || !data || !data.success) {
+            const error = new Error((data && data.error) || `HTTP ${res.status}`);
+            error.code = data && data.code;
+            throw error;
+        }
         // If another drag arrived while this request was running, keep the
         // response for diagnostics but do not repaint the UI with stale seeds,
         // dose, or DVH. The queued latest request owns the next repaint.
@@ -251,6 +269,12 @@ async function _runManualDoseJob(job) {
         }
         return data;
     } catch (e) {
+        if (e && e.code === 'manual_needle_intersects_obstacle' && payload.reproject_seeds) {
+            // The server validates the same world-coordinate segment used for
+            // DoseUNet. Restore the last accepted geometry instead of leaving
+            // an unsafe drag visible after the request is rejected.
+            _restoreManualNeedles(payload.previous_needles);
+        }
         if (!manualPlanningState.doseRecomputeQueued) {
             _setManualDoseProgress('error', `Replanning failed: ${e.message}`);
             addChat('error', `Manual AI dose failed: ${e.message}`);

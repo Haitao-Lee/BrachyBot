@@ -540,6 +540,55 @@ def _safe_float_list(values: Any, length: int = 3, default: Optional[list] = Non
         return list(default)
 
 
+class ManualNeedleSafetyError(ValueError):
+    """Raised when a manual needle would cross a hard Data Tree obstacle."""
+
+    code = "manual_needle_intersects_obstacle"
+
+    def __init__(self, rejected_needle_ids: list[str]):
+        self.rejected_needle_ids = rejected_needle_ids
+        ids = ", ".join(rejected_needle_ids) or "manual needle"
+        super().__init__(
+            f"Manual needle update rejected: {ids} intersects a non-traversable structure. "
+            "The previous safe geometry was retained."
+        )
+
+
+def _validate_manual_needle_safety(agent, needles, ct_image, ctv_mask, oar_mask):
+    """Fail closed when a manual world-coordinate needle crosses hard anatomy."""
+    import numpy as np
+
+    from tool_factory.seed_plan.planning_pipeline import (
+        _resolve_data_tree_obstacle_labels,
+        _world_segment_hits_obstacle,
+    )
+
+    obstacle_labels, _ = _resolve_data_tree_obstacle_labels(agent)
+    rejected = []
+    for index, needle in enumerate(needles or []):
+        if not isinstance(needle, dict):
+            continue
+        needle_id = str(needle.get("id") or f"manual_needle_{index + 1}")
+        points = needle.get("points")
+        if not isinstance(points, list) or len(points) < 2:
+            rejected.append(needle_id)
+            continue
+        try:
+            start = np.asarray(points[0], dtype=np.float64).reshape(-1)[:3]
+            end = np.asarray(points[-1], dtype=np.float64).reshape(-1)[:3]
+            if start.size != 3 or end.size != 3 or not np.all(np.isfinite(start + end)):
+                raise ValueError("invalid manual endpoint")
+        except Exception:
+            rejected.append(needle_id)
+            continue
+        if _world_segment_hits_obstacle(
+            [start, end], ct_image, ctv_mask, oar_mask, obstacle_labels
+        ):
+            rejected.append(needle_id)
+    if rejected:
+        raise ManualNeedleSafetyError(rejected)
+
+
 def _reproject_seeds_onto_needles(
     seeds: list,
     needles: list,
@@ -675,6 +724,7 @@ def _compute_manual_ai_dose(
     if ctv_mask is None or not np.any(ctv_mask > 0):
         raise ValueError("CTV mask is required before manual AI dose recomputation.")
     oar_mask = _mask_array("oar_array", "oar_label_data")
+    _validate_manual_needle_safety(agent, needles, ct_image, ctv_mask, oar_mask)
 
     from plans import utilizations
     from plans.config import setting
