@@ -326,6 +326,43 @@ def _auto_detect_ref_direc(ct_image, ctv_mask) -> np.ndarray:
     if ctv_mask is None or not np.any(ctv_mask > 0):
         return np.array(_GLOBAL_DEFAULT_REFDIREC, dtype=np.float64)
 
+    # Prefer the validated body-shell calculation used by the reference
+    # BrachyPlan workflow.  The legacy cardinal-ray implementation below is
+    # retained only as a bounded fallback for lightweight environments that
+    # lack the morphology dependencies.
+    try:
+        from plans.utilizations import compute_body_shell_and_ref_direction
+
+        ct_array = sitk.GetArrayFromImage(ct_image)
+        direction_matrix = np.asarray(ct_image.GetDirection(), dtype=np.float64).reshape(3, 3)
+        spacing_zyx = np.asarray(ct_image.GetSpacing(), dtype=np.float64)[::-1]
+        _, _, surface_kji, centroid_kji = compute_body_shell_and_ref_direction(
+            ct_array,
+            np.asarray(ctv_mask),
+            spacing_zyx,
+            target_value=1,
+            direction_matrix=direction_matrix,
+        )
+        if surface_kji is not None and centroid_kji is not None:
+            origin = np.asarray(ct_image.GetOrigin(), dtype=np.float64)
+            spacing_xyz = np.asarray(ct_image.GetSpacing(), dtype=np.float64)
+            surface_ijk = np.asarray(surface_kji, dtype=np.float64)[::-1]
+            centroid_ijk = np.asarray(centroid_kji, dtype=np.float64)[::-1]
+            surface_world = origin + direction_matrix.dot(surface_ijk * spacing_xyz)
+            centroid_world = origin + direction_matrix.dot(centroid_ijk * spacing_xyz)
+            direction = centroid_world - surface_world
+            if np.linalg.norm(direction) > 1e-8:
+                resolved = _normalize_ref_direc(direction)
+                logger.info(
+                    "[ref_direction] body-shell entry=%s ctv_center=%s vector=%s",
+                    np.round(surface_world, 3).tolist(),
+                    np.round(centroid_world, 3).tolist(),
+                    np.round(resolved, 5).tolist(),
+                )
+                return resolved
+    except Exception as exc:
+        logger.warning("[ref_direction] body-shell detection unavailable; using ray fallback: %s", exc)
+
     try:
         # CTV center of mass in voxel indices (k, j, i)
         coords = np.argwhere(ctv_mask > 0)
@@ -421,7 +458,7 @@ def _resolve_ref_direc(ref_direc_input, ct_image, ctv_mask, agent) -> np.ndarray
             logger.warning(f"_resolve_ref_direc: bad numeric input {ref_direc_input!r}: {e}")
 
     # Case 2: explicit auto_detect request
-    if isinstance(ref_direc_input, str) and ref_direc_input.lower() == "auto_detect":
+    if isinstance(ref_direc_input, str) and ref_direc_input.strip().lower() in {"auto", "auto_detect"}:
         logger.info("_resolve_ref_direc: running geometric auto-detection")
         return _auto_detect_ref_direc(ct_image, ctv_mask)
 
@@ -1320,12 +1357,9 @@ class PlanningPipelineTool(BaseTool):
         from plans import core, utilizations
         logger.info(f"Running seed planning (mode={mode})...")
 
-        # Use the pipeline's radiation volume (already built with whitelist filter)
-        # and the trajectories from trajectory_init/refine
-        trajectories = (
-            agent.memory.retrieve("refined_trajectories")
-            or agent.memory.retrieve("trajectories")
-        ) if agent else None
+        # Keep the trajectory list already validated against the current
+        # Data-tree obstacle whitelist. Re-reading the unfiltered memory
+        # entry here would silently reintroduce paths through bones/vessels.
         if not trajectories:
             logger.warning("[seed_planning] No trajectories found in memory, running trajectory_init...")
             ref_input = agent_config.get("reference_direc", CONFIG.get("reference_direc", "auto"))
@@ -1348,29 +1382,53 @@ class PlanningPipelineTool(BaseTool):
         )
 
         try:
-            plan_res = core.optimal_plan(
-                trajectories,
-                radiation_volume,
-                dose_image,
-                dose_model,
-                args.dl_params,
-                args.distance_filtter['lower_bound'],
-                args.distance_filtter['upper_bound'],
-                args.distance_filtter['distance_rate'],
-                args.radiation_array_params['target_value'],
-                args.radiation_array_params['background_value'],
-                args.radiation_array_params['obstacle_value'],
-                args.radiation_array_params['infer_img_size'],
-                args.in_lowest_energy,
-                args.out_highest_energy,
-                args.DVH_rate,
-                args.seed_info,
-                args.iter_rate,
-                args.image_normalize[0],
-                args.image_normalize[1],
-                args.image_normalize[2],
-                _MockProgressDialog()
-            )
+            if mode == "rl":
+                # RL uses the same filtered trajectories and radiation volume
+                # as rule-based planning, so changing mode cannot bypass the
+                # resolved reference direction or obstacle policy.
+                plan_res = core.optimal_plan_rf(
+                    trajectories,
+                    radiation_volume,
+                    dose_image,
+                    dose_model,
+                    args.dl_params,
+                    args.rf_params,
+                    getattr(args, 'distance_filter', getattr(args, 'distance_filtter', {})).get('interval_rate', 2),
+                    args.radiation_array_params['target_value'],
+                    args.radiation_array_params['infer_img_size'],
+                    args.in_lowest_energy,
+                    args.out_highest_energy,
+                    args.DVH_rate,
+                    args.seed_info,
+                    args.image_normalize[0],
+                    args.image_normalize[1],
+                    args.image_normalize[2],
+                    _MockProgressDialog()
+                )
+            else:
+                plan_res = core.optimal_plan(
+                    trajectories,
+                    radiation_volume,
+                    dose_image,
+                    dose_model,
+                    args.dl_params,
+                    args.distance_filtter['lower_bound'],
+                    args.distance_filtter['upper_bound'],
+                    args.distance_filtter['distance_rate'],
+                    args.radiation_array_params['target_value'],
+                    args.radiation_array_params['background_value'],
+                    args.radiation_array_params['obstacle_value'],
+                    args.radiation_array_params['infer_img_size'],
+                    args.in_lowest_energy,
+                    args.out_highest_energy,
+                    args.DVH_rate,
+                    args.seed_info,
+                    args.iter_rate,
+                    args.image_normalize[0],
+                    args.image_normalize[1],
+                    args.image_normalize[2],
+                    _MockProgressDialog()
+                )
             # Compute dose distribution
             sum_image = np.zeros_like(radiation_volume, dtype=np.float32)
             for entry in plan_res:

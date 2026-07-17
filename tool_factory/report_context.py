@@ -17,6 +17,29 @@ import numpy as np
 from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
 
 
+# Keep report links human-readable while retaining the original verified URL.
+# These titles correspond to the PubMed records used by the pancreatic KB.
+_VERIFIED_SOURCE_TITLES = {
+    "https://pubmed.ncbi.nlm.nih.gov/39206973": "Guidelines for permanent iodine-125 seed interstitial brachytherapy for pancreatic cancer (2023 edition): The Chinese expert consensus workshop report",
+    "https://pubmed.ncbi.nlm.nih.gov/30589023": "Chinese expert consensus on radioactive 125I seeds interstitial implantation brachytherapy for pancreatic cancer",
+    "https://pubmed.ncbi.nlm.nih.gov/30581276": "Preliminary application of 3D-printed coplanar template for iodine-125 seed implantation therapy in patients with advanced pancreatic cancer",
+}
+
+
+def _source_link_item(source: Any) -> Optional[Dict[str, str]]:
+    if isinstance(source, dict):
+        url = str(source.get("url") or "").strip()
+        title = str(source.get("title") or "").strip()
+    else:
+        url = str(source or "").strip()
+        title = ""
+    if not url.startswith(("http://", "https://")):
+        return None
+    normalized = url.rstrip("/")
+    title = title or _VERIFIED_SOURCE_TITLES.get(normalized) or "Clinical knowledge-base reference"
+    return {"title": title, "url": url}
+
+
 def _retrieve(memory: Any, key: str, default: Any = None) -> Any:
     if memory is None:
         return default
@@ -319,7 +342,7 @@ def build_prescription_rationale(memory: Any) -> Dict[str, Any]:
         "rationale": rationale,
         "target_criteria": target,
         "oar_criteria": oar,
-        "sources": sources,
+        "sources": [item for item in (_source_link_item(url) for url in sources) if item],
         "clinical_boundary": (
             "A clinician-confirmed prescription dose or rationale overrides this generated text."
         ),
@@ -380,7 +403,8 @@ def format_prescription_rationale_markdown(context: Dict[str, Any], lang: str = 
         if key.endswith("_min") or key.endswith("_max") or key.endswith("_target"):
             criteria_parts.append(f"{key}={value}")
     sources = rx.get("sources", []) or []
-    source_text = ", ".join(f"[source {i + 1}]({url})" for i, url in enumerate(sources[:5]))
+    source_links = [item for item in (_source_link_item(source) for source in sources[:5]) if item]
+    source_text = ", ".join(f"[{item['title']}]({item['url']})" for item in source_links)
     if str(lang or "").lower().startswith("zh"):
         lines = [
             "### 处方剂量选择依据",

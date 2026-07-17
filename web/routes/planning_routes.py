@@ -473,6 +473,15 @@ def register_planning_routes(app, get_agent):
             # Merge radiation_array_params from default if not on agent
             _rad_params_default = _default_cfg.get("radiation_array_params", {})
 
+            ui_state = agent.memory.get_ui_state() or {}
+            planning_state = ui_state.get("planning") if isinstance(ui_state, dict) else {}
+            planning_state = planning_state if isinstance(planning_state, dict) else {}
+            live_ref = planning_state.get("reference_direc")
+            if planning_state.get("ref_direc_auto"):
+                live_ref = "auto"
+            if live_ref is None:
+                live_ref = _cfg("reference_direc")
+
             result = tool._execute(
                 ct_image_path=ct_image_path,
                 step=step,
@@ -483,7 +492,7 @@ def register_planning_routes(app, get_agent):
                     "out_highest_energy": _cfg("out_highest_energy"),
                     "DVH_rate": _cfg("DVH_rate"),
                 },
-                ref_direc=_cfg("reference_direc"),
+                ref_direc=live_ref,
                 _agent=agent,
             )
 

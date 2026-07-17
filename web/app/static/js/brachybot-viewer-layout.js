@@ -582,7 +582,7 @@ async function _get3DConfig() {
         needle_opacity: 0.85,
         ctv_opacity: 0.65,
         oar_opacity: 0.55,
-        show_isosurfaces_by_default: true,
+        show_isosurfaces_by_default: false,
         show_seeds_by_default: true,
         show_needles_by_default: true,
     };
@@ -638,8 +638,12 @@ async function reconstruct3D() {
             if (cfg.show_seeds_by_default && typeof loadSeeds3D === 'function') {
                 try { await loadSeeds3D(); } catch (e) { console.warn('loadSeeds3D failed:', e); }
             }
-            if (cfg.show_isosurfaces_by_default && typeof loadAllIsoSurfaces === 'function') {
-                try { await loadAllIsoSurfaces(); } catch (e) { console.warn('loadAllIsoSurfaces failed:', e); }
+            if (typeof loadAllIsoSurfaces === 'function') {
+                try {
+                    await loadAllIsoSurfaces({
+                        reconstruct3d: cfg.show_isosurfaces_by_default !== false,
+                    });
+                } catch (e) { console.warn('loadAllIsoSurfaces failed:', e); }
             }
         }
     } catch (e) {

@@ -130,8 +130,6 @@ function collectUIState() {
             seed_counter: manualPlanningState.seedCounter,
             needle_counter: manualPlanningState.needleCounter,
             dose_engine: manualPlanningState.doseEngine || 'dose_unet_spacing1mm',
-            dose_recompute_running: !!manualPlanningState.doseRecomputeRunning,
-            dose_recompute_queued: !!manualPlanningState.doseRecomputeQueued,
         } : {},
         training: (typeof trainingMonitorState !== 'undefined') ? {
             active: !!trainingMonitorState.active,
@@ -233,10 +231,6 @@ var manualPlanningState = {
     seedCounter: 0,
     needleCounter: 0,
     doseEngine: 'dose_unet_spacing1mm',
-    doseRecomputeRunning: false,
-    doseRecomputeQueued: false,
-    doseRecomputeSequence: 0,
-    lastDoseNeedles: null,
 };
 
 function _activeApiSessionId() {
@@ -1892,6 +1886,28 @@ function _executeUIAction(a) {
     _executeUIActionRaw(a);
 }
 
+function navigateToDosePeakSlices() {
+    const peak = state?.doseOverlay?.peakVoxel;
+    if (!peak) {
+        const message = 'Dose peak is unavailable until a dose overlay has been calculated.';
+        if (typeof addChat === 'function') addChat('error', message);
+        return { success: false, error: message };
+    }
+    const requested = { axial: peak.z, sagittal: peak.x, coronal: peak.y };
+    Object.entries(requested).forEach(([axis, rawValue]) => {
+        const slider = document.getElementById('slider' + capitalize(axis));
+        if (!slider) return;
+        const max = Number.parseInt(slider.max, 10);
+        const value = Math.max(0, Math.min(Number.isFinite(max) ? max : Number(rawValue), Math.round(Number(rawValue) || 0)));
+        slider.value = String(value);
+        updateSlice(axis, value);
+    });
+    if (typeof reportUIEvent === 'function') {
+        reportUIEvent('viewer.dose_peak', 'Moved axial, sagittal, and coronal viewers to the dose peak', requested);
+    }
+    return { success: true, slices: requested };
+}
+
 function _executeUIActionRaw(a) {
     const { target, command, value } = a;
     try {
@@ -1984,6 +2000,10 @@ function _executeUIActionRaw(a) {
         if (target === 'overlay.display_mode') {
             const dm = document.getElementById('displayMode');
             if (dm) { dm.value = value; setDisplayMode(); }
+            return;
+        }
+        if (target === 'viewer.dose_peak' && command === 'run') {
+            navigateToDosePeakSlices();
             return;
         }
         // ── Slice navigation ──

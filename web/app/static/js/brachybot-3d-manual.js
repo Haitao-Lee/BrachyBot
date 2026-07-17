@@ -1620,7 +1620,10 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
 // Uses config/default_params.json → display_3d.iso_dose_values_gy for
 // absolute Gy thresholds (e.g. [50, 100, 145, 200, 300] Gy).
 // These are the actual dose levels the user sees in the 3D viewer.
-async function loadAllIsoSurfaces() {
+async function loadAllIsoSurfaces(options = {}) {
+    // Dose iso metadata and 2D contours are useful without creating
+    // expensive 3D meshes. Reconstruction is therefore opt-in.
+    const reconstruct3d = options.reconstruct3d !== false;
     // Fetch config once and cache
     let display3d = window._display3dConfig;
     if (!display3d) {
@@ -1675,13 +1678,15 @@ async function loadAllIsoSurfaces() {
         const color = (r << 16) | (g << 8) | b;
         const opacity = (opacities[i] !== undefined) ? opacities[i] : 0.3;
         try {
-            uiDebugLog(`[IsoSurf] Loading ${v} Gy (color=${hexStr}, opacity=${opacity})...`);
-            await loadDoseIsosurface(v, color);
-            uiDebugLog(`[IsoSurf] ${v} Gy: mesh=${scene3D.meshes['dose_iso_'+v] ? 'loaded' : 'FAILED'}`);
-            // Override the just-added mesh's opacity with the per-level
-            // config value (loadDoseIsosurface uses a hard-coded 0.3).
-            const mesh = scene3D.meshes[`dose_iso_${v}`];
-            if (mesh) applyMeshOpacity(mesh, opacity, true);
+            if (reconstruct3d) {
+                uiDebugLog(`[IsoSurf] Loading ${v} Gy (color=${hexStr}, opacity=${opacity})...`);
+                await loadDoseIsosurface(v, color);
+                uiDebugLog(`[IsoSurf] ${v} Gy: mesh=${scene3D.meshes['dose_iso_'+v] ? 'loaded' : 'FAILED'}`);
+                // Override the just-added mesh's opacity with the per-level
+                // config value (loadDoseIsosurface uses a hard-coded 0.3).
+                const mesh = scene3D.meshes[`dose_iso_${v}`];
+                if (mesh) applyMeshOpacity(mesh, opacity, true);
+            }
             // Mirror into data tree with the config opacity.
             if (dataTreeState && dataTreeState.planning) {
                 const existing = dataTreeState.planning.doseLevels
@@ -1709,6 +1714,27 @@ async function loadAllIsoSurfaces() {
         }
     }
     try { renderDataTree(); } catch (_) {}
+}
+
+async function reconstructDoseIsosurface3D(idOrThreshold) {
+    const threshold = Number(String(idOrThreshold ?? '').replace(/^dose_iso_/, ''));
+    if (!Number.isFinite(threshold)) throw new Error('Invalid dose iso-surface threshold');
+    const level = (dataTreeState?.planning?.doseLevels || []).find(item => Math.abs(Number(item.threshold) - threshold) < 1e-6);
+    if (!level) throw new Error(`Dose iso-surface ${threshold} Gy is not available`);
+    const colorText = String(level.color || '#22c55e').replace('#', '');
+    const color = Number.parseInt(colorText, 16) || 0x22c55e;
+    await loadDoseIsosurface(Number(level.threshold), color);
+    const mesh = scene3D.meshes[`dose_iso_${level.threshold}`];
+    if (mesh) applyMeshOpacity(mesh, level.opacity ?? 0.3, level.visible !== false);
+    renderDataTree();
+    forceRender3DViewer();
+    return { threshold: Number(level.threshold), reconstructed: !!mesh };
+}
+
+async function reconstructDoseIsosurfaces3D() {
+    const levels = (dataTreeState?.planning?.doseLevels || []).slice();
+    for (const level of levels) await reconstructDoseIsosurface3D(level.threshold);
+    return { count: levels.length };
 }
 
 // Load the CTV tumor mesh + any non-traversable OAR meshes into the
@@ -1963,16 +1989,15 @@ function _getCurrentPrescriptionGy() {
     return scale;
 }
 
-// Colorbar display range, in Gy. Restored to 0–1000 Gy to match clinical
-// dose display (D2 can reach 2500+ Gy in LDR; saturating at 200 Gy made
-// most of the colorbar show the same top color).
+// Colorbar display range for the 2D dose overlay. The 3D surface keeps its
+// independent range and palette in _doseColorbarDefaults.threeD.
 const COLORBAR_MIN_GY = 0.0;
-const COLORBAR_MAX_GY = 1000.0;
+const COLORBAR_MAX_GY = 600.0;
 
-const DOSE_COLORBAR_STORAGE_KEY = 'brachybot.doseColorbar.v1';
+const DOSE_COLORBAR_STORAGE_KEY = 'brachybot.doseColorbar.v2';
 const _doseColorbarDefaults = Object.freeze({
-    twoD: Object.freeze({ minGy: COLORBAR_MIN_GY, maxGy: COLORBAR_MAX_GY, palette: 'petRainbow2' }),
-    threeD: Object.freeze({ minGy: 0, maxGy: 200, palette: 'petRainbow3D' }),
+    twoD: Object.freeze({ minGy: COLORBAR_MIN_GY, maxGy: COLORBAR_MAX_GY, palette: 'hot' }),
+    threeD: Object.freeze({ minGy: 0, maxGy: 200, palette: 'petRainbow2' }),
 });
 let _doseColorbarConfig = null;
 
@@ -2184,8 +2209,8 @@ function _labelClassForDoseColorbarPosition(pos) {
 // Update all 3 colorbars (axial/sagittal/coronal) in lock-step.
 // doseMinNorm, doseMaxNorm: dose range in NORMALIZED units (raw CNN output).
 // They are converted to Gy here so the labels show real physical dose.
-// The colorbar always spans [COLORBAR_MIN_GY, COLORBAR_MAX_GY] (= 0–1000 Gy).
-// Dose values above 1000 Gy are saturated to the top colormap color.
+// The 2D colorbar always spans [COLORBAR_MIN_GY, COLORBAR_MAX_GY] (= 0–600 Gy).
+// Dose values above the configured maximum are saturated to the top color.
 function updateDoseColorbars(visible, doseMinNorm, doseMaxNorm) {
     document.querySelectorAll('.dose-colorbar').forEach(cb => {
         const shouldShow = cb.id === 'doseColorbar3D' ? (visible && !!state.doseTexture?.enabled) : visible;
@@ -2307,7 +2332,8 @@ async function applyDoseColorbarSettings() {
     const scope = _validDoseColorbarScope(document.getElementById('doseColorbarScope')?.value);
     const minGy = Number(document.getElementById('doseColorbarMinInput')?.value);
     const maxGy = Number(document.getElementById('doseColorbarMaxInput')?.value);
-    const palette = document.getElementById('doseColorbarPalette')?.value || 'petRainbow2';
+    const palette = document.getElementById('doseColorbarPalette')?.value
+        || (scope === 'twoD' ? 'hot' : 'petRainbow2');
     if (!Number.isFinite(minGy) || !Number.isFinite(maxGy) || maxGy <= minGy) {
         alert('Colorbar maximum must be greater than minimum.');
         return;
@@ -2317,6 +2343,7 @@ async function applyDoseColorbarSettings() {
     if (scope === 'twoD') {
         updateDoseColorbars(!!state.doseOverlay?.visible);
         try { await loadAllSlices(); } catch (_) {}
+        if (typeof refreshAllViewerCanvases === 'function') refreshAllViewerCanvases('dose-colorbar-2d');
     } else {
         update3DColorbar(!!state.doseTexture?.enabled);
         if (state.doseTexture?.enabled) {
@@ -2324,6 +2351,7 @@ async function applyDoseColorbarSettings() {
             await Promise.all(entries.map(([id, mesh]) => _applyDoseTextureToMesh(id, mesh)));
             forceRender3DViewer();
         }
+        if (typeof refreshAllViewerCanvases === 'function') refreshAllViewerCanvases('dose-colorbar-3d');
     }
     syncDoseColorbarControls();
 }
