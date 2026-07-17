@@ -74,6 +74,25 @@ CONTROL_REGISTRY = {
         "values": ["soft", "bone", "lung", "brain", "custom"],
         "description": "Apply window/level preset"
     },
+    "viewer.transform": {
+        "commands": ["flip_h", "flip_v", "rotate", "undo", "redo", "fit", "reset"],
+        "description": "Apply a 2D viewer transform or history action without changing the image coordinate chain"
+    },
+    "viewer.tool": {
+        "commands": ["set"],
+        "values": ["crosshair", "measure", "angle", "rect", "zoombox", "annotate", "eraser"],
+        "description": "Activate a 2D viewer interaction tool"
+    },
+    "viewer.colorbar": {
+        "commands": ["set", "reset"],
+        "value_type": "string",
+        "description": "Set or reset the dose colorbar. Value is JSON such as {\"scope\":\"twoD\",\"min\":0,\"max\":600,\"palette\":\"hot\"}."
+    },
+    "viewer.dose_scale": {
+        "commands": ["set"],
+        "value_type": "string",
+        "description": "Set dose display scale and palette using the viewer.colorbar JSON format"
+    },
     # ── Overlay controls ──
     "overlay.ctv": {
         "commands": ["show", "hide", "toggle"],
@@ -243,6 +262,10 @@ CONTROL_REGISTRY = {
         "commands": ["sync", "inspect"],
         "description": "Synchronize or inspect the current frontend UI state snapshot"
     },
+    "ui.catalog": {
+        "commands": ["inspect"],
+        "description": "Inspect the declarative UI command catalog before choosing a control action"
+    },
     "ui.control": {
         "commands": ["click", "set", "toggle", "focus", "blur"],
         "value_type": "string",
@@ -257,9 +280,19 @@ CONTROL_REGISTRY = {
         "commands": ["run"],
         "description": "Create an editable manual needle in the 3D viewer near the current planning target"
     },
+    "manual.needle.endpoint": {
+        "commands": ["set"],
+        "value_type": "string",
+        "description": "Move a manual needle endpoint through the existing edit/recompute path. Value is JSON such as {\"needle_id\":\"needle_0\",\"point_index\":1,\"position\":[x,y,z]}"
+    },
     "manual.seed.add": {
         "commands": ["run"],
         "description": "Add a manual seed on the selected/current manual needle and refresh dose preview"
+    },
+    "manual.seed.position": {
+        "commands": ["set"],
+        "value_type": "string",
+        "description": "Move a manual seed through the existing edit/recompute path. Value is JSON such as {\"seed_id\":\"seed_0\",\"position\":[x,y,z]}"
     },
     "manual.dose.recompute": {
         "commands": ["run"],
@@ -361,6 +394,23 @@ CONTROL_REGISTRY = {
         "range": [0, 100],
         "description": "3D dose mesh opacity"
     },
+    "3d.mesh_opacity": {
+        "commands": ["set", "increase", "decrease"],
+        "value_type": "int",
+        "range": [0, 100],
+        "description": "Opacity of reconstructed 3D organ meshes"
+    },
+    "3d.labels": {
+        "commands": ["toggle"],
+        "values": ["on", "off"],
+        "description": "Toggle 3D anatomical labels"
+    },
+    "3d.label_opacity": {
+        "commands": ["set", "increase", "decrease"],
+        "value_type": "int",
+        "range": [0, 100],
+        "description": "Opacity of 3D anatomical labels"
+    },
     "3d.dose_surface": {
         "commands": ["toggle"],
         "values": ["on", "off"],
@@ -408,6 +458,11 @@ CONTROL_REGISTRY = {
         "commands": ["set"],
         "values": ["crosshair", "measure", "angle", "rect", "zoombox", "annotate", "eraser"],
         "description": "Active annotation/measurement tool"
+    },
+    "planning.parameter": {
+        "commands": ["set"],
+        "value_type": "string",
+        "description": "Set a named planning input control. Value is JSON such as {\"id\":\"refDirecY\",\"value\":1}; use only controls present in the current UI state."
     },
 }
 
@@ -476,11 +531,16 @@ class UIControllerTool(BaseTool):
         actions = kwargs.get("actions", [])
         if not actions:
             return ToolResult(success=False, error="No actions provided")
+        if not isinstance(actions, list) or len(actions) > 32:
+            return ToolResult(success=False, error="actions must be a list containing at most 32 actions")
 
         # Validate all actions against registry
         validated = []
         errors = []
         for i, action in enumerate(actions):
+            if not isinstance(action, dict):
+                errors.append(f"Action {i}: action must be an object")
+                continue
             target = action.get("target", "")
             command = action.get("command", "")
             value = action.get("value")
@@ -496,6 +556,13 @@ class UIControllerTool(BaseTool):
                 continue
 
             # Validate value
+            # Commands that change a numeric, selection, or structured value
+            # must receive one. Commands such as run/toggle/fit remain value-free.
+            requires_value = reg.get("value_required", command in {"set", "increase", "decrease"})
+            if requires_value and value is None:
+                errors.append(f"Action {i}: command '{command}' for '{target}' requires a value")
+                continue
+
             if "values" in reg and value is not None:
                 if value not in reg["values"]:
                     errors.append(f"Action {i}: invalid value '{value}' for '{target}'. Valid: {reg['values']}")
@@ -512,14 +579,24 @@ class UIControllerTool(BaseTool):
                     errors.append(f"Action {i}: value '{value}' must be a number for '{target}'")
                     continue
 
+            # Copy before adding execution metadata. The parsed request is
+            # treated as immutable input data by the validation layer.
+            action = dict(action)
             # Mark destructive actions
             if reg.get("destructive"):
                 action["requires_confirm"] = True
 
             validated.append(action)
 
-        if errors and not validated:
-            return ToolResult(success=False, error="; ".join(errors))
+        # Never silently execute a partial action list. Partial UI changes
+        # are especially confusing for chained requests, so the model must
+        # repair the entire batch before anything reaches the browser.
+        if errors:
+            return ToolResult(
+                success=False,
+                error="; ".join(errors),
+                metadata={"validation_errors": errors, "validated_actions": validated},
+            )
 
         # Return validated actions — frontend will execute them
         result_data = {
@@ -579,6 +656,9 @@ class UIControllerTool(BaseTool):
         if target == "viewer.reset": return "Viewer settings reset to defaults"
         if target == "viewer.fit_all": return "All viewers fitted to image"
         if target == "viewer.preset": return f"Applied {value} window preset"
+        if target == "viewer.transform": return f"Viewer transform: {command}"
+        if target == "viewer.tool": return f"Activated viewer tool: {value}"
+        if target in ("viewer.colorbar", "viewer.dose_scale"): return f"Dose colorbar settings updated ({command})"
 
         # Overlay controls
         if target == "overlay.ctv":
@@ -638,6 +718,7 @@ class UIControllerTool(BaseTool):
         if target == "plan.run": return "Planning pipeline started"
         if target == "plan.run_manual_step": return f"Manual workflow step started: {value}"
         if target == "ui.state": return "UI state snapshot synchronized"
+        if target == "ui.catalog": return "UI command catalog inspected"
         if target == "ui.control": return f"UI control {command}: {value}"
         if target == "training.mode":
             if command == "start": return f"Planning monitor started: {value or 'default goal'}"
@@ -645,7 +726,9 @@ class UIControllerTool(BaseTool):
             if command == "advice": return "Detailed planning advice requested"
             return "Planning monitor status requested"
         if target == "manual.needle.create": return "Manual editable needle created"
+        if target == "manual.needle.endpoint": return "Manual needle endpoint updated"
         if target == "manual.seed.add": return "Manual seed added and dose preview requested"
+        if target == "manual.seed.position": return "Manual seed position updated"
         if target == "manual.dose.recompute": return "Manual dose and DVH preview recomputed"
         if target == "manual.plan.replan": return "Manual geometry replanned with dose_unet_spacing1mm"
         if target == "manual.plan.finish": return "Manual plan review requested"
@@ -678,11 +761,16 @@ class UIControllerTool(BaseTool):
             }
             return f"Activated {tool_names.get(value, value)} tool"
 
+        if target == "planning.parameter": return f"Planning control updated: {value}"
+
         # 3D
         if target == "3d.reconstruct": return f"3D reconstruction started for '{value}'"
         if target == "3d.wireframe": return f"3D wireframe {value}"
         if target == "3d.skin": return f"3D skin surface {value}"
         if target == "3d.dose_opacity": return f"3D dose opacity set to {value}%"
+        if target == "3d.mesh_opacity": return f"3D mesh opacity set to {value}%"
+        if target == "3d.labels": return f"3D labels {value}"
+        if target == "3d.label_opacity": return f"3D label opacity set to {value}%"
         if target == "3d.dose_surface": return f"3D dose surface mode {value}"
         if target == "3d.fit": return "Camera fitted to all 3D meshes"
         if target == "3d.reset": return "3D camera reset to default"

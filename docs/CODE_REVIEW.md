@@ -4534,3 +4534,75 @@ its original mapping.
 - The expensive clinical planning pipeline was not silently replaced by a
   synthetic end-to-end test. A real case should still be run with a clinician
   reviewing the resulting direction, obstacle avoidance, dose, and report.
+
+## Round 24 UI command execution and external-project scope lock (2026-07-17)
+
+### Confirmed findings
+
+- The server-side UI registry covered many controls, but the browser applied a
+  returned `ui_controller` action list only after the SSE tool event had already
+  been marked complete. Actions were also started with `forEach`, so multi-step
+  UI requests had no ordering or visible per-action progress contract.
+- UI validation previously allowed a partially valid action batch to execute.
+  That could leave a compound request half-applied when one target or value was
+  invalid.
+- Several existing user-facing controls were registered but not dispatchable
+  through the structured action path, including viewer transforms/tools,
+  colorbar settings, planning input parameters, 3D mesh opacity, and 3D labels.
+- An external-project follow-up such as `你能查到其代码吗` could be routed to
+  `filesystem_browser` or `doc_reader`. The runtime had no source boundary that
+  distinguished BrachyBot's local implementation from a named external project.
+  This is the root cause of the DeepRare/BrachyBot substitution, rather than a
+  factual property of the requested project.
+
+### Implemented fixes
+
+- `ui_controller` now rejects malformed or oversized batches and fails closed
+  when any action in a batch is invalid. It copies validated input before adding
+  confirmation metadata, requires values for value-bearing commands, and
+  exposes the expanded declarative control surface.
+- The browser now executes validated UI actions sequentially. Each action emits
+  a pending and terminal milestone into the live Execution Trace and todo list;
+  asynchronous planning, dose-peak navigation, slice refresh, and 3D
+  reconstruction handlers now return their Promises to the queue. The redundant
+  floating tool spinner is no longer created. Existing explicit reset/fit
+  actions remain the only camera/view reset paths.
+- Browser dispatch failures now become visible error milestones instead of
+  completed actions. This includes missing generic DOM controls, unavailable
+  manual-edit functions, and any registered target that lacks a dispatcher.
+- Added dispatchers for viewer transforms/tools, dose colorbar and dose-scale
+  settings, planning parameters, 3D mesh opacity, and 3D anatomical labels.
+  `viewer.dose_peak` remains a single action for synchronized axial,
+  sagittal, and coronal navigation.
+- Added structured `manual.needle.endpoint` and `manual.seed.position` actions.
+  They reuse the established manual-drag handlers, including seed reprojection
+  and AI dose/DVH recomputation where applicable, without adding a second
+  coordinate-conversion path.
+- Updated the system and routing prompts so conversational UI work uses
+  `ui.state`/`ui.catalog` plus `ui_controller`, rather than disabled code
+  execution or unrelated screenshots when current UI context is required.
+- Added an external-project scope detector that carries the most recent named
+  project into short follow-ups, forces public web search, uses
+  `github_repos` for source-code requests, and filters LLM tool calls to
+  `web_search`, `web_fetch`, and `web_access`. The system and routing prompts
+  now state the same rule and prohibit substituting local BrachyBot files.
+- New Viewer workspaces now default to the `3d-top` layout: the 3D view is
+  above a synchronized axial/sagittal/coronal row. Existing session-specific
+  layout choices remain intact rather than being silently reset.
+- Updated cache-busting versions for the changed chat progress and manual 3D
+  scripts so a browser refresh cannot retain an older interaction implementation.
+
+### Verification performed
+
+- Remote `python3 -m py_compile` passed for `llm_runtime.py`,
+  `response_tools.py`, and `ui_controller/__init__.py`.
+- Remote UI registry smoke tests passed with 87 registered controls, including
+  `viewer.dose_peak`, `manual.needle.endpoint`, and `manual.seed.position`;
+  valid actions execute and mixed valid/invalid batches are
+  rejected without partial execution.
+- A dependency-light AST smoke test verified that a DeepRare follow-up becomes
+  a web repository query while an explicit BrachyBot code request remains local.
+- Local `node --check` passed for `brachybot-ui-api.js` and
+  `brachybot-chat-todo.js`; remote `git diff --check` passed.
+- A full clinical run and browser automation were not performed in this batch;
+  the changes preserve the existing coordinate conversion and planning engines.

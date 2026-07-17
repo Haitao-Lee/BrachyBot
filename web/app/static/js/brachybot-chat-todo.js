@@ -43,6 +43,30 @@ function _todoLabelForStep(step) {
     return i18n[step.type] || (step.title || i18n.default_processing);
 }
 
+// UI-controller actions are applied in the browser after the server emits
+// the validated action list. Keep them in the same live trace and todo stream
+// so the user sees one truthful, sequential progress surface.
+if (!window._brachyUiTraceListenerReady) {
+    window._brachyUiTraceListenerReady = true;
+    document.addEventListener('brachy:ui-action-progress', (event) => {
+        const trace = window._brachyLiveTrace;
+        const step = event && event.detail;
+        if (!trace || !step) return;
+        const index = trace.steps.length;
+        trace.steps.push(step);
+        if (typeof appendStepToChain === 'function') {
+            appendStepToChain(trace.stepsDiv, step, index);
+        }
+        if (typeof updateChainHeader === 'function') {
+            updateChainHeader(trace.headerEl, trace.steps);
+        }
+        const activeTodo = typeof trace.getTodo === 'function' ? trace.getTodo() : null;
+        if (activeTodo && typeof _todoUpdateFromStep === 'function') {
+            _todoUpdateFromStep(activeTodo, step);
+        }
+    });
+}
+
 function _todoCreate() {
     // Build an empty todo container. Returns the DOM node and an `update` fn
     // the caller can use to push state changes.
@@ -1022,6 +1046,10 @@ async function sendChat(prefill, options) {
                             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
                             const r = createLiveThinkingChain();
                             chainEl = r.chainEl; stepsDiv = r.stepsDiv; headerEl = r.headerEl;
+                            window._brachyLiveTrace = {
+                                steps, chainEl, stepsDiv, headerEl,
+                                getTodo: () => todo,
+                            };
                         }
                         if (typeof appendStepToChain === 'function') {
                             appendStepToChain(stepsDiv, data, steps.length - 1);
@@ -1129,9 +1157,9 @@ async function sendChat(prefill, options) {
                                     progressEl.style.transform = 'scale(0.98)';
                                 }
                                 lastToolName = data.tool || 'unknown';
-                                if (typeof showToolProgress === 'function') {
-                                    progressEl = showToolProgress(lastToolName, data.params);
-                                }
+                                // Execution Trace and the persistent todo list
+                                // are the single progress surface for tools.
+                                progressEl = null;
                             }
                         } else if (data.type === 'tool' && (data.status === 'done' || data.status === 'error')) {
                             if (progressEl && typeof updateToolProgress === 'function') {
@@ -1155,7 +1183,11 @@ async function sendChat(prefill, options) {
                                     }
                                     if (Array.isArray(actions) && actions.length > 0) {
                                         uiDebugLog('[SSE-UI] Executing', actions.length, 'UI actions');
-                                        actions.forEach(a => _executeUIAction(a));
+                                        if (typeof _executeUIActionsWithProgress === 'function') {
+                                            _executeUIActionsWithProgress(actions);
+                                        } else {
+                                            actions.forEach(a => _executeUIAction(a));
+                                        }
                                     }
                                 } catch (e) { console.warn('[SSE-UI] Failed to parse ui_controller result:', e); }
                             }
@@ -1263,6 +1295,10 @@ async function sendChat(prefill, options) {
                             if (!chainEl && typeof createLiveThinkingChain === 'function') {
                                 const r = createLiveThinkingChain();
                                 chainEl = r.chainEl; stepsDiv = r.stepsDiv; headerEl = r.headerEl;
+                                window._brachyLiveTrace = {
+                                    steps, chainEl, stepsDiv, headerEl,
+                                    getTodo: () => todo,
+                                };
                             }
                             if (typeof createStreamingResponse === 'function') {
                                 responseEl = createStreamingResponse();
