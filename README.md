@@ -47,6 +47,7 @@
 - [Configuration](#-configuration)
 - [Web Interface](#-web-interface)
 - [Account-Owned Case Workspaces](#-account-owned-case-workspaces)
+- [Agent Runtime Contracts](#agent-runtime-contracts)
 - [Code Quality](#-code-quality)
 - [Testing](#-testing)
 - [Product Readiness & Clinical KB Governance](#product-readiness--clinical-kb-governance)
@@ -1453,6 +1454,51 @@ are marked for explicit continuation rather than silently rerun.
 
 See [Account-Owned Persistent Case Workspaces](docs/ACCOUNT_WORKSPACES_2026-07-17.md)
 for operational and security details.
+
+## Agent Runtime Contracts
+
+BrachyBot uses a provider-neutral runtime contract layer in
+`agent_runtime/contracts.py`. It adopts the useful discipline of modern agent
+runtimes while retaining the case-scoped, deterministic behaviour required for
+clinical planning.
+
+- **Bounded portable context:** Before the first provider request in a turn,
+  historical chat context is selected within a configurable token budget. The
+  current user request, including multimodal image content, and the system
+  safety prompt are never dropped. Historical tool messages are converted to
+  bounded evidence rather than being sent as orphaned provider tool-call
+  protocol messages.
+- **Provider-neutral recovery:** Native opaque compaction payloads are not
+  persisted because they cannot safely move between OpenAI-compatible,
+  Anthropic-compatible, and local providers. Each workspace stores only a
+  JSON-safe context manifest and run lifecycle evidence.
+- **Canonical run lifecycle:** Every turn is tracked as reasoning, tool
+  execution, awaiting user input, completed, failed, or cancelled. A restored
+  in-flight run is recorded as interrupted, while an explicit clarification is
+  preserved as awaiting input; BrachyBot never silently restarts GPU inference
+  after a server restart.
+- **Tool-call gateway:** The established tool registry remains authoritative.
+  The gateway validates declared schemas, journals outcomes, and reuses only
+  safe read-only calls within the same workspace revision. Planning,
+  segmentation, mutation, export, and viewer-editing tools always execute
+  explicitly and are never replayed from a cache.
+
+The context budget may be configured per agent without changing the clinical
+pipeline:
+
+```python
+config = {
+    "agent_runtime": {
+        "max_context_tokens": 12000,
+        "reserve_output_tokens": 2000,
+    },
+}
+```
+
+The runtime intentionally does **not** import coding-agent worktree semantics,
+unbounded recursive subagents, or arbitrary plugin execution. Those patterns
+are useful for software generation but would weaken ownership, auditability,
+and predictable resource use in a treatment-planning case.
 
 ## ⚙️ Configuration
 

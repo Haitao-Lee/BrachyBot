@@ -62,6 +62,32 @@ def _upsert_runtime_context(messages: List[Dict], content: str) -> None:
 
 
 class LLMRuntimeMixin:
+    def _pack_context_for_provider(self, messages: List[Dict], user_message: str) -> List[Dict]:
+        """Apply the portable context budget before the first provider call.
+
+        Tool-result protocol messages are appended only after this initial pack;
+        re-packing them between provider rounds could reorder function-call
+        pairs for Anthropic/OpenAI-compatible gateways.  The bounded tool loop
+        already limits those follow-up messages, while the initial historical
+        context is the dominant source of long-session token growth.
+        """
+        packer = getattr(self, "context_packer", None)
+        ledger = getattr(self, "run_ledger", None)
+        if packer is None:
+            return messages
+        # The current message can be multimodal. Reusing its exact content
+        # avoids silently replacing an image-bearing request with plain text.
+        current_content = next(
+            (entry.get("content") for entry in reversed(messages)
+             if entry.get("role") == "user"),
+            user_message,
+        )
+        packed, manifest = packer.build(messages, current_content)
+        if ledger is not None:
+            ledger.set_context_manifest(manifest)
+        logger.debug("Context pack: %s", manifest)
+        return packed
+
     def _run_llm_function_calling(self, message: str, steps: List[Dict], step_id_ref: List[int]) -> str:
         """
         LLM-driven function calling loop with enhanced self-evolving memory.
@@ -311,10 +337,10 @@ class LLMRuntimeMixin:
                 steps.append(forced_step)
 
                 # Use the new search tool with full pipeline (query processing, multi-engine, validation)
-                search_tool = self.registry.get("web_search")
-                search_result = None
-                if search_tool:
-                    search_result = search_tool.execute(query=_forced_search_query, search_type=_forced_search_type, max_results=5)
+                search_result = self._execute_tool_with_memory(
+                    "web_search",
+                    {"query": _forced_search_query, "search_type": _forced_search_type, "max_results": 5},
+                )
 
                 # Build result text from search results
                 result_text = ""
@@ -359,6 +385,7 @@ class LLMRuntimeMixin:
         else:
             messages.insert(0, {"role": "system", "content": system_prompt})
         _upsert_runtime_context(messages, runtime_context)
+        messages = self._pack_context_for_provider(messages, message)
 
         max_iterations = 8
         iteration = 0
@@ -536,6 +563,13 @@ class LLMRuntimeMixin:
                 # tumor_type, intercept and ask instead of running and failing.
                 if tool_name == "ctv_segmentation" and not params.get("tumor_type"):
                     logger.info("[TOOL-LOOP] ctv_segmentation missing tumor_type — intercepting")
+                    if getattr(self, "run_ledger", None) is not None:
+                        from agent_runtime.contracts import RunStatus
+                        self.run_ledger.transition(
+                            RunStatus.AWAITING_INPUT,
+                            "clinical.tumor_site_required",
+                            tool="ctv_segmentation",
+                        )
                     result_text = "请告知肿瘤部位，例如胰腺、肝脏、前列腺等，以便选择正确的CTV分割模型。"
                     tool_succeeded = False
                 elif tool_name in ("self_evolve", "evolve"):
@@ -552,6 +586,13 @@ class LLMRuntimeMixin:
                         result_text = ToolResultPipeline.format(tool_name, result, lang=_lang)
                         _metadata = getattr(result, "metadata", {}) or {}
                         if not tool_succeeded and _metadata.get("clarification_required"):
+                            if getattr(self, "run_ledger", None) is not None:
+                                from agent_runtime.contracts import RunStatus
+                                self.run_ledger.transition(
+                                    RunStatus.AWAITING_INPUT,
+                                    "tool.clarification_required",
+                                    tool=tool_name,
+                                )
                             result_text = _metadata.get("clarification_question") or result_text
                             _input_missing = True
                             final_response = result_text
@@ -1327,10 +1368,10 @@ class LLMRuntimeMixin:
                 yield_event("step", forced_step)
 
                 # Use the new search tool with full pipeline (query processing, multi-engine, validation)
-                search_tool = self.registry.get("web_search")
-                search_result = None
-                if search_tool:
-                    search_result = search_tool.execute(query=_forced_search_query, search_type=_forced_search_type, max_results=5)
+                search_result = self._execute_tool_with_memory(
+                    "web_search",
+                    {"query": _forced_search_query, "search_type": _forced_search_type, "max_results": 5},
+                )
 
                 result_text = ""
                 if search_result and search_result.success:
@@ -1375,6 +1416,7 @@ class LLMRuntimeMixin:
         else:
             messages.insert(0, {"role": "system", "content": system_prompt})
         _upsert_runtime_context(messages, runtime_context)
+        messages = self._pack_context_for_provider(messages, message)
 
         max_iterations = 8
         iteration = 0
@@ -1814,6 +1856,13 @@ class LLMRuntimeMixin:
                 # tumor_type, intercept and ask instead of running and failing.
                 if tool_name == "ctv_segmentation" and not params.get("tumor_type"):
                     logger.info("[TOOL-LOOP] ctv_segmentation missing tumor_type — intercepting")
+                    if getattr(self, "run_ledger", None) is not None:
+                        from agent_runtime.contracts import RunStatus
+                        self.run_ledger.transition(
+                            RunStatus.AWAITING_INPUT,
+                            "clinical.tumor_site_required",
+                            tool="ctv_segmentation",
+                        )
                     result_text = "请告知肿瘤部位，例如胰腺、肝脏、前列腺等，以便选择正确的CTV分割模型。"
                     _input_missing = True
                     final_response = result_text
@@ -2004,6 +2053,13 @@ class LLMRuntimeMixin:
                     step_status = "error"
                 _metadata = getattr(tool_result, "metadata", {}) or {}
                 if tool_result is not None and not tool_result.success and _metadata.get("clarification_required"):
+                    if getattr(self, "run_ledger", None) is not None:
+                        from agent_runtime.contracts import RunStatus
+                        self.run_ledger.transition(
+                            RunStatus.AWAITING_INPUT,
+                            "tool.clarification_required",
+                            tool=tool_name,
+                        )
                     result_text = _metadata.get("clarification_question") or result_text
                     final_response = result_text
                     _input_missing = True

@@ -621,6 +621,13 @@ class WorkspaceStore:
                 "conversation_state": _safe_json(memory.conversation_state),
                 "user_lang": str(memory.user_lang or "en"),
                 "ui_state": _safe_json(memory.get_ui_state()),
+                # Runtime traces are deliberately compact and JSON-only.  They
+                # contain no raw image arrays or provider-private payloads,
+                # but make an interrupted/recovered agent turn auditable.
+                "runtime_state": _safe_json(
+                    agent.run_ledger.export_state()
+                    if hasattr(agent, "run_ledger") else {}
+                ),
             }
         root = self.workspace_root(user_id, session_id, create=True)
         created_array_paths: List[str] = []
@@ -732,6 +739,8 @@ class WorkspaceStore:
             memory.conversation_state["data_available"] = available
         if isinstance(state.get("config"), Mapping):
             agent.config.update(_restore_json(state["config"]))
+        if hasattr(agent, "run_ledger") and isinstance(state.get("runtime_state"), Mapping):
+            agent.run_ledger.restore_state(_restore_json(state["runtime_state"]))
         self._hydrate_ct_image(root, memory)
         operation = snapshot.get("operation") or {}
         if operation.get("state") == "running":
