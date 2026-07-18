@@ -5247,3 +5247,30 @@ with the authenticated workspace and could block embedded-browser use.
 - Local JavaScript syntax checks pass.
 - Remote `brachytherapy` verification passes: **177 passed, 3 environment
   warnings**. The warnings are SimpleITK SWIG type deprecations during import.
+
+## Round 36 cancelled-worker trace isolation (2026-07-19)
+
+### Confirmed finding
+
+The streaming runtime used an Agent-wide callback buffer for progress and
+planning-substep events. After cancellation, a long-running GPU worker can
+finish naturally while the user starts a new turn. Its callbacks could then
+append to the shared buffer and appear in the new turn's Execution Trace.
+This was a real asynchronous UI-integrity risk; it did not change the planned
+geometry itself, but it could show stale progress and mislead the user.
+
+### Corrective changes
+
+- Replaced the Agent-wide callback list with a lock-protected buffer local to
+  each streaming tool invocation.
+- Bound callback delivery to the captured turn cancellation token. A cancelled
+  or superseded worker now drops both progress and substep updates before it
+  can mutate the current trace.
+- Retained the existing safe limitation: Python does not forcibly terminate an
+  in-flight GPU thread. The worker may finish in the background, but it can no
+  longer emit trace events into a later user action.
+
+### Verification
+
+- Added a regression guard that prevents reintroducing Agent-wide callback
+  buffering and requires turn-local cancellation gating.
