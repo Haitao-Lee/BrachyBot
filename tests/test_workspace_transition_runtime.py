@@ -90,3 +90,54 @@ vm.runInThisContext(fs.readFileSync('{bridge}', 'utf8'), {{ filename: 'brachybot
         check=False,
     )
     assert completed.returncode == 0, completed.stderr or completed.stdout
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is required for browser bridge runtime coverage")
+def test_late_scene_restore_cannot_repaint_newer_case():
+    """Delayed viewer restoration must be cancelled when another case wins."""
+
+    bridge = (ROOT / "web/app/static/js/brachybot-workspace.js").as_posix()
+    script = rf"""
+const assert = require('assert');
+const fs = require('fs');
+const vm = require('vm');
+
+const nativeSetTimeout = global.setTimeout;
+global.setTimeout = (callback, delay) => nativeSetTimeout(callback, Math.min(Number(delay) || 0, 5));
+global.window = {{}};
+global.document = {{
+  body: {{ classList: {{ toggle() {{}} }} }},
+  getElementById() {{ return null; }},
+  querySelectorAll() {{ return []; }},
+}};
+global.state = {{ slices: {{}}, viewerSettings: {{}}, doseTexture: {{ enabled: false }} }};
+global.scene3D = {{
+  camera: {{
+    position: {{ values: [0, 0, 0], fromArray(value) {{ this.values = value.slice(); }} }},
+    quaternion: {{ fromArray() {{}} }},
+    updateProjectionMatrix() {{}}
+  }},
+  controls: {{
+    target: {{ fromArray() {{}} }}, update() {{}}, addEventListener() {{}}
+  }},
+  requestRender() {{}}
+}};
+global.renderDataTree = () => {{}};
+
+vm.runInThisContext(fs.readFileSync('{bridge}', 'utf8'), {{ filename: 'brachybot-workspace.js' }});
+(async () => {{
+  await window.applyWorkspaceSnapshot({{ ui: {{ state: {{ viewer: {{ scene: {{ camera_position: [1, 1, 1] }} }} }} }} }});
+  await window.applyWorkspaceSnapshot({{ ui: {{ state: {{ viewer: {{ scene: {{ camera_position: [9, 8, 7] }} }} }} }} }});
+  await new Promise(resolve => nativeSetTimeout(resolve, 30));
+  assert.deepStrictEqual(scene3D.camera.position.values, [9, 8, 7]);
+  process.exit(0);
+}})().catch(error => {{ console.error(error); process.exit(1); }});
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
