@@ -5046,3 +5046,54 @@ boundary.
   this round.
 - Remote Python compilation, JavaScript syntax checks, and `git diff --check`
   passed. The remote worktree is clean and matches commit `1d0c7d0`.
+
+## Round 31 product-agent runtime contracts (2026-07-19)
+
+### Scope and reference review
+
+This round compared BrachyBot's existing architecture with the public design
+patterns in [xAI Grok Build](https://github.com/xai-org/grok-build) and
+[OpenCode](https://github.com/anomalyco/opencode): bounded context compaction,
+explicit session/run state, durable event history, tool contracts, and
+idempotency for safe reads. The goal was to adopt their operational discipline,
+not to transplant a coding-agent execution model into clinical planning.
+
+### Confirmed improvements
+
+| Area | Confirmed issue or limitation | Corrective implementation |
+|---|---|---|
+| Context growth | Existing smart memory selected relevant history, but provider requests did not have a single portable hard budget and could retain verbose historical tool output. | Added `ContextPackBuilder`: preserves system/current multimodal intent, keeps a recent bounded tail, turns historical tool protocol messages into ordinary evidence, and stores a compact manifest. |
+| Provider compatibility | Native provider compaction tokens are opaque and cannot safely survive a switch between Anthropic-compatible, OpenAI-compatible, and local endpoints. | Deliberately rejected opaque provider state. Workspace snapshots persist JSON-only manifests and can be restored across providers. |
+| Tool accuracy | Normal tool calls had a shared execution path, but forced external search bypassed it, and there was no common schema/journal boundary. | Added `ToolCallGateway`; all normal and forced-search calls now pass declared-field validation and lifecycle journaling. Only query-style tools may reuse an idempotent result within the same workspace revision. |
+| Turn recovery | Workspace checkpoints retained case data, but no compact canonical record distinguished an interrupted LLM/tool turn from a completed one. | Added `RunLedger` with explicit states. Cancellation and missing required input are recorded; active persisted work is archived as `interrupted`, while an explicit clarification remains `awaiting_input`, and no job is resumed automatically. |
+| UI observability | `/api/status` exposed workspace recovery but not the current runtime state. | Added JSON-safe runtime lifecycle history to `/api/status`, without exposing raw arrays, credentials, or provider request payloads. |
+
+### Deliberate boundaries
+
+- No recursive autonomous subagents, arbitrary plugin loading, shell/worktree
+  execution, or code-agent task delegation was introduced into the clinical
+  execution path. These are reasonable coding-agent techniques but are not a
+  safe default for a case workspace.
+- Tool schemas are validated conservatively. Existing server-injected image and
+  callback parameters remain accepted for backward compatibility; an
+  unreviewed strict unknown-field ban would break validated clinical tools.
+- Context packing occurs before the first provider call only. Repacking
+  function-call/result pairs mid-loop could violate provider protocol ordering,
+  so the bounded tool loop itself remains the guard for follow-up messages.
+
+### Verification status
+
+- Python bytecode compilation passed for the changed runtime, workspace, route,
+  and facade modules.
+- A standalone runtime smoke test passed: required-parameter clarification,
+  read-only idempotent reuse, multimodal current-message preservation,
+  historical tool-evidence conversion, and interrupted-run restoration.
+- Added `tests/test_runtime_contracts.py` for the same regression cases. The
+  local desktop Python environment lacks the project dependencies/pytest; the
+  remote `brachytherapy` environment ran the new contracts plus existing
+  workspace/auth/state coverage successfully: **19 passed, 3 warnings**.
+- The complete remote suite then finished with **168 passed, 2 failed, 17
+  warnings**. The two failures are the unchanged, pre-existing DICOM RT export
+  regressions documented in Round 30: RT Dose is not emitted and a mixed dose
+  grid is not rejected. They are outside this runtime-contract change and were
+  left untouched to keep this system-level integration narrowly scoped.

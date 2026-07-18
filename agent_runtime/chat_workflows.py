@@ -16,6 +16,7 @@ import numpy as np
 import SimpleITK as sitk
 
 from agent_runtime.core import PlanningPhase
+from agent_runtime.contracts import RunStatus
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ class ChatWorkflowMixin:
             lines.append("If the canvas remains black, the next diagnostic is the browser WebGL context-lost/restore log, not another planning run.")
         return "\n".join(lines)
 
-    def _begin_turn(self) -> int:
+    def _begin_turn(self, message: str = "") -> int:
         """Start an isolated chat turn and return its cancellation token."""
         lock = getattr(self, "_turn_state_lock", None)
         if lock is None:
@@ -98,6 +99,9 @@ class ChatWorkflowMixin:
             local = threading.local()
             self._turn_local = local
         local.token = token
+        ledger = getattr(self, "run_ledger", None)
+        if ledger is not None:
+            ledger.begin(message)
         return token
 
     def _current_turn_token(self) -> int:
@@ -115,6 +119,26 @@ class ChatWorkflowMixin:
             self._cancel_requested = True
             self._turn_generation = int(getattr(self, "_turn_generation", 0)) + 1
             self._active_turn_token = self._turn_generation
+        ledger = getattr(self, "run_ledger", None)
+        if ledger is not None:
+            ledger.transition(RunStatus.CANCELLED, "run.cancelled_by_user")
+
+    def _finish_turn(self, response: Any) -> None:
+        """Close a run unless its next valid state is user clarification."""
+        ledger = getattr(self, "run_ledger", None)
+        if ledger is None or ledger.active_status() is None:
+            return
+        if ledger.active_status() == RunStatus.AWAITING_INPUT:
+            return
+        if bool(getattr(self, "_cancel_requested", False)):
+            ledger.transition(RunStatus.CANCELLED, "run.cancelled")
+            return
+        text = str(response or "").strip().lower()
+        failed = text.startswith("error:") or text.startswith("exception:")
+        ledger.transition(
+            RunStatus.FAILED if failed else RunStatus.COMPLETED,
+            "run.failed" if failed else "run.completed",
+        )
 
     def _is_turn_cancelled(self, token: int) -> bool:
         lock = getattr(self, "_turn_state_lock", None)
@@ -324,7 +348,7 @@ class ChatWorkflowMixin:
             return f"Tool generation failed: {result['error']}"
 
     def chat(self, message: str) -> str:
-        self._begin_turn()
+        self._begin_turn(message)
         self.memory.add_message("user", message)
         self.memory.user_lang = "zh" if re.search(r'[一-鿿]', message) else "en"
 
@@ -350,10 +374,11 @@ class ChatWorkflowMixin:
                 outcome=response[:500], success="error" not in response.lower() and "fail" not in response.lower(),
             )
 
+        self._finish_turn(response)
         return response
 
     def chat_with_trace(self, message: str) -> Dict[str, Any]:
-        self._begin_turn()
+        self._begin_turn(message)
         self.memory.add_message("user", message)
         self.memory.user_lang = "zh" if re.search(r'[一-鿿]', message) else "en"
         steps = []
@@ -575,11 +600,12 @@ class ChatWorkflowMixin:
             except Exception as e:
                 logger.debug(f"Completeness check failed: {e}")
 
+        self._finish_turn(response)
         return {"response": response, "steps": steps, "llm_meta": llm_meta}
 
     def chat_with_stream(self, message: str):
         """Streaming version of chat_with_trace. Yields SSE events."""
-        self._begin_turn()
+        self._begin_turn(message)
         self.memory.add_message("user", message)
         self.memory.user_lang = "zh" if re.search(r'[一-鿿]', message) else "en"
         steps = []
@@ -821,6 +847,7 @@ class ChatWorkflowMixin:
                     _direct_cc_step["content"] = "Coverage check unavailable; continuing."
                     yield yield_event("step", _direct_cc_step)
 
+            self._finish_turn(response)
             yield yield_event("response", {"response": response})
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
             return
@@ -1453,6 +1480,7 @@ class ChatWorkflowMixin:
             response += "\n\n---\n" + "\n\n".join(review_sections)
 
         # Final response
+        self._finish_turn(response)
         yield yield_event("response", {"response": response, "steps": steps, "llm_meta": llm_meta})
         yield yield_event("done", {
             "context": {

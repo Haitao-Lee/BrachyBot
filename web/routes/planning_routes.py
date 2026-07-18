@@ -1717,6 +1717,11 @@ def register_planning_routes(app, get_agent):
 
         status = agent.get_status()
         status["brain_available"] = agent.brain_available
+        if hasattr(agent, "run_ledger"):
+            # Expose only compact, JSON-safe lifecycle evidence. The frontend
+            # can recover an interrupted turn without accessing model memory,
+            # raw images, or provider-private request payloads.
+            status["runtime"] = agent.run_ledger.export_state()
         status["execution_tools"] = {
             "code_executor_enabled": os.environ.get("BRACHYBOT_ENABLE_CODE_EXECUTOR", "").lower() in TRUE_VALUES,
             "shell_executor_enabled": os.environ.get("BRACHYBOT_ENABLE_SHELL_EXECUTOR", "").lower() in TRUE_VALUES,

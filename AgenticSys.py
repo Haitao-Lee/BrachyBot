@@ -41,6 +41,7 @@ from tool_factory import ToolResult
 logger = logging.getLogger(__name__)
 
 from agent_runtime.core import AgentMemory, PlanningPhase, ToolRegistry, ToolResultPipeline
+from agent_runtime.contracts import ContextPackBuilder, RunLedger, ToolCallGateway
 from agent_runtime.response_tools import ResponseToolMixin
 from agent_runtime.llm_runtime import LLMRuntimeMixin
 from agent_runtime.chat_workflows import ChatWorkflowMixin
@@ -98,6 +99,16 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         self._active_turn_token = 0
         self._turn_state_lock = threading.RLock()
         self._turn_local = threading.local()
+        # Runtime contracts are provider-neutral and case-local.  They add
+        # observability and validation around the established execution path
+        # without changing the validated clinical planning algorithms.
+        self.run_ledger = RunLedger()
+        runtime_cfg = self.config.get("agent_runtime", {}) if isinstance(self.config, dict) else {}
+        self.context_packer = ContextPackBuilder(
+            max_tokens=int(runtime_cfg.get("max_context_tokens", 12000)),
+            reserve_output_tokens=int(runtime_cfg.get("reserve_output_tokens", 2000)),
+        )
+        self.tool_gateway = ToolCallGateway(self.run_ledger)
 
         from memory import InteractionMemory, SkillLearner, PreferenceStore
         from skills import SkillRegistry
@@ -1346,10 +1357,18 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         if not _skip_tool:
             # BaseTool.execute owns operation tracking. Outer wrappers used to
             # double-track every registry call and depended on global builtins.
-            if tool_name in self._VALIDATORS:
-                result = self._validate_and_execute(tool_name, params)
-            else:
-                result = self.registry.execute(tool_name, **params)
+            workspace_revision = (self.memory.get_ui_state() or {}).get("workspace_revision")
+            result = self.tool_gateway.execute(
+                self.registry,
+                tool_name,
+                params,
+                lambda: (
+                    self._validate_and_execute(tool_name, params)
+                    if tool_name in self._VALIDATORS
+                    else self.registry.execute(tool_name, **params)
+                ),
+                workspace_revision=workspace_revision,
+            )
 
         if progress_callback:
             progress_callback(f"Processing results...", 90)
