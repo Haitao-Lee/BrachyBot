@@ -65,6 +65,29 @@ def test_llm_case_rename_uses_the_durable_session_api():
     assert "api/sessions/${encodeURIComponent(id)}" in workspace
 
 
+def test_session_ui_actions_wait_for_durable_case_transitions():
+    """The UI-controller trace must not complete before a case transition."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+
+    assert "if (target === 'session.new') return window.newChat();" in ui_api
+    assert "if (target === 'session.switch') return window.switchSession(value);" in ui_api
+    assert "return window.deleteSession(value, { skipConfirm: true });" in ui_api
+    assert "return { success: true, session_id: activeSessionId };" in workspace
+    assert "return { success: true, active_session_id: activeSessionId };" in workspace
+
+
+def test_legacy_session_clear_action_is_honest_about_its_scope():
+    """The LLM catalog must never claim cache cleanup deletes clinical cases."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    registry = read("tool_factory/ui_controller/__init__.py")
+
+    assert "browser_cache.clear" in ui_api
+    assert "Persistent server cases will be retained" in ui_api
+    assert '"browser_cache.clear"' in registry
+    assert "durable server cases are retained" in registry
+
+
 def test_manual_case_rename_waits_for_durable_confirmation():
     """A rejected lease write must not leave a fictional title in the sidebar."""
     chat = read("web/app/static/js/brachybot-chat-core.js")

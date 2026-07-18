@@ -292,7 +292,7 @@
     };
 
     window.newChat = async function newChat() {
-        if (!await prepareSessionChange()) return;
+        if (!await prepareSessionChange()) return { success: false, cancelled: true };
         if (typeof flushActiveReportState === 'function') flushActiveReportState();
         await persistWorkspace('session.switching');
         if (typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
@@ -306,11 +306,14 @@
         if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
         if (typeof restoreActiveSessionWorkspace === 'function') await restoreActiveSessionWorkspace({ clearReport: false });
         loadSessionChat(activeSessionId);
+        return { success: true, session_id: activeSessionId };
     };
 
     window.switchSession = async function switchSession(id) {
         document.getElementById('sessionSidebar')?.classList.remove('mobile-open');
-        if (id === activeSessionId || !sessions[id] || !(await prepareSessionChange())) return;
+        if (id === activeSessionId) return { success: true, session_id: id, unchanged: true };
+        if (!sessions[id]) return { success: false, error: 'The requested case does not exist.' };
+        if (!(await prepareSessionChange())) return { success: false, cancelled: true };
         if (typeof flushActiveReportState === 'function') flushActiveReportState();
         await persistWorkspace('session.switching');
         if (typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
@@ -325,17 +328,19 @@
         if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
         if (typeof restoreActiveSessionWorkspace === 'function') await restoreActiveSessionWorkspace({ clearReport: false, workspace: data.workspace });
         loadSessionChat(activeSessionId);
+        return { success: true, session_id: activeSessionId };
     };
 
     window.deleteSession = async function deleteSession(id, options = {}) {
-        if (!sessions[id] || !await prepareSessionChange()) return;
+        if (!sessions[id]) return { success: false, error: 'The requested case does not exist.' };
+        if (!await prepareSessionChange()) return { success: false, cancelled: true };
         if (options.skipConfirm !== true) {
             const title = sessions[id].title || id;
             const confirmed = await confirmWorkspaceAction(
                 `确定要将病例“${title}”移入回收站吗？`,
                 `Move case "${title}" to the recycle bin?`,
             );
-            if (!confirmed) return;
+            if (!confirmed) return { success: false, cancelled: true };
         }
         if (id === activeSessionId && typeof flushActiveReportState === 'function') flushActiveReportState();
         await persistWorkspace('session.delete');
@@ -350,6 +355,7 @@
         if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
         if (typeof restoreActiveSessionWorkspace === 'function') await restoreActiveSessionWorkspace({ clearReport: false });
         loadSessionChat(activeSessionId);
+        return { success: true, active_session_id: activeSessionId };
     };
 
     window.renameServerSession = async function renameServerSession(id, title) {

@@ -238,7 +238,14 @@ CONTROL_REGISTRY = {
     "session.clear_all": {
         "commands": ["run"],
         "destructive": True,
-        "description": "Delete ALL local sessions and data. REQUIRES user confirmation."
+        # Compatibility alias for old prompts. The browser implementation
+        # clears only legacy display caches; durable cases are retained.
+        "description": "Clear legacy browser display caches only; durable server cases are retained. REQUIRES user confirmation."
+    },
+    "browser_cache.clear": {
+        "commands": ["run"],
+        "destructive": True,
+        "description": "Clear legacy browser display caches only; durable server cases are retained. REQUIRES user confirmation."
     },
     # ── Planning actions ──
     "plan.run": {
@@ -712,7 +719,8 @@ class UIControllerTool(BaseTool):
         if target == "session.switch": return f"Switched to session {value}"
         if target == "session.rename": return f"Session renamed to '{value}'"
         if target == "session.delete": return f"⚠️ Deleted session {value}"
-        if target == "session.clear_all": return "⚠️ All sessions cleared"
+        if target == "session.clear_all": return "Browser display caches cleared; durable cases were retained"
+        if target == "browser_cache.clear": return "Browser display caches cleared; durable cases were retained"
 
         # Planning
         if target == "plan.run": return "Planning pipeline started"
