@@ -77,6 +77,21 @@ def test_session_ui_actions_wait_for_durable_case_transitions():
     assert "return { success: true, active_session_id: activeSessionId };" in workspace
 
 
+def test_ui_controller_waits_for_async_viewer_and_manual_planning_actions():
+    """UI action progress must represent completion, not merely task launch."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    manual = read("web/app/static/js/brachybot-manual-annotation.js")
+
+    assert "return navigateToDosePeakSlices();" in ui_api
+    assert "return Promise.all(organs.map(o => reconstructOrgan3D(o.id, true)));" in ui_api
+    assert "return resetSession();" in ui_api
+    assert "return startTrainingMode(value || 'Monitor planning workflow')" in ui_api
+    assert "return clearCurrentChatHistory({ skipConfirm: true });" in ui_api
+    assert "return { success: true, step: 'full' };" in manual
+    assert "return { success: true, kind, labels: n };" in manual
+    assert "Planning reset failed:" in manual
+
+
 def test_legacy_session_clear_action_is_honest_about_its_scope():
     """The LLM catalog must never claim cache cleanup deletes clinical cases."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")

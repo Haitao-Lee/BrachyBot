@@ -5492,3 +5492,32 @@ its implementation has always cleared browser-only compatibility caches.
 - Parsed all changed browser modules with Node.js syntax checking.
 - Remote `brachytherapy` full verification passes: **186 passed, 3 environment
   warnings**. The warnings are SimpleITK SWIG type deprecations during import.
+
+## Round 44 UI action completion and failure propagation (2026-07-19)
+
+### Confirmed finding
+
+Several non-session actions in the same UI-controller dispatcher launched
+asynchronous viewer, training, planning, reset, or chat-history work without
+returning the underlying promise. The trace could therefore report success
+before dose-peak navigation or 3D reconstruction finished, and manual
+planning functions swallowed HTTP failures before the controller could report
+them. In particular, a rejected planning reset could clear only the browser
+while the server-side plan remained intact.
+
+### Corrective changes
+
+- Return and await dose-peak navigation, batch OAR reconstruction, training,
+  readiness, report, chat-history, and reset operations through the common UI
+  action executor.
+- Make the manual full pipeline, individual pipeline steps, and CTV/OAR
+  segmentation return structured success or failure results after their UI
+  refresh completes.
+- Treat a non-success planning-reset response as a real failure and retain the
+  visible plan rather than clearing the browser into a divergent state.
+
+### Verification
+
+- Added regression checks covering promise-returning viewer/manual-plan
+  controller branches and structured manual planning results.
+- Parsed the changed browser modules with Node.js syntax checking.

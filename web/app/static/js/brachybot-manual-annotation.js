@@ -220,7 +220,7 @@ async function runPlanning() {
     const ctPath = ((document.getElementById('ctPath') || {}).value || '').trim();
     if (!ctPath) {
         addChat('error', 'Load CT before running the full planning pipeline.');
-        return;
+        return { success: false, error: 'Load CT before running the full planning pipeline.' };
     }
     await applyHyperparams();
     addChat('system', 'Full planning pipeline started...');
@@ -248,9 +248,11 @@ async function runPlanning() {
         if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
         if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
         if (trainingMonitorState.active) await requestPlanningAdvice();
+        return { success: true, step: 'full' };
     } catch (e) {
         addChat('error', `Full planning pipeline failed: ${e.message}`);
         reportUIEvent('planning.error', 'Full pipeline failed', { error: e.message });
+        return { success: false, error: e.message };
     }
 }
 
@@ -281,8 +283,16 @@ async function runIntra() {
 
 async function resetSession() {
     try {
-        await fetch(API + '/planning/clear', { method: 'POST' });
-    } catch (_) {}
+        const response = await fetch(API + '/planning/clear', { method: 'POST' });
+        if (!response.ok) {
+            const data = await response.json().catch(() => null);
+            throw new Error(data?.error || `HTTP ${response.status}`);
+        }
+    } catch (error) {
+        const message = `Planning reset failed: ${error.message}`;
+        addChat('error', message);
+        return { success: false, error: message };
+    }
     _saveManualState({
         ctv_segmentation: false,
         oar_segmentation: false,
@@ -318,9 +328,10 @@ async function resetSession() {
     if (typeof drawDVH === 'function') drawDVH._lastSig = null;
     if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
     renderDataTree();
-    if (state.ctLoaded) loadAllSlices();
+    if (state.ctLoaded) await loadAllSlices();
     reportUIEvent('planning.reset', 'Planning state reset', {});
     addChat('system', 'Planning state reset. CT remains loaded.');
+    return { success: true };
 }
 
 // Run a single planning step manually. The user must have a CT
@@ -336,7 +347,7 @@ async function runPlanningStep(step) {
     const info = stepLabels[step];
     if (!info) {
         if (typeof addChat === 'function') addChat('error', `Unknown planning step: ${step}`);
-        return;
+        return { success: false, error: `Unknown planning step: ${step}` };
     }
     const ctPathEl = document.getElementById('ctPath');
     const ctPath = ctPathEl ? ctPathEl.value.trim() : '';
@@ -344,7 +355,7 @@ async function runPlanningStep(step) {
         if (typeof addChat === 'function') {
             addChat('error', '请先在 Image Data 区域加载 CT 图像,然后再运行规划步骤。');
         }
-        return;
+        return { success: false, error: 'Load CT before running a planning step.' };
     }
     // Validate prerequisite steps are met.
     const st = _manualState();
@@ -360,7 +371,7 @@ async function runPlanningStep(step) {
         if (typeof addChat === 'function') {
             addChat('error', `请先完成前置步骤: ${prereq.label} (${prereq.needs})`);
         }
-        return;
+        return { success: false, error: `Complete ${prereq.label} before ${info.label}.` };
     }
     if (typeof addChat === 'function') {
         addChat('system', `▶ Step ${info.num}/5: ${info.label} (${info.i18n_zh})...`);
@@ -393,6 +404,7 @@ async function runPlanningStep(step) {
             if (typeof refreshPlanningUI === 'function') {
                 try { await refreshPlanningUI(); } catch (_) {}
             }
+            return { success: true, step };
         } else {
             throw new Error(data.error || 'Unknown error');
         }
@@ -401,6 +413,7 @@ async function runPlanningStep(step) {
         if (typeof addChat === 'function') {
             addChat('error', `Step ${info.num} (${info.label}) failed: ${e.message}`);
         }
+        return { success: false, error: e.message };
     } finally {
         if (btn) { btn.disabled = false; if (oldText) btn.innerHTML = oldText; }
     }
@@ -475,7 +488,7 @@ async function showStepResults(step) {
 async function runSegmentationStep(kind) {
     if (kind !== 'ctv_segmentation' && kind !== 'oar_segmentation') {
         if (typeof addChat === 'function') addChat('error', `Unknown segmentation step: ${kind}`);
-        return;
+        return { success: false, error: `Unknown segmentation step: ${kind}` };
     }
     const label = kind === 'ctv_segmentation' ? 'CTV segmentation' : 'OAR segmentation';
     const apiKind = kind === 'ctv_segmentation' ? 'ctv' : 'oar';
@@ -484,7 +497,7 @@ async function runSegmentationStep(kind) {
         if (typeof addChat === 'function') {
             addChat('error', '请先在 Image Data 区域加载 CT 图像,然后再运行分割。');
         }
-        return;
+        return { success: false, error: 'Load CT before running segmentation.' };
     }
     const btn = document.getElementById('stepBtn_' + kind);
     if (btn) {
@@ -523,11 +536,13 @@ async function runSegmentationStep(kind) {
         if (typeof startSegmentationMeshPrewarm === 'function') {
             startSegmentationMeshPrewarm(kind === 'ctv_segmentation' ? 'ctv' : 'oar');
         }
+        return { success: true, kind, labels: n };
     } catch (e) {
         reportUIEvent('segmentation.error', `${label} failed`, { kind, error: e.message });
         if (typeof addChat === 'function') {
             addChat('error', `${label} failed: ${e.message}`);
         }
+        return { success: false, error: e.message };
     } finally {
         if (btn) {
             btn.disabled = false;
