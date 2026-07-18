@@ -5094,11 +5094,9 @@ not to transplant a coding-agent execution model into clinical planning.
   local desktop Python environment lacks the project dependencies/pytest; the
   remote `brachytherapy` environment ran the new contracts plus existing
   workspace/auth/state coverage successfully: **19 passed, 3 warnings**.
-- The complete remote suite then finished with **168 passed, 2 failed, 17
-  warnings**. The two failures are the unchanged, pre-existing DICOM RT export
-  regressions documented in Round 30: RT Dose is not emitted and a mixed dose
-  grid is not rejected. They are outside this runtime-contract change and were
-  left untouched to keep this system-level integration narrowly scoped.
+- The complete remote suite at the time finished with **168 passed, 2 failed,
+  17 warnings**. The failures were later traced to an ignored DICOM RT exporter
+  source file and are resolved in Round 33.
 
 ## Round 32 UI motion and dialog-state audit (2026-07-19)
 
@@ -5141,3 +5139,39 @@ No layout, font-size, or content position is animated for a live Todo row.
 Long clinical traces must remain stable to scan; animation is limited to
 opacity, shadow, and a fixed-footprint status dot. This preserves the visual
 indication of active work without causing rows or surrounding content to jump.
+
+## Round 33 DICOM RT export release integrity (2026-07-19)
+
+### Verified cause
+
+The active DICOM RT exporter on the RTX host was an older untracked source
+file that emitted only RT Structure Set and RT Dose objects. The repository's
+`.gitignore` used an unanchored `output/` rule, which silently excluded
+`tool_factory/output/dicom_rt_exporter.py` from Git. Consequently, the
+repository could contain regression tests for linked RT Structure Set, RT
+Plan, and RT Dose export without shipping the implementation that satisfies
+them. The old exporter also accepted a dose array with a shape different from
+the CT planning grid.
+
+### Correction
+
+- Anchored the ignored runtime output directory to `/output/`, so source
+  packages whose directory happens to be named `output` are no longer
+  suppressed from release tracking.
+- Added the maintained linked exporter to version control. It validates every
+  structure and dose shape against the CT ZYX grid before any file is written,
+  requires at least one normalized seed channel, writes unapproved RTSTRUCT,
+  RTPLAN, and RTDOSE objects, and links their SOP instance UIDs.
+- RTDOSE uses unsigned 16-bit pixels with `DoseGridScaling`, preserving the
+  physical maximum while avoiding non-interoperable float pixel payloads.
+
+This exporter remains explicitly **UNAPPROVED** and does not claim to replace
+a treatment-planning system or clinical sign-off.
+
+### Verification
+
+- The two previously failing DICOM RT regressions now pass: linked RTSTRUCT /
+  RTPLAN / RTDOSE object generation and mixed planning-grid rejection.
+- The complete remote `brachytherapy` suite passes: **172 passed, 3
+  environment warnings**. The remaining warnings are SimpleITK SWIG type
+  deprecations emitted during import, not exporter behavior.

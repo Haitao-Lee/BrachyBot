@@ -37,7 +37,10 @@ dose_pre/*.ckpt
 
 # Data and runtime memory
 memory/data/
-output/
+# Keep the root runtime output directory untracked, but do not hide Python
+# source modules named "output". The prior unanchored rule silently excluded
+# tool_factory/output/dicom_rt_exporter.py from releases.
+/output/
 outputs/
 *.nii.gz
 *.nii
