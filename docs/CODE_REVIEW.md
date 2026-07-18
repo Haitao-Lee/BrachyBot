@@ -5551,9 +5551,27 @@ visual context was unavailable.
 - Executed a remote `brachytherapy` smoke test using real workspace layout:
   the current-case PNG produced an OpenAI-compatible image block and a second
   case ID was rejected.
-- `py_compile` and browser syntax checks remain part of the deployment gate.
-- A subsequent isolated pytest invocation hit a pre-existing environment
-  import-shadowing condition (`/home/lht/snap/brachyplan/config.py` taking the
-  top-level `config` name). It is unrelated to the modified screenshot code;
-  the earlier clean full-suite result remains the baseline and this invocation
-  is not counted as a regression pass.
+
+## Round 46 deterministic test imports (2026-07-19)
+
+### Confirmed finding
+
+Running tests from the deployed `/home/lht/snap/brachyplan/BrachyBot` tree
+could still load the unrelated parent `/home/lht/snap/brachyplan/config.py`
+under the top-level name `config`. It shadowed BrachyBot's `config/` package
+during pytest collection, so a valid checkout could report unrelated import
+errors before any functional test ran.
+
+### Corrective changes
+
+- Make the pytest bootstrap explicitly import BrachyBot's own `config` package
+  after placing the repository root first on `sys.path`.
+- Evict only an already-loaded external flat `config` module. This is confined
+  to the test harness and deliberately leaves production import behavior
+  unchanged.
+
+### Verification
+
+- Remote targeted regression suite: **73 passed, 3 environment warnings**.
+- Remote full suite: **188 passed, 3 environment warnings**. The warnings are
+  SimpleITK SWIG type deprecations during import.

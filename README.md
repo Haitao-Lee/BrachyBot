@@ -486,7 +486,9 @@ Task: "Generate prostate plan"
 - **ui_controller**: Direct LLM control of CT viewer (navigate, window/level, presets, overlays)
 - **ui_screenshot**: LLM captures screenshots of any UI component for visual analysis
 - **ui_annotate**: LLM draws annotations (arrows, circles, text labels) on screenshots
-- **Multimodal LLM**: Screenshots sent as base64 images to LLM for visual understanding
+- **Workspace-scoped multimodal LLM**: Screenshots are sent as base64 images
+  from the active case workspace only; a chat request cannot reference an
+  image from another case.
 - **Auto Screenshots**: LLM proactively screenshots UI areas during `/help` and explanations
 - **Image Modal**: Click-to-enlarge fullscreen view of any chat image
 
