@@ -31,6 +31,31 @@ _label_color = _server_support._label_color
 _validate_path = _server_support._validate_path
 
 
+def _requires_label_faithful_mesh(agent, source: str, label_id: int) -> bool:
+    """Return whether a mesh must preserve the exact planning-mask boundary.
+
+    Non-traversable structures are part of the planning safety contract.  The
+    presentation-oriented dilation, closing, and hole filling used for small
+    soft-tissue meshes can move their visible boundary away from the mask
+    checked by the trajectory safety gate.  For those labels, render the raw
+    mask boundary instead so a needle that is safe in the planner is not made
+    to look as though it traverses a reconstructed obstacle.
+    """
+    try:
+        from tool_factory.seed_plan.planning_pipeline import _resolve_data_tree_obstacle_labels
+
+        hard_labels, _ = _resolve_data_tree_obstacle_labels(agent)
+        if int(label_id) in {int(value) for value in hard_labels}:
+            return True
+    except Exception:
+        logger.exception("[viewer_3d] Could not resolve the current hard-obstacle policy")
+
+    # The pancreatic CTV model carries artery and vein in its own label
+    # namespace.  They are always hard obstacles in planning_pipeline even
+    # though their numeric IDs are unrelated to TotalSegmentator labels.
+    return str(source or "").strip().lower() == "ctv" and int(label_id) in {2, 3}
+
+
 def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
     def owned_case_path(path: str) -> bool:
         store = current_app.extensions.get("brachybot_workspace_store")
@@ -861,6 +886,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
             # Extract binary mask for this label
             label_id = int(label_id)
+            label_faithful = _requires_label_faithful_mesh(agent, source, label_id)
             try:
                 mask_shape_key = tuple(int(x) for x in getattr(mask_data, "shape", ()))
             except Exception:
@@ -872,7 +898,10 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             if total_voxels == 0:
                 return jsonify({"error": f"Label {label_id} not found in mask"}), 400
             mask_digest = hashlib.blake2b(binary_mask.tobytes(), digest_size=8).hexdigest()
-            cache_key = (source, label_id, str(smoothing_key), mask_shape_key, total_voxels, mask_digest)
+            cache_key = (
+                source, label_id, str(smoothing_key), label_faithful,
+                mask_shape_key, total_voxels, mask_digest,
+            )
             with _MESH_CACHE_LOCK:
                 cached = _MESH_CACHE.get(cache_key)
             if cached is not None:
@@ -880,28 +909,32 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 cached_payload["cached"] = True
                 return jsonify(cached_payload)
 
-            # Adaptive preprocessing based on mask density
-            mask_volume = binary_mask.shape[0] * binary_mask.shape[1] * binary_mask.shape[2]
-            density = total_voxels / mask_volume
+            if not label_faithful:
+                # Adaptive preprocessing is useful for presentation meshes of
+                # ordinary anatomy, but it deliberately does not apply to a
+                # hard obstacle; changing that surface would contradict the
+                # physical mask used by candidate trajectory filtering.
+                mask_volume = binary_mask.shape[0] * binary_mask.shape[1] * binary_mask.shape[2]
+                density = total_voxels / mask_volume
 
-            # More aggressive morphological ops for sparse/fragmented masks
-            if density < 0.001:
-                # Very sparse mask (e.g., small vessel): heavy closing + dilation
-                struct = np.ones((3, 3, 3), dtype=np.uint8)
-                binary_mask = binary_dilation(binary_mask, structure=struct, iterations=2)
-                binary_mask = binary_closing(binary_mask, structure=struct, iterations=3)
-                binary_mask = binary_fill_holes(binary_mask).astype(np.uint8)
-                binary_mask = binary_dilation(binary_mask, structure=struct, iterations=1)
-            elif density < 0.01:
-                # Sparse mask (e.g., bile duct, small organ): moderate closing
-                struct = np.ones((3, 3, 3), dtype=np.uint8)
-                binary_mask = binary_dilation(binary_mask, structure=struct, iterations=1)
-                binary_mask = binary_closing(binary_mask, structure=struct, iterations=2)
-                binary_mask = binary_fill_holes(binary_mask).astype(np.uint8)
-            else:
-                # Normal density mask: standard cleanup
-                binary_mask = binary_closing(binary_mask, iterations=2).astype(np.uint8)
-                binary_mask = binary_fill_holes(binary_mask).astype(np.uint8)
+                # More aggressive morphological ops for sparse/fragmented masks
+                if density < 0.001:
+                    # Very sparse mask (e.g., small vessel): heavy closing + dilation
+                    struct = np.ones((3, 3, 3), dtype=np.uint8)
+                    binary_mask = binary_dilation(binary_mask, structure=struct, iterations=2)
+                    binary_mask = binary_closing(binary_mask, structure=struct, iterations=3)
+                    binary_mask = binary_fill_holes(binary_mask).astype(np.uint8)
+                    binary_mask = binary_dilation(binary_mask, structure=struct, iterations=1)
+                elif density < 0.01:
+                    # Sparse mask (e.g., bile duct, small organ): moderate closing
+                    struct = np.ones((3, 3, 3), dtype=np.uint8)
+                    binary_mask = binary_dilation(binary_mask, structure=struct, iterations=1)
+                    binary_mask = binary_closing(binary_mask, structure=struct, iterations=2)
+                    binary_mask = binary_fill_holes(binary_mask).astype(np.uint8)
+                else:
+                    # Normal density mask: standard cleanup
+                    binary_mask = binary_closing(binary_mask, iterations=2).astype(np.uint8)
+                    binary_mask = binary_fill_holes(binary_mask).astype(np.uint8)
 
             # Gaussian smoothing on distance transform for smoother surface
             # This creates a continuous scalar field from the binary mask
@@ -926,8 +959,11 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 smooth_field, level=0.0, spacing=spacing_zyx, allow_degenerate=False
             )
 
-            # Smooth mesh vertices
-            vertices = _laplacian_smooth(vertices, faces, iterations=5, factor=0.4)
+            # Mesh smoothing also moves a boundary.  Preserve the voxel-faithful
+            # hard-obstacle surface so it remains consistent with trajectory
+            # validation; keep the polished appearance for ordinary anatomy.
+            if not label_faithful:
+                vertices = _laplacian_smooth(vertices, faces, iterations=5, factor=0.4)
 
             # Remove degenerate faces (faces with zero area or duplicate vertices)
             v0 = vertices[faces[:, 0]]
@@ -970,6 +1006,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "face_count": len(faces),
                 "label_id": label_id,
                 "source": source,
+                "geometry_mode": "label_faithful" if label_faithful else "presentation_smoothed",
                 "cached": False,
             }
             with _MESH_CACHE_LOCK:
