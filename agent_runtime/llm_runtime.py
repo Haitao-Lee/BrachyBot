@@ -1805,7 +1805,7 @@ class LLMRuntimeMixin:
                             "message": message,
                             "percent": percent,
                         },
-                    ))
+                    )
 
                 # step_callback: called by tools (e.g. planning_pipeline
                 # with step:full) for each internal sub-step transition.
