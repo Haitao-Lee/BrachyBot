@@ -89,7 +89,8 @@
         "dense_seed_limit": 24,
         "max_hierarchy_depth": 4,
         "max_actions_per_episode": 24,
-        "max_wall_seconds": 180
+        "max_wall_seconds": 180,
+        "fallback_to_rule_based": true
     },
     "color": [
         0.5019607843137255, 0.6823529411764706, 0.5019607843137255,

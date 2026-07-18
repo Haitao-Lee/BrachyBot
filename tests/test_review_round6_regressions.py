@@ -23,6 +23,43 @@ def test_clinical_metric_units_and_exact_oar_matching():
     assert match_constraint_name("rectum_sigmoid", constraints) is None
 
 
+def test_plan_reviewer_localizes_dynamic_target_and_oar_issues():
+    from agents.plan_reviewer import PlanReviewer
+
+    reviewer = PlanReviewer()
+    result = reviewer._merge_results(
+        {
+            "score": 5.0,
+            "issues": [{
+                "metric": "V100",
+                "value": 0.82,
+                "threshold": 0.90,
+                "operator": ">=",
+                "status": "EXCEEDS",
+                "unit": "fraction",
+            }],
+            "oar_issues": [{
+                "organ": "small_bowel",
+                "metric": "d2cc",
+                "value": 94.9,
+                "limit": 60.0,
+                "status": "EXCEEDS",
+            }],
+            "advisory_issues": [],
+            "unverified": [],
+            "has_clinical_thresholds": True,
+        },
+        None,
+        {"total_seeds": 14},
+        "zh",
+    )
+    appendix = reviewer.format_as_appendix(result, "zh")
+    assert "要求" in appendix
+    assert "限值" in appendix
+    assert "required" not in appendix
+    assert "limit=" not in appendix
+
+
 def test_router_patterns_are_session_local_and_use_word_boundaries():
     from agents.router_agent import RouterAgent
 
@@ -502,6 +539,39 @@ def test_report_context_exposes_source_backed_target_and_oar_criteria():
     assert rationale["oar_criteria"]["duodenum"]["d2cc_gy"] == pytest.approx(55.0)
     assert rationale["sources"]
     assert all(url.startswith("https://") for url in rationale["sources"])
+    assert rationale["rationale_zh"]
+
+
+def test_report_context_keeps_chinese_prescription_boundary_in_chinese():
+    from tool_factory.report_context import format_prescription_rationale_markdown
+
+    context = {
+        "prescription_rationale": {
+            "prescription_gy": 120.0,
+            "prescription_source": "plan_config.in_lowest_energy",
+            "rationale": "English fallback",
+            "rationale_zh": "当前处方剂量为 120.0 Gy。",
+            "clinical_boundary": "English boundary",
+            "target_criteria": {},
+            "sources": [],
+        }
+    }
+    rendered = format_prescription_rationale_markdown(context, "zh")
+    assert "当前处方剂量为 120.0 Gy。" in rendered
+    assert "English fallback" not in rendered
+    assert "English boundary" not in rendered
+
+
+def test_planning_report_uses_persisted_effective_mode():
+    from agent_runtime.core import AgentMemory
+    from agent_runtime.response_tools import ResponseToolMixin
+
+    agent = object.__new__(ResponseToolMixin)
+    agent.memory = AgentMemory("report-mode-test")
+    agent.memory.store("plan_config", {"mode": "rl", "effective_mode": "rl"})
+    report = agent._build_planning_report("en", [])
+    assert "reinforcement learning" in report
+    assert "Planning mode**: rule_based" not in report
 
 
 def test_report_context_does_not_apply_cross_site_defaults():

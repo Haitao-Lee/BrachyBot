@@ -305,8 +305,9 @@ print(json.dumps(result))
         # The web planning routes use the same display scale for dose summaries.
         DOSE_SCALE = DOSE_MODEL_SCALE_GY
         rx_gy = DOSE_SCALE  # default: 1.0 * 120 = 120 Gy
+        plan_config = self.memory.retrieve("plan_config") or {}
         try:
-            _plan_cfg = self.memory.retrieve("plan_config") or {}
+            _plan_cfg = plan_config
             # "in_lowest_energy" is the normalized prescription (typically 1.0).
             # "prescription_dose" is a legacy key — both map to the same value.
             _rx_norm = _plan_cfg.get("in_lowest_energy",
@@ -546,7 +547,22 @@ print(json.dumps(result))
         lines.append(f"- [ICRU Report 89](https://www.icru.org/report/icru-report-89-prescribing-recording-and-reporting-photon-beam-therapy-2nd-edition) — {L('处方、记录和报告原则', 'Prescribing, recording, and reporting principles')}")
         lines.append("")
 
-        return "\n".join(lines)
+        # The mode is part of the persisted plan configuration. Keep this
+        # final normalization as a compatibility guard for older report code
+        # paths that still emitted the historical hard-coded rule-based label.
+        mode = str(plan_config.get("effective_mode") or plan_config.get("mode") or "rule_based")
+        mode_labels = {
+            "rule_based": L("规则优化", "rule-based"),
+            "rl": L("强化学习", "reinforcement learning"),
+            "rule_based_fallback": L("规则优化兜底（RL 未达到目标）", "rule-based fallback (RL target not reached)"),
+        }
+        report = "\n".join(lines).replace(": rule_based", f": {mode_labels.get(mode, mode)}")
+        if plan_config.get("rl_fallback_used"):
+            report += "\n\n" + L(
+                "RL 在有限预算内未达到目标覆盖率，系统使用同一组安全候选路径执行了 AI 剂量模型的规则优化兜底。",
+                "RL did not reach the target coverage within its bounded budget; the same safety-filtered candidates were replanned with the AI-dose rule-based optimizer.",
+            )
+        return report
 
     def _synthesize_with_llm(self, raw_results: str, steps: List, lang: str, user_message: str = "", query_type: str = "knowledge") -> str:
         """Synthesize tool results. Delegates to ToolResultPipeline."""

@@ -1074,6 +1074,10 @@ function init3DScene() {
 
         menu.innerHTML = items;
         document.body.appendChild(menu);
+        // Register with the shared context-menu lifecycle. Without this,
+        // clicking outside a 3D endpoint menu could leave it stuck because
+        // the Data Tree menu state is held in another script.
+        window.__brachyContextMenuElement = menu;
 
         const menuRect = menu.getBoundingClientRect();
         if (menuRect.right > window.innerWidth) menu.style.left = (x - menuRect.width) + 'px';
@@ -1437,7 +1441,11 @@ async function loadSeeds3D() {
         if (!data.success) throw new Error(data.error || 'Failed to load seeds');
 
         // Store seed/needle data in state for 2D overlay rendering
-        state.seedsOverlay = { seeds: data.seeds || [], needles: data.needles || [] };
+        state.seedsOverlay = {
+            seeds: data.seeds || [],
+            needles: data.needles || [],
+            geometry: data.seed_geometry || { length: 3.7, radius: 0.4 },
+        };
 
         init3DScene();
 
@@ -1489,11 +1497,12 @@ async function loadSeeds3D() {
         dataTreeState.needles.loaded = true;
         dataTreeState.needles.visible = true;
 
-        // Render seeds as cylinders (matching Zhiyuan ref.py: length=4.5, radius=0.4, yellow)
-        // Slightly enlarged for 3D scene visibility (real brachy seeds are ~0.4mm × 4.5mm,
-        // which is hard to spot in a 200-400mm CT volume).
-        const seedRadius = 0.8;
-        const seedLength = 4.5;
+        // Render the physical seed geometry returned by the active plan. The
+        // same length/radius are used by the 2D cylinder projection, so a
+        // seed cannot appear as a point in 2D while having different bounds
+        // in the 3D viewer.
+        const seedRadius = Math.max(0.05, Number(data.seed_geometry?.radius || 0.4));
+        const seedLength = Math.max(0.1, Number(data.seed_geometry?.length || 3.7));
         data.seeds.forEach(seed => {
             const pos = new THREE.Vector3(...seed.position);
             // direction may be [[x,y,z]] (nested) or [x,y,z] (flat) — flatten it

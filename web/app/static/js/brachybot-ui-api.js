@@ -513,11 +513,32 @@ async function handleFileSelect(input, targetId) {
     input.value = '';
 }
 
+function clearViewerCanvases() {
+    // Session switches invalidate every pending image callback. Without this
+    // generation fence, an old case can repaint a canvas after the new case
+    // has already been selected.
+    window.__viewerRenderGeneration = (window.__viewerRenderGeneration || 0) + 1;
+    document.querySelectorAll(
+        '[id^="sliceCanvas"], [id^="labelOverlay_"], [id^="doseOverlay_"], '
+        + '[id^="seedsOverlayCanvas"], [id^="crosshairCanvas"], [id^="annotationCanvas"]'
+    ).forEach(canvas => {
+        const ctx = canvas.getContext?.('2d');
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        canvas.style.display = 'none';
+        canvas._posSet = false;
+        canvas._doseWrapper = null;
+    });
+    document.querySelectorAll('.viewer-no-data').forEach(el => { el.style.display = ''; });
+    if (typeof hideContextMenu === 'function') hideContextMenu();
+    return window.__viewerRenderGeneration;
+}
+
 /**
  * Reset all segmentation, planning, and data tree state when loading a new CT.
  * Must be called before loading new CT to clear stale data.
  */
 function resetAllState() {
+    clearViewerCanvases();
     // Clear segmentation data arrays
     ctvLabelData = null;
     oarLabelData = null;
@@ -872,6 +893,7 @@ async function loadCTToViewers(ctPath, options = {}) {
 
     // Reset all segmentation and planning state for new CT
     resetAllState();
+    const renderGeneration = window.__viewerRenderGeneration || 0;
 
     // Per-patient memory isolation on the FRONTEND. The server
     // also clears its memory if the CT path changed (see
@@ -919,6 +941,7 @@ async function loadCTToViewers(ctPath, options = {}) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const data = await res.json();
+        if (renderGeneration !== window.__viewerRenderGeneration) return;
         if (data.success) {
             state.ctPath = ctPath;
             state.ctShape = data.shape;
@@ -943,6 +966,7 @@ async function loadCTToViewers(ctPath, options = {}) {
 
             // Load CT volume for client-side rendering
             await loadVolumeData();
+            if (renderGeneration !== window.__viewerRenderGeneration) return;
             state.ctLoaded = true;
 
             // Render initial slices from volume

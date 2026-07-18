@@ -1075,11 +1075,31 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
             seed_plan = agent.memory.retrieve("seed_plan")
             seed_plan_serialized = agent.memory.retrieve("seed_plan_serialized") or []
+            plan_config = agent.memory.retrieve("plan_config") or getattr(agent, "config", {}) or {}
+            seed_info = plan_config.get("seed_info") if isinstance(plan_config, dict) else {}
+            if not isinstance(seed_info, dict):
+                seed_info = {}
+            def _positive_geometry_value(name, default):
+                try:
+                    value = float(seed_info.get(name, default) or default)
+                    return value if np.isfinite(value) and value > 0 else default
+                except (TypeError, ValueError):
+                    return default
+            seed_geometry = {
+                "length": _positive_geometry_value("length", 3.7),
+                "radius": _positive_geometry_value("radius", 0.4),
+            }
             verified_needle_geometry = agent.memory.retrieve("verified_needle_geometry") or {}
             manual_needles = agent.memory.retrieve("manual_needles") or []
             has_manual_geometry = bool(manual_needles)
             if seed_plan is None and not seed_plan_serialized:
-                return jsonify({"success": True, "seeds": [], "needles": [], "message": "No seed plan available"})
+                return jsonify({
+                    "success": True,
+                    "seeds": [],
+                    "needles": [],
+                    "seed_geometry": seed_geometry,
+                    "message": "No seed plan available",
+                })
 
             ct_image = agent.memory.retrieve("ct_image")
 
@@ -1255,6 +1275,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "success": True,
                 "seeds": seeds,
                 "needles": needles,
+                "seed_geometry": seed_geometry,
                 "total_seeds": len(seeds),
                 "total_needles": len(needles),
             })

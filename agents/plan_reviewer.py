@@ -331,6 +331,11 @@ Return JSON only:
         # the LLM to output in Chinese so the review sections are consistent
         # with the rest of the chat response.
         if getattr(self, "_lang", "en") == "zh":
+            prompt += (
+                "\n\nLanguage: Respond entirely in Simplified Chinese. "
+                "Translate the assessment, concerns, suggestions, and summary; "
+                "keep metric names, units, and citation identifiers unchanged.\n"
+            )
             prompt += "\n\n**Language**: 请用中文回答。所有评价、建议和总结都必须使用中文。"
 
         try:
@@ -406,18 +411,9 @@ Return JSON only:
     def _merge_results(self, det_results: dict, llm_results: Optional[dict], plan_info: Dict[str, Any], lang: str = "en") -> ReviewResult:
         concerns: List[str] = []
         for issue in det_results["issues"]:
-            unit = f" {issue.get('unit')}" if issue.get("unit") else ""
-            concerns.append(self._localize_review_text(
-                f"{issue['metric']}={issue['value']:.3g}{unit}, "
-                f"required {issue['operator']} {issue['threshold']:.3g}{unit} ({issue['status']})",
-                lang,
-            ))
+            concerns.append(self._format_metric_issue(issue, lang))
         for issue in det_results["oar_issues"]:
-            concerns.append(self._localize_review_text(
-                f"{issue['organ']} {issue['metric']}={issue['value']:.1f} Gy, "
-                f"limit={issue['limit']:.1f} Gy ({issue['status']})",
-                lang,
-            ))
+            concerns.append(self._format_oar_issue(issue, lang))
         concerns.extend(self._localize_review_text(c, lang) for c in det_results.get("advisory_issues", []))
         concerns.extend(self._localize_review_text(c, lang) for c in det_results["unverified"])
 
@@ -454,6 +450,45 @@ Return JSON only:
             suggestions=suggestions[:5],
             confidence=confidence,
         )
+
+    @staticmethod
+    def _format_metric_issue(issue: dict, lang: str) -> str:
+        """Format a dynamic target issue without leaking English into zh output."""
+        metric = str(issue.get("metric", "metric"))
+        value = float(issue.get("value", 0.0))
+        threshold = float(issue.get("threshold", 0.0))
+        unit = str(issue.get("unit", ""))
+        operator = str(issue.get("operator", "="))
+        status = str(issue.get("status", "UNKNOWN"))
+        if lang != "zh":
+            unit_text = f" {unit}" if unit else ""
+            return f"{metric}={value:.3g}{unit_text}, required {operator} {threshold:.3g}{unit_text} ({status})"
+        if unit == "fraction":
+            value_text = f"{value * 100:.1f}%"
+            threshold_text = f"{threshold * 100:.1f}%"
+        elif unit == "fraction_of_prescription":
+            value_text = f"{value * 100:.1f}% of prescription"
+            threshold_text = f"{threshold * 100:.1f}% of prescription"
+        else:
+            suffix = f" {unit}" if unit else ""
+            value_text = f"{value:.3g}{suffix}"
+            threshold_text = f"{threshold:.3g}{suffix}"
+        operator_text = {">=": "≥", "<=": "≤"}.get(operator, operator)
+        status_text = {"EXCEEDS": "超限", "OK": "通过", "UNKNOWN": "无法判定"}.get(status, status)
+        return f"{metric}={value_text}，要求 {operator_text} {threshold_text}（{status_text}）"
+
+    @staticmethod
+    def _format_oar_issue(issue: dict, lang: str) -> str:
+        """Format a dynamic OAR issue in the selected conversation language."""
+        organ = str(issue.get("organ", "OAR"))
+        metric = str(issue.get("metric", "dose"))
+        value = float(issue.get("value", 0.0))
+        limit = float(issue.get("limit", 0.0))
+        status = str(issue.get("status", "UNKNOWN"))
+        if lang != "zh":
+            return f"{organ} {metric}={value:.1f} Gy, limit={limit:.1f} Gy ({status})"
+        status_text = {"EXCEEDS": "超限", "OK": "通过", "UNKNOWN": "无法判定"}.get(status, status)
+        return f"{organ} 的 {metric}={value:.1f} Gy，限值={limit:.1f} Gy（{status_text}）"
 
     def _build_reasoning(self, det_results: dict, llm_results: Optional[dict]) -> str:
         lines = [f"Deterministic score: {det_results['score']}/10"]
