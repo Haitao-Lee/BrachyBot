@@ -155,7 +155,7 @@ print(json.dumps(result))
                               "params": {"actions": [{"target": target, "command": "switch", "value": value}]}})
                 continue
 
-            if action == 'analyze' and ct_path:
+            if action == 'analyze' and ct_path and self.registry.is_available('code_executor'):
                 code = self._ANALYSIS_CODE_TEMPLATE.format(ct_path=ct_path)
                 tools.append({"id": "tool_direct_analysis", "tool": "code_executor",
                               "params": {"code": code, "description": "Analyze CT image"}})

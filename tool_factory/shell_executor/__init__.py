@@ -76,6 +76,9 @@ Commands are executed without shell expansion and must start with an allowed exe
         "returncode": {"type": "integer"},
     }
 
+    def is_available(self) -> bool:
+        return _execution_enabled()
+
     def _validate_command(self, command: str) -> tuple:
         """Validate command is safe. Returns (is_safe, reason)."""
         command_lower = command.lower().strip()

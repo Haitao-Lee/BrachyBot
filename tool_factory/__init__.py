@@ -96,6 +96,16 @@ class BaseTool(ABC):
     def output_schema(self) -> Dict:
         """JSON Schema describing the output format."""
         return {}
+
+    def is_available(self) -> bool:
+        """Whether this tool may be advertised to the current LLM turn.
+
+        Most clinical tools are always available once registered. Trusted-local
+        developer tools can override this hook so a disabled capability is not
+        needlessly offered to the model and called only to return an error.
+        Direct execution still performs its own gate as defense in depth.
+        """
+        return True
     
     def validate_input(self, **kwargs) -> bool:
         """Validate input parameters against the input schema."""

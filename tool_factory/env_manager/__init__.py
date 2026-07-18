@@ -188,6 +188,9 @@ Capabilities:
         "data": {"type": "object"},
     }
 
+    def is_available(self) -> bool:
+        return _execution_enabled()
+
     def _get_env_path(self, env_name: str) -> Path:
         """Get the path for a virtual environment."""
         return Path(ENVS_DIR) / env_name
