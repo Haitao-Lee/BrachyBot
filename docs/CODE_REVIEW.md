@@ -5174,6 +5174,14 @@ import, or supported workflow referenced them. The supported implementations
 live in `tool_factory/dose_engine` and `tool_factory/report_generator`.
 Generated export reports remain ignored under `tool_factory/output/reports/`.
 
+### Verification
+
+- The two previously failing DICOM RT regressions pass: linked RTSTRUCT /
+  RTPLAN / RTDOSE object generation and mixed planning-grid rejection.
+- The complete remote `brachytherapy` suite passes; remaining warnings are
+  SimpleITK SWIG type deprecations emitted during import, not exporter
+  behavior.
+
 ## Round 34 protected-login usability and credential scope (2026-07-19)
 
 ### Confirmed finding
@@ -5205,13 +5213,7 @@ real usability failure, not a reason to remove the perimeter guard.
   session-scoped credential storage.
 - Added a frontend regression preventing report actions from regressing to
   browser-native confirmation dialogs.
-- JavaScript syntax checks and the full remote pytest suite are required
-  before release.
-
-### Verification
-
-- The two previously failing DICOM RT regressions now pass: linked RTSTRUCT /
-  RTPLAN / RTDOSE object generation and mixed planning-grid rejection.
-- The complete remote `brachytherapy` suite passes: **172 passed, 3
-  environment warnings**. The remaining warnings are SimpleITK SWIG type
-  deprecations emitted during import, not exporter behavior.
+- Local Node.js syntax checks pass for all changed browser modules.
+- The complete remote `brachytherapy` suite passes: **174 passed, 3
+  environment warnings**. The warnings are SimpleITK SWIG type deprecations
+  emitted during import, not authentication or report behavior.
