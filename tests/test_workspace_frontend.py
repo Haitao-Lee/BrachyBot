@@ -78,6 +78,13 @@ def test_report_actions_use_the_app_confirmation_modal_not_browser_confirm():
     assert "confirm(" not in report_export
 
 
+def test_legacy_browser_actions_do_not_fall_back_to_native_confirm():
+    chat_core = read("web/app/static/js/brachybot-chat-core.js")
+    assert "window.confirm" not in chat_core
+    assert "async function clearLocalChatData" in chat_core
+    assert "window._confirmAction" in chat_core
+
+
 def test_deployment_api_key_has_a_session_scoped_login_path():
     """A protected deployment must not leave the account screen at a 401 dead end."""
     index = read("web/app/index.html")
