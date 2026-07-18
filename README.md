@@ -461,7 +461,10 @@ Task: "Generate prostate plan"
 - **nnU-Net + VoCo**: Deep learning segmentation models
 - **TotalSegmentator**: 104 anatomical structures segmentation
 - **Rule-based + RL**: Dual seed planning modes
-- **DICOM Export**: RT Structure, RT Plan, RT Dose
+- **DICOM RT Export**: linked RT Structure Set, RT Plan, and RT Dose objects
+  on the current CT grid. Exports are explicitly marked `UNAPPROVED`; they
+  are interoperability artifacts for downstream review, not a treatment
+  planning system approval or clinical sign-off.
 - **Autonomous Tool Creation**: LLM can create new tools on-demand via `tool_creator`
 - **Clinical Knowledge Base**: Dose constraints, organ tolerances, treatment protocols, and source-backed literature retrieval (`clinical_kb`). Safety-critical clinical claims must cite KB/web sources; prompts and validators should not invent standalone clinical thresholds.
 - **Case Memory**: Store, retrieve, and learn from past treatment plans (`case_memory`)
