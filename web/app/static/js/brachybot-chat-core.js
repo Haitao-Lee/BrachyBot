@@ -415,19 +415,14 @@ function loadSessionChat(id) {
         // an array like [user, error, user, error, ...]. On refresh
         // the array was replayed verbatim.
         //
-        // Two-pass dedup:
-        //   1. Drop "Send failed" error messages entirely — they
-        //      are transient network noise, not part of the
-        //      conversation the user wants to see on refresh.
-        //   2. For all OTHER (type, content) pairs, keep only the
-        //      FIRST occurrence in the array. Subsequent identical
-        //      messages (even non-adjacent) are dropped. This
-        //      handles the case where the user retried with the
-        //      same text multiple times and the array accumulated
-        //      duplicates at non-adjacent positions.
+        // Repair only the historical duplicate pattern, without deleting
+        // legitimate repeated questions or answers elsewhere in the case
+        // transcript. After transient send failures are dropped, accidental
+        // retry duplicates become adjacent. Non-adjacent equal text is a
+        // real part of a clinical conversation and must be preserved.
         const msgs = session.messages;
-        const seen = new Set();
         const deduped = [];
+        const canonicalType = message => message?.type === 'bot-response' ? 'bot' : message?.type;
         for (let i = 0; i < msgs.length; i++) {
             const m = msgs[i];
             // Skip transient error messages — they're for live
@@ -436,17 +431,11 @@ function loadSessionChat(id) {
                 && /^Send failed/i.test(m.content)) {
                 continue;
             }
-            // KEY = content only (NOT type+content). Reason: a saved
-            // bot-response message gets re-rendered by addChat which
-            // remaps the type to 'bot' (for CSS), then would re-save
-            // it as 'bot' if we don't suppress that. Using content
-            // alone catches both 'bot-response' and 'bot' copies of
-            // the same answer — the type rename on save was the
-            // root cause of the user seeing 2-6-8-12… copies of every
-            // message after each page refresh.
-            const key = String(m.content || '');
-            if (seen.has(key)) continue;
-            seen.add(key);
+            const previous = deduped[deduped.length - 1];
+            const sameAdjacentMessage = previous
+                && canonicalType(previous) === canonicalType(m)
+                && String(previous.content || '') === String(m.content || '');
+            if (sameAdjacentMessage) continue;
             deduped.push(m);
         }
         deduped.forEach(msg => {

@@ -5380,3 +5380,54 @@ the previous title.
 - Parsed the changed browser module with Node.js syntax checking.
 - Remote `brachytherapy` full verification passes: **181 passed, 3 environment
   warnings**. The warnings are SimpleITK SWIG type deprecations during import.
+
+## Round 40 lease-safe manual case rename (2026-07-19)
+
+### Confirmed finding
+
+The sidebar's manual rename handler changed its in-memory title before asking
+the durable session API to save it. If a second browser held the edit lease,
+the API correctly rejected the write, but the first browser continued to show
+the unsaved title. This was a UI-state integrity defect rather than a metadata
+or authorization bypass.
+
+### Corrective changes
+
+- The durable path now waits for server confirmation before the sidebar and
+  chat header display the new title.
+- On a rejected write, it restores the previously confirmed title and redraws
+  the session list. The legacy localStorage compatibility path retains its
+  local-only update because it has no server repository to confirm.
+
+### Verification
+
+- Added a frontend regression test that requires durable confirmation to
+  precede the local title assignment and requires rollback handling.
+- Parsed the changed browser module with Node.js syntax checking.
+- Remote `brachytherapy` full verification passes: **182 passed, 3 environment
+  warnings**. The warnings are SimpleITK SWIG type deprecations during import.
+
+## Round 41 transcript-preserving chat restore (2026-07-19)
+
+### Confirmed finding
+
+The chat restore renderer used a set keyed only by message text across the
+entire stored transcript. It hid every later occurrence of the same text,
+even when a user intentionally repeated a question later in the case or the
+assistant gave a legitimate repeated short answer. This could make a durable
+session appear to have lost chat history after a refresh.
+
+### Corrective changes
+
+- Retained removal of transient `Send failed` rows.
+- Replaced global text de-duplication with adjacent duplicate suppression after
+  those transient rows are removed.
+- Treat legacy `bot-response` and rendered `bot` records as the same message
+  type only for this adjacent historical-repair check. Non-adjacent messages
+  are now always retained.
+
+### Verification
+
+- Added a frontend regression check requiring adjacent-only comparison rather
+  than a transcript-wide `seen` set.
+- Parsed the changed browser module with Node.js syntax checking.
