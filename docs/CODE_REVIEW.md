@@ -5277,3 +5277,22 @@ geometry itself, but it could show stale progress and mislead the user.
 - Remote `brachytherapy` bytecode compilation and full verification pass:
   **178 passed, 3 environment warnings**. The warnings are SimpleITK SWIG
   type deprecations during import.
+
+## Round 37 live UI tool freshness (2026-07-19)
+
+### Confirmed finding
+
+The tool gateway cached `ui_inspector`, `viewer_command`, and `query_metrics`
+alongside immutable knowledge tools. Their cache key can include a workspace
+revision, but older UI snapshots do not reliably supply that revision. A
+repeated UI query could therefore return stale viewer, slice, or dose metrics
+after a user interaction. This contradicted BrachyBot's requirement to act on
+the current visible case state.
+
+### Corrective changes
+
+- Restricted gateway caching to case-independent `clinical_kb` retrieval.
+- Live browser, patient metric, model-availability, and viewer-command tools
+  now execute on every request and observe current state.
+- Added regression coverage that invokes `ui_inspector` twice and proves that
+  the second result is not reused.
