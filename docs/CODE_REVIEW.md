@@ -5490,3 +5490,5 @@ its implementation has always cleared browser-only compatibility caches.
 - Added frontend regression checks for awaited session transitions and honest
   cache-clearing semantics.
 - Parsed all changed browser modules with Node.js syntax checking.
+- Remote `brachytherapy` full verification passes: **186 passed, 3 environment
+  warnings**. The warnings are SimpleITK SWIG type deprecations during import.
