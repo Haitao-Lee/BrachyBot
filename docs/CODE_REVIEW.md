@@ -2,6 +2,28 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-07-19 - Round 52: Case-scoped deferred viewer restoration
+
+**Confirmed issue:** `restoreSceneView()` deliberately reapplied saved camera,
+DVH, and dose-surface state after asynchronous mesh reconstruction. The delayed
+callbacks were not tied to a case identity. A rapid session switch could
+therefore let callbacks from the prior workspace apply presentation state to the
+newly selected case.
+
+**Resolution:** Added a generation token and a tracked timer set in
+`brachybot-workspace.js`. Starting a case transition or applying a newer
+workspace snapshot invalidates every earlier deferred restoration callback.
+Deferred scene, DVH, and dose-surface work executes only when its captured
+generation remains current.
+
+This intentionally changes presentation timing only; it does not alter
+persisted clinical data, coordinate transforms, planning state, or viewer reset
+semantics.
+
+**Verification:** Added regression assertions for generation-scoped deferred
+restoration. Focused workspace/auth browser-bridge tests and JavaScript syntax
+checks pass locally.
+
 ---
 
 ## 2026-07-17 - Round 9: Full needle-path obstacle validation

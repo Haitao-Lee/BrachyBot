@@ -92,6 +92,19 @@ def test_server_workspace_serializes_case_transitions():
     assert "body.workspace-transitioning #sessionList" in layout
 
 
+def test_delayed_scene_restore_is_scoped_to_its_case_generation():
+    """A late mesh/DVH callback from an old case must not repaint the new one."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+
+    assert "let workspaceRestoreGeneration = 0;" in workspace
+    assert "const workspaceRestoreTimers = new Set();" in workspace
+    assert "function invalidateDeferredWorkspaceRestore()" in workspace
+    assert "function scheduleDeferredWorkspaceRestore(generation, callback, delay)" in workspace
+    assert "if (generation !== workspaceRestoreGeneration) return;" in workspace
+    assert "const restoreGeneration = invalidateDeferredWorkspaceRestore();" in workspace
+    assert "restoreSceneView(uiState.viewer?.scene, uiState.viewer?.dvh, restoreGeneration);" in workspace
+
+
 def test_ui_controller_waits_for_async_viewer_and_manual_planning_actions():
     """UI action progress must represent completion, not merely task launch."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")

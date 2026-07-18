@@ -7,11 +7,33 @@
     let saveTimer = null;
     let restoring = false;
     let workspaceTransition = null;
+    let workspaceRestoreGeneration = 0;
+    const workspaceRestoreTimers = new Set();
 
     function clearScheduledWorkspaceSave() {
         if (!saveTimer) return;
         clearTimeout(saveTimer);
         saveTimer = null;
+    }
+
+    function invalidateDeferredWorkspaceRestore() {
+        // A mesh or chart restore may deliberately run after asynchronous
+        // rendering settles. Those callbacks belong to one case only: a
+        // newer case selection must never let an older snapshot repaint it.
+        workspaceRestoreGeneration += 1;
+        workspaceRestoreTimers.forEach(timer => clearTimeout(timer));
+        workspaceRestoreTimers.clear();
+        return workspaceRestoreGeneration;
+    }
+
+    function scheduleDeferredWorkspaceRestore(generation, callback, delay) {
+        const timer = setTimeout(() => {
+            workspaceRestoreTimers.delete(timer);
+            if (generation !== workspaceRestoreGeneration) return;
+            callback();
+        }, delay);
+        workspaceRestoreTimers.add(timer);
+        return timer;
     }
 
     function setWorkspaceTransitionState(active) {
@@ -29,6 +51,7 @@
             return { success: false, busy: true, error: 'A case transition is already in progress.' };
         }
         clearScheduledWorkspaceSave();
+        invalidateDeferredWorkspaceRestore();
         setWorkspaceTransitionState(true);
         const transition = (async () => {
             try {
@@ -155,7 +178,7 @@
         });
     }
 
-    function restoreSceneView(scene, dvh) {
+    function restoreSceneView(scene, dvh, generation) {
         const applyScene = () => {
             if (!scene || typeof scene3D === 'undefined' || !scene3D?.camera) return;
             const camera = scene3D.camera;
@@ -170,8 +193,8 @@
         // Mesh reconstruction is asynchronous. Applying twice restores the
         // saved pose after geometry and renderer-resize work has settled.
         applyScene();
-        setTimeout(applyScene, 450);
-        setTimeout(applyScene, 1200);
+        scheduleDeferredWorkspaceRestore(generation, applyScene, 450);
+        scheduleDeferredWorkspaceRestore(generation, applyScene, 1200);
 
         const applyDvh = () => {
             const chart = document.getElementById('dvhChart');
@@ -182,13 +205,17 @@
             if (dvh.axis_zoom_mode) chart._dvhAxisZoomMode = dvh.axis_zoom_mode;
             if (Object.keys(update).length) Plotly.relayout(chart, update);
         };
-        setTimeout(applyDvh, 350);
-        setTimeout(applyDvh, 1100);
+        scheduleDeferredWorkspaceRestore(generation, applyDvh, 350);
+        scheduleDeferredWorkspaceRestore(generation, applyDvh, 1100);
 
         if (scene?.display_mode === 'dose_surface' && typeof setDoseTextureMode === 'function') {
             // Recreate textures from the restored dose grid; WebGL materials
             // themselves are intentionally not persisted in the workspace.
-            setTimeout(() => setDoseTextureMode(true, { silent: true }), 900);
+            scheduleDeferredWorkspaceRestore(
+                generation,
+                () => setDoseTextureMode(true, { silent: true }),
+                900,
+            );
         }
     }
 
@@ -196,6 +223,7 @@
         if (!snapshot) return;
         const ui = snapshot.ui || {};
         const uiState = ui.state || ui;
+        const restoreGeneration = invalidateDeferredWorkspaceRestore();
         restoring = true;
         try {
             applyControls(uiState.controls || {});
@@ -240,7 +268,7 @@
             if (typeof setViewerLayout === 'function' && state?.viewerSettings?.layout) setViewerLayout(state.viewerSettings.layout);
             if (typeof renderDataTree === 'function') renderDataTree();
             if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
-            restoreSceneView(uiState.viewer?.scene, uiState.viewer?.dvh);
+            restoreSceneView(uiState.viewer?.scene, uiState.viewer?.dvh, restoreGeneration);
         } finally {
             restoring = false;
         }
@@ -519,6 +547,7 @@
     window.persistWorkspace = persistWorkspace;
     window.applyWorkspaceSnapshot = applyWorkspaceSnapshot;
     window.loadServerSessions = loadServerSessions;
+    window.invalidateDeferredWorkspaceRestore = invalidateDeferredWorkspaceRestore;
 
     function installScenePersistenceHook() {
         if (typeof scene3D === 'undefined' || !scene3D?.controls) {

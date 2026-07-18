@@ -24,6 +24,9 @@
 - Session switching clears stale canvases, meshes, overlays, and charts before
   restoring the selected workspace; late image callbacks cannot repaint an
   older case.
+- Deferred mesh, DVH, and dose-surface restoration is case-generation scoped,
+  so a late presentation callback from the prior workspace cannot repaint a
+  newly selected case.
 - Case creation, switching, and deletion are serialized as one workspace
   transition. The sidebar is briefly unavailable while the selected case is
   persisted and restored, preventing rapid clicks or out-of-order responses
