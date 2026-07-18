@@ -5274,3 +5274,6 @@ geometry itself, but it could show stale progress and mislead the user.
 
 - Added a regression guard that prevents reintroducing Agent-wide callback
   buffering and requires turn-local cancellation gating.
+- Remote `brachytherapy` bytecode compilation and full verification pass:
+  **178 passed, 3 environment warnings**. The warnings are SimpleITK SWIG
+  type deprecations during import.
