@@ -18,6 +18,9 @@
 - Candidate needle trajectories are filtered against the current Data Tree
   non-traversable masks before optimization and are revalidated in physical
   coordinates before display.
+- 3D meshes for non-traversable labels preserve the exact safety-mask boundary;
+  cosmetic dilation and smoothing remain limited to ordinary anatomy so the
+  viewer cannot visually contradict the trajectory safety check.
 - Session switching clears stale canvases, meshes, overlays, and charts before
   restoring the selected workspace; late image callbacks cannot repaint an
   older case.

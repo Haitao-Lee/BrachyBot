@@ -5575,3 +5575,35 @@ errors before any functional test ran.
 - Remote targeted regression suite: **73 passed, 3 environment warnings**.
 - Remote full suite: **188 passed, 3 environment warnings**. The warnings are
   SimpleITK SWIG type deprecations during import.
+
+## Round 47 hard-obstacle mesh fidelity (2026-07-19)
+
+### Confirmed finding
+
+The trajectory pipeline correctly applies the Data Tree's non-traversable
+policy in planning-grid and original-world validation. A deployed workspace
+was independently checked: all four published needle segments were clear of
+the raw CTV/OAR hard-label masks. However, `/api/viewer/3d_mask` then applied
+dilation, closing, hole filling, and Laplacian smoothing to every displayed
+label. For thin or sparse bones and vessels, that cosmetic processing can make
+the rendered surface substantially larger than the physical mask used for
+planning, falsely suggesting that a safe needle crosses an obstacle.
+
+### Corrective changes
+
+- Resolve the current Data Tree hard-obstacle policy in the 3D mesh route.
+- Render non-traversable OAR labels and the pancreatic CTV artery/vein labels
+  with a label-faithful mesh: no boundary-changing morphology or vertex
+  smoothing.
+- Keep the existing presentation smoothing for ordinary, traversable anatomy.
+  This limits the visual change to structures whose displayed boundary must
+  agree with the planning safety contract.
+- Include mesh geometry mode in the cache key and response so a previously
+  smoothed mesh cannot be reused as a hard-obstacle mesh.
+
+### Verification
+
+- Added regression coverage for Data Tree hard labels, traversable soft
+  structures, and CTV embedded vessels.
+- Remote `brachytherapy` safety suite: **14 passed, 3 environment warnings**.
+  Warnings are the existing SimpleITK SWIG type deprecations during import.
