@@ -837,6 +837,22 @@ async function _flushHiddenChatQueue() {
     }
 }
 
+// Session switching and logout use the same cancellation path as the Stop
+// button. This prevents an old response stream from writing into the newly
+// selected case and keeps the UI progress surfaces in sync.
+window.cancelActiveChatTurn = async function cancelActiveChatTurn() {
+    // Do not let a screenshot-analysis follow-up queued by the previous case
+    // run after the user switches to another case.
+    if (Array.isArray(window._pendingHiddenChats)) window._pendingHiddenChats.length = 0;
+    if (!window._chatTurnActive && !window._chatStreaming
+        && !(typeof isStreaming !== 'undefined' && isStreaming)) return true;
+    if (typeof sendChat === 'function') {
+        await sendChat();
+        return true;
+    }
+    return false;
+};
+
 async function sendChat(prefill, options) {
     const opts = options || {};
     const input = document.getElementById('chatInput');

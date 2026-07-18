@@ -1175,7 +1175,11 @@ async function init() {
     // The authenticated server is the case-session source of truth.  Do not
     // render a localStorage transcript before the selected case is known.
     try {
-        if (typeof loadSessions === 'function') await loadSessions();
+        // Use the server-backed function explicitly.  The legacy chat script
+        // still contains a localStorage-compatible loadSessions binding for
+        // old embeds; calling it here would restore a different case than the
+        // authenticated browser workspace.
+        if (typeof window.loadSessions === 'function') await window.loadSessions();
         if (typeof renderSessionList === 'function') renderSessionList();
     } catch (e) { console.warn('Session init failed:', e); }
 
