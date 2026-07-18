@@ -5244,5 +5244,6 @@ with the authenticated workspace and could block embedded-browser use.
 ### Verification
 
 - Added focused Python and static frontend regression tests.
-- Local JavaScript syntax and the complete remote test suite are run before
-  release synchronization.
+- Local JavaScript syntax checks pass.
+- Remote `brachytherapy` verification passes: **177 passed, 3 environment
+  warnings**. The warnings are SimpleITK SWIG type deprecations during import.
