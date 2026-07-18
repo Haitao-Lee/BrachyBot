@@ -158,7 +158,7 @@ async function clearLocalChatData(options = {}) {
             )
             : false
     );
-    if (!ok) return;
+    if (!ok) return { success: false, cancelled: true };
     try {
         // Chat sessions + active-session pointer
         localStorage.removeItem('brachybot_sessions');
@@ -193,6 +193,7 @@ async function clearLocalChatData(options = {}) {
     // Reload the page so the cleared state takes effect everywhere
     // (sidebar re-renders, report panel resets, etc).
     try { location.reload(); } catch (_) {}
+    return { success: true, scope: 'browser_cache', reloading: true };
 }
 
 function toggleSessionSidebar() {

@@ -1942,7 +1942,8 @@ function _executeUIAction(a) {
     if (requires_confirm) {
         const pairs = {
             'session.delete': [`确定要删除会话 ${value} 吗？此操作不可撤销。`, `Delete session ${value}? This cannot be undone.`],
-            'session.clear_all': ['确定要清空所有会话和本地数据吗？此操作不可撤销。', 'Clear all sessions and local data? This cannot be undone.'],
+            'session.clear_all': ['确定要清除浏览器本地显示缓存吗？服务端病例不会删除。', 'Clear browser display caches? Persistent server cases will be retained.'],
+            'browser_cache.clear': ['确定要清除浏览器本地显示缓存吗？服务端病例不会删除。', 'Clear browser display caches? Persistent server cases will be retained.'],
             'plan.reset': ['确定要重置当前规划会话吗？所有规划数据将被清除。', 'Reset the current planning session? All data will be cleared.'],
             'report.clear': ['确定要清空报告数据吗？', 'Clear the report data?'],
             'chat.clear_history': ['确定要清空当前聊天记录吗？', 'Clear the current chat history?'],
@@ -2274,8 +2275,8 @@ function _executeUIActionRaw(a) {
             return;
         }
         // ── Session management ──
-        if (target === 'session.new') { newChat(); return; }
-        if (target === 'session.switch') { switchSession(value); return; }
+        if (target === 'session.new') return window.newChat();
+        if (target === 'session.switch') return window.switchSession(value);
         if (target === 'session.rename') {
             const title = String(value || '').trim();
             if (!activeSessionId || !sessions[activeSessionId]) {
@@ -2301,8 +2302,13 @@ function _executeUIActionRaw(a) {
                     error: String(error?.message || error || 'Unable to rename the case.'),
                 }));
         }
-        if (target === 'session.delete') { deleteSession(value, { skipConfirm: true }); return; }
-        if (target === 'session.clear_all') { clearLocalChatData({ skipConfirm: true }); return; }
+        if (target === 'session.delete') return window.deleteSession(value, { skipConfirm: true });
+        if (target === 'session.clear_all' || target === 'browser_cache.clear') {
+            // ``session.clear_all`` is a legacy alias. It has never deleted
+            // durable cases; retain it only so older prompts cannot turn a
+            // cache cleanup into a failed or misleading UI action.
+            return clearLocalChatData({ skipConfirm: true });
+        }
         // ── Planning ──
         if (target === 'plan.run') {
             return runPlanning();

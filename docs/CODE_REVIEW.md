@@ -5460,3 +5460,33 @@ old case and was not a safe workspace isolation guarantee.
 - Parsed the changed browser module with Node.js syntax checking.
 - Remote `brachytherapy` full verification passes: **184 passed, 3 environment
   warnings**. The warnings are SimpleITK SWIG type deprecations during import.
+
+## Round 43 durable session-controller completion semantics (2026-07-19)
+
+### Confirmed findings
+
+The declarative UI controller invoked asynchronous new-case, case-switch, and
+case-delete functions without returning their promises. The execution trace
+could mark a session action complete while the authenticated workspace was
+still saving, restoring, or acquiring its edit lease; a following agent tool
+could therefore observe the wrong case. In addition, the legacy
+`session.clear_all` catalog entry claimed it deleted all sessions even though
+its implementation has always cleared browser-only compatibility caches.
+
+### Corrective changes
+
+- Return durable session-operation promises from the browser UI action
+  dispatcher so progress and follow-up tool calls wait for the completed case
+  transition.
+- Make new, switch, and delete operations return structured success, error,
+  cancellation, and selected-case results.
+- Add the accurately named `browser_cache.clear` action. Keep
+  `session.clear_all` only as a documented compatibility alias, with both the
+  tool catalog and confirmation dialog stating that durable server cases are
+  retained.
+
+### Verification
+
+- Added frontend regression checks for awaited session transitions and honest
+  cache-clearing semantics.
+- Parsed all changed browser modules with Node.js syntax checking.
