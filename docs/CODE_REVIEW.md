@@ -5301,3 +5301,52 @@ the current visible case state.
 
 - Remote `brachytherapy` verification passes: **179 passed, 3 environment
   warnings**. The warnings are SimpleITK SWIG type deprecations during import.
+
+## Round 38 durable-workspace release audit (2026-07-19)
+
+### Scope and result
+
+Performed a final source-level trace across the authenticated case-session
+boundary, artifact download path, session-switch restoration flow, editor
+lease propagation, cancellation ledger, and tool-call freshness policy. No
+additional behavior-changing defect was verified in these paths.
+
+### Verified invariants
+
+- Case artifact URLs are constructed only from sanitized relative paths and
+  resolve through the authenticated owner-scoped session artifact route. Direct
+  exporters and browser-generated artifacts both write below the selected
+  workspace's `artifacts/` directory.
+- A session transition persists the outgoing workspace, releases its editor
+  lease, clears browser-resident case data, changes the server-selected case,
+  then hydrates CT, labels, planning state, report, chat, viewer settings, and
+  saved camera state in that order. The restore path checks that the selected
+  session has not changed before applying asynchronous results.
+- Browser fetch wrappers compose deliberately: the earlier API wrapper adds a
+  deployment key and selected-case header, while the authentication wrapper
+  adds cookie credentials, CSRF protection, and the per-browser editor token.
+  Lease release therefore remains CSRF-protected even though its local call
+  site contains only a JSON content-type header.
+- Dynamic tools are not idempotency-cached. Only immutable clinical knowledge
+  retrieval remains cacheable, so UI inspection, viewer state, and current
+  metrics are evaluated against the live case.
+- Run ledger restores never revive a running provider or GPU task. A persisted
+  clarification state is retained as awaiting input; all other live work is
+  recorded as interrupted and requires an explicit user rerun.
+
+### Verification
+
+- Parsed all 14 first-party browser JavaScript modules with Node.js syntax
+  checks (vendor bundles excluded).
+- Ran the complete remote `brachytherapy` test suite on the deployed source:
+  **179 passed, 3 environment warnings**. The warnings are SimpleITK SWIG type
+  deprecations during import and do not represent test failures.
+
+### Deliberate compatibility boundary
+
+The legacy localStorage functions remain as guarded compatibility shims for
+pre-workspace installations and one-time import. Once
+`__serverWorkspaceReady` is set, they delegate to the server-backed workspace
+and no longer write a competing clinical session store. Removing those shims
+would break cached older browser assets without improving the authenticated
+runtime.
