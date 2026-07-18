@@ -21,6 +21,10 @@ class _Registry:
                 "properties": {"query": {"type": "string"}},
                 "required": ["query"],
             }),
+            "ui_inspector": _Tool({
+                "type": "object",
+                "properties": {"scope": {"type": "string"}},
+            }),
         }
 
     @property
@@ -80,6 +84,32 @@ def test_gateway_requires_schema_fields_and_reuses_only_idempotent_read_tool():
     assert first.success and second.success
     assert calls == ["called"]
     assert second.metadata["reused_idempotent_result"] is True
+
+
+def test_gateway_never_caches_live_ui_inspection_without_a_fresh_snapshot():
+    """The current viewer state is case-local and must be observed each time."""
+    ledger = RunLedger()
+    ledger.begin("inspect active viewer")
+    gateway = ToolCallGateway(ledger)
+    registry = _Registry()
+    calls = []
+
+    first = gateway.execute(
+        registry,
+        "ui_inspector",
+        {"scope": "viewer"},
+        lambda: calls.append("first") or ToolResult(True, data={"slice": 12}),
+    )
+    second = gateway.execute(
+        registry,
+        "ui_inspector",
+        {"scope": "viewer"},
+        lambda: calls.append("second") or ToolResult(True, data={"slice": 13}),
+    )
+
+    assert first.success and second.success
+    assert calls == ["first", "second"]
+    assert not second.metadata.get("reused_idempotent_result")
 
 
 def test_restored_running_run_is_archived_as_interrupted_not_resumed():

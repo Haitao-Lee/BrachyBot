@@ -307,7 +307,12 @@ class ToolCallGateway:
     high-risk tools can opt into strict unknown-field rejection later.
     """
 
-    _CACHEABLE_TOOLS = {"ctv_model_catalog", "clinical_kb", "ui_inspector", "viewer_command", "query_metrics"}
+    # Cache only immutable, case-independent retrieval. Viewer commands,
+    # UI inspection, metrics, and model availability depend on live browser,
+    # case, or installation state. They must never reuse a result merely
+    # because an optional workspace revision was unavailable in a legacy UI
+    # snapshot.
+    _CACHEABLE_TOOLS = {"clinical_kb"}
 
     def __init__(self, ledger: RunLedger):
         self.ledger = ledger
