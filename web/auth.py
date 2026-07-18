@@ -98,6 +98,10 @@ def register_auth_routes(app: Flask, store: WorkspaceStore) -> None:
     @require_api_key
     @rate_limit
     def auth_register():
+        # The deployment API key is intentionally required before account
+        # creation. It is a server-access boundary, while the session cookie
+        # remains the user identity boundary; removing this guard would expose
+        # an open registration endpoint whenever the service is network-bound.
         data = request.get_json(silent=True) or {}
         username = str(data.get("username") or "").strip()
         password = str(data.get("password") or "")

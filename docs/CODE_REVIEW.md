@@ -4903,3 +4903,70 @@ output and metric names/units remain unchanged.
 
 Verification: the focused reviewer suite passed (**77 passed** including the
 new dynamic-localization regression), followed by the final full-suite run.
+
+## Round 29 training-monitor audit (2026-07-18)
+
+This round independently checked the reported training-monitor findings
+against the actual manual-dose writer, automatic dose-evaluation writer,
+training event routes, frontend screenshot bridge, and authentication
+boundary.
+
+### Findings and dispositions
+
+- **B4, V100/V150/V200 units: confirmed as a latent contract weakness, not a
+  reproduced current-value bug.** Manual and automatic CTV metrics are both
+  currently written as `0-1` fractions, while nested OAR `v100/v150` values
+  are percentages and are not consumed by the CTV training feedback path.
+  The prior helper therefore did not double-divide the current CTV values.
+  However, inferring units from magnitude was unsafe for future persisted
+  payloads. All CTV metric writers now persist
+  `volume_metric_units: "fraction"`; training advice reads that declaration
+  and retains the old heuristic only for legacy records without the field.
+
+- **F1, 45-second screenshot throttle: confirmed.** A manual dose
+  recomputation is an explicit training checkpoint, and the generic throttle
+  could silently suppress its dose/DVH screenshot. `manual.dose`,
+  `dose-overview`, and `dvh` checkpoints now bypass the generic chatter
+  throttle. Needle and other lower-value events remain throttled to prevent
+  redundant captures.
+
+- **F3, duplicated final advice report: confirmed and fixed.** The frontend
+  rendered the server's summary, which already contained strengths/issues/
+  recommendations, and then rendered the same structured advice again. The
+  monitor stop response now renders the server summary once, with structured
+  advice only as a compatibility fallback.
+
+- **F4, monitor timers crossing runs/sessions: confirmed and fixed.**
+  `lastFeedbackAt` and `lastScreenshotAt` are transient UI throttles, not case
+  state. They now reset at monitor start and stop, and when the selected case
+  changes, so one run cannot suppress the first feedback in another run.
+
+- **Training lifecycle event counted as user planning activity: confirmed and
+  fixed.** `training.start` remains in the global UI audit log but is excluded
+  from the active training action list and its final activity counts.
+
+- **B5, `question || description`: not a defect.** Current server payloads use
+  `question`, but `description` is a deliberate backward-compatible fallback
+  for older screenshot/tool payloads. An English comment now documents this
+  choice so a later review does not mistake compatibility code for dead code.
+
+- **Authentication/API-key observation: intentional design, no removal.**
+  `/api/auth/*` is deliberately protected by the deployment-level
+  `BRACHYBOT_API_KEY` before user registration/login. The API key protects
+  network access; the HttpOnly session cookie identifies the account. The
+  browser can supply the deployment key through `?api_key=...` or the existing
+  local configuration mechanism. Removing the guard would turn open
+  registration into an unauthenticated network endpoint. An English comment
+  was added at the registration route to preserve this design rationale.
+
+### Verification
+
+- Focused training-monitor and review regressions: **75 passed**.
+- Full local suite: **161 passed, 1 skipped, 3 warnings**.
+- `py_compile` passed for server support, training routes, auth, and planning
+  pipeline modules.
+- Node `--check` passed for the modified training-monitor and manual-planning
+  scripts.
+- `git diff --check` passed. No live patient/GPU case was run in this audit;
+  deployment still requires restarting the server and performing the normal
+  visual training-monitor smoke test.

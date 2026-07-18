@@ -282,9 +282,19 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
         }
         if (data && data.suggested_screenshot && trainingMonitorState.active) {
             const now = Date.now();
-            if (now - trainingMonitorState.lastScreenshotAt > 45000 && typeof _interceptScreenshot === 'function') {
+            const ss = data.suggested_screenshot;
+            // Dose recomputation is an explicit teaching checkpoint: the
+            // monitor must not hide the corresponding screenshot behind the
+            // generic 45-second chatter throttle. Other event types remain
+            // throttled to avoid filling the chat with redundant captures.
+            const isDoseCheckpoint = type === 'manual.dose'
+                || ss.target === 'dose-overview'
+                || ss.target === 'dvh';
+            if ((isDoseCheckpoint || now - trainingMonitorState.lastScreenshotAt > 45000)
+                && typeof _interceptScreenshot === 'function') {
                 trainingMonitorState.lastScreenshotAt = now;
-                const ss = data.suggested_screenshot;
+                // ``description`` is kept as a compatibility fallback for
+                // older servers; current training payloads use ``question``.
                 setTimeout(() => _interceptScreenshot(ss.target || 'dose-overview', ss.question || ss.description || 'Monitor screenshot'), 500);
             }
         }
@@ -1043,6 +1053,12 @@ async function restoreActiveSessionWorkspace(options = {}) {
     if (_activeApiSessionId() !== sessionAtStart) return null;
 
     state.sessionId = status.session_id || sessionAtStart;
+    if (trainingMonitorState.sessionId !== sessionAtStart) {
+        // Per-session monitor throttles are transient UI state. Reset them
+        // on case switch so one case cannot suppress feedback in another.
+        trainingMonitorState.lastFeedbackAt = 0;
+        trainingMonitorState.lastScreenshotAt = 0;
+    }
     state.brainAvailable = !!status.brain_available;
     const sessionDisplay = document.getElementById('sessionDisplay');
     if (sessionDisplay) sessionDisplay.textContent = state.sessionId;
