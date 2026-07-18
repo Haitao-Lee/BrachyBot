@@ -33,6 +33,28 @@
         target.classList.toggle('error', !!error);
     }
 
+    function setDeploymentAccessKey(value) {
+        const key = String(value || '').trim();
+        if (typeof window.setBrachyBotApiKey === 'function') {
+            window.setBrachyBotApiKey(key);
+        } else {
+            // The UI API wrapper normally provides this helper. Keep the
+            // login shell usable when static assets are temporarily cached
+            // out of order, without persisting the credential to a case.
+            window.BRACHYBOT_API_KEY = key;
+            if (key) sessionStorage.setItem('BRACHYBOT_API_KEY', key);
+            else sessionStorage.removeItem('BRACHYBOT_API_KEY');
+        }
+    }
+
+    function revealDeploymentKeyHelp(message) {
+        const details = document.getElementById('authAccessKeyDetails');
+        const input = document.getElementById('authDeploymentKey');
+        if (details) details.open = true;
+        if (input) input.focus();
+        setStatus(message || 'This server requires its deployment access key before you can sign in or create an account.', true);
+    }
+
     function renderAccount() {
         const host = document.getElementById('accountStatus');
         const name = document.getElementById('accountName');
@@ -91,7 +113,13 @@
     async function authenticated() {
         try {
             const response = await fetch('/api/auth/me', { credentials: 'same-origin' });
-            if (!response.ok) return false;
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                if (response.status === 401 && /api key/i.test(String(data.error || ''))) {
+                    revealDeploymentKeyHelp();
+                }
+                return false;
+            }
             const data = await response.json();
             state.user = data.user;
             state.csrfToken = data.csrf_token;
@@ -108,6 +136,8 @@
     async function submit(mode) {
         const username = document.getElementById('authUsername')?.value.trim();
         const password = document.getElementById('authPassword')?.value || '';
+        const deploymentKey = document.getElementById('authDeploymentKey')?.value || '';
+        if (deploymentKey.trim()) setDeploymentAccessKey(deploymentKey);
         try {
             setStatus(mode === 'register' ? 'Creating account...' : 'Signing in...');
             const data = await request(`/api/auth/${mode}`, { username, password });
@@ -120,7 +150,8 @@
                 window.startBrachyBotApplication();
             }
         } catch (error) {
-            setStatus(error.message, true);
+            if (/api key/i.test(String(error.message || ''))) revealDeploymentKeyHelp(String(error.message));
+            else setStatus(error.message, true);
         }
     }
 
@@ -206,6 +237,9 @@
         document.getElementById('authLogin')?.addEventListener('click', () => submit('login'));
         document.getElementById('authRegister')?.addEventListener('click', () => submit('register'));
         document.getElementById('authPassword')?.addEventListener('keydown', event => {
+            if (event.key === 'Enter') submit('login');
+        });
+        document.getElementById('authDeploymentKey')?.addEventListener('keydown', event => {
             if (event.key === 'Enter') submit('login');
         });
         document.getElementById('accountLogout')?.addEventListener('click', () => api.logout());

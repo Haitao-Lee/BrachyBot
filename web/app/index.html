@@ -66,6 +66,11 @@
         <div class="auth-brand" id="authTitle"><img src="_assets/brachybot-avatar.png" alt="">BrachyBot workspace</div>
         <label>Username<input id="authUsername" autocomplete="username" minlength="3" maxlength="64"></label>
         <label>Password<input id="authPassword" type="password" autocomplete="current-password" minlength="12"></label>
+        <details class="auth-access-key" id="authAccessKeyDetails">
+            <summary>Deployment access key</summary>
+            <label>Access key<input id="authDeploymentKey" type="password" autocomplete="off" spellcheck="false"></label>
+            <p>This is only needed when this server is protected by <code>BRACHYBOT_API_KEY</code>. It is kept for this browser session only.</p>
+        </details>
         <div class="auth-actions"><button id="authLogin" type="button">Sign in</button><button id="authRegister" class="secondary" type="button">Create account</button></div>
         <div id="authStatus" aria-live="polite"></div>
     </div>
@@ -1129,8 +1134,8 @@
 -->
 <script src="static/js/brachybot-chat-core.js?v=9"></script>
 <script src="static/js/brachybot-chat-todo.js?v=9"></script>
-<script src="static/js/brachybot-ui-api.js?v=11"></script>
-<script src="static/js/brachybot-auth.js?v=4"></script>
+<script src="static/js/brachybot-ui-api.js?v=12"></script>
+<script src="static/js/brachybot-auth.js?v=5"></script>
 <script src="static/js/brachybot-viewer-volume.js?v=8"></script>
 <script src="static/js/brachybot-viewer-layout.js?v=6"></script>
 <script src="static/js/brachybot-3d-manual.js?v=12"></script>

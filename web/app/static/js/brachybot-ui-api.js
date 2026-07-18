@@ -407,7 +407,11 @@ function instrumentUIControls() {
     const urlParams = new URLSearchParams(window.location.search);
     const keyFromUrl = urlParams.get('api_key');
     if (keyFromUrl) {
-        localStorage.setItem('BRACHYBOT_API_KEY', keyFromUrl);
+        // A deployment key belongs to this browser session, not to the
+        // durable clinical workspace or an indefinitely persisted profile.
+        // Keep legacy localStorage reads below for existing installations,
+        // but never create another persistent copy from a shared URL.
+        sessionStorage.setItem('BRACHYBOT_API_KEY', keyFromUrl);
         window.BRACHYBOT_API_KEY = keyFromUrl;
         // Clean URL without reload
         const cleanUrl = window.location.pathname;
@@ -416,11 +420,17 @@ function instrumentUIControls() {
     window.setBrachyBotApiKey = function setBrachyBotApiKey(key) {
         const value = String(key || '').trim();
         window.BRACHYBOT_API_KEY = value;
-        if (value) localStorage.setItem('BRACHYBOT_API_KEY', value);
-        else localStorage.removeItem('BRACHYBOT_API_KEY');
+        if (value) sessionStorage.setItem('BRACHYBOT_API_KEY', value);
+        else sessionStorage.removeItem('BRACHYBOT_API_KEY');
     };
     window.fetch = function brachybotFetch(input, init) {
-        const key = window.BRACHYBOT_API_KEY || localStorage.getItem('BRACHYBOT_API_KEY') || '';
+        // The localStorage fallback supports a pre-workspace deployment. New
+        // values are session-scoped above so a copied workstation does not
+        // silently retain a perimeter credential.
+        const key = window.BRACHYBOT_API_KEY
+            || sessionStorage.getItem('BRACHYBOT_API_KEY')
+            || localStorage.getItem('BRACHYBOT_API_KEY')
+            || '';
         const url = typeof input === 'string' ? input : (input && input.url) || '';
         let isApiRequest = url.startsWith(API + '/') || url.startsWith('/api/');
         if (!isApiRequest) {

@@ -5174,6 +5174,40 @@ import, or supported workflow referenced them. The supported implementations
 live in `tool_factory/dose_engine` and `tool_factory/report_generator`.
 Generated export reports remain ignored under `tool_factory/output/reports/`.
 
+## Round 34 protected-login usability and credential scope (2026-07-19)
+
+### Confirmed finding
+
+The deployment-level `BRACHYBOT_API_KEY` boundary was intentionally retained
+for network-exposed instances. However, the browser login screen had no
+discoverable way to provide that key. A protected instance consequently showed
+only `Invalid or missing API key` when a user tried to register or sign in,
+even though account registration itself was otherwise available. This was a
+real usability failure, not a reason to remove the perimeter guard.
+
+### Corrective changes
+
+- Added a collapsed **Deployment access key** field to the account screen.
+  A 401 API-key response opens the field and explains why it is required.
+- New browser-provided keys now use `sessionStorage` instead of creating a
+  durable `localStorage` copy. The request wrapper retains a read-only legacy
+  fallback so existing configured browsers continue to work.
+- The key remains excluded from workspace snapshots and never enters case
+  state, reports, chat context, or agent prompts.
+
+- Replaced the remaining browser-native confirmation prompts in report reset
+  and snapshot restore flows with the existing in-app confirmation dialog.
+  Report restoration now keeps its snapshot list open when the user cancels.
+
+### Verification
+
+- Added a frontend regression test for the protected-login input path and
+  session-scoped credential storage.
+- Added a frontend regression preventing report actions from regressing to
+  browser-native confirmation dialogs.
+- JavaScript syntax checks and the full remote pytest suite are required
+  before release.
+
 ### Verification
 
 - The two previously failing DICOM RT regressions now pass: linked RTSTRUCT /
