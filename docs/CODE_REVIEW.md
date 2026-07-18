@@ -5129,6 +5129,11 @@ preference.
   passed: **25 passed, 3 environment warnings**. JavaScript syntax checks
   passed locally with the bundled Node runtime; the remote host does not
   install Node.
+- The subsequent complete remote suite passed **170 tests**. Two unchanged
+  DICOM RT export regressions remain documented separately: missing RT Dose
+  output and acceptance of a mixed dose grid. The obsolete Round 9 test that
+  demanded infinite animation under a user-selected reduced-motion preference
+  was corrected to test the intended static active treatment instead.
 
 ### Deliberate UX boundary
 
