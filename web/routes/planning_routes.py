@@ -1465,7 +1465,16 @@ def register_planning_routes(app, get_agent):
             training = bucket.setdefault("training", {})
             training["active"] = False
             training["stopped_at"] = time.time()
-            events = list(training.get("events") or bucket.get("events") or [])
+            # ``events`` is initialized for every training run. Do not use a
+            # truthiness fallback here: an empty training run must stay empty
+            # instead of re-counting unrelated global UI events (including
+            # training.start or events from before monitoring began).
+            training_events = training.get("events")
+            events = list(
+                training_events
+                if isinstance(training_events, list)
+                else (bucket.get("events") or [])
+            )
             feedback = list(training.get("feedback") or [])
         counts: Dict[str, int] = {}
         for event in events:

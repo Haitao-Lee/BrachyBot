@@ -40,9 +40,11 @@ def test_training_monitor_frontend_handles_high_value_checkpoints_and_report_lif
     root = Path(__file__).resolve().parents[1]
     ui_api = (root / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
     manual = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    routes = (root / "web/routes/planning_routes.py").read_text(encoding="utf-8")
 
     assert "const isDoseCheckpoint = type === 'manual.dose'" in ui_api
     assert "trainingMonitorState.lastFeedbackAt = 0;" in manual
     assert "data.summary || _formatAdviceReport(data.advice)" in manual
     assert "description`` is kept as a compatibility fallback" in ui_api
-
+    assert "training_events = training.get(\"events\")" in routes
+    assert "events from before monitoring began" in routes
