@@ -77,6 +77,9 @@ vm.runInThisContext(fs.readFileSync('{bridge}', 'utf8'), {{ filename: 'brachybot
   assert.strictEqual(result.success, true);
   assert.strictEqual(activeSessionId, 'new');
   assert(!bodyClasses.has('workspace-transitioning'), 'busy state should clear after completion');
+  // The real bridge intentionally owns deferred UI timers. Explicitly finish
+  // this isolated Node harness once its assertions have completed.
+  process.exit(0);
 }})().catch(error => {{ console.error(error); process.exit(1); }});
 """
     completed = subprocess.run(

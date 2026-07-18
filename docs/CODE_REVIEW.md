@@ -5638,5 +5638,9 @@ GPU workstation or an intermittent network.
 
 - Added source-level regression coverage for the serialization gate, deferred
   save cancellation, lifecycle wrapping, and busy sidebar state.
+- Added a Node.js runtime harness that holds a case-create request open,
+  verifies the second click is rejected as busy, and confirms the first
+  transition restores the selected session and releases the busy state. The
+  harness is skipped only on deployments without Node.js.
 - Node.js syntax check passes for the workspace bridge.
 - Remote `brachytherapy` workspace frontend suite: **16 passed**.
