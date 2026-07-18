@@ -217,7 +217,12 @@ def _drop_ui_bucket(session_id: Optional[str]) -> None:
         _UI_BRIDGE.pop(sid, None)
 
 
-def _append_ui_event(session_id: Optional[str], event: Dict[str, Any]) -> Dict[str, Any]:
+def _append_ui_event(
+    session_id: Optional[str],
+    event: Dict[str, Any],
+    *,
+    include_in_training: bool = True,
+) -> Dict[str, Any]:
     bucket = _ui_bucket(session_id)
     item = dict(event or {})
     item.setdefault("type", "ui.event")
@@ -230,7 +235,7 @@ def _append_ui_event(session_id: Optional[str], event: Dict[str, Any]) -> Dict[s
         if len(events) > _UI_BRIDGE_MAX_EVENTS:
             del events[: len(events) - _UI_BRIDGE_MAX_EVENTS]
         training = bucket.setdefault("training", {})
-        if training.get("active"):
+        if training.get("active") and include_in_training:
             training.setdefault("events", []).append(item)
     return item
 
@@ -245,12 +250,34 @@ def _extract_metric_value(metrics: Dict[str, Any], *names: str) -> Optional[floa
     return None
 
 
-def _metric_as_fraction(value: Optional[float]) -> Optional[float]:
-    """Accept either a 0-1 fraction or a 0-100 percentage metric."""
+def _metric_as_fraction(
+    value: Optional[float],
+    *,
+    units: Optional[str] = None,
+) -> Optional[float]:
+    """Normalize a volume metric while honoring an explicit unit contract.
+
+    Current automatic and manual CTV metrics are stored as fractions. Older
+    persisted payloads may omit the unit and can still use the legacy value
+    heuristic; new writers should always set ``volume_metric_units``.
+    """
     if value is None:
         return None
     value = float(value)
+    normalized_units = str(units or "").strip().lower()
+    if normalized_units in {"fraction", "ratio", "0-1"}:
+        return value
+    if normalized_units in {"percent", "percentage", "0-100"}:
+        return value / 100.0
     return value / 100.0 if value > 1.0 else value
+
+
+def _volume_metric_as_fraction(metrics: Dict[str, Any], name: str) -> Optional[float]:
+    """Read a CTV volume metric using its persisted unit declaration."""
+    return _metric_as_fraction(
+        _extract_metric_value(metrics, name),
+        units=metrics.get("volume_metric_units") if isinstance(metrics, dict) else None,
+    )
 
 
 def _latest_plan_snapshot(agent) -> Dict[str, Any]:
@@ -319,10 +346,10 @@ def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any
     elif prescribed:
         rx_gy = prescribed
 
-    v100 = _metric_as_fraction(_extract_metric_value(metrics, "v100"))
+    v100 = _volume_metric_as_fraction(metrics, "v100")
     d90 = _extract_metric_value(metrics, "d90")
-    v150 = _metric_as_fraction(_extract_metric_value(metrics, "v150"))
-    v200 = _metric_as_fraction(_extract_metric_value(metrics, "v200"))
+    v150 = _volume_metric_as_fraction(metrics, "v150")
+    v200 = _volume_metric_as_fraction(metrics, "v200")
     plan_score = _extract_metric_value(metrics, "plan_score", "score")
 
     if v100 is not None:
@@ -489,7 +516,7 @@ def _training_feedback_for_event(agent, session_id: Optional[str], event: Dict[s
     label = str(event.get("label", ""))
     snapshot = _latest_plan_snapshot(agent)
     metrics = snapshot.get("metrics", {}) or {}
-    v100 = _metric_as_fraction(_extract_metric_value(metrics, "v100"))
+    v100 = _volume_metric_as_fraction(metrics, "v100")
     d90 = _extract_metric_value(metrics, "d90")
     target_context = _source_backed_target_context(agent)
     target_criteria = target_context.get("criteria", {})
@@ -518,8 +545,8 @@ def _training_screenshot_for_event(agent, session_id: Optional[str], event: Dict
     label = str(event.get("label", ""))
     snapshot = _latest_plan_snapshot(agent)
     metrics = snapshot.get("metrics", {}) or {}
-    v100 = _metric_as_fraction(_extract_metric_value(metrics, "v100"))
-    v200 = _metric_as_fraction(_extract_metric_value(metrics, "v200"))
+    v100 = _volume_metric_as_fraction(metrics, "v100")
+    v200 = _volume_metric_as_fraction(metrics, "v200")
     target_criteria = _source_backed_target_context(agent).get("criteria", {})
     v100_min = _metric_as_fraction(_extract_metric_value(target_criteria, "v100_min"))
     v200_max = _metric_as_fraction(_extract_metric_value(target_criteria, "v200_max"))
@@ -890,6 +917,7 @@ def _compute_manual_ai_dose(
 
     metrics: Dict[str, Any] = {
         "prescribed_dose": 1.0,
+        "volume_metric_units": "fraction",
         "manual_preview": True,
         "dose_engine": "dose_unet_spacing1mm",
         "total_seeds": len(norm_seeds),

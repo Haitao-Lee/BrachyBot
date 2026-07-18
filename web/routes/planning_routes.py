@@ -1439,7 +1439,11 @@ def register_planning_routes(app, get_agent):
                 "events": [],
                 "feedback": [],
             }
-        _append_ui_event(session_id, {"type": "training.start", "label": "Training started", "detail": {"goal": goal}})
+        _append_ui_event(
+            session_id,
+            {"type": "training.start", "label": "Training started", "detail": {"goal": goal}},
+            include_in_training=False,
+        )
         checkpoint_ui_bridge(session_id, "training.started")
         return jsonify({
             "success": True,

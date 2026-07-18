@@ -2620,6 +2620,10 @@ class PlanningPipelineTool(BaseTool):
                         }
 
         metrics = {
+            # V100/V150/V200 are ratios in the shared planning contract. Keep
+            # the declaration beside the values so UI training feedback never
+            # has to guess whether a payload uses 0-1 or 0-100 units.
+            "volume_metric_units": "fraction",
             # D metrics in Gy (reference: Zhiyuan calculate_dvh)
             "dmax": max_dose,
             "dmin": min_dose,

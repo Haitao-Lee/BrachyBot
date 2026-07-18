@@ -391,6 +391,11 @@ async function moveManualSeedFromUi(value) {
 
 async function startTrainingMode(goal = 'Monitor planning workflow') {
     trainingMonitorState.sessionId = _activeApiSessionId();
+    // A new monitoring run starts a fresh feedback/screenshot budget. These
+    // timers are UX throttles, not case data, so they must not leak across
+    // stop/start cycles.
+    trainingMonitorState.lastFeedbackAt = 0;
+    trainingMonitorState.lastScreenshotAt = 0;
     trainingMonitorState.goal = goal;
     try {
         const res = await fetch(API + '/training/start', {
@@ -420,7 +425,12 @@ async function stopTrainingMode() {
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
         trainingMonitorState.active = false;
-        addChat('bot-response', _formatAdviceReport(data.advice, data.summary));
+        // The server summary already contains Strengths/Issues/
+        // Recommendations. Rendering it together with structured advice
+        // duplicated the same report in the chat.
+        addChat('bot-response', data.summary || _formatAdviceReport(data.advice));
+        trainingMonitorState.lastFeedbackAt = 0;
+        trainingMonitorState.lastScreenshotAt = 0;
         return data;
     } catch (e) {
         addChat('error', `Monitor mode failed to stop: ${e.message}`);
