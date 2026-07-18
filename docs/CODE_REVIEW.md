@@ -5350,3 +5350,33 @@ pre-workspace installations and one-time import. Once
 and no longer write a competing clinical session store. Removing those shims
 would break cached older browser assets without improving the authenticated
 runtime.
+
+## Round 39 durable chat-driven case rename (2026-07-19)
+
+### Confirmed finding
+
+The `session.rename` UI-controller action updated only the browser-side session
+title and scheduled a UI snapshot save. Durable case titles live in the
+owner-scoped session metadata repository, not in the browser snapshot. A
+rename requested through chat therefore looked successful until the page was
+refreshed or the user signed in again, at which point the server list restored
+the previous title.
+
+### Corrective changes
+
+- Routed chat-driven case renames through the existing authenticated
+  `PATCH /api/sessions/<id>` bridge used by the manual session UI.
+- Reject an empty title or an unavailable durable-workspace bridge instead of
+  silently applying a non-persistent local edit.
+- Keep the in-memory list synchronized only after the server-side rename has
+  succeeded, and surface a structured error if it fails.
+
+### Verification
+
+- Added a Flask integration test proving an authenticated rename is visible in
+  a fresh server session listing.
+- Added a frontend regression test requiring the UI-controller action to call
+  the durable rename bridge.
+- Parsed the changed browser module with Node.js syntax checking.
+- Remote `brachytherapy` full verification passes: **181 passed, 3 environment
+  warnings**. The warnings are SimpleITK SWIG type deprecations during import.
