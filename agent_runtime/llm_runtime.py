@@ -1770,22 +1770,34 @@ class LLMRuntimeMixin:
                 # because the function body containing `yield` makes it
                 # a generator and the yield yields the SSE string
                 # itself, never reaching the stream. We now append to
-                # a shared list that the streaming wrapper drains
-                # between event yields.
+                # a per-call list that the streaming wrapper drains between
+                # event yields.
                 #
-                # The list (self._pending_callback_events) acts as a
-                # bridge between the sync tool call (which can't
+                # The local list acts as a bridge between the sync tool call
+                # (which can't
                 # `yield` because it's a regular function) and the
                 # streaming generator (which can). Tools call the
                 # callback, the callback appends to the list, and
                 # after the tool returns, the streaming wrapper
                 # flushes the list as additional SSE events.
-                if not hasattr(self, '_pending_callback_events'):
-                    self._pending_callback_events = []
-                self._pending_callback_events.clear()
+                #
+                # This must *not* be an Agent-wide buffer. A stopped GPU tool
+                # can finish after a user has started the next turn. Keeping
+                # callbacks on ``self`` allowed those old events to leak into
+                # the next case interaction. Capturing the current turn token
+                # also prevents a cancelled worker from mutating ``steps``.
+                import threading as _callback_threading
+                callback_events = []
+                callback_events_lock = _callback_threading.RLock()
+
+                def append_callback_event(event_type, event_data):
+                    if _cancelled():
+                        return
+                    with callback_events_lock:
+                        callback_events.append((event_type, event_data))
 
                 def tool_progress_callback(message, percent):
-                    self._pending_callback_events.append((
+                    append_callback_event(
                         "progress",
                         {
                             "type": "tool_progress",
@@ -1829,7 +1841,7 @@ class LLMRuntimeMixin:
                         # the events list is drained, the only copy of the step
                         # has been mutated to status='done'.
                         import copy as _copy
-                        self._pending_callback_events.append(("step", _copy.copy(substep_step)))
+                        append_callback_event("step", _copy.copy(substep_step))
                     elif substep_status in ("done", "error"):
                         # Find the matching pending entry we appended
                         # earlier and update it in place.
@@ -1844,12 +1856,12 @@ class LLMRuntimeMixin:
                             match["status"] = substep_status
                             if substep_content:
                                 match["result"] = str(substep_content)[:200]
-                            self._pending_callback_events.append(("step", match))
+                            append_callback_event("step", match)
                         else:
                             step_id_ref[0] += 1
                             substep_step["id"] = step_id_ref[0]
                             steps.append(substep_step)
-                            self._pending_callback_events.append(("step", substep_step))
+                            append_callback_event("step", substep_step)
 
                 tool_result = None  # Track result for metadata
                 # Pre-execution check: if ctv_segmentation is called without
@@ -1940,16 +1952,18 @@ class LLMRuntimeMixin:
                         # Drain any sub-step events the tool emitted
                         # while running. The tool's callbacks are
                         # sync, so they couldn't `yield` directly —
-                        # they appended to _pending_callback_events,
+                        # they appended to this call's event buffer,
                         # and now we flush that list into the SSE
                         # stream. THIS is what makes the todo list
                         # tick through 5 sub-steps in real time.
-                        if self._pending_callback_events:
-                            logger.info(f"[DRAIN-1] Flushing {len(self._pending_callback_events)} pending events for {tool_name}")
-                        for _evt_type, _evt_data in self._pending_callback_events:
+                        with callback_events_lock:
+                            pending_events = list(callback_events)
+                            callback_events.clear()
+                        if pending_events:
+                            logger.info(f"[DRAIN-1] Flushing {len(pending_events)} pending events for {tool_name}")
+                        for _evt_type, _evt_data in pending_events:
                             logger.info(f"[DRAIN-1] Yielding event: type={_evt_type}, tool={_evt_data.get('tool', '?')}, status={_evt_data.get('status', '?')}")
                             yield yield_event(_evt_type, _evt_data)
-                        self._pending_callback_events.clear()
                         if result.success:
                             result_text = result.message
                             # Special handling for web_search - include actual results

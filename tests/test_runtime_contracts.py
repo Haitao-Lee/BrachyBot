@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from agent_runtime.contracts import ContextPackBuilder, RunLedger, RunStatus, ToolCallGateway
 from tool_factory import ToolResult
 
@@ -99,3 +101,12 @@ def test_restored_clarification_is_not_mislabeled_as_interrupted():
 
     assert restored.active_id() is None
     assert restored.history[-1]["status"] == RunStatus.AWAITING_INPUT.value
+
+
+def test_streaming_tool_callbacks_are_turn_local_after_cancellation():
+    """A cancelled worker must not inject progress into the next turn's trace."""
+    source = (Path(__file__).resolve().parents[1] / "agent_runtime" / "llm_runtime.py").read_text(encoding="utf-8")
+
+    assert "self._pending_callback_events" not in source
+    assert "callback_events_lock" in source
+    assert "if _cancelled():\n                        return" in source
