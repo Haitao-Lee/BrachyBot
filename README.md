@@ -470,7 +470,9 @@ Task: "Generate prostate plan"
 - **50+ medical tools**: CTV/OAR segmentation, trajectory, seed planning, dose calculation/evaluation
 - **nnU-Net + VoCo**: Deep learning segmentation models
 - **TotalSegmentator**: 104 anatomical structures segmentation
-- **Rule-based + RL**: Dual seed planning modes
+- **Rule-based + RL**: Dual seed planning modes. RL uses bounded candidate,
+  action, and wall-clock budgets, and ranks complete accumulated AI-dose plans
+  rather than the final seed's local reward.
 - **DICOM RT Export**: linked RT Structure Set, RT Plan, and RT Dose objects
   on the current CT grid. Exports are explicitly marked `UNAPPROVED`; they
   are interoperability artifacts for downstream review, not a treatment

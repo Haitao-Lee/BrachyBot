@@ -5672,3 +5672,43 @@ also explained requests that tried a disabled code executor for a UI task.
 
 - Added unit coverage for disabled-tool omission, explicit opt-in visibility,
   and direct-analysis gating.
+
+## Round 50 RL final-plan ranking and coverage propagation (2026-07-19)
+
+### Confirmed finding
+
+The interactive RL path had finite episode, action, and wall-clock controls;
+the deployed configuration is `100` episodes, `24` actions per episode, and a
+`180` second RL budget. Therefore the reported long runtime was not an
+unbounded loop. The cost is dominated by legitimate AI dose evaluations over
+the configured candidate/action space, with an optional deterministic
+rule-based fallback executed after an RL plan remains below the requested
+coverage.
+
+A separate correctness defect was confirmed. The high-level and low-level
+selection code compared `low_agent.rewards[-1]`, the *last seed's incremental
+reward*, against the best complete plan. In addition, the high-level
+environment discarded the coverage returned for its initial seed. A complete
+plan can therefore be superior while its final seed has a smaller marginal
+reward, and a valid one-seed plan could be misreported as zero coverage. Both
+conditions can lead to unnecessary iterations and an incorrect fallback.
+
+### Corrective changes
+
+- Keep the initial high-level seed's coverage in `HighLevelEnv.step`.
+- Add a final-plan objective that accumulates the stored AI dose maps and
+  computes coverage plus the existing OAR penalty on that complete dose.
+- Use that final objective consistently when retaining hierarchical,
+  low-level, and flat RL candidates; incremental rewards remain exclusively
+  for policy updates.
+- Retain the existing configured execution limits and dose model; this fix
+  does not alter the coordinate chain, obstacle filtering, or the trained
+  model contract.
+
+### Verification
+
+- Added a regression test where two seed dose maps jointly cover the target;
+  the test proves final-plan ranking uses accumulated dose rather than the
+  last seed.
+- Local RL guard and dose-inference suite: **8 passed, 2 skipped, 3 existing
+  SimpleITK import warnings**.

@@ -704,10 +704,12 @@ class HighLevelEnv(gym.Env):
 
             state = low_env.reset()
 
-            total_reward, _ = self.update_planned_position(action, high_level=True)
+            # Keep the initial high-level seed's coverage.  Dropping this
+            # value made a one-seed valid plan look like V100=0 whenever the
+            # low-level action space was exhausted immediately.
+            total_reward, cur_DVH_rate = self.update_planned_position(action, high_level=True)
 
             mask = None
-            cur_DVH_rate = 0.0
             while not low_env.done:
                 try:
                     if self.deadline is not None and time.monotonic() >= self.deadline:
@@ -798,6 +800,53 @@ def DVH2Rewards(plan_res, radiation_volume, target_value, out_highest_dose, cur_
     reward = min(cur_DVH_rate, DVH_rate) + ((cur_DVH_rate - DVH_rate) >= 0) * (1.0 - out_damage)
 
     return reward
+
+
+def evaluate_plan_objective(
+    plan_res,
+    radiation_volume,
+    target_value,
+    in_lowest_dose,
+    out_highest_dose,
+    DVH_rate,
+):
+    """Return the final RL objective and V100-style coverage for a full plan.
+
+    A single seed's incremental reward is useful for updating a policy, but it
+    is not a valid way to rank complete plans: the last seed can have a small
+    marginal gain while the accumulated plan is the best one.  This helper is
+    deliberately based on the stored AI dose maps, so selection uses the same
+    final dose representation that downstream DVH evaluation receives.
+    """
+    total_radiation = np.zeros_like(radiation_volume, dtype=np.float32)
+    for entry in plan_res or []:
+        if not isinstance(entry, (list, tuple)) or len(entry) < 3:
+            continue
+        for single_seed_radiation in entry[2] or []:
+            dose = np.asarray(single_seed_radiation, dtype=np.float32)
+            if dose.shape != total_radiation.shape:
+                raise ValueError(
+                    "RL plan contains a dose map whose geometry differs from the planning grid"
+                )
+            total_radiation += dose
+
+    target_mask = radiation_volume == target_value
+    target_count = int(np.count_nonzero(target_mask))
+    if target_count <= 0:
+        return -np.inf, 0.0
+
+    coverage = float(
+        np.count_nonzero(total_radiation[target_mask] > float(in_lowest_dose))
+    ) / target_count
+    non_target_mask = ~target_mask
+    out_damage = normalized_oar_damage(
+        int(np.count_nonzero(total_radiation[non_target_mask] > float(out_highest_dose))),
+        target_count,
+    )
+    objective = min(coverage, float(DVH_rate)) + (
+        (coverage >= float(DVH_rate)) * (1.0 - out_damage)
+    )
+    return float(objective), coverage
 
 
 def generate_baseline_state_space(low_level_state_spaces, level, idx):
@@ -951,13 +1000,26 @@ def reinforcement_planning(
                     high_agent.record_reward(low_reward)
                     high_agent.finish_episode()
 
-                    if low_agent.rewards and low_agent.rewards[-1] > best_reward:
+                    plan_objective, plan_coverage = evaluate_plan_objective(
+                        plan,
+                        radiation_volume,
+                        target_value,
+                        in_lowest_dose,
+                        out_highest_dose,
+                        DVH_rate,
+                    )
+                    if plan_objective > best_reward:
                         best_plan = plan
                         best_group_idx = group_idx
                         best_low_level_state_space = low_level_state_space
                         best_low_env = low_env
                         best_low_agent = low_agent
-                        best_reward = low_agent.rewards[-1]
+                        best_reward = plan_objective
+                        logger.debug(
+                            "[rl] improved hierarchical plan: objective=%.4f coverage=%.4f",
+                            plan_objective,
+                            plan_coverage,
+                        )
                     
                     low_agent.finish_episode()
                 except DoseInferenceDeadlineExceeded:
@@ -1085,9 +1147,22 @@ def reinforcement_planning(
                         trajectory_def = best_traj[lv][1]
                         planned_res.append([trajectory_def, seeds, single_seed_radiations])
 
-                    if best_low_agent.rewards and best_low_agent.rewards[-1] > best_reward:
-                        best_reward = best_low_agent.rewards[-1]
+                    plan_objective, plan_coverage = evaluate_plan_objective(
+                        planned_res,
+                        radiation_volume,
+                        target_value,
+                        in_lowest_dose,
+                        out_highest_dose,
+                        DVH_rate,
+                    )
+                    if plan_objective > best_reward:
+                        best_reward = plan_objective
                         best_plan = planned_res
+                        logger.debug(
+                            "[rl] improved low-level plan: objective=%.4f coverage=%.4f",
+                            plan_objective,
+                            plan_coverage,
+                        )
 
                     del cur_radiation
                     best_low_agent.finish_episode()
@@ -1120,9 +1195,22 @@ def reinforcement_planning(
                     high_agent.record_reward(low_reward)
                     high_agent.finish_episode()
 
-                    if low_agent.rewards and low_agent.rewards[-1] > best_reward:
-                        best_reward = low_agent.rewards[-1]
+                    plan_objective, plan_coverage = evaluate_plan_objective(
+                        plan,
+                        radiation_volume,
+                        target_value,
+                        in_lowest_dose,
+                        out_highest_dose,
+                        DVH_rate,
+                    )
+                    if plan_objective > best_reward:
+                        best_reward = plan_objective
                         best_plan = plan
+                        logger.debug(
+                            "[rl] improved flat plan: objective=%.4f coverage=%.4f",
+                            plan_objective,
+                            plan_coverage,
+                        )
                     low_agent.finish_episode()
                 except DoseInferenceDeadlineExceeded:
                     logger.warning("[rl] Flat RL stopped at the DoseUNet deadline")
