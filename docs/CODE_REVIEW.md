@@ -5030,3 +5030,19 @@ boundary.
   New case, switching between two cases, restored transcript, and sending a
   short message after switching. The server should be restarted before that
   smoke test so the browser receives the new script cache versions.
+
+### Remote verification update
+
+- On the remote `brachytherapy` environment, the complete pytest suite finished
+  with **164 passed, 2 failed, 17 warnings**.
+- The new durable-session frontend regression test, workspace/auth/store tests,
+  and the other reviewed regression tests passed. The two failures are the
+  pre-existing DICOM RT export checks in
+  `tests/test_review_round6_regressions.py`:
+  `test_dicom_rt_export_writes_linked_objects_on_one_grid` does not emit the
+  expected `RTDoseStorage` object, and
+  `test_dicom_rt_export_rejects_mixed_geometry` accepts a mismatched dose grid.
+  They are outside the session UI change and were intentionally not altered in
+  this round.
+- Remote Python compilation, JavaScript syntax checks, and `git diff --check`
+  passed. The remote worktree is clean and matches commit `1d0c7d0`.
