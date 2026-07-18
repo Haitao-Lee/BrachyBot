@@ -39,6 +39,15 @@ def test_workspace_delete_uses_custom_confirmation_and_cancels_active_stream():
     assert "window.cancelActiveChatTurn" in chat_todo
 
 
+def test_session_switch_waits_for_server_chat_abort_acknowledgement():
+    """A cancelled turn must finish targeting its old case before switching."""
+    chat_todo = read("web/app/static/js/brachybot-chat-todo.js")
+    stop_block = chat_todo.split("if (window._chatTurnActive)", 1)[1].split("const text =", 1)[0]
+
+    assert "await fetch(API + '/chat/abort'" in stop_block
+    assert "Chat abort was not acknowledged" in stop_block
+
+
 def test_chat_snapshot_is_redrawn_after_restore():
     workspace = read("web/app/static/js/brachybot-workspace.js")
     assert "Array.isArray(chat.messages)" in workspace

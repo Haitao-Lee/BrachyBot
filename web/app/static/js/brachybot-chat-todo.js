@@ -874,7 +874,16 @@ async function sendChat(prefill, options) {
         window._chatTurnActive = false;
         window._chatStreaming = false;
         setStreamingState(false);
-        try { fetch(API + '/chat/abort', { method: 'POST' }); } catch (_) {}
+        try {
+            // Session changes await this branch. Confirm that the server has
+            // cancelled the old case before its signed-cookie selection can
+            // move to another workspace.
+            const response = await fetch(API + '/chat/abort', { method: 'POST' });
+            if (!response.ok) console.warn('Chat abort was not acknowledged:', response.status);
+        } catch (_) {
+            // The local abort and progress cleanup have already completed.
+            // A disconnected browser is still protected by the turn token.
+        }
         return;
     }
 
