@@ -56,6 +56,15 @@ def test_llm_case_rename_uses_the_durable_session_api():
     assert "api/sessions/${encodeURIComponent(id)}" in workspace
 
 
+def test_manual_case_rename_waits_for_durable_confirmation():
+    """A rejected lease write must not leave a fictional title in the sidebar."""
+    chat = read("web/app/static/js/brachybot-chat-core.js")
+    block = chat.split("const saveRename = async () =>", 1)[1].split("input.addEventListener", 1)[0]
+
+    assert block.index("try {") < block.index("session.title = newTitle;")
+    assert "session.title = currentTitle;" in block
+
+
 def test_active_progress_animation_stops_only_for_terminal_or_reduced_motion_states():
     todo = read("web/app/static/js/brachybot-chat-todo.js")
     status_css = read("web/app/static/css/brachybot-chat-status.css")
