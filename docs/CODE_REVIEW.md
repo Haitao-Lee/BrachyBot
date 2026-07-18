@@ -5168,12 +5168,11 @@ the CT planning grid.
 This exporter remains explicitly **UNAPPROVED** and does not claim to replace
 a treatment-planning system or clinical sign-off.
 
-The RTX workspace may still contain old untracked `dose_exporter.py` and
-`report_generator.py` duplicates from an earlier deployment. They are not
-registered by `BrachyAgent` and the supported implementations live in
-`tool_factory/dose_engine` and `tool_factory/report_generator`; they were
-intentionally not promoted into the release. Generated export reports remain
-ignored under `tool_factory/output/reports/`.
+The obsolete untracked `dose_exporter.py` and `report_generator.py` duplicates
+from an earlier RTX deployment were removed after confirming that no registry,
+import, or supported workflow referenced them. The supported implementations
+live in `tool_factory/dose_engine` and `tool_factory/report_generator`.
+Generated export reports remain ignored under `tool_factory/output/reports/`.
 
 ### Verification
 
