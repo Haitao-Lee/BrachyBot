@@ -2277,11 +2277,29 @@ function _executeUIActionRaw(a) {
         if (target === 'session.new') { newChat(); return; }
         if (target === 'session.switch') { switchSession(value); return; }
         if (target === 'session.rename') {
-            if (activeSessionId && sessions[activeSessionId]) {
-                sessions[activeSessionId].title = value;
-                saveSessions(); renderSessionList();
+            const title = String(value || '').trim();
+            if (!activeSessionId || !sessions[activeSessionId]) {
+                return { success: false, error: 'No active case is available to rename.' };
             }
-            return;
+            if (!title) {
+                return { success: false, error: 'A case title is required.' };
+            }
+            // Case metadata belongs to the durable session repository, not
+            // the browser UI snapshot. Updating only `sessions` looked right
+            // until refresh, then the server list restored the old title.
+            if (typeof window.renameServerSession !== 'function') {
+                return { success: false, error: 'Durable case renaming is unavailable.' };
+            }
+            return window.renameServerSession(activeSessionId, title)
+                .then(() => {
+                    if (sessions[activeSessionId]) sessions[activeSessionId].title = title;
+                    renderSessionList();
+                    return { success: true, title };
+                })
+                .catch(error => ({
+                    success: false,
+                    error: String(error?.message || error || 'Unable to rename the case.'),
+                }));
         }
         if (target === 'session.delete') { deleteSession(value, { skipConfirm: true }); return; }
         if (target === 'session.clear_all') { clearLocalChatData({ skipConfirm: true }); return; }

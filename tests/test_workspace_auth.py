@@ -78,6 +78,26 @@ def test_session_trash_restore_and_cookie_logout(tmp_path):
     assert client.get("/api/sessions").status_code == 401
 
 
+def test_session_rename_persists_for_the_authenticated_case(tmp_path):
+    """A case rename must survive a fresh server-side session listing."""
+    app = _app(tmp_path)
+    client = app.test_client()
+    created = _register(client, "rename_user")
+    session_id = created["active_session_id"]
+
+    response = client.patch(
+        f"/api/sessions/{session_id}",
+        json={"title": "Pancreas follow-up"},
+        headers={"X-CSRF-Token": created["csrf_token"]},
+    )
+    assert response.status_code == 200
+    assert response.get_json()["session"]["title"] == "Pancreas follow-up"
+
+    sessions = client.get("/api/sessions").get_json()["sessions"]
+    restored = next(item for item in sessions if item["id"] == session_id)
+    assert restored["title"] == "Pancreas follow-up"
+
+
 def test_password_change_requires_csrf_and_updates_login(tmp_path):
     app = _app(tmp_path)
     client = app.test_client()

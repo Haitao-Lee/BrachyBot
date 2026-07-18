@@ -46,6 +46,16 @@ def test_chat_snapshot_is_redrawn_after_restore():
     assert "sessions[activeSessionId].pending = false" in workspace
 
 
+def test_llm_case_rename_uses_the_durable_session_api():
+    """A chat-driven rename must survive refresh just like a manual rename."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+
+    assert "window.renameServerSession(activeSessionId, title)" in ui_api
+    assert "Durable case renaming is unavailable" in ui_api
+    assert "api/sessions/${encodeURIComponent(id)}" in workspace
+
+
 def test_active_progress_animation_stops_only_for_terminal_or_reduced_motion_states():
     todo = read("web/app/static/js/brachybot-chat-todo.js")
     status_css = read("web/app/static/css/brachybot-chat-status.css")
