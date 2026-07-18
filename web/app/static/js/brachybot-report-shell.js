@@ -894,18 +894,48 @@ window.Report = (function () {
 
     // ---------- Modal helper ----------
     function _showModal(title, body) {
+        _closeModal();
+        const previouslyFocused = document.activeElement;
         const ov = document.createElement('div');
-        ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
-        ov.innerHTML = `<div style="background:var(--bg-2,#1e293b);border:1px solid var(--card-border,#334155);border-radius:8px;max-width:600px;width:90%;max-height:80vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,0.5);color:var(--text,#e2e8f0);">
-            <div style="padding:12px 16px;border-bottom:1px solid var(--card-border,#334155);display:flex;justify-content:space-between;align-items:center;">
-                <b style="font-size:0.85rem;color:var(--text,#e2e8f0);">${_escHtml(title)}</b>
-                <button onclick="this.closest('[data-rp-modal]').remove()" style="background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--text-dim,#94a3b8);">✕</button>
+        ov.className = 'rp-modal-overlay';
+        ov.innerHTML = `<section class="rp-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="rp-modal-title" tabindex="-1">
+            <div class="rp-modal-header">
+                <b id="rp-modal-title" class="rp-modal-title">${_escHtml(title)}</b>
+                <button type="button" class="rp-modal-close" aria-label="Close dialog">✕</button>
             </div>
-            <div style="padding:16px;color:var(--text,#e2e8f0);">${body}</div>
-        </div>`;
+            <div class="rp-modal-body">${body}</div>
+        </section>`;
         ov.setAttribute('data-rp-modal', '1');
-        ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+        const dialog = ov.querySelector('.rp-modal-dialog');
+        const close = (immediate = false) => {
+            if (!ov.isConnected || ov.dataset.closing) return;
+            ov.dataset.closing = '1';
+            ov.classList.remove('is-open');
+            ov.classList.add('is-closing');
+            const remove = () => {
+                if (ov.isConnected) ov.remove();
+                if (previouslyFocused && typeof previouslyFocused.focus === 'function') previouslyFocused.focus();
+            };
+            const prefersReducedMotion = typeof window.matchMedia === 'function'
+                && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (immediate || prefersReducedMotion) remove();
+            else window.setTimeout(remove, 160);
+        };
+        ov.querySelector('.rp-modal-close').addEventListener('click', () => close());
+        ov.addEventListener('click', (event) => { if (event.target === ov) close(); });
+        ov.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') { event.preventDefault(); close(); }
+            if (event.key !== 'Tab') return;
+            const focusable = [...dialog.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+            if (!focusable.length) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        });
         document.body.appendChild(ov);
+        window.requestAnimationFrame(() => { ov.classList.add('is-open'); dialog.focus(); });
+        return close;
     }
     function _closeModal() { document.querySelectorAll('[data-rp-modal]').forEach(e => e.remove()); }
 

@@ -1007,13 +1007,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     outline-offset: 2px;
 }
 
-/* Accessibility: when the OS "reduce motion" is enabled, shorten
-   transitions but KEEP essential feedback animations running.
-   The previous rule used animation-duration:0.01ms !important
-   which killed ALL animations — spinner, breathing, step glow —
-   leaving zero visual feedback. */
+/* Accessibility: honor the operating system's reduced-motion preference.
+   The responsive stylesheet keeps active work legible with a static highlight;
+   do not re-enable a single animation cycle here, otherwise an active todo
+   appears to pulse once and then incorrectly looks stalled. */
 @media (prefers-reduced-motion: reduce) {
-    /* Slow down but don't kill these animations */
     .chat-todo-item.active,
     .chat-todo-item.active .chat-todo-label,
     .chat-todo-item.active::before,
@@ -1021,8 +1019,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     .step-status.pending::before,
     .step-block:has(.step-status.pending),
     .spinner-ring,
-    .spinner-ring--sm { animation-duration: 2.4s !important; }
-    * { transition-duration: 0.1s !important; }
+    .spinner-ring--sm {
+        animation: none !important;
+        transition: none !important;
+    }
+    * { transition-duration: 0.01ms !important; }
 }
 
 /* =============================================================================
@@ -1249,3 +1250,38 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .rp-export-item:first-child { border-top: none; }
 .rp-export-item:hover { background: var(--bg-3); }
+
+/* Report overlays share the application's restrained workstation language:
+   short opacity/scale transitions, no layout movement, and a clear focus ring
+   for keyboard users. The JS removes the overlay only after the exit state. */
+.rp-modal-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+    padding: 1.25rem; background: rgba(5, 10, 20, 0.62);
+    opacity: 0; transition: opacity 150ms ease;
+}
+.rp-modal-overlay.is-open { opacity: 1; }
+.rp-modal-overlay.is-closing { opacity: 0; pointer-events: none; }
+.rp-modal-dialog {
+    width: min(600px, 100%); max-height: min(80vh, 720px); overflow: auto;
+    background: var(--bg-2); border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm); box-shadow: 0 18px 54px rgba(0,0,0,0.44);
+    color: var(--text); transform: translateY(6px) scale(0.985);
+    transition: transform 150ms ease;
+}
+.rp-modal-overlay.is-open .rp-modal-dialog { transform: translateY(0) scale(1); }
+.rp-modal-overlay.is-closing .rp-modal-dialog { transform: translateY(4px) scale(0.99); }
+.rp-modal-header {
+    padding: 0.75rem 1rem; border-bottom: 1px solid var(--card-border);
+    display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
+}
+.rp-modal-title { font-size: 0.85rem; color: var(--text); }
+.rp-modal-close {
+    width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--control-r);
+    background: transparent; color: var(--text-dim); cursor: pointer; font-size: 1.1rem;
+}
+.rp-modal-close:hover { background: var(--bg-3); color: var(--text); }
+.rp-modal-close:focus-visible, .rp-modal-dialog:focus-visible {
+    outline: 2px solid var(--primary); outline-offset: 2px;
+}
+.rp-modal-body { padding: 1rem; color: var(--text); }

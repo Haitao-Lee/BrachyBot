@@ -192,15 +192,9 @@
         transition-duration: 0.01ms !important;
     }
 
-    /*
-     * An active Progress row is a live execution status, not decoration.
-     * Keep its breathing indicator running until the backend marks that
-     * step done or failed. Without this override the global reduced-motion
-     * rule above leaves the row with exactly one animation cycle, making a
-     * still-running task look stalled. The motion is limited to the compact
-     * status rows and remains intentionally subtle; all other animations
-     * still honor the user's reduced-motion preference.
-     */
+    /* Preserve a clear active state without overriding an explicit operating
+       system request for less motion. A static highlight communicates the
+       same live status without a perpetual pulse. */
     .chat-todo-item.active,
     .chat-todo-item.active .chat-todo-label,
     .chat-todo-item.active::before,
@@ -208,7 +202,9 @@
     .chat-todo-item.active .chat-todo-gpu,
     .pipeline-step.active,
     .pipeline-step.active .pipeline-step-dot {
-        animation-iteration-count: infinite !important;
-        animation-play-state: running !important;
+        animation: none !important;
+        transition: none !important;
     }
+    .chat-todo-item.active { box-shadow: inset 0 0 0 1px var(--primary) !important; }
+    .chat-todo-item.active::before { opacity: 1 !important; }
 }
