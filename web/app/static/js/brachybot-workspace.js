@@ -1,5 +1,8 @@
 /* Durable case workspace bridge: server sessions own all clinical state. */
 (function () {
+    // This flag lets compatibility shims in the older chat script route
+    // direct global calls to the durable workspace implementation.
+    window.__serverWorkspaceReady = true;
     let revision = null;
     let saveTimer = null;
     let restoring = false;
@@ -184,9 +187,12 @@
                 try { _updateReportPreview(); } catch (_) {}
             }
             const chat = snapshot.chat || {};
-            if (chat.messages && typeof sessions !== 'undefined' && activeSessionId && sessions[activeSessionId]) {
+            if (Array.isArray(chat.messages) && typeof sessions !== 'undefined' && activeSessionId && sessions[activeSessionId]) {
+                // Pending is a transient browser presentation state.  Never
+                // resurrect an old spinner after a reload or case switch.
                 sessions[activeSessionId].messages = chat.messages;
-                sessions[activeSessionId].pending = !!chat.pending;
+                sessions[activeSessionId].pending = false;
+                if (typeof loadSessionChat === 'function') loadSessionChat(activeSessionId);
             }
             renderRecoveryNotice(snapshot.operation);
             if (typeof setViewerLayout === 'function' && state?.viewerSettings?.layout) setViewerLayout(state.viewerSettings.layout);
@@ -220,6 +226,29 @@
     function scheduleWorkspaceSave(reason) {
         if (saveTimer) clearTimeout(saveTimer);
         saveTimer = setTimeout(() => persistWorkspace(reason || 'ui.changed'), 700);
+    }
+
+    async function prepareSessionChange() {
+        const active = !!window._chatTurnActive || !!window._chatStreaming
+            || (typeof isStreaming !== 'undefined' && isStreaming);
+        const pendingFollowUps = (Array.isArray(window._pendingHiddenChats)
+            && window._pendingHiddenChats.length > 0) || !!window._hiddenChatFlushRunning;
+        if (!active && !pendingFollowUps) return true;
+        // Switching cases is an explicit user action. Stop the current
+        // response first so its late SSE events cannot mutate the next case.
+        if (typeof window.cancelActiveChatTurn === 'function') {
+            await window.cancelActiveChatTurn('Session changed');
+            return true;
+        }
+        return false;
+    }
+
+    function confirmWorkspaceAction(messageZh, messageEn) {
+        if (typeof _confirmAction === 'function') return _confirmAction(messageZh, messageEn);
+        // Never fall back to the browser-native confirm dialog: it is
+        // visually inconsistent and can be blocked by embedded browsers.
+        console.error('[workspace] Confirmation UI is unavailable; action cancelled.');
+        return Promise.resolve(false);
     }
 
     async function loadServerSessions() {
@@ -263,7 +292,7 @@
     };
 
     window.newChat = async function newChat() {
-        if (typeof _canChangeChatSession === 'function' && !_canChangeChatSession()) return;
+        if (!await prepareSessionChange()) return;
         if (typeof flushActiveReportState === 'function') flushActiveReportState();
         await persistWorkspace('session.switching');
         if (typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
@@ -281,7 +310,7 @@
 
     window.switchSession = async function switchSession(id) {
         document.getElementById('sessionSidebar')?.classList.remove('mobile-open');
-        if (id === activeSessionId || !sessions[id] || (typeof _canChangeChatSession === 'function' && !_canChangeChatSession())) return;
+        if (id === activeSessionId || !sessions[id] || !(await prepareSessionChange())) return;
         if (typeof flushActiveReportState === 'function') flushActiveReportState();
         await persistWorkspace('session.switching');
         if (typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
@@ -299,8 +328,15 @@
     };
 
     window.deleteSession = async function deleteSession(id, options = {}) {
-        if (!sessions[id] || (typeof _canChangeChatSession === 'function' && !_canChangeChatSession())) return;
-        if (options.skipConfirm !== true && !window.confirm(`Move case "${sessions[id].title || id}" to the recycle bin?`)) return;
+        if (!sessions[id] || !await prepareSessionChange()) return;
+        if (options.skipConfirm !== true) {
+            const title = sessions[id].title || id;
+            const confirmed = await confirmWorkspaceAction(
+                `确定要将病例“${title}”移入回收站吗？`,
+                `Move case "${title}" to the recycle bin?`,
+            );
+            if (!confirmed) return;
+        }
         if (id === activeSessionId && typeof flushActiveReportState === 'function') flushActiveReportState();
         await persistWorkspace('session.delete');
         if (id === activeSessionId && typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
@@ -395,7 +431,12 @@
     };
 
     window.purgeTrashedSession = async function purgeTrashedSession(id, title) {
-        if (!window.confirm(`Permanently delete "${title || 'this case'}"? This cannot be undone.`)) return;
+        const label = title || 'this case';
+        const confirmed = await confirmWorkspaceAction(
+            `确定要永久删除“${label}”吗？此操作无法撤销。`,
+            `Permanently delete "${label}"? This cannot be undone.`,
+        );
+        if (!confirmed) return;
         const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/purge`, { method: 'DELETE' });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Unable to permanently delete case');

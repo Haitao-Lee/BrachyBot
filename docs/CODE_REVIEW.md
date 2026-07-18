@@ -4973,3 +4973,60 @@ boundary.
 - `git diff --check` passed. No live patient/GPU case was run in this audit;
   deployment still requires restarting the server and performing the normal
   visual training-monitor smoke test.
+
+## Round 30 durable-session UI regression (2026-07-18)
+
+### Confirmed findings
+
+- **Session lifecycle split-brain was real.** `brachybot-chat-core.js`
+  declared top-level `loadSessions` and `saveSessions` functions for the old
+  browser-local transcript. `brachybot-workspace.js` later assigned
+  `window.loadSessions` and `window.saveSessions`, but direct calls from the
+  original script continued to use the old global bindings. The result was a
+  server-restored viewer paired with a localStorage session list/transcript;
+  chat history disappeared after reload and chat requests could carry a stale
+  browser session identifier.
+- **The deletion popup regression was real.** The durable workspace delete and
+  permanent-delete handlers still called the browser-native `window.confirm`,
+  bypassing the application's existing localized confirmation modal.
+- **A stuck chat turn blocked case navigation.** New/switch/delete returned
+  silently while a streaming turn was active. This made a delayed or failed
+  response look like New and the session list were non-functional.
+- **Chat restore was incomplete at the presentation boundary.** The snapshot
+  data was assigned to the in-memory session but the chat renderer was not
+  guaranteed to redraw at that point, and a persisted pending flag could
+  resurrect a stale spinner after reload.
+
+### Corrective changes
+
+- Added an explicit durable-workspace readiness flag and compatibility shims
+  so legacy direct calls route to server session loading and workspace saves.
+  Main initialization now calls `window.loadSessions` explicitly, ensuring it
+  cannot accidentally read localStorage.
+- Every chat transcript mutation schedules a durable workspace checkpoint.
+  Applying a workspace snapshot restores and redraws the selected transcript;
+  transient `pending` state is cleared so an old Thinking indicator cannot be
+  resurrected.
+- Session navigation now cancels the active chat turn through the same abort
+  path as the Stop control before changing the selected case. Late SSE events
+  therefore cannot write into the next workspace. Queued hidden screenshot
+  follow-ups are discarded during the same transition, so a visual-analysis
+  request from the old case cannot start in the new one.
+- Session deletion and recycle-bin purge now use the existing localized
+  in-app confirmation modal. If that UI module is unavailable, the operation
+  fails closed instead of showing a browser-native dialog.
+- Bumped frontend cache versions for the changed scripts and added static
+  regression checks covering boot routing, transcript persistence, custom
+  confirmation, cancellation, and post-restore chat redraw.
+
+### Verification
+
+- Node syntax checks passed for all four changed JavaScript modules.
+- Python bytecode compilation passed for the web package; the local pytest
+  executable was unavailable because the desktop environment has an invalid
+  global `PYTHONHOME`, so the full pytest suite must be run in the project
+  environment before deployment.
+- `git diff --check` passed. A browser smoke test must verify: delete modal,
+  New case, switching between two cases, restored transcript, and sending a
+  short message after switching. The server should be restarted before that
+  smoke test so the browser receives the new script cache versions.

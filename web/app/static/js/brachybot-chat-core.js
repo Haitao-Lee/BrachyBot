@@ -40,6 +40,13 @@ function removeSessionScopedLocalState(sessionId) {
 }
 
 function loadSessions() {
+    // The durable workspace bridge is loaded after this legacy script.  A
+    // direct call to this top-level function must still reach the server
+    // implementation; assigning window.loadSessions alone does not replace
+    // this script's global binding in all browsers.
+    if (window.__serverWorkspaceReady && typeof window.loadServerSessions === 'function') {
+        return window.loadServerSessions();
+    }
     // PERSISTENT + AUTO-NEW (2026-06-15): the user wants two
     // apparently-opposite things:
     //   (a) fresh page load should NOT show stale conversations
@@ -115,6 +122,13 @@ function ensurePendingSession() {
 }
 
 function saveSessions() {
+    // Clinical session state is server-owned.  Keep this legacy function as
+    // a compatibility shim for older call sites, but never write a second,
+    // divergent browser-local session store once the workspace bridge is up.
+    if (window.__serverWorkspaceReady && typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('chat.changed');
+        return;
+    }
     localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
     localStorage.setItem(ACTIVE_KEY, activeSessionId);
     uiDebugLog(`[Session] Saved ${Object.keys(sessions).length} sessions, active=${activeSessionId}`);
@@ -215,6 +229,9 @@ function _canChangeChatSession() {
 }
 
 async function newChat() {
+    if (window.__serverWorkspaceReady && typeof window.newChat === 'function' && window.newChat !== newChat) {
+        return window.newChat();
+    }
     if (!_canChangeChatSession()) return;
     if (typeof flushActiveReportState === 'function') flushActiveReportState();
     const id = generateSessionId();
@@ -231,6 +248,9 @@ async function newChat() {
 }
 
 async function switchSession(id) {
+    if (window.__serverWorkspaceReady && typeof window.switchSession === 'function' && window.switchSession !== switchSession) {
+        return window.switchSession(id);
+    }
     document.getElementById('sessionSidebar')?.classList.remove('mobile-open');
     if (id === activeSessionId || !sessions[id] || !_canChangeChatSession()) return;
     if (typeof flushActiveReportState === 'function') flushActiveReportState();
@@ -245,6 +265,9 @@ async function switchSession(id) {
 }
 
 async function deleteSession(id, options = {}) {
+    if (window.__serverWorkspaceReady && typeof window.deleteSession === 'function' && window.deleteSession !== deleteSession) {
+        return window.deleteSession(id, options);
+    }
     if (Object.keys(sessions).length <= 1 || !sessions[id] || !_canChangeChatSession()) return;
     if (options.skipConfirm !== true) {
         const prompt = `Delete session "${sessions[id].title || id}"? This cannot be undone.`;
@@ -462,6 +485,11 @@ function saveSessionMessage(type, content, steps, timestamp) {
         renderSessionList();
     }
     saveSessions();
+    // Persist the transcript through the durable case workspace even when a
+    // legacy caller reaches the old saveSessions binding directly.
+    if (window.__serverWorkspaceReady && typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('chat.message');
+    }
 }
 
 // ----- Chat message rendering -----
