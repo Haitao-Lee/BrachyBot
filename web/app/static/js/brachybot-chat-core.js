@@ -345,17 +345,24 @@ function startRenameSession(id, event) {
     // Handle save on Enter or blur
     const saveRename = async () => {
         const newTitle = input.value.trim() || 'Untitled';
-        session.title = newTitle;
         try {
             if (typeof renameServerSession === 'function') await renameServerSession(id, newTitle);
-            else saveSessions();
+            else {
+                // Legacy localStorage mode has no server metadata to confirm.
+                session.title = newTitle;
+                saveSessions();
+            }
         } catch (error) {
+            // Do not retain an optimistic title when the durable repository
+            // rejects the write because another browser owns the edit lease.
+            session.title = currentTitle;
+            renderSessionList();
             console.warn('Case rename failed:', error);
             return;
         }
         renderSessionList();
         if (id === activeSessionId) {
-            document.getElementById('chatSessionTitle').textContent = newTitle;
+            document.getElementById('chatSessionTitle').textContent = session.title || newTitle;
         }
     };
 
