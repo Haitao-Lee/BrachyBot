@@ -1482,6 +1482,12 @@ clinical planning.
   safe read-only calls within the same workspace revision. Planning,
   segmentation, mutation, export, and viewer-editing tools always execute
   explicitly and are never replayed from a cache.
+- **Truthful motion and dialogs:** Active workflow rows use a subtle infinite
+  pulse only while their run state is active. Done, failed, cancelled, and
+  restored rows remove timers and motion deterministically. Systems requesting
+  reduced motion receive a stable active highlight instead. Report dialogs use
+  focus management, Escape, backdrop dismissal, and a short non-blocking
+  transition rather than browser-native modal interruption.
 
 The context budget may be configured per agent without changing the clinical
 pipeline:

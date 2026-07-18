@@ -873,34 +873,25 @@
     text-align: center;
 }
 
-/* Active — high-contrast: blue background tint + bright text + pulsing
-   left bar + filled dot with breathing glow + WHOLE-ITEM SCALE
-   PULSE so the user's eye lands there even when scanning fast.
-   The 1.0 -> 1.25 scale + 0.6->1.0 background opacity pulse is
-   obvious enough to feel "alive" even at a glance. transform-origin
-   centers the pulse on the left edge so the text doesn't slide. */
+/* Active work gets a durable but quiet pulse.  Do not animate text size or
+   whole-row geometry: long planning traces must remain easy to scan without
+   adjacent rows jumping while an operation is still running. */
 .chat-todo-item.active {
     color: var(--primary-ink);
     font-weight: 600;
-    background: linear-gradient(90deg, rgba(14,165,233,0.30) 0%, rgba(14,165,233,0.08) 100%);
-    /* Pulsing glow — the primary "breathing" visual. box-shadow
-       is NOT affected by overflow:hidden or transition conflicts. */
-    animation: todo-active-breathe 1.4s ease-in-out infinite;
-    animation-play-state: running !important;
-}
-/* Font-size pulse on label — secondary effect */
-.chat-todo-item.active .chat-todo-label {
-    animation: todo-label-breathe 1.4s ease-in-out infinite;
+    background: linear-gradient(90deg, rgba(14,165,233,0.20) 0%, rgba(14,165,233,0.04) 100%);
+    animation: todo-active-breathe 1.8s ease-in-out infinite;
     animation-play-state: running !important;
 }
 .chat-todo-item.active::before {
     background: var(--primary);
-    box-shadow: 0 0 8px 2px rgba(14,165,233,0.8);
-    animation: todo-bar-breathe 1.6s ease-in-out infinite;
+    box-shadow: 0 0 6px 1px rgba(14,165,233,0.6);
+    animation: todo-bar-breathe 1.8s ease-in-out infinite;
     animation-play-state: running !important;
 }
 
-/* Center dot — sized for the new font */
+/* Center dot stays inside its fixed footprint, so elapsed-time updates do not
+   shift the row while the operation remains active. */
 .chat-todo-dot {
     width: 9px; height: 9px;
     border-radius: 50%;
@@ -916,8 +907,8 @@
     color: #fff;
     font-size: 0.6rem;
     line-height: 1;
-    transform: scale(1.15);
-    animation: todo-dot-breathe 1.4s ease-in-out infinite;
+    transform: scale(1.05);
+    animation: todo-dot-breathe 1.8s ease-in-out infinite;
     animation-play-state: running !important;
 }
 .chat-todo-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -956,7 +947,7 @@
 }
 .chat-todo-item.active .chat-todo-gpu {
     visibility: visible;
-    animation: todo-gpu-pulse 1.4s ease-in-out infinite;
+    animation: todo-gpu-pulse 1.8s ease-in-out infinite;
 }
 .chat-todo-gpu.cpu {
     background: rgba(234, 179, 8, 0.12);
@@ -975,45 +966,23 @@
 .chat-todo.folded .chat-todo-list { display: none; }
 .chat-todo.folded .chat-todo-header { margin-bottom: 0; }
 
-/* Breathing keyframes — stronger glow on both the left bar and the
-   dot so the active step is unmistakable. Modeled on the soft
-   cyan pulse used by Claude Code's todo list. */
+/* Breathing keyframes are intentionally limited to opacity and shadow. */
 @keyframes todo-bar-breathe {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.0); opacity: 0.6; }
-    50%      { box-shadow: 0 0 14px 3px rgba(14, 165, 233, 0.9); opacity: 1.0; }
+    0%, 100% { box-shadow: 0 0 2px 0 rgba(14, 165, 233, 0.15); opacity: 0.7; }
+    50%      { box-shadow: 0 0 9px 2px rgba(14, 165, 233, 0.65); opacity: 1.0; }
 }
 @keyframes todo-dot-breathe {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.0); transform: scale(1.0); }
-    50%      { box-shadow: 0 0 14px 4px rgba(14, 165, 233, 0.9); transform: scale(1.4); }
+    0%, 100% { box-shadow: 0 0 1px 0 rgba(14, 165, 233, 0.1); transform: scale(1.0); }
+    50%      { box-shadow: 0 0 8px 2px rgba(14, 165, 233, 0.65); transform: scale(1.16); }
 }
-/* Whole-item breathing scale (1.0 -> 1.25 -> 1.0). The 1.25
-   peak is dramatic enough to be visible at a glance but not so
-   much that it disrupts adjacent rows. transform-origin: center
-   left keeps the row anchored on its left edge so it doesn't
-   slide sideways. Background-color also pulses from 30% -> 60%
-   opacity so the eye picks up the active state even if the
-   scale change is missed (e.g., peripheral vision or slow scan). */
-@keyframes todo-item-breathe {
-    0%, 100% { transform: scale(1.0);   background: linear-gradient(90deg, rgba(14,165,233,0.30) 0%, rgba(14,165,233,0.08) 100%); }
-    50%      { transform: scale(1.25);  background: linear-gradient(90deg, rgba(14,165,233,0.60) 0%, rgba(14,165,233,0.20) 100%); }
-}
-/* Font-size breathing for the active step label — avoids conflict
-   with .chat-todo-item's transition:transform which cancels the
-   scale animation. font-size pulsing is more targeted and visible. */
-@keyframes todo-label-breathe {
-    0%, 100% { font-size: 0.72rem; }
-    50%      { font-size: 0.88rem; }
-}
-/* Box-shadow breathing pulse — always visible regardless of
-   overflow or transition conflicts. */
 @keyframes todo-active-breathe {
     0%, 100% {
-        box-shadow: inset 0 0 0 1px rgba(14,165,233,0.45),
-                    0 0 6px 1px rgba(14,165,233,0.15);
+        box-shadow: inset 0 0 0 1px rgba(14,165,233,0.32),
+                    0 0 5px 0 rgba(14,165,233,0.08);
     }
     50% {
-        box-shadow: inset 0 0 0 1px rgba(14,165,233,0.80),
-                    0 0 18px 6px rgba(14,165,233,0.45);
+        box-shadow: inset 0 0 0 1px rgba(14,165,233,0.62),
+                    0 0 12px 2px rgba(14,165,233,0.22);
     }
 }
 

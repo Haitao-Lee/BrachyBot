@@ -4149,12 +4149,14 @@ inside review history, where they document what was removed.
 
 ### Progress breathing animation
 
-The active Progress row already used an infinite animation, but the later
+The active Progress row used an infinite animation, but a later
 `prefers-reduced-motion` rule applied `animation-iteration-count: 1` globally.
 On systems with reduced motion enabled, a still-running step therefore pulsed
-once and looked frozen. The responsive stylesheet now explicitly keeps active
-Progress and pipeline indicators running until their done/error state, while
-unrelated animations continue to honor reduced-motion settings.
+once and looked frozen. The final behavior is deliberately static, not
+re-animated: active rows retain a clear border and status color while every
+motion effect stops. This respects the operating-system preference and avoids
+the misleading one-cycle pulse. On systems without reduced motion, the active
+row keeps its subtle infinite pulse until its own terminal event.
 
 ### Dose pipeline hardware selection
 
@@ -5097,3 +5099,40 @@ not to transplant a coding-agent execution model into clinical planning.
   regressions documented in Round 30: RT Dose is not emitted and a mixed dose
   grid is not rejected. They are outside this runtime-contract change and were
   left untouched to keep this system-level integration narrowly scoped.
+
+## Round 32 UI motion and dialog-state audit (2026-07-19)
+
+### Verified issue
+
+The responsive stylesheet correctly respected `prefers-reduced-motion` by
+limiting animations to one iteration, but a later report stylesheet attempted
+to restore a 2.4-second active-task animation. Cascade order produced a single
+breathing cycle for an otherwise active task, visually resembling a stalled
+pipeline. This was a real UI state-reporting defect, not merely a cosmetic
+preference.
+
+### Correction
+
+- The reduced-motion cascade now uses a static active treatment everywhere;
+  it never re-enables a partial animation cycle.
+- In the normal motion path, Todo rows retain their `active` class and a
+  subtle infinite pulse until their own done/error/cancel terminal transition.
+  Existing cleanup clears elapsed timers, GPU polling, animation guards, and
+  transitional classes on every terminal path.
+- Report dialogs now use semantic dialog markup, focus restoration, Tab focus
+  containment, Escape/backdrop dismissal, and short opacity/scale transitions.
+  A defensive `matchMedia` guard keeps this path safe in limited web views.
+- Static regression tests verify that no later stylesheet reintroduces the
+  one-cycle rule and that the report modal keeps its keyboard close path.
+- The remote `brachytherapy` regression slice covering runtime contracts,
+  workspace persistence/authentication/state, and frontend workspace checks
+  passed: **25 passed, 3 environment warnings**. JavaScript syntax checks
+  passed locally with the bundled Node runtime; the remote host does not
+  install Node.
+
+### Deliberate UX boundary
+
+No layout, font-size, or content position is animated for a live Todo row.
+Long clinical traces must remain stable to scan; animation is limited to
+opacity, shadow, and a fixed-footprint status dot. This preserves the visual
+indication of active work without causing rows or surrounding content to jump.
