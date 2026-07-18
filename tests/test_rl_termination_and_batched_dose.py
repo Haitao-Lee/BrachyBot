@@ -24,9 +24,10 @@ from plans.dose_pre.inference import (
     sliding_window_predict_batch,
 )
 try:
-    from plans.reinforcement import LowLevelEnv
+    from plans.reinforcement import LowLevelEnv, evaluate_plan_objective
 except ModuleNotFoundError:  # pragma: no cover - optional RL runtime dependency.
     LowLevelEnv = None
+    evaluate_plan_objective = None
 
 
 class _IdentityDoseModel(torch.nn.Module):
@@ -96,6 +97,28 @@ class RlTerminationAndDoseBatchTests(unittest.TestCase):
                 device=torch.device("cpu"),
                 deadline=time.monotonic() - 1.0,
             )
+
+    @unittest.skipIf(evaluate_plan_objective is None, "gymnasium is required for RL objective tests")
+    def test_full_plan_objective_uses_accumulated_dose_not_the_last_seed_reward(self):
+        # The target occupies two voxels.  The first seed covers one target
+        # voxel and the second covers the other; selecting by only the last
+        # incremental reward would discard the clinically meaningful total.
+        radiation_volume = np.array([[[1, 1, 0, 0]]], dtype=np.int16)
+        first_seed = np.array([[[12.0, 0.0, 0.0, 0.0]]], dtype=np.float32)
+        second_seed = np.array([[[0.0, 12.0, 0.0, 0.0]]], dtype=np.float32)
+        plan = [[None, [], [first_seed, second_seed]]]
+
+        objective, coverage = evaluate_plan_objective(
+            plan,
+            radiation_volume,
+            target_value=1,
+            in_lowest_dose=10.0,
+            out_highest_dose=100.0,
+            DVH_rate=0.9,
+        )
+
+        self.assertAlmostEqual(coverage, 1.0)
+        self.assertGreater(objective, 1.0)
 
 
 if __name__ == "__main__":
